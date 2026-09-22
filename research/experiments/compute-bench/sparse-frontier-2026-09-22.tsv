@@ -249,3 +249,1170 @@ default-policy	raw	real 0.17
 default-policy	raw	user 0.15
 default-policy	raw	sys 0.00
 default-policy	raw	== END captures-sparse-default-emission: 0.21 s, exit 0 ==
+# Subsequent default-policy preflight and fixed null-control outcome; no algorithm comparison followed.
+outcome	manifest	criterion_commit: 301fd1b505ed58992644e7d923c6006679a2e848; committed before construction and all timing samples
+outcome	manifest	default_module: /private/tmp/whitefoot-capture-sparse-default.ll; byte-identical to initial qualification module
+outcome	manifest	timing_image_sha256: ca2a3826fa6fa35dde913530ab47303317f1d4a2ac9e64c2548e2e8ed3f0a473
+outcome	manifest	construction: 1.63 s wall, 1.16 s user, 0.42 s system; fresh O3 vectorization-permitted FIFO/kernel/harness and O2 WF module/runtime objects
+outcome	manifest	oracle_stage: 3.47 s wall, 2.60 s user, 0.53 s system; original exact plain image W1/W4 plus 14 timing-image cells and actual input hashing
+outcome	manifest	preflight_guard: 5.18 s wall, exit 0, 30 s cap; logs /private/tmp/whitefoot-sparse-bench-20260922-preflight.log
+outcome	manifest	plain_large_correctness: W1 and W4 each PASS 96 configurations,70021040 distance/input comparisons; process real times 0.66 s and 0.55 s; original image sha256=cdd68d82f4e974b03600845e11ddc3f20996645ae632a0237d1dcd282cb0c558
+outcome	manifest	timing_image_correctness: all 14 frozen cells pass; each call compares n distances and 4*n original input words; input is regenerated only after temporary WF workspace is freed
+outcome	manifest	input_hash_format: fixture, vertices, adjacency slots, SHA256 of native little-endian uint64 input bytes; input dumps are produced during untimed preflight and removed after hashing
+outcome	manifest	cached_optional_backends: unchanged shared harness registry requires cached static/TBB/Parlay/Rayon objects; kernel exposes only wf,wf-seq,serial, so no optional backend is called or starts workers; exact objects/libraries are hashed below
+outcome	manifest	form_names: wf=outbox, selected at W1/W4; wf-seq=unchanged intrusive traversal in same module, selected only at W1; serial=ordinary useful C FIFO
+outcome	manifest	null_inventory: 40 fresh processes; five paired passes; 160 fully verified calls including 40 first calls and 120 warm samples; all samples retained
+outcome	manifest	null_guard: 17.59 s wall, exit 3, 60 s cap; command real=17.57 s,user=20.58 s,system=1.17 s
+outcome	manifest	null_verdict: INCONCLUSIVE: collision-large/W4 median paired wall ratio 0.9533491375596893 is outside precommitted [0.97,1.03]; no repeated null or microtuning selected
+outcome	manifest	null_variation: cause unattributed; this is not evidence of a BFS win or loss against FIFO
+outcome	manifest	main_comparison: NOT EXECUTED; no compare.tsv or null-passed.txt exists; all FIFO-versus-outbox and narrow-chain elapsed comparisons remain unmeasured
+outcome	manifest	cost_attribution: permuted-tree 20 processes sum 14.184478 s wall, timed-call intervals sum 10.195982 s; collision 20 processes sum 3.260658 s, timed-call intervals sum 2.137095 s; total process wall 17.445136 s, about 5.11 s outside algorithm intervals
+outcome	manifest	cost_limit: null stage exceeded prospective 5--15 s expectation, not 60 s cap; attribution includes process/fixture/oracle/check overhead and makes no claim about variation cause
+outcome	manifest	retained_limits: original tree completed zero nonempty routing rows on helpers despite one nonzero routing budget; smaller fixtures had no routing budget; persistent outbox workspace 64V bytes plus bucket matrix, serial fills, metadata passes and concentrated-label span remain charged
+outcome	manifest	artifact_integrity: all compiled image/object/module/source/library hashes checked before and after each executed stage and unchanged; no source/specification/default/runtime price changes
+outcome	manifest	source_retention: following source rows retain exact one-shot fixture host, timing adapter, native recipe and fixed driver for reproduction; they are evidence, not maintained runners or gate dependencies
+outcome	manifest	reproduction: restore named scratch source files from source/source-empty rows; native build recipe appends the formal host adapter to the frozen default module and compares against the initial plain linked module; reproduce initial plain image using qualification-build source; qualified graph generators and formal oracle retain recorded hashes; use fresh output paths and the same guard/stage caps
+outcome	manifest	bounds: W1/W4 initial plain qualification, then final-image verify under a 30 s build/preflight guard; 60 s null guard; comparison was withheld under the committed stop rule
+timing-verify	sha256	0049c0c10283b1ff550a02f741db5be1f0241b1a8a5cb06673b7cc2fa912d979  /private/tmp/whitefoot-sparse-bench-20260922/verify.tsv
+timing-verify	raw	# stage=verify; criterion_commit=301fd1b505ed58992644e7d923c6006679a2e848
+timing-verify	raw	# image_sha256=ca2a3826fa6fa35dde913530ab47303317f1d4a2ac9e64c2548e2e8ed3f0a473; calls=3; passes=5; gap_us=0
+timing-verify	raw	# sample columns: fixture variant kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-verify	raw	# invocation exact-plain-large/W1 command=/usr/bin/time -p /private/tmp/whitefoot-sparse-capture-qualified-plain
+timing-verify	raw	# invocation_cost exact-plain-large/W1 wall_s=0.666996 exit=0
+timing-verify	raw	# stderr real 0.66
+timing-verify	raw	# stderr user 0.59
+timing-verify	raw	# stderr sys 0.06
+timing-verify	raw	bfs routed oracle PASS: 96 configurations, 70021040 values
+timing-verify	raw	# invocation exact-plain-large/W4 command=/usr/bin/time -p /private/tmp/whitefoot-sparse-capture-qualified-plain
+timing-verify	raw	# invocation_cost exact-plain-large/W4 wall_s=0.563281 exit=0
+timing-verify	raw	# stderr real 0.55
+timing-verify	raw	# stderr user 0.60
+timing-verify	raw	# stderr sys 0.06
+timing-verify	raw	bfs routed oracle PASS: 96 configurations, 70021040 values
+timing-verify	raw	# invocation tree-large-permuted/fifo command=/usr/bin/time -p /private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse verify serial 1
+timing-verify	raw	# invocation_cost tree-large-permuted/fifo wall_s=0.648572 exit=0
+timing-verify	raw	# stderr real 0.64
+timing-verify	raw	# stderr user 0.15
+timing-verify	raw	# stderr sys 0.04
+timing-verify	raw	# bfs-sparse VERIFY PASS: form=serial width=1 gap_us=0 compared=10485755
+timing-verify	raw	# invocation tree-large-permuted/outbox-w1 command=/usr/bin/time -p /private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse verify wf 1
+timing-verify	raw	# invocation_cost tree-large-permuted/outbox-w1 wall_s=0.304924 exit=0
+timing-verify	raw	# stderr real 0.30
+timing-verify	raw	# stderr user 0.26
+timing-verify	raw	# stderr sys 0.03
+timing-verify	raw	# bfs-sparse VERIFY PASS: form=wf width=1 gap_us=0 compared=10485755
+timing-verify	raw	# invocation tree-large-permuted/outbox-w4 command=/usr/bin/time -p /private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse verify wf 4
+timing-verify	raw	# invocation_cost tree-large-permuted/outbox-w4 wall_s=0.205852 exit=0
+timing-verify	raw	# stderr real 0.20
+timing-verify	raw	# stderr user 0.26
+timing-verify	raw	# stderr sys 0.02
+timing-verify	raw	# bfs-sparse VERIFY PASS: form=wf width=4 gap_us=0 compared=10485755
+timing-verify	raw	# invocation tree-large-permuted/intrusive command=/usr/bin/time -p /private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse verify wf-seq 1
+timing-verify	raw	# invocation_cost tree-large-permuted/intrusive wall_s=0.304619 exit=0
+timing-verify	raw	# stderr real 0.30
+timing-verify	raw	# stderr user 0.27
+timing-verify	raw	# stderr sys 0.02
+timing-verify	raw	# bfs-sparse VERIFY PASS: form=wf-seq width=1 gap_us=0 compared=10485755
+timing-verify	raw	# invocation collision-large/fifo command=/usr/bin/time -p /private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse verify serial 1
+timing-verify	raw	# invocation_cost collision-large/fifo wall_s=0.100940 exit=0
+timing-verify	raw	# stderr real 0.09
+timing-verify	raw	# stderr user 0.02
+timing-verify	raw	# stderr sys 0.03
+timing-verify	raw	# bfs-sparse VERIFY PASS: form=serial width=1 gap_us=0 compared=13107195
+timing-verify	raw	# invocation collision-large/outbox-w1 command=/usr/bin/time -p /private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse verify wf 1
+timing-verify	raw	# invocation_cost collision-large/outbox-w1 wall_s=0.084220 exit=0
+timing-verify	raw	# stderr real 0.08
+timing-verify	raw	# stderr user 0.04
+timing-verify	raw	# stderr sys 0.02
+timing-verify	raw	# bfs-sparse VERIFY PASS: form=wf width=1 gap_us=0 compared=13107195
+timing-verify	raw	# invocation collision-large/outbox-w4 command=/usr/bin/time -p /private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse verify wf 4
+timing-verify	raw	# invocation_cost collision-large/outbox-w4 wall_s=0.073360 exit=0
+timing-verify	raw	# stderr real 0.07
+timing-verify	raw	# stderr user 0.05
+timing-verify	raw	# stderr sys 0.02
+timing-verify	raw	# bfs-sparse VERIFY PASS: form=wf width=4 gap_us=0 compared=13107195
+timing-verify	raw	# invocation collision-large/intrusive command=/usr/bin/time -p /private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse verify wf-seq 1
+timing-verify	raw	# invocation_cost collision-large/intrusive wall_s=0.059680 exit=0
+timing-verify	raw	# stderr real 0.05
+timing-verify	raw	# stderr user 0.03
+timing-verify	raw	# stderr sys 0.01
+timing-verify	raw	# bfs-sparse VERIFY PASS: form=wf-seq width=1 gap_us=0 compared=13107195
+timing-verify	raw	# invocation tree-large/fifo command=/usr/bin/time -p /private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse verify serial 1
+timing-verify	raw	# invocation_cost tree-large/fifo wall_s=0.084204 exit=0
+timing-verify	raw	# stderr real 0.08
+timing-verify	raw	# stderr user 0.02
+timing-verify	raw	# stderr sys 0.02
+timing-verify	raw	# bfs-sparse VERIFY PASS: form=serial width=1 gap_us=0 compared=10485755
+timing-verify	raw	# invocation tree-large/outbox-w1 command=/usr/bin/time -p /private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse verify wf 1
+timing-verify	raw	# invocation_cost tree-large/outbox-w1 wall_s=0.065242 exit=0
+timing-verify	raw	# stderr real 0.06
+timing-verify	raw	# stderr user 0.03
+timing-verify	raw	# stderr sys 0.02
+timing-verify	raw	# bfs-sparse VERIFY PASS: form=wf width=1 gap_us=0 compared=10485755
+timing-verify	raw	# invocation tree-large/outbox-w4 command=/usr/bin/time -p /private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse verify wf 4
+timing-verify	raw	# invocation_cost tree-large/outbox-w4 wall_s=0.058011 exit=0
+timing-verify	raw	# stderr real 0.05
+timing-verify	raw	# stderr user 0.03
+timing-verify	raw	# stderr sys 0.02
+timing-verify	raw	# bfs-sparse VERIFY PASS: form=wf width=4 gap_us=0 compared=10485755
+timing-verify	raw	# invocation chain/fifo command=/usr/bin/time -p /private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse verify serial 1
+timing-verify	raw	# invocation_cost chain/fifo wall_s=0.007687 exit=0
+timing-verify	raw	# stderr real 0.00
+timing-verify	raw	# stderr user 0.00
+timing-verify	raw	# stderr sys 0.00
+timing-verify	raw	# bfs-sparse VERIFY PASS: form=serial width=1 gap_us=0 compared=20485
+timing-verify	raw	# invocation chain/outbox-w1 command=/usr/bin/time -p /private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse verify wf 1
+timing-verify	raw	# invocation_cost chain/outbox-w1 wall_s=0.006620 exit=0
+timing-verify	raw	# stderr real 0.00
+timing-verify	raw	# stderr user 0.00
+timing-verify	raw	# stderr sys 0.00
+timing-verify	raw	# bfs-sparse VERIFY PASS: form=wf width=1 gap_us=0 compared=20485
+timing-verify	raw	# invocation chain/outbox-w4 command=/usr/bin/time -p /private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse verify wf 4
+timing-verify	raw	# invocation_cost chain/outbox-w4 wall_s=0.007853 exit=0
+timing-verify	raw	# stderr real 0.00
+timing-verify	raw	# stderr user 0.00
+timing-verify	raw	# stderr sys 0.00
+timing-verify	raw	# bfs-sparse VERIFY PASS: form=wf width=4 gap_us=0 compared=20485
+timing-verify	raw	# artifact_hashes_after=PASS
+input-hashes	sha256	16a730c598665b59f1e3a1b4424d69ff599c7cbab4bddd0a9cc8222a8981cc1d  /private/tmp/whitefoot-sparse-bench-20260922/input-hashes.tsv
+input-hashes	raw	tree-large-permuted	2097151	8388604	78e911c2ef23a4a76e71dde234e1ba5067e62a5346d00afd615d2e789c588d27
+input-hashes	raw	collision-large	2621439	10485756	34f1f755e54ae9d7fc8af9ec05243f520d6387e2a5676163873d7a095b92dff3
+input-hashes	raw	tree-large	2097151	8388604	feaa7b64b096c1eacefe6041b87f44e654a386b22e79c548840cf1413aae6fa5
+input-hashes	raw	chain	4097	16388	64da5526b873965ef4e6737925479141cdd10364a30287b680b0360fc0171570
+timing-artifacts	sha256	2a11220b00a1c40cf769bfb8fe1e1a84b3e053b1879a965c33b2125c8d3ac402  /private/tmp/whitefoot-sparse-bench-20260922/hashes-before.txt
+timing-artifacts	raw	8e55e5dd9668df5fdb6bc1ba5bb918a80f0af8c5c6803272f9caba92d050d512  /private/tmp/whitefoot-capture-sparse-default.ll
+timing-artifacts	raw	a7e10c98cff6567154669874a8327c80be557221b2e83e9f44cc79df3d22078b  /private/tmp/whitefoot-sparse-bench-20260922/module.ll
+timing-artifacts	raw	cd0979bc9b96891c2a10191e51561cb0f59e24a2ad12b77bc7aea160a3fd3c55  /private/tmp/whitefoot-sparse-bench-20260922/backend_serial.o
+timing-artifacts	raw	af91032f29dc1b1c22dcf43099d933303ff3b1e4741a93122f987bdbdb70c4ec  /private/tmp/whitefoot-sparse-bench-20260922/completion_bridge_c.o
+timing-artifacts	raw	fb4ee3f397da5bcee9188332d56fb3c854b931b4c1f07b4c8350a9c941891937  /private/tmp/whitefoot-sparse-bench-20260922/completion_file_adapter_c.o
+timing-artifacts	raw	1d1fe1c3033038fc69cd031e32b5eff6e85571da89176f85e442f52f0fb1b940  /private/tmp/whitefoot-sparse-bench-20260922/completion_file_posix_c.o
+timing-artifacts	raw	e389769ac8c9f38af9cd00e5bc5d56d3c180dff5985fb81ddfff63dfa89eb453  /private/tmp/whitefoot-sparse-bench-20260922/completion_linux_io_uring_c.o
+timing-artifacts	raw	75cb971977625c9b05adcf74b14989544ccbf61b0a81fe4843ec72226eb36c61  /private/tmp/whitefoot-sparse-bench-20260922/completion_runtime_c.o
+timing-artifacts	raw	d95b24c2367aa6dcf60a9d9e4e36acf79fa502d4ded856f244c6f4afcf28aa10  /private/tmp/whitefoot-sparse-bench-20260922/completion_wait_host_c.o
+timing-artifacts	raw	e44b04bd3b722a61ee6493dcefdff6d73431f227f60073e2ea6eafc8ad09bb29  /private/tmp/whitefoot-sparse-bench-20260922/harness.o
+timing-artifacts	raw	7fa87759ab801313b8988cd0556bebcb37f6440f059e2f9c79d6ad349db78b21  /private/tmp/whitefoot-sparse-bench-20260922/kernel.o
+timing-artifacts	raw	7e520c06f640f4a8cd8b0881598f30542efe242a25cb5be338f35baf6089721b  /private/tmp/whitefoot-sparse-bench-20260922/module.o
+timing-artifacts	raw	685d56fcf6c89bbddf8d1921b44952bb909dd0362715817babbacd64da8898c3  /private/tmp/whitefoot-sparse-bench-20260922/ordinary_values_c.o
+timing-artifacts	raw	d578790251750de1a10ef95e1265d028184cc1d18f0c40d78e88c5ee8f1fcd80  /private/tmp/whitefoot-sparse-bench-20260922/ordinary_values_ll.o
+timing-artifacts	raw	0655633c69666fcce21bf67258101aedb49c914fc50a6cc8edbfe22a8315e645  /private/tmp/whitefoot-sparse-bench-20260922/sched_core_c.o
+timing-artifacts	raw	e04734d7a1ddbe9083b47570ca2854963803b88a7197628bed2ca66cb4924d5c  /private/tmp/whitefoot-sparse-bench-20260922/sched_entry_c.o
+timing-artifacts	raw	c3a5140b8221a57d27a510995ae37c7b33a64ebc87ec9f9286b99ece649bce45  /private/tmp/whitefoot-sparse-bench-20260922/sched_prim_host_c.o
+timing-artifacts	raw	8342e7ea0b8d6a0817d543e8c05e807c96527393945e95597718ba9a27ce722d  /private/tmp/whitefoot-sparse-bench-20260922/wf_floor_c.o
+timing-artifacts	raw	ca2a3826fa6fa35dde913530ab47303317f1d4a2ac9e64c2548e2e8ed3f0a473  /private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse
+timing-artifacts	raw	a6675dbbbb739f4efd2f5a94032f3dc966ba10eda3cf26990922f2db437f4023  /private/tmp/sparse-frontier-bench.c
+timing-artifacts	raw	b4fd26dfffefddbea68b1d269431af74f731f31df79189915efba00d314c8b8a  /private/tmp/sparse-frontier-bench-build.sh
+timing-artifacts	raw	a2b744286ca1a88af1bc8a840d00452477073546b46478f2f772ecd26cc28703  /private/tmp/sparse-frontier-bench-run.rb
+timing-artifacts	raw	14e650600b5e9500f6e24ed6e01fdcd8d0896651e7b1567d00d9580020b2919e  /private/tmp/sparse-frontier-host.c
+timing-artifacts	raw	e1f5e20e713af5be3102a835b98fddc2d69ff76a0bcc9b65460a08d4fd299a7d  /private/tmp/whitefoot-compute-x1/research/experiments/compute-bench/harness.c
+timing-artifacts	raw	55431157db8304ccd58e3911eabd7471d22a3cefa6a1859dd836a8fe8e61fbef  /private/tmp/whitefoot-compute-x1/research/experiments/compute-bench/harness.h
+timing-artifacts	raw	9aaf1a9984b6d440b122c3401f71a5caae622a7e005678352cefc8c6fb3adb70  /private/tmp/whitefoot-compute-x1/research/experiments/compute-bench/backend.h
+timing-artifacts	raw	f9acfb9d7625d217aadd21ea021448223d0dc0fd41220a26adbcc12189d8097e  /private/tmp/whitefoot-compute-x1/research/experiments/compute-bench/backend_serial.c
+timing-artifacts	raw	a32d0cda8bf995b5279997229b588340041f79cf71d056dda58ee76ec7ad87a6  /private/tmp/whitefoot-sparse-frontier/tests/programs/compute/bfs_oracle.c
+timing-artifacts	raw	1f68218f7eaa5cbc7d863919ec710ca5b60611abb91acc8ef5256746af8b5a96  /private/tmp/whitefoot-sparse-frontier/tests/programs/compute/bfs_host.ll
+timing-artifacts	raw	4e04bcf39eee9edfb02bbec182cf4bbf0d5f2e577003ec3a193dbce143c40813  /private/tmp/whitefoot-sparse-frontier/tests/programs/compute/host-adapter.awk
+timing-artifacts	raw	f6e3b500d1102609551dc73d3cfe563fbb918bdf7e3b62488e5f8633c7ebc7c4  /private/tmp/wf-x1-scatter-range-bench/reference/backend_static.o
+timing-artifacts	raw	ae659a357f3f2116374114b0c63cc510f1589aca3dc3aa303d348690a62514bb  /private/tmp/wf-x1-scatter-range-bench/reference/backend_tbb.o
+timing-artifacts	raw	dda0c684e7ecce072f90318e8afe02ebfde3c593fd4db035ef6b486ec57fc659  /private/tmp/wf-x1-scatter-range-bench/reference/backend_parlay.o
+timing-artifacts	raw	0f7c2a10ee18cb2c5aa9cad69d70d2439d83cb8cd0e214d7ddf7289c6a822410  /private/tmp/wf-x1-scatter-range-bench/reference/backend_rayon.o
+timing-artifacts	raw	61fec48dc42829dc97943d72051ab2ca00786f97d198c412db1042b2b08e3188  /var/folders/71/d_n5m1v94kdg7bjl_4jxvcpr0000gp/T/whitefoot/whitefoot-compute-bench/deps/lib/libtbb.12.dylib
+timing-artifacts	raw	5908bab9d6de77a0ce8608e32d312459360f1ec63baf57cb8559bbd250fdd5ac  /var/folders/71/d_n5m1v94kdg7bjl_4jxvcpr0000gp/T/whitefoot/whitefoot-compute-bench/deps/rayon/libwf_compute_bench_rayon.a
+timing-artifacts	raw	a50ccec0994ecdc8f5c5241e1a9f76dd4376fb84780013be15c1a5a189059cc9  /private/tmp/whitefoot-sparse-frontier/compiler/src/backend/wf_floor.c
+timing-artifacts	raw	6f07b726dda9a63df65add525dd66f3cebeac38ef30d65ac52df2d303c3261d3  /private/tmp/whitefoot-sparse-frontier/compiler/src/backend/ordinary_values.c
+timing-artifacts	raw	c727e7810a6eae3f0ac32ab465d3b4352c91f4b2f6d0e6d008e0fdac003fe502  /private/tmp/whitefoot-sparse-frontier/compiler/src/backend/ordinary_values.ll
+timing-artifacts	raw	48f0080fd5c43e9e07691a05936c36e232b76d1bde309b6f53bc912176ac3285  /private/tmp/whitefoot-sparse-frontier/compiler/src/backend/sched/core.c
+timing-artifacts	raw	fcd531f908b0f88ebeb9601a7d953a6b99eb62ce5ed55caa4a58a26bf3874e8c  /private/tmp/whitefoot-sparse-frontier/compiler/src/backend/sched/prim_host.c
+timing-artifacts	raw	25ef25d07b118f46e592a6779afc3df70cb311008fc5b9ffaa2d0de94d8cf5d2  /private/tmp/whitefoot-sparse-frontier/compiler/src/backend/sched/entry.c
+timing-artifacts	raw	93b730805ba5f6946660fbe3376db89e623acef686c8887bafe2f07ec1798c28  /private/tmp/whitefoot-sparse-frontier/compiler/src/backend/completion/runtime.c
+timing-artifacts	raw	fd49723d6b60810151f1a251b1a76d580868b74af251f4f428664fa2fb845a9f  /private/tmp/whitefoot-sparse-frontier/compiler/src/backend/completion/wait_host.c
+timing-artifacts	raw	543afebc488df39671ddf66b60b2f7f1de85b67281aa5b243c42e57de5e9789e  /private/tmp/whitefoot-sparse-frontier/compiler/src/backend/completion/file_adapter.c
+timing-artifacts	raw	be44444becc76a4271ea6c7b11fd65da5f6c4f894ed6ebf92a3039a79b1e0803  /private/tmp/whitefoot-sparse-frontier/compiler/src/backend/completion/file_posix.c
+timing-artifacts	raw	03dbf225a762f3c97de4f8e6593ce675de1504d7feaafb1d6ea0496b14bf9979  /private/tmp/whitefoot-sparse-frontier/compiler/src/backend/completion/bridge.c
+timing-artifacts	raw	5ed8fe013bf3c891d3b5eb9bb48cb7d7f2713f092c286937df023df0435aea65  /private/tmp/whitefoot-sparse-frontier/compiler/src/backend/completion/linux_io_uring.c
+timing-null	sha256	290d394d456b14e8773703c2234adb4e54d10cba273836e8347e8f0120deceb6  /private/tmp/whitefoot-sparse-bench-20260922/null.tsv
+timing-null	raw	# stage=null; criterion_commit=301fd1b505ed58992644e7d923c6006679a2e848
+timing-null	raw	# image_sha256=ca2a3826fa6fa35dde913530ab47303317f1d4a2ac9e64c2548e2e8ed3f0a473; calls=3; passes=5; gap_us=0
+timing-null	raw	# sample columns: fixture variant kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	# invocation tree-large-permuted/null-a-w1/pass0 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 1 0 3
+timing-null	raw	# invocation_cost tree-large-permuted/null-a-w1/pass0 wall_s=0.878343 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=0 workload=fixture=tree-large-permuted vertices=2097151 reached=2097151 levels=21 adjacency_slots=8388604 wf=outbox wf-seq=intrusive serial=FIFO input_slots=8388604 outbox_persistent_cells=16777208 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	tree-large-permuted	null-a-w1	bfs-sparse	wf	1	0	0	first	176946500	175757000	2097151	0
+timing-null	raw	tree-large-permuted	null-a-w1	bfs-sparse	wf	1	0	1	warm	168717917	167107000	2097151	0
+timing-null	raw	tree-large-permuted	null-a-w1	bfs-sparse	wf	1	0	2	warm	170488958	169502000	2097151	0
+timing-null	raw	tree-large-permuted	null-a-w1	bfs-sparse	wf	1	0	3	warm	165914583	165125000	2097151	0
+timing-null	raw	# batch form=wf width=1 calls=3 gap_us=0 outputs=8388604 compared=41943020 explicit_shutdown=0 shutdown_ns=9375
+timing-null	raw	# invocation tree-large-permuted/null-b-w1/pass0 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 1 0 3
+timing-null	raw	# invocation_cost tree-large-permuted/null-b-w1/pass0 wall_s=0.873749 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=0 workload=fixture=tree-large-permuted vertices=2097151 reached=2097151 levels=21 adjacency_slots=8388604 wf=outbox wf-seq=intrusive serial=FIFO input_slots=8388604 outbox_persistent_cells=16777208 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	tree-large-permuted	null-b-w1	bfs-sparse	wf	1	0	0	first	175894833	174999000	2097151	0
+timing-null	raw	tree-large-permuted	null-b-w1	bfs-sparse	wf	1	0	1	warm	169592042	168252000	2097151	0
+timing-null	raw	tree-large-permuted	null-b-w1	bfs-sparse	wf	1	0	2	warm	164053291	163120000	2097151	0
+timing-null	raw	tree-large-permuted	null-b-w1	bfs-sparse	wf	1	0	3	warm	169667709	168892000	2097151	0
+timing-null	raw	# batch form=wf width=1 calls=3 gap_us=0 outputs=8388604 compared=41943020 explicit_shutdown=0 shutdown_ns=375
+timing-null	raw	# invocation tree-large-permuted/null-a-w4/pass0 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 4 0 3
+timing-null	raw	# invocation_cost tree-large-permuted/null-a-w4/pass0 wall_s=0.498254 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=0 workload=fixture=tree-large-permuted vertices=2097151 reached=2097151 levels=21 adjacency_slots=8388604 wf=outbox wf-seq=intrusive serial=FIFO input_slots=8388604 outbox_persistent_cells=16777208 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	tree-large-permuted	null-a-w4	bfs-sparse	wf	4	0	0	first	77856334	180497000	2097151	31
+timing-null	raw	tree-large-permuted	null-a-w4	bfs-sparse	wf	4	0	1	warm	73840416	174858000	2097151	29
+timing-null	raw	tree-large-permuted	null-a-w4	bfs-sparse	wf	4	0	2	warm	75255458	175093000	2097151	27
+timing-null	raw	tree-large-permuted	null-a-w4	bfs-sparse	wf	4	0	3	warm	76244833	175258000	2097151	32
+timing-null	raw	# batch form=wf width=4 calls=3 gap_us=0 outputs=8388604 compared=41943020 explicit_shutdown=0 shutdown_ns=333
+timing-null	raw	# invocation tree-large-permuted/null-b-w4/pass0 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 4 0 3
+timing-null	raw	# invocation_cost tree-large-permuted/null-b-w4/pass0 wall_s=0.537420 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=0 workload=fixture=tree-large-permuted vertices=2097151 reached=2097151 levels=21 adjacency_slots=8388604 wf=outbox wf-seq=intrusive serial=FIFO input_slots=8388604 outbox_persistent_cells=16777208 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	tree-large-permuted	null-b-w4	bfs-sparse	wf	4	0	0	first	80222125	180212000	2097151	28
+timing-null	raw	tree-large-permuted	null-b-w4	bfs-sparse	wf	4	0	1	warm	75826250	175483000	2097151	31
+timing-null	raw	tree-large-permuted	null-b-w4	bfs-sparse	wf	4	0	2	warm	110140542	188370000	2097151	33
+timing-null	raw	tree-large-permuted	null-b-w4	bfs-sparse	wf	4	0	3	warm	76600333	177332000	2097151	29
+timing-null	raw	# batch form=wf width=4 calls=3 gap_us=0 outputs=8388604 compared=41943020 explicit_shutdown=0 shutdown_ns=250
+timing-null	raw	# invocation collision-large/null-b-w1/pass0 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 1 0 3
+timing-null	raw	# invocation_cost collision-large/null-b-w1/pass0 wall_s=0.178073 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=0 workload=fixture=collision-large vertices=2621439 reached=2621439 levels=22 adjacency_slots=10485756 wf=outbox wf-seq=intrusive serial=FIFO input_slots=10485756 outbox_persistent_cells=20971512 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	collision-large	null-b-w1	bfs-sparse	wf	1	0	0	first	38896750	38326000	2621439	0
+timing-null	raw	collision-large	null-b-w1	bfs-sparse	wf	1	0	1	warm	28557084	28192000	2621439	0
+timing-null	raw	collision-large	null-b-w1	bfs-sparse	wf	1	0	2	warm	27789459	27567000	2621439	0
+timing-null	raw	collision-large	null-b-w1	bfs-sparse	wf	1	0	3	warm	26173417	26083000	2621439	0
+timing-null	raw	# batch form=wf width=1 calls=3 gap_us=0 outputs=10485756 compared=52428780 explicit_shutdown=0 shutdown_ns=7417
+timing-null	raw	# invocation collision-large/null-a-w1/pass0 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 1 0 3
+timing-null	raw	# invocation_cost collision-large/null-a-w1/pass0 wall_s=0.183838 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=0 workload=fixture=collision-large vertices=2621439 reached=2621439 levels=22 adjacency_slots=10485756 wf=outbox wf-seq=intrusive serial=FIFO input_slots=10485756 outbox_persistent_cells=20971512 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	collision-large	null-a-w1	bfs-sparse	wf	1	0	0	first	42462125	42281000	2621439	0
+timing-null	raw	collision-large	null-a-w1	bfs-sparse	wf	1	0	1	warm	29359458	29342000	2621439	0
+timing-null	raw	collision-large	null-a-w1	bfs-sparse	wf	1	0	2	warm	28593834	28319000	2621439	0
+timing-null	raw	collision-large	null-a-w1	bfs-sparse	wf	1	0	3	warm	25992875	25893000	2621439	0
+timing-null	raw	# batch form=wf width=1 calls=3 gap_us=0 outputs=10485756 compared=52428780 explicit_shutdown=0 shutdown_ns=209
+timing-null	raw	# invocation collision-large/null-b-w4/pass0 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 4 0 3
+timing-null	raw	# invocation_cost collision-large/null-b-w4/pass0 wall_s=0.175194 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=0 workload=fixture=collision-large vertices=2621439 reached=2621439 levels=22 adjacency_slots=10485756 wf=outbox wf-seq=intrusive serial=FIFO input_slots=10485756 outbox_persistent_cells=20971512 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	collision-large	null-b-w4	bfs-sparse	wf	4	0	0	first	65592208	44833000	2621439	30
+timing-null	raw	collision-large	null-b-w4	bfs-sparse	wf	4	0	1	warm	18712416	34339000	2621439	33
+timing-null	raw	collision-large	null-b-w4	bfs-sparse	wf	4	0	2	warm	18790333	31410000	2621439	32
+timing-null	raw	collision-large	null-b-w4	bfs-sparse	wf	4	0	3	warm	16327000	30364000	2621439	32
+timing-null	raw	# batch form=wf width=4 calls=3 gap_us=0 outputs=10485756 compared=52428780 explicit_shutdown=0 shutdown_ns=291
+timing-null	raw	# invocation collision-large/null-a-w4/pass0 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 4 0 3
+timing-null	raw	# invocation_cost collision-large/null-a-w4/pass0 wall_s=0.144279 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=0 workload=fixture=collision-large vertices=2621439 reached=2621439 levels=22 adjacency_slots=10485756 wf=outbox wf-seq=intrusive serial=FIFO input_slots=10485756 outbox_persistent_cells=20971512 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	collision-large	null-a-w4	bfs-sparse	wf	4	0	0	first	31496750	45954000	2621439	40
+timing-null	raw	collision-large	null-a-w4	bfs-sparse	wf	4	0	1	warm	19628083	34422000	2621439	34
+timing-null	raw	collision-large	null-a-w4	bfs-sparse	wf	4	0	2	warm	17841417	30992000	2621439	32
+timing-null	raw	collision-large	null-a-w4	bfs-sparse	wf	4	0	3	warm	19816041	32892000	2621439	33
+timing-null	raw	# batch form=wf width=4 calls=3 gap_us=0 outputs=10485756 compared=52428780 explicit_shutdown=0 shutdown_ns=416
+timing-null	raw	# invocation collision-large/null-b-w4/pass1 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 4 1 3
+timing-null	raw	# invocation_cost collision-large/null-b-w4/pass1 wall_s=0.146795 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=1 workload=fixture=collision-large vertices=2621439 reached=2621439 levels=22 adjacency_slots=10485756 wf=outbox wf-seq=intrusive serial=FIFO input_slots=10485756 outbox_persistent_cells=20971512 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	collision-large	null-b-w4	bfs-sparse	wf	4	1	0	first	34304125	49060000	2621439	28
+timing-null	raw	collision-large	null-b-w4	bfs-sparse	wf	4	1	1	warm	18737250	32966000	2621439	33
+timing-null	raw	collision-large	null-b-w4	bfs-sparse	wf	4	1	2	warm	18279583	33804000	2621439	32
+timing-null	raw	collision-large	null-b-w4	bfs-sparse	wf	4	1	3	warm	17651208	33558000	2621439	33
+timing-null	raw	# batch form=wf width=4 calls=3 gap_us=0 outputs=10485756 compared=52428780 explicit_shutdown=0 shutdown_ns=125
+timing-null	raw	# invocation collision-large/null-a-w4/pass1 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 4 1 3
+timing-null	raw	# invocation_cost collision-large/null-a-w4/pass1 wall_s=0.147874 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=1 workload=fixture=collision-large vertices=2621439 reached=2621439 levels=22 adjacency_slots=10485756 wf=outbox wf-seq=intrusive serial=FIFO input_slots=10485756 outbox_persistent_cells=20971512 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	collision-large	null-a-w4	bfs-sparse	wf	4	1	0	first	34188292	48124000	2621439	29
+timing-null	raw	collision-large	null-a-w4	bfs-sparse	wf	4	1	1	warm	19859042	33743000	2621439	34
+timing-null	raw	collision-large	null-a-w4	bfs-sparse	wf	4	1	2	warm	21429125	34288000	2621439	27
+timing-null	raw	collision-large	null-a-w4	bfs-sparse	wf	4	1	3	warm	16586333	30034000	2621439	36
+timing-null	raw	# batch form=wf width=4 calls=3 gap_us=0 outputs=10485756 compared=52428780 explicit_shutdown=0 shutdown_ns=416
+timing-null	raw	# invocation collision-large/null-b-w1/pass1 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 1 1 3
+timing-null	raw	# invocation_cost collision-large/null-b-w1/pass1 wall_s=0.181176 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=1 workload=fixture=collision-large vertices=2621439 reached=2621439 levels=22 adjacency_slots=10485756 wf=outbox wf-seq=intrusive serial=FIFO input_slots=10485756 outbox_persistent_cells=20971512 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	collision-large	null-b-w1	bfs-sparse	wf	1	1	0	first	39288084	39112000	2621439	0
+timing-null	raw	collision-large	null-b-w1	bfs-sparse	wf	1	1	1	warm	31865500	31662000	2621439	0
+timing-null	raw	collision-large	null-b-w1	bfs-sparse	wf	1	1	2	warm	24911208	24904000	2621439	0
+timing-null	raw	collision-large	null-b-w1	bfs-sparse	wf	1	1	3	warm	29841417	29514000	2621439	0
+timing-null	raw	# batch form=wf width=1 calls=3 gap_us=0 outputs=10485756 compared=52428780 explicit_shutdown=0 shutdown_ns=458
+timing-null	raw	# invocation collision-large/null-a-w1/pass1 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 1 1 3
+timing-null	raw	# invocation_cost collision-large/null-a-w1/pass1 wall_s=0.182921 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=1 workload=fixture=collision-large vertices=2621439 reached=2621439 levels=22 adjacency_slots=10485756 wf=outbox wf-seq=intrusive serial=FIFO input_slots=10485756 outbox_persistent_cells=20971512 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	collision-large	null-a-w1	bfs-sparse	wf	1	1	0	first	42459666	41433000	2621439	0
+timing-null	raw	collision-large	null-a-w1	bfs-sparse	wf	1	1	1	warm	31019791	30486000	2621439	0
+timing-null	raw	collision-large	null-a-w1	bfs-sparse	wf	1	1	2	warm	26498209	26424000	2621439	0
+timing-null	raw	collision-large	null-a-w1	bfs-sparse	wf	1	1	3	warm	25844750	25578000	2621439	0
+timing-null	raw	# batch form=wf width=1 calls=3 gap_us=0 outputs=10485756 compared=52428780 explicit_shutdown=0 shutdown_ns=333
+timing-null	raw	# invocation tree-large-permuted/null-a-w4/pass1 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 4 1 3
+timing-null	raw	# invocation_cost tree-large-permuted/null-a-w4/pass1 wall_s=0.520414 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=1 workload=fixture=tree-large-permuted vertices=2097151 reached=2097151 levels=21 adjacency_slots=8388604 wf=outbox wf-seq=intrusive serial=FIFO input_slots=8388604 outbox_persistent_cells=16777208 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	tree-large-permuted	null-a-w4	bfs-sparse	wf	4	1	0	first	81751708	183734000	2097151	29
+timing-null	raw	tree-large-permuted	null-a-w4	bfs-sparse	wf	4	1	1	warm	76613459	177673000	2097151	28
+timing-null	raw	tree-large-permuted	null-a-w4	bfs-sparse	wf	4	1	2	warm	84327959	181960000	2097151	28
+timing-null	raw	tree-large-permuted	null-a-w4	bfs-sparse	wf	4	1	3	warm	79543958	186169000	2097151	33
+timing-null	raw	# batch form=wf width=4 calls=3 gap_us=0 outputs=8388604 compared=41943020 explicit_shutdown=0 shutdown_ns=375
+timing-null	raw	# invocation tree-large-permuted/null-b-w4/pass1 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 4 1 3
+timing-null	raw	# invocation_cost tree-large-permuted/null-b-w4/pass1 wall_s=0.511000 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=1 workload=fixture=tree-large-permuted vertices=2097151 reached=2097151 levels=21 adjacency_slots=8388604 wf=outbox wf-seq=intrusive serial=FIFO input_slots=8388604 outbox_persistent_cells=16777208 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	tree-large-permuted	null-b-w4	bfs-sparse	wf	4	1	0	first	80617333	180883000	2097151	27
+timing-null	raw	tree-large-permuted	null-b-w4	bfs-sparse	wf	4	1	1	warm	74203125	175843000	2097151	30
+timing-null	raw	tree-large-permuted	null-b-w4	bfs-sparse	wf	4	1	2	warm	78527750	179729000	2097151	28
+timing-null	raw	tree-large-permuted	null-b-w4	bfs-sparse	wf	4	1	3	warm	79336208	182294000	2097151	32
+timing-null	raw	# batch form=wf width=4 calls=3 gap_us=0 outputs=8388604 compared=41943020 explicit_shutdown=0 shutdown_ns=417
+timing-null	raw	# invocation tree-large-permuted/null-a-w1/pass1 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 1 1 3
+timing-null	raw	# invocation_cost tree-large-permuted/null-a-w1/pass1 wall_s=0.907936 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=1 workload=fixture=tree-large-permuted vertices=2097151 reached=2097151 levels=21 adjacency_slots=8388604 wf=outbox wf-seq=intrusive serial=FIFO input_slots=8388604 outbox_persistent_cells=16777208 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	tree-large-permuted	null-a-w1	bfs-sparse	wf	1	1	0	first	173567125	172904000	2097151	0
+timing-null	raw	tree-large-permuted	null-a-w1	bfs-sparse	wf	1	1	1	warm	178344125	175088000	2097151	0
+timing-null	raw	tree-large-permuted	null-a-w1	bfs-sparse	wf	1	1	2	warm	183507916	180860000	2097151	0
+timing-null	raw	tree-large-permuted	null-a-w1	bfs-sparse	wf	1	1	3	warm	173155167	171210000	2097151	0
+timing-null	raw	# batch form=wf width=1 calls=3 gap_us=0 outputs=8388604 compared=41943020 explicit_shutdown=0 shutdown_ns=417
+timing-null	raw	# invocation tree-large-permuted/null-b-w1/pass1 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 1 1 3
+timing-null	raw	# invocation_cost tree-large-permuted/null-b-w1/pass1 wall_s=0.902820 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=1 workload=fixture=tree-large-permuted vertices=2097151 reached=2097151 levels=21 adjacency_slots=8388604 wf=outbox wf-seq=intrusive serial=FIFO input_slots=8388604 outbox_persistent_cells=16777208 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	tree-large-permuted	null-b-w1	bfs-sparse	wf	1	1	0	first	180389916	179077000	2097151	0
+timing-null	raw	tree-large-permuted	null-b-w1	bfs-sparse	wf	1	1	1	warm	170226459	169131000	2097151	0
+timing-null	raw	tree-large-permuted	null-b-w1	bfs-sparse	wf	1	1	2	warm	179619500	178203000	2097151	0
+timing-null	raw	tree-large-permuted	null-b-w1	bfs-sparse	wf	1	1	3	warm	175770708	173808000	2097151	0
+timing-null	raw	# batch form=wf width=1 calls=3 gap_us=0 outputs=8388604 compared=41943020 explicit_shutdown=0 shutdown_ns=416
+timing-null	raw	# invocation tree-large-permuted/null-a-w1/pass2 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 1 2 3
+timing-null	raw	# invocation_cost tree-large-permuted/null-a-w1/pass2 wall_s=0.894537 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=2 workload=fixture=tree-large-permuted vertices=2097151 reached=2097151 levels=21 adjacency_slots=8388604 wf=outbox wf-seq=intrusive serial=FIFO input_slots=8388604 outbox_persistent_cells=16777208 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	tree-large-permuted	null-a-w1	bfs-sparse	wf	1	2	0	first	181121458	179389000	2097151	0
+timing-null	raw	tree-large-permuted	null-a-w1	bfs-sparse	wf	1	2	1	warm	168125000	167267000	2097151	0
+timing-null	raw	tree-large-permuted	null-a-w1	bfs-sparse	wf	1	2	2	warm	171646500	170083000	2097151	0
+timing-null	raw	tree-large-permuted	null-a-w1	bfs-sparse	wf	1	2	3	warm	174131750	171807000	2097151	0
+timing-null	raw	# batch form=wf width=1 calls=3 gap_us=0 outputs=8388604 compared=41943020 explicit_shutdown=0 shutdown_ns=292
+timing-null	raw	# invocation tree-large-permuted/null-b-w1/pass2 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 1 2 3
+timing-null	raw	# invocation_cost tree-large-permuted/null-b-w1/pass2 wall_s=0.976417 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=2 workload=fixture=tree-large-permuted vertices=2097151 reached=2097151 levels=21 adjacency_slots=8388604 wf=outbox wf-seq=intrusive serial=FIFO input_slots=8388604 outbox_persistent_cells=16777208 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	tree-large-permuted	null-b-w1	bfs-sparse	wf	1	2	0	first	192553458	181130000	2097151	0
+timing-null	raw	tree-large-permuted	null-b-w1	bfs-sparse	wf	1	2	1	warm	175349625	174031000	2097151	0
+timing-null	raw	tree-large-permuted	null-b-w1	bfs-sparse	wf	1	2	2	warm	200909125	182469000	2097151	0
+timing-null	raw	tree-large-permuted	null-b-w1	bfs-sparse	wf	1	2	3	warm	187379542	167814000	2097151	0
+timing-null	raw	# batch form=wf width=1 calls=3 gap_us=0 outputs=8388604 compared=41943020 explicit_shutdown=0 shutdown_ns=333
+timing-null	raw	# invocation tree-large-permuted/null-a-w4/pass2 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 4 2 3
+timing-null	raw	# invocation_cost tree-large-permuted/null-a-w4/pass2 wall_s=0.503886 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=2 workload=fixture=tree-large-permuted vertices=2097151 reached=2097151 levels=21 adjacency_slots=8388604 wf=outbox wf-seq=intrusive serial=FIFO input_slots=8388604 outbox_persistent_cells=16777208 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	tree-large-permuted	null-a-w4	bfs-sparse	wf	4	2	0	first	77335459	181193000	2097151	36
+timing-null	raw	tree-large-permuted	null-a-w4	bfs-sparse	wf	4	2	1	warm	76781291	177958000	2097151	31
+timing-null	raw	tree-large-permuted	null-a-w4	bfs-sparse	wf	4	2	2	warm	76919292	176151000	2097151	32
+timing-null	raw	tree-large-permuted	null-a-w4	bfs-sparse	wf	4	2	3	warm	75969792	173499000	2097151	34
+timing-null	raw	# batch form=wf width=4 calls=3 gap_us=0 outputs=8388604 compared=41943020 explicit_shutdown=0 shutdown_ns=375
+timing-null	raw	# invocation tree-large-permuted/null-b-w4/pass2 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 4 2 3
+timing-null	raw	# invocation_cost tree-large-permuted/null-b-w4/pass2 wall_s=0.514491 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=2 workload=fixture=tree-large-permuted vertices=2097151 reached=2097151 levels=21 adjacency_slots=8388604 wf=outbox wf-seq=intrusive serial=FIFO input_slots=8388604 outbox_persistent_cells=16777208 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	tree-large-permuted	null-b-w4	bfs-sparse	wf	4	2	0	first	81796041	182600000	2097151	25
+timing-null	raw	tree-large-permuted	null-b-w4	bfs-sparse	wf	4	2	1	warm	78257833	179291000	2097151	32
+timing-null	raw	tree-large-permuted	null-b-w4	bfs-sparse	wf	4	2	2	warm	77368500	173483000	2097151	33
+timing-null	raw	tree-large-permuted	null-b-w4	bfs-sparse	wf	4	2	3	warm	79812750	179913000	2097151	31
+timing-null	raw	# batch form=wf width=4 calls=3 gap_us=0 outputs=8388604 compared=41943020 explicit_shutdown=0 shutdown_ns=416
+timing-null	raw	# invocation collision-large/null-b-w1/pass2 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 1 2 3
+timing-null	raw	# invocation_cost collision-large/null-b-w1/pass2 wall_s=0.171124 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=2 workload=fixture=collision-large vertices=2621439 reached=2621439 levels=22 adjacency_slots=10485756 wf=outbox wf-seq=intrusive serial=FIFO input_slots=10485756 outbox_persistent_cells=20971512 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	collision-large	null-b-w1	bfs-sparse	wf	1	2	0	first	38999083	38664000	2621439	0
+timing-null	raw	collision-large	null-b-w1	bfs-sparse	wf	1	2	1	warm	25826625	25555000	2621439	0
+timing-null	raw	collision-large	null-b-w1	bfs-sparse	wf	1	2	2	warm	26779500	26669000	2621439	0
+timing-null	raw	collision-large	null-b-w1	bfs-sparse	wf	1	2	3	warm	24413208	24404000	2621439	0
+timing-null	raw	# batch form=wf width=1 calls=3 gap_us=0 outputs=10485756 compared=52428780 explicit_shutdown=0 shutdown_ns=584
+timing-null	raw	# invocation collision-large/null-a-w1/pass2 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 1 2 3
+timing-null	raw	# invocation_cost collision-large/null-a-w1/pass2 wall_s=0.179116 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=2 workload=fixture=collision-large vertices=2621439 reached=2621439 levels=22 adjacency_slots=10485756 wf=outbox wf-seq=intrusive serial=FIFO input_slots=10485756 outbox_persistent_cells=20971512 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	collision-large	null-a-w1	bfs-sparse	wf	1	2	0	first	39705291	39524000	2621439	0
+timing-null	raw	collision-large	null-a-w1	bfs-sparse	wf	1	2	1	warm	29105583	29003000	2621439	0
+timing-null	raw	collision-large	null-a-w1	bfs-sparse	wf	1	2	2	warm	27459750	27437000	2621439	0
+timing-null	raw	collision-large	null-a-w1	bfs-sparse	wf	1	2	3	warm	27814875	27684000	2621439	0
+timing-null	raw	# batch form=wf width=1 calls=3 gap_us=0 outputs=10485756 compared=52428780 explicit_shutdown=0 shutdown_ns=458
+timing-null	raw	# invocation collision-large/null-b-w4/pass2 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 4 2 3
+timing-null	raw	# invocation_cost collision-large/null-b-w4/pass2 wall_s=0.136546 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=2 workload=fixture=collision-large vertices=2621439 reached=2621439 levels=22 adjacency_slots=10485756 wf=outbox wf-seq=intrusive serial=FIFO input_slots=10485756 outbox_persistent_cells=20971512 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	collision-large	null-b-w4	bfs-sparse	wf	4	2	0	first	29026250	43002000	2621439	38
+timing-null	raw	collision-large	null-b-w4	bfs-sparse	wf	4	2	1	warm	18133458	32979000	2621439	36
+timing-null	raw	collision-large	null-b-w4	bfs-sparse	wf	4	2	2	warm	17614666	33457000	2621439	31
+timing-null	raw	collision-large	null-b-w4	bfs-sparse	wf	4	2	3	warm	17013000	30057000	2621439	30
+timing-null	raw	# batch form=wf width=4 calls=3 gap_us=0 outputs=10485756 compared=52428780 explicit_shutdown=0 shutdown_ns=375
+timing-null	raw	# invocation collision-large/null-a-w4/pass2 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 4 2 3
+timing-null	raw	# invocation_cost collision-large/null-a-w4/pass2 wall_s=0.145938 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=2 workload=fixture=collision-large vertices=2621439 reached=2621439 levels=22 adjacency_slots=10485756 wf=outbox wf-seq=intrusive serial=FIFO input_slots=10485756 outbox_persistent_cells=20971512 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	collision-large	null-a-w4	bfs-sparse	wf	4	2	0	first	29105792	43547000	2621439	33
+timing-null	raw	collision-large	null-a-w4	bfs-sparse	wf	4	2	1	warm	19916583	35547000	2621439	30
+timing-null	raw	collision-large	null-a-w4	bfs-sparse	wf	4	2	2	warm	21194125	34540000	2621439	34
+timing-null	raw	collision-large	null-a-w4	bfs-sparse	wf	4	2	3	warm	17862250	30686000	2621439	37
+timing-null	raw	# batch form=wf width=4 calls=3 gap_us=0 outputs=10485756 compared=52428780 explicit_shutdown=0 shutdown_ns=292
+timing-null	raw	# invocation collision-large/null-b-w4/pass3 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 4 3 3
+timing-null	raw	# invocation_cost collision-large/null-b-w4/pass3 wall_s=0.142394 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=3 workload=fixture=collision-large vertices=2621439 reached=2621439 levels=22 adjacency_slots=10485756 wf=outbox wf-seq=intrusive serial=FIFO input_slots=10485756 outbox_persistent_cells=20971512 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	collision-large	null-b-w4	bfs-sparse	wf	4	3	0	first	32283708	46176000	2621439	36
+timing-null	raw	collision-large	null-b-w4	bfs-sparse	wf	4	3	1	warm	17134708	30726000	2621439	28
+timing-null	raw	collision-large	null-b-w4	bfs-sparse	wf	4	3	2	warm	17063291	31409000	2621439	34
+timing-null	raw	collision-large	null-b-w4	bfs-sparse	wf	4	3	3	warm	18997542	31518000	2621439	27
+timing-null	raw	# batch form=wf width=4 calls=3 gap_us=0 outputs=10485756 compared=52428780 explicit_shutdown=0 shutdown_ns=417
+timing-null	raw	# invocation collision-large/null-a-w4/pass3 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 4 3 3
+timing-null	raw	# invocation_cost collision-large/null-a-w4/pass3 wall_s=0.135267 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=3 workload=fixture=collision-large vertices=2621439 reached=2621439 levels=22 adjacency_slots=10485756 wf=outbox wf-seq=intrusive serial=FIFO input_slots=10485756 outbox_persistent_cells=20971512 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	collision-large	null-a-w4	bfs-sparse	wf	4	3	0	first	29601958	46040000	2621439	38
+timing-null	raw	collision-large	null-a-w4	bfs-sparse	wf	4	3	1	warm	17186250	31699000	2621439	39
+timing-null	raw	collision-large	null-a-w4	bfs-sparse	wf	4	3	2	warm	16896459	31221000	2621439	38
+timing-null	raw	collision-large	null-a-w4	bfs-sparse	wf	4	3	3	warm	16728459	30846000	2621439	32
+timing-null	raw	# batch form=wf width=4 calls=3 gap_us=0 outputs=10485756 compared=52428780 explicit_shutdown=0 shutdown_ns=334
+timing-null	raw	# invocation collision-large/null-b-w1/pass3 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 1 3 3
+timing-null	raw	# invocation_cost collision-large/null-b-w1/pass3 wall_s=0.181383 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=3 workload=fixture=collision-large vertices=2621439 reached=2621439 levels=22 adjacency_slots=10485756 wf=outbox wf-seq=intrusive serial=FIFO input_slots=10485756 outbox_persistent_cells=20971512 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	collision-large	null-b-w1	bfs-sparse	wf	1	3	0	first	41254292	41150000	2621439	0
+timing-null	raw	collision-large	null-b-w1	bfs-sparse	wf	1	3	1	warm	31068750	30602000	2621439	0
+timing-null	raw	collision-large	null-b-w1	bfs-sparse	wf	1	3	2	warm	27078583	26562000	2621439	0
+timing-null	raw	collision-large	null-b-w1	bfs-sparse	wf	1	3	3	warm	26944000	26590000	2621439	0
+timing-null	raw	# batch form=wf width=1 calls=3 gap_us=0 outputs=10485756 compared=52428780 explicit_shutdown=0 shutdown_ns=125
+timing-null	raw	# invocation collision-large/null-a-w1/pass3 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 1 3 3
+timing-null	raw	# invocation_cost collision-large/null-a-w1/pass3 wall_s=0.177036 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=3 workload=fixture=collision-large vertices=2621439 reached=2621439 levels=22 adjacency_slots=10485756 wf=outbox wf-seq=intrusive serial=FIFO input_slots=10485756 outbox_persistent_cells=20971512 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	collision-large	null-a-w1	bfs-sparse	wf	1	3	0	first	40880834	40685000	2621439	0
+timing-null	raw	collision-large	null-a-w1	bfs-sparse	wf	1	3	1	warm	26767083	26573000	2621439	0
+timing-null	raw	collision-large	null-a-w1	bfs-sparse	wf	1	3	2	warm	25487708	25480000	2621439	0
+timing-null	raw	collision-large	null-a-w1	bfs-sparse	wf	1	3	3	warm	28685042	28566000	2621439	0
+timing-null	raw	# batch form=wf width=1 calls=3 gap_us=0 outputs=10485756 compared=52428780 explicit_shutdown=0 shutdown_ns=125
+timing-null	raw	# invocation tree-large-permuted/null-a-w4/pass3 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 4 3 3
+timing-null	raw	# invocation_cost tree-large-permuted/null-a-w4/pass3 wall_s=0.503028 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=3 workload=fixture=tree-large-permuted vertices=2097151 reached=2097151 levels=21 adjacency_slots=8388604 wf=outbox wf-seq=intrusive serial=FIFO input_slots=8388604 outbox_persistent_cells=16777208 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	tree-large-permuted	null-a-w4	bfs-sparse	wf	4	3	0	first	79058250	181422000	2097151	33
+timing-null	raw	tree-large-permuted	null-a-w4	bfs-sparse	wf	4	3	1	warm	74870042	175656000	2097151	26
+timing-null	raw	tree-large-permuted	null-a-w4	bfs-sparse	wf	4	3	2	warm	74046167	175802000	2097151	32
+timing-null	raw	tree-large-permuted	null-a-w4	bfs-sparse	wf	4	3	3	warm	77618458	182822000	2097151	28
+timing-null	raw	# batch form=wf width=4 calls=3 gap_us=0 outputs=8388604 compared=41943020 explicit_shutdown=0 shutdown_ns=500
+timing-null	raw	# invocation tree-large-permuted/null-b-w4/pass3 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 4 3 3
+timing-null	raw	# invocation_cost tree-large-permuted/null-b-w4/pass3 wall_s=0.501999 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=3 workload=fixture=tree-large-permuted vertices=2097151 reached=2097151 levels=21 adjacency_slots=8388604 wf=outbox wf-seq=intrusive serial=FIFO input_slots=8388604 outbox_persistent_cells=16777208 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	tree-large-permuted	null-b-w4	bfs-sparse	wf	4	3	0	first	78647542	181659000	2097151	35
+timing-null	raw	tree-large-permuted	null-b-w4	bfs-sparse	wf	4	3	1	warm	74377666	173627000	2097151	28
+timing-null	raw	tree-large-permuted	null-b-w4	bfs-sparse	wf	4	3	2	warm	79139791	177053000	2097151	26
+timing-null	raw	tree-large-permuted	null-b-w4	bfs-sparse	wf	4	3	3	warm	73037083	169307000	2097151	27
+timing-null	raw	# batch form=wf width=4 calls=3 gap_us=0 outputs=8388604 compared=41943020 explicit_shutdown=0 shutdown_ns=417
+timing-null	raw	# invocation tree-large-permuted/null-a-w1/pass3 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 1 3 3
+timing-null	raw	# invocation_cost tree-large-permuted/null-a-w1/pass3 wall_s=0.871777 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=3 workload=fixture=tree-large-permuted vertices=2097151 reached=2097151 levels=21 adjacency_slots=8388604 wf=outbox wf-seq=intrusive serial=FIFO input_slots=8388604 outbox_persistent_cells=16777208 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	tree-large-permuted	null-a-w1	bfs-sparse	wf	1	3	0	first	178431375	178040000	2097151	0
+timing-null	raw	tree-large-permuted	null-a-w1	bfs-sparse	wf	1	3	1	warm	166252875	165523000	2097151	0
+timing-null	raw	tree-large-permuted	null-a-w1	bfs-sparse	wf	1	3	2	warm	166813459	166040000	2097151	0
+timing-null	raw	tree-large-permuted	null-a-w1	bfs-sparse	wf	1	3	3	warm	168793209	167490000	2097151	0
+timing-null	raw	# batch form=wf width=1 calls=3 gap_us=0 outputs=8388604 compared=41943020 explicit_shutdown=0 shutdown_ns=291
+timing-null	raw	# invocation tree-large-permuted/null-b-w1/pass3 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 1 3 3
+timing-null	raw	# invocation_cost tree-large-permuted/null-b-w1/pass3 wall_s=0.890128 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=3 workload=fixture=tree-large-permuted vertices=2097151 reached=2097151 levels=21 adjacency_slots=8388604 wf=outbox wf-seq=intrusive serial=FIFO input_slots=8388604 outbox_persistent_cells=16777208 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	tree-large-permuted	null-b-w1	bfs-sparse	wf	1	3	0	first	175219375	174196000	2097151	0
+timing-null	raw	tree-large-permuted	null-b-w1	bfs-sparse	wf	1	3	1	warm	173969750	171357000	2097151	0
+timing-null	raw	tree-large-permuted	null-b-w1	bfs-sparse	wf	1	3	2	warm	171768250	170499000	2097151	0
+timing-null	raw	tree-large-permuted	null-b-w1	bfs-sparse	wf	1	3	3	warm	170070208	169320000	2097151	0
+timing-null	raw	# batch form=wf width=1 calls=3 gap_us=0 outputs=8388604 compared=41943020 explicit_shutdown=0 shutdown_ns=417
+timing-null	raw	# invocation tree-large-permuted/null-a-w1/pass4 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 1 4 3
+timing-null	raw	# invocation_cost tree-large-permuted/null-a-w1/pass4 wall_s=0.912304 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=4 workload=fixture=tree-large-permuted vertices=2097151 reached=2097151 levels=21 adjacency_slots=8388604 wf=outbox wf-seq=intrusive serial=FIFO input_slots=8388604 outbox_persistent_cells=16777208 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	tree-large-permuted	null-a-w1	bfs-sparse	wf	1	4	0	first	183212791	179713000	2097151	0
+timing-null	raw	tree-large-permuted	null-a-w1	bfs-sparse	wf	1	4	1	warm	176459792	174520000	2097151	0
+timing-null	raw	tree-large-permuted	null-a-w1	bfs-sparse	wf	1	4	2	warm	175905750	174100000	2097151	0
+timing-null	raw	tree-large-permuted	null-a-w1	bfs-sparse	wf	1	4	3	warm	173412792	172329000	2097151	0
+timing-null	raw	# batch form=wf width=1 calls=3 gap_us=0 outputs=8388604 compared=41943020 explicit_shutdown=0 shutdown_ns=417
+timing-null	raw	# invocation tree-large-permuted/null-b-w1/pass4 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 1 4 3
+timing-null	raw	# invocation_cost tree-large-permuted/null-b-w1/pass4 wall_s=0.923195 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=4 workload=fixture=tree-large-permuted vertices=2097151 reached=2097151 levels=21 adjacency_slots=8388604 wf=outbox wf-seq=intrusive serial=FIFO input_slots=8388604 outbox_persistent_cells=16777208 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	tree-large-permuted	null-b-w1	bfs-sparse	wf	1	4	0	first	178564084	177024000	2097151	0
+timing-null	raw	tree-large-permuted	null-b-w1	bfs-sparse	wf	1	4	1	warm	170481250	168855000	2097151	0
+timing-null	raw	tree-large-permuted	null-b-w1	bfs-sparse	wf	1	4	2	warm	176895959	175098000	2097151	0
+timing-null	raw	tree-large-permuted	null-b-w1	bfs-sparse	wf	1	4	3	warm	196497375	182258000	2097151	0
+timing-null	raw	# batch form=wf width=1 calls=3 gap_us=0 outputs=8388604 compared=41943020 explicit_shutdown=0 shutdown_ns=416
+timing-null	raw	# invocation tree-large-permuted/null-a-w4/pass4 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 4 4 3
+timing-null	raw	# invocation_cost tree-large-permuted/null-a-w4/pass4 wall_s=0.540367 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=4 workload=fixture=tree-large-permuted vertices=2097151 reached=2097151 levels=21 adjacency_slots=8388604 wf=outbox wf-seq=intrusive serial=FIFO input_slots=8388604 outbox_persistent_cells=16777208 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	tree-large-permuted	null-a-w4	bfs-sparse	wf	4	4	0	first	83722250	183807000	2097151	33
+timing-null	raw	tree-large-permuted	null-a-w4	bfs-sparse	wf	4	4	1	warm	79863916	183311000	2097151	32
+timing-null	raw	tree-large-permuted	null-a-w4	bfs-sparse	wf	4	4	2	warm	88863917	181935000	2097151	32
+timing-null	raw	tree-large-permuted	null-a-w4	bfs-sparse	wf	4	4	3	warm	77170292	180941000	2097151	39
+timing-null	raw	# batch form=wf width=4 calls=3 gap_us=0 outputs=8388604 compared=41943020 explicit_shutdown=0 shutdown_ns=333
+timing-null	raw	# invocation tree-large-permuted/null-b-w4/pass4 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 4 4 3
+timing-null	raw	# invocation_cost tree-large-permuted/null-b-w4/pass4 wall_s=0.522413 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=4 workload=fixture=tree-large-permuted vertices=2097151 reached=2097151 levels=21 adjacency_slots=8388604 wf=outbox wf-seq=intrusive serial=FIFO input_slots=8388604 outbox_persistent_cells=16777208 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	tree-large-permuted	null-b-w4	bfs-sparse	wf	4	4	0	first	82392666	181348000	2097151	24
+timing-null	raw	tree-large-permuted	null-b-w4	bfs-sparse	wf	4	4	1	warm	78395042	179285000	2097151	30
+timing-null	raw	tree-large-permuted	null-b-w4	bfs-sparse	wf	4	4	2	warm	79821875	179838000	2097151	31
+timing-null	raw	tree-large-permuted	null-b-w4	bfs-sparse	wf	4	4	3	warm	79987208	181511000	2097151	28
+timing-null	raw	# batch form=wf width=4 calls=3 gap_us=0 outputs=8388604 compared=41943020 explicit_shutdown=0 shutdown_ns=375
+timing-null	raw	# invocation collision-large/null-b-w1/pass4 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 1 4 3
+timing-null	raw	# invocation_cost collision-large/null-b-w1/pass4 wall_s=0.184855 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=4 workload=fixture=collision-large vertices=2621439 reached=2621439 levels=22 adjacency_slots=10485756 wf=outbox wf-seq=intrusive serial=FIFO input_slots=10485756 outbox_persistent_cells=20971512 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	collision-large	null-b-w1	bfs-sparse	wf	1	4	0	first	41504666	41403000	2621439	0
+timing-null	raw	collision-large	null-b-w1	bfs-sparse	wf	1	4	1	warm	32862417	32510000	2621439	0
+timing-null	raw	collision-large	null-b-w1	bfs-sparse	wf	1	4	2	warm	29836791	29804000	2621439	0
+timing-null	raw	collision-large	null-b-w1	bfs-sparse	wf	1	4	3	warm	25351083	25343000	2621439	0
+timing-null	raw	# batch form=wf width=1 calls=3 gap_us=0 outputs=10485756 compared=52428780 explicit_shutdown=0 shutdown_ns=375
+timing-null	raw	# invocation collision-large/null-a-w1/pass4 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 1 4 3
+timing-null	raw	# invocation_cost collision-large/null-a-w1/pass4 wall_s=0.180884 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=4 workload=fixture=collision-large vertices=2621439 reached=2621439 levels=22 adjacency_slots=10485756 wf=outbox wf-seq=intrusive serial=FIFO input_slots=10485756 outbox_persistent_cells=20971512 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	collision-large	null-a-w1	bfs-sparse	wf	1	4	0	first	40670292	40457000	2621439	0
+timing-null	raw	collision-large	null-a-w1	bfs-sparse	wf	1	4	1	warm	27920375	27766000	2621439	0
+timing-null	raw	collision-large	null-a-w1	bfs-sparse	wf	1	4	2	warm	26424750	26258000	2621439	0
+timing-null	raw	collision-large	null-a-w1	bfs-sparse	wf	1	4	3	warm	27882750	27549000	2621439	0
+timing-null	raw	# batch form=wf width=1 calls=3 gap_us=0 outputs=10485756 compared=52428780 explicit_shutdown=0 shutdown_ns=458
+timing-null	raw	# invocation collision-large/null-b-w4/pass4 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 4 4 3
+timing-null	raw	# invocation_cost collision-large/null-b-w4/pass4 wall_s=0.146274 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=4 workload=fixture=collision-large vertices=2621439 reached=2621439 levels=22 adjacency_slots=10485756 wf=outbox wf-seq=intrusive serial=FIFO input_slots=10485756 outbox_persistent_cells=20971512 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	collision-large	null-b-w4	bfs-sparse	wf	4	4	0	first	31003500	45259000	2621439	29
+timing-null	raw	collision-large	null-b-w4	bfs-sparse	wf	4	4	1	warm	20086875	33424000	2621439	40
+timing-null	raw	collision-large	null-b-w4	bfs-sparse	wf	4	4	2	warm	20413459	35145000	2621439	37
+timing-null	raw	collision-large	null-b-w4	bfs-sparse	wf	4	4	3	warm	17331625	32143000	2621439	30
+timing-null	raw	# batch form=wf width=4 calls=3 gap_us=0 outputs=10485756 compared=52428780 explicit_shutdown=0 shutdown_ns=333
+timing-null	raw	# invocation collision-large/null-a-w4/pass4 command=/private/tmp/whitefoot-sparse-bench-20260922/bfs-sparse time wf 4 4 3
+timing-null	raw	# invocation_cost collision-large/null-a-w4/pass4 wall_s=0.139691 exit=0
+timing-null	raw	# driver=bfs-sparse form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=3 pass=4 workload=fixture=collision-large vertices=2621439 reached=2621439 levels=22 adjacency_slots=10485756 wf=outbox wf-seq=intrusive serial=FIFO input_slots=10485756 outbox_persistent_cells=20971512 clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+timing-null	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+timing-null	raw	collision-large	null-a-w4	bfs-sparse	wf	4	4	0	first	30674917	45848000	2621439	37
+timing-null	raw	collision-large	null-a-w4	bfs-sparse	wf	4	4	1	warm	18304875	31061000	2621439	32
+timing-null	raw	collision-large	null-a-w4	bfs-sparse	wf	4	4	2	warm	17223875	32238000	2621439	37
+timing-null	raw	collision-large	null-a-w4	bfs-sparse	wf	4	4	3	warm	16781000	30832000	2621439	35
+timing-null	raw	# batch form=wf width=4 calls=3 gap_us=0 outputs=10485756 compared=52428780 explicit_shutdown=0 shutdown_ns=208
+timing-null	raw	# artifact_hashes_after=PASS
+timing-null-summary	sha256	791cd112cf34f08b73400a1e70b77f932f013ba94efff0d674ae21434eb079ac  /private/tmp/whitefoot-sparse-bench-20260922/null-summary.tsv
+timing-null-summary	raw	fixture	width	paired_wall_ratio	paired_cpu_ratio	minimum_wall_ratio	maximum_wall_ratio	lower	status
+timing-null-summary	raw	tree-large-permuted	1	1.0056292020016402	1.0068518972873668	0.9855704974862503	1.0916595561226126	1	pass
+timing-null-summary	raw	tree-large-permuted	4	0.9994735920537631	0.9884739055157061	0.9872245733610591	1.019230491969717	3	pass
+timing-null-summary	raw	collision-large	1	1.0116374279558218	1.0006397471117299	0.9285184635918731	1.1261673194592132	2	pass
+timing-null-summary	raw	collision-large	4	0.9533491375596893	0.9945173813828053	0.8844220918819258	1.1662227576547088	3	inconclusive
+timing-null-guard	sha256	d9e8adff38bff82ea57003a64574643260ebb0358d2c7325e6b18c6e6a54f1ff  /private/tmp/whitefoot-sparse-bench-20260922-null.log
+timing-null-guard	raw	== START sparse-fifo-null (limit 60s): ruby /private/tmp/sparse-frontier-bench-run.rb null /private/tmp/whitefoot-sparse-bench-20260922 ==
+timing-null-guard	raw	completed null pass 1/5
+timing-null-guard	raw	completed null pass 2/5
+timing-null-guard	raw	completed null pass 3/5
+timing-null-guard	raw	completed null pass 4/5
+timing-null-guard	raw	completed null pass 5/5
+timing-null-guard	raw	identical-image null is inconclusive; comparison not authorized by the recorded protocol
+timing-null-guard	raw	real 17.57
+timing-null-guard	raw	user 20.58
+timing-null-guard	raw	sys 1.17
+timing-null-guard	raw	== END sparse-fifo-null: 17.59 s, exit 3 ==
+timing-preflight-guard	sha256	229cca5ad1ed5cc9dafe8e8f4f84c583cb18e925ced3afabc42e47bb3160471b  /private/tmp/whitefoot-sparse-bench-20260922-preflight.log
+timing-preflight-guard	raw	== START sparse-fifo-preflight (limit 30s): sh -c /usr/bin/time -p sh -x /private/tmp/sparse-frontier-bench-build.sh /private/tmp/whitefoot-sparse-bench-20260922 && /usr/bin/time -p ruby /private/tmp/sparse-frontier-bench-run.rb verify /private/tmp/whitefoot-sparse-bench-20260922 ==
+timing-preflight-guard	raw	real 1.63
+timing-preflight-guard	raw	user 1.16
+timing-preflight-guard	raw	sys 0.42
+timing-preflight-guard	raw	real 3.47
+timing-preflight-guard	raw	user 2.60
+timing-preflight-guard	raw	sys 0.53
+timing-preflight-guard	raw	real 5.11
+timing-preflight-guard	raw	user 3.76
+timing-preflight-guard	raw	sys 0.96
+timing-preflight-guard	raw	== END sparse-fifo-preflight: 5.18 s, exit 0 ==
+qualification-host	sha256	14e650600b5e9500f6e24ed6e01fdcd8d0896651e7b1567d00d9580020b2919e  /private/tmp/sparse-frontier-host.c
+qualification-host	source	#define WF_ORACLE_NO_MAIN
+qualification-host	source	#include "/private/tmp/whitefoot-sparse-frontier/tests/programs/compute/bfs_oracle.c"
+qualification-host	source-empty	.
+qualification-host	source	extern void wf_bench_bfs(const uint64_t *, uint64_t, uint64_t, uint64_t **, uint64_t *, void **);
+qualification-host	source	extern void wf_bench_bfs_release(void *);
+qualification-host	source	extern int wf__floor_run(int, char **);
+qualification-host	source	extern int wf__par_pool_active(void);
+qualification-host	source-empty	.
+qualification-host	source	#ifdef WF_SPARSE_OBSERVER
+qualification-host	source	#include <stdatomic.h>
+qualification-host	source	static _Thread_local unsigned char thread_marker;
+qualification-host	source	static const unsigned char *caller_thread;
+qualification-host	source	static _Atomic uint64_t route_rows, helper_route_rows;
+qualification-host	source	static _Atomic uint64_t nonempty_buckets, helper_nonempty_buckets;
+qualification-host	source	static _Atomic uint64_t discovered_vertices, helper_discovered_vertices;
+qualification-host	source	static _Atomic uint64_t budget_calls[2], budget_offers[2];
+qualification-host	source	static _Atomic uint64_t max_span[2], max_weight[2], max_budget[2];
+qualification-host	source	extern uint64_t wf__par_split_budget(uint64_t, uint64_t);
+qualification-host	source	extern unsigned long wf__par_grants(void);
+qualification-host	source	static unsigned long grants_before;
+qualification-host	source	static const char *budget_fixture;
+qualification-host	source-empty	.
+qualification-host	source	static void maximum(_Atomic uint64_t *value, uint64_t next) {
+qualification-host	source	    uint64_t old = atomic_load_explicit(value, memory_order_relaxed);
+qualification-host	source	    while (old < next && !atomic_compare_exchange_weak_explicit(
+qualification-host	source	        value, &old, next, memory_order_relaxed, memory_order_relaxed)) {}
+qualification-host	source	}
+qualification-host	source-empty	.
+qualification-host	source	uint64_t wf_sparse_split_budget(uint64_t span, uint64_t weight, uint64_t phase) {
+qualification-host	source	    if (phase >= 2) fail("unknown observed sparse phase");
+qualification-host	source	    uint64_t budget = wf__par_split_budget(span, weight);
+qualification-host	source	    uint64_t round = atomic_fetch_add_explicit(&budget_calls[phase], 1, memory_order_relaxed);
+qualification-host	source	    if (budget) atomic_fetch_add_explicit(&budget_offers[phase], 1, memory_order_relaxed);
+qualification-host	source	    maximum(&max_span[phase], span);
+qualification-host	source	    maximum(&max_weight[phase], weight);
+qualification-host	source	    maximum(&max_budget[phase], budget);
+qualification-host	source	    if (budget_fixture)
+qualification-host	source	        printf("sparse level budget: fixture=%s phase=%s round=%llu span=%llu weight=%llu budget=%llu\n",
+qualification-host	source	            budget_fixture, phase ? "discovery" : "routing",
+qualification-host	source	            (unsigned long long)round, (unsigned long long)span,
+qualification-host	source	            (unsigned long long)weight, (unsigned long long)budget);
+qualification-host	source	    return budget;
+qualification-host	source	}
+qualification-host	source-empty	.
+qualification-host	source	static void observer_begin(void) {
+qualification-host	source	    caller_thread = &thread_marker;
+qualification-host	source	    grants_before = wf__par_grants();
+qualification-host	source	    atomic_store(&route_rows, 0);
+qualification-host	source	    atomic_store(&helper_route_rows, 0);
+qualification-host	source	    atomic_store(&nonempty_buckets, 0);
+qualification-host	source	    atomic_store(&helper_nonempty_buckets, 0);
+qualification-host	source	    atomic_store(&discovered_vertices, 0);
+qualification-host	source	    atomic_store(&helper_discovered_vertices, 0);
+qualification-host	source	    for (size_t phase = 0; phase < 2; ++phase) {
+qualification-host	source	        atomic_store(&budget_calls[phase], 0);
+qualification-host	source	        atomic_store(&budget_offers[phase], 0);
+qualification-host	source	        atomic_store(&max_span[phase], 0);
+qualification-host	source	        atomic_store(&max_weight[phase], 0);
+qualification-host	source	        atomic_store(&max_budget[phase], 0);
+qualification-host	source	    }
+qualification-host	source	}
+qualification-host	source-empty	.
+qualification-host	source	static void observer_report(const char *fixture, size_t n) {
+qualification-host	source	    printf("sparse phase observer: fixture=%s vertices=%zu grants=%lu nonempty_route_rows=%llu helper_route_rows=%llu nonempty_buckets=%llu helper_nonempty_buckets=%llu discovered_vertices=%llu helper_discovered_vertices=%llu\n",
+qualification-host	source	        fixture, n, wf__par_grants() - grants_before,
+qualification-host	source	        (unsigned long long)atomic_load(&route_rows),
+qualification-host	source	        (unsigned long long)atomic_load(&helper_route_rows),
+qualification-host	source	        (unsigned long long)atomic_load(&nonempty_buckets),
+qualification-host	source	        (unsigned long long)atomic_load(&helper_nonempty_buckets),
+qualification-host	source	        (unsigned long long)atomic_load(&discovered_vertices),
+qualification-host	source	        (unsigned long long)atomic_load(&helper_discovered_vertices));
+qualification-host	source	    for (size_t phase = 0; phase < 2; ++phase)
+qualification-host	source	        printf("sparse budget observer: fixture=%s phase=%s calls=%llu nonzero_budgets=%llu max_span=%llu max_weight=%llu max_budget=%llu\n",
+qualification-host	source	            fixture, phase ? "discovery" : "routing",
+qualification-host	source	            (unsigned long long)atomic_load(&budget_calls[phase]),
+qualification-host	source	            (unsigned long long)atomic_load(&budget_offers[phase]),
+qualification-host	source	            (unsigned long long)atomic_load(&max_span[phase]),
+qualification-host	source	            (unsigned long long)atomic_load(&max_weight[phase]),
+qualification-host	source	            (unsigned long long)atomic_load(&max_budget[phase]));
+qualification-host	source	}
+qualification-host	source-empty	.
+qualification-host	source	void wf_sparse_route_done(uint64_t first, uint64_t width) {
+qualification-host	source	    if (first >= width) return;
+qualification-host	source	    atomic_fetch_add_explicit(&route_rows, 1, memory_order_relaxed);
+qualification-host	source	    if (caller_thread != &thread_marker)
+qualification-host	source	        atomic_fetch_add_explicit(&helper_route_rows, 1, memory_order_relaxed);
+qualification-host	source	}
+qualification-host	source-empty	.
+qualification-host	source	void wf_sparse_discovery_done(uint64_t added) {
+qualification-host	source	    atomic_fetch_add_explicit(&discovered_vertices, added, memory_order_relaxed);
+qualification-host	source	    if (caller_thread != &thread_marker)
+qualification-host	source	        atomic_fetch_add_explicit(&helper_discovered_vertices, added, memory_order_relaxed);
+qualification-host	source	}
+qualification-host	source-empty	.
+qualification-host	source	void wf_sparse_bucket_done(void) {
+qualification-host	source	    atomic_fetch_add_explicit(&nonempty_buckets, 1, memory_order_relaxed);
+qualification-host	source	    if (caller_thread != &thread_marker)
+qualification-host	source	        atomic_fetch_add_explicit(&helper_nonempty_buckets, 1, memory_order_relaxed);
+qualification-host	source	}
+qualification-host	source	#endif
+qualification-host	source-empty	.
+qualification-host	source	static uint64_t *rebuild_large_graph(const char *, size_t);
+qualification-host	source-empty	.
+qualification-host	source	static size_t check_graph(uint64_t *edges, size_t n, const char *fixture, int regenerate) {
+qualification-host	source	    (void)fixture;
+qualification-host	source	    uint64_t *before = NULL;
+qualification-host	source	    if (!regenerate) {
+qualification-host	source	        before = allocate(4 * n);
+qualification-host	source	        memcpy(before, edges, 4 * n * sizeof(*edges));
+qualification-host	source	    }
+qualification-host	source	    uint64_t *expected = oracle(edges, n, NULL);
+qualification-host	source	    size_t checked = 0;
+qualification-host	source	    for (unsigned mode = 0; mode < 2; ++mode) {
+qualification-host	source	#ifdef WF_SPARSE_OBSERVER
+qualification-host	source	        observer_begin();
+qualification-host	source	        budget_fixture = regenerate ? fixture : NULL;
+qualification-host	source	#endif
+qualification-host	source	        uint64_t *actual = NULL, length = UINT64_MAX;
+qualification-host	source	        void *held = NULL;
+qualification-host	source	        wf_bench_bfs(edges, 4 * n, mode, &actual, &length, &held);
+qualification-host	source	        if (length != n) fail("extra graph length");
+qualification-host	source	        checked += compare(actual, expected, n);
+qualification-host	source	        if (regenerate) before = rebuild_large_graph(fixture, n);
+qualification-host	source	        checked += compare(edges, before, 4 * n);
+qualification-host	source	        if (regenerate) { free(before); before = NULL; }
+qualification-host	source	        wf_bench_bfs_release(held);
+qualification-host	source	#ifdef WF_SPARSE_OBSERVER
+qualification-host	source	        if (mode) observer_report(fixture, n);
+qualification-host	source	#endif
+qualification-host	source	    }
+qualification-host	source	    free(expected);
+qualification-host	source	    free(before);
+qualification-host	source	    return checked;
+qualification-host	source	}
+qualification-host	source-empty	.
+qualification-host	source	static uint64_t *permuted_tree(size_t n) {
+qualification-host	source	    uint64_t *source = graph(n, 1), *edges = allocate(4 * n);
+qualification-host	source	    uint64_t *permutation = allocate(n);
+qualification-host	source	    for (size_t i = 0; i < n; ++i) permutation[i] = i;
+qualification-host	source	    uint64_t state = UINT64_C(0x8af20c354d159761);
+qualification-host	source	    for (size_t i = n - 1; i > 1; --i) {
+qualification-host	source	        state = state * UINT64_C(6364136223846793005) + 1;
+qualification-host	source	        size_t j = 1 + state % i;
+qualification-host	source	        uint64_t old = permutation[i];
+qualification-host	source	        permutation[i] = permutation[j];
+qualification-host	source	        permutation[j] = old;
+qualification-host	source	    }
+qualification-host	source	    for (size_t v = 0; v < n; ++v) {
+qualification-host	source	        for (size_t slot = 0; slot < 4; ++slot) {
+qualification-host	source	            uint64_t neighbor = source[4 * v + slot];
+qualification-host	source	            edges[4 * permutation[v] + slot] = neighbor < n ? permutation[neighbor] : n;
+qualification-host	source	        }
+qualification-host	source	    }
+qualification-host	source	    free(permutation);
+qualification-host	source	    free(source);
+qualification-host	source	    return edges;
+qualification-host	source	}
+qualification-host	source-empty	.
+qualification-host	source	static uint64_t *collision_graph(unsigned depth, size_t *count) {
+qualification-host	source	    size_t leaves = (size_t)1 << depth;
+qualification-host	source	    size_t tree = 2 * leaves - 1;
+qualification-host	source	    size_t groups = leaves / 2;
+qualification-host	source	    *count = tree + groups;
+qualification-host	source	    uint64_t *edges = allocate(4 * *count);
+qualification-host	source	    for (size_t i = 0; i < 4 * *count; ++i) edges[i] = *count;
+qualification-host	source	    for (size_t v = 0; v < leaves - 1; ++v) {
+qualification-host	source	        edges[4 * v] = 2 * v + 1;
+qualification-host	source	        edges[4 * v + 1] = 2 * v + 2;
+qualification-host	source	    }
+qualification-host	source	    for (size_t i = 0; i < leaves; ++i) {
+qualification-host	source	        size_t v = leaves - 1 + i;
+qualification-host	source	        edges[4 * v] = tree + i / 2;
+qualification-host	source	        edges[4 * v + 1] = tree + i / 2;
+qualification-host	source	        edges[4 * v + 2] = tree + groups - 1 - i / 2;
+qualification-host	source	        edges[4 * v + 3] = v;
+qualification-host	source	    }
+qualification-host	source	    return edges;
+qualification-host	source	}
+qualification-host	source-empty	.
+qualification-host	source	/* Recreate deterministic large inputs only after the WF call has released
+qualification-host	source	 * its temporary workspace. Every input word is still compared; a second
+qualification-host	source	 * 4V snapshot is not retained during the memory-heavy traversal. */
+qualification-host	source	static uint64_t *rebuild_large_graph(const char *fixture, size_t n) {
+qualification-host	source	    if (!strcmp(fixture, "tree-large")) return graph(n, 1);
+qualification-host	source	    if (!strcmp(fixture, "tree-large-permuted")) return permuted_tree(n);
+qualification-host	source	    if (!strcmp(fixture, "collision-large")) {
+qualification-host	source	        size_t rebuilt_count;
+qualification-host	source	        uint64_t *result = collision_graph(20, &rebuilt_count);
+qualification-host	source	        if (rebuilt_count != n) fail("large collision count");
+qualification-host	source	        return result;
+qualification-host	source	    }
+qualification-host	source	    fail("unknown large graph fixture");
+qualification-host	source	    return NULL;
+qualification-host	source	}
+qualification-host	source-empty	.
+qualification-host	source	int wf__main_body(int argc, char **argv) {
+qualification-host	source	    (void)argc;
+qualification-host	source	    (void)argv;
+qualification-host	source	#ifdef WF_SPARSE_OBSERVER
+qualification-host	source	    observer_begin();
+qualification-host	source	#endif
+qualification-host	source	    size_t checked = matrix(wf_bench_bfs, wf_bench_bfs_release);
+qualification-host	source	#ifdef WF_SPARSE_OBSERVER
+qualification-host	source	    observer_report("formal-matrix", 0);
+qualification-host	source	#endif
+qualification-host	source	    uint64_t *permuted = permuted_tree(65535);
+qualification-host	source	    checked += check_graph(permuted, 65535, "tree-permuted", 0);
+qualification-host	source	    free(permuted);
+qualification-host	source	    size_t n;
+qualification-host	source	    uint64_t *collision = collision_graph(14, &n);
+qualification-host	source	    checked += check_graph(collision, n, "collision", 0);
+qualification-host	source	    free(collision);
+qualification-host	source	    unsigned configurations = 90;
+qualification-host	source	    if (getenv("WF_SPARSE_LARGE")) {
+qualification-host	source	        size_t large = 2097151;
+qualification-host	source	        uint64_t *tree = graph(large, 1);
+qualification-host	source	        checked += check_graph(tree, large, "tree-large", 1);
+qualification-host	source	        free(tree);
+qualification-host	source	        uint64_t *shuffled = permuted_tree(large);
+qualification-host	source	        checked += check_graph(shuffled, large, "tree-large-permuted", 1);
+qualification-host	source	        free(shuffled);
+qualification-host	source	        uint64_t *colliding = collision_graph(20, &n);
+qualification-host	source	        checked += check_graph(colliding, n, "collision-large", 1);
+qualification-host	source	        free(colliding);
+qualification-host	source	        configurations += 6;
+qualification-host	source	    }
+qualification-host	source	    const char *workers = getenv("WF_WORKERS");
+qualification-host	source	    if (workers && atoi(workers) > 1 && !wf__par_pool_active()) fail("worker pool inactive");
+qualification-host	source	    printf("bfs routed oracle PASS: %u configurations, %zu values\n", configurations, checked);
+qualification-host	source	    return 0;
+qualification-host	source	}
+qualification-host	source-empty	.
+qualification-host	source	int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+qualification-build	sha256	4f93af4f04a8c90dde11486a0f7b5844e7dd3bd1ed0ab505b5497f528960c970  /private/tmp/sparse-frontier-build.sh
+qualification-build	source	#!/bin/sh
+qualification-build	source	set -eu
+qualification-build	source	repo=/private/tmp/whitefoot-sparse-frontier
+qualification-build	source	native=$repo/compiler/src/backend
+qualification-build	source	module=${1:?emitted module required}
+qualification-build	source	output=${2:?native output required}
+qualification-build	source	mode=${3:?plain or observe required}
+qualification-build	source	case "$mode" in
+qualification-build	source	  plain) define=;;
+qualification-build	source	  observe) define=-DWF_SPARSE_OBSERVER=1;;
+qualification-build	source	  *) printf '%s\n' 'mode must be plain or observe' >&2; exit 1;;
+qualification-build	source	esac
+qualification-build	source	linked=$output-linked.ll
+qualification-build	source	awk -f "$repo/tests/programs/compute/host-adapter.awk" "$module" "$repo/tests/programs/compute/bfs_host.ll" |
+qualification-build	source	  perl -pe 's/\@main\(/\@wf_sparse_original_main\(/g; s/\@wf__main_body\(/\@wf_sparse_original_body\(/g' > "$linked"
+qualification-build	source	/usr/bin/clang -std=c11 -pthread -O2 -Wno-override-module \
+qualification-build	source	  $define "$linked" /private/tmp/sparse-frontier-host.c \
+qualification-build	source	  "$native/wf_floor.c" "$native/ordinary_values.c" "$native/ordinary_values.ll" \
+qualification-build	source	  "$native/sched/core.c" "$native/sched/prim_host.c" "$native/sched/entry.c" \
+qualification-build	source	  "$native/completion/runtime.c" "$native/completion/wait_host.c" \
+qualification-build	source	  "$native/completion/file_adapter.c" "$native/completion/file_posix.c" \
+qualification-build	source	  "$native/completion/bridge.c" "$native/completion/linux_io_uring.c" \
+qualification-build	source	  -lm -o "$output"
+timing-adapter	sha256	a6675dbbbb739f4efd2f5a94032f3dc966ba10eda3cf26990922f2db437f4023  /private/tmp/sparse-frontier-bench.c
+timing-adapter	source	/* One-shot timing adapter. Remove after the bounded trial is recorded.
+timing-adapter	source	 * Reuse the qualified fixture generators and formal FIFO without observers. */
+timing-adapter	source	#define wf__main_body wf_sparse_qualification_body
+timing-adapter	source	#define main wf_sparse_qualification_main
+timing-adapter	source	#include "/private/tmp/sparse-frontier-host.c"
+timing-adapter	source	#undef main
+timing-adapter	source	#undef wf__main_body
+timing-adapter	source	#include "/private/tmp/whitefoot-compute-x1/research/experiments/compute-bench/harness.h"
+timing-adapter	source-empty	.
+timing-adapter	source	static const char *timed_fixture;
+timing-adapter	source	static size_t timed_count;
+timing-adapter	source	static uint64_t *timed_edges, *timed_expected, *timed_output;
+timing-adapter	source	static void *timed_held;
+timing-adapter	source	static int timed_native;
+timing-adapter	source	static char timed_workload[512];
+timing-adapter	source-empty	.
+timing-adapter	source	static uint64_t *timed_graph(void) {
+timing-adapter	source	    if (!strcmp(timed_fixture, "chain")) return graph(timed_count, 0);
+timing-adapter	source	    return rebuild_large_graph(timed_fixture, timed_count);
+timing-adapter	source	}
+timing-adapter	source-empty	.
+timing-adapter	source	static void timed_prepare(unsigned width) {
+timing-adapter	source	    (void)width;
+timing-adapter	source	    timed_fixture = getenv("WFB_SPARSE_FIXTURE");
+timing-adapter	source	    if (!timed_fixture) fail("WFB_SPARSE_FIXTURE is required");
+timing-adapter	source	    if (!strcmp(timed_fixture, "tree-large") ||
+timing-adapter	source	        !strcmp(timed_fixture, "tree-large-permuted")) timed_count = 2097151;
+timing-adapter	source	    else if (!strcmp(timed_fixture, "collision-large")) timed_count = 2621439;
+timing-adapter	source	    else if (!strcmp(timed_fixture, "chain")) timed_count = 4097;
+timing-adapter	source	    else fail("unknown timed sparse fixture");
+timing-adapter	source	    timed_edges = timed_graph();
+timing-adapter	source	    work_count work;
+timing-adapter	source	    timed_expected = oracle(timed_edges, timed_count, &work);
+timing-adapter	source	    const char *dump = getenv("WFB_SPARSE_INPUT_DUMP");
+timing-adapter	source	    if (dump) {
+timing-adapter	source	        FILE *file = fopen(dump, "wbx");
+timing-adapter	source	        if (!file) fail("cannot create fresh sparse input dump");
+timing-adapter	source	        if (fwrite(timed_edges, sizeof(*timed_edges), 4 * timed_count, file) != 4 * timed_count)
+timing-adapter	source	            fail("cannot write sparse input dump");
+timing-adapter	source	        if (fclose(file)) fail("cannot close sparse input dump");
+timing-adapter	source	    }
+timing-adapter	source	    (void)snprintf(timed_workload, sizeof(timed_workload),
+timing-adapter	source	        "fixture=%s vertices=%zu reached=%zu levels=%zu adjacency_slots=%zu wf=outbox wf-seq=intrusive serial=FIFO input_slots=%zu outbox_persistent_cells=%zu",
+timing-adapter	source	        timed_fixture, timed_count, work.reached, work.levels, work.slots,
+timing-adapter	source	        4 * timed_count, 8 * timed_count);
+timing-adapter	source	}
+timing-adapter	source-empty	.
+timing-adapter	source	static size_t timed_call(const char *form, unsigned width) {
+timing-adapter	source	    uint64_t length = UINT64_MAX;
+timing-adapter	source	    timed_native = !strcmp(form, "serial");
+timing-adapter	source	    if (timed_native) {
+timing-adapter	source	        if (width != 1) fail("FIFO reference requires one worker");
+timing-adapter	source	        timed_output = oracle(timed_edges, timed_count, NULL);
+timing-adapter	source	        timed_held = timed_output;
+timing-adapter	source	        length = timed_count;
+timing-adapter	source	    } else {
+timing-adapter	source	        unsigned mode = !strcmp(form, "wf");
+timing-adapter	source	        if (!mode && strcmp(form, "wf-seq")) fail("unknown sparse timing form");
+timing-adapter	source	        if (!mode && width != 1) fail("intrusive context requires one worker");
+timing-adapter	source	        wf_bench_bfs(timed_edges, 4 * timed_count, mode,
+timing-adapter	source	                     &timed_output, &length, &timed_held);
+timing-adapter	source	    }
+timing-adapter	source	    if (length != timed_count) fail("timed sparse output length");
+timing-adapter	source	    return timed_count;
+timing-adapter	source	}
+timing-adapter	source-empty	.
+timing-adapter	source	static size_t timed_check(void) {
+timing-adapter	source	    size_t checked = compare(timed_output, timed_expected, timed_count);
+timing-adapter	source	    uint64_t *original = timed_graph();
+timing-adapter	source	    checked += compare(timed_edges, original, 4 * timed_count);
+timing-adapter	source	    free(original);
+timing-adapter	source	    if (timed_native) free(timed_held);
+timing-adapter	source	    else wf_bench_bfs_release(timed_held);
+timing-adapter	source	    timed_output = NULL;
+timing-adapter	source	    timed_held = NULL;
+timing-adapter	source	    return checked;
+timing-adapter	source	}
+timing-adapter	source-empty	.
+timing-adapter	source	static size_t timed_verify(const char *form, unsigned width) {
+timing-adapter	source	    (void)timed_call(form, width);
+timing-adapter	source	    return timed_check();
+timing-adapter	source	}
+timing-adapter	source-empty	.
+timing-adapter	source	static void timed_finish(const char *form) {
+timing-adapter	source	    (void)form;
+timing-adapter	source	    free(timed_edges);
+timing-adapter	source	    free(timed_expected);
+timing-adapter	source	}
+timing-adapter	source-empty	.
+timing-adapter	source	static const char *const timed_forms[] = {"wf", "wf-seq", "serial", NULL};
+timing-adapter	source	const wfb_kernel wfb_this_kernel = {
+timing-adapter	source	    "bfs-sparse", timed_forms, timed_prepare, timed_call, timed_check,
+timing-adapter	source	    timed_verify, timed_finish, timed_workload, 0, 0, NULL
+timing-adapter	source	};
+timing-build	sha256	b4fd26dfffefddbea68b1d269431af74f731f31df79189915efba00d314c8b8a  /private/tmp/sparse-frontier-bench-build.sh
+timing-build	source	#!/bin/sh
+timing-build	source	# One-shot build; no timings or compiler/source changes.
+timing-build	source	set -eu
+timing-build	source	output=${1:?fresh output directory required}
+timing-build	source	test -n "${WHITEFOOT_CHECK_OWNER:-}" || { echo 'shared guard required' >&2; exit 1; }
+timing-build	source	test ! -e "$output" || { echo 'fresh output directory required' >&2; exit 1; }
+timing-build	source	repo=/private/tmp/whitefoot-sparse-frontier
+timing-build	source	bench=/private/tmp/whitefoot-compute-x1/research/experiments/compute-bench
+timing-build	source	native=$repo/compiler/src/backend
+timing-build	source	cached=/private/tmp/wf-x1-scatter-range-bench/reference
+timing-build	source	deps=/var/folders/71/d_n5m1v94kdg7bjl_4jxvcpr0000gp/T/whitefoot/whitefoot-compute-bench/deps
+timing-build	source	module=/private/tmp/whitefoot-capture-sparse-default.ll
+timing-build	source	mkdir "$output"
+timing-build	source	test "$(shasum -a 256 "$module" | cut -d ' ' -f 1)" = 8e55e5dd9668df5fdb6bc1ba5bb918a80f0af8c5c6803272f9caba92d050d512
+timing-build	source	awk -f "$repo/tests/programs/compute/host-adapter.awk" "$module" "$repo/tests/programs/compute/bfs_host.ll" |
+timing-build	source	  perl -pe 's/\@main\(/\@wf_sparse_original_main\(/g; s/\@wf__main_body\(/\@wf_sparse_original_body\(/g' > "$output/module.ll"
+timing-build	source	cmp "$output/module.ll" /private/tmp/whitefoot-sparse-capture-qualified-plain-linked.ll
+timing-build	source	/usr/bin/clang -std=c11 -pthread -O2 -Wno-override-module -c "$output/module.ll" -o "$output/module.o"
+timing-build	source	for unit in wf_floor.c ordinary_values.c ordinary_values.ll sched/core.c sched/prim_host.c sched/entry.c completion/runtime.c completion/wait_host.c completion/file_adapter.c completion/file_posix.c completion/bridge.c completion/linux_io_uring.c; do
+timing-build	source	  object=$(printf '%s' "$unit" | tr '/.' '__')
+timing-build	source	  /usr/bin/clang -std=c11 -pthread -O2 -Wno-override-module -c "$native/$unit" -o "$output/$object.o"
+timing-build	source	done
+timing-build	source	/usr/bin/clang -std=c11 -pthread -O3 -Wall -Wextra -Werror -Wpedantic -fno-fast-math -ffp-contract=off -fno-lto \
+timing-build	source	  -c /private/tmp/sparse-frontier-bench.c -o "$output/kernel.o"
+timing-build	source	/usr/bin/clang -std=c11 -pthread -O3 -Wall -Wextra -Werror -Wpedantic -fno-fast-math -ffp-contract=off -fno-lto \
+timing-build	source	  -I"$cached" -c "$bench/harness.c" -o "$output/harness.o"
+timing-build	source	/usr/bin/clang -std=c11 -pthread -O3 -Wall -Wextra -Werror -Wpedantic -fno-fast-math -ffp-contract=off -fno-lto \
+timing-build	source	  -c "$bench/backend_serial.c" -o "$output/backend_serial.o"
+timing-build	source	# Reuse the unchanged harness's existing optional-backend registry and cached
+timing-build	source	# objects. This kernel exposes only wf, wf-seq and serial; none of these
+timing-build	source	# optional backends is called or starts workers in any selected cell.
+timing-build	source	/usr/bin/clang++ -pthread -fno-lto "$output/kernel.o" "$output/harness.o" "$output/backend_serial.o" \
+timing-build	source	  "$cached/backend_static.o" "$cached/backend_tbb.o" "$cached/backend_parlay.o" "$cached/backend_rayon.o" \
+timing-build	source	  "$output/module.o" "$output/wf_floor_c.o" "$output/sched_core_c.o" "$output/sched_prim_host_c.o" "$output/sched_entry_c.o" \
+timing-build	source	  "$output/completion_runtime_c.o" "$output/completion_wait_host_c.o" "$output/completion_file_adapter_c.o" \
+timing-build	source	  "$output/completion_file_posix_c.o" "$output/completion_bridge_c.o" "$output/completion_linux_io_uring_c.o" \
+timing-build	source	  "$output/ordinary_values_c.o" "$output/ordinary_values_ll.o" \
+timing-build	source	  -L"$deps/lib" -Wl,-rpath,"$deps/lib" -ltbb "$deps/rayon/libwf_compute_bench_rayon.a" -ldl -lm -o "$output/bfs-sparse"
+timing-build	source	for symbol in wf__par_publish wf__par_split_budget wf__par_recursion_budget wf__floor_run; do
+timing-build	source	  nm -m "$output/bfs-sparse" | awk -v name="_$symbol" '$NF==name && /\(__TEXT,__text\) external/ && !/weak/ {ok=1} END {exit !ok}'
+timing-build	source	done
+timing-build	source	if nm "$output/bfs-sparse" | rg 'wf_sparse_(route_done|bucket_done|discovery_done|split_budget)'; then
+timing-build	source	  echo 'observer in timing image' >&2; exit 1
+timing-build	source	fi
+timing-build	source	shasum -a 256 "$module" "$output"/*.ll "$output"/*.o "$output/bfs-sparse" \
+timing-build	source	  /private/tmp/sparse-frontier-bench.c /private/tmp/sparse-frontier-bench-build.sh /private/tmp/sparse-frontier-bench-run.rb /private/tmp/sparse-frontier-host.c \
+timing-build	source	  "$bench/harness.c" "$bench/harness.h" "$bench/backend.h" "$bench/backend_serial.c" \
+timing-build	source	  "$repo/tests/programs/compute/bfs_oracle.c" "$repo/tests/programs/compute/bfs_host.ll" "$repo/tests/programs/compute/host-adapter.awk" \
+timing-build	source	  "$cached/backend_static.o" "$cached/backend_tbb.o" "$cached/backend_parlay.o" "$cached/backend_rayon.o" \
+timing-build	source	  "$deps/lib/libtbb.12.dylib" "$deps/rayon/libwf_compute_bench_rayon.a" > "$output/hashes-before.txt"
+timing-build	source	for unit in wf_floor.c ordinary_values.c ordinary_values.ll sched/core.c sched/prim_host.c sched/entry.c completion/runtime.c completion/wait_host.c completion/file_adapter.c completion/file_posix.c completion/bridge.c completion/linux_io_uring.c; do
+timing-build	source	  shasum -a 256 "$native/$unit" >> "$output/hashes-before.txt"
+timing-build	source	done
+timing-build	source	/usr/bin/clang --version > "$output/compiler.txt"
+timing-driver	sha256	a2b744286ca1a88af1bc8a840d00452477073546b46478f2f772ecd26cc28703  /private/tmp/sparse-frontier-bench-run.rb
+timing-driver	source	# One-shot driver for the recorded bounded protocol. The existing C harness
+timing-driver	source	# owns all clocks and timed intervals; this script selects fixed cells only.
+timing-driver	source	require 'open3'
+timing-driver	source	require 'digest'
+timing-driver	source-empty	.
+timing-driver	source	stage, root = ARGV
+timing-driver	source	abort 'usage: sparse-frontier-bench-run.rb verify|null|compare BUILD' unless %w[verify null compare].include?(stage) && root
+timing-driver	source	abort 'shared guard required' unless ENV['WHITEFOOT_CHECK_OWNER']
+timing-driver	source	image = File.join(root, 'bfs-sparse')
+timing-driver	source	raw_path = File.join(root, stage + '.tsv')
+timing-driver	source	abort 'fresh stage output required' if File.exist?(raw_path)
+timing-driver	source	counts = {'tree-large-permuted'=>2097151, 'collision-large'=>2621439, 'tree-large'=>2097151, 'chain'=>4097}
+timing-driver	source	primary = counts.keys.first(2)
+timing-driver	source	cells = lambda do |fixture|
+timing-driver	source	  selected = [['fifo', 'serial', 1], ['outbox-w1', 'wf', 1], ['outbox-w4', 'wf', 4]]
+timing-driver	source	  selected << ['intrusive', 'wf-seq', 1] if primary.include?(fixture)
+timing-driver	source	  selected
+timing-driver	source	end
+timing-driver	source-empty	.
+timing-driver	source	def check_hashes(root)
+timing-driver	source	  File.foreach(File.join(root, 'hashes-before.txt')) do |line|
+timing-driver	source	    wanted, path = line.chomp.split(/  /, 2)
+timing-driver	source	    raise "malformed hash row: #{line}" unless wanted&.match?(/\A[0-9a-f]{64}\z/) && path
+timing-driver	source	    raise "artifact hash changed: #{path}" unless Digest::SHA256.file(path).hexdigest == wanted
+timing-driver	source	  end
+timing-driver	source	end
+timing-driver	source-empty	.
+timing-driver	source	def median(values)
+timing-driver	source	  sorted = values.sort
+timing-driver	source	  raise 'empty median' if sorted.empty?
+timing-driver	source	  sorted.length.odd? ? sorted[sorted.length / 2] : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2.0
+timing-driver	source	end
+timing-driver	source-empty	.
+timing-driver	source	def ratio_stats(samples, fixture, numerator, denominator)
+timing-driver	source	  pairs = (0...5).map do |pass|
+timing-driver	source	    a = samples.fetch([fixture, numerator, pass])
+timing-driver	source	    b = samples.fetch([fixture, denominator, pass])
+timing-driver	source	    [a[0] / b[0], a[1] / b[1]]
+timing-driver	source	  end
+timing-driver	source	  walls = pairs.map(&:first)
+timing-driver	source	  [median(walls), median(pairs.map(&:last)), walls.min, walls.max, walls.count { |x| x < 1.0 }]
+timing-driver	source	end
+timing-driver	source-empty	.
+timing-driver	source	check_hashes(root)
+timing-driver	source	if stage == 'compare'
+timing-driver	source	  expected = Digest::SHA256.file(image).hexdigest + "\n"
+timing-driver	source	  raise 'successful same-image null stage required' unless File.read(File.join(root, 'null-passed.txt')) == expected
+timing-driver	source	end
+timing-driver	source-empty	.
+timing-driver	source	samples = {}
+timing-driver	source	File.open(raw_path, 'w') do |raw|
+timing-driver	source	  raw.sync = true
+timing-driver	source	  raw.puts "# stage=#{stage}; criterion_commit=301fd1b505ed58992644e7d923c6006679a2e848"
+timing-driver	source	  raw.puts "# image_sha256=#{Digest::SHA256.file(image).hexdigest}; calls=3; passes=5; gap_us=0"
+timing-driver	source	  raw.puts '# sample columns: fixture variant kernel form width pass call phase wall_ns cpu_ns outputs steals'
+timing-driver	source	  run = lambda do |env, command, label|
+timing-driver	source	    raw.puts "# invocation #{label} command=#{command.join(' ')}"
+timing-driver	source	    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+timing-driver	source	    out, err, status = Open3.capture3(env, *command)
+timing-driver	source	    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+timing-driver	source	    raw.puts "# invocation_cost #{label} wall_s=#{format('%.6f', elapsed)} exit=#{status.exitstatus}"
+timing-driver	source	    err.each_line { |line| raw.puts "# stderr #{line.chomp}" }
+timing-driver	source	    unless status.success?
+timing-driver	source	      out.each_line { |line| raw.puts "# failed_stdout #{line.chomp}" }
+timing-driver	source	      raise "failed invocation: #{label}"
+timing-driver	source	    end
+timing-driver	source	    out
+timing-driver	source	  end
+timing-driver	source-empty	.
+timing-driver	source	  if stage == 'verify'
+timing-driver	source	    qualification = '/private/tmp/whitefoot-sparse-capture-qualified-plain'
+timing-driver	source	    raise 'plain qualification image changed' unless Digest::SHA256.file(qualification).hexdigest == 'cdd68d82f4e974b03600845e11ddc3f20996645ae632a0237d1dcd282cb0c558'
+timing-driver	source	    [1, 4].each do |width|
+timing-driver	source	      output = run.call({'WF_WORKERS'=>width.to_s, 'WF_SPARSE_LARGE'=>'1'},
+timing-driver	source	                        ['/usr/bin/time', '-p', qualification], "exact-plain-large/W#{width}")
+timing-driver	source	      raw.write(output)
+timing-driver	source	      raise 'large plain matrix incomplete' unless output.include?('PASS: 96 configurations, 70021040 values')
+timing-driver	source	    end
+timing-driver	source	    File.open(File.join(root, 'input-hashes.tsv'), 'w') do |hashes|
+timing-driver	source	      counts.each do |fixture, count|
+timing-driver	source	        cells.call(fixture).each_with_index do |(variant, form, width), index|
+timing-driver	source	          dump = index.zero? ? File.join(root, fixture + '.input') : nil
+timing-driver	source	          env = {'WF_WORKERS'=>width.to_s, 'WFB_SPARSE_FIXTURE'=>fixture, 'WFB_GAP_US'=>'0', 'WFB_SPARSE_INPUT_DUMP'=>dump}
+timing-driver	source	          output = run.call(env, ['/usr/bin/time', '-p', image, 'verify', form, width.to_s], "#{fixture}/#{variant}")
+timing-driver	source	          raw.write(output)
+timing-driver	source	          raise 'timing-image verification incomplete' unless output.include?("compared=#{5 * count}")
+timing-driver	source	          if dump
+timing-driver	source	            raise 'wrong dumped input length' unless File.size(dump) == 32 * count
+timing-driver	source	            hashes.puts [fixture, count, 4 * count, Digest::SHA256.file(dump).hexdigest].join("\t")
+timing-driver	source	            File.unlink(dump)
+timing-driver	source	          end
+timing-driver	source	        end
+timing-driver	source	      end
+timing-driver	source	    end
+timing-driver	source	    File.write(File.join(root, 'verify-passed.txt'), Digest::SHA256.file(image).hexdigest + "\n")
+timing-driver	source	  else
+timing-driver	source	    expected = Digest::SHA256.file(image).hexdigest + "\n"
+timing-driver	source	    raise 'successful exact timing-image verification required' unless File.read(File.join(root, 'verify-passed.txt')) == expected
+timing-driver	source	    grids = stage == 'null' ? primary : counts.keys
+timing-driver	source	    5.times do |pass|
+timing-driver	source	      grids.rotate(pass).each_with_index do |fixture, index|
+timing-driver	source	        selected = if stage == 'null'
+timing-driver	source	          [1, 4].rotate(pass).flat_map do |width|
+timing-driver	source	            roles = [['null-a-w' + width.to_s, 'wf', width], ['null-b-w' + width.to_s, 'wf', width]]
+timing-driver	source	            (pass + index).odd? ? roles.reverse : roles
+timing-driver	source	          end
+timing-driver	source	        else
+timing-driver	source	          ordered = cells.call(fixture).rotate(pass + index)
+timing-driver	source	          pass.odd? ? ordered.reverse : ordered
+timing-driver	source	        end
+timing-driver	source	        selected.each do |variant, form, width|
+timing-driver	source	          env = {'WF_WORKERS'=>width.to_s, 'WFB_SPARSE_FIXTURE'=>fixture, 'WFB_GAP_US'=>'0', 'WFB_SPARSE_INPUT_DUMP'=>nil}
+timing-driver	source	          output = run.call(env, [image, 'time', form, width.to_s, pass.to_s, '3'], "#{fixture}/#{variant}/pass#{pass}")
+timing-driver	source	          rows = []
+timing-driver	source	          output.each_line do |line|
+timing-driver	source	            if line.start_with?('#')
+timing-driver	source	              raw.write(line)
+timing-driver	source	            else
+timing-driver	source	              fields = line.chomp.split("\t")
+timing-driver	source	              raise 'malformed timing sample' unless fields.length == 10
+timing-driver	source	              raise 'wrong timing identity' unless fields[0] == 'bfs-sparse' && fields[1] == form && fields[2].to_i == width && fields[3].to_i == pass
+timing-driver	source	              raise 'wrong output count' unless fields[8].to_i == counts.fetch(fixture)
+timing-driver	source	              raise 'wrong phase' unless fields[5] == (fields[4].to_i.zero? ? 'first' : 'warm')
+timing-driver	source	              rows << fields
+timing-driver	source	              raw.write("#{fixture}\t#{variant}\t#{line}")
+timing-driver	source	            end
+timing-driver	source	          end
+timing-driver	source	          raise 'missing or duplicate timing sample' unless rows.map { |r| r[4].to_i }.sort == [0, 1, 2, 3]
+timing-driver	source	          raise 'missing full input checks' unless output.include?("compared=#{20 * counts.fetch(fixture)}")
+timing-driver	source	          warm = rows.select { |r| r[5] == 'warm' }
+timing-driver	source	          samples[[fixture, variant, pass]] = [median(warm.map { |r| r[6].to_f }), median(warm.map { |r| r[7].to_f })]
+timing-driver	source	        end
+timing-driver	source	      end
+timing-driver	source	      puts "completed #{stage} pass #{pass + 1}/5"
+timing-driver	source	      STDOUT.flush
+timing-driver	source	    end
+timing-driver	source	  end
+timing-driver	source	  check_hashes(root)
+timing-driver	source	  raw.puts '# artifact_hashes_after=PASS'
+timing-driver	source	end
+timing-driver	source-empty	.
+timing-driver	source	if stage == 'null'
+timing-driver	source	  qualified = true
+timing-driver	source	  File.open(File.join(root, 'null-summary.tsv'), 'w') do |summary|
+timing-driver	source	    summary.puts "fixture\twidth\tpaired_wall_ratio\tpaired_cpu_ratio\tminimum_wall_ratio\tmaximum_wall_ratio\tlower\tstatus"
+timing-driver	source	    primary.each do |fixture|
+timing-driver	source	      [1, 4].each do |width|
+timing-driver	source	        stats = ratio_stats(samples, fixture, "null-b-w#{width}", "null-a-w#{width}")
+timing-driver	source	        passed = (0.97..1.03).cover?(stats[0])
+timing-driver	source	        qualified &&= passed
+timing-driver	source	        summary.puts ([fixture, width] + stats + [passed ? 'pass' : 'inconclusive']).join("\t")
+timing-driver	source	      end
+timing-driver	source	    end
+timing-driver	source	  end
+timing-driver	source	  unless qualified
+timing-driver	source	    warn 'identical-image null is inconclusive; comparison not authorized by the recorded protocol'
+timing-driver	source	    exit 3
+timing-driver	source	  end
+timing-driver	source	  File.write(File.join(root, 'null-passed.txt'), Digest::SHA256.file(image).hexdigest + "\n")
+timing-driver	source	elsif stage == 'compare'
+timing-driver	source	  File.open(File.join(root, 'comparison-summary.tsv'), 'w') do |summary|
+timing-driver	source	    summary.puts "fixture\tvariant\twall_ms\tcpu_ms\tpaired_vs_fifo_wall\tpaired_vs_fifo_cpu\tminimum_wall_ratio\tmaximum_wall_ratio\tlower"
+timing-driver	source	    counts.each_key do |fixture|
+timing-driver	source	      cells.call(fixture).each do |variant, _form, _width|
+timing-driver	source	        selected = (0...5).map { |pass| samples.fetch([fixture, variant, pass]) }
+timing-driver	source	        stats = ratio_stats(samples, fixture, variant, 'fifo')
+timing-driver	source	        summary.puts ([fixture, variant, median(selected.map(&:first)) / 1e6, median(selected.map(&:last)) / 1e6] + stats).join("\t")
+timing-driver	source	      end
+timing-driver	source	    end
+timing-driver	source	    summary.puts "# within-WF: fixture paired_wall_ratio paired_cpu_ratio minimum_wall_ratio maximum_wall_ratio lower"
+timing-driver	source	    primary.each { |fixture| summary.puts (['# own-sequential', fixture] + ratio_stats(samples, fixture, 'outbox-w4', 'outbox-w1')).join("\t") }
+timing-driver	source	  end
+timing-driver	source	  fifo = primary.map { |fixture| ratio_stats(samples, fixture, 'outbox-w4', 'fifo') }
+timing-driver	source	  own = primary.map { |fixture| ratio_stats(samples, fixture, 'outbox-w4', 'outbox-w1') }
+timing-driver	source	  verdict = if fifo.any? { |s| s[0] <= 0.80 && s[4] >= 4 } && own.all? { |s| s[0] <= 0.97 && s[4] >= 4 }
+timing-driver	source	    'promising-under-recorded-criterion'
+timing-driver	source	  elsif fifo.all? { |s| s[0] > 1.0 }
+timing-driver	source	    'stop-algorithm-trial-slower-than-FIFO-on-both-primary-families'
+timing-driver	source	  else
+timing-driver	source	    'recorded-promising-criterion-not-met'
+timing-driver	source	  end
+timing-driver	source	  File.write(File.join(root, 'selection.txt'), verdict + "\n")
+timing-driver	source	  puts verdict
+timing-driver	source	end

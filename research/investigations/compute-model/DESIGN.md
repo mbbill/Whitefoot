@@ -264,8 +264,9 @@ and unchanged-input comparisons. Observed W4 passed 96 configurations and
 70,021,040 comparisons after adding original and permuted 2,097,151-vertex
 trees and a 2,621,439-vertex directed collision graph. The entire guarded
 construction/check command took 2.69 seconds, exit 0, under a 30-second bound.
-These are correctness-batch costs, not performance samples. The large inputs
-have not yet passed through the unobserved image.
+These are correctness-batch costs, not performance samples. This initial
+qualification checked the large inputs only in the observed image; the
+subsequent unobserved preflight below closes that limitation.
 
 Both useful maps execute nonempty work on helpers on the permuted tree and
 collision graph. The respective counts are 511 and 102 nonempty source rows,
@@ -282,7 +283,8 @@ to two and sixteen chunks. Observed W1 records no grants or helper work.
 The observed image's atomics can affect scheduling and are excluded from
 every performance interval.
 
-Before recording any timing samples, the comparison is fixed as follows.
+Before recording any timing samples, revision `301fd1b5` fixed the comparison
+as follows; the criteria were not changed after seeing the control samples.
 The two primary families are the permuted 2,097,151-vertex tree and the
 depth-20 collision graph with 2,621,439 vertices. Both have four cells: useful
 C FIFO at W1, outbox WF at W1 and W4, and the unchanged intrusive WF at W1 as
@@ -304,8 +306,8 @@ all distances to the unreachable sentinel, writes queue cells when enqueued,
 and frees the queue before returning the distances. Allocation-failure checks,
 absent-edge tests and first-discovery tests remain. That routine performs no
 distance comparison or input-preservation scan; those are separate checks.
-WF pays all 8V persistent cells and each bucket matrix
-inside the same boundary. Returning a result includes its allocation for both
+WF pays all 8V persistent cells and each bucket matrix inside the same
+boundary. Returning a result includes its allocation for both
 implementations; checking and freeing the returned distance array are outside
 for both. Graph construction, expected-distance construction and every full
 input comparison are outside timing. Regenerate deterministic input after
@@ -347,20 +349,63 @@ the original-tree routing limit, the narrow-chain elapsed penalty, and the
 Native construction is expected below two seconds and untimed oracle checks
 below five, with a 30-second guarded preflight bound. The null stage is
 expected to take 5--15 seconds and the comparison 10--25 seconds, each with
-its own 60-second guarded bound. These are prospective costs, not observed
+its own 60-second guarded bound. These were prospective costs, not observed
 ones. A wrong distance, changed input, artifact-hash drift, competing heavy
 load or timeout stops the stage and retains its raw output; a timeout is not
 a source rejection or an algorithm-performance verdict. Inspect the shared
 guard before each stage. No source, scheduling default or daily CI selection
 changes as a result of this protocol alone.
 
+The subsequent preflight used ordinary default-policy LLVM with the same
+module bytes. The original exact plain qualification image passed all 96
+configurations and 70,021,040 comparisons at both W1 and W4, taking 0.66 and
+0.55 seconds respectively. The timing image, SHA-256
+`ca2a3826fa6fa35dde913530ab47303317f1d4a2ac9e64c2548e2e8ed3f0a473`,
+then passed all fourteen selected cells, each comparing every distance and
+input word. Exact generated-input hashes, the adapter, native build recipe,
+measurement driver and all artifact hashes are retained in the dated record.
+Native construction took 1.63 seconds; the complete untimed oracle stage took
+3.47 seconds, including input generation/hashing and process startup. The
+guarded preflight took 5.18 seconds, exit 0. No source algorithm, compiler
+default, runtime price or specification rule changed.
+
+The identical-image control completed all forty processes and 160 verified
+calls: forty warm-up calls and 120 retained warm samples. Its median paired
+wall ratios were 1.005629 and 0.999474 on the permuted tree at W1 and W4,
+and 1.011637 and 0.953349 on collision at W1 and W4. Collision/W4 is outside
+the committed [0.97, 1.03] interval; its five paired wall ratios range from
+0.884422 to 1.166223. The session is therefore inconclusive under the recorded
+criterion. The seventy-process FIFO comparison was not executed, and no
+repeated null session or microtuning was selected. These observations support
+neither a BFS advantage nor a BFS loss against useful FIFO. The source of the
+identical-image variation is not attributed.
+
+The null stage took 17.59 seconds, exit 3, below its 60-second cap but above
+the prospective 5--15-second estimate. Inspection of the retained invocation
+costs accounts for 14.184 seconds in permuted-tree processes and 3.261 seconds
+in collision processes. Their algorithm-call intervals sum to 10.196 and
+2.137 seconds respectively; the remaining approximately 5.11 seconds of
+process wall time covers process startup, fixture/oracle work, full checks
+and other work outside those intervals. This attributes the stage's cost,
+not the cause of its paired variation. All artifact hashes remained unchanged.
+
+The earlier zero-helper-routing observation on the original tree and the
+no-routing-budget observations on smaller inputs remain limitations. The
+64V-byte persistent workspace, per-level matrix initialization, both metadata
+passes and concentrated-label span remain charged algorithm costs. A
+narrow-chain elapsed penalty and comparisons against FIFO remain unmeasured
+because the required control failed before those cells ran. The bounded BFS
+performance action stops here; no broader performance claim follows from
+permission, emitted splits, useful helper work or correct output alone.
+
 Design suitability: the shared harness and FIFO oracle cover the intended
-useful-work and timing boundaries. A scratch adapter adds only the frozen
-large fixtures and complete between-call input checks; it remains outside
-daily checks and is removed when this bounded trial is recorded. Default-flag
-equivalence is established; large unobserved correctness remains required
-before timing, and the observed original-tree routing limitation remains an explicit
-uncertainty rather than a reason to change decomposition or prices.
+useful-work and timing boundaries. The scratch adapter added the frozen
+large fixtures and complete between-call input checks; its exact source and
+recipe are dated evidence rather than a new maintained runner or a daily
+check. Default-policy equivalence and large unobserved correctness are now
+established. The failed stability control and original-tree routing limit
+remain explicit limitations, with no decomposition, pricing or retry policy
+change selected to remove them.
 
 ## Reference-model scatter investigation
 
