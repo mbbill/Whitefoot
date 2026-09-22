@@ -1,10 +1,10 @@
 # Cleanup continuation models
 
-These two bounded Rust programs test whether compiler-derived cleanup can walk
-selected recursive owner layouts without allocating a worklist and without
-using the host call stack. They are investigation artifacts, not compiler
-code, specification text, conformance evidence, or a selected general
-lowering.
+This investigation combines a native compiler reproduction, an abstract
+continuation-cost comparison, and the two earlier Rust models of selected
+recursive owner layouts. The models test traversal without a cleanup-time
+worklist allocation or depth-dependent host stack. They are research artifacts,
+not compiler code, conformance evidence, or a selected general lowering.
 
 ## Current-compiler investigation, 2026-09-22
 
@@ -82,7 +82,7 @@ to this compiler, host target and module.
 
 [PR #75](https://github.com/mbbill/Whitefoot/pull/75) changes source self-call
 selection and entry-jump lowering; it does not
-replace `backend/emitter/cleanup.rs`. PR #70's final description explicitly
+replace `backend/emitter/cleanup.rs`. [PR #70](https://github.com/mbbill/Whitefoot/pull/70)'s final description explicitly
 defers general bounded-stack cleanup (its review item #47). Commit `7044db24`
 adds the two layout models below; `ea141997` records their limitation and the
 retained recursive compiler. This explains the earlier research without
