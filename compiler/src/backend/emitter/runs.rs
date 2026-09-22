@@ -335,8 +335,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         self.load_place_result(result, ty, &format!("%{element_pointer}"))
     }
 
-    /// [BLK-3] the element a removal row hands back, read before the boundary
-    /// moves.
+    /// [OP-10] capture the old physical slot, move the descriptor and return
+    /// its element. Descriptor words and a nonempty element's bytes are
+    /// disjoint in both Slots and Ring; a zero-sized element touches no bytes.
+    /// No call, release or source observation intervenes. Writing the header
+    /// first lets LLVM forward the element through later aggregate moves.
     pub(super) fn emit_run_taken(
         &mut self,
         result: IrValueId,
@@ -344,7 +347,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         row: IrBoundary,
         run: IrValueId,
     ) -> Result<(), BackendFailure> {
-        if row.places() {
+        if row.places() || !matches!(self.value_type(run), Some(IrType::Address(_))) {
             return Err(BackendFailure::InvalidIr);
         }
         let run_type = self.run_value_type(run)?;
@@ -356,11 +359,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
         let physical = self.boundary_slot(shape, run_type, run, row)?;
         let element_pointer = self.element_pointer(result, shape, run_type, run, &physical)?;
+        self.move_run_boundary(shape, run_type, run, row)?;
         self.load_place_result(result, ty, &format!("%{element_pointer}"))
     }
 
-    /// [BLK-3] update an exclusive run: one store at the boundary slot for a
-    /// placement, and the moved boundary for both.
+    /// [OP-10] place an element, then move the boundary.
     pub(super) fn emit_run_boundary(
         &mut self,
         result: IrValueId,
@@ -376,26 +379,29 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let Some(shape) = RunShape::of(run_type) else {
             return Err(BackendFailure::InvalidIr);
         };
-        match (row.places(), value) {
-            (true, Some(value)) => {
-                if self.value_type(value) != Some(shape.element_type(self.program)?) {
-                    return Err(BackendFailure::InvalidIr);
-                }
-            }
-            (false, None) => {}
-            _ => return Err(BackendFailure::InvalidIr),
+        let Some(value) = value else {
+            return Err(BackendFailure::InvalidIr);
+        };
+        if !row.places() || self.value_type(value) != Some(shape.element_type(self.program)?) {
+            return Err(BackendFailure::InvalidIr);
         }
+        let updated = self.prepare_run_update(result, run, run_type)?;
+        let physical = self.boundary_slot(shape, run_type, run, row)?;
+        let element_pointer = self.element_pointer(result, shape, run_type, updated, &physical)?;
+        self.store_value_at(value, &format!("%{element_pointer}"))?;
+        self.move_run_boundary(shape, run_type, run, row)?;
+        self.emit_constant(result, ty, IrConstant::Unit)
+    }
+
+    fn move_run_boundary(
+        &mut self,
+        shape: RunShape,
+        run_type: IrType,
+        run: IrValueId,
+        row: IrBoundary,
+    ) -> Result<(), BackendFailure> {
         let length = self.run_word(run_type, run, shape.length_field())?;
         let head = self.window_origin(shape, run_type, run)?;
-        let updated = self.prepare_run_update(result, run, run_type)?;
-        // A placement writes the element at the slot the boundary is about to
-        // occupy; a removal has already read it out.
-        if let Some(value) = value {
-            let physical = self.boundary_slot(shape, run_type, run, row)?;
-            let element_pointer =
-                self.element_pointer(result, shape, run_type, updated, &physical)?;
-            self.store_value_at(value, &format!("%{element_pointer}"))?;
-        }
         // The new descriptor words. A back operation leaves `head` where it
         // was; a front operation moves it by one, modulo the capacity.
         let new_length = self.next_temporary()?;
@@ -436,7 +442,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         } else if row.front() {
             return Err(BackendFailure::InvalidIr);
         }
-        self.emit_constant(result, ty, IrConstant::Unit)
+        Ok(())
     }
 
     /// The physical slot one boundary operation touches [WIN-1].

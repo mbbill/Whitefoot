@@ -1011,6 +1011,86 @@ fn main() -> status: own ExitStatus pure {
     assert_success(&module);
 }
 
+/// OP-11 excludes partial overlap while admitting an exactly equal target.
+/// The owning payload makes a corrupted snapshot observable at cleanup; the
+/// wrapped Ring and retained helper keep address formation and dynamic indexes
+/// in the executable path instead of folding the exchange into constants.
+#[test]
+fn aggregate_swap_uses_equal_or_disjoint_copies_for_wrapped_owning_records() {
+    let module = compile(
+        br#"nocopy struct Row {
+  words: Array<u64, 32>;
+  owner: Box<u64>;
+}
+
+fn make_row(value: own u64) -> result: own Row pure {
+  let words = array_filled::<u64, 32>(value: value);
+  let owner = box_new::<u64>(value: value);
+  return Row(words: words, owner: move owner);
+}
+
+fn exchange(values: &Ring<Row, 3>, first: own u64, second: own u64) -> result: own unit writes(values) contract {
+  requires first < second;
+  requires second < deref(values).len;
+  ensures deref(values).len == deref(entry(values)).len;
+} {
+  swap(first: &deref(values)[first], second: &deref(values)[second]);
+  return unit;
+}
+
+fn same(values: &Ring<Row, 3>, index: own u64) -> result: own unit writes(values) contract {
+  requires index < deref(values).len;
+  ensures deref(values).len == deref(entry(values)).len;
+} {
+  swap(first: &deref(values)[index], second: &deref(values)[index]);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let values = ring_new::<Row, 3>();
+  let first = make_row(value: 11_u64);
+  place_back(window: &values, value: move first);
+  let second = make_row(value: 22_u64);
+  place_back(window: &values, value: move second);
+  let third = make_row(value: 33_u64);
+  place_back(window: &values, value: move third);
+  let rotated = take_front(window: &values);
+  place_back(window: &values, value: move rotated);
+  exchange(values: &values, first: 0_u64, second: 2_u64);
+  same(values: &values, index: 1_u64);
+  if values[0_u64].owner.inner != 11_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if values[1_u64].owner.inner != 33_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if values[2_u64].owner.inner != 22_u64 {
+    return exit_status(code: 3_u8);
+  }
+  for (index in 0_u64..32_u64) {
+    if values[0_u64].words[index] != 11_u64 {
+      return exit_status(code: 4_u8);
+    }
+    if values[1_u64].words[index] != 33_u64 {
+      return exit_status(code: 5_u8);
+    }
+    if values[2_u64].words[index] != 22_u64 {
+      return exit_status(code: 6_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+    );
+    let swap = super::emitted_prelude_row(&module, "swap");
+    assert!(swap.contains("call void @llvm.memcpy."), "{swap}");
+    assert!(!swap.contains("@llvm.memmove."), "{swap}");
+    assert!(!swap.contains("@llvm.memcpy.inline."), "{swap}");
+    assert!(!swap.lines().next().unwrap().contains("noalias"), "{swap}");
+    assert_success(&module);
+    assert_success(&retain_calls(&module));
+}
+
 /// A reference to an element, a reference to an element's field, a range
 /// reference over a byte run and a reference to a sibling scalar all name
 /// paths into the one owner's storage [REF-1, REF-4], and a write through each

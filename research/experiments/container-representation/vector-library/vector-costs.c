@@ -86,10 +86,12 @@ static HELPER void accept_record(uint64_t *digest, Record value) {
         *digest = *digest * UINT64_C(131) + value.words[i];
 }
 
-// Four concrete controls keep element size and the consumption algorithm
+// Concrete controls keep element size and the consumption algorithm
 // static, as in WF instantiation; no function pointer or width dispatch enters
-// an element operation. DIRECT differs only inside consuming truncation.
-#define DEFINE_VECTOR(P, T, MAKE, ACCEPT, DIRECT)                              \
+// an element operation. CONSUME differs only inside consuming truncation:
+// 0 reverses then consumes, 1 consumes directly, 2 interleaves swap then take,
+// 3 interleaves take then swap through a private local.
+#define DEFINE_VECTOR(P, T, MAKE, ACCEPT, CONSUME)                             \
 typedef struct { uint64_t length, capacity; T data[]; } P##_Block;              \
 _Static_assert(offsetof(P##_Block, data) == 16, "Slots header extent");          \
 static HELPER P##_Block *P##_new(void) {                                       \
@@ -149,16 +151,29 @@ static HELPER void P##_truncate(P##_Block **owner, uint64_t retained,          \
                                 uint64_t *digest) {                          \
     P##_Block *block = *owner;                                                \
     uint64_t count = block->length;                                          \
-    if (DIRECT) {                                                            \
+    if (CONSUME == 1) {                                                      \
         for (uint64_t i = retained; i < count; ++i) ACCEPT(digest, block->data[i]); \
         block->length = retained;                                           \
+    } else if (CONSUME == 3) {                                               \
+        uint64_t half = (count - retained) / 2;                               \
+        for (uint64_t i = 0; i < half; ++i) {                                \
+            uint64_t left = retained + i;                                   \
+            T taken = block->data[--block->length];                           \
+            T saved = block->data[left];                                     \
+            block->data[left] = taken;                                       \
+            taken = saved;                                                  \
+            ACCEPT(digest, taken);                                          \
+        }                                                                    \
+        while (block->length != retained) ACCEPT(digest, block->data[--block->length]); \
     } else {                                                                 \
         uint64_t half = (count - retained) / 2;                               \
         for (uint64_t i = 0; i < half; ++i) {                                \
-            uint64_t left = retained + i, right = count - 1 - i;             \
+            uint64_t left = retained + i;                                   \
+            uint64_t right = CONSUME == 2 ? block->length - 1 : count - 1 - i; \
             T saved = block->data[left];                                    \
             block->data[left] = block->data[right];                          \
             block->data[right] = saved;                                      \
+            if (CONSUME == 2) ACCEPT(digest, block->data[--block->length]);   \
         }                                                                    \
         while (block->length != retained) ACCEPT(digest, block->data[--block->length]); \
     }                                                                        \
@@ -185,9 +200,34 @@ static HELPER uint64_t P##_round(uint64_t count, uint64_t seed, bool reserve) { 
     P##_free_empty(owner);                                                    \
     return digest;                                                           \
 }                                                                            \
+static HELPER void P##_tail_work(P##_Block **owner, uint64_t retained,        \
+                                 uint64_t removed, uint64_t seed,             \
+                                 uint64_t *digest) {                          \
+    for (uint64_t i = 0; i < removed; ++i)                                   \
+        P##_append(owner, MAKE(seed + retained + i));                        \
+    P##_truncate(owner, retained, digest);                                   \
+}                                                                            \
 static NOINLINE uint64_t P##_trace(uint64_t count, uint64_t rounds,            \
                                   uint64_t seed, uint64_t path) {             \
     uint64_t checksum = seed;                                                \
+    if (path >= 3) {                                                         \
+        uint64_t removed = path - 3;                                         \
+        if (removed > count) removed = count;                               \
+        uint64_t retained = count - removed;                                \
+        P##_Block *owner = P##_new();                                         \
+        P##_reserve(&owner, count + 1);                                      \
+        for (uint64_t i = 0; i < retained; ++i)                             \
+            P##_append(&owner, MAKE(seed + i));                              \
+        for (uint64_t r = 0; r < rounds; ++r) {                              \
+            uint64_t digest = seed + r;                                     \
+            P##_tail_work(&owner, retained, removed, seed + r, &digest);     \
+            checksum = checksum * UINT64_C(257) + digest;                    \
+        }                                                                    \
+        uint64_t digest = seed;                                              \
+        P##_drain(&owner, &digest);                                          \
+        P##_free_empty(owner);                                                \
+        return checksum * UINT64_C(257) + digest;                            \
+    }                                                                        \
     if (path == 2) {                                                         \
         P##_Block *owner = P##_new();                                         \
         P##_reserve(&owner, count + 1);                                      \
@@ -206,10 +246,14 @@ static NOINLINE uint64_t P##_trace(uint64_t count, uint64_t rounds,            \
 
 DEFINE_VECTOR(word_reverse, uint64_t, make_word, accept_word, 0)
 DEFINE_VECTOR(word_direct, uint64_t, make_word, accept_word, 1)
+DEFINE_VECTOR(word_interleaved, uint64_t, make_word, accept_word, 2)
+DEFINE_VECTOR(word_take_swap, uint64_t, make_word, accept_word, 3)
 DEFINE_VECTOR(record_reverse, Record, make_record, accept_record, 0)
 DEFINE_VECTOR(record_direct, Record, make_record, accept_record, 1)
+DEFINE_VECTOR(record_interleaved, Record, make_record, accept_record, 2)
+DEFINE_VECTOR(record_take_swap, Record, make_record, accept_record, 3)
 
-enum Variant { WHITEFOOT, REVERSE_C, DIRECT_C };
+enum Variant { WHITEFOOT, REVERSE_C, DIRECT_C, INTERLEAVED_C, TAKE_SWAP_C, VARIANT_COUNT };
 static NOINLINE uint64_t run(enum Variant variant, bool wide, uint64_t count,
                             uint64_t rounds, uint64_t seed, uint64_t path) {
     uint64_t result;
@@ -219,9 +263,15 @@ static NOINLINE uint64_t run(enum Variant variant, bool wide, uint64_t count,
     else if (variant == REVERSE_C)
         result = wide ? record_reverse_trace(count, rounds, seed, path)
                       : word_reverse_trace(count, rounds, seed, path);
-    else
+    else if (variant == DIRECT_C)
         result = wide ? record_direct_trace(count, rounds, seed, path)
                       : word_direct_trace(count, rounds, seed, path);
+    else if (variant == INTERLEAVED_C)
+        result = wide ? record_interleaved_trace(count, rounds, seed, path)
+                      : word_interleaved_trace(count, rounds, seed, path);
+    else
+        result = wide ? record_take_swap_trace(count, rounds, seed, path)
+                      : word_take_swap_trace(count, rounds, seed, path);
     observed = result;
     return result;
 }
@@ -234,9 +284,25 @@ static uint64_t oracle_accept(uint64_t digest, uint64_t seed, unsigned words) {
         digest = digest * UINT64_C(131) + seed + word;
     return digest;
 }
-static uint64_t oracle(uint64_t count, uint64_t rounds, uint64_t seed, bool wide) {
+static uint64_t oracle(uint64_t count, uint64_t rounds, uint64_t seed, bool wide,
+                       uint64_t path) {
     unsigned words = wide ? RECORD_WORDS : 1;
     uint64_t checksum = seed;
+    if (path >= 3) {
+        uint64_t removed = path - 3;
+        if (removed > count) removed = count;
+        uint64_t retained = count - removed;
+        for (uint64_t round = 0; round < rounds; ++round) {
+            uint64_t base = seed + round, digest = base;
+            for (uint64_t at = retained; at < count; ++at)
+                digest = oracle_accept(digest, base + at, words);
+            checksum = checksum * UINT64_C(257) + digest;
+        }
+        uint64_t digest = seed;
+        for (uint64_t at = 0; at < retained; ++at)
+            digest = oracle_accept(digest, seed + at, words);
+        return checksum * UINT64_C(257) + digest;
+    }
     for (uint64_t round = 0; round < rounds; ++round) {
         uint64_t base = seed + round;
         uint64_t digest = oracle_accept(base, base ^ UINT64_C(11400714819323198485), words);
@@ -272,13 +338,13 @@ static void check(void) {
     const uint64_t seeds[] = {0, 17, UINT64_MAX};
     size_t configurations = 0;
     for (unsigned wide = 0; wide < 2; ++wide)
-        for (unsigned path = 0; path < 3; ++path)
+        for (unsigned path = 0; path < 7; ++path)
             for (size_t n = 0; n < sizeof counts / sizeof counts[0]; ++n)
                 for (size_t r = 0; r < sizeof rounds / sizeof rounds[0]; ++r)
                     for (size_t s = 0; s < sizeof seeds / sizeof seeds[0]; ++s) {
-                        uint64_t expected = oracle(counts[n], rounds[r], seeds[s], wide != 0);
+                        uint64_t expected = oracle(counts[n], rounds[r], seeds[s], wide != 0, path);
                         size_t wf_requests = 0, wf_peak = 0, wf_bytes = 0;
-                        for (unsigned v = 0; v < 3; ++v) {
+                        for (unsigned v = 0; v < VARIANT_COUNT; ++v) {
                             reset_accounting();
                             uint64_t actual = run((enum Variant)v, wide != 0, counts[n], rounds[r], seeds[s], path);
                             require(actual == expected, "independent logical-order checksum");
@@ -293,27 +359,30 @@ static void check(void) {
                         }
                         ++configurations;
                     }
-    require(configurations == 540, "configuration matrix");
-    printf("vector library costs: %zu three-way configurations, %zu executions passed\n",
-           configurations, configurations * 3);
+    require(configurations == 1260, "configuration matrix");
+    printf("vector library costs: %zu five-way configurations, %zu executions passed\n",
+           configurations, configurations * VARIANT_COUNT);
 }
 
 static void measure(void) {
     const uint64_t counts[] = {16, 256, 4096};
-    const char *paths[] = {"reserved", "growth", "reuse"};
-    const char *variants[] = {"whitefoot", "reverse-c", "direct-c"};
+    const char *paths[] = {"reserved", "growth", "reuse", "suffix-0", "suffix-1", "suffix-2", "suffix-3"};
+    const char *variants[] = {"whitefoot", "reverse-c", "direct-c", "swap-take-c", "take-swap-c"};
     puts("contract,cohort,element_bytes,path,count,variant,sample,rounds,elapsed_ns,checksum,requests,requested_bytes,peak_bytes");
     for (unsigned cohort = 0; cohort < 2; ++cohort)
         for (unsigned wide = 0; wide < 2; ++wide)
-            for (unsigned path = 0; path < 3; ++path)
+            for (unsigned path = 0; path < 7; ++path)
                 for (size_t n = 0; n < sizeof counts / sizeof counts[0]; ++n)
                     for (unsigned sample = 0; sample < 11; ++sample) {
-                        uint64_t count = counts[n], rounds = UINT64_C(16384) / count;
+                        if (path == 3 || path == 5 || (path >= 3 && counts[n] == 256)) continue;
+                        uint64_t count = counts[n];
+                        uint64_t rounds = path >= 3 ? UINT64_C(65536) / (path - 3)
+                                                   : UINT64_C(16384) / count;
                         uint64_t seed = UINT64_C(101) + sample;
-                        uint64_t expected = oracle(count, rounds, seed, wide != 0);
-                        for (unsigned offset = 0; offset < 3; ++offset) {
-                            unsigned position = (sample + offset) % 3;
-                            unsigned v = cohort ? 2 - position : position;
+                        uint64_t expected = oracle(count, rounds, seed, wide != 0, path);
+                        for (unsigned offset = 0; offset < VARIANT_COUNT; ++offset) {
+                            unsigned position = (sample + offset) % VARIANT_COUNT;
+                            unsigned v = cohort ? VARIANT_COUNT - 1 - position : position;
                             reset_accounting();
                             uint64_t before = nanos();
                             uint64_t checksum = run((enum Variant)v, wide != 0, count, rounds, seed, path);

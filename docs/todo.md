@@ -69,34 +69,55 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   and their derived tests. Neither implementation behavior nor this audit
   selects the language rule.
 
-- **Ordered Vector consumption still makes avoidable transfers.** The ordinary
-  prefix-window library reverses a removed suffix before consuming it in
-  original order. It is O(n), but the
-  [matched native comparison](../research/experiments/container-representation/vector-library/RESULTS.md#lowering-attribution)
-  retains three whole-record transfers per reversed pair that a direct
-  consumer does not need. With retained helpers, the 4096-element 256-byte
-  reuse chain is 18.4 percent slower than direct C; ordinary optimization
-  also exposes a separate WF/reverse-C gap and short-vector overhead. The
-  Slots wrap-arithmetic repair does not remove either source-required movement
-  or every lowering cost. Retain the tested composition as the current
-  implementation, without claiming minimum-transfer or general native parity.
-  Reopen before relying on ordered consumption in a performance-critical
-  container: compare a representation or operation that avoids reversal under
-  the same original-order, disjoint-callback, nodrop-ownership contract, and
-  separately attribute alignment/alias facts and ordinary inlining against
-  the retained-helper controls. No new language operation is selected yet.
+- **Ordered Vector consumption still relocates rear elements.** The take-first
+  composition exchanges an owned local with each first-half suffix slot, then
+  consumes the reversed remainder. It preserves the prefix and callback order
+  with O(removed) work and constant auxiliary storage, but still relocates
+  `floor(removed / 2)` rear elements beyond a direct consumer's handoffs. The
+  [matched native comparison](../research/experiments/container-representation/vector-library/RESULTS.md)
+  separates that source cost from redundant compiler snapshots; qualified
+  independent stack slots and descriptor-before-transfer takes remove the
+  latter in the local Clang 21 retained-record witness. That result establishes
+  neither a guarantee across optimizers nor universal native parity. Keep the
+  current ordinary composition while measuring any
+  concrete workload that makes its remaining movement significant; introducing
+  a more general operation without that evidence is deferred. Reopen before
+  relying on ordered consumption in a performance-critical container. Compare
+  an alternative under the same original-order, disjoint-callback,
+  nodrop-ownership, constant-auxiliary-space and O(removed) contract, including
+  nearly complete retention; require an attributable measured improvement
+  against direct C and the current WF implementation. No new language operation
+  is selected yet.
 
-- **Measure placement stops at Box content.** Destructuring an owner with a
-  `Box<Slots<T>>` field loses established facts about its `.inner.len`;
-  `free_empty` on the resulting binding then fails OP-14. The exact
-  [Vector example](../research/investigations/containers-and-resources/X1-LIBRARY.md#vector-source-obligations)
-  is a naming event covered by MSR-3, whose implementation's `measured_paths`
-  currently traverses inline nominal fields but stops at a Box. The Vector
-  can consume its sole storage field directly, so this does not block its
-  cleanup. Repair the general placement path when a consumer needs the
-  destructured or rebound owner; account for recursive nominal types without
-  enumerating infinitely many content paths and test kills as well as fact
-  retention.
+- **Short Vector cycles retain unresolved lowering costs.** The paired
+  consumption experiment improves the large-record paths but slows the
+  16-element scalar reuse chain in both source orders. Ordinary optimization
+  also leaves a large WF/direct-C gap in the one-element suffix cycle, where
+  neither composition relocates a rear element. Fewer aggregate transfers do
+  not explain either cost. Keep this attribution separate from the operation
+  choice above: compare the emitted loop, callback and argument code under
+  ordinary and retained helpers, preserving the same source contract and
+  accounting for the in-binary C controls' variation. A general lowering
+  improvement is worthwhile if the short-cycle reduction is reproducible
+  without losing the established large-record gain. Defer further tuning until
+  that cause is established; reopen for a workload dominated by these cycles.
+  The [paired samples and limits](../research/experiments/container-representation/vector-library/RESULTS.md)
+  are the starting evidence, not a claim of uniform improvement.
+
+- **Consumed aggregate locals can retain an argument snapshot.** An exposed
+  mutable local is loaded into an immutable argument snapshot before a consuming
+  call. Clang 21 forwards that snapshot in the large-record regression, while
+  Apple Clang 15 retains an extra whole-record copy. General forwarding could
+  remove that copy independently of the optimizer, but needs a liveness and
+  interference argument across the complete argument list and result/input
+  reuse. Existing call-result coalescing does not cover a consumer returning
+  unit. Defer broadening that path while the frame and descriptor changes are
+  qualified; reopen when the retained snapshot materially affects a measured
+  workload. Require a before/after transfer and timing comparison plus the
+  existing exposed-place, later-argument-write, reentered-block and owned-result
+  snapshot controls. The
+  [transfer evidence](../research/experiments/container-representation/vector-library/RESULTS.md#v061-copy-and-consumption-trial)
+  separates this opportunity from the library's remaining element relocation.
 
 - **Parallel grain policy needs a dedicated study.** Captured extents are a
   provisional scheduling input, not an established broadly suitable policy.
