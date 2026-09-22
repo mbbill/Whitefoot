@@ -61,8 +61,8 @@ use std::fmt::Write;
 use super::{BackendFailure, FunctionEmitter, IntrinsicDeclaration, llvm_type, value_name};
 use crate::backend::abi::{FunctionAbi, ResultAbi};
 use crate::{
-    IrAddressed, IrFunction, IrInstruction, IrOperation, IrProgram, IrSynthesis, IrType, IrValueId,
-    IrWorkEstimate,
+    IrAddressed, IrFunction, IrInstruction, IrNominalKind, IrOperation, IrProgram, IrSynthesis,
+    IrType, IrValueId, IrWorkEstimate,
 };
 
 /// The counted loop's index type [FN-1], which fixes every width question the
