@@ -2132,6 +2132,49 @@ timing action are separate guarded stages capped at 30 seconds. No core
 pinning, runtime constant change, phase instrumentation or wider sweep is part
 of this control, and no research artifact enters correctness CI.
 
+The [2026-09-22 record](../../experiments/compute-bench/stencil-zero-budget-2026-09-22.tsv)
+retains the exact IR diff, frozen input/image hashes, one-shot recipes and all
+outcomes. Construction took 1.35 seconds; all four existing oracle matrices
+passed, comparing 3,387,721 values each, in 1.93 seconds. Optimized-code
+inspection took 0.89 seconds. The W1 optimized IR matches after expanding
+equivalent loop metadata, and its object instructions match after rebasing
+addresses. Parallel pixel arithmetic retains its eight-output SIMD shape and
+floating-point grouping. B additionally inlines that work into row chunks and
+outer split leaves and moves chunk alias checks outside the row loop. Those
+effects belong to the combined control; they do not isolate query overhead.
+
+The original null action completed once in 5.65 seconds, retaining all 120
+checked calls, but its order generator was defective: `(pass + index) % 2`
+combined with reversed widths always ran A/B at W1 and B/A at W4. This violates
+the selected within-width alternation, so the session is protocol-invalid and
+has no main comparison. Its descriptive paired W4 wall ratios span
+0.890044–1.047734; the median is 0.986233 and largest absolute drift 0.109956.
+W1 spans 0.899249–1.034519 with median 0.949014. These are preserved outcomes,
+not a qualified null or a performance result for B. No image, compiler, runtime
+or lowering change follows from this session.
+
+#### Corrected-order session
+
+A separately selected session repairs only that order-generation defect; it
+does not rerun or overwrite the original session. It reuses the qualified A/B
+images and oracle evidence with hash checks, without rebuilding or repeating
+unchanged correctness work. The fixture, widths, arms, five paired passes,
+one warm-up plus five warm calls, zero gap, combined attribution scope and
+numerical criterion above remain unchanged. Arm order is A/B on even passes
+and B/A on odd passes independently of width order, which still reverses each
+pass. The retained dry run lists all 20 invocations and mechanically asserts
+that each pass contains each arm once at each width, and that each width's arm
+order alternates. The new recipe has SHA-256
+`05a4cd3ea80ad3fb75ad1aab3f39364c157add395b70230ba59aa29b868d2906`.
+
+After this new criterion is committed and published, run exactly one new
+identical-image null action and one main action, each under the shared guard
+with a 30-second cap. Preserve all new raw data and use only the new null in
+the unchanged numerical criterion; exclude the protocol-invalid session from
+that comparison. A failed check or inconclusive criterion ends this corrected
+session without retry. No corrected-session timing has occurred at selection,
+and no production improvement is selected before its result.
+
 ## Needed loop captures
 
 The sparse-frontier source at `139fc2d1d74480d58ab878c0eb67bca12b5144f1`,
