@@ -24,9 +24,15 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   interface comparison and cross-file private calls without interface entries.
   Public declaration duplication, build-selection contention and useful module
   sizes remain unmeasured; measure matched collaboration tasks before claiming
-  benefits. Validate direct grandchild and cross-subtree imports, absence of
-  transitive source access or parent/child privileges, and cycle checks including
-  private edges; directory relocation alone must not change cyclicity. Subtree-
+  benefits. Qualify explicit complete sibling-subtree orders, canonical module
+  positions and all selected roots, then validate descendant imports, earlier-
+  branch imports and rejection of self/ancestor/reverse edges for both public
+  and private dependencies. The design supplies a strict postorder argument and
+  a bounded exploratory model check, not a verified implementation. Check order-
+  change invalidation without global-rank churn. The rule forbids some acyclic
+  interleaving across intact subtrees; compare explicit module ranks if a real
+  consumer requires that layout, while retaining local structural acyclicity.
+  Preserve the absence of transitive access and parent/child privileges. Subtree-
   private separately compiled modules remain an unselected capability: reopen
   for a concrete consumer that cannot use one module's private files, judging
   the extra visibility rules against interface clarity and needed decomposition.

@@ -42,7 +42,7 @@ they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge bounda
   keep fact states' closed cores and insert fresh edges instead of recomputing
   the cubic closure, relaxing only which equal-bound L0 derivation is retained.
 - [Modular compilation](investigations/modular-compilation/DESIGN.md):
-  self-contained public interfaces, filesystem namespaces, explicit dependency DAGs, persistent proof
+  self-contained public interfaces, structurally ordered module dependencies, persistent proof
   dependencies, and incremental cross-module optimization through object
   generation, with ordinary final linking.
 
