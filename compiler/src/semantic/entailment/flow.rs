@@ -5832,7 +5832,7 @@ impl Analyzer<'_, '_> {
                     },
                     Vec::new(),
                     Vec::new(),
-                    root.element.ty(),
+                    root.element_type,
                     vec![collection, self.goal_expression(offset, admitted_partial)?],
                 )
             }
@@ -16985,7 +16985,7 @@ fn invalidate_goal_origin_for_set(state: &mut FactState, target: &CheckedSetTarg
 /// The type one slot of an indexable base holds [OP-4, WIN-1].
 fn element_type(input: CheckedType, elements: &[CheckedType]) -> Option<CheckedType> {
     match input {
-        CheckedType::Buffer { element } => Some(element.ty()),
+        CheckedType::Buffer { element } => elements.get(element.index()).copied(),
         CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
             elements.get(element.0 as usize).copied()
         }

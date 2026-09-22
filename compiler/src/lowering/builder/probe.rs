@@ -5,7 +5,7 @@ use crate::semantic::{
     CheckedMatchArm, CheckedStatement, CheckedType,
 };
 use crate::{
-    IrAddressed, IrConstant, IrEnumType, IrFlatElement, IrIntegerOperation, IrMatchTarget,
+    IrAddressed, IrConstant, IrEnumType, IrIntegerOperation, IrMatchTarget,
     IrOperation, IrTerminator, IrType, LoweringFailure,
 };
 
@@ -171,9 +171,7 @@ fn recognize_load(
     };
     let (root, offset) = match value {
         CheckedExpression::BufferIndex { root, offset, .. } => {
-            if crate::lowering::lower_flat_element(TypeLowering::EMPTY, root.element)
-                .ok()?
-                .ty()
+            if crate::lowering::lower_type(TypeLowering::EMPTY, root.element_type).ok()?
                 != U8
                 || root
                     .path
@@ -221,15 +219,13 @@ fn recognize_load(
                 CheckedType::Buffer { element }
                     if !prefix.iter().any(|step| {
                         matches!(step, crate::semantic::CheckedPlaceStep::Subscript(_))
-                    }) && crate::lowering::lower_flat_element(TypeLowering::EMPTY, element)
-                        .ok()?
-                        .ty()
-                        == U8 =>
+                    }) =>
                 {
                     WalkedRun::Boxed(crate::semantic::CheckedBufferRoot {
                         binding,
                         path: prefix.to_vec(),
                         element,
+                        element_type: root.ty,
                     })
                 }
                 _ => return None,
@@ -475,18 +471,15 @@ impl IrBuilder<'_> {
         if self.value_type(index)? != U64 || self.value_type(limit)? != U64 {
             return Ok(());
         }
-        let byte = IrFlatElement::Integer {
-            width: 8,
-            signed: false,
-        };
         let buffer = match &walk.run {
             // [TYPE-9] the boxed runtime-capacity block, reached through its
             // cell exactly as every other read of it is.
             WalkedRun::Boxed(root) => {
                 let address = self.buffer_root(root)?;
-                if self.value_type(address)?
-                    != IrType::Address(IrAddressed::Buffer { element: byte })
-                {
+                let IrType::Address(IrAddressed::Buffer { element }) = self.value_type(address)? else {
+                    return Ok(());
+                };
+                if self.element_type(element)? != U8 {
                     return Ok(());
                 }
                 address

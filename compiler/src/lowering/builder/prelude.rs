@@ -185,7 +185,7 @@ impl IrBuilder<'_> {
         let IrType::Buffer { element } = referent else {
             return Err(LoweringFailure::InvalidCheckedProgram);
         };
-        let obligations = self.runtime_obligations(element.ty())?;
+        let obligations = self.runtime_obligations(self.element_type(element)?)?;
         let cell = self.define(
             self.result,
             IrOperation::BufferFill {

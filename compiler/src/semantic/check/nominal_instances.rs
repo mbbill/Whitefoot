@@ -8,7 +8,7 @@ use crate::{
 };
 
 use super::super::model::{
-    CheckedConstructor, CheckedElement, CheckedField, CheckedFlatElement, CheckedNominal,
+    CheckedConstructor, CheckedElement, CheckedField, CheckedNominal,
     CheckedNominalKind, CheckedNumericType, CheckedType, CheckedVariant, NominalId,
 };
 use super::generics::GenericSubstitution;
@@ -1132,7 +1132,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 length,
             },
             CheckedType::Buffer { element } => CheckedType::Buffer {
-                element: self.substitute_flat_element_regions(element, regions)?,
+                element: self.substitute_element_regions(element, regions)?,
             },
             CheckedType::Window {
                 shape,
@@ -1154,40 +1154,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<CheckedElement, CheckStop> {
         let ty = self.substitute_type_regions(self.element_type(element)?, regions)?;
         self.intern_element(ty)
-    }
-
-    /// One flat slot element with the same substitution [FN-2, TYPE-2].
-    ///
-    /// Scalar and symbolic elements contain no region. A nominal element can
-    /// contain one arbitrarily far inside its instance — for example the
-    /// `'s` in `Option<Entry<'s>>` — while remaining one flat slot element.
-    /// Substitution changes that instance identity and preserves whether the
-    /// element has tag-only or payload representation; capability class is
-    /// independent of that shape.
-    fn substitute_flat_element_regions(
-        &self,
-        element: CheckedFlatElement,
-        regions: &[(crate::DeclarationId, crate::DeclarationId)],
-    ) -> Result<CheckedFlatElement, CheckStop> {
-        let (id, tag_only) = match element {
-            CheckedFlatElement::TagOnlyNominal(id) => (id, true),
-            CheckedFlatElement::Nominal(id) => (id, false),
-            CheckedFlatElement::Unit
-            | CheckedFlatElement::Bool
-            | CheckedFlatElement::Integer(_)
-            | CheckedFlatElement::Float(_)
-            | CheckedFlatElement::GenericInt(_)
-            | CheckedFlatElement::GenericFloat(_)
-            | CheckedFlatElement::Generic(_) => return Ok(element),
-        };
-        let CheckedType::Nominal(id) = self.substitute_nominal_regions(id, regions)? else {
-            return Err(SemanticCompilerFailure::InvalidResolution.into());
-        };
-        Ok(if tag_only {
-            CheckedFlatElement::TagOnlyNominal(id)
-        } else {
-            CheckedFlatElement::Nominal(id)
-        })
     }
 
     /// One nominal instance with the same substitution, reported as a
@@ -1382,7 +1348,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     left_length == right_length
                 }
                 (CheckedType::Buffer { element: left }, CheckedType::Buffer { element: right }) => {
-                    pending.push((left.ty(), right.ty()));
+                    pending.push((self.element_type(left)?, self.element_type(right)?));
                     true
                 }
                 _ => false,

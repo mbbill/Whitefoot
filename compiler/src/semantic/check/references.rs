@@ -1156,7 +1156,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 // [OP-4] a runtime-capacity `Array<T>` is an indexable base
                 // exactly as the constant-capacity one is [TYPE-9].
-                CheckedType::Buffer { element } => element.ty(),
+                CheckedType::Buffer { element } => self.element_type(element)?,
                 _ => {
                     return self.issue_node(
                         SemanticRule::Op4,

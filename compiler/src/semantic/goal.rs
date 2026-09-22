@@ -1,7 +1,7 @@
 use crate::{DeclarationId, NodePath};
 
 use super::model::{
-    BindingId, CheckedBooleanOperation, CheckedConst, CheckedElement, CheckedFlatElement,
+    BindingId, CheckedBooleanOperation, CheckedConst, CheckedElement,
     CheckedFloatOperation, CheckedIntegerOperation, CheckedMeasure, CheckedNumericType,
     CheckedType, CheckedValue, FunctionId, MeasuredKind,
 };
@@ -272,12 +272,12 @@ pub(crate) enum GoalOperation {
     },
     BufferMeasure {
         measure: CheckedMeasure,
-        element: CheckedFlatElement,
+        element: CheckedElement,
     },
     /// One buffer element value whose own OP-4 obligation has already been
     /// discharged before this expression is used as a proof operand.
     BufferIndex {
-        element: CheckedFlatElement,
+        element: CheckedElement,
     },
     /// Canonical total allocation-domain predicate [OP-9]. The ceiling is
     /// part of the row identity so a proof cannot be reused across a layout

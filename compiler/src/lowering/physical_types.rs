@@ -71,7 +71,7 @@ pub(super) fn base_elements(
         }
     }
     while let Some(ty) = pending.pop() {
-        if let CheckedType::Array { element, .. } | CheckedType::Window { element, .. } = ty
+        if let CheckedType::Array { element, .. } | CheckedType::Window { element, .. } | CheckedType::Buffer { element } = ty
             && needed.insert(element.index())
         {
             pending.push(
@@ -305,6 +305,9 @@ impl<'a> PhysicalTypes<'a> {
         releases: &[(DeclarationId, CheckedReleaseClass)],
     ) -> Result<IrType, LoweringFailure> {
         match ty {
+            CheckedType::Buffer { element } => {
+                return Ok(IrType::Buffer { element: self.element(element, releases)? });
+            }
             CheckedType::Array { element, length } => {
                 return Ok(IrType::Array {
                     element: self.element(element, releases)?,
@@ -344,7 +347,6 @@ impl<'a> PhysicalTypes<'a> {
                 CheckedType::Nominal(id) => {
                     map[id.0 as usize] = self.nominal(id, releases)?;
                 }
-                CheckedType::Buffer { element } => pending.push(element.ty()),
                 _ => {}
             }
         }
@@ -490,7 +492,10 @@ impl<'a> PhysicalTypes<'a> {
                         .ok_or(LoweringFailure::InvalidCheckedProgram)?,
                 )),
                 (CheckedType::Buffer { element: left }, CheckedType::Buffer { element: right }) => {
-                    pending.push((left.ty(), right.ty()));
+                    pending.push((
+                        *self.data.elements.get(left.index()).ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                        *self.data.elements.get(right.index()).ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                    ));
                 }
                 _ if left == right => {}
                 _ => return Ok(false),

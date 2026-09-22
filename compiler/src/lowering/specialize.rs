@@ -294,7 +294,7 @@ fn collect_regions(
                 CheckedNominalKind::Opaque => {}
             }
         }
-        CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
+        CheckedType::Array { element, .. } | CheckedType::Window { element, .. } | CheckedType::Buffer { element } => {
             collect_regions(
                 program,
                 *program
@@ -305,9 +305,6 @@ fn collect_regions(
                 visited,
                 defaults,
             )?;
-        }
-        CheckedType::Buffer { element } => {
-            collect_regions(program, element.ty(), regions, visited, defaults)?;
         }
         CheckedType::Unit
         | CheckedType::Bool

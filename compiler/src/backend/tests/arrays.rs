@@ -1427,3 +1427,113 @@ fn main() -> status: own ExitStatus pure {
         assert!(output.stderr.is_empty(), "{overlap:?}: {output:?}");
     }
 }
+
+/// Runtime-capacity arrays carry complete inline element types through generic
+/// construction, typed ranges, whole-element copies, and nested writes.
+#[test]
+fn runtime_arrays_preserve_nested_fixed_array_storage_and_release() {
+    let source = br#"fn make<T: copy>(value: own T) -> result: own Box<Array<T>> pure contract {
+  ensures result.inner.len == 2_u64;
+} {
+  return box_array_filled::<T>(count: 2_u64, value: value);
+}
+
+fn read(rows: &[Array<u64, 2>], index: own u64) -> result: own u64 reads(rows) contract {
+  requires index < deref(rows).len;
+} {
+  return deref(rows)[index][1_u64];
+}
+
+fn update(row: &Array<u64, 2>) -> result: own unit writes(row) {
+  set deref(row)[1_u64] = 19_u64;
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let seed = array_filled::<u64, 2>(value: 7_u64);
+  let rows = make::<Array<u64, 2>>(value: seed);
+  set rows.inner[1_u64][0_u64] = 11_u64;
+  update(row: &rows.inner[1_u64]);
+  let snapshot = rows.inner[1_u64];
+  set rows.inner[0_u64] = snapshot;
+  set snapshot[1_u64] = 23_u64;
+  if rows.inner[0_u64][0_u64] != 11_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if rows.inner[0_u64][1_u64] != 19_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if rows.inner[1_u64][0_u64] != 11_u64 {
+    return exit_status(code: 3_u8);
+  }
+  let observed = read(rows: &rows.inner[0_u64..2_u64], index: 1_u64);
+  if observed != 19_u64 {
+    return exit_status(code: 4_u8);
+  }
+  if seed[0_u64] != 7_u64 {
+    return exit_status(code: 5_u8);
+  }
+  let empty = box_array_filled::<Array<u64, 2>>(count: 0_u64, value: seed);
+  if empty.inner.len != 0_u64 {
+    return exit_status(code: 6_u8);
+  }
+  let empty_seed = array_filled::<u64, 0>(value: 0_u64);
+  let zero_width = box_array_filled::<Array<u64, 0>>(count: 3_u64, value: empty_seed);
+  if zero_width.inner[2_u64].len != 0_u64 {
+    return exit_status(code: 7_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let module = retain_calls(&compile(source))
+        .replace("@malloc(", "@wf_test_allocate(")
+        .replace("@free(", "@wf_test_release(");
+    let observer = super::owned_places::allocation_observer(3, 0);
+    let output = super::compile_link_and_run(&module, Some(&observer), &[]);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(output.stdout, b"A1;A2;A3;F3;F2;F1;", "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
+/// An ordinary callable receives the same header-first runtime owner from the
+/// native host. This exercises affine element cleanup independently of the
+/// copy-only fill constructor.
+#[test]
+fn runtime_arrays_release_nested_fixed_array_owners_in_element_order() {
+    let source = br#"fn release_rows(values: own Box<Array<Array<Box<u64>, 2>>>) -> result: own u64 pure contract {
+  requires values.inner.len == 2_u64;
+} {
+  return values.inner[1_u64][1_u64].inner;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let module = retain_calls(&compile(source))
+        .replace("@malloc(", "@wf_test_allocate(")
+        .replace("@free(", "@wf_test_release(");
+    let observer = format!(
+        "{}\n{}",
+        super::owned_places::allocation_observer(5, 0),
+        r#"#include <stdint.h>
+struct Rows { uint64_t len; uint64_t *items[2][2]; };
+extern uint64_t wf_release_rows(struct Rows *);
+__attribute__((constructor)) static void check_nested_cleanup(void) {
+    struct Rows *rows = wf_test_allocate(sizeof(*rows));
+    rows->len = 2;
+    const uint64_t payloads[4] = {17, 19, 23, 29};
+    for (unsigned i = 0; i < 4; ++i) {
+        uint64_t *cell = wf_test_allocate(sizeof(*cell));
+        *cell = payloads[i];
+        rows->items[i / 2][i % 2] = cell;
+    }
+    if (wf_release_rows(rows) != 29) abort();
+}
+"#
+    );
+    let output = super::compile_link_and_run(&module, Some(&observer), &[]);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(output.stdout, b"A1;A2;A3;A4;A5;F2;F3;F4;F5;F1;", "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}

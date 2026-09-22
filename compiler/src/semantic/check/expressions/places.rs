@@ -972,7 +972,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         PathType::Value(current) => match current {
                             CheckedType::Array { element, .. }
                             | CheckedType::Window { element, .. } => self.element_type(element)?,
-                            CheckedType::Buffer { element } => element.ty(),
+                            CheckedType::Buffer { element } => self.element_type(element)?,
                             _ => return Ok(None),
                         },
                     });
@@ -983,7 +983,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         PathType::Value(current) => match current {
                             CheckedType::Array { element, .. }
                             | CheckedType::Window { element, .. } => self.element_type(element)?,
-                            CheckedType::Buffer { element } => element.ty(),
+                            CheckedType::Buffer { element } => self.element_type(element)?,
                             _ => return Ok(None),
                         },
                     });
@@ -1057,7 +1057,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         match ty {
                             CheckedType::Array { element, .. }
                             | CheckedType::Window { element, .. } => self.element_type(element)?,
-                            CheckedType::Buffer { element } => element.ty(),
+                            CheckedType::Buffer { element } => self.element_type(element)?,
                             _ => return Ok(None),
                         }
                     };
@@ -1130,7 +1130,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
                         self.element_type(element)?
                     }
-                    CheckedType::Buffer { element } => element.ty(),
+                    CheckedType::Buffer { element } => self.element_type(element)?,
                     _ => return Ok(()),
                 };
                 continue;

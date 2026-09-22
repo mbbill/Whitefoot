@@ -80,7 +80,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         visited: &mut HashSet<NominalId>,
     ) -> Result<bool, CheckStop> {
         match ty {
-            CheckedType::Buffer { element } => self.loan_bearing_with(element.ty(), visited),
+            CheckedType::Buffer { element } => self.loan_bearing_with(self.element_type(element)?, visited),
             CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
                 self.loan_bearing_with(self.element_type(element)?, visited)
             }
@@ -139,7 +139,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 } if capacity.and_then(super::super::model::CheckedConst::value) != Some(0) => {
                     pending.push(self.element_type(element)?);
                 }
-                CheckedType::Buffer { element } => pending.push(element.ty()),
+                CheckedType::Buffer { element } => pending.push(self.element_type(element)?),
                 _ => {}
             }
         }
@@ -173,7 +173,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             match current {
                 CheckedType::Buffer { element } => {
-                    pending.push(element.ty());
+                    pending.push(self.element_type(element)?);
                 }
                 // A run owns the elements of its window [BLK-1], so its
                 // element is a sub-node exactly as a field is.

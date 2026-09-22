@@ -1,7 +1,7 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::fmt::Write;
 
-use crate::{IrFlatElement, IrReleaseClass, IrVariant, IrWindowShape};
+use crate::{IrReleaseClass, IrVariant, IrWindowShape};
 
 use super::super::target::TargetLayout;
 use super::{
@@ -44,37 +44,6 @@ pub(super) fn emit_resource_drop_helpers(
         emit_enum_cleanup_body(program, &mut output, variants, ty, &aggregate_ty)?;
         output.push_str("}\n\n");
     }
-    for element in cleanup_buffer_element_nominals(program)? {
-        // The [STOR-3] affine-element buffer drop: each element's
-        // compiler-derived drop in ascending index order. The block's own
-        // free stays with its caller, because the header and the elements
-        // are one allocation the cell owns
-        // (compiler/storage-representation), exactly as a boxed window's
-        // walk leaves the cell's free to the [PROV-6] traversal.
-        let element_ty = IrType::Nominal(element);
-        let symbol = buffer_drop_helper_symbol(element);
-        let aggregate_ty = llvm_type(program, element_ty)?;
-        let block_ty = llvm_type(
-            program,
-            IrType::Buffer {
-                element: IrFlatElement::Nominal(element),
-            },
-        )?;
-        writeln!(
-            output,
-            "define private void @{symbol}(ptr %value) {{\nentry:\n  %length.pointer = getelementptr inbounds {block_ty}, ptr %value, i32 0, i32 0\n  %length = load i64, ptr %length.pointer\n  br label %head\nhead:\n  %index = phi i64 [ 0, %entry ], [ %next, %body ]\n  %continue = icmp ult i64 %index, %length\n  br i1 %continue, label %body, label %done\nbody:\n  %element.pointer = getelementptr inbounds {block_ty}, ptr %value, i64 0, i32 1, i64 %index\n  %element = load {aggregate_ty}, ptr %element.pointer"
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        let mut temporary = 0_u32;
-        emit_value_cleanup(
-            program,
-            &mut output,
-            &mut temporary,
-            element_ty,
-            "%element".to_owned(),
-        )?;
-        output.push_str("  %next = add i64 %index, 1\n  br label %head\ndone:\n  ret void\n}\n\n");
-    }
     for (index, ty) in cleanup_run_types(program)?.into_iter().enumerate() {
         emit_run_drop_helper(program, &mut output, index, ty)?;
     }
@@ -103,7 +72,7 @@ fn emit_run_drop_helper(
     // A runtime-capacity block is reached only through the `Box` that owns
     // it [TYPE-9], so its helper takes the block pointer; every other run is
     // a value and its helper takes that value.
-    let parameter = if matches!(ty, IrType::Window { capacity: None, .. }) {
+    let parameter = if matches!(ty, IrType::Window { capacity: None, .. } | IrType::Buffer { .. }) {
         "ptr".to_owned()
     } else {
         run_llvm.clone()
@@ -114,6 +83,14 @@ fn emit_run_drop_helper(
     )
     .map_err(|_| BackendFailure::TextEmission)?;
     let element = match ty {
+        IrType::Buffer { element } => {
+            writeln!(
+                output,
+                "  %pointer = getelementptr inbounds {run_llvm}, ptr %value, i64 0, i32 1, i64 0\n  %length = load i64, ptr %value\n  %capacity = add i64 %length, 0\n  %origin = add i64 0, 0"
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+            element
+        }
         // A full array has no window descriptor. Every logical element is
         // live; the shared walk performs no access for an empty array.
         IrType::Array { element, length } => {
@@ -198,7 +175,7 @@ fn emit_run_drop_helper(
 fn cleanup_run_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, BackendFailure> {
     let mut needed = Vec::new();
     for ty in program_types(program)? {
-        let (IrType::Array { element, .. } | IrType::Window { element, .. }) = ty else {
+        let (IrType::Array { element, .. } | IrType::Window { element, .. } | IrType::Buffer { element }) = ty else {
             continue;
         };
         let element = program.element(element).ok_or(BackendFailure::InvalidIr)?;
@@ -223,25 +200,6 @@ fn run_drop_helper(
         .into_iter()
         .position(|candidate| candidate == ty)
         .map(run_drop_helper_symbol))
-}
-
-/// Every buffer element nominal in the program whose element drop derives an
-/// action, in deterministic nominal order. The complete type inventory also
-/// reaches buffers stored inside arbitrarily nested run elements.
-fn cleanup_buffer_element_nominals(
-    program: &IrProgram<'_, '_, '_>,
-) -> Result<Vec<IrNominalId>, BackendFailure> {
-    let mut needed = BTreeMap::new();
-    for ty in program_types(program)? {
-        if let IrType::Buffer {
-            element: IrFlatElement::Nominal(id),
-        } = ty
-            && type_requires_cleanup(program, IrType::Nominal(id))?
-        {
-            needed.insert(id.ordinal(), id);
-        }
-    }
-    Ok(needed.into_values().collect())
 }
 
 /// Every type reachable from the program's declarations and values, including
@@ -273,7 +231,7 @@ fn program_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, Backend
             IrType::Array { element, .. } | IrType::Window { element, .. } => {
                 pending.push(program.element(element).ok_or(BackendFailure::InvalidIr)?);
             }
-            IrType::Buffer { element } => pending.push(element.ty()),
+            IrType::Buffer { element } => pending.push(program.element(element).ok_or(BackendFailure::InvalidIr)?),
             IrType::Range { element } => {
                 pending.push(program.element(element).ok_or(BackendFailure::InvalidIr)?);
             }
@@ -301,10 +259,6 @@ fn program_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, Backend
         }
     }
     Ok(types)
-}
-
-pub(super) fn buffer_drop_helper_symbol(element: IrNominalId) -> String {
-    format!("wf.drop.buffer.t{}", element.ordinal())
 }
 
 /// Whether any type of this program is a run taken from a general store
@@ -454,7 +408,7 @@ fn emit_cleanup_jobs(
                                     jobs.push(CleanupJob::FreePointer(operand.clone()));
                                 }
                                 match referent {
-                                    IrType::Window { element, .. } => {
+                                    IrType::Window { element, .. } | IrType::Buffer { element } => {
                                         let element = program
                                             .element(*element)
                                             .ok_or(BackendFailure::InvalidIr)?;
@@ -464,19 +418,6 @@ fn emit_cleanup_jobs(
                                             writeln!(
                                                 output,
                                                 "  call void @{symbol}(ptr {operand})"
-                                            )
-                                            .map_err(|_| BackendFailure::TextEmission)?;
-                                        }
-                                    }
-                                    IrType::Buffer { element } => {
-                                        if type_requires_cleanup(program, element.ty())? {
-                                            let IrFlatElement::Nominal(id) = element else {
-                                                return Err(BackendFailure::InvalidIr);
-                                            };
-                                            writeln!(
-                                                output,
-                                                "  call void @{}(ptr {operand})",
-                                                buffer_drop_helper_symbol(*id)
                                             )
                                             .map_err(|_| BackendFailure::TextEmission)?;
                                         }

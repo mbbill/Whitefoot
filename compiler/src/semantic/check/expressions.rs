@@ -503,7 +503,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 )
             }
             CheckedType::Buffer { element } => {
-                format!("Array<{}>", self.checked_type_name(element.ty())?)
+                format!("Array<{}>", self.checked_type_name(self.element_type(element)?)?)
             }
             CheckedType::Window {
                 shape,

@@ -452,7 +452,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(None);
         };
         Ok(match referent {
-            CheckedType::Buffer { element } => Some(element.ty()),
+            CheckedType::Buffer { element } => Some(self.element_type(element)?),
             CheckedType::Window {
                 element,
                 capacity: None,
