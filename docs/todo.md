@@ -118,27 +118,28 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   nonadjacent and stale-capture negative controls.
 
 - **Large entering proof contexts still have substantial checking cost.**
-  In the [pinned row-summary comparison](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#row-summary-selection-2026-09-15),
-  256 independent inequality pairs with 256 uses still take a median 5.50 s;
-  the same context with only three uses takes 0.626 s. Query-preparation reuse
-  and conservative closure-product pruning remove repeated and non-improving
-  work, but complete matrix/index construction and long-target AUTO traversal
+  In the [post-x1 comparison](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#post-x1-selection),
+  256 independent inequality pairs with 256 uses still take a median 2.337 s;
+  the same context with only three uses takes 0.264 s. Reusing the ordered
+  affine index within a certificate removes repeated premise preparation,
+  but complete matrix/index construction and long-target AUTO traversal
   remain. This is not certificate-length cost alone: a fixed three-pair
-  context admits all 4096 uses in 295 ms. Larger growing contexts remain
-  unmeasured; these results establish neither linear total cost nor a
-  universal cost for the full use ceiling.
+  context admits all 4096 uses in 377 ms. The 512-pair context was accepted
+  in exploratory runs; these results establish neither linear total cost
+  nor a universal cost for the full use ceiling.
   Preserve the complete [ENT-6]/[PRF-1] rules when investigating that cost.
 - **Ordinary-fallback views still copy a fact state per materialization.**
-  After [incremental closure](../research/investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md#selection),
-  the [retained-proof follow-up](../research/investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md#retained-proof-follow-up-results)
-  checks `tests/programs/fixed_run_library.wf` in 1.21 s and
-  `tests/programs/wfgrep.wf` in 0.94 s. The previously attributed largest
-  fixed-run cost is `materialize_closure_at` in
+  The [current comparison](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#post-x1-selection)
+  checks `tests/programs/fixed_run_library.wf` in 134 ms and
+  `tests/programs/wfgrep.wf` in 834 ms. In `materialize_closure_at` in
   [`semantic/entailment/state.rs`](../compiler/src/semantic/entailment/state.rs):
   whenever a selected proof depends on a postcondition call, it clones the
   state, removes the call-dependent candidates and closes that view again.
-  Kill-time edge insertion and derivation interning for recreated cells are
-  the next costs.
+  A [query-only ordinary projection](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#ordinary-fallback-attribution-and-candidate)
+  passed the transition checks but improved fixed-run only 1.03x and left
+  wfgrep unchanged, so it was not retained. Revisit the representation when
+  a current workload attributes a substantial share to this path. Kill-time
+  edge insertion and derivation interning for recreated cells also remain.
 - **Connection-level concurrency is not supplied by ordinary source order.**
   A loop that accepts and serves connections in source order
   completes the current handler before entering the next, so a handler waiting
