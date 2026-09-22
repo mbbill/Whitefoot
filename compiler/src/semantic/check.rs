@@ -567,6 +567,7 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// owning loop resolves its variables before the function is published;
     /// the function driver clears this scratch state on every retry.
     deferred_loop_reference_uses: RefCell<Vec<references::DeferredLoopReferenceUse>>,
+    loop_reference_summaries: RefCell<HashMap<references::LoopReferenceToken, Vec<ResolvedPlace>>>,
     /// Successful declaration-only FN-4 queries. A complete member check
     /// stages its batch before publishing here, and the whole checker remains
     /// failure-atomic with the prospective checked program [DIAG-2].
@@ -678,9 +679,11 @@ fn check_semantics_with<'classified, 'lexed, 'source>(
         // The deferred-box signal is repaired where it is raised, one
         // function at a time, so reaching here is an internal inconsistency
         // rather than anything the source can express.
-        Err(CheckStop::DeferredNominal) => SemanticOutcome::CompilerFailure {
-            failure: SemanticCompilerFailure::InvalidResolution,
-        },
+        Err(CheckStop::DeferredNominal | CheckStop::ReferenceSummaryChanged) => {
+            SemanticOutcome::CompilerFailure {
+                failure: SemanticCompilerFailure::InvalidResolution,
+            }
+        }
         Err(CheckStop::PostconditionPrerequisiteUnavailable) => SemanticOutcome::CompilerFailure {
             failure: SemanticCompilerFailure::InvalidResolution,
         },
@@ -1143,6 +1146,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             commit_read_outs: RefCell::new(Vec::new()),
             call_separations: RefCell::new(Vec::new()),
             deferred_loop_reference_uses: RefCell::new(Vec::new()),
+            loop_reference_summaries: RefCell::new(HashMap::new()),
             contract_queries: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
             prelude_types: Vec::new(),
@@ -1657,7 +1661,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             signature.substitution.len() > 0
                 && signature.substitution.is_concrete(&self.elements.borrow()),
         );
-        let outcome = self.check_function_signature_body(signature);
+        self.loop_reference_summaries.borrow_mut().clear();
+        let queries = self.contract_queries.borrow().len();
+        let outcome = loop {
+            self.call_separations.borrow_mut().clear();
+            self.contract_queries.borrow_mut().truncate(queries);
+            match self.check_function_signature_body(signature) {
+                Err(CheckStop::ReferenceSummaryChanged) => continue,
+                outcome => break outcome,
+            }
+        };
         self.template_spelling_authority.set(previous);
         outcome
     }
@@ -3244,6 +3257,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         super::entailment::ObligationFamily::AllocationFit => SemanticRule::Op9,
                         super::entailment::ObligationFamily::RangeFormation => SemanticRule::Ref4,
                         super::entailment::ObligationFamily::CallSeparation => SemanticRule::Eff5,
+                        super::entailment::ObligationFamily::ExchangeSeparation => {
+                            SemanticRule::Op11
+                        }
                     },
                     Self::Call(_) => SemanticRule::Fn8,
                 }
@@ -3563,14 +3579,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 mechanical_fix: "the allocation's own size arithmetic must stay inside u64: bound the count with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when the refusal is intended program behavior; otherwise restructure the allocation",
                             },
                         },
-                        super::entailment::ObligationFamily::CallSeparation => SemanticIssue {
-                            rule: SemanticRule::Eff5,
-                            location,
-                            kind: SemanticIssueKind::UndischargedCallSeparation {
-                                residual,
-                                mechanical_fix: "prove the two positions distinct before this call, or pass one of them",
-                            },
-                        },
+                        super::entailment::ObligationFamily::CallSeparation
+                        | super::entailment::ObligationFamily::ExchangeSeparation => {
+                            SemanticIssue {
+                                rule: if outcome.family
+                                    == super::entailment::ObligationFamily::ExchangeSeparation
+                                {
+                                    SemanticRule::Op11
+                                } else {
+                                    SemanticRule::Eff5
+                                },
+                                location,
+                                kind: SemanticIssueKind::UndischargedCallSeparation {
+                                    residual,
+                                    mechanical_fix: "prove the two positions distinct before this call, or pass one of them",
+                                },
+                            }
+                        }
                         super::entailment::ObligationFamily::RangeFormation => SemanticIssue {
                             rule: SemanticRule::Ref4,
                             location,

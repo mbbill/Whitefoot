@@ -642,13 +642,6 @@ pub enum SemanticIssueKind {
         /// Exact restructuring required by STOR-8.
         mechanical_fix: &'static str,
     },
-    /// [REF-1] a loop-carried rebinding changed a reference's path shape. A
-    /// path has a static shape: a rebinding may change only the index values
-    /// inside the path and may never extend the path through itself.
-    ReferenceShapeChanged {
-        /// Exact restructuring required by REF-1.
-        mechanical_fix: &'static str,
-    },
     /// [WIN-3] a move out of a window slot or an array element, which has no
     /// take operation and leaves no hole.
     InvalidElementMove {
@@ -1229,6 +1222,9 @@ enum CheckStop {
     /// pending and checks the function again. It is private to the checker
     /// and never reaches a diagnostic.
     DeferredNominal,
+    /// A finite loop-header path summary grew. Retry the ordinary typed
+    /// walk; no partial checked body or obligations are published.
+    ReferenceSummaryChanged,
     /// A throwaway FN-9 selector dependency whose ordinary source premise did
     /// not succeed. It must be consumed inside preflight and never becomes a
     /// source or compiler diagnostic of its own.

@@ -116,6 +116,15 @@ fn bfs_pull_is_permitted_while_sparse_discovery_remains_source_ordered() {
 // Grants
 // ----------------------------------------------------------------------
 
+#[test]
+fn descending_reference_transfers_keep_the_counted_loop_sequential() {
+    let source = include_bytes!(
+        "../../../../tests/conformance/cases/ref1-pos-wildcard-three-holder-join.wf"
+    );
+    let refused = denied(source, "inspect", 2);
+    assert!(matches!(refused, LoopDenial::SharedWrite { .. }));
+}
+
 /// The runtime-stride partition: one range reference per iteration over one
 /// runtime-capacity origin, with the endpoint proof written as an explicit
 /// local invariant. This is the shape [PAR-2]'s proved range family exists

@@ -1342,7 +1342,7 @@ fn goal_projection_of_step(step: &PlaceStep) -> Option<GoalProjection> {
         // Canonicalizing those captures by endpoint spelling would merge two
         // formations that read the same binding at different times.
         PlaceStep::Range(range) => Some(GoalProjection::Range(*range)),
-        PlaceStep::Part(_) | PlaceStep::Measure(_) => None,
+        PlaceStep::Part(_) | PlaceStep::Measure(_) | PlaceStep::Descendant(_) => None,
     }
 }
 
@@ -3928,6 +3928,7 @@ impl Analyzer<'_, '_> {
                     consume_root: false,
                     ..
                 },
+            ..
         } = statement
         else {
             return None;
@@ -9786,7 +9787,11 @@ impl Analyzer<'_, '_> {
         }
         self.obligations.push(ObligationOutcome {
             node_path: separation.site.clone(),
-            family: ObligationFamily::CallSeparation,
+            family: if separation.exchange {
+                ObligationFamily::ExchangeSeparation
+            } else {
+                ObligationFamily::CallSeparation
+            },
             conjunct: 0,
             canonical_goal: None,
             components: Vec::new(),
@@ -14992,6 +14997,7 @@ impl Analyzer<'_, '_> {
                 node_path,
                 target,
                 value,
+                ..
             } => {
                 let _ = self.walk_set(node_path, target, value, false, state);
                 true
@@ -15917,6 +15923,7 @@ impl Analyzer<'_, '_> {
                     node_path,
                     target,
                     value,
+                    ..
                 } = statement
                 else {
                     unreachable!("selected receiver preparation admits only a set statement");
@@ -16151,6 +16158,7 @@ impl Analyzer<'_, '_> {
                 node_path,
                 target,
                 value,
+                ..
             } => {
                 if normal_reaches {
                     self.collect_set_kills(node_path, target, value, kills);
@@ -16440,6 +16448,10 @@ impl Analyzer<'_, '_> {
         };
         for projection in &place.path {
             match projection {
+                PlaceStep::Descendant(target) => {
+                    rendered.push_str(".**");
+                    ty = Some(target.ty);
+                }
                 PlaceStep::Payload { variant, field } => {
                     rendered.push_str(&format!(".{variant}.{field}"));
                     ty = None;
@@ -16613,6 +16625,7 @@ impl Analyzer<'_, '_> {
                 );
                 for projection in projections {
                     match projection {
+                        PlaceStep::Descendant(_) => place.push_str(".**"),
                         PlaceStep::Deref => place = format!("deref({place})"),
                         PlaceStep::Field(field) => {
                             place = format!("{place}.{field}");
@@ -17250,7 +17263,6 @@ mod goal_origin_kill_tests {
             mode: crate::semantic::model::CheckedMode::Own,
             ty: CheckedType::Bool,
             declares: false,
-            displaces_live_value: false,
         });
 
         invalidate_goal_origin_for_set(&mut state, &target);

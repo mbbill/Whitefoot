@@ -15,14 +15,8 @@ pub(super) struct PreparedTarget<'target> {
     /// [WIN-3] whether the value this commit overwrites is certainly still
     /// live, so the commit owes it its compiler-derived release [STOR-3].
     ///
-    /// A reference-rooted path and an element position are both always
-    /// initialized: a reference names a valid path [REF-1, REF-2], and an
-    /// element inside a window's filled prefix or an array's slots always
-    /// holds a value [WIN-1]. A directly named binding path is not: a
-    /// binding whose owner was moved out is re-initialized by a `set` that
-    /// displaces nothing. Which of the two a given commit is, is a liveness
-    /// judgment of the checker's, so the checked target carries its answer
-    /// [SET-1, LIV-1, DIAG-2].
+    /// The checker carries this conclusion on the commit: even a reference
+    /// or element target can have its old value read out atomically [OP-12].
     displaces_live_value: bool,
 }
 
@@ -48,6 +42,7 @@ impl IrBuilder<'_> {
     pub(super) fn prepare_target<'target>(
         &mut self,
         target: &'target CheckedSetTarget,
+        displaces_live_value: bool,
     ) -> Result<PreparedTarget<'target>, LoweringFailure> {
         let ty = match target {
             // [REF-1, REF-4] a reference variable carries its address or
@@ -67,16 +62,6 @@ impl IrBuilder<'_> {
                 self.value_type(value)?
             }
             _ => lower_type(self.erasure, target.ty())?,
-        };
-        // [WIN-3] every other target shape always holds a value at the
-        // commit: a referent, a field, and an element inside a window's
-        // filled prefix or an array's slots are storage that is there. A
-        // directly named binding is the one shape whose old value may
-        // already be gone, and the checker recorded which of the two this
-        // commit is [SET-1, LIV-1].
-        let displaces_live_value = match target {
-            CheckedSetTarget::Place(place) => place.displaces_live_value,
-            _ => true,
         };
         let address_kind = |address, referent| TargetStorage::Address { address, referent };
         let kind = match target {

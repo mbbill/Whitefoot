@@ -21,7 +21,7 @@ use crate::{
 
 use super::super::super::model::{
     CheckedContainerRoot, CheckedExpression, CheckedMeasure, CheckedMode, CheckedNominalKind,
-    CheckedOwnedTakeCleanup, CheckedPlaceStep, CheckedType,
+    CheckedOwnedTakeCleanup, CheckedPlaceStep, CheckedType, IntegerType,
 };
 use super::super::super::places::{PlaceRoot, PlaceStep, ResolvedPlace};
 use super::super::references::{OWN1_ROOTED_CONSUME, WIN3_NO_TAKE};
@@ -323,11 +323,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         // [REF-2] a consume is one of the three invalidating actions: every
         // reference into the cell names storage this move has carried away.
-        Self::invalidate_references(
+        self.invalidate_references(
             bindings,
             &ResolvedPlace::binding(local.binding),
             &super::super::references::InvalidationEvent::PrefixMoved,
-        );
+        )?;
         bindings
             .get_mut(&declaration)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?
@@ -862,7 +862,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// The first readonly declaration member crossed by one resolved origin
     /// path. Every reference alias retains this path, while its referent type
     /// alone cannot say which declaration field supplied it.
-    fn readonly_member_on_resolved_path(
+    pub(in crate::semantic::check) fn readonly_member_on_resolved_path(
         &self,
         path: &ResolvedPlace,
         bindings: &HashMap<DeclarationId, LocalBinding>,
@@ -875,10 +875,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
         let mut ty = match path.root {
             PlaceRoot::Binding(binding) => {
-                let local = bindings
-                    .values()
-                    .find(|local| local.binding == binding)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                let Some(local) = bindings.values().find(|local| local.binding == binding) else {
+                    // A carried alternative rooted in an iteration-local
+                    // binding is invalidated by scope cleanup and the
+                    // header validity equation. It has no live type here.
+                    return Ok(None);
+                };
                 if local.mode == CheckedMode::Range {
                     PathType::Range(local.ty)
                 } else {
@@ -891,6 +893,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         for step in &path.path {
             match *step {
+                PlaceStep::Descendant(target) => {
+                    if target.readonly {
+                        return Ok(Some("a readonly descendant path".to_owned()));
+                    }
+                    ty = PathType::Value(target.ty);
+                }
                 PlaceStep::Field(index) => {
                     let PathType::Value(current) = ty else {
                         return Ok(None);
@@ -968,6 +976,79 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
         Ok(None)
+    }
+
+    /// The selected type of a resolved target. A descendant summary keeps
+    /// its referent type even though its containing anchor has another type.
+    pub(in crate::semantic::check) fn resolved_place_type(
+        &self,
+        path: &ResolvedPlace,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<Option<CheckedType>, CheckStop> {
+        let mut range = false;
+        let mut ty = match path.root {
+            PlaceRoot::Binding(binding) => {
+                let Some(local) = bindings.values().find(|local| local.binding == binding) else {
+                    return Ok(None);
+                };
+                range = local.mode == CheckedMode::Range;
+                local.ty
+            }
+            PlaceRoot::Constant(id) => self.constant(id)?.declared_type,
+        };
+        for step in &path.path {
+            ty = match *step {
+                PlaceStep::Descendant(target) => target.ty,
+                PlaceStep::Field(index) => {
+                    let CheckedType::Nominal(id) = ty else {
+                        return Ok(None);
+                    };
+                    let CheckedNominalKind::Struct { fields } = &self.nominal(id)?.kind else {
+                        return Ok(None);
+                    };
+                    fields
+                        .get(index as usize)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                        .ty
+                }
+                PlaceStep::Deref => {
+                    let Some(referent) = self.box_content(ty)? else {
+                        return Ok(None);
+                    };
+                    referent
+                }
+                PlaceStep::Payload { variant, field } => {
+                    let CheckedType::Nominal(id) = ty else {
+                        return Ok(None);
+                    };
+                    let CheckedNominalKind::Enum { variants } = &self.nominal(id)?.kind else {
+                        return Ok(None);
+                    };
+                    variants
+                        .get(variant as usize)
+                        .and_then(|variant| variant.fields.get(field as usize))
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                        .ty
+                }
+                PlaceStep::Index(_) | PlaceStep::Range(_) => {
+                    let element = if range {
+                        ty
+                    } else {
+                        match ty {
+                            CheckedType::Array { element, .. }
+                            | CheckedType::Window { element, .. } => self.element_type(element)?,
+                            CheckedType::Buffer { element } => element.ty(),
+                            _ => return Ok(None),
+                        }
+                    };
+                    range = matches!(step, PlaceStep::Range(_));
+                    element
+                }
+                PlaceStep::Measure(_) => CheckedType::Integer(IntegerType::U64),
+                PlaceStep::Part(_) => return Ok(None),
+            };
+        }
+        Ok((!range).then_some(ty))
     }
 
     /// [TYPE-10] a window part is effect-row vocabulary and never a place.

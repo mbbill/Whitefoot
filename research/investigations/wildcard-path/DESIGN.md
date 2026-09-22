@@ -24,8 +24,8 @@ only widened references this property would make validity depend on whether
 an unrelated loop needs a summary.
 
 A changing loop-header reference retains a finite possible-location cover
-for each root. An unchanged static shape retains its opaque captured
-offsets. When shapes for one root differ, replace them with their common
+for each root. Unchanged entering static shapes retain their opaque captured
+offsets. When a contribution leaves those entering shapes, replace them with their common
 known prefix followed by a subtree cover, including that prefix itself.
 Further contributions can add roots or shorten the prefix, never expand an
 unknown tail. A distinct header target identity permits finite projections
@@ -60,6 +60,14 @@ Call arguments receive no blanket exemption from another actual's write.
 Exchange requires equal-or-disjoint targets, excluding possible proper
 ancestry. Effects and parallel permission use the same conservative covers.
 
+The executable cursor removal exposed a pre-existing displacement defect:
+`set deref(cursor) = without_first(head: move deref(cursor));` was accepted,
+but lowering released the already consumed old value a second time. The
+checked post-right-hand-side disposition now belongs to the commit for all
+target shapes, including references and elements, rather than only a named
+binding target. This restores the existing cleanup-traversal decision; the
+backend neither rediscovers liveness nor infers it from the target's shape.
+
 ## Alternatives and tradeoffs
 
 Recursion and indexed pools remain usable but do not implement iterative
@@ -70,7 +78,7 @@ proofs could recover independent-cursor precision but require a different
 proof language. Restricting all structural writes while a cursor lives
 would prevent the requested link-slot edits.
 
-One prefix per root can lose precision when a holder alternates between
+Once widening is needed, one prefix per root can lose precision when a holder alternates between
 different static shapes. Independent cursors in one cone cannot both
 survive a potentially destructive write. These are explicit conservative
 limitations, not runtime checks or evidence of a general cost bound.
@@ -85,7 +93,59 @@ at least three holders, with nested and joined targets. Retain existing
 static-index controls. Measure compiler checking separately from building
 the compiler and executing generated programs. Report source sizes, loop
 shapes, repetitions and limits; do not infer asymptotics from a few points.
+For the replay implementation specifically, the qualification target is a
+median source-check time below one second for the complete cursor program
+and for a 64-holder propagation chain on this development host, over five
+runs after compiler construction. Missing that target reopens replay rather
+than changing any acceptance rule; the corresponding cost TODO remains open
+until the measured limitation is repaired or explicitly accepted. Larger
+points qualify scale but do not create a source-size limit.
 
 The specification and formal tests own admitted behavior. This document
 owns the selection grounds and measurements, and is superseded in place if
 the mechanism changes. No correctness gate depends on research files.
+
+The explicit cost experiment uses `measure.rs`, retained while this summary
+implementation's scaling question remains relevant. From the repository
+root, construct the compiler with `make -C compiler build`, then link the
+standalone Rust driver against `compiler/target/gate/deps/libwhitefoot-*.rlib`
+using `rustc --edition=2024 -O`, `--extern whitefoot=<that library>` and
+`-L dependency=compiler/target/gate/deps`. Place the executable outside the
+repository and run it through `.github/run-check.pl`. The driver reports
+each of five complete source checks, separately from compiler construction
+and any target-program execution. `--check <source>...` prints individual
+source verdicts for diagnosis; it is not a conformance runner or gate path.
+
+## Measurement on 2026-09-21
+
+Apple M1 Pro, arm64 macOS, Rust 1.98.1; ordinary optimized `gate` compiler
+profile, with compiler construction excluded from these times. The build
+took 43.48 seconds. Five consecutive complete `whitefoot::check` calls per
+case include the prelude, parsing, semantic checking and proof analysis;
+the executable program was separately compiled and exited successfully.
+The shared check guard excluded other Whitefoot gates during this run.
+
+| Source | Bytes | Five source-check times (ms) | Median (ms) |
+| --- | ---: | --- | ---: |
+| List, tree and removal cursor program | 4471 | 19.432, 17.589, 18.105, 17.530, 18.892 | 18.105 |
+| 1 holder | 428 | 12.163, 11.710, 11.982, 11.713, 11.825 | 11.825 |
+| 8 holders | 799 | 12.507, 12.423, 12.583, 12.941, 12.701 | 12.583 |
+| 16 holders | 1242 | 14.345, 14.839, 14.632, 14.012, 13.898 | 14.345 |
+| 32 holders | 2138 | 19.748, 19.679, 20.517, 20.858, 20.457 | 20.457 |
+| 64 holders | 3930 | 43.969, 42.444, 43.851, 43.185, 43.029 | 43.185 |
+| 128 holders | 7599 | 144.619, 143.918, 143.871, 145.676, 143.720 | 143.918 |
+| 4 holders, 2 nested loops | 647 | 11.985, 12.119, 11.550, 11.577, 11.483 | 11.577 |
+| 4 holders, 4 nested loops | 779 | 12.036, 12.169, 12.041, 12.001, 12.237 | 12.041 |
+| 4 holders, 8 nested loops | 1091 | 14.150, 14.208, 14.047, 14.015, 14.050 | 14.050 |
+| 2 joined roots | 555 | 11.421, 11.558, 11.891, 11.315, 11.368 | 11.421 |
+| 8 joined roots | 1035 | 13.083, 13.024, 13.131, 13.020, 13.221 | 13.083 |
+| 32 joined roots | 3043 | 48.078, 46.832, 46.618, 46.638, 47.266 | 46.832 |
+
+Both predeclared one-second criteria pass. These observations support
+retaining replay for the present experiments, not a linear-time claim or a
+cost bound for arbitrary functions. The 64-to-128-holder increase shows a
+remaining scale cost; reopen the transfer-graph alternative when a real
+program needs that scale or a later measurement misses the criterion.
+Precision remains intentionally conservative for independent cursors in
+one subtree and for changing captured indices; the formal cases own those
+acceptance boundaries. No measurement threshold selects source acceptance.

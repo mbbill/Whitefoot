@@ -1970,7 +1970,9 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     ObligationFamily::AllocationFit => assert_eq!(outcome.conjunct, 0),
                     // [EFF-5] a range separation submits its four orderings as
                     // one occurrence and never carries a conjunct of its own.
-                    ObligationFamily::CallSeparation => assert_eq!(outcome.conjunct, 0),
+                    ObligationFamily::CallSeparation | ObligationFamily::ExchangeSeparation => {
+                        assert_eq!(outcome.conjunct, 0)
+                    }
                     // [REF-4] the two formation goals `lo <= hi` and
                     // `hi <= x.len` are conjuncts zero and one.
                     ObligationFamily::RangeFormation => {

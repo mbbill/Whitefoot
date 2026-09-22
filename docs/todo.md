@@ -99,17 +99,6 @@ of them is a decision. Remove an item when its fix and test land.
   `records` failure nor proves that any one general layout choice caused it.
   Keep the deferred general representation study separate, and close this item
   only when the relevant costs and chosen tradeoffs have discriminating evidence.
-- **Loop reference abstraction needs practical precision and cost evidence.**
-  Current loop headers keep possible roots and static path shapes, give
-  potentially rebound endpoints finite opaque capture identities, and solve
-  owner-tagged validity dependencies over entry and executable backedges.
-  This prevents a current iteration's facts from authorizing a previous
-  iteration's reference. Its precision and checking cost on larger real loops,
-  nested loops and joined targets remain unqualified. Investigate useful facts
-  lost at headers and the evidence needed to recover them without merging
-  distinct evaluations, dropping possible targets or imposing an acceptance
-  budget. Close this item with representative positive and hostile cases,
-  cost measurements, and any required precision repair or explicit limitation.
 - **Runtime-capacity Array element suffixes retain a flat-buffer limitation.**
   A valid field selection such as `values.inner[i].field` on a
   `Box<Array<CopyStruct>>` can still reach `CompositeValues` instead of the
@@ -252,36 +241,6 @@ Items the owner asked to be kept on this list during the redesign recorded in
 `design/language` on 2026-09-19. None of them is a decision; each names the
 condition under which it is taken up.
 
-- **Iterative descent of owned links by reference (wildcard path).** A path
-  has a static shape, so `loop { set p = &deref(p).next.Some.value.inner; }`
-  over a Box-linked list is refused and the walk is a tail recursion or a
-  pool with an index. Owner's direction (2026-09-20): add the wildcard path
-  after PR 70 merges, because it is purely additive and costs the compiler
-  almost nothing. Design on record, needing no new syntax because a
-  reference's path is never written: when a loop-carried rebinding extends
-  the reference's loop-entry path through itself, the checker widens the
-  path to `R.**` ("somewhere under R") and rechecks the loop body once to
-  its fixed point. Rules: (1) `R.**` overlaps every path at or under R, one
-  prefix test; (2) while `p` is valid, a write, move or free of a place
-  under R that does not go through `p` invalidates `p`, except a write of a
-  primitive leaf field, which is a prefix of nothing; reads are free; (3) a
-  write through `p` of a non-leaf place invalidates every other reference
-  under R and leaves `p` valid. Runtime cost none (a reference stays a bare
-  pointer). Checked against: tree descent through either child, a cursor
-  reset to the root, node removal through a single cursor on the link slot.
-  Known price: two live cursors under one root invalidate each other on a
-  link write, and a live cursor is the whole subtree's footprint for the
-  parallel judgments.
-  INCOMPLETE as recorded (independent study, 2026-09-20, branch
-  `research/x1-wildcard-path`, `research/investigations/wildcard-path/`):
-  the basic loop is still refused, because the rebinding goes through the
-  payload step `.Some.value` and [ENT-3.S15] ends the refinement fact at the
-  arm's exit, which [REF-2] makes an invalidation, so the rebound reference
-  is invalid in the next iteration. The design needs a rule that a payload
-  place already selected keeps existing until the enum is written; a
-  widened path is a may-alias cover and never one term of the fact system;
-  ancestor moves and window removals must still invalidate; "recheck once"
-  must become a fixed point over a finite domain. Start from that study.
 - **`musttail` at the call.** Owner's ruling (2026-09-20): a call-site marker
   named `musttail`, rejected with the failing condition named when the call
   is not a guaranteed tail call. Conditions for a self call: it is the

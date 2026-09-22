@@ -290,6 +290,10 @@ pub(crate) enum PlaceRoot {
 /// One step below a resolved place's root [REF-1, OWN-7].
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum PlaceStep {
+    /// One current target somewhere at or below the preceding anchor.
+    /// The identity permits suffix comparison only for this same target;
+    /// its cover is never an equality of independently selected places.
+    Descendant(DescendantTarget),
     /// One struct field selection, by source ordinal.
     Field(u32),
     /// `deref` of `Box` content [TYPE-7]. It is an ordinary path step and is
@@ -308,6 +312,14 @@ pub(crate) enum PlaceStep {
     Part(WindowPart),
     /// One measure read [OP-15, MSR-1]: descriptor storage, never a slot.
     Measure(CheckedMeasure),
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct DescendantTarget {
+    pub(crate) loop_id: CheckedLoopId,
+    pub(crate) holder: BindingId,
+    pub(crate) ty: CheckedType,
+    pub(crate) readonly: bool,
 }
 
 /// What one step pair establishes about the two places below it.
@@ -400,6 +412,7 @@ impl ResolvedPlace {
                     range.end = next()?;
                 }
                 PlaceStep::Deref
+                | PlaceStep::Descendant(_)
                 | PlaceStep::Field(_)
                 | PlaceStep::Payload { .. }
                 | PlaceStep::Part(_)
@@ -425,6 +438,7 @@ impl ResolvedPlace {
                 PlaceStep::Index(offset) => *offset = offset.goal_identity(),
                 PlaceStep::Range(_) => {}
                 PlaceStep::Field(_)
+                | PlaceStep::Descendant(_)
                 | PlaceStep::Deref
                 | PlaceStep::Payload { .. }
                 | PlaceStep::Part(_)
@@ -486,10 +500,9 @@ impl ResolvedPlace {
     /// Whether this place's path positively selects the same storage as, or a
     /// storage containing, `other`'s.
     ///
-    /// This is containment, not an absence of proved divergence: [REF-2] asks
-    /// it of a written path against a live reference's path, and [EFF-5]
-    /// clause 3 asks it of a call's substituted write paths, and both need a
-    /// positive answer rather than "not proved apart".
+    /// This is positive target containment, used to preserve a captured
+    /// target after a write below it. Invalidation instead asks the
+    /// conservative question in [`Self::may_be_prefix_of`].
     pub(crate) fn contains(&self, other: &Self) -> bool {
         self.root == other.root
             && self.path.len() <= other.path.len()
@@ -504,6 +517,7 @@ impl ResolvedPlace {
     /// `other`, which is what invalidates a reference whose path is `other`.
     /// Writing the storage at `other` or below it is a content write and
     /// invalidates nothing.
+    #[cfg(test)]
     pub(crate) fn is_proper_prefix_of(&self, other: &Self) -> bool {
         self.path.len() < other.path.len() && self.contains(other)
     }
@@ -522,6 +536,17 @@ impl ResolvedPlace {
         other: &Self,
         include_equal: bool,
     ) -> bool {
+        if self.has_descendant() || other.has_descendant() {
+            if !places_overlap(oracle, self, other) {
+                return false;
+            }
+            // A write at or below a captured target cannot remove that
+            // target. This is positive target identity, not cover equality.
+            if other.contains(self) {
+                return include_equal && self.contains(other);
+            }
+            return true;
+        }
         let length_admitted = if include_equal {
             self.path.len() <= other.path.len()
         } else {
@@ -529,11 +554,42 @@ impl ResolvedPlace {
         };
         length_admitted && places_overlap(oracle, self, other)
     }
+
+    pub(crate) fn has_descendant(&self) -> bool {
+        self.path
+            .iter()
+            .any(|step| matches!(step, PlaceStep::Descendant(_)))
+    }
+
+    /// Exchange may tolerate equality, never possible proper ancestry.
+    /// Positions in one fixed slot shape are equal or disjoint even when
+    /// their index values are unknown. Unknown targets need actual identity.
+    pub(crate) fn exchange_safe(&self, oracle: &dyn SeparationOracle, other: &Self) -> bool {
+        !places_overlap(oracle, self, other)
+            || (self.root == other.root
+                && self.path.len() == other.path.len()
+                && self.path.iter().zip(&other.path).all(|(left, right)| {
+                    matches!((left, right), (PlaceStep::Index(_), PlaceStep::Index(_)))
+                        || steps_provably_same(*left, *right)
+                }))
+    }
+
+    /// The known prefix of the possible-location cover. Relative suffixes
+    /// describe the selected target, not a narrower subtree anchor.
+    pub(crate) fn cover_prefix(&self) -> &[PlaceStep] {
+        let end = self
+            .path
+            .iter()
+            .position(|step| matches!(step, PlaceStep::Descendant(_)))
+            .unwrap_or(self.path.len());
+        &self.path[..end]
+    }
 }
 
 /// Whether two steps positively select one storage on every execution.
 fn steps_provably_same(left: PlaceStep, right: PlaceStep) -> bool {
     match (left, right) {
+        (PlaceStep::Descendant(left), PlaceStep::Descendant(right)) => left == right,
         (PlaceStep::Field(left), PlaceStep::Field(right)) => left == right,
         (PlaceStep::Deref, PlaceStep::Deref) => true,
         (
@@ -586,6 +642,9 @@ fn separation(
     right: PlaceStep,
 ) -> StepSeparation {
     match (left, right) {
+        (PlaceStep::Descendant(left), PlaceStep::Descendant(right)) if left == right => {
+            StepSeparation::Same
+        }
         // Two field selections of different fields select two storages.
         (PlaceStep::Field(left), PlaceStep::Field(right)) => {
             if left == right {
@@ -815,6 +874,7 @@ pub(crate) struct BindingSummary {
 #[derive(Debug, Default)]
 pub(crate) struct PlaceMap {
     bindings: Vec<BindingSummary>,
+    loop_covers: Vec<(BindingId, ResolvedPlace)>,
 }
 
 impl PlaceMap {
@@ -864,6 +924,11 @@ impl PlaceMap {
             } = statement
             {
                 for reference in carried_references {
+                    for path in &reference.paths {
+                        if path.has_descendant() {
+                            self.loop_covers.push((reference.binding, path.clone()));
+                        }
+                    }
                     let summary = self.summary_mut(reference.binding);
                     summary.reference = true;
                     if reference.paths.is_empty() {
@@ -938,10 +1003,8 @@ impl PlaceMap {
 
     /// The path set one reference variable names, read through to storage.
     ///
-    /// The recursion closes over the static path shapes [REF-1]: a
-    /// loop-carried rebinding may change only the index values inside a path
-    /// and may never extend the path through itself, so the shapes are
-    /// finite. A summary this prepass cannot close yields no resolved place;
+    /// Loop-carried recursive descent is already bounded by the checker's
+    /// finite covers [REF-1]. A summary this prepass cannot close yields no resolved place;
     /// permission consumers turn that into an unresolved footprint and fail
     /// closed rather than inventing a disjoint local anchor.
     fn resolve_root(&self, binding: BindingId, depth: usize) -> Vec<ResolvedPlace> {
@@ -1015,6 +1078,21 @@ impl PlaceMap {
                 _ => None,
             };
             if let Some((binding, paths)) = origins {
+                let paths = paths
+                    .into_iter()
+                    .filter(|path| {
+                        !self.loop_covers.iter().any(|(holder, cover)| {
+                            *holder == binding
+                                && cover.root == path.root
+                                && cover.cover_prefix().len() <= path.cover_prefix().len()
+                                && cover
+                                    .cover_prefix()
+                                    .iter()
+                                    .zip(path.cover_prefix())
+                                    .all(|(left, right)| steps_provably_same(*left, *right))
+                        })
+                    })
+                    .collect::<Vec<_>>();
                 let summary = self.summary_mut(binding);
                 for path in paths {
                     if !summary.reference_paths.contains(&path) {

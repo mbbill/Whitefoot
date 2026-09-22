@@ -312,6 +312,60 @@ fn two_opens_through_one_factory_are_ordinary_conflicting_calls() {
     );
 }
 
+#[test]
+fn independent_descendant_cursors_do_not_gain_sibling_field_separation() {
+    let source = br#"struct Node {
+  left: u64;
+  right: u64;
+  next: Option<Box<Node>>;
+}
+
+fn paint_left(node: &Node) -> result: own unit writes(node.left) {
+  set deref(node).left = 1_u64;
+  return unit;
+}
+
+fn paint_right(node: &Node) -> result: own unit writes(node.right) {
+  set deref(node).right = 2_u64;
+  return unit;
+}
+
+fn inspect(root: &Node) -> result: own unit writes(root) {
+  let first = root;
+  let second = root;
+  for (i in 0_u64..2_u64) {
+    match deref(first).next {
+      Some(value: child) => {
+        set first = &deref(child).inner;
+      }
+      None() => {
+      }
+    }
+    match deref(second).next {
+      Some(value: child) => {
+        set second = &deref(child).inner;
+      }
+      None() => {
+      }
+    }
+  }
+  paint_left(node: first);
+  paint_right(node: second);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let table = permission_of(source);
+    let pair = pair_of(&table, "inspect", "paint_left", "paint_right");
+    let Denial::Footprint { kind, .. } = denial(pair, 1) else {
+        panic!("independent covers must retain their footprint conflict");
+    };
+    assert_eq!(kind.halves(), ("write", "write"));
+}
+
 /// Disjoint destinations do not save two calls that also write one shared
 /// cursor: the substituted rows meet on that one path whatever else they
 /// reach.

@@ -4,4 +4,4 @@ Decision: The ordinary typed structural walk grows finite loop-header path summa
 
 Rejected:
 - Preserve the second decision's static-shape-only header representation: rejected because it cannot represent the requested owned-link cursor; fixed-shape captures keep their existing evaluation identities while descendant summaries gain separate target identity.
-- Preserve the third decision's unconditional avoidance of body replay: rejected provisionally because a second transfer interpreter would duplicate typed resolution; the stated cost criterion can reopen this implementation choice without changing language acceptance.
+- Preserve the third decision's unconditional avoidance of body replay: rejected because a second transfer interpreter would duplicate typed resolution; this provisional choice reopens under the stated cost criterion without changing language acceptance.

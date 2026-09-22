@@ -115,9 +115,15 @@ if index < table.len {
 
 A write, move, or release of a proper prefix invalidates a reference. Moving
 its owner also invalidates a reference to that owner itself. Form it again
-after that event [REF-2]. A loop-carried rebinding may change captured index
-values while keeping the same static path shape; it may not walk recursively
-through itself [REF-1].
+after that event [REF-2]. A loop-carried reference can descend through owned
+links [REF-1]. The checker summarizes unknown depth as a containing subtree;
+the runtime reference remains an ordinary pointer. A selected payload
+reference survives the selecting match's exit, but replacing its enum still
+invalidates it. A single link-slot cursor can edit a list through an atomic
+owned update. Independent cursors in the same subtree may invalidate each
+other on structural writes; reform them after such an edit. The executable
+[owned-link examples](../tests/programs/owned_link_cursors.wf) exercise list
+walks, removal, tree descent and cursor resets.
 
 Use a range reference for one contiguous run [REF-4]:
 
