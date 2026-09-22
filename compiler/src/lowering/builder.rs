@@ -398,10 +398,30 @@ fn lower_function<'program>(
         if builder.bindings.insert(parameter.binding, value).is_some() {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
-        // A compiler-owned row's body names no binding: it reads its
-        // parameters as the operands they already are, so nothing is
-        // promoted to a frame slot for it.
-        if !compiler_owned {
+    }
+    if !uninhabited && function.body.as_deref().is_some_and(contains_tail_transfer) {
+        let types = builder
+            .parameters
+            .iter()
+            .map(|(_, ty)| *ty)
+            .collect::<Vec<_>>();
+        let arguments = builder.parameters.iter().map(|(value, _)| *value).collect();
+        let (entry, parameters) = builder.new_block(&types)?;
+        builder.terminate(IrTerminator::Jump {
+            target: entry,
+            arguments,
+            drops: Vec::new(),
+        })?;
+        builder.current = Some(entry);
+        builder.tail_entry = Some(entry);
+        for (parameter, value) in function.parameters.iter().zip(parameters) {
+            builder.bindings.insert(parameter.binding, value);
+        }
+    }
+    // Promotion is in the body entry, so an addressed parameter receives its
+    // new value on each checked self transfer, using the ordinary frame plan.
+    if !compiler_owned {
+        for parameter in &function.parameters {
             builder.promote_binding_if_needed(parameter.binding)?;
         }
     }
@@ -428,6 +448,26 @@ fn lower_function<'program>(
         result: lower_source_mode(function.result_mode),
     });
     Ok(lowered)
+}
+
+fn contains_tail_transfer(statements: &[CheckedStatement]) -> bool {
+    statements.iter().any(|statement| match statement {
+        CheckedStatement::Return {
+            value:
+                CheckedExpression::UserCall {
+                    tail_transfer: true,
+                    ..
+                },
+            ..
+        } => true,
+        CheckedStatement::Match { arms, .. } | CheckedStatement::ValueMatchLet { arms, .. } => {
+            arms.iter().any(|arm| contains_tail_transfer(&arm.body))
+        }
+        CheckedStatement::Loop { body, .. } | CheckedStatement::CountedRange { body, .. } => {
+            contains_tail_transfer(body)
+        }
+        _ => false,
+    })
 }
 
 const fn lower_source_mode(mode: CheckedMode) -> IrSourceMode {
@@ -533,6 +573,8 @@ struct IrBuilder<'program> {
     blocks: Vec<BuildingBlock>,
     counted_ranges: Vec<crate::IrCountedRange>,
     current: Option<IrBlockId>,
+    /// Parameterized body entry for a checked [FN-10] self transfer.
+    tail_entry: Option<IrBlockId>,
     loops: Vec<LoopTarget>,
     result: IrType,
     addressed_bindings: std::collections::HashSet<BindingId>,
@@ -606,6 +648,7 @@ impl<'program> IrBuilder<'program> {
             blocks: Vec::new(),
             counted_ranges: Vec::new(),
             current: None,
+            tail_entry: None,
             loops: Vec::new(),
             result,
             addressed_bindings,
@@ -1002,6 +1045,27 @@ impl<'program> IrBuilder<'program> {
                 // effect, branch, or instruction.
                 CheckedStatement::Proof(_) => {}
                 CheckedStatement::Return { value, drops, .. } => {
+                    if let CheckedExpression::UserCall {
+                        tail_transfer: true,
+                        arguments,
+                        ..
+                    } = value
+                    {
+                        let arguments = arguments
+                            .iter()
+                            .map(|argument| self.expression(argument))
+                            .collect::<Result<Vec<_>, _>>()?;
+                        let drops = self.lower_drops(drops)?;
+                        let target = self
+                            .tail_entry
+                            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                        self.terminate(IrTerminator::Jump {
+                            target,
+                            arguments,
+                            drops,
+                        })?;
+                        continue;
+                    }
                     let value = self.expression(value)?;
                     let drops = self.lower_drops(drops)?;
                     self.terminate(IrTerminator::Return { value, drops })?;

@@ -63,6 +63,7 @@ mod requires;
 mod resource_enums;
 mod stack_ledger;
 mod system;
+mod tail_calls;
 mod target_frame;
 /// [TYPE-9]'s storage shapes and the cell as the backend emits them: their
 /// construction [OP-13], target qualification [STOR-6, OP-9] and

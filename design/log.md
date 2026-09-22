@@ -5,6 +5,22 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-21 Select eligible ordinary self calls for tail lowering
+
+Nodes: compiler/self-tail-lowering, language/self-tail-calls
+
+Owner-approved: The owner explicitly approved the presented compiler/self-tail-lowering replacement after the detailed PR #75 explanation and clean independent review of revision b05ee4be. The language/self-tail-calls node retains the earlier explicit approval recorded below. These rulings do not authorize a merge.
+
+Summary: Apply the reviewed compiler replacement unchanged. Separate the written musttail obligation from the checked lowering selection, and select an unmarked direct self call when the shared position, reference-root and release conditions permit activation replacement. An unavailable condition retains an ordinary unmarked call and produces an FN-10 rejection only for a written marker. Both forms preserve ordinary call and proof checking and share argument capture, checked cleanup and the parameterized entry jump, avoiding duplicate semantics or a new source acceptance condition. Remove the resolved amendment and its directory. The language guarantee is unchanged.
+
+## 2026-09-21 Guarantee direct self-tail transfers
+
+Nodes: language/self-tail-calls, compiler/self-tail-lowering
+
+Owner-approved: The owner explicitly approved both presented self-tail amendments after the detailed PR #75 design explanation and completed independent review of revision dc0def24. This applies that exact proposed revision; it does not authorize a merge.
+
+Summary: Add a call-site guarantee for sole-return direct self calls with incoming-reference-rooted actuals and no retained cleanup. Permit ordinary derived releases before the transfer when no live valid reference names the released owner. Preserve ordinary call and proof checking, capture every argument before cleanup and simultaneous parameter replacement, and lower the transfer to a parameterized body-entry jump using existing frame storage. These choices make the guarantee independent of optimizer decisions and inter-function tail-call ABIs while retaining the source ownership boundary. Mutual transfers and termination proofs remain deferred. Apply the reviewed amendments unchanged and remove them.
+
 ## 2026-09-21 Admit finite descendant summaries for owned-link cursors
 
 Nodes: compiler/checker-facts, language/effects, language/ownership, language/ownership/exchange, language/ownership/reference-rebinding, language/ownership/reference-validity
