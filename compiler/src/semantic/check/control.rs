@@ -635,7 +635,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .collect::<Vec<_>>();
         live.sort_by_key(|entry| std::cmp::Reverse(entry.1.binding.0));
         let mut drops = Vec::new();
-        let mut releases = Vec::with_capacity(live.len());
         for (_, local) in &live {
             let name = self
                 .resolved
@@ -643,18 +642,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .iter()
                 .find(|declaration| declaration.id() == local.declaration)
                 .map_or_else(String::new, |declaration| declaration.spelling().to_owned());
-            releases.push(self.scope_release_mode(local.ty, &name, bindings, edge)?);
+            self.validate_scope_release(local.ty, &name, edge)?;
         }
-        for ((_, local), release) in live.into_iter().zip(releases) {
+        for (_, local) in live {
             if !self.is_copy_type(local.ty)? {
                 let paths = self.drop_paths(local.ty, Vec::new())?;
                 for (fields, ty) in paths {
                     drops.push(CheckedDrop {
-                        source_edge: self.tree.path(edge)?.clone(),
                         binding: local.binding,
                         fields,
                         ty,
-                        release,
                     });
                 }
             }

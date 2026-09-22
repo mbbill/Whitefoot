@@ -1,77 +1,65 @@
 use crate::SemanticCompilerFailure;
 
 use super::super::model::{
-    CheckedDrop, CheckedExpression, CheckedNominalKind, CheckedReleaseMode, CheckedSetTarget,
-    CheckedStatement, CheckedType,
+    CheckedDrop, CheckedExpression, CheckedNominalKind, CheckedSetTarget, CheckedStatement,
+    CheckedType,
 };
-use super::{CheckStop, Checker, EffectSet};
+use super::{CheckStop, Checker};
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
-    /// [STOR-3, PROV-6, EFF-2] Derived memory reclamation writes each
-    /// required provider. An opaque value contributes no release effect.
-    pub(super) fn collect_release_effects(
+    /// [STOR-8, PROV-6] Validate every release graph reached by the checked
+    /// cleanup traversal before [EFF-2] compares the body's ordinary effects.
+    pub(super) fn validate_release_graphs(
         &self,
-        function: &super::FunctionSignature,
         statements: &[CheckedStatement],
-        effects: &mut EffectSet,
     ) -> Result<(), CheckStop> {
         for statement in statements {
             match statement {
                 CheckedStatement::Let { value, .. }
                 | CheckedStatement::DestructuringLet { value, .. } => {
-                    self.collect_expression_release_effects(function, value, effects)?;
+                    self.validate_expression_release_graphs(value)?;
                 }
                 CheckedStatement::PropagateLet {
                     scrutinee,
                     error_drops,
                     ..
                 } => {
-                    self.collect_expression_release_effects(function, scrutinee, effects)?;
-                    self.collect_drop_release_effects(function, error_drops, effects)?;
+                    self.validate_expression_release_graphs(scrutinee)?;
+                    self.validate_drop_release_graphs(error_drops)?;
                 }
                 CheckedStatement::Set { target, value, .. } => {
                     match target {
                         CheckedSetTarget::Place(_) => {}
                         CheckedSetTarget::ArrayIndex(target) => {
-                            self.collect_expression_release_effects(
-                                function,
-                                &target.offset,
-                                effects,
-                            )?;
+                            self.validate_expression_release_graphs(&target.offset)?;
                         }
                         CheckedSetTarget::BufferIndex(target) => {
-                            self.collect_expression_release_effects(
-                                function,
-                                &target.offset,
-                                effects,
-                            )?;
+                            self.validate_expression_release_graphs(&target.offset)?;
                         }
                         CheckedSetTarget::RangeIndex(target) => {
                             for offset in target.offsets() {
-                                self.collect_expression_release_effects(function, offset, effects)?;
+                                self.validate_expression_release_graphs(offset)?;
                             }
                         }
                         CheckedSetTarget::Storage(target) => {
                             for offset in target.offsets() {
-                                self.collect_expression_release_effects(function, offset, effects)?;
+                                self.validate_expression_release_graphs(offset)?;
                             }
                         }
                     }
-                    self.collect_expression_release_effects(function, value, effects)?;
+                    self.validate_expression_release_graphs(value)?;
                 }
                 CheckedStatement::Evaluate(value) => {
-                    self.collect_expression_release_effects(function, value, effects)?;
+                    self.validate_expression_release_graphs(value)?;
                 }
                 CheckedStatement::DropExpression { value } => {
-                    self.collect_expression_release_effects(function, value, effects)?;
-                    for path in self.resolved_provider_writes(function, value.ty())? {
-                        effects.add_write(path);
-                    }
+                    self.validate_expression_release_graphs(value)?;
+                    self.release_graph_nodes(value.ty())?;
                 }
                 CheckedStatement::Proof(_) => {}
                 CheckedStatement::Return { value, drops, .. } => {
-                    self.collect_expression_release_effects(function, value, effects)?;
-                    self.collect_drop_release_effects(function, drops, effects)?;
+                    self.validate_expression_release_graphs(value)?;
+                    self.validate_drop_release_graphs(drops)?;
                 }
                 CheckedStatement::Match {
                     scrutinee, arms, ..
@@ -79,27 +67,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | CheckedStatement::ValueMatchLet {
                     scrutinee, arms, ..
                 } => {
-                    self.collect_expression_release_effects(function, scrutinee, effects)?;
+                    self.validate_expression_release_graphs(scrutinee)?;
                     for arm in arms {
-                        self.collect_release_effects(function, &arm.body, effects)?;
-                        self.collect_drop_release_effects(
-                            function,
-                            &arm.fallthrough_drops,
-                            effects,
-                        )?;
+                        self.validate_release_graphs(&arm.body)?;
+                        self.validate_drop_release_graphs(&arm.fallthrough_drops)?;
                     }
                 }
                 CheckedStatement::Give { value, drops, .. } => {
-                    self.collect_expression_release_effects(function, value, effects)?;
-                    self.collect_drop_release_effects(function, drops, effects)?;
+                    self.validate_expression_release_graphs(value)?;
+                    self.validate_drop_release_graphs(drops)?;
                 }
                 CheckedStatement::Loop {
                     body,
                     backedge_drops,
                     ..
                 } => {
-                    self.collect_release_effects(function, body, effects)?;
-                    self.collect_drop_release_effects(function, backedge_drops, effects)?;
+                    self.validate_release_graphs(body)?;
+                    self.validate_drop_release_graphs(backedge_drops)?;
                 }
                 CheckedStatement::CountedRange {
                     lower,
@@ -108,47 +92,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     backedge_drops,
                     ..
                 } => {
-                    self.collect_expression_release_effects(function, lower, effects)?;
-                    self.collect_expression_release_effects(function, upper, effects)?;
-                    self.collect_release_effects(function, body, effects)?;
-                    self.collect_drop_release_effects(function, backedge_drops, effects)?;
+                    self.validate_expression_release_graphs(lower)?;
+                    self.validate_expression_release_graphs(upper)?;
+                    self.validate_release_graphs(body)?;
+                    self.validate_drop_release_graphs(backedge_drops)?;
                 }
                 CheckedStatement::Break { drops, .. } => {
-                    self.collect_drop_release_effects(function, drops, effects)?;
+                    self.validate_drop_release_graphs(drops)?;
                 }
             }
         }
         Ok(())
     }
 
-    fn collect_drop_release_effects(
-        &self,
-        function: &super::FunctionSignature,
-        drops: &[CheckedDrop],
-        effects: &mut EffectSet,
-    ) -> Result<(), CheckStop> {
+    fn validate_drop_release_graphs(&self, drops: &[CheckedDrop]) -> Result<(), CheckStop> {
         for drop in drops {
-            for path in self.resolved_provider_writes_for(function, drop.ty, drop.release)? {
-                effects.add_write(path);
-            }
+            self.release_graph_nodes(drop.ty)?;
         }
         Ok(())
     }
 
-    fn collect_expression_release_effects(
+    fn validate_expression_release_graphs(
         &self,
-        function: &super::FunctionSignature,
         expression: &CheckedExpression,
-        effects: &mut EffectSet,
     ) -> Result<(), CheckStop> {
         match expression {
             CheckedExpression::Project { residual_drops, .. } => {
                 for drop in residual_drops {
-                    for path in
-                        self.resolved_provider_writes_for(function, drop.ty, drop.release)?
-                    {
-                        effects.add_write(path);
-                    }
+                    self.release_graph_nodes(drop.ty)?;
                 }
             }
             CheckedExpression::UserCall { arguments, .. }
@@ -163,19 +134,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 fields: arguments, ..
             } => {
                 for argument in arguments {
-                    self.collect_expression_release_effects(function, argument, effects)?;
+                    self.validate_expression_release_graphs(argument)?;
                 }
             }
             CheckedExpression::BoxTake { cleanup, .. } => {
                 for action in cleanup {
                     if let super::super::model::CheckedOwnedTakeCleanup::Drop { ty, .. } = action {
-                        for path in self.resolved_provider_writes_for(
-                            function,
-                            *ty,
-                            CheckedReleaseMode::Full,
-                        )? {
-                            effects.add_write(path);
-                        }
+                        self.release_graph_nodes(*ty)?;
                     }
                 }
             }
@@ -183,22 +148,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::Reinterpret { value, .. }
             | CheckedExpression::BoxDeref { value, .. }
             | CheckedExpression::ProjectValue { value, .. } => {
-                self.collect_expression_release_effects(function, value, effects)?;
+                self.validate_expression_release_graphs(value)?;
             }
             CheckedExpression::ReadStorage { root, .. } => {
                 for offset in root.offsets() {
-                    self.collect_expression_release_effects(function, offset, effects)?;
+                    self.validate_expression_release_graphs(offset)?;
                 }
             }
             CheckedExpression::ArrayIndex { offset, .. }
             | CheckedExpression::BufferIndex { offset, .. } => {
-                self.collect_expression_release_effects(function, offset, effects)?;
+                self.validate_expression_release_graphs(offset)?;
             }
             CheckedExpression::RangeElementMeasure { place, .. }
             | CheckedExpression::RangeIndex { place, .. }
             | CheckedExpression::BorrowRangeIndex { place, .. } => {
                 for offset in place.offsets() {
-                    self.collect_expression_release_effects(function, offset, effects)?;
+                    self.validate_expression_release_graphs(offset)?;
                 }
             }
             CheckedExpression::RangeOf {
@@ -206,11 +171,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             } => {
                 if let crate::semantic::CheckedRangeSource::Storage(root) = source {
                     for offset in root.offsets() {
-                        self.collect_expression_release_effects(function, offset, effects)?;
+                        self.validate_expression_release_graphs(offset)?;
                     }
                 }
-                self.collect_expression_release_effects(function, start, effects)?;
-                self.collect_expression_release_effects(function, end, effects)?;
+                self.validate_expression_release_graphs(start)?;
+                self.validate_expression_release_graphs(end)?;
             }
             CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }

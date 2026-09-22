@@ -12,7 +12,7 @@ use std::collections::HashSet;
 use crate::syntax::NodeId;
 use crate::{Production, SemanticIssueKind, SemanticRule, TerminalPredicate};
 
-use super::super::model::{CheckedNominalKind, CheckedReleaseMode, CheckedType, NominalId};
+use super::super::model::{CheckedNominalKind, CheckedType, NominalId};
 use super::{CheckStop, Checker};
 
 /// [OWN-1, PROV-6] the class read from a type's two capabilities, copy and
@@ -154,20 +154,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(nodes)
     }
 
-    /// [PROV-6] the release graph selected at one release point. Proving a
-    /// direct run empty removes only its element edge; its own backing node
-    /// remains, so provider and effect obligations for that storage survive.
-    pub(in crate::semantic) fn release_graph_nodes_for(
-        &self,
-        ty: CheckedType,
-        release: CheckedReleaseMode,
-    ) -> Result<Vec<CheckedType>, CheckStop> {
-        if release == CheckedReleaseMode::EmptyRun && matches!(ty, CheckedType::Window { .. }) {
-            return Ok(vec![ty]);
-        }
-        self.release_graph_nodes(ty)
-    }
-
     /// [PROV-6] whether any node of this type's release graph carries the
     /// `nodrop` modifier, this type's own node included.
     pub(in crate::semantic) fn owns_modifier_linear_node(
@@ -213,35 +199,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    /// [PROV-6, D3] every general store whose capability a value of this type
-    /// spends at its release, named by that store's own region.
-    ///
-    /// A run branded to a general store is the one capability-released node
-    /// this version has whose provider is a value [PROV-1]: `box<T>` and
-    /// `buffer<T>` name the ambient heap, which is no value and which every
-    /// scope therefore holds. The regions come back in release-graph order
-    /// with no duplicates.
-    pub(in crate::semantic) fn capability_released_stores(
-        &self,
-        ty: CheckedType,
-    ) -> Result<Vec<crate::DeclarationId>, CheckStop> {
-        self.capability_released_stores_for(ty, CheckedReleaseMode::Full)
-    }
-
-    pub(in crate::semantic) fn capability_released_stores_for(
-        &self,
-        ty: CheckedType,
-        release: CheckedReleaseMode,
-    ) -> Result<Vec<crate::DeclarationId>, CheckStop> {
-        // [STOR-8] one heap, provided by the trusted base: no value provides
-        // storage, so no release spends a provider a parameter supplies and
-        // no release-graph node names one. The graph is still walked, so a
-        // type whose release graph this version cannot build is reported here
-        // rather than answered with an empty set.
-        self.release_graph_nodes_for(ty, release)?;
-        Ok(Vec::new())
-    }
-
+    /// [PROV-6] The linear node, if any, in this type's release graph.
     pub(super) fn linear_release_obligation(
         &self,
         ty: CheckedType,
@@ -264,24 +222,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(None)
     }
 
-    /// Chooses the graph for a compiler-derived release. A direct run whose
-    /// complete graph is blocked may use the element-free graph only when its
-    /// own backing obligations remain satisfiable; entailment separately
-    /// proves the run empty before the edge removes its facts.
-    pub(in crate::semantic::check) fn scope_release_mode(
+    /// Validates that the complete graph admits a compiler-derived release.
+    pub(in crate::semantic::check) fn validate_scope_release(
         &self,
         ty: CheckedType,
         name: &str,
-        bindings: &std::collections::HashMap<crate::DeclarationId, super::LocalBinding>,
         node: NodeId,
-    ) -> Result<CheckedReleaseMode, CheckStop> {
+    ) -> Result<(), CheckStop> {
         let linear = self.linear_release_obligation(ty)?;
-        let missing = self
-            .capability_released_stores(ty)?
-            .into_iter()
-            .find(|store| !self.scope_holds_store_capability(bindings, *store));
-        if linear.is_none() && missing.is_none() {
-            return Ok(CheckedReleaseMode::Full);
+        self.release_graph_nodes(ty)?;
+        if linear.is_none() {
+            return Ok(());
         }
         // [WIN-3] "No operation releases a linear element: a storage whose
         // element type is linear is itself linear [PROV-6] and the program
@@ -289,61 +240,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // storage proved empty, call `free_empty` [OP-14]." A proved-empty
         // run therefore takes no compiler-derived release of its own either:
         // `free_empty` is a written call that consumes the window, so a run
-        // reaching a scope exit is refused here whatever its length, and the
-        // v0.59 element-free derived release is gone with the capability
-        // leaves it was written for.
-        if linear.is_some() {
-            self.reject_linear_value_not_consumed(ty, name, node)?;
-        }
-        self.reject_release_without_capability(ty, name, bindings, node)?;
-        Ok(CheckedReleaseMode::Full)
-    }
-
-    /// [PROV-6, D3] whether a live binding of this store's provider type
-    /// stands in this scope, reached directly or through a borrow.
-    ///
-    /// A provider enters a function only as a parameter or as an entry input
-    /// [PROV-2, FN-7], so this is a question about the bindings that stand at
-    /// the point, and the mode of the binding is immaterial: a `&uniq
-    /// Heap<'s>` parameter holds the capability exactly as the entry's own
-    /// `own Heap<'s>` does.
-    pub(in crate::semantic) fn scope_holds_store_capability(
-        &self,
-        bindings: &std::collections::HashMap<crate::DeclarationId, super::LocalBinding>,
-        _store: crate::DeclarationId,
-    ) -> bool {
-        bindings.values().any(|local| local.live && false)
-    }
-
-    /// [PROV-6, D3] the refusal of a value whose release spends a capability
-    /// this scope does not hold. The rejection names the binding, the scope's
-    /// own edge, and the absent capability.
-    pub(in crate::semantic) fn reject_release_without_capability(
-        &self,
-        ty: CheckedType,
-        name: &str,
-        bindings: &std::collections::HashMap<crate::DeclarationId, super::LocalBinding>,
-        node: NodeId,
-    ) -> Result<(), CheckStop> {
-        for store in self.capability_released_stores(ty)? {
-            if self.scope_holds_store_capability(bindings, store) {
-                continue;
-            }
-            let phrase = self.region_phrase(store)?;
-            return self
-                .issue_node::<()>(
-                    SemanticRule::Prov6,
-                    node,
-                    SemanticIssueKind::LinearValueNotConsumed {
-                        binding: name.to_owned(),
-                        obligation: format!(
-                            "the provider capability of {phrase}, which no live binding of this scope holds"
-                        ),
-                        mechanical_fix: "move the value out whole, take it apart with let N(f: a, ...) = move v;, or receive this store's provider as a parameter so the scope holds its capability",
-                    },
-                )
-                .map(|_| ());
-        }
+        // reaching a scope exit is refused here whatever its length. Under
+        // [STOR-8]'s one trusted heap, this graph carries no writer-visible
+        // provider effect.
+        self.reject_linear_value_not_consumed(ty, name, node)?;
         Ok(())
     }
 
@@ -550,40 +450,5 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             },
         )?;
         Ok(())
-    }
-}
-
-impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
-    /// [PROV-6, D3] the provider place each general store reached by `ty`'s
-    /// release graph spends, resolved against this function's own parameters.
-    ///
-    /// A general-store provider enters a function as an ordinary parameter
-    /// [TYPE-2], so the parameter list is the complete candidate set,
-    /// and the write this returns is what makes a derived or early release of
-    /// store-backed storage visible in the declared row [EFF-2].
-    pub(in crate::semantic) fn resolved_provider_writes(
-        &self,
-        function: &super::FunctionSignature,
-        ty: CheckedType,
-    ) -> Result<Vec<super::super::model::CheckedStatePath>, CheckStop> {
-        self.resolved_provider_writes_for(function, ty, CheckedReleaseMode::Full)
-    }
-
-    pub(in crate::semantic) fn resolved_provider_writes_for(
-        &self,
-        function: &super::FunctionSignature,
-        ty: CheckedType,
-        release: CheckedReleaseMode,
-    ) -> Result<Vec<super::super::model::CheckedStatePath>, CheckStop> {
-        let mut writes = Vec::new();
-        for _store in self.capability_released_stores_for(ty, release)? {
-            if let Some(parameter) = function.parameters.iter().find(|_parameter| false) {
-                writes.push(super::super::model::CheckedStatePath {
-                    root: parameter.declaration,
-                    steps: Vec::new(),
-                });
-            }
-        }
-        Ok(writes)
     }
 }
