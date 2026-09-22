@@ -3,6 +3,23 @@
 Defects, capability gaps, and unresolved costs of the current compiler. None
 of them is a decision. Remove an item when its fix and test land.
 
+- **Ordered Vector consumption still makes avoidable transfers.** The ordinary
+  prefix-window library reverses a removed suffix before consuming it in
+  original order. It is O(n), but the
+  [matched native comparison](../research/experiments/container-representation/vector-library/RESULTS.md#lowering-attribution)
+  retains three whole-record transfers per reversed pair that a direct
+  consumer does not need. With retained helpers, the 4096-element 256-byte
+  reuse chain is 18.4 percent slower than direct C; ordinary optimization
+  also exposes a separate WF/reverse-C gap and short-vector overhead. The
+  Slots wrap-arithmetic repair does not remove either source-required movement
+  or every lowering cost. Retain the tested composition as the current
+  implementation, without claiming minimum-transfer or general native parity.
+  Reopen before relying on ordered consumption in a performance-critical
+  container: compare a representation or operation that avoids reversal under
+  the same original-order, disjoint-callback, nodrop-ownership contract, and
+  separately attribute alignment/alias facts and ordinary inlining against
+  the retained-helper controls. No new language operation is selected yet.
+
 - **Measure placement stops at Box content.** Destructuring an owner with a
   `Box<Slots<T>>` field loses established facts about its `.inner.len`;
   `free_empty` on the resulting binding then fails OP-14. The exact

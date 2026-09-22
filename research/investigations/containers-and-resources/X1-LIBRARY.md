@@ -390,13 +390,13 @@ trials and receive no coverage claim from them.
 
 ## Findings rechecked against merged PR #70
 
-These rows distinguish resolved snapshot findings from actual remaining work.
-The source relocation on this branch changes no container algorithm, contract,
-specification rule or compiler implementation.
+These rows distinguish the merged `8c02e875` restoration baseline from the
+subsequent library trial. The restoration alone changed no container algorithm,
+contract, specification rule or compiler implementation.
 
 | ID | Exact witness/source | Status at the merged baseline | Next action |
 | --- | --- | --- | --- |
-| X1-P1 | `grow_vector_drain` in [grow-vector.wf](../../../lib/containers/grow-vector.wf), loop containing `remove_at(..., index: 0_u64)`; OP-10 | Still present: the source algorithm has quadratic element movement. | First library implementation work: preserve the drain's order/callback contract and implement an O(n) algorithm. The reverse-drain probe is a candidate, not a minimum-transfer claim. |
+| X1-P1 | Baseline `grow_vector_drain` used repeated `remove_at(..., index: 0_u64)`; OP-10 | The later Vector trial replaces quadratic movement with suffix reversal and back consumption in [grow-vector.wf](../../../lib/containers/grow-vector.wf). | The original-order callback contract is preserved. The [comparison](../../experiments/container-representation/vector-library/RESULTS.md) measures the remaining cost against a direct consumer; O(n) is not a minimum-transfer claim. |
 | X1-P2 | [unbounded-reserve.wf](../../experiments/container-representation/x1/unbounded-reserve.wf) records the old missing-requirement shape | Resolved in the shipped GrowVector: `const ceiling`, `requires total <= ceiling`, bounded doubling and saturation replace unrestricted growth. MSR-4 now supplies the specified affine-left/L0-right bridge needed by the ordinary caller proof. The deliberately unbounded probe should still reject under OP-9. | Keep the size requirement. A library/application Full outcome may return the offered owner when its selected limit is reached; heap allocation itself has no refusal arm. Do not carry this old finding forward as a compiler or current-library defect. |
 | X1-P3 | [linear-ring-publish.wf](../../experiments/container-representation/x1/linear-ring-publish.wf):18; OP-12 and WIN-3 versus the atomic-update paragraphs in [CANDIDATE-X1.md](../access-effects/CANDIDATE-X1.md) and [affine-replacement.md](../../../design/language/ownership/affine-replacement.md) | The active affine/copy restriction remains. A nodrop Ring cannot use this atomic-publication route; the candidate's general linear-assignment refusal also remains. The broader atomic paragraph alone does not establish a selected linear exception. | Obtain an explicit intended-domain ruling before changing OP-12 or its record. In parallel, test ordinary swap/contract and consuming-rebase alternatives without claiming all deque designs impossible. No language widening is part of this restoration. |
 
@@ -412,8 +412,8 @@ The following are specified limits, not bugs to silently fix in #70:
 
 ## Library home and evidence after the merge
 
-The owner selected root `lib/` for reusable WF source. Restore the merged
-GrowVector implementation, byte for byte, as
+The owner selected root `lib/` for reusable WF source. The restoration at
+`8c02e875` placed the merged GrowVector implementation, byte for byte, at
 [`lib/containers/grow-vector.wf`](../../../lib/containers/grow-vector.wf).
 Its caller and C allocation observer remain under `tests/programs/containers/`;
 the existing corpus test still builds the same source bundle in sequential
@@ -429,13 +429,14 @@ the other container fixtures as fixtures until they meet a reusable contract:
 and the behavior map requires droppable keys and fixes the payload to a Box.
 Their useful coverage does not establish the complete generic families.
 
-The existing GrowVector caller covers scalar and owned droppable Box elements,
+At that restoration baseline the GrowVector caller covered scalar and owned droppable Box elements,
 zero capacity, doubling, ceiling saturation, insertion, removal and drain.
-Its release observer checks exactly twelve allocations. It does not establish
+Its release observer checked exactly twelve allocations. That evidence did not establish
 must-consume-element construction/cleanup, an order-sensitive drain oracle,
 large-element costs, or native parity of the merged implementation. The
 retained v0.58 experiment has a different storage and allocation-refusal
-contract and must not be used as current performance evidence.
+contract and must not be used as current performance evidence. The later
+Vector trial below supplies the expanded ownership and current cost evidence.
 
 ## Recommended implementation and measurement order
 
@@ -532,6 +533,17 @@ Before measuring, use these discriminators:
 The proposed consumption decision remains in
 [`design/amendments/vector-consumption.md`](../../../design/amendments/vector-consumption.md)
 while implementation and measurement proceed; it has not changed the live tree.
+
+The trial now implements the selected operations, including explicit cleanup
+of a nodrop element vector. The formal bundle observes original callback order,
+retained contents and capacity, reuse and 25 exact-once allocation releases in
+sequential and parallel lowering. The current
+[cost comparison](../../experiments/container-representation/vector-library/RESULTS.md)
+uses the actual library, matched reverse C and direct C, and scalar/256-byte
+elements. It isolates an unnecessary Slots wrap computation and retains the
+measured cost of suffix reversal after that repair. The source form is an O(n)
+baseline, not native parity across workloads. The residual performance question
+and a separate Box-measure placement defect remain in `docs/todo.md`.
 
 ### Vector source obligations
 

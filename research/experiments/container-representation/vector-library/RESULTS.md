@@ -93,10 +93,72 @@ For 4096 elements the initial WF/reverse-C ratios were:
 | ordinary | 256 | 1.213 | 1.169 | 1.206 |
 | retained | 256 | 1.063 | 1.057 | 1.058 |
 
-The Slots-address repair has a backend regression covering subscripts and
-back placement/take for both inline and boxed Slots, with Ring retaining its
-wrap in both placements. Final measurements and the remaining cost attribution
-follow that validated compiler revision.
+The final samples are
+[`measurements-x1.csv`](measurements-x1.csv), measured on 2026-09-21 PDT with
+compiler `4d7a4c629` (including the address repair in `ad62a039f`). The workload,
+C sources, inputs and harness are unchanged between the two datasets. The
+address repair has a backend regression covering subscripts and back
+placement/take for inline and boxed Slots; Ring retains wrap in both placements.
+The final 4096-element WF/reverse-C ratios are:
+
+| Helpers | Element bytes | Reserved | Growth | Reuse |
+| --- | ---: | ---: | ---: | ---: |
+| ordinary | 8 | 1.170 | 1.173 | 1.174 |
+| retained | 8 | 0.988 | 0.989 | 0.988 |
+| ordinary | 256 | 1.192 | 1.147 | 1.186 |
+| retained | 256 | 1.043 | 1.036 | 1.041 |
+
+For the reused 4096-element chain, absolute times separate the remaining
+lowering gap from the cost of the source composition:
+
+| Helpers | Element bytes | WF ns/round | Reverse C ns/round | Direct C ns/round | WF / direct C |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| ordinary | 8 | 13,500 | 11,500 | 6,250 | 2.160 |
+| retained | 8 | 20,500 | 20,750 | 19,500 | 1.051 |
+| ordinary | 256 | 220,875 | 186,250 | 161,000 | 1.372 |
+| retained | 256 | 226,500 | 217,500 | 191,250 | 1.184 |
+
+The isolated code change removes all three Slots wrap decisions from retained
+truncation. For the reused scalar chain, WF time falls 27.5 percent with
+ordinary inlining and 18.0 percent with retained helpers; the corresponding
+C controls change by 4.2 and 1.2 percent. This supports a real scalar benefit,
+not attributing every timing difference to the patch. The large-record
+change is much smaller. These short samples have no calibrated confidence
+interval; the retained scalar result is approximate parity, not a speed win.
+
+Optimized IR shows the remaining transfers directly:
+
+| Retained 256-byte truncate | Per reversed pair | Per consumed record |
+| --- | --- | --- |
+| WF | 2 memcpy + 1 memmove, each 256 bytes | 1 memcpy into the callback argument |
+| Reverse C | 3 memcpy, each 256 bytes | 1 memcpy into the callback argument |
+| Direct C | none | 1 memcpy into the callback argument |
+
+All three retain a direct callback call. WF's alias-permitting `swap` keeps
+memmove and conservative element alignment where C keeps memcpy/alignment
+facts. The transfer counts explain why removing wrap arithmetic cannot erase
+the reversal cost; they do not isolate the timing contribution of alignment
+or alias facts. In the retained large-record reuse case, reverse C is 26,250
+ns slower than direct C and WF is a further 9,000 ns slower than reverse C.
+Both are costs of the full chain. In ordinary mode inlining changes the
+surrounding loops too, so subtracting retained and ordinary timings is not a
+measurement of call overhead alone. The optimizer retains 7 ordinary and 42
+retained WF library call sites; the retained C IR keeps 12 append/truncate
+call sites.
+
+The shortest scalar reuse case also remains significant: 49.8 ns WF versus
+30.3 ns reverse C and 26.4 ns direct C at length 16 with ordinary inlining.
+The 4096-element table must not stand for every length or element size; all
+36 comparison cells are present in the raw samples.
+
+The proposed library form is therefore a correct O(n), no-allocation baseline
+with complete ownership cleanup, not the final minimum-transfer ordered
+consumer. The measured gap reopens the blanket zero-extra-cost claim in
+kernel minimality. Keep the operation inventory unchanged in this trial;
+record direct ordered consumption and the residual ordinary-inlining cost
+in `docs/todo.md`. A follow-up must compare representations or an operation
+under the same callback/ownership contract before selecting language support.
+Slab/Deque construction need not depend on a claim of Vector native parity.
 
 ## Source and proof boundaries
 
