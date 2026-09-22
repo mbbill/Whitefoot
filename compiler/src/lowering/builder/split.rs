@@ -123,6 +123,14 @@ enum CaptureReconstruction {
     },
 }
 
+/// One binding's task ABI and the inverse used by the ordinary loop lowering.
+/// Planning a capture does not load or project its source value.
+struct Capture {
+    binding: BindingId,
+    ty: IrType,
+    reconstruction: CaptureReconstruction,
+}
+
 impl Decline {
     fn reason(self) -> String {
         match self {
@@ -220,23 +228,13 @@ impl IrBuilder<'_> {
             LoopActualization::IndependentMap => None,
             LoopActualization::Reduction { accumulator, .. } => Some(accumulator),
         };
-        // Every binding in scope travels into the chunk. Narrowing this to the
-        // body's own free bindings needs a dead-parameter analysis over the
-        // built chunk — the loop graph passes every in-scope binding as a block
-        // parameter, so a use count cannot tell a read from a forwarding — and
-        // no measured program declines on it today. What a wide scope costs is
-        // the frame bound below, and that decline is reported. A reduction's
-        // accumulator is the one exception because its seed/result carries it;
-        // an independent map has no such binding and captures the whole scope,
-        // including the buffer descriptor whose backing storage it updates.
-        let mut captures: Vec<BindingId> = self
-            .bindings
-            .keys()
-            .copied()
-            .filter(|binding| Some(*binding) != accumulator)
-            .collect();
-        captures.sort_by_key(|binding| binding.0);
-
+        if accumulator.is_some_and(|binding| self.addressed_bindings.contains(&binding)) {
+            self.note(
+                node_path,
+                &format!("declined: {}", Decline::AccumulatorAddressed.reason()),
+            );
+            return Ok(false);
+        }
         let reduction_seed = accumulator
             .map(|binding| self.binding_value(binding))
             .transpose()?;
@@ -244,18 +242,31 @@ impl IrBuilder<'_> {
             .map(|seed| self.value_type(seed))
             .transpose()?
             .unwrap_or(IrType::Unit);
-        if let Some(decline) = self.decline(actualization, result_type, &captures)? {
-            self.note(node_path, &format!("declined: {}", decline.reason()));
+        if let LoopActualization::Reduction { combine, .. } = actualization
+            && identity(combine, result_type).is_none()
+        {
+            self.note(
+                node_path,
+                &format!("declined: {}", Decline::NoIdentity.reason()),
+            );
             return Ok(false);
         }
 
-        let mut capture_types = Vec::with_capacity(captures.len());
-        let mut capture_values = Vec::with_capacity(captures.len());
-        let mut capture_reconstructions = Vec::with_capacity(captures.len());
-        for binding in &captures {
+        // The ordinary graph initially forwards the complete scope. Build it
+        // once, then retain only captures with a runtime use reachable through
+        // those forwarding edges, including generated cleanup and nested splits.
+        let mut bindings: Vec<BindingId> = self
+            .bindings
+            .keys()
+            .copied()
+            .filter(|binding| Some(*binding) != accumulator)
+            .collect();
+        bindings.sort_by_key(|binding| binding.0);
+        let mut captures = Vec::with_capacity(bindings.len());
+        for binding in bindings {
             let stored = self
                 .bindings
-                .get(binding)
+                .get(&binding)
                 .copied()
                 .ok_or(LoweringFailure::InvalidCheckedProgram)?;
             let stored_type = self.value_type(stored)?;
@@ -265,11 +276,10 @@ impl IrBuilder<'_> {
             // iterations, and the structured join preserves the owners they
             // use. The chunk reverses the Array projection before rebuilding
             // borrowed local owner storage; it acquires no cleanup authority.
-            // Capture-all can also carry a consumed but still represented
-            // binding. Conversion neither dereferences that allocation nor
-            // assumes it is live. Other Box kinds retain the block pointer,
-            // and inline affine aggregates retain their address form.
-            let local_slot = if self.addressed_bindings.contains(binding)
+            // Other Box kinds retain the block pointer, and inline affine
+            // aggregates retain their address form. Unused bindings disappear
+            // before any parent load or payload projection is emitted.
+            let local_slot = if self.addressed_bindings.contains(&binding)
                 && let IrType::Address(referent @ IrAddressed::Nominal(nominal)) = stored_type
                 && matches!(
                     &self.nominals[nominal.index()].kind,
@@ -279,9 +289,8 @@ impl IrBuilder<'_> {
             } else {
                 None
             };
-            let (captured, reconstruction) = match local_slot {
+            let (ty, reconstruction) = match local_slot {
                 Some(referent @ IrAddressed::Nominal(nominal)) => {
-                    let owner = self.load_storage_value(stored)?;
                     if matches!(
                         &self.nominals[nominal.index()].kind,
                         IrNominalKind::Box {
@@ -290,36 +299,29 @@ impl IrBuilder<'_> {
                         }
                     ) {
                         (
-                            self.define(
-                                IrType::RuntimeBoxPayload { nominal },
-                                IrOperation::RuntimeBoxPayload { nominal, owner },
-                            )?,
+                            IrType::RuntimeBoxPayload { nominal },
                             CaptureReconstruction::RuntimeBoxPayload { nominal, referent },
                         )
                     } else {
-                        (owner, CaptureReconstruction::BoxSlot { referent })
+                        (referent.ty(), CaptureReconstruction::BoxSlot { referent })
                     }
                 }
                 Some(_) => return Err(LoweringFailure::InvalidCheckedProgram),
-                None => (stored, CaptureReconstruction::Direct),
+                None => (stored_type, CaptureReconstruction::Direct),
             };
-            capture_types.push(self.value_type(captured)?);
-            capture_values.push(captured);
-            capture_reconstructions.push(reconstruction);
+            captures.push(Capture {
+                binding,
+                ty,
+                reconstruction,
+            });
         }
 
-        // A false result promises to leave the ordinary lowering untouched, so
-        // the independent map's synthetic token is created only after every
-        // shape-based decline above. A reduction reuses its source seed.
-        let seed = match reduction_seed {
-            Some(seed) => seed,
-            None => self.define(IrType::Unit, IrOperation::Constant(IrConstant::Unit))?,
-        };
-        let (splitter, chunk) = {
+        let (checkpoint, splitter, chunk) = {
             let mut synthesis = self.synthesis.borrow_mut();
-            (synthesis.reserve()?, synthesis.reserve()?)
+            let checkpoint = (synthesis.functions.len(), synthesis.ledger.len());
+            (checkpoint, synthesis.reserve()?, synthesis.reserve()?)
         };
-        let chunk_function = self.build_chunk(
+        let (chunk_function, needed) = self.build_chunk(
             chunk,
             id,
             binder,
@@ -328,9 +330,50 @@ impl IrBuilder<'_> {
             actualization,
             result_type,
             &captures,
-            &capture_types,
-            &capture_reconstructions,
         )?;
+        captures = captures
+            .into_iter()
+            .zip(needed)
+            .filter_map(|(capture, needed)| needed.then_some(capture))
+            .collect();
+        if let Some(decline) = self.frame_decline(result_type, &captures)? {
+            // Nested candidates were built in this tentative chunk. Restore
+            // their reservations and ledger too; ordinary lowering will visit
+            // the same nested statements in the parent graph after refusal.
+            let mut synthesis = self.synthesis.borrow_mut();
+            synthesis.functions.truncate(checkpoint.0);
+            synthesis.ledger.truncate(checkpoint.1);
+            drop(synthesis);
+            self.note(node_path, &format!("declined: {}", decline.reason()));
+            return Ok(false);
+        }
+
+        let capture_types = captures
+            .iter()
+            .map(|capture| capture.ty)
+            .collect::<Vec<_>>();
+        let mut capture_values = Vec::with_capacity(captures.len());
+        for capture in &captures {
+            let stored = self.bindings[&capture.binding];
+            let value = match capture.reconstruction {
+                CaptureReconstruction::Direct => stored,
+                CaptureReconstruction::BoxSlot { .. } => self.load_storage_value(stored)?,
+                CaptureReconstruction::RuntimeBoxPayload { nominal, .. } => {
+                    let owner = self.load_storage_value(stored)?;
+                    self.define(
+                        capture.ty,
+                        IrOperation::RuntimeBoxPayload { nominal, owner },
+                    )?
+                }
+            };
+            capture_values.push(value);
+        }
+        // Declining a candidate leaves the parent graph untouched. Create the
+        // map's token only after its reduced frame fits; reductions reuse seed.
+        let seed = match reduction_seed {
+            Some(seed) => seed,
+            None => self.define(IrType::Unit, IrOperation::Constant(IrConstant::Unit))?,
+        };
         let splitter_function =
             self.build_splitter(splitter, chunk, actualization, result_type, &capture_types)?;
         {
@@ -392,34 +435,21 @@ impl IrBuilder<'_> {
 
     /// The emission conditions, all of them properties of the shape rather than
     /// of the permission.
-    fn decline(
+    fn frame_decline(
         &self,
-        actualization: LoopActualization,
         result_type: IrType,
-        captures: &[BindingId],
+        captures: &[Capture],
     ) -> Result<Option<Decline>, LoweringFailure> {
-        if let LoopActualization::Reduction {
-            accumulator,
-            combine,
-        } = actualization
-        {
-            if self.addressed_bindings.contains(&accumulator) {
-                return Ok(Some(Decline::AccumulatorAddressed));
-            }
-            if identity(combine, result_type).is_none() {
-                return Ok(Some(Decline::NoIdentity));
-            }
-        }
         // `{ seed, lo, hi, captures…, budget, result }`, each field charged its
         // own size rounded up to the widest scalar the backend puts in a frame.
         // Over-charging refuses a little early; under-charging would let every
         // lane acquisition be refused at run time, which is the silent case
         // this exists to close.
         let mut bytes = 3 * FRAME_FIELD_ALIGN + 2 * frame_bytes(result_type);
-        for binding in captures {
+        for capture in captures {
             let ty = self
                 .bindings
-                .get(binding)
+                .get(&capture.binding)
                 .copied()
                 .ok_or(LoweringFailure::InvalidCheckedProgram)
                 .and_then(|value| self.value_type(value))?;
@@ -449,9 +479,10 @@ impl IrBuilder<'_> {
     /// subrange starting from `seed`; an independent-map chunk performs its
     /// disjoint stores and returns the `Unit` seed as a synchronization token.
     ///
-    /// This is the same block graph [`IrBuilder::counted_range_graph`] builds
-    /// at an unsplit site, built by the same code from the same statements. The
-    /// only difference is where the endpoints and any accumulator come from.
+    /// This starts with the block graph [`IrBuilder::counted_range_graph`]
+    /// builds at an unsplit site, using the same code and statements. Endpoints
+    /// and the accumulator come from parameters; after building, unused
+    /// capture forwarding is removed without changing any body operation.
     #[allow(clippy::too_many_arguments)]
     fn build_chunk(
         &self,
@@ -462,10 +493,8 @@ impl IrBuilder<'_> {
         backedge_drops: &[CheckedDrop],
         actualization: LoopActualization,
         result_type: IrType,
-        captures: &[BindingId],
-        capture_types: &[IrType],
-        capture_reconstructions: &[CaptureReconstruction],
-    ) -> Result<IrFunction, LoweringFailure> {
+        captures: &[Capture],
+    ) -> Result<(IrFunction, Vec<bool>), LoweringFailure> {
         let mut builder = IrBuilder::new(
             self.context(),
             result_type,
@@ -482,20 +511,12 @@ impl IrBuilder<'_> {
         {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
-        if captures.len() != capture_types.len() || captures.len() != capture_reconstructions.len()
-        {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
-        for ((binding, ty), reconstruction) in captures
-            .iter()
-            .zip(capture_types)
-            .zip(capture_reconstructions)
-        {
-            let value = builder.new_parameter(*ty)?;
-            let value = match reconstruction {
+        for capture in captures {
+            let value = builder.new_parameter(capture.ty)?;
+            let value = match &capture.reconstruction {
                 CaptureReconstruction::Direct => value,
                 CaptureReconstruction::BoxSlot { referent } => {
-                    if referent.ty() != *ty {
+                    if referent.ty() != capture.ty {
                         return Err(LoweringFailure::InvalidCheckedProgram);
                     }
                     builder.define(
@@ -507,7 +528,7 @@ impl IrBuilder<'_> {
                     )?
                 }
                 CaptureReconstruction::RuntimeBoxPayload { nominal, referent } => {
-                    if *ty != (IrType::RuntimeBoxPayload { nominal: *nominal })
+                    if capture.ty != (IrType::RuntimeBoxPayload { nominal: *nominal })
                         || referent.ty() != IrType::Nominal(*nominal)
                     {
                         return Err(LoweringFailure::InvalidCheckedProgram);
@@ -528,10 +549,11 @@ impl IrBuilder<'_> {
                     )?
                 }
             };
-            if builder.bindings.insert(*binding, value).is_some() {
+            if builder.bindings.insert(capture.binding, value).is_some() {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }
         }
+        let reconstruction_count = builder.blocks[0].instructions.len();
         // No give target and no enclosing loop: condition 4 refused every edge
         // that could leave this loop, so a body reaching for one is a
         // malformed checked program rather than a shape this declines on.
@@ -553,7 +575,10 @@ impl IrBuilder<'_> {
         // it; a group whose members do not all land in this body resolves to
         // nothing, which is the narrowing `overlaps` already performs.
         let overlaps = builder.overlaps();
-        builder.finish(chunk_symbol(ordinal), overlaps, Some(IrSynthesis::Chunk))
+        let mut function =
+            builder.finish(chunk_symbol(ordinal), overlaps, Some(IrSynthesis::Chunk))?;
+        let needed = prune_capture_parameters(&mut function, reconstruction_count)?;
+        Ok((function, needed))
     }
 
     /// The recursive range splitter, whose two halves are one ordinary overlap
@@ -815,6 +840,105 @@ impl IrBuilder<'_> {
             ],
         })
     }
+}
+
+/// Removes capture-only forwarding from an outlined chunk. Every ordinary
+/// instruction stays: its operands are runtime roots even when its result is
+/// unused. Only the entry prefix generated to reconstruct captured Box slots
+/// is removable. Cleanup subjects and returns are roots too; a jump argument
+/// is needed exactly when its destination block parameter is needed.
+///
+/// The worklist visits each needed value once. Cyclic loop-carried forwarding
+/// therefore terminates without mistaking an unobserved phi cycle for a read.
+/// Value IDs stay stable for source-call, overlap and counted-range metadata.
+fn prune_capture_parameters(
+    function: &mut IrFunction,
+    reconstruction_count: usize,
+) -> Result<Vec<bool>, LoweringFailure> {
+    let mut dependencies = vec![Vec::new(); function.values.len()];
+    let mut pending = function.parameters[..3]
+        .iter()
+        .map(|(value, _)| *value)
+        .collect::<Vec<_>>();
+    for (block_index, block) in function.blocks.iter().enumerate() {
+        for (instruction_index, instruction) in block.instructions.iter().enumerate() {
+            if block_index == 0 && instruction_index < reconstruction_count {
+                let IrInstruction::Define {
+                    result, operation, ..
+                } = instruction
+                else {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                };
+                dependencies[result.index()] = operation.operands();
+            } else {
+                pending.extend(instruction.operands());
+            }
+        }
+        if let IrTerminator::Jump {
+            target,
+            arguments,
+            drops,
+        } = &block.terminator
+        {
+            let target = function
+                .blocks
+                .get(target.index())
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            if arguments.len() != target.parameters.len() {
+                return Err(LoweringFailure::InvalidCheckedProgram);
+            }
+            for ((parameter, _), argument) in target.parameters.iter().zip(arguments) {
+                dependencies[parameter.index()].push(*argument);
+            }
+            pending.extend(drops.iter().map(|drop| drop.operand()));
+        } else {
+            pending.extend(block.terminator.operands());
+        }
+    }
+    let mut needed = vec![false; function.values.len()];
+    while let Some(value) = pending.pop() {
+        if !needed[value.index()] {
+            needed[value.index()] = true;
+            pending.extend(dependencies[value.index()].iter().copied());
+        }
+    }
+    let captures = function.parameters[3..]
+        .iter()
+        .map(|(value, _)| needed[value.index()])
+        .collect();
+    let block_parameters = function
+        .blocks
+        .iter()
+        .map(|block| {
+            block
+                .parameters
+                .iter()
+                .map(|(value, _)| needed[value.index()])
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    for (block_index, block) in function.blocks.iter_mut().enumerate() {
+        block.parameters.retain(|(value, _)| needed[value.index()]);
+        if let IrTerminator::Jump {
+            target, arguments, ..
+        } = &mut block.terminator
+        {
+            let mut keep = block_parameters[target.index()].iter();
+            arguments.retain(|_| *keep.next().expect("checked jump arity"));
+        }
+        if block_index == 0 {
+            let mut index = 0;
+            block.instructions.retain(|instruction| {
+                let reconstruction = index < reconstruction_count;
+                index += 1;
+                !reconstruction || matches!(instruction, IrInstruction::Define { result, .. } if needed[result.index()])
+            });
+        }
+    }
+    function
+        .parameters
+        .retain(|(value, _)| needed[value.index()]);
+    Ok(captures)
 }
 
 /// The emitted operation of one admitted combine, as either half of the IR's
@@ -1083,8 +1207,171 @@ pub(crate) type SynthesisCell = RefCell<Synthesis>;
 
 #[cfg(test)]
 mod tests {
-    use super::{LoopCombine, identity, operation};
-    use crate::{IrBooleanOperation, IrConstant, IrIntegerOperation, IrType};
+    use super::{LoopCombine, U64, identity, operation, prune_capture_parameters};
+    use crate::lowering::{IrBlockId, IrValueId};
+    use crate::{
+        IrAddressed, IrBlock, IrBooleanOperation, IrConstant, IrDrop, IrDropSubject, IrEnumType,
+        IrFunction, IrInstruction, IrIntegerOperation, IrMatchTarget, IrOperation, IrSynthesis,
+        IrTerminator, IrType,
+    };
+
+    #[test]
+    fn capture_need_crosses_phi_cycles_for_calls_drops_returns_and_reconstruction() {
+        let referent = IrAddressed::Integer {
+            width: 64,
+            signed: false,
+        };
+        let address = IrType::Address(referent);
+        let value = IrValueId;
+        let mut types = vec![U64; 20];
+        for index in [9, 10, 15, 16] {
+            types[index] = address;
+        }
+        types[19] = IrType::Bool;
+        let parameters = |indices: std::ops::Range<u32>| {
+            indices
+                .map(|index| (value(index), types[index as usize]))
+                .collect()
+        };
+        let mut function = IrFunction {
+            name: "capture_need".into(),
+            parameters: parameters(0..9),
+            source_signature: None,
+            source_calls: Vec::new(),
+            result: U64,
+            values: types.clone(),
+            counted_ranges: Vec::new(),
+            overlaps: Vec::new(),
+            synthesis: Some(IrSynthesis::Chunk),
+            blocks: vec![
+                IrBlock {
+                    parameters: Vec::new(),
+                    instructions: vec![
+                        IrInstruction::Define {
+                            result: value(9),
+                            ty: address,
+                            operation: IrOperation::AddressOf {
+                                value: value(7),
+                                referent,
+                            },
+                        },
+                        IrInstruction::Define {
+                            result: value(10),
+                            ty: address,
+                            operation: IrOperation::AddressOf {
+                                value: value(8),
+                                referent,
+                            },
+                        },
+                    ],
+                    terminator: IrTerminator::Jump {
+                        target: IrBlockId(1),
+                        arguments: [3, 4, 5, 6, 9, 10].map(value).to_vec(),
+                        drops: Vec::new(),
+                    },
+                },
+                IrBlock {
+                    parameters: parameters(11..17),
+                    instructions: vec![
+                        IrInstruction::Define {
+                            result: value(17),
+                            ty: U64,
+                            operation: IrOperation::Call {
+                                function: 0,
+                                arguments: vec![value(11)],
+                            },
+                        },
+                        IrInstruction::Define {
+                            result: value(18),
+                            ty: U64,
+                            operation: IrOperation::Load {
+                                address: value(15),
+                                referent,
+                            },
+                        },
+                        IrInstruction::Define {
+                            result: value(19),
+                            ty: IrType::Bool,
+                            operation: IrOperation::Constant(IrConstant::Bool(true)),
+                        },
+                    ],
+                    terminator: IrTerminator::Match {
+                        scrutinee: value(19),
+                        enum_type: IrEnumType::Bool,
+                        targets: vec![
+                            IrMatchTarget {
+                                tag: 1,
+                                block: IrBlockId(2),
+                            },
+                            IrMatchTarget {
+                                tag: 0,
+                                block: IrBlockId(3),
+                            },
+                        ],
+                    },
+                },
+                IrBlock {
+                    parameters: Vec::new(),
+                    instructions: Vec::new(),
+                    terminator: IrTerminator::Jump {
+                        target: IrBlockId(1),
+                        arguments: (11..17).map(value).collect(),
+                        drops: vec![IrDrop {
+                            subject: IrDropSubject::Value(value(12)),
+                            ty: U64,
+                        }],
+                    },
+                },
+                IrBlock {
+                    parameters: Vec::new(),
+                    instructions: Vec::new(),
+                    terminator: IrTerminator::Return {
+                        value: value(13),
+                        drops: Vec::new(),
+                    },
+                },
+            ],
+        };
+        let needed = prune_capture_parameters(&mut function, 2).expect("valid chunk graph");
+        assert_eq!(needed, [true, true, true, false, true, false]);
+        assert_eq!(
+            function
+                .parameters
+                .iter()
+                .map(|(value, _)| value.0)
+                .collect::<Vec<_>>(),
+            [0, 1, 2, 3, 4, 5, 7]
+        );
+        assert_eq!(
+            function.blocks[0].instructions.len(),
+            1,
+            "only unused reconstruction disappears"
+        );
+        assert_eq!(
+            function.blocks[1].instructions.len(),
+            3,
+            "unused call/load results do not erase runtime uses"
+        );
+        assert_eq!(
+            function.blocks[1]
+                .parameters
+                .iter()
+                .map(|(value, _)| value.0)
+                .collect::<Vec<_>>(),
+            [11, 12, 13, 15]
+        );
+        for block in &function.blocks {
+            if let IrTerminator::Jump {
+                target, arguments, ..
+            } = &block.terminator
+            {
+                assert_eq!(
+                    arguments.len(),
+                    function.blocks[target.index()].parameters.len()
+                );
+            }
+        }
+    }
 
     /// Every admitted combine, so a widening of the set has to come through
     /// here and answer the property below for its new entry.

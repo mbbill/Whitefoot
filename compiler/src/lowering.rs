@@ -11,6 +11,7 @@ use crate::semantic::{
     CheckedNumericType, CheckedProgram, CheckedTargetDomainObligation, CheckedType,
 };
 
+mod operands;
 mod physical_types;
 mod specialize;
 

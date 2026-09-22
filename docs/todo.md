@@ -57,6 +57,19 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   cleanup and the unchanged sequential image in any later experiment. Defer
   repair until the sparse oracle and bounded comparison establish materiality.
 
+- **Loop capture selection remains conservative beyond forwarding.** The
+  [needed-capture change](../research/investigations/compute-model/DESIGN.md#needed-loop-captures)
+  retains every ordinary instruction and call argument. Removing an unused
+  pure computation or an unused callee formal could shrink further frames,
+  but needs independent effect and call-interface reasoning; no blocked
+  consumer currently justifies that scope. A still-oversized candidate also
+  lowers again on the ordinary path, with repeated work possible across
+  nested declines. Reopen when an otherwise useful map still exceeds the
+  fixed frame bound or a compilation profile attributes material cost to
+  repeated candidate construction. Validate smaller emitted frames or reduced
+  lowering time on the same source, preserving cleanup, calls and native
+  results, before selecting a broader analysis or reuse scheme.
+
 - **Parallel grain policy needs a dedicated study.** Captured extents are a
   provisional scheduling input, not an established broadly suitable policy.
   The [first same-source trial](../research/investigations/compute-model/DESIGN.md#runtime-extent-trial-result)

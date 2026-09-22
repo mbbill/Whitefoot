@@ -1912,3 +1912,78 @@ then forms B/A within the same form, width and pass; its reported ratio is the
 median of those five ratios, not a ratio of the arm medians. The retained recipe
 is execution evidence, not a new maintained benchmark runner or a default flag
 change.
+
+## Needed loop captures
+
+The sparse-frontier source at `139fc2d1d74480d58ab878c0eb67bca12b5144f1`,
+SHA-256 `d10f0047164ca614968d55e50549d7efd1a768a5784c901d36dd82f9467f63f2`,
+exposes a task-width obstruction independent of its partition proof. The
+emission ledger before needed-capture selection reports 29 captured bindings
+for `outbox_level` loop `6.0.27.0` and a 352-byte frame against the 256-byte lane
+limit. That lowering captures every surrounding binding, including inputs used
+only by an earlier source phase or the function's tail. These bindings reach no
+runtime operation in the receiver but are forwarded through every loop block
+parameter.
+
+The selected change builds the ordinary chunk once, then traces runtime need
+backward through its block parameters. All ordinary instruction operands,
+helper arguments, cleanup subjects and returned values seed need. Only the
+compiler-generated entry operations that reconstruct captured Box slots are
+removable computations; their inputs become needed when the reconstructed
+value is needed. Nested chunks select their inputs before the enclosing chunk
+reads the nested call. Keep value identities, source operations, ownership,
+cleanup order, range proof, source Box representation, and the chunk's loop.
+Capture loads and projections in the parent wait until the reduced frame fits.
+A still-oversized candidate discards its tentative nested synthesis and ledger
+before normal lowering revisits the body.
+
+The discriminating criterion is that the unchanged sparse receiver actually
+emits its split with a frame below the existing limit, while ordinary native
+loop tests retain their independently checked results and cleanup. Formal
+structural cases must retain call-, cleanup-, return- and nested-helper-only
+uses, remove forwarding-only captures, and preserve ordinary lowering when a
+still-oversized candidate declines. These are lowering observations, not a
+performance verdict. Construction cost must be recorded separately: accepted
+candidates lower once, while declined candidates lower their body again for
+the ordinary path.
+
+Enlarging the lane limit preserves the accidental dependency on lexical scope.
+Writer phase helpers would work around it in every consumer. A source-use or
+effect walk would duplicate semantic interpretation and risk missing generated
+cleanup; a general projection or interprocedural optimizer is unnecessary to
+remove this obstruction. The existing exhaustive IR operand walk therefore
+becomes the shared owner for capture selection, backend storage and emission.
+Read-only formal markers and Box payload reconstruction remain associated with
+their original value identities when a capture survives.
+
+Preserving value IDs leaves type metadata for removed aggregate formals and
+block parameters. Storage planning previously assigned backing to every typed
+aggregate ID, including those with no remaining definition. The selected
+companion change seeds storage candidates from the existing flow graph's
+entry parameters, block parameters and instruction results. It keeps storage
+for every remaining ordinary definition, including unused ones. A tail-only
+fixed array in the existing captured-fold native test checks that removed
+aggregate captures leave no chunk slots; the existing aligned Box test checks
+that unused generated reconstruction disappears while used payload and
+measure paths retain their original cleanup behavior. Type tombstones and a
+whole-chunk renumberer would introduce another representation or rewrite
+without serving this consumer.
+
+Emitting the same source with `--par --par-scalar-leaf-limit off --emit-llvm
+--par-ledger` meets the frame criterion:
+
+| `outbox_level` phase | Before selection | After selection | Current work price |
+| --- | --- | --- | --- |
+| Routing, `6.0.16.0` | 21 captures, 256-byte frame | 10 captures, 152-byte frame; split emitted | 363 per iteration, static |
+| Receiver, `6.0.27.0` | 29 captures, 352-byte estimate; split declined | 11 captures, 168-byte frame; `+wrap` count reduction emitted | 2,580 per iteration, static |
+
+The emitted frame sizes are the actual `wf__par_acquire_lane` arguments; the
+receiver's earlier 352 bytes are its conservative lowering refusal estimate.
+The strengthened captured-fold native case retains the removed array's type
+metadata, allocates no aggregate chunk slot, and preserves the ordinary
+lowering's output at one and four workers and under controlled worker grants.
+Its harness construction took 79.33 seconds and its focused execution 2.70
+seconds; isolated CLI construction took 45.35 seconds, and source checking plus
+LLVM emission took 0.72 seconds. These are construction and qualification
+costs, not a program performance comparison. Sparse-frontier native behavior,
+worker participation and performance remain separate qualification work.
