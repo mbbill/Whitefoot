@@ -1,7 +1,9 @@
 # Containers over the x1 language
 
-This investigation now uses the merged PR #70 baseline,
-`36be8784e84a26d34bc24668babd789e0f4c96fb`, kernel v0.60. The initial study
+The reassessment and first Vector trial below use the merged PR #70 baseline,
+`36be8784e84a26d34bc24668babd789e0f4c96fb`, kernel v0.60, and their stated
+subsequent implementation revisions. The Box-placement and consumption
+follow-up at the end starts from kernel v0.61. The initial study
 used the earlier published snapshot `efd6ebc9`; its dated observations remain
 in the [probe results](../../experiments/container-representation/x1/RESULTS.md).
 The merged-baseline reassessment below supersedes outstanding-work claims
@@ -617,3 +619,40 @@ not equality. The equivalent `requires deref(values).storage.inner.len <=
 0_u64;` succeeds because the length is an unsigned measure. The reuse work
 helper and empty-owner consumer use that spelling, without a runtime test or
 weaker domain. FN-9's numeric postcondition route still permits equality.
+
+## Box placement and Vector consumption follow-up
+
+This comparison starts from `efe41016d10379325ed4513d0ac7457ec7f24c5b`,
+kernel v0.61, including the Vector trial and the wildcard-reference amendment.
+Earlier observations retain their recorded baselines; the old absence of
+wildcard traversal is not a premise of this follow-up. The two remaining
+questions are ordinary Box-content measure transport and the extra transfers
+required by ordered Vector consumption.
+
+The Box witness above is a naming event, not a new relation theorem. A repair
+must transfer the available measure facts through the placements MSR-3
+specifies and preserve ENT-5's invalidation after an overlapping write,
+replacement or call. Check both directions: an admitted consume becomes
+provable after rebinding, and an obsolete pre-mutation measure cannot authorize
+a later operation. Recursive nominal types must not cause infinite path
+enumeration or an arbitrary depth limit. The v0.61 distinction between a
+possible descendant cover and an exact captured target still applies.
+
+For consumption, reuse the actual library and the existing reverse-C and
+direct-C controls. Keep callback order, retained prefix and capacity, nodrop
+ownership, allocation policy and helper-retention settings fixed. A candidate
+that introduces scratch allocation, omits consuming callbacks or weakens their
+allowed effects does not meet this operation contract. Distinguish an ordinary
+algorithm or representation change from a general lowering repair and from an
+operation the current source rules cannot express.
+
+Before selecting a candidate, compare it with both the unchanged WF baseline
+and the native controls in paired runs. Count the source-required element
+transfers and inspect optimized IR with helpers retained; then measure the
+existing scalar/large-record and short/long-window cases with ordinary and
+retained helpers. The candidate must remove or demonstrably reduce the
+identified consumption cost, with reproducible improvement in the affected
+large-record path and an explicit account of changes to the other operations.
+A new attribution alone is not an improvement result. Any native-parity claim
+must be supported by the resulting comparisons, including measurement
+variation, rather than inferred from O(n) complexity or fewer IR instructions.
