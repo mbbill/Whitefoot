@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-22 Retain Array extents through read-only Box helpers
+
+Nodes: compiler/parallel-lowering
+
+Owner-approved: The owner accepted the reviewed PR #80 contents at 1d8f838b, including its unchanged Array-reference work amendment.
+
+Summary: Apply the reviewed extension and its rejected alternatives unchanged. Preserve runtime Array-length observations through original read-only reference formals and exact direct captures, using checker-owned validity and ordinary typed header projection. Keep mutable, rebound, local-owner and unsupported projection cases on the static estimate. The [matched helper trial](../research/investigations/compute-model/DESIGN.md#matched-helper-result-2026-09-22-utc) retains the measured benefit, CPU costs and validation limits. Remove the resolved amendment and its directory. No specification or compiler implementation changes accompany this ruling; it does not authorize a merge.
+
 ## 2026-09-22 Preserve references through event-site separation proofs
 
 Nodes: compiler/checker-facts
