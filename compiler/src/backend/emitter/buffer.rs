@@ -80,6 +80,14 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         address: &str,
         offset: &str,
     ) -> Result<String, BackendFailure> {
+        let IrType::Buffer { element } = block else {
+            return Err(BackendFailure::InvalidIr);
+        };
+        let element = self
+            .program
+            .element(element)
+            .ok_or(BackendFailure::InvalidIr)?;
+        let offset = self.element_address_index(element, offset)?;
         let pointer = self.next_temporary()?;
         writeln!(
             self.output,
@@ -304,35 +312,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let index = self.value_name(offset);
         let element_pointer = self.buffer_element_pointer(block, &address, &index)?;
         self.load_place_result(result, ty, &element_pointer)
-    }
-
-    /// Emits a discharged source subscript write [OP-4]: the index is the
-    /// plain `u64` offset, already proven in bounds by the checker.
-    pub(super) fn emit_buffer_store(
-        &mut self,
-        buffer: IrValueId,
-        index: IrValueId,
-        value: IrValueId,
-    ) -> Result<(), BackendFailure> {
-        let (block, element) = self.buffer_block(buffer)?;
-        if self.value_type(index)
-            != Some(IrType::Integer {
-                width: 64,
-                signed: false,
-            })
-            || self.value_type(value)
-                != Some(
-                    self.program
-                        .element(element)
-                        .ok_or(BackendFailure::InvalidIr)?,
-                )
-        {
-            return Err(BackendFailure::InvalidIr);
-        }
-        let address = self.value_name(buffer);
-        let offset = self.value_name(index);
-        let element_pointer = self.buffer_element_pointer(block, &address, &offset)?;
-        self.store_value_at(value, &element_pointer)
     }
 
     /// Emits the proof-preserving wide probe: how many upcoming byte-walk

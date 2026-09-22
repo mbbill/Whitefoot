@@ -1346,11 +1346,6 @@ pub enum IrInstruction {
         ty: IrType,
         operation: IrOperation,
     },
-    StoreBuffer {
-        buffer: IrValueId,
-        index: IrValueId,
-        value: IrValueId,
-    },
     /// One element-position store through an exclusive view [SET-1,
     /// VIEW-1]. The descriptor is unchanged; the storage written is the
     /// origin's, reached through the view's own data pointer.

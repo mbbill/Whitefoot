@@ -845,7 +845,7 @@ fn main() -> status: own ExitStatus pure {
 
 /// [SET-1] resolves and evaluates its target before the right-hand side, so a
 /// call that writes the index binding still commits to the slot the statement
-/// named.
+/// named. Slots and both fixed- and runtime-capacity Arrays share this rule.
 ///
 /// The two-target half of this case retired with [LIV-2]: `set (a, b) = e, f;`
 /// has no v0.60 production, [SET-1] writes exactly one place, and the
@@ -879,6 +879,35 @@ fn main() -> status: own ExitStatus pure {
   }
   if trace != 1_u64 {
     return exit_status(code: 4_u8);
+  }
+  let fixed = array_filled::<u64, 2>(value: 7_u64);
+  set offset = 0_u64;
+  invariant fixed_target_bound: offset < fixed.len;
+  set fixed[offset] = advance(offset: &offset, trace: &trace);
+  if fixed[0_u64] != 41_u64 {
+    return exit_status(code: 5_u8);
+  }
+  if fixed[1_u64] != 7_u64 {
+    return exit_status(code: 6_u8);
+  }
+  if offset != 1_u64 {
+    return exit_status(code: 7_u8);
+  }
+  let runtime = box_array_filled::<u64>(count: 2_u64, value: 11_u64);
+  set offset = 0_u64;
+  invariant runtime_target_bound: offset < runtime.inner.len;
+  set runtime.inner[offset] = advance(offset: &offset, trace: &trace);
+  if runtime.inner[0_u64] != 41_u64 {
+    return exit_status(code: 8_u8);
+  }
+  if runtime.inner[1_u64] != 11_u64 {
+    return exit_status(code: 9_u8);
+  }
+  if offset != 1_u64 {
+    return exit_status(code: 10_u8);
+  }
+  if trace != 111_u64 {
+    return exit_status(code: 11_u8);
   }
   return exit_status(code: 0_u8);
 }

@@ -22,7 +22,7 @@ use super::{
 /// release path is a runtime trap the writer never wrote.
 pub(super) fn emit_resource_drop_helpers(
     program: &IrProgram<'_, '_, '_>,
-    _target: TargetLayout,
+    target: TargetLayout,
 ) -> Result<String, BackendFailure> {
     let mut output = String::new();
     for nominal in program.nominals() {
@@ -45,7 +45,7 @@ pub(super) fn emit_resource_drop_helpers(
         output.push_str("}\n\n");
     }
     for (index, ty) in cleanup_run_types(program)?.into_iter().enumerate() {
-        emit_run_drop_helper(program, &mut output, index, ty)?;
+        emit_run_drop_helper(program, target, &mut output, index, ty)?;
     }
     Ok(output)
 }
@@ -62,6 +62,7 @@ pub(super) fn emit_resource_drop_helpers(
 /// the walk; an inline array or window has no separate backing action.
 fn emit_run_drop_helper(
     program: &IrProgram<'_, '_, '_>,
+    target: TargetLayout,
     output: &mut String,
     index: usize,
     ty: IrType,
@@ -154,9 +155,17 @@ fn emit_run_drop_helper(
     };
     let element_ty = program.element(element).ok_or(BackendFailure::InvalidIr)?;
     let element_llvm = llvm_type(program, element_ty)?;
+    let address_index =
+        if super::super::target::element_has_zero_stride(target, program, element_ty)
+            .map_err(BackendFailure::TargetLayout)?
+        {
+            "0"
+        } else {
+            "%physical"
+        };
     writeln!(
         output,
-        "  br label %walk\nwalk:\n  %index = phi i64 [ 0, %entry ], [ %next, %body ]\n  %continue = icmp ult i64 %index, %length\n  br i1 %continue, label %body, label %done\nbody:\n  %raw = add i64 %origin, %index\n  %over = icmp uge i64 %raw, %capacity\n  %reduced = sub i64 %raw, %capacity\n  %physical = select i1 %over, i64 %reduced, i64 %raw\n  %element.pointer = getelementptr inbounds {element_llvm}, ptr %pointer, i64 %physical\n  %element = load {element_llvm}, ptr %element.pointer"
+        "  br label %walk\nwalk:\n  %index = phi i64 [ 0, %entry ], [ %next, %body ]\n  %continue = icmp ult i64 %index, %length\n  br i1 %continue, label %body, label %done\nbody:\n  %raw = add i64 %origin, %index\n  %over = icmp uge i64 %raw, %capacity\n  %reduced = sub i64 %raw, %capacity\n  %physical = select i1 %over, i64 %reduced, i64 %raw\n  %element.pointer = getelementptr inbounds {element_llvm}, ptr %pointer, i64 {address_index}\n  %element = load {element_llvm}, ptr %element.pointer"
     )
     .map_err(|_| BackendFailure::TextEmission)?;
     let mut temporary = 0_u32;

@@ -588,7 +588,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         run: IrValueId,
         physical: &str,
     ) -> Result<String, BackendFailure> {
-        let _ = shape;
+        let physical = self.element_address_index(shape.element_type(self.program)?, physical)?;
         let llvm = llvm_type(self.program, run_type)?;
         let slot = self.run_storage(run)?.ok_or(BackendFailure::InvalidIr)?;
         let pointer = self.next_temporary()?;

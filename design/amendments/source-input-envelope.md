@@ -1,0 +1,3 @@
+Node: design/compiler/prelude-records.md
+
+Decision: Require a nonempty caller-provided source-record sequence before the public compilation path injects prelude declarations, while retaining the complete internal bundle for resource ceilings and the lower-level transport's existing envelope-checking use, because PROG-2 binds the invocation's source identity and PRE-1 declarations have no writer source event, instead of allowing compiler-owned prelude storage to turn an absent source unit into a valid invocation. A present record proceeds to ordinary source checks even if it contains no declarations; absence is an invocation failure without a source-language rule.
