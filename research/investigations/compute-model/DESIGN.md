@@ -1196,3 +1196,112 @@ Runtime profile-guided compilation and online adaptation are candidate
 directions in [the research ideas](../../../docs/ideas.md#parallel-grain-policies-and-runtime-profiles),
 with the unresolved cost tracked in [TODO](../../../docs/todo.md). No profile
 collection, adaptive policy or further timing trial is implemented here.
+
+## Query-retained zero-budget dispatch control
+
+This prospective development control starts from main
+`7127bcb6f48a0664d31a856ef54e21010bb2c238`, including the Buffer representation
+and checker changes in #84. It does not include the pending capture amendment
+or PR80. The [earlier combined control at its published revision](https://github.com/mbbill/Whitefoot/blob/44ee9c1352f44de553149f49a57dd471ebc073fc/research/investigations/compute-model/DESIGN.md#zero-budget-stencil-dispatch-control)
+removed both the query and recursive entry and allowed further LLVM changes.
+Its 17.97 percent result does not predict the effect of retaining the query.
+No language or runtime policy change is proposed by this experiment.
+
+Arm A is newly emitted ordinary `--par` LLVM from a freshly built compiler at
+this source revision. Arm B changes one inner row-helper `LoopSplit` call site:
+retain `wf__par_split_budget` and its exact arguments, then call the existing
+overlapping-world chunk if its returned budget is zero; otherwise call the
+existing splitter with that budget. Derive the exact site and callee anchors
+from this fresh IR, preserve their exact diff, and reject any other raw IR
+change. Preserve outer split sites, W1 sequential clones, arithmetic,
+allocation, cleanup, query/configuration handling and runtime support. The
+overlapping chunk preserves nested parallel opportunities; substituting a
+sequential clone would change the experiment. Timing images contain no
+observation calls. Both arms use identical freshly compiled current-main
+driver, sequential module, runtime and support objects and link order;
+cached external dependencies may be reused only with recorded hashes.
+
+The current research caller requires a shared scratch ABI repair before any
+native execution. Its two WF entry declarations and calls must pass the
+sixth retained-owner-cell pointer, and release must receive that one cell;
+native callbacks must obey the same signatures and retain their allocation.
+Check the repair against maintained `stencil_host.ll` and `stencil_oracle.c`,
+record the original/repaired source hashes and exact diff, and compile that
+one repaired caller for both arms. Do not modify the maintained harness in
+this diagnostic. Record source, compiler, toolchain, command, object and image
+identities; no old image is relabeled as a current-main baseline.
+
+Qualification precedes timing. Run the maintained full stencil oracle matrix
+for A and B at W1 and W4. Inspect optimized overlapping pixel work and W1
+clones: arithmetic and cleanup must remain equivalent, W1 code must be
+unchanged apart from incidental labels/addresses, and any dispatch-induced
+inlining, alias-check motion or code growth must be recorded. Such effects
+belong to this control's combined result, not a standalone runtime-query cost.
+An unexplained body difference stops the experiment.
+
+Use one qualification-only ordinary `stencil_row` helper adapter, derived
+from its actual emitted ABI, with initialized input rows and disjoint output
+of width 1,024 and 32,770. This calls a helper whose own contract has no 4,096
+upper bound, not an out-of-contract full-stencil entry. Verify view extents,
+disjointness and oracle support, and compare its one interior row with the
+maintained C oracle's one-step, three-row result. In a separate observed image
+at W4, record actual zero and positive query returns and the corresponding
+dispatch paths while forwarding the exact query arguments to the unchanged
+runtime and returning its actual answer. Affordability alone cannot prove
+positive coverage because the caller's deque can refuse a budget. If this
+fixed helper qualification cannot establish both paths, stop; do not force a
+return, change a floor or widen the input set. The full matrix covers zero
+timesteps. Neither fixture establishes empty or inverted inner-range behavior;
+that remains a general compiler-test obligation if implementation is selected.
+
+The sole timed input is 1,024 by 4,096 for 16 steps, at W1 and W4. Reuse the
+existing harness with one first call and five warm calls per process, five
+paired passes, no inter-call gap, and no core pinning or runtime override.
+Within each width, arm order is A/B, B/A, A/B, B/A, A/B; width order reverses
+on odd passes. Before execution, dry-run all 20 invocations and independently
+assert that every pass contains each arm once per width and that each width
+alternates arm order independently of width order. Every result is checked.
+Run exactly one fresh identical-image A/A null action, then one A/B action;
+retain all raw rows, orders, commands, hashes and failed outcomes. No retry,
+adaptive sweep, extra timing cell or replacement session is authorized here.
+
+For each width and pass, divide B's median of five warm wall times by A's.
+Let D be the maximum absolute deviation from one among all ten new-null
+paired ratios, including both widths. A useful W4 lead requires B/A at most
+0.95 in at least four of five pairs and `1 - median(W4 B/A) > D`. The null
+sets that numerical drift bound; there is no separate numerical pre-main
+rejection band. A failed order, provenance, correctness or time-cap check in
+the null stops before the main action. A valid null followed by failure of
+either numerical condition is inconclusive and stops without a rerun. Report
+all paired ratios, W1 behavior, wall/CPU and first-call results, including
+regressions; CPU/wall ratios do not attribute an effect to scheduling.
+
+Check the live shared guard before each heavy stage. The fresh compiler build
+has a 120-second cap and two Cargo jobs; LLVM emission, native construction,
+full-oracle execution, helper-path qualification, optimized-code inspection,
+null timing and main timing each have a separate 30-second cap. Record build
+time separately from program execution. A stage failure or cap overrun stops
+the sequence; an expected cost above its cap must be reported before changing
+the protocol. This document is published before any of these stages begins.
+Scratch recipes and artifacts remain outside the repository; only compact
+dated evidence needed to assess the result is retained here afterward, and
+none enters CI or creates a maintained benchmark runner.
+
+**Design suitability.** Retaining the runtime query keeps configured floors,
+queue state and nested parallelism authoritative while testing whether a
+known-zero splitter activation is worth avoiding. It can remove parameter
+transport and entry tests, but adds a positive-path branch and may grow code;
+the retained call can also prevent the earlier alias-check hoisting. No gain
+is presumed. If selected, the smallest general implementation belongs in
+`backend/emitter/parallel.rs` with continuation/phi handling in `emitter.rs`:
+branch results must join with the existing seed/return ABI, including Unit
+maps and reductions, without creating nonexistent W1 predecessors. A small
+synthesized dispatch wrapper is an alternative that avoids caller CFG changes
+but adds helper/ABI ownership and depends on inlining. Prefer testing the local
+branch first; neither choice needs capture pruning, copied floor constants,
+source recognition or a scheduler change. Production selection would require
+ordinary compiler tests for zero/nonzero budgets, empty/inverted ranges,
+map/reduction seeds, nested loops, cleanup and CFG/phi continuation, with its
+design amendment and deferred opportunities recorded in the existing TODO.
+This is preparation for that decision, not a production implementation or a
+change to the frozen PR78 review scope.
