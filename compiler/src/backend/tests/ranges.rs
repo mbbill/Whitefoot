@@ -230,7 +230,7 @@ fn sum_shared(first: &Box<Array<u64>>, second: &Box<Array<u64>>) -> result: own 
             "mutable",
             "&Box<Array<u64>>",
             "writes(input)",
-            "  if deref(input).inner.len != 0_u64 { set deref(input).inner[0_u64] = 7_u64; }\n",
+            "  if deref(input).inner.len != 0_u64 {\n    set deref(input).inner[0_u64] = 7_u64;\n  }\n",
             "sum_owner(input: input)",
             "box_array_filled::<u64>(count: count, value: 7_u64)",
             "&input",
