@@ -262,16 +262,31 @@ condition under which it is taken up.
   no_heap;` supplies source allocation restrictions, but ordinary linked bodies,
   startup and exit are not resource-closed by that declaration. `musttail`
   supplies neither termination nor a complete stack bound. A bounded non-tail
-  recursive probe works today, while its nondecreasing control is also accepted;
-  the missing rank and resource consumers must distinguish them. Next qualify
-  local rank evidence, complete work/stack composition and one fixed sequential
-  adapter against an exact image. Validation must detect an unchanged rank,
-  unknown callee, over-budget cap and changed artifact, while admitting proved
-  bounded recursion. Symbolic/amortized bounds, hardware deadlines, interrupts,
-  parallel contexts and service-response contracts remain unqualified; reopen
-  each when a concrete consumer needs that extension. This research does not
-  change the atomic in-place update callable's no-failure-exit contract or source
-  rules.
+  recursive probe works today, while its nondecreasing control is also accepted.
+  The [implementation contract](../research/investigations/fixed-resource-execution/DESIGN.md)
+  proposes erased entry/header rank snapshots, ordinary ProofContext queries,
+  complete call/loop coverage and separate work/stack composition. Implementing
+  that consumer is the next source task: it must detect unchanged actuals,
+  reset-before-decrement, missing backedges and nonterminating callees inside
+  counted loops, including concrete function-kind actuals. The existing INV-1
+  probes establish reusable arithmetic checks, not implemented termination.
+  A fixed 4 KiB stack adapter runs the recursive fixture and its particular
+  linked path was inspected, but general source/machine correspondence and
+  complete native closure remain unqualified. The diagnostic stack parser
+  drops unmeasured targets and malformed rows and uses saturating sums;
+  qualification needs typed missing-evidence outcomes, all frame/call/region
+  coverage and the analyzed objects actually linked. Validate with unknown
+  callees, dynamic frames, new unmapped cycles, insufficient budgets and changed
+  images before claiming a deployment guarantee. This target work is deferred
+  until the source consumer supplies proved bounds; reopen at that handoff.
+  Uniform body bounds may be too loose: validation of tighter per-call or
+  per-iteration dependence is deferred until a real kernel misses its budget
+  because of that estimate. Clipped numeric composition must report an upper
+  bound that cannot certify the request, not an actual resource lower bound.
+  Wider/lexicographic ranks, symbolic/amortized costs, hardware deadlines,
+  asynchronous or parallel contexts and service-response contracts remain
+  unqualified; reopen each when a concrete consumer needs that extension.
+  The atomic in-place update callable's no-failure-exit contract is unchanged.
 - **Facts a contract can carry (after PR 70 merges; owner, 2026-09-20).**
   Three additive widenings, taken up together, each measured:
   (1) Affine `ensures`. A `requires` may already be an affine relation and

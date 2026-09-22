@@ -5,7 +5,9 @@ finishes within a declared resource budget. Bounded recursion is an admissible
 candidate: eliminating every recursive call is not the objective. The study
 uses main `f3cf41d4`, specification v0.62, and the compiler built for the
 [cleanup investigation](../access-effects/cleanup-continuations/README.md).
-It proposes no new source syntax, implemented proof family, or live-tree change.
+The [implementation contract](DESIGN.md) now proposes source rank clauses and
+an internal proof consumer. The active specification and compiler are unchanged;
+three pending design amendments keep those choices outside the live tree.
 
 ## Question and initial scope
 
@@ -122,8 +124,8 @@ bodies are not described by their `pure` or `reads`/`writes` rows [EFF-1].
 
 ## Candidate proof decomposition
 
-This is a research candidate, not a selected source extension or an additional
-current acceptance judgment.
+The following decomposition motivates the [concrete source proposal](DESIGN.md).
+Neither adds a current acceptance judgment.
 
 ### Source progress and work
 
@@ -215,12 +217,36 @@ signature is not permission to assume those properties.
 
 The ordinary source checker remains the one semantic path. Resource evidence
 would refine a checked program's deployment guarantee without changing its
-result or relaxing its safety checks. The language form of new proof
-obligations and the target interface remain open. Existing accepted source
+result or relaxing its safety checks. The proposed rank form and source
+interfaces are specified in DESIGN.md; complete target qualification still
+needs its correspondence and coverage evidence. Existing accepted source
 without the future certificate remains ordinary source; this study invents
 no current rejection rule or compiler flag.
 
 ## Native probes, 2026-09-22
+
+The next implementation-readiness probes distinguish three unresolved choices.
+Their criteria are recorded before those probes run:
+
+1. Submit the proposed local descent inequalities through ordinary INV-1,
+   using explicit immutable copies only as an experiment stand-in for erased
+   rank snapshots. Check direct descent and a loop backedge, then change the
+   recursive actual and the backedge separately. A reset-before-decrement
+   example must distinguish comparison with the function-entry value from
+   comparison with the value immediately before the call. These tests assess
+   reuse of the existing proof engine, not implemented termination checking.
+2. Compose the same generated object with a small sequential adapter and a
+   caller-supplied fixed stack. Inspect every reachable machine call, static
+   frame and linked section. If ordinary optimization preserves enough call
+   identity, keep it; if it does not, test a narrowly constrained optimization
+   boundary. A successful run is supporting evidence only. Dynamic loader and
+   host startup remain outside this component experiment's handoff boundary.
+3. Check closed numeric work/stack composition against independent small
+   examples, including binary recursion, zero work, and enormous numeric
+   depths. Evaluation must depend on the representation size of the bounds,
+   not unroll the admitted number of runtime iterations. Any clipped result
+   must mean that this upper bound cannot certify the requested budget, never
+   that the program necessarily uses that many resources.
 
 The compiler sources are unchanged from `f3cf41d4`. The host is arm64 macOS
 26.6.2 with Apple clang 21.0.0, ordinary `-O2`, and `--no-overlap`.
@@ -326,6 +352,148 @@ closure, or a general recursion certificate. The compiler itself checked all
 source obligations it currently specifies; the new rank interpretation above
 is an argument to qualify in a future proof consumer.
 
+### Implementation-readiness results
+
+The [rank-obligation probe](rank-obligations.wf) uses ordinary value copies and
+INV-1 inequalities to test the proposed arithmetic obligations on the current
+checker. It compiles and checks all counts 0..32 natively. Its ordinary loop
+and non-tail recursion both agree with their expected results. These copies
+are experiment inputs, not an implementation of erased rank snapshots.
+
+Four compile-only changes distinguish the proof boundaries:
+
+| Change | Current result |
+|---|---|
+| Set recursive `next` to unchanged `remaining` | INV-1 rejects `local_progress` |
+| Leave the loop's `remaining` unchanged | INV-1 rejects `backedge_progress` |
+| Reset `remaining` to 32, then decrement | INV-1 rejects `entry_progress` |
+| Same reset, remove only `entry_progress` | Accepted, never run |
+
+The last case keeps a proved local decrease but repeats rank 31 forever for
+positive inputs. It selects an activation-entry snapshot over a call-local
+comparison. The loop case selects a per-iteration snapshot. Existing
+`entry(reference)` cannot supply either: MSR-3 admits it only for written
+reference-parameter measures in ensures, not as a scalar/body snapshot.
+
+The [bound algebra model](bound-algebra.rs) checks clipped affine-map
+exponentiation against an independent level-sum oracle on 3,150 combinations
+of depth, branching, local cost and budget. Four full-u64-rank controls cover
+linear growth, no children, zero local cost and budget overflow. B+1 uses
+u128; B=`u64::MAX` takes 65 exponent-bit steps rather than unrolling a runtime
+depth. At depth 33, one-child activation count is 33 and two-child count is
+8,589,934,591, while a 32-byte recursive frame still has the same conservative
+1,056-byte chain bound. This validates the small algebra model, not a resource
+consumer integrated into the compiler.
+
+The [fixed-stack adapter](fixed-stack.S) replaces the module's weak floor
+entry for one research link, invokes the unchanged WF entry on a statically
+reserved, 16-byte-aligned 4,096-byte region and restores the caller's stack
+on return. The two exit conversion functions are extracted verbatim from
+`compiler/src/backend/ordinary_values.c`; no scheduler or ordinary exhaustion
+floor is linked. The same generated module is compiled to assembly with its
+stack report, and that exact assembly is assembled for the final link.
+
+The native program exits 0. Final disassembly confirms the entry-to-helper
+path uses 32 bytes in the adapter, 64 in `wf__main_body`, and 32 per recursive
+`wf_fold_hash` activation. The two exit helpers use no stack and make no calls.
+The source `wf_main` was inlined into the entry body and its separate 48-byte
+definition is not on this invocation path. Thus this particular inspected
+path has a conservative `32 + 64 + 33*32 = 1,152 B` stack bound, below the
+4,096-byte reservation. The base case's skipped frame leaves this deliberately
+loose. A requested budget below 1,152 would fail this bound, not prove that
+actual execution needs 1,152 bytes.
+
+`llvm-nm --undefined-only` prints no symbols. Every call in the linked
+disassembly resolves to the recursive helper, entry body or the two exit
+helpers; there are no allocator, stack-probe or lazy-binding calls in this
+closure. No extra optimization restriction was needed to inspect this
+particular graph. It does not establish general optimizer correspondence.
+An additional exploratory leaf-frame check reported 16 bytes and its
+assembly adjusted SP by exactly 16; no general red-zone claim follows.
+
+The linked section payloads are 456 bytes of text, 32 of constants, 112 of
+compact unwind data, 104 of unwind frames and 4,096 of BSS. Their 4,800-byte
+sum is not a deployment memory budget: the Mach-O image maps three 16 KiB
+segments (`__TEXT`, `__DATA`, `__LINKEDIT`) and reserves an inaccessible
+`__PAGEZERO`; the host loader, libraries, suspended caller stack and asynchronous
+activity are outside this component experiment. A complete deployment must
+account for its actual supplied regions and environment, not add section
+payloads and call that whole-process memory.
+
+The experiment narrows the next implementation: the existing checked body and
+ABI can run inside a small explicit resource boundary, and current ProofContext
+can discharge the required local comparisons. The missing pieces are the
+erased snapshot/coverage consumer and general target qualification. The
+[implementation contract](DESIGN.md#implementation-admission-and-evidence)
+states the first source milestone and the stronger deployment milestone
+separately.
+
+To reproduce the additional probes, use the existing compiler and the variables
+from the earlier block, or create a fresh scratch directory first:
+
+```sh
+perl .github/run-check.pl rank-build \
+  compiler/target/gate/whitefootc --no-overlap \
+  -o "$resource_scratch/rank" "$resource_study/rank-obligations.wf"
+perl .github/run-check.pl rank-run "$resource_scratch/rank"
+rustfmt --check --edition 2024 "$resource_study/bound-algebra.rs"
+perl .github/run-check.pl bound-algebra-build \
+  rustc --edition 2024 -O "$resource_study/bound-algebra.rs" \
+  -o "$resource_scratch/bound-algebra"
+perl .github/run-check.pl bound-algebra-run "$resource_scratch/bound-algebra"
+ruby - "$resource_study" "$resource_scratch" <<'RUBY'
+study, scratch = ARGV
+source = File.read(File.join(study, 'rank-obligations.wf'))
+reset = source.sub('let next = remaining - 1_u64;',
+                   "set remaining = 32_u64;\n  let next = remaining - 1_u64;")
+variants = {
+  'unchanged-call' => [source.sub('let next = remaining - 1_u64;',
+                                'let next = remaining;'), 1],
+  'unchanged-loop' => [source.sub('set remaining = remaining - 1_u64;',
+                                'set remaining = remaining;'), 1],
+  'reset-with-entry' => [reset, 1],
+  'reset-local-only' => [reset.sub("  invariant entry_progress: next < start;\n", ''), 0]
+}
+variants.each do |name, (text, expected)|
+  input = File.join(scratch, name + '.wf')
+  File.write(input, text)
+  system('perl', '.github/run-check.pl', name,
+         'compiler/target/gate/whitefootc', '--no-overlap', '--emit-llvm',
+         '-o', File.join(scratch, name + '.ll'), input)
+  raise "unexpected status for #{name}" unless $?.exitstatus == expected
+end
+native = File.read('compiler/src/backend/ordinary_values.c')
+first = native.index('void wf_exit_status(')
+last = native.index('void wf_socket_address_v4(', first)
+raise 'missing exit definitions' unless first && last
+File.write(File.join(scratch, 'exit-adapter.c'),
+           "#include \"ordinary_values.h\"\n#include <string.h>\n\n" + native[first...last])
+RUBY
+perl .github/run-check.pl fixed-body-assembly \
+  clang -x ir "$resource_scratch/bounded.ll" -S \
+  -o "$resource_scratch/fixed-body.s" -fstack-usage -Wno-override-module -O2
+perl .github/run-check.pl fixed-exit-assembly \
+  clang -I compiler/src/backend "$resource_scratch/exit-adapter.c" -S \
+  -o "$resource_scratch/exit-adapter.s" -fstack-usage -O2
+perl .github/run-check.pl fixed-link \
+  clang "$resource_scratch/fixed-body.s" "$resource_scratch/exit-adapter.s" \
+  "$resource_study/fixed-stack.S" -Wl,-map,"$resource_scratch/fixed.map" \
+  -o "$resource_scratch/fixed"
+perl .github/run-check.pl fixed-run "$resource_scratch/fixed"
+cat "$resource_scratch/fixed-body.su" "$resource_scratch/exit-adapter.su"
+llvm-nm --undefined-only "$resource_scratch/fixed"
+llvm-objdump --disassemble --no-show-raw-insn "$resource_scratch/fixed"
+llvm-size --format=sysv "$resource_scratch/fixed"
+otool -l "$resource_scratch/fixed"
+```
+
+The adapter commands target arm64 macOS and require LLVM inspection tools on
+PATH. They deliberately do not run any compile-only divergent variant. The
+three added probes have an explicit caller here and are replaced or removed
+when maintained resource-proof and target regressions supersede them. The
+one-shot scratch Makefile used to group native build/run commands was removed
+after use; it is not a new repository runner or gate input.
+
 ## Alternatives and useful prior work
 
 | Route | Benefit | Cost and research disposition |
@@ -362,14 +530,14 @@ proof path would duplicate semantic responsibility. The main uncertainty is
 preserving and checking source progress/cost evidence through optimization and
 linking.
 
-Next test an experimental complete certificate for a maintained bounded kernel
-and the recursive probe: checked rank/counter evidence, composed work/stack
-bounds, and a fully accounted sequential adapter. Before selecting a production
-design, it must distinguish an unchanged-rank call, an unaccounted native callee,
-an over-budget input cap and a changed image from the valid certificate. It
-must also admit a bounded non-tail recursive program when its proved stack
-fits. Those cases distinguish the actual goal from a blanket recursion ban
-or a successful test run.
+The next implementation is the ordinary source rank/coverage consumer and
+separate cost composition specified in [DESIGN.md](DESIGN.md). Its proposed
+rules and interfaces are ready for implementation; the live tree still awaits
+the owner's ruling on the three amendments. The following target milestone
+must distinguish an unaccounted native callee, missing source/machine mapping,
+an insufficient budget and a changed image before publishing a complete
+qualification. The manually inspected adapter above is evidence for that
+boundary, not an implemented general certificate checker.
 
 General constant-stack cleanup is deferred as an optimization for heap-using
 programs; reopen it when a concrete ownership depth fails its stack budget or
