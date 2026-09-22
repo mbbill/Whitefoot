@@ -470,8 +470,9 @@ separately. A source rejection, unsupported lowering, wrong native result and
 unmeasured candidate are four different outcomes. Required library behavior
 must not be weakened to obtain a green experiment. Merging PR #70 establishes
 the baseline; it does not by itself complete these libraries or establish
-their performance ceiling. This branch restores the library home and updates
-the evidence and recommendations, without implementing the next slice.
+their performance ceiling. The restoration at `8c02e875` restored the library
+home and updated the evidence and recommendations. The subsequent Vector
+consumption trial below implements the first library slice.
 
 ## Vector consumption trial
 
@@ -530,9 +531,9 @@ Before measuring, use these discriminators:
   representation or proposing language support. O(n) alone is not a parity
   claim, and no percentage threshold is invented for all workloads.
 
-The proposed consumption decision remains in
-[`design/amendments/vector-consumption.md`](../../../design/amendments/vector-consumption.md)
-while implementation and measurement proceed; it has not changed the live tree.
+The adopted consumption decision is recorded in
+[`design/language/data-model/vector-consumption.md`](../../../design/language/data-model/vector-consumption.md).
+Its current baseline retains the measured performance limitations below.
 
 The trial now implements the selected operations, including explicit cleanup
 of a nodrop element vector. The formal bundle observes original callback order,
