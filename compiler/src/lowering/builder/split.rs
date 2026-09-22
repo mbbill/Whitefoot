@@ -1208,10 +1208,11 @@ pub(crate) type SynthesisCell = RefCell<Synthesis>;
 #[cfg(test)]
 mod tests {
     use super::{LoopCombine, U64, identity, operation, prune_capture_parameters};
+    use crate::lowering::{IrBlockId, IrValueId};
     use crate::{
-        IrAddressed, IrBlock, IrBlockId, IrBooleanOperation, IrConstant, IrDrop, IrDropSubject,
-        IrEnumType, IrFunction, IrInstruction, IrIntegerOperation, IrMatchTarget, IrOperation,
-        IrSynthesis, IrTerminator, IrType, IrValueId,
+        IrAddressed, IrBlock, IrBooleanOperation, IrConstant, IrDrop, IrDropSubject, IrEnumType,
+        IrFunction, IrInstruction, IrIntegerOperation, IrMatchTarget, IrOperation, IrSynthesis,
+        IrTerminator, IrType,
     };
 
     #[test]

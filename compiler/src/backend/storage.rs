@@ -106,12 +106,18 @@ impl FunctionStoragePlan {
                 fields: Vec::new(),
             });
         }
-        let types = function
-            .value_types()
-            .iter()
-            .map(|ty| is_stored_aggregate(program, *ty).map(|stored| stored.then_some(*ty)))
-            .collect::<Result<Vec<_>, _>>()?;
         let graph = FlowGraph::from_function(program, function, sequential)?;
+        // Capture pruning preserves value IDs and their type metadata. Only
+        // definitions still present in the graph need backing; ordinary unused
+        // definitions keep their storage just as used definitions do.
+        let mut types = vec![None; function.value_types().len()];
+        for value in graph.definitions() {
+            let ty = *function
+                .value_types()
+                .get(value)
+                .ok_or(BackendFailure::InvalidIr)?;
+            types[value] = is_stored_aggregate(program, ty)?.then_some(ty);
+        }
         let returned: Vec<_> = function
             .blocks()
             .iter()
@@ -411,6 +417,20 @@ struct FlowInstruction {
 }
 
 impl FlowGraph {
+    fn definitions(&self) -> impl Iterator<Item = usize> + '_ {
+        self.entry_parameters
+            .iter()
+            .copied()
+            .chain(self.blocks.iter().flat_map(|block| {
+                block.parameters.iter().copied().chain(
+                    block
+                        .instructions
+                        .iter()
+                        .filter_map(|instruction| instruction.result),
+                )
+            }))
+    }
+
     /// Whether a later CFG visit can overwrite this block's static backing.
     /// No source ownership inference is needed for an acyclic initialization.
     fn reentered(&self, block: usize) -> bool {

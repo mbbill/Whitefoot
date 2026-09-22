@@ -749,26 +749,26 @@ fn synthesized_symbols(module: &str, prefix: &str) -> Vec<String> {
 /// not present in the reference.
 #[test]
 fn a_split_loop_carries_its_captures_and_a_second_combine() {
-    // The tail uses every extra scalar, but none belongs to the loop's task.
+    // The tail uses every extra scalar and an inline array, but none belongs
+    // to the loop's task.
     // Capturing lexical scope would put this otherwise unchanged fold beyond
     // the lane limit. Keep the existing native builds and worker observations.
     let tail_bindings = (0..32)
         .map(|index| format!("  let tail{index} = {index}_u64;\n"))
         .collect::<String>();
     let tail_sum = (0..32)
-        .map(|index| format!("tail{index}"))
-        .collect::<Vec<_>>()
-        .join(" +wrap ");
+        .map(|index| format!("  set tail_sum = tail_sum +wrap tail{index};\n"))
+        .collect::<String>();
     let source = std::str::from_utf8(CAPTURED_XOR_FOLD)
         .expect("UTF-8 fixture")
         .replace(
             "  let total = 12345678901234567890_u64;",
-            &format!("{tail_bindings}  let total = 12345678901234567890_u64;"),
+            &format!("{tail_bindings}  let tail_array = array_filled::<u64, 512>(value: 99_u64);\n  let total = 12345678901234567890_u64;"),
         )
         .replace(
             "  return total;",
             &format!(
-                "  let tail_sum = {tail_sum};\n  return total +wrap (tail_sum -wrap 496_u64);"
+                "  let tail_sum = 0_u64;\n{tail_sum}  let tail_delta = tail_sum -wrap 496_u64;\n  let saved_array = tail_array;\n  let array_value = saved_array[0_u64];\n  let array_delta = array_value -wrap 99_u64;\n  let adjusted = total +wrap tail_delta;\n  return adjusted +wrap array_delta;"
             ),
         );
     let unsplit = emit(source.as_bytes());
@@ -787,6 +787,24 @@ fn a_split_loop_carries_its_captures_and_a_second_combine() {
             frame.size(),
             64,
             "seed, bounds, three captures, budget and result"
+        );
+        let chunk = program
+            .functions()
+            .iter()
+            .find(|function| function.synthesis() == Some(crate::IrSynthesis::Chunk))
+            .expect("the fold has one chunk");
+        assert!(
+            chunk
+                .value_types()
+                .iter()
+                .any(|ty| matches!(ty, crate::IrType::Array { .. })),
+            "the removed capture must leave aggregate type metadata for this regression"
+        );
+        let storage = crate::backend::storage::FunctionStoragePlan::build(program, chunk)
+            .expect("the pruned chunk has valid storage");
+        assert!(
+            storage.slots().is_empty(),
+            "removed aggregate capture definitions must not allocate phantom chunk storage"
         );
         let mut module = crate::backend::emitter::emit_llvm_with_layout(program, host)
             .expect("the reduced capture ABI must emit")
@@ -1858,7 +1876,7 @@ fn a_loop_whose_frame_is_too_wide_declines_and_says_so() {
     // the inner loop once when the ordinary outer graph is built.
     let nested = std::str::from_utf8(WIDE_FRAME).expect("UTF-8 fixture").replace(
         "    let bias0 = mixed +wrap a0;",
-        "    let partial = 0_u64;\n    for @inner (j in 0_u64..2_u64) {\n      set partial = partial +wrap j;\n    }\n    let bias0 = mixed +wrap a0 +wrap partial;",
+        "    let partial = 0_u64;\n    for @inner (j in 0_u64..2_u64) {\n      set partial = partial +wrap j;\n    }\n    let initial = mixed +wrap a0;\n    let bias0 = initial +wrap partial;",
     );
     super::system::with_parallel_ir(nested.as_bytes(), |program| {
         let rows = program.actualization_ledger();
