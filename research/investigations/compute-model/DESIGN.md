@@ -1214,12 +1214,13 @@ original reference formal's root. An exact direct chunk capture retains that
 fact; rebinding and reconstructed owned captures do not. Work estimation can
 then carry a typed Box-array length observation, and the emitter uses the
 ordinary Box/header projection. The source call establishes the original
-referent's validity, effects exclude replacing or consuming it through that
-formal, and EFF-5 separates aliasing writes through other formals. Those facts
-hold throughout the call, including a zero-trip map. A reference type alone
-does not establish this lifetime: capture-all can retain an already consumed
-owner, and pricing must not dereference it. The precise proposed extension is
-in the [pending amendment](../../../design/amendments/array-reference-work.md).
+referent's validity. The originating typed length read supplies an exhibited
+read effect even in a zero-trip body under EFF-2, and EFF-5 separates it from
+reference writes and by-value consumption throughout the call. The no-write
+marker alone does not establish the lifetime of an unused formal. A reference
+type alone does not establish this lifetime: capture-all can retain an already
+consumed owner, and pricing must not dereference it. The precise proposed
+extension is in the [pending amendment](../../../design/amendments/array-reference-work.md).
 
 The focused native regression requires increasing prices for original Box,
 range and shared read-only alias helpers, unchanged static estimates for
@@ -1259,4 +1260,19 @@ summary is `7 * length + 5`; the outer iteration's own instructions produce
 `7 * length + 11`. The generic `ContainerMeasure(Length)` operation and the
 buffer-specific measure both feed the typed Array-length observation. Reading
 only the older buffer-specific operation misses the current helper path.
-Focused regression tests and matched-current performance remain pending.
+The same two-arm witness passes with independently built `6fdb6768` baseline
+and `cabae235` candidate compilers: baseline Box prices remain 123 and candidate
+prices grow as above. The exact source and native oracle of the maintained
+seven-arm regression also pass in a separate 1.14-second preflight. At lengths
+0, 1, 17 and 4,096, mutable, rebound and local-owner estimates stay 123, the
+unrelated `Box<u64>` estimate stays 91, and the shared read-only alias estimate
+grows from 19 to 57,363. Complete output checks and zero-trip outer calls pass.
+
+The new EFF-5 conformance pair retains a header read inside a zero-trip body
+and passes a sibling affine field by value at the same call. Both baseline
+and candidate reject the same-owner case, comparing the referenced field with
+consumption of the complete owner root, and accept the unrelated-owner
+control. This tests the existing EFF-2/OWN-1/EFF-5 safety premise without
+changing a source rule. The four source checks take 0.21 seconds together.
+Focused Rust regression execution and matched-current performance remain
+pending; the cheap native preflight does not stand in for the full gate.

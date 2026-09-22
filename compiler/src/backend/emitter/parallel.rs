@@ -635,7 +635,9 @@ impl FunctionEmitter<'_, '_> {
     }
 
     /// Scheduling arithmetic is total even when the priced source branch
-    /// would never execute. Only already-materialized SSA captures are read.
+    /// would never execute. Scalars and range descriptors are already
+    /// captured; a Box-array header load additionally relies on its exhibited
+    /// typed read and the retained no-write fact for the original formal.
     fn emit_work_estimate(
         &mut self,
         work: &IrWorkEstimate,

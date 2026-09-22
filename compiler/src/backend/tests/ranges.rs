@@ -296,7 +296,7 @@ fn probe_{name}(count: own u64, iterations: own u64) -> result: own u64 pure con
         ));
     }
     source.push_str(
-        "\nfn main() -> status: own ExitStatus pure { return exit_status(code: 0_u8); }\n",
+        "\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
     let mut llvm = emit_with_overlap(source.as_bytes())
         .replace("@main(", "@wf_reference_price_main(")
