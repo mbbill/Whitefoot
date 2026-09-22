@@ -7,6 +7,23 @@ criterion for deciding whether to pursue it. Entries do not select a design.
 Remove an item when its implementation and checks land, or its validation
 concludes with a recorded disposition; retain any selected follow-up work here.
 
+- **Modular incremental checking and optimized code generation.** The compiler
+  currently rechecks one source bundle and emits one LLVM module. The proposed
+  [architecture](../research/investigations/modular-compilation/DESIGN.md)
+  targets independent modules, reusable source proofs and generic instances,
+  dependency-tracked cross-module optimization, and ordinary full final linking.
+  Its selected direction remains an amendment, not implemented capability.
+  Validate qualified grammar and private contract projection rules; establish
+  the component-proof composition argument; exercise graph edge deletion and
+  SCC changes; and qualify complete LLVM planning/cache dependencies.
+  Require cold/incremental agreement, no unchanged-body proof work on a no-op
+  build, precise isolated-edit invalidation, and causal investigation of every
+  repeatable runtime loss against matched optimized baselines. Fragment sizes,
+  persistence cost and optimizer integration remain unmeasured. Implementation
+  is deferred because this work delivers the design; reopen when the owner
+  selects its revision for implementation, and remove this entry when the
+  stated end-to-end evidence lands or the direction is explicitly superseded.
+
 - **Ordered Vector consumption still makes avoidable transfers.** The ordinary
   prefix-window library reverses a removed suffix before consuming it in
   original order. It is O(n), but the

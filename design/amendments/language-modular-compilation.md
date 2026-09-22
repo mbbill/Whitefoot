@@ -1,0 +1,9 @@
+Node: language
+
+Decision: A program is a closed, explicitly selected graph of source modules with independently checked components, and final composition requires a verified implementation for every imported claim and required concrete instance while preserving the ordinary ownership, effect, contract and finite-proof rules, because the [modular-compilation design](../../research/investigations/modular-compilation/DESIGN.md) separates a checked callable boundary from its current implementation evidence and makes unchanged proof work reusable without introducing an assumed contract, instead of requiring every source file and derivation to belong to one freshly checked compilation unit.
+
+Decision: Cached and fresh compilation establish the same specified judgments through one checker, with modular proof publication retaining the existing recursive-component restrictions and complete current dependency validation, because an implementation edit can change summary availability without changing a signature and a cache must not authorize a circular proof, instead of treating imported declarations or previously successful cache entries as independent fact sources.
+
+Rejected:
+- Replaced decision "A program is one closed compilation unit with no include, import, module, separate compilation, internal ABI, dynamic loading, or reflection": rejected because its reason that a module boundary necessarily trusts an unverified restatement no longer holds for a boundary composed with checked implementation evidence; dynamic loading, reflection and a stable writer-visible internal ABI remain unselected.
+- Accepting an exported declaration without a currently verified implementation: rejected because publication and linkage cannot supply a proof that the implementation satisfies the declared contract.

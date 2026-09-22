@@ -43,7 +43,7 @@ they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge bounda
   the cubic closure, relaxing only which equal-bound L0 derivation is retained.
 - [Modular compilation](investigations/modular-compilation/DESIGN.md):
   independent module checking, persistent proof dependencies, and incremental
-  cross-module optimization through executable construction.
+  cross-module optimization through object generation, with ordinary final linking.
 
 Open research questions and evidence links are in [ideas](../docs/ideas.md);
 known compiler defects and implementation costs are in [todo](../docs/todo.md).
