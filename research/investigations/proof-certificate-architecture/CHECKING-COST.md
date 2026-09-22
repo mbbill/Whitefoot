@@ -838,7 +838,7 @@ fallback cost remains open. Revisit it when a current workload attributes a
 large enough share to this path, rather than adopting another representation
 for this measured gain. No passing maintained check is removed or narrowed.
 
-The pending amendment replaces the single decision at
+The owner-approved revision replaces the single decision at
 `compiler/proof-query-context`, adding reuse of the ordered affine index to
 the existing entering-closure reuse. It keeps the current invalidation,
 traversal-order and cross-flow qualifications. This keeps preparation owned
