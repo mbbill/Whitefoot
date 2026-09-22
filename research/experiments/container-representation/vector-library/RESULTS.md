@@ -4,8 +4,10 @@ This experiment bundles the current reusable
 [`GrowVector`](../../../../lib/containers/grow-vector.wf), not a second
 benchmark-only implementation. The selection criteria precede measurement in
 [X1-LIBRARY.md](../../../investigations/containers-and-resources/X1-LIBRARY.md#vector-consumption-trial).
-The source uses kernel v0.60's global heap and total allocation. Measurements
-are descriptive evidence, outside correctness CI, not a native-parity gate.
+The current source uses kernel v0.61's global heap and total allocation. The
+dated v0.60 measurements below retain their original compiler and source
+identities. Measurements are descriptive evidence, outside correctness CI,
+not a native-parity gate.
 
 ## Contract and controls
 
@@ -32,6 +34,12 @@ allocation costs.
   callback cannot observe the vector, so the control can traverse the suffix
   and shorten the length once. Its difference from reverse C measures the
   composition's cost, separately from WF lowering.
+- **Swap/take C:** swaps the next suffix element with the last one, then
+  immediately takes and consumes it; the second half is consumed from back.
+- **Take/swap C:** takes the last element into a local, exchanges that local
+  with the next suffix element, then consumes the local; the second half is
+  consumed from back. The distinct statement order permits fewer optimized
+  transfers without changing the ownership or callback contract.
 
 Each implementation has one pointer owner and a header-first allocation:
 16 bytes for length/capacity, then `capacity * sizeof(element)` bytes.
@@ -39,7 +47,9 @@ Growth allocates, copies the live run, and releases the previous backing;
 there is no realloc-policy difference. Allocation counts, requested bytes,
 peak live bytes and final zero live bytes must match before any timing is
 accepted. The common accounting wrapper adds the same bookkeeping to all
-three implementations; reported sizes exclude its private header.
+five implementations; reported sizes exclude its private header. The two
+interleaved controls were added for the v0.61 follow-up and do not occur in
+the dated v0.60 timing datasets.
 
 The ordinary mode permits normal Clang O2 inlining. The retained mode marks
 library and workload helpers and the element make/accept functions noinline
@@ -52,7 +62,7 @@ Generated optimized WF and C IR remain in `.build/` for inspection.
 `make check` in this directory checks 540 configurations per helper mode:
 10 lengths (including 0, 1, 8192), three round counts (including 0), three
 seeds (including u64 max), two element sizes and three allocation paths.
-All three implementations run each configuration: 3,240 executions across
+All five implementations run each configuration: 5,400 executions across
 the two modes. This is an experiment check, not a daily gate dependency.
 
 The formal corpus separately bundles the library and
@@ -76,7 +86,97 @@ large-record samples, so these timings do not isolate pure memory bandwidth.
 Reported timings are medians in nanoseconds per round; ratios are ratios of
 those medians. No cross-machine or application-wide speed claim follows.
 
+## v0.61 copy and consumption trial
+
+The 2026-09-22 UTC follow-up uses a freshly built baseline at
+`efe41016d10379325ed4513d0ac7457ec7f24c5b`, whose active specification SHA-256 is
+`f61a42e815e23d6bd1c837790081800ef2cfe20a9e728d87db781be92f9181d9`.
+The baseline compiler was built in a detached checkout, then the two-file
+backend copy patch alone was applied there and rebuilt. This separates the
+copy repair from simultaneous checker work in the integration branch. Both
+builds used the gate profile under the shared verification guard.
+
+| Isolated input | SHA-256 |
+| --- | --- |
+| Baseline compiler executable | `a63ad5603dcd9bfc580c203d7ebd5a73d39be6d706b2f686ab6ada46db1d6212` |
+| Swap-only compiler executable | `7e6fa30e24b2633ac96b5a2d7ed13c6e47e124a075dc6e73e7f010e27ff12993` |
+| Swap-only backend patch | `ef426a19e60f2e0ecc5b42900d813fe4776f0731d02959d814494c5f8818533c` |
+| Original library | `c8ce9e0cdd850deebcb5c4d0cc91d5bc183631c19514c274834d59ff6e139eb8` |
+| Take-first library candidate | `e13c9937621abc2179d2d939cdb23b4a403d312d0245a5c369858aa3aeb6acad` |
+| Shared WF workload | `1b11932fe84f30c5d37d885ef5331d1f5b8944f586c228bf0720ff2049985e33` |
+| Five-way C harness | `e11377b7fc835203441337243af264d9fa0082fa21fbe65bbd92fe925a8d3976` |
+
+The original library with the baseline compiler, original library with the
+swap-only compiler, and take-first candidate with the swap-only compiler each
+passed all 5,400 executions, including unchanged allocation counts, requested
+bytes, peak live bytes and exact release. Compiler builds took 45.91 and
+44.31 seconds; the corresponding experiment construction and execution checks
+took 3.54, 3.30 and 2.93 seconds. These are verification costs, not workload
+performance samples. The earlier executable already present in the shared
+worktree was a historical v0.60 build and was not used as this baseline.
+
+The copy patch uses ordinary `llvm.memcpy` only in the compiler-owned `swap`
+body. OP-11 establishes that its two targets are equal or disjoint, excluding
+proper ancestry. Ordinary [LLVM memcpy](https://llvm.org/docs/LangRef.html#llvm-memcpy-intrinsic)
+admits equality as well as disjointness; `memcpy.inline` has a different
+requirement. Private snapshots are disjoint
+from both exchange targets. No parameter receives a new `noalias` promise,
+and other storage copies retain `memmove` because their general path can
+include partially overlapping input/result storage.
+
+The take-first candidate consumes `floor(removed / 2)` elements by taking the
+last element, swapping that local with the next suffix position, and passing
+the local to the callback. The reversed remainder is consumed from back.
+At first-half offset `k`, `k < floor(removed / 2)` proves that the post-take
+length still exceeds `retained + k`. A local PRF-1 certificate publishes this
+bound without a runtime branch. The retained prefix and backing are unchanged,
+and every callback observes the original suffix order.
+
+The criterion before timing is fewer actual optimized record transfers. For
+the retained 256-byte truncate, the original WF body has three transfers per
+reverse pair and one per consumed record. The copy patch changes the pair's
+`2 memcpy + 1 memmove` to `3 memcpy`, without changing that count. The
+take-first WF candidate still has four transfers per first-half iteration
+and one per remaining record. Matched take-first C has two and one; matched
+swap-first C still has four and one. No timing was used to select the
+unimproved WF source candidate.
+
+Raw IR reveals additional immutable local snapshots. A bounded, IR-only
+diagnosis left source, callbacks, control flow and noalias facts unchanged:
+
+| Scratch IR change | First-half 256-byte transfers | Remainder transfers |
+| --- | ---: | ---: |
+| Unchanged take-first candidate | 4 | 1 |
+| Early `captures(none)` on aggregate ABI inputs/results | 4 | 1 |
+| Four separate local allocations instead of one 1,024-byte frame | 4 | 1 |
+| Both changes | 4 | 1 |
+
+Clang O2 completed all three diagnostic optimizations in one guarded 0.20-second
+run. Separate allocations forwarded two caller snapshots but exposed the
+swap temporary, leaving the transfer count unchanged. These negative results
+justify neither a broader ABI attribute nor a frame representation change.
+The compiler-produced raw and optimized modules are in the experiment's
+`.build/followups-*` directories. The diagnostic transformations were written
+outside the repository; they are not an alternate compiler path or checked-in
+implementation.
+
+Ordinary representation alternatives must preserve the complete API. An
+`Option<T>` slot representation permits a forward drain but cannot implement
+the unchanged `remove(index) -> T` contract without an occupancy invariant
+that rules out `None`; an impossible fallback or an optional result would
+weaken the contract. Rotating a Ring's retained prefix before draining costs
+O(retained + removed), violating O(removed) truncation when almost all values
+are retained. An atomic update that consumes the old slot in a callback and
+returns a replacement would avoid the local swap, but OP-12 admits only copy
+or affine targets; unconstrained T is linear, so that form cannot serve the
+existing nodrop-generic API. None of these alternatives was silently substituted
+for the selected operation contract.
+
 ## Lowering attribution
+
+This section preserves the historical v0.60 measurements and their original
+three-way controls. The v0.61 follow-up above does not relabel these samples
+as measurements of its newer compiler or source candidates.
 
 The initial dataset is
 [`measurements-x1-before-address.csv`](measurements-x1-before-address.csv).
@@ -176,9 +276,12 @@ records the exact rejected fragments, rules and ordinary forms:
 - The compiler wrongly rejected moving the sole linear field of a wrapper.
   The PROV-6 repair judges the unselected residual and includes regressions
   that still reject an abandoned generic or fieldless nodrop member.
-- Destructuring a Box-containing wrapper currently loses the content measure
-  fact. The separate placement defect is recorded in `docs/todo.md`; direct
-  field consumption serves this library without an artificial failure branch.
+- Destructuring a Box-containing wrapper previously lost the content measure
+  fact. The ordinary placement repair carries the recursive content inventory
+  through ownership moves and construction; focused
+  [descriptor regressions](../../../../compiler/src/semantic/tests/descriptor_invalidation.rs)
+  exercise it. Direct field consumption still serves this library without an
+  artificial failure branch.
 
 No specification rule changes in this trial.
 
