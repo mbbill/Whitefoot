@@ -58,7 +58,7 @@
 
 use crate::{SemanticIssueKind, SemanticRule};
 
-use super::{assert_accepts, assert_rule_kind};
+use super::{assert_accepts, assert_rule_at, assert_rule_kind};
 
 /// [OWN-1] one consuming use kills the whole binding that rooted the place, so
 /// a proved-distinct candidate index pair does not keep a later subscript
@@ -212,6 +212,45 @@ fn a_field_consume_cannot_hide_a_linear_residual_without_a_drop_action() {
         );
         assert_rule_kind(source.as_bytes(), SemanticRule::Prov6, |kind| {
             matches!(kind, SemanticIssueKind::LinearValuePartiallyConsumed { .. })
+        });
+    }
+}
+
+#[test]
+fn boxed_field_consumes_judge_linear_residuals_before_empty_releases() {
+    for (declaration, residual) in [
+        ("nodrop enum Token {\n  Live();\n}\n\n", "Token"),
+        ("nodrop struct Token {\n}\n\n", "Token"),
+        ("nodrop struct Token {\n  value: u64;\n}\n\n", "Token"),
+    ] {
+        let source = format!(
+            "{declaration}struct Holder {{\n  value: Box<u64>;\n  residual: {residual};\n}}\n\nfn take(holder: own Box<Holder>) -> value: own Box<u64> pure {{\n  return move holder.inner.value;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        assert_rule_at(source.as_bytes(), SemanticRule::Prov6, "holder.inner.value");
+        assert_rule_kind(source.as_bytes(), SemanticRule::Prov6, |kind| {
+            matches!(
+                kind,
+                SemanticIssueKind::LinearValuePartiallyConsumed {
+                    mechanical_fix: "destructure the whole value with let N(f: a, ...) = move v;",
+                    ..
+                }
+            )
+        });
+    }
+}
+
+#[test]
+fn moving_an_array_or_window_element_still_reports_a_hole() {
+    for (ty, requires) in [
+        ("Array<Box<u64>, 1>", ""),
+        ("Slots<Box<u64>, 1>", " contract {\n  requires values.len > 0_u64;\n}"),
+    ] {
+        let source = format!(
+            "fn take(values: own {ty}) -> value: own Box<u64> pure{requires} {{\n  return move values[0_u64];\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        assert_rule_at(source.as_bytes(), SemanticRule::Win3, "values[0_u64]");
+        assert_rule_kind(source.as_bytes(), SemanticRule::Win3, |kind| {
+            matches!(kind, SemanticIssueKind::InvalidElementMove { .. })
         });
     }
 }

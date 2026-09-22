@@ -15,8 +15,8 @@ use crate::{
 };
 
 use super::super::model::{
-    BindingId, CheckedDrop, CheckedLoopId, CheckedMode, CheckedStatement, CheckedType,
-    ValueInitializerKind,
+    BindingId, CheckedDrop, CheckedLoopId, CheckedMode, CheckedProjectedDrop, CheckedStatement,
+    CheckedType, ValueInitializerKind,
 };
 use super::references::{InvalidationEvent, REF3_RETURN_AN_INDEX, ReferenceInfo};
 use super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
@@ -213,8 +213,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 {
                     CheckedStatement::Evaluate(value.expression)
                 } else {
+                    self.validate_scope_release(value.expression.ty(), "discarded result", node)?;
+                    let drops = self
+                        .drop_paths(value.expression.ty(), Vec::new())?
+                        .into_iter()
+                        .map(|(fields, ty)| CheckedProjectedDrop { fields, ty })
+                        .collect();
                     CheckedStatement::DropExpression {
                         value: value.expression,
+                        drops,
                     }
                 };
                 Ok(Self::continuing_statement(statement, value.effects))

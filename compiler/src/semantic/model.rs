@@ -2338,6 +2338,7 @@ pub(crate) enum CheckedStatement {
     /// compiler-derived release it runs [STOR-3].
     DropExpression {
         value: CheckedExpression,
+        drops: Vec<CheckedProjectedDrop>,
     },
     /// A finite source-written local invariant checked before it is published
     /// and erased before lowering. It has no runtime expression, effect,

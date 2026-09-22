@@ -4774,6 +4774,12 @@ impl Analyzer<'_, '_> {
     ) -> bool {
         self.goals.support(goal).iter().any(|support| {
             let (place, holders) = self.resolve_goal_support(support);
+            // [ENT-5, MSR-2] a current place reads every named offset as
+            // well as the selected storage. Goals and L0 terms must lose
+            // that place's identity on the same offset event.
+            if self.event_kills_offset_support(separations, &place, event) {
+                return true;
+            }
             match event {
                 // [MSR-2] a write at an element position carries the written
                 // element's own place, `P[i]`, so it reaches the descriptor
@@ -4848,6 +4854,10 @@ impl Analyzer<'_, '_> {
             let (place, holders) = self.resolve_goal_support(support);
             holders.iter().any(|holder| exited.contains(holder))
                 || matches!(place.root, PlaceRoot::Binding(binding) if exited.contains(&binding))
+                || place.path.iter().any(|projection| {
+                    matches!(projection, PlaceStep::Index(offset)
+                        if offset.support().is_some_and(|binding| exited.contains(&binding)))
+                })
         })
     }
 
@@ -17172,6 +17182,131 @@ mod proof_closure_tests {
             &context.close(&terms, &goals, &mut ledger),
             &closed.state
         ));
+    }
+}
+
+#[cfg(test)]
+mod indexed_goal_kill_tests {
+    use super::*;
+
+    #[test]
+    fn signed_indexed_facts_follow_offset_events_and_scope_exits() {
+        let constant_ids = HashMap::new();
+        let context = EntailmentContext {
+            callees: &[],
+            constants: &[],
+            constant_ids: &constant_ids,
+            nominals: &[],
+            elements: &[],
+            contract_queries: &[],
+            verified_postconditions: &[],
+            verified_postcondition_proofs: &[],
+            binding_names: &[],
+        };
+        let function = CheckedFunction {
+            formal_hypothesis: false,
+            id: crate::semantic::model::FunctionId(0),
+            declaration: crate::DeclarationId::from_index(0).unwrap(),
+            name: String::new(),
+            symbol: String::new(),
+            region_parameters: Vec::new(),
+            parameters: Vec::new(),
+            result_mode: CheckedMode::Own,
+            result: CheckedType::Unit,
+            declared_state_writes: Vec::new(),
+            requirements: Vec::new(),
+            postconditions: Vec::new(),
+            body: None,
+            body_disposition: Default::default(),
+            allocates: false,
+            call_separations: Vec::new(),
+            permission_separation_queries: Vec::new(),
+            entailment: FunctionEntailment::default(),
+        };
+        let mut analyzer = Analyzer::new(&context, &function);
+        let index = BindingId(1);
+        let unrelated = BindingId(2);
+        // The offset is below a preceding literal subscript: every index
+        // in a selected place contributes support, not only its first one.
+        let projections = vec![
+            GoalProjection::Subscript(CapturedValue::new(
+                CaptureId::source(0),
+                CapturedTerm::Literal(0),
+            )),
+            GoalProjection::Subscript(CapturedValue::new(
+                CaptureId::source(1),
+                CapturedTerm::Binding(index),
+            )),
+        ];
+        let goal = analyzer.goals.intern(
+            GoalExpression::Datum(GoalDatum::Place {
+                root: BindingId(0),
+                projections: projections.clone(),
+                ty: CheckedType::Bool,
+            }),
+            None,
+            None,
+            vec![GoalSupport {
+                root: BindingId(0),
+                projections,
+                measure: None,
+            }],
+        );
+        let separations = SeparationLedger::default();
+        for sign in [GoalSign::Positive, GoalSign::Negative] {
+            for binding in [index, unrelated] {
+                let source = crate::NodePath {
+                    components: Vec::new(),
+                };
+                let events = [
+                    KillEvent::Write {
+                        place: ResolvedPlace::binding(binding),
+                        element: false,
+                        source: source.clone(),
+                    },
+                    KillEvent::Consume { binding, source },
+                ];
+                for event in events {
+                    let mut facts = FactState::new();
+                    let established = analyzer.derivations.event(FlowEventKind::S1, None);
+                    facts.establish_goal(goal, sign, &mut analyzer.derivations, established);
+                    analyzer.apply_kills_one(&separations, &mut facts, &[event]);
+                    let closed = close(
+                        &facts,
+                        &analyzer.terms,
+                        &analyzer.goals,
+                        &mut analyzer.derivations,
+                    );
+                    assert_eq!(
+                        closed.derives_goal(goal, sign, &analyzer.goals),
+                        binding == unrelated,
+                        "event must remove exactly the goals that read its binding"
+                    );
+                }
+                let mut facts = FactState::new();
+                let established = analyzer.derivations.event(FlowEventKind::S1, None);
+                facts.establish_goal(goal, sign, &mut analyzer.derivations, established);
+                let exited = HashSet::from([binding]);
+                materialize_closure_before_kill(
+                    &mut facts,
+                    &analyzer.terms,
+                    &analyzer.goals,
+                    &mut analyzer.derivations,
+                );
+                facts.kill_goals(|candidate| analyzer.scope_kills_goal(candidate, &exited));
+                let closed = close(
+                    &facts,
+                    &analyzer.terms,
+                    &analyzer.goals,
+                    &mut analyzer.derivations,
+                );
+                assert_eq!(
+                    closed.derives_goal(goal, sign, &analyzer.goals),
+                    binding == unrelated,
+                    "scope exit must remove exactly the goals that read its binding"
+                );
+            }
+        }
     }
 }
 
