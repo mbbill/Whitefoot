@@ -258,7 +258,9 @@ condition under which it is taken up.
 - **Fixed-resource execution with proved completion.** The
   [resource investigation](../research/investigations/fixed-resource-execution/README.md)
   studies the no-heap goal: checked loop/recursion progress, total work and peak
-  storage within an explicit entry, target and runtime contract. `program
+  storage within an explicit entry, target and runtime contract. The stack
+  capacity is supplied in bytes before qualification; depth is only an input
+  to the byte calculation, never an independent acceptance limit. `program
   no_heap;` supplies source allocation restrictions, but ordinary linked bodies,
   startup and exit are not resource-closed by that declaration. `musttail`
   supplies neither termination nor a complete stack bound. A bounded non-tail
@@ -277,7 +279,9 @@ condition under which it is taken up.
   qualification needs typed missing-evidence outcomes, all frame/call/region
   coverage and the analyzed objects actually linked. Validate with unknown
   callees, dynamic frames, new unmapped cycles, insufficient budgets and changed
-  images before claiming a deployment guarantee. This target work is deferred
+  images before claiming a deployment guarantee. Include an oversized single
+  frame, many small frames that fit, the exact budget boundary, and changed
+  frames under an unchanged source depth proof. This target work is deferred
   until the source consumer supplies proved bounds; reopen at that handoff.
   Uniform body bounds may be too loose: validation of tighter per-call or
   per-iteration dependence is deferred until a real kernel misses its budget

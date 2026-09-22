@@ -2,7 +2,8 @@
 
 This investigation asks how Whitefoot can establish that a no-heap program
 finishes within a declared resource budget. Bounded recursion is an admissible
-candidate: eliminating every recursive call is not the objective. The study
+candidate: qualification must prove peak stack bytes fit a capacity supplied
+in advance; a recursion-depth bound is only intermediate evidence. The study
 uses main `f3cf41d4`, specification v0.62, and the compiler built for the
 [cleanup investigation](../access-effects/cleanup-continuations/README.md).
 The [implementation contract](DESIGN.md) now proposes source rank clauses and
@@ -533,7 +534,10 @@ linking.
 The next implementation is the ordinary source rank/coverage consumer and
 separate cost composition specified in [DESIGN.md](DESIGN.md). Its proposed
 rules and interfaces are ready for implementation; the live tree still awaits
-the owner's ruling on the three amendments. The following target milestone
+the owner's ruling on the three amendments. This source task is a dependency,
+not a usable fixed-stack guarantee. The first complete target milestone takes
+the supplied byte budget as an input and must distinguish one oversized frame
+from many small frames that fit, as well as the exact budget boundary. It also
 must distinguish an unaccounted native callee, missing source/machine mapping,
 an insufficient budget and a changed image before publishing a complete
 qualification. The manually inspected adapter above is evidence for that

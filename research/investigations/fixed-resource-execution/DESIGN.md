@@ -13,6 +13,33 @@ source checkers: source progress, structural cost composition, and target
 resource qualification. A passed source check, a resource qualification and a
 successful native run remain distinct results.
 
+## Supplied stack budget
+
+The deployment supplies a usable stack capacity S in bytes before
+qualification. For the fixed entry contract, target configuration and actual
+linked image, the required conclusion is that every admitted invocation's
+peak stack use is at most S. A source activation count is intermediate
+evidence, never the resource limit or a sufficient success criterion.
+Even one nonrecursive activation can exceed S; many small activations can fit.
+
+The checker combines proved path/depth bounds with complete machine frame
+and edge costs, including entry, exit, helpers, spills, temporaries and
+alignment. In a simple uniform-frame case this yields `O + D*C <= S`, where
+O accounts for the remaining peak-path bytes and C is the complete incremental
+cost of an activation. For `C > 0` and `S >= O`, the budget can be restated as
+`D <= floor((S-O)/C)`, but the checker must still prove the actual path fits
+that derived bound. It must not impose an independent depth cap, strengthen
+the entry contract silently, enlarge the supplied region or rely on stopping
+execution when a counter runs out. Nonuniform paths use the full frame/edge
+composition below.
+
+The fixture's `remaining <= 32` is an algorithm input domain chosen for a
+small exhaustive experiment, not a proposed stack policy. Its rank snapshot
+is named `entry_remaining` below to keep that distinction visible. Source
+rank checking can be implemented first as a dependency; the first usable
+fixed-stack milestone must take S as input and establish the byte inequality.
+No source-only result may announce that the supplied stack is sufficient.
+
 ## Source proposal
 
 Add one proof-only rank clause. The proposed grammar delta is:
@@ -41,13 +68,13 @@ the existing recursive helper's contract:
 contract {
   requires remaining <= deref(data).len;
   requires remaining <= 32_u64;
-  decreases depth: remaining;
+  decreases entry_remaining: remaining;
 }
 ```
 
-`depth` denotes the mathematical value of the expression at this activation's
-entry. It is an immutable, erased proof datum visible only in affine proof
-expressions in the function body. It is not a runtime local, argument, effect,
+`entry_remaining` denotes the mathematical value of the expression at this
+activation's entry. It is an immutable, erased proof datum visible only in
+affine proof expressions in the function body. It is not a runtime local, argument, effect,
 measure, source value or callable promise. It cannot occur in executable
 expressions, `requires`, `ensures`, or its own defining expression. A loop's
 rank name similarly denotes the current iteration's header value and is
@@ -66,7 +93,7 @@ measures require a later admission change backed by a consumer.
 
 For a recursive call, instantiate the callee's rank over the **evaluated
 actual argument images**, after ordinary argument evaluation and its checks,
-before publishing any callee result facts. Prove `0 <= R_actual < depth`.
+before publishing any callee result facts. Prove `0 <= R_actual < entry_remaining`.
 The comparison is with the containing activation's entry snapshot, not the
 current values of its mutable parameters. Capture an argument at its own
 evaluation point; later argument effects cannot retroactively change its
@@ -88,8 +115,8 @@ needs no rank for progress. A proved-contradictory edge retains the contradictio
 than disappearing from the source audit.
 
 The rank name lets a preceding ordinary local invariant expose a hard descent
-fact using PRF-1, for example `invariant step: next < depth;`. Header ranks
-need no new inline proof language. Function-entry requirements, preheader
+fact using PRF-1, for example `invariant step: next < entry_remaining;`.
+Header ranks need no new inline proof language. Function-entry requirements, preheader
 invariants and local backedge/call-site invariants are the existing places
 to establish their premises. Merely writing a rank publishes no unproved
 inequality.
@@ -306,6 +333,17 @@ mapped recursive depth, fixed-stack adapter, all reserved memory regions,
 and budget comparison. Its negative controls must include an unaccounted
 callee, dynamic frame, unproved new cycle, insufficient budget and changed
 image. Passing the source milestone alone must not print that guarantee.
+
+Budget-directed target cases must also distinguish the following outcomes.
+The arithmetic examples are test criteria, not additional native measurements:
+
+| Case | Required observation |
+|---|---|
+| One unavoidable 8 KiB frame, S = 4 KiB | Cannot qualify even without recursion |
+| 33 activations at 32 B each plus 96 B complete path overhead, S = 4 KiB | The 1,152 B bound fits; depth alone imposes no rejection |
+| Same input/depth proof, changed machine frame sizes | Recompute bytes for the new image; do not reuse the previous budget result |
+| All else fixed, S equal to the proved byte bound or one byte below it | The bound certifies the former but does not certify the latter |
+| Proven tail transfer with many source calls | Account for reused machine storage; do not charge retained frames that do not exist |
 
 ## Alternatives and selection grounds
 
