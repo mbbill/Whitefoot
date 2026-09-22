@@ -165,6 +165,8 @@ pub enum SemanticRule {
     Fn8,
     /// Verified narrow normal-return relation.
     Fn9,
+    /// Guaranteed direct self-tail call and activation replacement.
+    Fn10,
     /// Contract vocabulary, the result ordinal, the routes, and where the
     /// relations land.
     Call4,
@@ -243,6 +245,7 @@ impl SemanticRule {
             Self::Fn6 => "FN-6",
             Self::Fn8 => "FN-8",
             Self::Fn9 => "FN-9",
+            Self::Fn10 => "FN-10",
             Self::Call4 => "CALL-4",
             Self::Eff1 => "EFF-1",
             Self::Eff2 => "EFF-2",
@@ -319,7 +322,8 @@ impl SemanticRule {
             Self::Fn6 => Self::Fn8,
             Self::Fn8 => Self::Fn9,
             Self::Fn9 => Self::Call4,
-            Self::Call4 => Self::Eff1,
+            Self::Call4 => Self::Fn10,
+            Self::Fn10 => Self::Eff1,
             Self::Eff1 => Self::Eff2,
             Self::Eff2 => Self::Eff5,
             Self::Eff5 => Self::Err2,
@@ -389,16 +393,17 @@ impl SemanticRule {
             Self::Fn8 => 42,
             Self::Fn9 => 43,
             Self::Call4 => 44,
-            Self::Eff1 => 45,
-            Self::Eff2 => 46,
-            Self::Eff5 => 47,
-            Self::Err2 => 48,
-            Self::Err3 => 49,
-            Self::Ent2 => 50,
-            Self::Msr3 => 51,
-            Self::Call6 => 52,
-            Self::Inv1 => 53,
-            Self::Prf1 => 54,
+            Self::Fn10 => 45,
+            Self::Eff1 => 46,
+            Self::Eff2 => 47,
+            Self::Eff5 => 48,
+            Self::Err2 => 49,
+            Self::Err3 => 50,
+            Self::Ent2 => 51,
+            Self::Msr3 => 52,
+            Self::Call6 => 53,
+            Self::Inv1 => 54,
+            Self::Prf1 => 55,
         }
     }
 }
@@ -890,6 +895,13 @@ pub enum SemanticIssueKind {
     },
     /// A return expression disagrees with the written function result.
     ReturnMismatch,
+    /// A call-site tail-transfer guarantee failed its named condition.
+    InvalidMusttail {
+        /// The condition the marked call must satisfy.
+        condition: &'static str,
+        /// The offending argument or still-live owner, when applicable.
+        subject: Option<String>,
+    },
     /// A call on a cycle among generic functions instantiates its callee at
     /// something other than exactly the caller's own type parameters [FN-6].
     PolymorphicRecursion {

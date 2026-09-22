@@ -19,6 +19,15 @@ fn growable_vector_grows_by_affine_replace_and_runs_its_checks() {
 }
 
 #[test]
+fn musttail_consumes_a_deep_heap_linked_sequence() {
+    let llvm = compile_program("tail_list.wf");
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
 fn byte_string_builds_searches_and_publishes_its_report() {
     let llvm = compile_program("byte_string.wf");
     let output = compile_and_run(&llvm);
