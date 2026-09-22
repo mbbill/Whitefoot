@@ -1,0 +1,28 @@
+struct Node {
+  value: u64;
+  next: Option<Box<Node>>;
+}
+
+fn inspect(root: &Node) -> result: own u64 writes(root) {
+  doc "A primitive write preserves the cursor but kills possibly overlapping value facts.";
+  let cursor = root;
+  for (i in 0_u64..2_u64) {
+    match deref(cursor).next {
+      Some(value: child) => {
+        set cursor = &deref(child).inner;
+      }
+      None() => {
+        break;
+      }
+    }
+  }
+  if deref(cursor).value != 0_u64 {
+    set deref(root).value = 0_u64;
+    return 1_u64 / deref(cursor).value;
+  }
+  return 0_u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,25 @@
+struct Node {
+  value: u64;
+  next: Option<Box<Node>>;
+}
+
+fn inspect(root: &Node) -> result: own u64 writes(root) {
+  let cursor = root;
+  for (i in 0_u64..2_u64) {
+    match deref(cursor).next {
+      Some(value: child) => {
+        set cursor = &deref(child).inner;
+      }
+      None() => {
+        break;
+      }
+    }
+  }
+  set deref(root).value = 3_u64;
+  return deref(cursor).value;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "A primitive leaf store through the root preserves an unknown-depth selected place.";
+  return exit_status(code: 0_u8);
+}

@@ -510,6 +510,7 @@ impl<'check> Survey<'check, '_> {
                 node_path,
                 target,
                 value,
+                ..
             } => {
                 // A reference rebinding writes no storage, but its current
                 // origin is flow-sensitive and may be carried from a prior

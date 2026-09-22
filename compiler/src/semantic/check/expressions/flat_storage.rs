@@ -1532,6 +1532,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         place: &ResolvedPlace,
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<(), CheckStop> {
+        self.reject_readonly_resolved_write(node, place, bindings)?;
         let PlaceRoot::Binding(binding) = place.root else {
             return Ok(());
         };

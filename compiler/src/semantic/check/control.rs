@@ -103,22 +103,6 @@ impl GiveContext {
             reference.invalidate(InvalidationEvent::RootScopeEnded);
         }
     }
-
-    /// [REF-2, ENT-3.S15] meet the delivered reference with the live
-    /// refinement witnesses on every delivery edge crossing one scope.
-    fn invalidate_reference_refinements(
-        &self,
-        states: &[HashMap<DeclarationId, LocalBinding>],
-        leaving: &[BindingId],
-    ) {
-        let mut delivered = self.delivered_reference.borrow_mut();
-        let Some(reference) = delivered.as_mut() else {
-            return;
-        };
-        for state in states {
-            Checker::invalidate_reference_without_refinement_witness(reference, state, leaving);
-        }
-    }
 }
 
 pub(super) struct ControlCounters<'state> {

@@ -1,0 +1,171 @@
+struct Link {
+  value: u64;
+  next: Option<Box<Link>>;
+}
+
+fn list(count: own u64) -> result: own Option<Box<Link>> pure {
+  let head = None<Box<Link>>();
+  for (i in 0_u64..count) {
+    let node = Link(value: i, next: move head);
+    let cell = box_new::<Link>(value: move node);
+    set head = Some<Box<Link>>(value: move cell);
+  }
+  return move head;
+}
+
+fn sum(head: &Option<Box<Link>>) -> result: own u64 reads(head) {
+  let cursor = head;
+  let total = 0_u64;
+  loop {
+    match deref(cursor) {
+      Some(value: node) => {
+        set total = total +wrap deref(node).inner.value;
+        set cursor = &deref(node).inner.next;
+      }
+      None() => {
+        return total;
+      }
+    }
+  }
+  return total;
+}
+
+fn without_first(head: own Option<Box<Link>>) -> result: own Option<Box<Link>> pure {
+  match head {
+    Some(value: cell) => {
+      let node = move cell.inner;
+      return move node.next;
+    }
+    None() => {
+      return None<Box<Link>>();
+    }
+  }
+}
+
+fn remove_even(head: &Option<Box<Link>>) -> result: own unit writes(head) {
+  doc "A single link-slot cursor removes nodes by atomic owned transformation, preserving the occupied slot and releasing each removed cell.";
+  let cursor = head;
+  loop {
+    match deref(cursor) {
+      Some(value: node) => {
+        let parity = deref(node).inner.value % 2_u64;
+        if parity == 0_u64 {
+          set deref(cursor) = without_first(head: move deref(cursor));
+        } else {
+          set cursor = &deref(node).inner.next;
+        }
+      }
+      None() => {
+        return unit;
+      }
+    }
+  }
+  return unit;
+}
+
+fn raise_values(head: &Option<Box<Link>>) -> result: own unit writes(head) {
+  let cursor = head;
+  loop {
+    match deref(cursor) {
+      Some(value: node) => {
+        set deref(node).inner.value = deref(node).inner.value +wrap 1_u64;
+        set cursor = &deref(node).inner.next;
+      }
+      None() => {
+        return unit;
+      }
+    }
+  }
+  return unit;
+}
+
+enum Tree {
+  Leaf(value: u64);
+  Fork(left: Box<Tree>, right: Box<Tree>);
+}
+
+fn tree() -> result: own Tree pure {
+  let left = Leaf(value: 13_u64);
+  let right = Leaf(value: 29_u64);
+  let left_cell = box_new::<Tree>(value: move left);
+  let right_cell = box_new::<Tree>(value: move right);
+  let first = Fork(left: move left_cell, right: move right_cell);
+  let middle = Leaf(value: 47_u64);
+  let last = Leaf(value: 61_u64);
+  let middle_cell = box_new::<Tree>(value: move middle);
+  let last_cell = box_new::<Tree>(value: move last);
+  let second = Fork(left: move middle_cell, right: move last_cell);
+  let first_cell = box_new::<Tree>(value: move first);
+  let second_cell = box_new::<Tree>(value: move second);
+  return Fork(left: move first_cell, right: move second_cell);
+}
+
+fn edge(root: &Tree, right: own Bool) -> result: own u64 reads(root) {
+  let cursor = root;
+  loop {
+    match deref(cursor) {
+      Leaf(value: leaf_value) => {
+        return deref(leaf_value);
+      }
+      Fork(left: first, right: next) => {
+        if right {
+          set cursor = &deref(next).inner;
+        } else {
+          set cursor = &deref(first).inner;
+        }
+      }
+    }
+  }
+  return 0_u64;
+}
+
+fn repeated_sum(head: &Option<Box<Link>>) -> result: own u64 reads(head) {
+  doc "Nested loops reset the same cursor to its root between complete walks.";
+  let cursor = head;
+  let total = 0_u64;
+  for (pass in 0_u64..3_u64) {
+    set cursor = head;
+    loop @walk {
+      match deref(cursor) {
+        Some(value: node) => {
+          set total = total +wrap deref(node).inner.value;
+          set cursor = &deref(node).inner.next;
+        }
+        None() => {
+          break @walk;
+        }
+      }
+    }
+  }
+  return total;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let head = list(count: 64_u64);
+  let before = sum(head: &head);
+  if before != 2016_u64 {
+    return exit_status(code: 1_u8);
+  }
+  remove_even(head: &head);
+  let odd_sum = sum(head: &head);
+  if odd_sum != 1024_u64 {
+    return exit_status(code: 2_u8);
+  }
+  raise_values(head: &head);
+  let raised = repeated_sum(head: &head);
+  if raised != 3168_u64 {
+    return exit_status(code: 3_u8);
+  }
+  let root = tree();
+  let left_side = False();
+  let right_side = True();
+  let left = edge(root: &root, right: left_side);
+  let right = edge(root: &root, right: right_side);
+  if left != 13_u64 {
+    return exit_status(code: 4_u8);
+  }
+  if right != 61_u64 {
+    return exit_status(code: 5_u8);
+  }
+  return exit_status(code: 0_u8);
+}

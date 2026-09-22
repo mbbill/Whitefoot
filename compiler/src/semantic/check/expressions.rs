@@ -353,9 +353,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 mode: local.mode,
                 ty,
                 declares: false,
-                // [SET-1] the premise is rechecked after the right-hand side
-                // under [LIV-1], so the commit itself records it.
-                displaces_live_value: false,
             }),
             effects,
             unsupported: None,
@@ -1370,11 +1367,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // prefix names storage the move has carried away, and
                 // [REF-2] says a move never re-roots an existing reference.
                 if !copy && !read_out {
-                    Self::invalidate_references(
+                    self.invalidate_references(
                         bindings,
                         &ResolvedPlace::fields(local.binding, fields.clone()),
                         &super::references::InvalidationEvent::PrefixMoved,
-                    );
+                    )?;
                 }
                 let access = ResolvedPlace::fields(local.binding, access_fields);
                 let mut effects = EffectSet::NONE;
