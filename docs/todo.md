@@ -120,6 +120,24 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   when a policy meets explicit representative criteria or its accepted
   tradeoffs are recorded.
 
+- **Known-zero loop dispatch has a qualified combined cost, but no production mechanism.**
+  The [bounded stencil control](../research/investigations/compute-model/DESIGN.md#zero-budget-stencil-dispatch-control)
+  removes 65,504 queries returning zero and inner splitter entries together in
+  the parallel world, enabling pixel inlining and alias-check movement. Its
+  corrected W4 trial improves all five pairs, with a 17.97 percent median benefit
+  against 4.25 percent maximum null drift. It does not isolate query cost or
+  justify a grain-policy change.
+  Defer implementation until a general lowering/runtime path is selected;
+  reopen with a design that handles zero and nonzero budgets, configured work
+  floors, nested loops and the sequential world without copying a fixture's
+  threshold into lowering. Preserve ordinary operations and exact-once cleanup,
+  inspect optimized paths, and validate full oracles plus a prospective bounded
+  paired/null whole-call criterion. A query-retained direct-chunk control is
+  the smallest additional observation if choosing that mechanism requires
+  distinguishing query effects from splitter removal and resulting optimization;
+  select its cost cap and stop rule before running it, rather than extending
+  the completed trial.
+
 - **Stable scatter retains construction and packing costs.** The dated merged-model
   [joined-phase result](../research/investigations/compute-model/DESIGN.md#joined-phase-result-2026-09-21)
   identifies about 0.596 ms of chunk initialization and 0.569 ms of packing at

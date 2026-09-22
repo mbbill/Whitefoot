@@ -2085,8 +2085,9 @@ change.
 
 ### Zero-budget stencil dispatch control
 
-Static inspection of the frozen wide stencil identifies 65,504 row executions
-per call, each querying the inner split budget with span 1,022 and weight 17.
+Static inspection of the frozen wide stencil's parallel world identifies
+65,504 row executions per call, each querying the inner split budget with span
+1,022 and weight 17.
 The retained runtime's 150,000 work floor returns zero affordable chunks; the
 harness clears the diagnostic floor override. Nevertheless, each row resolves
 thread-local state in the runtime query and enters a recursive splitter whose
@@ -2174,6 +2175,40 @@ the unchanged numerical criterion; exclude the protocol-invalid session from
 that comparison. A failed check or inconclusive criterion ends this corrected
 session without retry. No corrected-session timing has occurred at selection,
 and no production improvement is selected before its result.
+
+The corrected criterion was published at `45961216` before either action.
+Both actions completed once, in 4.67 seconds for the new null and 4.55 seconds
+for main; all 240 checked calls, process orders and unchanged-input checks
+passed. W4's five paired main wall ratios are 0.773692, 0.856267, 0.859311,
+0.820277 and 0.817753. All five clear 0.95, and their median benefit of
+17.9723 percent exceeds the new null's largest absolute drift of 4.2470 percent
+(null range 0.969571–1.042470, median 0.992097). This meets the selected
+useful-lead criterion. The original invalid null remains excluded.
+
+| Width | Main A/B wall ms | Paired wall B/A | Main A/B CPU ms | Paired CPU B/A |
+| --- | ---: | ---: | ---: | ---: |
+| W1 | 28.887 / 28.880 | 1.010216 | 28.876 / 28.870 | 1.010253 |
+| W4 | 16.519 / 13.559 | 0.820277 | 59.823 / 49.964 | 0.826945 |
+
+Arm values are medians of the five process medians; paired ratios are medians
+of the five within-pass B/A ratios. W1 main pairs span 0.933252–1.040836,
+wider than their 0.976660–1.020736 null despite identical normalized W1 code.
+This limits small claims and exact causal percentages. First-call A/B wall
+medians are 33.853/33.996 ms at W1 and 21.313/18.795 ms at W4; corresponding
+CPU medians are 33.820/33.985 and 67.865/58.255 ms. Median warm successful
+steals are 0/0 at W1 and 166/164 at W4, not measurements of task count or
+worker idleness. The evidence retains every first call, warm call and counter.
+
+The result supports a general investigation of work that receives a zero
+split budget. It establishes a combined dispatch/inlining/alias-check effect
+on this fixture, not standalone runtime-query overhead, a new grain policy,
+or later-main/native competitiveness. A production mechanism and its separate
+validation remain deferred in [the maintained TODO](../../../docs/todo.md).
+The scratch change is structurally suitable for attribution because it calls
+the existing subrange chunk and preserves arithmetic, cleanup and the
+two-world boundary; copying the runtime's current floor into production
+lowering would require grounds this experiment does not supply. No compiler,
+runtime, specification or correctness-CI change follows from this result.
 
 ## Needed loop captures
 
