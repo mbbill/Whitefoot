@@ -652,6 +652,28 @@ impl FunctionEmitter<'_, '_> {
                 }
                 self.value_name(*value)
             }
+            IrWorkEstimate::BoxArrayLength(value) => {
+                let Some(IrType::Address(IrAddressed::Nominal(nominal))) = self.value_type(*value)
+                else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                let IrNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind() else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                let block @ IrType::Buffer { element } = *referent else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                let pointer = self.projected_address_pointer(
+                    IrType::Address(IrAddressed::Buffer { element }),
+                    *value,
+                    &crate::IrPlaceStep::BoxReferent { nominal },
+                )?;
+                let address = self.aggregate_field_pointer(block, &pointer, 0)?;
+                let result = format!("%{}", self.next_temporary()?);
+                writeln!(self.output, "  {result} = load i64, ptr {address}")
+                    .map_err(|_| BackendFailure::TextEmission)?;
+                result
+            }
             IrWorkEstimate::Length(value) => {
                 let ty = self.value_type(*value).ok_or(BackendFailure::InvalidIr)?;
                 // A runtime-capacity `Array<T>` keeps its `len` in the block

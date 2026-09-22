@@ -1049,6 +1049,11 @@ pub enum IrWorkEstimate {
     Constant(u64),
     Value(IrValueId),
     Length(IrValueId),
+    /// The runtime Array length behind an original, read-only Box reference
+    /// formal, or its exact capture in a synthesized chunk. The marker on
+    /// `IrFunction` retains the checked effect fact authorizing this read;
+    /// being an address, or a captured Box owner, is insufficient.
+    BoxArrayLength(IrValueId),
     Sum(Vec<Self>),
     Product(Box<Self>, Box<Self>),
     Difference(Box<Self>, Box<Self>),
@@ -1790,6 +1795,13 @@ pub(crate) struct IrCountedRange {
 pub struct IrFunction {
     name: String,
     parameters: Vec<(IrValueId, IrType)>,
+    /// Original reference formals whose roots have no declared write, copied
+    /// from checked effects. Only their exact direct chunk captures inherit
+    /// the fact: rebinding and reconstructed owned captures do not. EFF-5
+    /// also excludes aliasing writes through another formal, so their entry
+    /// referents remain valid through the ordinary call, including zero-trip
+    /// loops. Scheduling consumes this fact without inferring new lifetimes.
+    readonly_reference_parameters: Vec<IrValueId>,
     /// Checked source modes, or `None` for a compiler-synthesized function.
     /// Internal transfer contracts must not be invented from representation.
     source_signature: Option<IrSourceSignature>,
