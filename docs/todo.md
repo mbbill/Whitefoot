@@ -41,8 +41,11 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   The [first same-source trial](../research/investigations/compute-model/DESIGN.md#runtime-extent-trial-result)
   improves prefix, histogram and stencil, but makes chain-pull 51 percent
   slower at two workers and incurs substantial CPU costs in some faster
-  cases. Those measurements precede the continuation-accounting correction;
-  its performance has not been remeasured. Study whether a robust common
+  cases. Those measurements precede the continuation-accounting correction.
+  The [frozen `6fdb6768` baseline](../research/investigations/compute-model/DESIGN.md#frozen-compute-baseline-2026-09-21)
+  observes useful regular parallel work and substantial wide-stencil CPU cost;
+  it does not isolate that correction's effect. Its scalar native controls do
+  not establish optimized-native competitiveness. Study whether a robust common
   policy exists or workload, input shape, worker count and hardware require
   different choices, comparing wall time, CPU and scheduling/profile overhead.
   [Runtime profiles and PGO](ideas.md#parallel-grain-policies-and-runtime-profiles)

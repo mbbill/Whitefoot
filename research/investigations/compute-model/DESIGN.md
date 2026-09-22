@@ -1436,5 +1436,173 @@ can serve varied workloads, shapes and machines, or whether selection needs
 more context; this trial does not prove that no broadly useful policy exists.
 Runtime profile-guided compilation and online adaptation are candidate
 directions in [the research ideas](../../../docs/ideas.md#parallel-grain-policies-and-runtime-profiles),
-with the unresolved cost tracked in [TODO](../../../docs/todo.md). No profile
-collection, adaptive policy or further timing trial is implemented here.
+with the unresolved cost tracked in [TODO](../../../docs/todo.md). That trial
+added no profile collection or adaptive policy.
+
+## Frozen compute baseline, 2026-09-21
+
+The [retained evidence](../../experiments/compute-bench/compute-baseline-2026-09-21.tsv)
+measures source, compiler and native runtime revision
+`6fdb6768890b91283fb041dfc7981a2cc2f3e5b8`, with only the research caller's
+retained-result-handle adaptation at `f19d53e2` (published as `0cc0e7f4`). It is
+a dated baseline, not a measurement of later main revisions. The compiler
+image SHA-256 is `d6ba9286f877df7e2a2d9e7d751d415871b2d2d992d558a2d9e37ad14e3a32c5`;
+the evidence file is `8fb90790a6fba27a375c4256472d57188204d6b391577d247fa7734a6f210cb6`.
+The adaptation separates borrowed output data from its retained owner handle;
+checking and owner release remain outside timing, and algorithms and fixtures
+are unchanged. Host: unpinned Apple M1 Pro, eight CPUs (six performance/two
+efficiency cores), Darwin arm64, Apple clang 21.0.0 and Rust 1.98.1. The shared
+guard excludes competing guarded work, not ordinary host activity.
+
+Before measurement, the scope was fixed to six primary fixtures and four
+distinct controls below, workers 1/2/4, five rotated/reversed passes, and one
+retained first plus five warm calls per process. No baseline ratio selects a
+policy. Every call checks the complete independent output oracle; all 20
+null/main actions and 4,290 calls pass, with compiler, dependency, source and
+image hashes unchanged. The prior 166 calibration calls check cost only and
+remain separately labeled. No control was repeated to obtain a favorable
+result. Wall and CPU below are medians of process medians, in milliseconds;
+steals are the runtime observation, not the static `chunks=na` header.
+
+| Fixture | WF wall W1 / W2 / W4 | WF CPU W1 / W2 / W4 | Steals W1 / W2 / W4 |
+|---|---:|---:|---:|
+| `prefix-large`: 4,194,321 words, block 4,096 | 2.522 / 1.755 / 1.276 | 2.514 / 3.117 / 3.219 | 0 / 5 / 20 |
+| `histogram-large`: same count/block, 256 buckets | 2.999 / 1.696 / 1.030 | 2.963 / 3.025 / 3.192 | 0 / 1 / 10 |
+| `stencil-large`: 1,024 by 4,096, 16 steps | 31.141 / 27.205 / 17.133 | 30.635 / 51.866 / 62.084 | 0 / 21 / 163 |
+| `chain-pull`: 4,097 vertices | 15.229 / 14.953 / 14.994 | 15.209 / 14.882 / 14.875 | 0 / 0 / 0 |
+| `fir`: 524,288 outputs, 64 taps | 13.425 / 6.926 / 3.649 | 13.347 / 13.623 / 13.985 | 0 / 1 / 9 |
+| `quadrature`: 64 adaptive integrations | 8.312 / 4.657 / 3.135 | 8.294 / 8.162 / 10.759 | 0 / 445 / 1,013 |
+| `prefix-coarse`: block 65,536 | 2.513 / 1.711 / 1.272 | 2.507 / 2.864 / 2.776 | 0 / 4 / 22 |
+| `histogram-small`: 17 words, block 3 | 0.00350 / 0.00479 / 0.00492 | 0.002 / 0.004 / 0.004 | 0 / 0 / 0 |
+| `stencil-narrow`: 17 by 4,096, 16 steps | 0.490 / 0.430 / 0.264 | 0.489 / 0.429 / 0.269 | 0 / 17 / 51 |
+| `chain-sparse`: 4,097 vertices | 0.01521 / 0.01533 / 0.01563 | 0.014 / 0.014 / 0.014 | 0 / 0 / 0 |
+
+Regular kernels perform checked work on additional lanes. Paired W1/W4 wall
+speedups are 1.97 for prefix, 2.92 for histogram, 3.68 for FIR and 2.65 for
+quadrature. Wide stencil reaches 1.83 while its paired CPU ratio reaches 2.01;
+extra offers are useful but their cost remains material. Tiny histogram stays
+unsplit yet adds about 1.3--1.4 microseconds at W2/W4. These observations do not
+select a work floor, offer policy or adaptive mechanism.
+
+Chain pull's emitted iteration price is 55. At the unchanged 150,000-unit
+floor, `4097 / ceil(150000 / 55) = 1`, which affords no split and agrees with
+zero steals. Its 16,785,409 full-vertex visits are a materially different
+algorithm from the sparse traversal's 16,388 adjacency-slot visits. The useful
+FIFO serial reference takes 21.4 microseconds, and WF sparse takes about 15.2
+microseconds; a pull/native ratio cannot stand in for useful graph efficiency.
+Across the ten fixtures, paired WF W1/`wf-seq` medians range from 0.988 to 1.084
+(the upper value is the noisy wide stencil). This finds no broad gross cost
+from the two execution worlds in these fixtures. It does not causally measure
+the historical continuation correction: no identical-source before/after
+compiler control was run, and the earlier failed extent trial remains intact.
+
+The null invokes the **same image path** twice, relabeling the second run
+`wf-b`. It qualifies host/cadence only, not separately linked layouts. The
+generic reducer's twin-build wording does not change that boundary. All nulls
+remain: coarse-prefix W2 has median `b/a=1.0344` with four of five pairs higher;
+tiny-histogram W1 has `1.0366`, only 0.125 microseconds, with three higher,
+one equal and one lower. Wide-stencil W4 ranges from 0.95 to 1.51 despite a
+0.984 median. CPU null ratios include prefix W4 at 0.804 and quadrature W4 at
+1.144; tiny CPU readings are quantized to microseconds. Small wall or CPU
+claims comparable to these variations are inconclusive, not rescued by a
+replacement control or another run.
+
+Native rows cover oneTBB and, for quadrature, Rayon join; the reducer's
+"BEST REFERENCE" means only among supplied rows. They deliberately use the
+bundle's scalar `-O3`/no-vectorization flags, while WF uses driver `-O2` with
+vectorization permitted. Retained object inspection confirms packed stencil
+arithmetic and packed FIR multiplication in WF against scalar native kernels.
+These are scheduler/decomposition and representation context, **not evidence
+of native competitiveness or closure of regular code-generation gaps**.
+Strict FP preserves operation order without forbidding independent vector
+lanes. Useful serial prefix/histogram also use direct one-pass algorithms;
+native FIFO and sparse/pull comparisons explicitly change useful work.
+
+Construction and execution costs are separate. The fresh revision-specific
+compiler build took 46.39 s; emission of 18 modules took 0.94 s; construction
+of nine native images took 3.75 s with pinned dependencies reused. Six
+selected correctness stages took 1.04--1.76 s each, and the three ABI-only
+Mandelbrot/records/merge-sort stages took 0.93--1.25 s each. Calibration stages
+took 0.83--1.98 s each. The 20 fixed execution actions took 70.80 s across
+guarded stages including hashing, setup and checks; the largest action was
+12.39 s. The final six fixtures shared a 30.99 s guarded ownership window,
+retaining separate action results. These are stage costs, not warm-call times.
+Three live-owner refusals ran no benchmark and remain in the record.
+
+To reproduce construction, start from a fresh checkout and target directory;
+do not reuse a Cargo target shared by differently edited worktrees. The
+published ABI-only patch reproduces the actual `f19d53e2` caller content.
+Reuse the cached oneTBB `3046c8b0c29df995980003ea24f4d78c80ec0c8d`, Parlay
+`51017699dcc421f80479cdb238d3092233ad0d26` and Rayon 1.12.0 dependencies with
+the recorded flags/hashes and successful Parlay probe. If unavailable, the
+bundle's `make deps` is a separate guarded dependency-construction stage.
+
+```sh
+work=$(mktemp -d /tmp/wf-6fdb.XXXXXX)
+git worktree add --detach "$work/source" 6fdb6768890b91283fb041dfc7981a2cc2f3e5b8
+git show 0cc0e7f4cdd9048aed124b54d9fe4d93b6873ac4 --format= -- \
+  research/experiments/compute-bench > "$work/caller.patch"
+git -C "$work/source" apply "$work/caller.patch"
+git -C "$work/source" diff --exit-code -- compiler tests/programs/compute
+export CARGO_TARGET_DIR="$work/target-6fdb" CARGO_BUILD_JOBS=2 JOBS=2
+guard="$work/source/.github/run-check.pl"
+WHITEFOOT_CHECK_TIMEOUT=120 perl "$guard" baseline-compiler cargo build \
+  --manifest-path "$work/source/compiler/Cargo.toml" --profile gate \
+  --bin whitefootc --locked --offline
+wfc="$CARGO_TARGET_DIR/gate/whitefootc"
+bench="$work/source/research/experiments/compute-bench"
+build="$work/build"
+deps=/absolute/path/to/the/recorded/pinned/deps
+kernels='prefix histogram stencil bfs fir quadrature mandelbrot records merge_sort'
+mkdir -p "$build"
+printf '/* Generated by `make deps`: the ParlayLib probe compiled. */\n' > "$build/parlay_status.h"
+set --
+for k in $kernels; do set -- "$@" "$build/$k-par.ll" "$build/$k-seq.ll"; done
+WHITEFOOT_CHECK_TIMEOUT=120 perl "$guard" baseline-emission make -C "$bench" -j2 \
+  WFC="$wfc" BUILD="$build" DEPS="$deps" KERNELS="$kernels" WF_AB= \
+  WF_PAR_CONTROL_FLAGS= WF_RUNTIME_CONTROL_FLAGS= WF_MODULE_CONTROL_FLAGS= "$@"
+WHITEFOOT_CHECK_TIMEOUT=120 perl "$guard" baseline-native make -C "$bench" -j2 \
+  WFC="$wfc" BUILD="$build" DEPS="$deps" KERNELS="$kernels" WF_AB= \
+  WF_PAR_CONTROL_FLAGS= WF_RUNTIME_CONTROL_FLAGS= WF_MODULE_CONTROL_FLAGS= images
+```
+
+Run `WF_WORKERS=WIDTH IMAGE verify FORM WIDTH` for WF/TBB at 1/2/4 and
+`wf-seq 1`; quadrature also verifies Rayon join at 1/2/4. ABI-only images verify
+WF/TBB at 1/4 and `wf-seq 1`. Guard those stages separately. Hash the compiler,
+images, emitted modules, runtime/source inputs and pinned libraries before and
+after timing, as the retained `context` records do. No compiler build, emission
+or native construction belongs inside a measured kernel call.
+
+The retained raw headers specify the exact process order and workload, so a
+fixture can be replayed without a new permanent runner. Set `data` to the
+absolute retained TSV path, choose one `main-*` or `null-*` group from the
+table above, and use a fresh `out`. Repeat once per declared group, retaining
+all outputs; the same-image null is not `WF_AB=1` construction.
+
+```sh
+data=/absolute/path/to/compute-baseline-2026-09-21.tsv
+group=null-prefix-large
+out="$work/$group"
+WHITEFOOT_CHECK_TIMEOUT=90 JOBS=2 perl "$guard" "$group" \
+  sh -eu -s -- "$data" "$group" "$out" "$build" "$bench" <<'SH'
+data=$1 group=$2 out=$3 build=$4 bench=$5
+test ! -e "$out"; mkdir -p "$out"
+unset WFB_BLOCKED_GRID WFB_STENCIL_GRID WFB_STENCIL_WIDTH WFB_STENCIL_HEIGHT
+unset WFB_BFS_MODE WFB_BFS_GRAPH WFB_GAP_US
+settings=$(awk -F '\t' -v g="$group" '$1==g && $2=="manifest" && $3~/^environment:/ {sub(/^environment: /,"",$3); print $3}' "$data")
+if test "$settings" = 'default fixture'; then settings=; fi
+awk -F '\t' -v g="$group" '$1==g && $2=="raw" {sub(/^[^\t]*\t[^\t]*\t/,"");print}' "$data" > "$out/recorded.tsv"
+awk 'function value(k,s){s=$0;sub(".* " k "=","",s);sub(" .*","",s);return s}
+ /^# driver=/ {print value("driver"),value("form"),value("width"),value("pass"),value("calls")}' \
+ "$out/recorded.tsv" > "$out/order.txt"
+while read -r kernel form width pass calls; do
+  real_form=$form; if test "$form" = wf-b; then real_form=wf; fi
+  log="$out/$form-w$width-p$pass"
+  env $settings WF_WORKERS="$width" "$build/$kernel" time "$real_form" "$width" "$pass" "$calls" > "$log.out" 2> "$log.err"
+  if test "$form" = wf-b; then
+    awk -F '\t' -v OFS='\t' '/^# driver=/ || /^# batch / {sub(/ form=wf /," form=wf-b ");print;next} /^#/ {print;next} {$2="wf-b";print}' "$log.out" >> "$out/raw.tsv"
+  else cat "$log.out" >> "$out/raw.tsv"; fi
+done < "$out/order.txt"
+awk -f "$bench/reduce.awk" -v passes=5 -v calls=5 "$out/raw.tsv" > "$out/table.txt"
+SH
+```
