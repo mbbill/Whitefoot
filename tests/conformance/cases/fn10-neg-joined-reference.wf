@@ -1,0 +1,9 @@
+fn walk(value: &u64, choose: own Bool) -> result: own u64 reads(value) {
+  let local = deref(value);
+  let selected = if choose {
+    give value;
+  } else {
+    give &local;
+  }
+  return musttail walk(value: selected, choose: choose);
+}

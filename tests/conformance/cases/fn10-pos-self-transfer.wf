@@ -1,0 +1,97 @@
+nocopy struct Plain {
+  value: u64;
+}
+
+struct Pair {
+  first: u64;
+  second: u64;
+}
+
+fn swap_pairs(n: own u64, left: own Pair, right: own Pair) -> result: own Pair pure {
+  if n == 0_u64 {
+    return left;
+  }
+  set left.first = left.first +wrap 1_u64;
+  let next = n - 1_u64;
+  return musttail swap_pairs(n: next, left: right, right: left);
+}
+
+fn rotate<T: copy>(n: own u64, left: own T, right: own T) -> result: own T pure {
+  if n == 0_u64 {
+    return left;
+  }
+  let next = n - 1_u64;
+  return musttail rotate::<T>(n: next, left: right, right: left);
+}
+
+fn accumulate(n: own u64, total: own u64) -> result: own u64 pure {
+  if n == 0_u64 {
+    return total;
+  }
+  let left = rotate::<u64>(n: 100_u64, left: 2_u64, right: 5_u64);
+  let right = rotate::<u64>(n: 101_u64, left: 3_u64, right: 7_u64);
+  let subtotal = total +wrap left;
+  let next_total = subtotal +wrap right;
+  let next = n - 1_u64;
+  return musttail accumulate(n: next, total: next_total);
+}
+
+fn sum(bytes: &[u8], total: own u64) -> result: own u64 reads(bytes) {
+  let length = deref(bytes).len;
+  if length == 0_u64 {
+    return total;
+  }
+  let first = deref(bytes)[0_u64];
+  let value = cvt::<u8, u64>(first);
+  let next = total +wrap value;
+  let rest = &deref(bytes)[1_u64..length];
+  return musttail sum(bytes: rest, total: next);
+}
+
+fn exchange(n: own u64, left: own Box<u64>, right: own Box<u64>) -> result: own u64 pure {
+  if n == 0_u64 {
+    let high = left.inner *wrap 10_u64;
+    return high +wrap right.inner;
+  }
+  let spare = box_new::<u64>(value: n);
+  let empty = Plain(value: n);
+  let held = &empty;
+  let next = n - 1_u64;
+  return musttail exchange(n: next, left: move right, right: move left);
+}
+
+fn main() -> status: own ExitStatus pure {
+  let rotated = rotate::<u64>(n: 100001_u64, left: 3_u64, right: 7_u64);
+  let even = rotate::<u64>(n: 100002_u64, left: 3_u64, right: 7_u64);
+  if rotated != 7_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if even != 3_u64 {
+    return exit_status(code: 6_u8);
+  }
+  let accumulated = accumulate(n: 4_u64, total: 0_u64);
+  if accumulated != 36_u64 {
+    return exit_status(code: 7_u8);
+  }
+  let bytes = array_filled::<u8, 4>(value: 3_u8);
+  let total = sum(bytes: &bytes[0_u64..4_u64], total: 0_u64);
+  if total != 12_u64 {
+    return exit_status(code: 2_u8);
+  }
+  let left = box_new::<u64>(value: 2_u64);
+  let right = box_new::<u64>(value: 8_u64);
+  let seen = exchange(n: 1001_u64, left: move left, right: move right);
+  if seen != 82_u64 {
+    return exit_status(code: 3_u8);
+  }
+  let first = Pair(first: 11_u64, second: 12_u64);
+  let second = Pair(first: 21_u64, second: 22_u64);
+  let pair = swap_pairs(n: 3_u64, left: first, right: second);
+  if pair.first != 22_u64 {
+    return exit_status(code: 4_u8);
+  }
+  if pair.second != 22_u64 {
+    return exit_status(code: 5_u8);
+  }
+  return exit_status(code: 0_u8);
+}

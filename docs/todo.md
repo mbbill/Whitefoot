@@ -358,26 +358,19 @@ Items the owner asked to be kept on this list during the redesign recorded in
 `design/language` on 2026-09-19. None of them is a decision; each names the
 condition under which it is taken up.
 
-- **`musttail` at the call.** Owner's ruling (2026-09-20): a call-site marker
-  named `musttail`, rejected with the failing condition named when the call
-  is not a guaranteed tail call. Conditions for a self call: it is the
-  operand of `return`; every reference argument's path is rooted at a
-  reference parameter and never at a local of the current activation; no
-  local with a non-empty release is live across the call (a local nothing
-  refers to may be released before the call, release order being
-  unobservable). Lower a self tail call in the compiler's own lowering as
-  parameter reassignment plus a branch to the entry, so it holds on every
-  target; mutual recursion needs LLVM `musttail` with a matching
-  convention and is a later step. Without the marker the stack bound rests
-  on an implementation obligation the writer cannot check, and a pending
-  release silently breaks tail position. Implement after PR 70 merges.
+- **Mutual tail transfers.** [FN-10](../spec/kernel-spec.md) admits direct
+  self calls through `return musttail f(...);`. Extending the guarantee to
+  a different function needs a matching tail-call ABI and target evidence;
+  the current parameter reassignment and entry jump cannot cross a function
+  boundary. Reopen when a real mutually recursive program needs that bound.
 - **Totality and recursion-depth proofs.** Domains that need determinism about
   resource use will need proved totality (termination) and proved recursion
   depth as obligation families; the atomic in-place update deliberately
   requires only a function that returns the place's type with no failure exit.
   The current recursive-cleanup stack cost is a separate compiler limitation
-  recorded above, and the call-site `musttail` mechanism remains a separate
-  follow-up. Neither is an implemented source-level recursion-depth proof.
+  recorded above; the call-site `musttail` guarantee covers only retained
+  activations at marked self transfers. Neither is an implemented
+  source-level recursion-depth proof.
 - **Facts a contract can carry (after PR 70 merges; owner, 2026-09-20).**
   Three additive widenings, taken up together, each measured:
   (1) Affine `ensures`. A `requires` may already be an affine relation and

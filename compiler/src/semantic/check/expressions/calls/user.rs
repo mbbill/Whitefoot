@@ -308,6 +308,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // allocating prelude row; [OP-11] refuses a `swap` over a copy place.
         self.reject_allocating_call_under_no_heap(node, signature)?;
         self.reject_swap_over_copy(node, signature)?;
+        // Both forms share the same activation-replacement conditions. A
+        // source marker requires them; an ordinary call merely opts out when
+        // they fail. Bound calls are not direct self calls even when their
+        // concrete target happens to be this function. The return checker
+        // completes this selection after deriving the remaining releases.
+        let tail_transfer = formal.is_none()
+            && target == function.id
+            && self.is_sole_return_call(node)?
+            && self.check_self_tail_arguments(
+                node,
+                function,
+                bindings,
+                &actual_paths,
+                &actual_modes,
+            )?;
         // [EFF-5] substitute, compare pairwise, then project the surviving
         // footprint onto the caller's own row [EFF-2].
         // [EFF-3] a call inherits its callee's allocation fact.
@@ -342,6 +357,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(TypedExpression {
             expression: CheckedExpression::UserCall {
                 function: target,
+                tail_transfer,
                 formal_effects,
                 formal_contract,
                 call,
