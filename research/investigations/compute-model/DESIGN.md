@@ -222,11 +222,12 @@ With `--par --par-ledger --emit-llvm`, routing emits an independent split with
 its 352-byte frame over 29 captures because the lane bound is 256 bytes.
 The emitted module SHA-256 is
 `63f0f31e1481c1e0506a97f0d5edb0e799ef846a8da3096d4e510ba7318d695f`.
-The general capture-selection repair is in progress; nonempty helper work in
-both phases and performance remain unqualified. The 90-configuration native
-oracle above describes the `6fdb6768` baseline, whereas the repair observations
-here establish source checking and emission. The integrated compiler through
-`cc060dc9` has not yet run its full gate or the candidate native oracle.
+The general needed-capture repair now emits both owner maps: routing retains
+10 bindings in a 152-byte frame, and discovery retains 11 in a 168-byte
+frame. The earlier 90-configuration native oracle describes the `6fdb6768`
+baseline; the separate qualification below identifies the capture-repaired
+image. Neither source permission nor these bounded native checks replace the
+integrated compiler's full gate or establish a performance result.
 
 Those are phase bounds, not the complete implementation's span.
 `compiler/src/backend/emitter/buffer.rs::emit_buffer_block` emits a sequential
@@ -236,6 +237,130 @@ persistent arrays add O(V) serial fill work once. Independent allocations may
 overlap as statements, but each individual fill is serial in this lowering.
 This is an implementation cost to attribute in a native result, not a language
 ban on parallel initialization or a reason to claim useful speedup already.
+
+### Native phase qualification and prospective FIFO comparison (2026-09-22)
+
+The [dated qualification record](../../experiments/compute-bench/sparse-frontier-2026-09-22.tsv)
+retains the artifact hashes, invocation, construction costs, every phase
+budget, and the no-offer outcomes. The unchanged source hash remains
+`d10f0047164ca614968d55e50549d7efd1a768a5784c901d36dd82f9467f63f2`.
+Compiler SHA-256
+`480b8b56c8dca5b4469307026a10643d142ee46fff5b937634e3618699e17adf`
+emitted module
+`8e55e5dd9668df5fdb6bc1ba5bb918a80f0af8c5c6803272f9caba92d050d512`
+with `--par --par-scalar-leaf-limit off --emit-llvm --par-ledger`.
+That nondefault scalar-leaf setting was part of the initial qualification,
+not a selected compiler default. A fresh ordinary `--par` emission completed
+in 0.21 seconds, exit 0, with byte-identical LLVM and identical PAR ledger
+lines. The same native qualification therefore applies to the default policy
+for this source and compiler. Use the separately retained default artifact
+path in the prospective timing run; its module hash is unchanged.
+
+Plain and observed native images use ordinary `-std=c11 -pthread -O2
+-Wno-override-module` construction and the unchanged 150,000 runtime work
+unit. Their construction took 0.69 and 0.72 seconds respectively. Plain W1,
+plain W4 and observed W1 each passed 90 configurations and 1,863,630 distance
+and unchanged-input comparisons. Observed W4 passed 96 configurations and
+70,021,040 comparisons after adding original and permuted 2,097,151-vertex
+trees and a 2,621,439-vertex directed collision graph. The entire guarded
+construction/check command took 2.69 seconds, exit 0, under a 30-second bound.
+These are correctness-batch costs, not performance samples. The large inputs
+have not yet passed through the unobserved image.
+
+Both useful maps execute nonempty work on helpers on the permuted tree and
+collision graph. The respective counts are 511 and 102 nonempty source rows,
+1,190,060 and 1,885 nonempty incoming buckets, and 1,546,566 and 1,998,849 new
+discoveries on helpers. Nonempty incoming buckets also count useful handling
+when every message is already discovered. The original tree records zero
+nonempty source rows on helpers despite a nonzero routing budget; its helpers
+handle 1,642 nonempty incoming buckets and 1,566,722 discoveries. Preserve
+that label-concentration limitation instead of rerunning until routing moves
+to a helper. The smaller fixtures receive no routing budget. At actual prices
+363 for routing and 2,580 for discovery, the large maps reach a maximum full
+owner span of 1,023 and budgets of one and four respectively, corresponding
+to two and sixteen chunks. Observed W1 records no grants or helper work.
+The observed image's atomics can affect scheduling and are excluded from
+every performance interval.
+
+Before recording any timing samples, the comparison is fixed as follows.
+The two primary families are the permuted 2,097,151-vertex tree and the
+depth-20 collision graph with 2,621,439 vertices. Both have four cells: useful
+C FIFO at W1, outbox WF at W1 and W4, and the unchanged intrusive WF at W1 as
+context. The original 2,097,151-vertex tree and a 4,097-vertex chain each have
+three diagnostic cells: FIFO W1 and outbox W1/W4. Those fourteen cells are
+fixed before timing; diagnostic results cannot rescue a primary-family
+failure. The existing formal matrix already retains the width-31 grid,
+disconnection and duplicate-edge controls; no timing sweep is added for them.
+Permutation keeps vertex zero fixed and uses the recorded fixed LCG seed;
+every fixture definition and source identity is frozen in the dated record.
+
+Reuse the existing compute-bench harness's clocks, process protocol and
+verified-call loop through a scratch kernel adapter. Its wall clock encloses
+one complete algorithm call, including all result and work allocation,
+required initialization, traversal, routing, matrix processing, joins and
+temporary frees. C FIFO calls the formal `oracle(edges, n, NULL)` algorithm:
+it allocates both its distance array and queue inside the interval, initializes
+all distances to the unreachable sentinel, writes queue cells when enqueued,
+and frees the queue before returning the distances. Allocation-failure checks,
+absent-edge tests and first-discovery tests remain. That routine performs no
+distance comparison or input-preservation scan; those are separate checks.
+WF pays all 8V persistent cells and each bucket matrix
+inside the same boundary. Returning a result includes its allocation for both
+implementations; checking and freeing the returned distance array are outside
+for both. Graph construction, expected-distance construction and every full
+input comparison are outside timing. Regenerate deterministic input after
+each completed call for the input comparison, so a second graph is not held
+during WF's temporary workspace. Check the large inputs at W1 and W4 through
+the exact unobserved qualification image, then check every timed cell through
+the final timing image before sampling.
+
+Compile the useful FIFO C code at `-O3 -fno-fast-math -ffp-contract=off
+-fno-lto`, with vectorization permitted and no target override on this arm64
+host. WF uses the ordinary `-O2` native path; record its exact source,
+emitted module, runtime sources/objects, image, clang identity and flags.
+Do not carry the old benchmark's `-fno-vectorize -fno-slp-vectorize` flags into
+the FIFO reference. No observer or runtime-work-unit override enters the
+timing image, and the candidate's source and algorithm remain unchanged.
+
+Use five fixed paired passes. Each fresh process performs one verified warm-up
+and three verified warm calls with `WFB_GAP_US=0`; rotate and reverse cell order
+across passes. Preserve all wall-time, process-CPU and steal observations.
+Reduce to each process's median of its three warm calls, then compare matched
+per-pass medians and report their median ratio, spread and count below one.
+First run forty processes for an identical-image A/B control: both primary
+graphs at W1 and W4, two identically configured processes per pair, five
+passes. Every cell's median B/A warm wall ratio must lie in [0.97, 1.03]; any
+failure makes this session inconclusive and stops before the seventy-process
+algorithm comparison. No repeated null session selects a favorable result.
+
+The prior selection criterion remains a 20-percent FIFO improvement on at
+least one primary family and improvement over WF's own sequential execution
+on both. For this bounded comparison, require median outbox-W4/FIFO-W1 wall
+ratio at most 0.80 on at least one primary family, median outbox-W4/outbox-W1
+ratio at most 0.97 on both, and at least four of five paired wins for every
+claimed improvement. Report process CPU separately. A qualified result slower
+than FIFO on both primary families ends this algorithm trial; inconclusive
+variation authorizes no speedup claim or repeated tuning session. Preserve
+the original-tree routing limit, the narrow-chain elapsed penalty, and the
+64V-byte persistent workspace plus bucket-matrix cost in the conclusion.
+
+Native construction is expected below two seconds and untimed oracle checks
+below five, with a 30-second guarded preflight bound. The null stage is
+expected to take 5--15 seconds and the comparison 10--25 seconds, each with
+its own 60-second guarded bound. These are prospective costs, not observed
+ones. A wrong distance, changed input, artifact-hash drift, competing heavy
+load or timeout stops the stage and retains its raw output; a timeout is not
+a source rejection or an algorithm-performance verdict. Inspect the shared
+guard before each stage. No source, scheduling default or daily CI selection
+changes as a result of this protocol alone.
+
+Design suitability: the shared harness and FIFO oracle cover the intended
+useful-work and timing boundaries. A scratch adapter adds only the frozen
+large fixtures and complete between-call input checks; it remains outside
+daily checks and is removed when this bounded trial is recorded. Default-flag
+equivalence is established; large unobserved correctness remains required
+before timing, and the observed original-tree routing limitation remains an explicit
+uncertainty rather than a reason to change decomposition or prices.
 
 ## Reference-model scatter investigation
 

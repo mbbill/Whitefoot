@@ -1,0 +1,251 @@
+# Sparse-frontier native qualification and prospective matched FIFO comparison.
+# Fields: section, record-kind, original line or key/value.
+# Keep while compute-model/DESIGN.md cites this evidence; no daily gate consumes it.
+context	manifest	hardware: Apple M1 Pro; Darwin 25.6.0 arm64; unpinned interactive workstation; shared guard serializes heavy repository work
+context	manifest	qualification_worktree: 139fc2d1d74480d58ab878c0eb67bca12b5144f1; compiler/runtime source tree for native construction
+context	manifest	compiler_candidate_revision: bd938f53; integrated into compute/scatter-costs at 30198a19b626c25ce525004e7a02e491a22c1681
+context	manifest	qualification_emission_flags: --par --par-scalar-leaf-limit off --emit-llvm --par-ledger
+context	manifest	default_emission_flags: --par --emit-llvm --par-ledger; LLVM bytes and all PAR ledger lines identical to qualification emission
+context	manifest	native_flags: -std=c11 -pthread -O2 -Wno-override-module; linked ordinary floor, values, scheduler and completion runtime; -lm
+context	manifest	clang: Apple clang version 21.0.0 (clang-2100.3.34.2); arm64-apple-darwin25.6.0
+context	manifest	runtime_policy: work unit 150000; 16 chunks per lane cap; no override; routing price 363; discovery price 2580
+context	manifest	configuration_modes: mode 0 unchanged intrusive WF; mode 1 private-outbox WF; W1 selects sequential world and W4 overlapping world
+context	manifest	formal_matrix: counts 0,1,2,17,63,257,2049,65535; shapes chain,tree,disconnected-chain,cycle,width-31-grid,duplicate-chain; only tree at 65535; two modes; 86 configurations
+context	manifest	extra_small_graphs: permuted tree n=65535; collision depth=14,n=40959; two modes each; total 90 configurations
+context	manifest	extra_large_graphs: original tree n=2097151; permuted tree n=2097151; collision depth=20,n=2621439; two modes each; total 96 configurations
+context	manifest	tree_generator: formal bfs_oracle.c graph(n,1): up to parent (v-1)/2 and children 2*v+1,2*v+2 in four slots, n sentinel for absent edges
+context	manifest	permutation_generator: identity permutation; root 0 fixed; uint64 state=0x8af20c354d159761; for i=n-1 down to 2: state=state*6364136223846793005+1 modulo 2^64; j=1+state%i; swap permutation[i],permutation[j]; remap both vertex IDs and valid neighbors
+context	manifest	collision_generator: leaves=1<<depth; tree=2*leaves-1; groups=leaves/2; n=tree+groups; n sentinel; v<leaves-1 has edges 2*v+1,2*v+2; leaf v=leaves-1+i has edges tree+i/2,tree+i/2,tree+groups-1-i/2,v; final group vertices have absent edges only
+context	manifest	oracle_contract: independent FIFO distances and n unreachable sentinel; compare all n distances and all 4*n input words in both modes; regenerate large original input after WF temporary workspace is freed
+context	manifest	observer_contract: completed nonempty source rows; completed nonempty incoming buckets, including duplicate-only buckets; completed new discoveries; TLS caller/helper identity; actual split spans, weights and returned budgets unchanged
+context	manifest	qualification_limit: observed atomics perturb scheduling; no timing claim; original tree has no nonempty routing rows on helpers; large unobserved inputs remain unverified at this record
+context	manifest	prospective_cells: primary permuted-tree2097151 and collision2621439: serial FIFO W1,outbox W1,outbox W4,intrusive W1; diagnostic tree2097151 and chain4097: serial FIFO W1,outbox W1,outbox W4; 14 cells
+context	manifest	prospective_c_flags: -std=c11 -pthread -O3 -fno-fast-math -ffp-contract=off -fno-lto; vectorization permitted; no arm64 target override
+context	manifest	prospective_wf_flags: ordinary --par; -std=c11 -pthread -O2 -Wno-override-module; unchanged runtime sources and policy; no observer
+context	manifest	prospective_protocol: five fixed passes; fresh processes; one verified warm-up plus three verified warm calls; zero gap; rotated/reversed cell order; 40 identical-image primary null processes then 70 comparison processes
+context	manifest	prospective_null_rule: each primary fixture/width median paired B/A wall ratio must be within [0.97,1.03]; otherwise inconclusive and stop before comparison; no rerun-to-green
+context	manifest	prospective_selection: outbox W4/FIFO W1 median wall <=0.80 on at least one primary; outbox W4/W1 <=0.97 on both; at least 4/5 paired wins for each claimed improvement; qualified slower-than-FIFO result on both ends trial; diagnostics cannot rescue failure
+context	manifest	prospective_limits: preflight native construction and untimed correctness 30s; null 60s; comparison 60s; preserve failure/timeout/hash-drift/competing-load outcomes; no elapsed-time source rejection
+qualification	sha256	d10f0047164ca614968d55e50549d7efd1a768a5784c901d36dd82f9467f63f2  research/investigations/compute-model/sparse-frontier.wf
+qualification	sha256	480b8b56c8dca5b4469307026a10643d142ee46fff5b937634e3618699e17adf  /private/tmp/whitefoot-capture-candidate-cli
+qualification	sha256	8e55e5dd9668df5fdb6bc1ba5bb918a80f0af8c5c6803272f9caba92d050d512  /private/tmp/whitefoot-capture-sparse.ll
+qualification	sha256	c027c54ff857618836c16466924704f81aec9c41246c36ee5c7efcaeeb6f7a44  /private/tmp/whitefoot-capture-sparse.log
+qualification	sha256	cdd68d82f4e974b03600845e11ddc3f20996645ae632a0237d1dcd282cb0c558  /private/tmp/whitefoot-sparse-capture-qualified-plain
+qualification	sha256	a7e10c98cff6567154669874a8327c80be557221b2e83e9f44cc79df3d22078b  /private/tmp/whitefoot-sparse-capture-qualified-plain-linked.ll
+qualification	sha256	f1d6761d70dc2779d68892ead5faa0a8933b5a659ed7dbb059c0e2c7c05ea96f  /private/tmp/whitefoot-sparse-capture-qualified-observed
+qualification	sha256	7db57cb9dd0833ab19c8cd68377f6e5a99b505cd30f58e2ac4a9757cdcd106b6  /private/tmp/whitefoot-sparse-capture-qualified-observed.ll
+qualification	sha256	1dad94ad89f50f3503ca5764a6e465cbc7f1e89b0fefa502345aafcba8d5b9a1  /private/tmp/whitefoot-sparse-capture-qualified-observed-linked.ll
+qualification	sha256	98401dc3b5a69d32be910406a956edcfeeee339990f9b0a2f3b7896e0710a4aa  /private/tmp/whitefoot-sparse-capture-qualified.log
+qualification	sha256	68f08268d5fb17e92bdc6c0971d39c1fbcb9400d09c2df51b147ebaa853c3291  /private/tmp/sparse-frontier-native-qualify.sh
+qualification	sha256	c9e08aab201f0d0c85dabe31795cf4641f094c29b7dec0d434140c0cb4da8a3e  /private/tmp/sparse-frontier-native-qualify-timed.sh
+qualification	sha256	14e650600b5e9500f6e24ed6e01fdcd8d0896651e7b1567d00d9580020b2919e  /private/tmp/sparse-frontier-host.c
+qualification	sha256	4f93af4f04a8c90dde11486a0f7b5844e7dd3bd1ed0ab505b5497f528960c970  /private/tmp/sparse-frontier-build.sh
+qualification	sha256	32b083d62073086d232e910055a81864032fc88e975324ef933f8a7c1ac6df07  /private/tmp/sparse-frontier-observe.pl
+qualification	sha256	a32d0cda8bf995b5279997229b588340041f79cf71d056dda58ee76ec7ad87a6  tests/programs/compute/bfs_oracle.c
+qualification	sha256	1f68218f7eaa5cbc7d863919ec710ca5b60611abb91acc8ef5256746af8b5a96  tests/programs/compute/bfs_host.ll
+qualification	sha256	4e04bcf39eee9edfb02bbec182cf4bbf0d5f2e577003ec3a193dbce143c40813  tests/programs/compute/host-adapter.awk
+default-policy	sha256	8e55e5dd9668df5fdb6bc1ba5bb918a80f0af8c5c6803272f9caba92d050d512  /private/tmp/whitefoot-capture-sparse-default.ll
+default-policy	sha256	fe7868a2c2200d1d6603ed81b1bbecc57be4aec0e167e6215221ac1d7c3d5fa4  /private/tmp/whitefoot-capture-sparse-default.log
+qualification	raw	== START sparse-native-qualified (limit 30s): sh -x /private/tmp/sparse-frontier-native-qualify-timed.sh /private/tmp/whitefoot-capture-sparse.ll /private/tmp/whitefoot-sparse-capture-qualified ==
+qualification	raw	+ set -eu
+qualification	raw	+ module=/private/tmp/whitefoot-capture-sparse.ll
+qualification	raw	+ output=/private/tmp/whitefoot-sparse-capture-qualified
+qualification	raw	+ test -n 99228
+qualification	raw	+ /usr/bin/time -p sh /private/tmp/sparse-frontier-build.sh /private/tmp/whitefoot-capture-sparse.ll /private/tmp/whitefoot-sparse-capture-qualified-plain plain
+qualification	raw	real 0.69
+qualification	raw	user 0.57
+qualification	raw	sys 0.14
+qualification	raw	+ /usr/bin/time -p perl /private/tmp/sparse-frontier-observe.pl /private/tmp/whitefoot-capture-sparse.ll /private/tmp/whitefoot-sparse-capture-qualified-observed.ll
+qualification	raw	real 0.00
+qualification	raw	user 0.00
+qualification	raw	sys 0.00
+qualification	raw	+ /usr/bin/time -p sh /private/tmp/sparse-frontier-build.sh /private/tmp/whitefoot-sparse-capture-qualified-observed.ll /private/tmp/whitefoot-sparse-capture-qualified-observed observe
+qualification	raw	real 0.72
+qualification	raw	user 0.60
+qualification	raw	sys 0.14
+qualification	raw	+ /usr/bin/time -p env WF_WORKERS=1 /private/tmp/whitefoot-sparse-capture-qualified-plain
+qualification	raw	bfs routed oracle PASS: 90 configurations, 1863630 values
+qualification	raw	real 0.40
+qualification	raw	user 0.00
+qualification	raw	sys 0.00
+qualification	raw	+ /usr/bin/time -p env WF_WORKERS=4 /private/tmp/whitefoot-sparse-capture-qualified-plain
+qualification	raw	bfs routed oracle PASS: 90 configurations, 1863630 values
+qualification	raw	real 0.01
+qualification	raw	user 0.00
+qualification	raw	sys 0.00
+qualification	raw	+ /usr/bin/time -p env WF_WORKERS=1 /private/tmp/whitefoot-sparse-capture-qualified-observed
+qualification	raw	sparse phase observer: fixture=formal-matrix vertices=0 grants=0 nonempty_route_rows=9027 helper_route_rows=0 nonempty_buckets=9953 helper_nonempty_buckets=0 discovered_vertices=78636 helper_discovered_vertices=0
+qualification	raw	sparse budget observer: fixture=formal-matrix phase=routing calls=0 nonzero_budgets=0 max_span=0 max_weight=0 max_budget=0
+qualification	raw	sparse budget observer: fixture=formal-matrix phase=discovery calls=0 nonzero_budgets=0 max_span=0 max_weight=0 max_budget=0
+qualification	raw	sparse phase observer: fixture=tree-permuted vertices=65535 grants=0 nonempty_route_rows=509 helper_route_rows=0 nonempty_buckets=51131 helper_nonempty_buckets=0 discovered_vertices=65534 helper_discovered_vertices=0
+qualification	raw	sparse budget observer: fixture=tree-permuted phase=routing calls=0 nonzero_budgets=0 max_span=0 max_weight=0 max_budget=0
+qualification	raw	sparse budget observer: fixture=tree-permuted phase=discovery calls=0 nonzero_budgets=0 max_span=0 max_weight=0 max_budget=0
+qualification	raw	sparse phase observer: fixture=collision vertices=40959 grants=0 nonempty_route_rows=114 helper_route_rows=0 nonempty_buckets=312 helper_nonempty_buckets=0 discovered_vertices=40958 helper_discovered_vertices=0
+qualification	raw	sparse budget observer: fixture=collision phase=routing calls=0 nonzero_budgets=0 max_span=0 max_weight=0 max_budget=0
+qualification	raw	sparse budget observer: fixture=collision phase=discovery calls=0 nonzero_budgets=0 max_span=0 max_weight=0 max_budget=0
+qualification	raw	bfs routed oracle PASS: 90 configurations, 1863630 values
+qualification	raw	real 0.24
+qualification	raw	user 0.00
+qualification	raw	sys 0.00
+qualification	raw	+ /usr/bin/time -p env WF_WORKERS=4 WF_SPARSE_LARGE=1 /private/tmp/whitefoot-sparse-capture-qualified-observed
+qualification	raw	sparse phase observer: fixture=formal-matrix vertices=0 grants=3 nonempty_route_rows=9027 helper_route_rows=0 nonempty_buckets=9953 helper_nonempty_buckets=106 discovered_vertices=78636 helper_discovered_vertices=15873
+qualification	raw	sparse budget observer: fixture=formal-matrix phase=routing calls=7406 nonzero_budgets=0 max_span=127 max_weight=363 max_budget=0
+qualification	raw	sparse budget observer: fixture=formal-matrix phase=discovery calls=7406 nonzero_budgets=3 max_span=255 max_weight=2580 max_budget=2
+qualification	raw	sparse phase observer: fixture=tree-permuted vertices=65535 grants=5 nonempty_route_rows=509 helper_route_rows=0 nonempty_buckets=51131 helper_nonempty_buckets=27057 discovered_vertices=65534 helper_discovered_vertices=22765
+qualification	raw	sparse budget observer: fixture=tree-permuted phase=routing calls=16 nonzero_budgets=0 max_span=127 max_weight=363 max_budget=0
+qualification	raw	sparse budget observer: fixture=tree-permuted phase=discovery calls=16 nonzero_budgets=3 max_span=255 max_weight=2580 max_budget=2
+qualification	raw	sparse phase observer: fixture=collision vertices=40959 grants=2 nonempty_route_rows=114 helper_route_rows=0 nonempty_buckets=312 helper_nonempty_buckets=27 discovered_vertices=40958 helper_discovered_vertices=3777
+qualification	raw	sparse budget observer: fixture=collision phase=routing calls=16 nonzero_budgets=0 max_span=127 max_weight=363 max_budget=0
+qualification	raw	sparse budget observer: fixture=collision phase=discovery calls=16 nonzero_budgets=3 max_span=127 max_weight=2580 max_budget=1
+qualification	raw	sparse level budget: fixture=tree-large phase=routing round=0 span=0 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=discovery round=0 span=0 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=routing round=1 span=0 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=discovery round=1 span=1 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=routing round=2 span=1 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=discovery round=2 span=1 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=routing round=3 span=1 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=discovery round=3 span=3 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=routing round=4 span=3 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=discovery round=4 span=3 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=routing round=5 span=3 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=discovery round=5 span=7 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=routing round=6 span=7 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=discovery round=6 span=7 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=routing round=7 span=7 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=discovery round=7 span=15 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=routing round=8 span=15 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=discovery round=8 span=15 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=routing round=9 span=15 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=discovery round=9 span=31 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=routing round=10 span=31 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=discovery round=10 span=31 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=routing round=11 span=31 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=discovery round=11 span=63 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=routing round=12 span=63 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=discovery round=12 span=63 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=routing round=13 span=63 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=discovery round=13 span=127 weight=2580 budget=1
+qualification	raw	sparse level budget: fixture=tree-large phase=routing round=14 span=127 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=discovery round=14 span=127 weight=2580 budget=1
+qualification	raw	sparse level budget: fixture=tree-large phase=routing round=15 span=127 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=discovery round=15 span=255 weight=2580 budget=2
+qualification	raw	sparse level budget: fixture=tree-large phase=routing round=16 span=255 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=discovery round=16 span=255 weight=2580 budget=2
+qualification	raw	sparse level budget: fixture=tree-large phase=routing round=17 span=255 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=discovery round=17 span=511 weight=2580 budget=3
+qualification	raw	sparse level budget: fixture=tree-large phase=routing round=18 span=511 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=discovery round=18 span=511 weight=2580 budget=3
+qualification	raw	sparse level budget: fixture=tree-large phase=routing round=19 span=511 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large phase=discovery round=19 span=1023 weight=2580 budget=4
+qualification	raw	sparse level budget: fixture=tree-large phase=routing round=20 span=1023 weight=363 budget=1
+qualification	raw	sparse level budget: fixture=tree-large phase=discovery round=20 span=1023 weight=2580 budget=4
+qualification	raw	sparse phase observer: fixture=tree-large vertices=2097151 grants=33 nonempty_route_rows=752 helper_route_rows=0 nonempty_buckets=2146 helper_nonempty_buckets=1642 discovered_vertices=2097150 helper_discovered_vertices=1566722
+qualification	raw	sparse budget observer: fixture=tree-large phase=routing calls=21 nonzero_budgets=1 max_span=1023 max_weight=363 max_budget=1
+qualification	raw	sparse budget observer: fixture=tree-large phase=discovery calls=21 nonzero_budgets=8 max_span=1023 max_weight=2580 max_budget=4
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=routing round=0 span=0 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=discovery round=0 span=0 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=routing round=1 span=0 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=discovery round=1 span=1 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=routing round=2 span=1 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=discovery round=2 span=1 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=routing round=3 span=1 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=discovery round=3 span=3 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=routing round=4 span=3 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=discovery round=4 span=3 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=routing round=5 span=3 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=discovery round=5 span=7 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=routing round=6 span=7 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=discovery round=6 span=7 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=routing round=7 span=7 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=discovery round=7 span=15 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=routing round=8 span=15 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=discovery round=8 span=15 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=routing round=9 span=15 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=discovery round=9 span=31 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=routing round=10 span=31 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=discovery round=10 span=31 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=routing round=11 span=31 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=discovery round=11 span=63 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=routing round=12 span=63 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=discovery round=12 span=63 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=routing round=13 span=63 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=discovery round=13 span=127 weight=2580 budget=1
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=routing round=14 span=127 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=discovery round=14 span=127 weight=2580 budget=1
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=routing round=15 span=127 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=discovery round=15 span=255 weight=2580 budget=2
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=routing round=16 span=255 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=discovery round=16 span=255 weight=2580 budget=2
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=routing round=17 span=255 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=discovery round=17 span=511 weight=2580 budget=3
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=routing round=18 span=511 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=discovery round=18 span=511 weight=2580 budget=3
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=routing round=19 span=511 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=discovery round=19 span=1023 weight=2580 budget=4
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=routing round=20 span=1023 weight=363 budget=1
+qualification	raw	sparse level budget: fixture=tree-large-permuted phase=discovery round=20 span=1023 weight=2580 budget=4
+qualification	raw	sparse phase observer: fixture=tree-large-permuted vertices=2097151 grants=27 nonempty_route_rows=3070 helper_route_rows=511 nonempty_buckets=1638998 helper_nonempty_buckets=1190060 discovered_vertices=2097150 helper_discovered_vertices=1546566
+qualification	raw	sparse budget observer: fixture=tree-large-permuted phase=routing calls=21 nonzero_budgets=1 max_span=1023 max_weight=363 max_budget=1
+qualification	raw	sparse budget observer: fixture=tree-large-permuted phase=discovery calls=21 nonzero_budgets=8 max_span=1023 max_weight=2580 max_budget=4
+qualification	raw	sparse level budget: fixture=collision-large phase=routing round=0 span=0 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=discovery round=0 span=0 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=routing round=1 span=0 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=discovery round=1 span=1 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=routing round=2 span=1 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=discovery round=2 span=1 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=routing round=3 span=1 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=discovery round=3 span=3 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=routing round=4 span=3 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=discovery round=4 span=3 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=routing round=5 span=3 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=discovery round=5 span=7 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=routing round=6 span=7 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=discovery round=6 span=7 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=routing round=7 span=7 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=discovery round=7 span=15 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=routing round=8 span=15 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=discovery round=8 span=15 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=routing round=9 span=15 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=discovery round=9 span=31 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=routing round=10 span=31 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=discovery round=10 span=31 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=routing round=11 span=31 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=discovery round=11 span=63 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=routing round=12 span=63 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=discovery round=12 span=63 weight=2580 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=routing round=13 span=63 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=discovery round=13 span=127 weight=2580 budget=1
+qualification	raw	sparse level budget: fixture=collision-large phase=routing round=14 span=127 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=discovery round=14 span=127 weight=2580 budget=1
+qualification	raw	sparse level budget: fixture=collision-large phase=routing round=15 span=127 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=discovery round=15 span=255 weight=2580 budget=2
+qualification	raw	sparse level budget: fixture=collision-large phase=routing round=16 span=255 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=discovery round=16 span=255 weight=2580 budget=2
+qualification	raw	sparse level budget: fixture=collision-large phase=routing round=17 span=255 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=discovery round=17 span=511 weight=2580 budget=3
+qualification	raw	sparse level budget: fixture=collision-large phase=routing round=18 span=511 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=discovery round=18 span=511 weight=2580 budget=3
+qualification	raw	sparse level budget: fixture=collision-large phase=routing round=19 span=511 weight=363 budget=0
+qualification	raw	sparse level budget: fixture=collision-large phase=discovery round=19 span=1023 weight=2580 budget=4
+qualification	raw	sparse level budget: fixture=collision-large phase=routing round=20 span=1023 weight=363 budget=1
+qualification	raw	sparse level budget: fixture=collision-large phase=discovery round=20 span=1023 weight=2580 budget=4
+qualification	raw	sparse level budget: fixture=collision-large phase=routing round=21 span=1023 weight=363 budget=1
+qualification	raw	sparse level budget: fixture=collision-large phase=discovery round=21 span=1023 weight=2580 budget=4
+qualification	raw	sparse phase observer: fixture=collision-large vertices=2621439 grants=39 nonempty_route_rows=811 helper_route_rows=102 nonempty_buckets=2417 helper_nonempty_buckets=1885 discovered_vertices=2621438 helper_discovered_vertices=1998849
+qualification	raw	sparse budget observer: fixture=collision-large phase=routing calls=22 nonzero_budgets=2 max_span=1023 max_weight=363 max_budget=1
+qualification	raw	sparse budget observer: fixture=collision-large phase=discovery calls=22 nonzero_budgets=9 max_span=1023 max_weight=2580 max_budget=4
+qualification	raw	bfs routed oracle PASS: 96 configurations, 70021040 values
+qualification	raw	real 0.57
+qualification	raw	user 0.84
+qualification	raw	sys 0.05
+qualification	raw	real 2.67
+qualification	raw	user 2.06
+qualification	raw	sys 0.36
+qualification	raw	== END sparse-native-qualified: 2.69 s, exit 0 ==
+default-policy	raw	== START captures-sparse-default-emission (limit 30s): /private/tmp/whitefoot-capture-candidate-cli --par --emit-llvm --par-ledger /private/tmp/whitefoot-sparse-frontier/research/investigations/compute-model/sparse-frontier.wf -o /private/tmp/whitefoot-capture-sparse-default.ll ==
+default-policy	raw	PAR split       outbox_level  loop at 6.0.16.0  split independent map over 10 captured bindings
+default-policy	raw	PAR split       outbox_level  loop at 6.0.27.0  split under +wrap over 11 captured bindings
+default-policy	raw	real 0.17
+default-policy	raw	user 0.15
+default-policy	raw	sys 0.00
+default-policy	raw	== END captures-sparse-default-emission: 0.21 s, exit 0 ==
