@@ -305,6 +305,48 @@ concludes with a recorded disposition; retain any selected follow-up work here.
 Questions the owner has left open on purpose. None of them is a decision;
 each is resolved by a discussion and a tree change.
 
+- **Declaration and call-boundary syntax after the ownership redesign.**
+  Reassess mandatory `own` on value parameters and results, mandatory names
+  for every result including `unit`, and the named-argument/construction-field
+  discipline together. References now have only the `&` form and cannot be
+  returned; result names serve contracts rather than runtime storage. These
+  changes may leave declarations repeating information without improving the
+  callable boundary. Named arguments and fields have a separate transposition
+  rationale and must not be removed merely because they are verbose. Compare
+  complete alternative signature and contract forms on scalar, generic,
+  multi-result and resource APIs. A candidate must preserve explicit boundary
+  types, unambiguous result references, useful mismatch diagnostics and one
+  grammar-defined spelling, without site-dependent inference relief. The
+  benefit and final spelling are unverified; defer selection while result-proof
+  transport is investigated, and reopen at the next syntax-design discussion.
+- **Ownership transfer and reference-access forms.** Audit unnecessary
+  owner-in/owner-out APIs now expressible with reference parameters and exact
+  effect rows, the differing consumption spellings of calls, returns, matches
+  and `propagate`, and repeated `deref`/`&deref` paths. `move` still marks a
+  consumption boundary; `deref` distinguishes a reference holder from its
+  referent and from owned `Box.inner`, so neither is redundant solely because
+  `own` may be. Compare the same container and owned-link operations under
+  proposed forms, preserving copy/drop capabilities, whole-owner consumption,
+  atomic replacement, reference rebinding, invalidation and effect separation.
+  Require the ordinary positive and invalid-use examples to remain explainable
+  by one rule per operation, with no additional runtime checks or transfers.
+  Reduced ceremony is an opportunity, not an established gain. Defer these
+  interface and syntax choices to a dedicated discussion after the current
+  result-proof study; reopen with those same-operation comparisons.
+- **Expression composition and canonical source policy.** Reassess mandatory
+  three-address computation and intermediate names together with the ban on
+  comments and rejection of noncanonical formatting. Compare authoring,
+  local refactoring and diagnostic locality on unchanged algorithms and proof
+  obligations; assess each restriction's concrete purpose rather than treating
+  explicitness or brevity as sufficient grounds. Expression alternatives must
+  specify evaluation order, temporary ownership and cleanup, proof invalidation
+  and parallel-permission granularity while retaining deterministic parsing.
+  Documentation and formatting alternatives must distinguish canonical output
+  from the accepted-input boundary and must grant no proof authority to prose.
+  No relaxation or authoring-cost improvement is established. Defer selection
+  until the syntax review reaches this group; close it only with an explicit
+  disposition supported by these comparisons.
+
 - **Sparse containers over must-consume linear elements need ownership-visible
   slot state.** The maintained
   [owning-map witness](../tests/programs/containers/owning-behavior.wf)
