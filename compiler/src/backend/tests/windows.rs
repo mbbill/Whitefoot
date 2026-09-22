@@ -68,6 +68,40 @@ const U64_CELL: &[u8] = br#"fn main() -> status: own ExitStatus pure {
 }
 "#;
 
+/// OP-4 and OP-10 already prove a Slots offset is inside the physical
+/// capacity. A Ring still needs its head-relative wrap in both placements.
+#[test]
+fn slots_addresses_use_proved_offsets_and_ring_addresses_still_wrap() {
+    for shape in ["Slots", "Ring"] {
+        for capacity in ["", ", 4"] {
+            let (ty, window) = if capacity.is_empty() {
+                (format!("Box<{shape}<u64>>"), "deref(values).inner")
+            } else {
+                (format!("{shape}<u64{capacity}>"), "deref(values)")
+            };
+            let source = format!(
+                "fn read(values: &{ty}, index: own u64) -> result: own u64 reads(values) contract {{\n  requires index < {window}.len;\n}} {{\n  return {window}[index];\n}}\n\nfn roundtrip(values: &{ty}, value: own u64) -> result: own u64 writes(values) contract {{\n  requires {window}.len < {window}.cap;\n}} {{\n  place_back(window: &{window}, value: value);\n  let result = take_back(window: &{window});\n  return result;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+            );
+            let llvm = compile(source.as_bytes());
+            let functions = llvm
+                .split("\ndefine ")
+                .filter(|body| {
+                    body.starts_with("i64 @wf_read(")
+                        || body.lines().next().is_some_and(|line| {
+                            line.contains("@wf_place_back$") || line.contains("@wf_take_back$")
+                        })
+                })
+                .map(|body| body.split("\n}").next().expect("function body"))
+                .collect::<Vec<_>>();
+            assert_eq!(functions.len(), 3, "{shape}{capacity}");
+            for body in functions {
+                assert!(body.contains("getelementptr inbounds"), "{body}");
+                assert_eq!(body.contains("icmp uge i64"), shape == "Ring", "{body}");
+            }
+        }
+    }
+}
+
 /// OP-9 admits zero even when the mathematical language ceiling exceeds
 /// u64. Lowering must preserve that result so STOR-6, rather than an internal
 /// compiler failure, reports the unrepresentable concrete element layout.
