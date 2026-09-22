@@ -1,4 +1,5 @@
-//! [FN-10] the source conditions for replacing the current activation.
+//! Shared activation-replacement conditions. Only a written [FN-10] marker
+//! requires them; an unmarked call keeps ordinary lowering when they fail.
 
 use std::collections::HashMap;
 
@@ -20,6 +21,20 @@ impl Checker<'_, '_, '_, '_> {
             }
         }
         Ok(false)
+    }
+
+    pub(super) fn is_sole_return_call(&self, call: NodeId) -> Result<bool, CheckStop> {
+        let expression = self
+            .tree
+            .parent(call)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let parent = self
+            .tree
+            .parent(expression)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        Ok(self.tree.production(expression)? == Production::Expr
+            && self.tree.production(parent)? == Production::ReturnStmt
+            && self.tree.children_with(parent, Production::Expr)?.len() == 1)
     }
 
     fn record_musttail_rejection(
@@ -82,18 +97,7 @@ impl Checker<'_, '_, '_, '_> {
             if !self.is_musttail_call(call)? {
                 continue;
             }
-            let expression = self
-                .tree
-                .parent(call)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            let parent = self
-                .tree
-                .parent(expression)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            if self.tree.production(expression)? != Production::Expr
-                || self.tree.production(parent)? != Production::ReturnStmt
-                || self.tree.children_with(parent, Production::Expr)?.len() != 1
-            {
+            if !self.is_sole_return_call(call)? {
                 self.record_musttail_rejection(
                     call,
                     "musttail must be the sole expression of return",
@@ -146,14 +150,14 @@ impl Checker<'_, '_, '_, '_> {
         Ok(())
     }
 
-    pub(super) fn check_musttail_arguments(
+    pub(super) fn check_self_tail_arguments(
         &self,
         node: NodeId,
         function: &FunctionSignature,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         paths: &[Vec<ResolvedPlace>],
         modes: &[CheckedMode],
-    ) -> Result<(), CheckStop> {
+    ) -> Result<bool, CheckStop> {
         for (ordinal, (paths, mode)) in paths.iter().zip(modes).enumerate() {
             if !mode.is_reference() {
                 continue;
@@ -168,17 +172,20 @@ impl Checker<'_, '_, '_, '_> {
                     })
                 })
             {
-                return self.record_musttail_rejection(node, "every musttail reference argument must be rooted at a reference parameter, not current-activation storage", Some(function.parameters[ordinal].name.clone()));
+                if self.is_musttail_call(node)? {
+                    self.record_musttail_rejection(node, "every musttail reference argument must be rooted at a reference parameter, not current-activation storage", Some(function.parameters[ordinal].name.clone()))?;
+                }
+                return Ok(false);
             }
         }
-        Ok(())
+        Ok(true)
     }
 
-    pub(super) fn check_musttail_releases(
+    pub(super) fn check_self_tail_releases(
         &self,
         call: &NodePath,
         bindings: &HashMap<DeclarationId, LocalBinding>,
-    ) -> Result<(), CheckStop> {
+    ) -> Result<bool, CheckStop> {
         let mut owners = bindings
             .values()
             .filter(|local| local.live && local.mode == CheckedMode::Own)
@@ -199,23 +206,26 @@ impl Checker<'_, '_, '_, '_> {
                     })
             });
             if referenced {
-                let name = self
-                    .resolved
-                    .declarations()
-                    .iter()
-                    .find(|declaration| declaration.id() == owner.declaration)
-                    .map(|declaration| declaration.spelling().to_owned());
                 let node = self
                     .tree
                     .node_with_path(call)
                     .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-                return self.record_musttail_rejection(
-                    node,
-                    "a live reference prevents releasing this owner before the musttail transfer",
-                    name,
-                );
+                if self.is_musttail_call(node)? {
+                    let name = self
+                        .resolved
+                        .declarations()
+                        .iter()
+                        .find(|declaration| declaration.id() == owner.declaration)
+                        .map(|declaration| declaration.spelling().to_owned());
+                    self.record_musttail_rejection(
+                        node,
+                        "a live reference prevents releasing this owner before the musttail transfer",
+                        name,
+                    )?;
+                }
+                return Ok(false);
             }
         }
-        Ok(())
+        Ok(true)
     }
 }

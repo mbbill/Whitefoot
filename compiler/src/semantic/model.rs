@@ -1831,9 +1831,11 @@ pub(crate) enum CheckedExpression {
     },
     UserCall {
         function: FunctionId,
-        /// [FN-10] an admitted direct self transfer in the sole return position.
-        /// It remains an ordinary call for every source proof judgment.
-        musttail: bool,
+        /// A selected direct self transfer in the sole return position, either
+        /// required by [FN-10] or inferred under the same conditions. This is
+        /// lowering information, not a source marker; every proof judgment
+        /// still sees the ordinary call.
+        tail_transfer: bool,
         /// The authoritative function-formal row [FN-4, EFF-2], rebased to
         /// the selected concrete callee's parameter declarations. It is
         /// proof-only: lowering still calls `function` directly.

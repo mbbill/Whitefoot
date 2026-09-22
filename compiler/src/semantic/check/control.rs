@@ -275,7 +275,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     );
                 }
                 self.check_return_implicit_read(function, expression_node, bindings)?;
-                let value =
+                let mut value =
                     self.check_expression(function, expression_node, bindings, scope.loops.len())?;
                 // [REF-3] a `return_stmt` whose selected expression is a
                 // reference is the escape violation itself, and [FN-1] forms
@@ -293,12 +293,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 let drops = self.live_affine_drops(bindings, &HashSet::new(), node)?;
                 if let CheckedExpression::UserCall {
-                    musttail: true,
+                    tail_transfer,
                     call,
                     ..
-                } = &value.expression
+                } = &mut value.expression
+                    && *tail_transfer
                 {
-                    self.check_musttail_releases(call, bindings)?;
+                    *tail_transfer = self.check_self_tail_releases(call, bindings)?;
                 }
                 Ok(StatementResult {
                     statement: CheckedStatement::Return {

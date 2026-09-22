@@ -399,7 +399,7 @@ fn lower_function<'program>(
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
     }
-    if !uninhabited && function.body.as_deref().is_some_and(contains_musttail) {
+    if !uninhabited && function.body.as_deref().is_some_and(contains_tail_transfer) {
         let types = builder
             .parameters
             .iter()
@@ -450,17 +450,21 @@ fn lower_function<'program>(
     Ok(lowered)
 }
 
-fn contains_musttail(statements: &[CheckedStatement]) -> bool {
+fn contains_tail_transfer(statements: &[CheckedStatement]) -> bool {
     statements.iter().any(|statement| match statement {
         CheckedStatement::Return {
-            value: CheckedExpression::UserCall { musttail: true, .. },
+            value:
+                CheckedExpression::UserCall {
+                    tail_transfer: true,
+                    ..
+                },
             ..
         } => true,
         CheckedStatement::Match { arms, .. } | CheckedStatement::ValueMatchLet { arms, .. } => {
-            arms.iter().any(|arm| contains_musttail(&arm.body))
+            arms.iter().any(|arm| contains_tail_transfer(&arm.body))
         }
         CheckedStatement::Loop { body, .. } | CheckedStatement::CountedRange { body, .. } => {
-            contains_musttail(body)
+            contains_tail_transfer(body)
         }
         _ => false,
     })
@@ -1035,7 +1039,7 @@ impl<'program> IrBuilder<'program> {
                 CheckedStatement::Proof(_) => {}
                 CheckedStatement::Return { value, drops, .. } => {
                     if let CheckedExpression::UserCall {
-                        musttail: true,
+                        tail_transfer: true,
                         arguments,
                         ..
                     } = value

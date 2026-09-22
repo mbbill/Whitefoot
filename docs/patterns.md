@@ -127,6 +127,9 @@ local cannot survive replacement of that activation. Move owned arguments as
 usual. An unreferenced affine local is released before the transfer; a live
 valid reference to a local with nonempty release prevents that transfer.
 The marker preserves every ordinary call proof and does not prove termination.
+The compiler also optimizes unmarked direct self calls that meet the same
+conditions. If a condition is unavailable, an unmarked call stays ordinary;
+use `musttail` when failure to make the transfer must be a compile-time error.
 The [consuming linked sequence](../tests/programs/tail_list.wf) demonstrates
 moving the next heap cell into a self transfer while releasing the old one.
 

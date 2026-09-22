@@ -1,12 +1,23 @@
 //! Implementation obligations beyond the source-level FN-10 corpus verdicts.
 
 use super::system::with_mutated_ir_lowering;
-use super::{build_executable, emitted_function, test_directory};
+use super::{build_executable, compile_rejection, emitted_function, test_directory};
 use crate::{IrNominalKind, IrTerminator, IrType, OverlapLowering, emit_llvm};
 
 #[test]
 fn musttail_is_a_backedge_before_host_optimization_in_both_worlds() {
     let source = include_bytes!("../../../../tests/conformance/cases/fn10-pos-self-transfer.wf");
+    assert_self_tail_lowering(source);
+}
+
+#[test]
+fn unmarked_self_calls_share_the_guaranteed_transfer_lowering() {
+    let source = include_str!("../../../../tests/conformance/cases/fn10-pos-self-transfer.wf")
+        .replace("musttail ", "");
+    assert_self_tail_lowering(source.as_bytes());
+}
+
+fn assert_self_tail_lowering(source: &[u8]) {
     for overlap in [OverlapLowering::Off, OverlapLowering::On] {
         let module = with_mutated_ir_lowering(source, overlap, |program| {
             let exchange = program
@@ -83,4 +94,66 @@ fn musttail_is_a_backedge_before_host_optimization_in_both_worlds() {
             std::fs::remove_dir_all(directory).expect("remove self-tail native artifacts");
         }
     }
+}
+
+#[test]
+fn ineligible_unmarked_calls_keep_their_ordinary_lowering() {
+    // These source pairs differ only in whether the writer requires a tail
+    // transfer. Their unmarked forms must stay accepted without losing the
+    // caller storage, cleanup continuation, or distinct callee they need.
+    for (source, caller, callee) in [
+        (
+            include_str!("../../../../tests/conformance/cases/fn10-neg-local-reference.wf"),
+            "walk",
+            "walk",
+        ),
+        (
+            include_str!(
+                "../../../../tests/conformance/cases/fn10-neg-owned-parameter-reference.wf"
+            ),
+            "walk",
+            "walk",
+        ),
+        (
+            include_str!("../../../../tests/conformance/cases/fn10-neg-joined-reference.wf"),
+            "walk",
+            "walk",
+        ),
+        (
+            include_str!("../../../../tests/conformance/cases/fn10-neg-pending-release.wf"),
+            "walk",
+            "walk",
+        ),
+        (
+            include_str!("../../../../tests/conformance/cases/fn10-neg-not-return.wf"),
+            "walk",
+            "walk",
+        ),
+        (
+            include_str!("../../../../tests/conformance/cases/fn10-neg-other-callee.wf"),
+            "left",
+            "right",
+        ),
+    ] {
+        let source = source.replace("musttail ", "");
+        for overlap in [OverlapLowering::Off, OverlapLowering::On] {
+            with_mutated_ir_lowering(source.as_bytes(), overlap, |program| {
+                let module = emit_llvm(program)
+                    .expect("ordinary call emits")
+                    .into_string();
+                let body = emitted_function(&module, caller);
+                assert!(
+                    body.contains(&format!("call void @wf_{callee}(")),
+                    "the ineligible transfer must remain a call: {body}"
+                );
+            });
+        }
+    }
+}
+
+#[test]
+fn automatic_tail_selection_cannot_discharge_an_ordinary_requirement() {
+    let source = include_str!("../../../../tests/conformance/cases/fn10-neg-requires.wf")
+        .replace("musttail ", "");
+    assert_eq!(compile_rejection(source.as_bytes()).rule_id(), Some("FN-8"));
 }
