@@ -20,8 +20,8 @@
 //   replacement the ordinary `set` whose old value takes [WIN-3]'s
 //   disposition. Successor: the [SET-1] tests in this file, `owned_places`,
 //   and the `swap` tests in `windows`. [OP-12]'s atomic in-place update
-//   `set p = f(move p, args...);` is the remaining successor and the checker
-//   does not implement it yet, so no test of it is added here.
+//   `set p = f(move p, args...);` has alias-path coverage in `references`
+//   and formal-result boundary coverage in `contracts`.
 // - `arenas` (15 tests) retired with [OWN-3], [OWN-4], [OWN-10], [FORM-8] and
 //   [STOR-4]: v0.60 has no regions, lifetimes, arenas or store brands at all.
 //   There is no successor rule; a pool or an arena is ordinary `Slots` usage
