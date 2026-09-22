@@ -177,6 +177,18 @@ not separately linked layouts, despite the reducer's generic twin boilerplate.
 These rows do not establish native competitiveness or isolate the historical
 continuation fix. Keep them while the investigation or its dependents cite them.
 
+[`native-kernel-vectorization-2026-09-22.tsv`](native-kernel-vectorization-2026-09-22.tsv)
+adds the bounded wide-stencil/FIR W1/W4 control against those same frozen
+objects. It retains all 1,200 checked timing calls, full oracle results,
+identical-image and unchanged-WF-object controls, optimized callback excerpts,
+and the exact one-shot construction recipe. The complete native kernel C
+translation units permit vectorization; FIR also removes its local tap-loop
+prohibition. Cached scheduler libraries retain their original flags. Both
+fixtures cross the predeclared native-improvement criterion; the
+[interpretation](../../investigations/compute-model/DESIGN.md#native-kernel-vectorization-control)
+keeps the noisy stencil null, the remaining stencil W4 gap, and the limits on
+causal attribution. No default build flags change.
+
 The `wf` row is the module `whitefootc` emits from the kernel's `.wf` source
 under **plain `--par --emit-llvm` and no other flag**, linked with
 the complete ordinary native library under `compiler/src/backend/`
@@ -1169,8 +1181,11 @@ compute independent lanes with those semantics. Inspection of the frozen
 `6fdb6768` objects in the [2026-09-21 baseline](compute-baseline-2026-09-21.tsv)
 finds packed `fadd.2d`/`fmul.2d` in WF stencil and packed multiplication followed
 by ordered scalar additions in WF FIR. The corresponding retained native
-kernel objects are scalar. A comparison with optimized native kernels is
-therefore still required before drawing a native code-generation conclusion.
+kernel objects are scalar. The bounded
+[2026-09-22 control](native-kernel-vectorization-2026-09-22.tsv) permits native
+vectorization on these two fixtures and confirms packed arithmetic while
+retaining their numerical contracts. It improves the native baseline without
+isolating a WF scheduling or code-generation cause.
 The bundle's 2026-09-11 description (`aefb2bee`) reported roughly ninefold SLP
 gain for its bit-identical, lane-blocked FIR form. That observation remains
 evidence about its historical fixture and toolchain, not these images or a

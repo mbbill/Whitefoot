@@ -1835,7 +1835,8 @@ SH
 
 ### Native kernel vectorization control
 
-The next bounded control retains compiler/runtime `6fdb6768`, harness
+The bounded control, selected before measurement at `25263b24`, retains
+compiler/runtime `6fdb6768`, harness
 `f19d53e2`, fixed wide stencil (1,024 by 4,096, 16 steps) and FIR (524,288
 outputs, 64 taps), at W1/W4. It removes the native kernel translation units'
 global vectorization bans and FIR's local `FIR_TAP_ORDER` prohibition, retaining
@@ -1859,3 +1860,55 @@ to obtain a favorable result, and there is no broader sweep. If FIR remains
 scalar, this trial establishes no lane-blocked FIR comparison. Construction,
 correctness and measurement remain separate guarded stages capped at 90 seconds,
 calibrated against the preceding baseline's largest 12.39-second action.
+
+The [2026-09-22 evidence](../../experiments/compute-bench/native-kernel-vectorization-2026-09-22.tsv)
+retains all 1,200 checked timing calls, 20 full oracle-matrix outcomes, paired
+process medians, unchanged-input hashes, construction commands and optimized
+callback excerpts. All oracle matrices passed. Native stencil now uses packed
+`fadd.2d`/`fmul.2d`; native FIR computes packed products and adds their extracted
+lanes in the original scalar tap order. Neither callback introduces contraction
+or a horizontal sum. FIR therefore exercises ordinary optimized tap-loop code,
+but the historical lane-blocked source remains unmeasured here. Construction
+took 1.15 seconds, verification 2.07/1.65 seconds, and the four timing actions
+6.54–16.01 seconds; each selected action ran once, with no timeout or rerun.
+
+| Native cell | Stencil paired B/A wall | Pairs at least 10% faster | FIR paired B/A wall | Pairs at least 10% faster |
+| --- | ---: | ---: | ---: | ---: |
+| Serial W1 | 0.779 | 5/5 | 0.888 | 4/5 |
+| TBB W1 | 0.785 | 5/5 | 0.885 | 5/5 |
+| TBB W4 | 0.763 | 4/5 | 0.897 | 4/5 |
+
+Both fixtures meet the prospective hidden-cost criterion. The identical WF
+objects retimed in A/B have paired wall medians of 1.010/1.020 for stencil
+W1/W4 and 1.007/1.004 for FIR; no such pair moves by 10%. The identical-image
+stencil TBB W4 control is noisy, spanning 0.868–1.195, and stencil WF W1 spans
+0.959–1.147. FIR TBB W4's null CPU ratio is 0.915 despite a wall ratio of 1.000.
+These controls support the substantial native improvement, especially its
+consistent W1 result, without assigning an exact causal percentage to
+vectorization or treating small CPU differences as settled. The FIR control
+also bundles removal of its local pragma with the global flag change.
+
+In the optimized-native image, stencil's WF W1 median is 29.09 ms versus
+37.20 ms for native serial, while WF W4 is 16.83 ms versus 14.04 ms for TBB
+(paired WF/TBB median 1.188). FIR is close under this contract: WF/native serial
+W1 are 13.21/13.26 ms and WF/TBB W4 are 3.58/3.50 ms. The remaining stencil
+question is why work and scaling differ across widths, including allocation,
+layout, serial phases and runtime costs; these whole-call results select no
+scheduler or global code-generation repair. They qualify the frozen `6fdb6768`
+regular-kernel baseline, not later-main performance or the remaining compute
+families.
+
+For reproduction, the TSV's `context/command-source` rows retain the exact
+one-shot scratch recipe; its build action changes only the two C translation
+units and links the recorded frozen objects in their original order. Extract
+those rows by removing the first two tab-separated fields, inspect the pinned
+artifact paths, and invoke its stages through the shared guard as recorded in
+`context/manifest`. Empty payloads denote blank lines. Run full verification
+and inspect the resulting arithmetic before recording the qualification marker
+and starting timing. Each of the eight `*/raw` groups extracts byte-for-byte
+to the original stream and feeds the existing `reduce.awk` with five passes and
+five calls. The paired summary first takes each process's five-call median,
+then forms B/A within the same form, width and pass; its reported ratio is the
+median of those five ratios, not a ratio of the arm medians. The retained recipe
+is execution evidence, not a new maintained benchmark runner or a default flag
+change.
