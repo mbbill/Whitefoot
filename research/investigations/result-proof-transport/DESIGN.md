@@ -2,7 +2,7 @@
 
 This investigation asks why a verified result relation survives a direct call
 match but not naming that result or forwarding its success with `propagate`.
-The active specification remains authoritative. The implemented v0.64 rules
+The active specification remains authoritative. The implemented v0.65 rules
 carry conditional evidence with local integer-payload Results.
 
 The consumer is ordinary library composition: perform one operation, keep its
@@ -168,7 +168,7 @@ At the measured baseline revision, the flow checker implemented those rules:
   constructor shape.
 
 The [baseline negative conformance case](https://github.com/mbbill/Whitefoot/blob/7127bcb6f48a0664d31a856ef54e21010bb2c238/tests/conformance/cases/fn9-neg-named-outcome-no-publication.wf)
-deliberately required this loss. The v0.64 specification amendment changes
+deliberately required this loss. The v0.65 specification amendment changes
 that expectation explicitly; the unchanged WF source now lives in the
 [positive transport case](../../../tests/conformance/cases/fn9-pos-named-outcome-publication.wf).
 
@@ -371,8 +371,8 @@ The affected language owners are FN-9, CALL-4, CALL-6, ENT-2, ENT-3.S12,
 ENT-5, GIVE-1 and DIAG-2; ERR-3 retains its ordinary value/control semantics.
 S13 captures, MSR-2 descriptor support, ownership, callable refinement and the
 same-component summary schedule retain their existing rules. The outgoing
-v0.63 bytes are archived unchanged; no grammar production or generated syntax
-data changes. The approved decisions supplement
+v0.64 bytes from main are archived unchanged; no grammar production or generated
+syntax data changes. The approved decisions supplement
 [automatic-facts](../../../design/language/checks-and-proofs/automatic-facts.md)
 and [checker-facts](../../../design/compiler/checker-facts.md); they replace no
 live-tree line. Their ancestors and the existing contract, obligation-discharge,
