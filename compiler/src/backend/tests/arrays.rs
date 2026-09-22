@@ -1435,7 +1435,8 @@ fn runtime_arrays_preserve_nested_fixed_array_storage_and_release() {
     let source = br#"fn make<T: copy>(value: own T) -> result: own Box<Array<T>> pure contract {
   ensures result.inner.len == 2_u64;
 } {
-  return box_array_filled::<T>(count: 2_u64, value: value);
+  let rows = box_array_filled::<T>(count: 2_u64, value: value);
+  return move rows;
 }
 
 fn read(rows: &[Array<u64, 2>], index: own u64) -> result: own u64 reads(rows) contract {

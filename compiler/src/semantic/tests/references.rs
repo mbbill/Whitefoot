@@ -1547,6 +1547,12 @@ fn demanded_bystander_preservations_retain_derivations() {
                 );
             } else {
                 assert!(!preservations.is_empty(), "{name} retains its preservation");
+                if name == "inspect_join" {
+                    assert!(
+                        preservations.len() >= 2,
+                        "both joined targets retain preservation obligations"
+                    );
+                }
                 for preservation in preservations {
                     assert!(preservation.discharged, "{name} has a discharged proof");
                     assert!(preservation.derivation.is_some(), "{name} retains its root");

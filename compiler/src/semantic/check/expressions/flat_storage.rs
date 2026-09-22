@@ -1442,7 +1442,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         element_type: array.element_type,
                         length: array.length,
                         offset: offset.expression,
-                        captured: offset_place,
                         obligation,
                         target_domain: CheckedTargetDomainObligation::ElementAddress,
                     })),
@@ -1460,7 +1459,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     CheckedSetTarget::BufferIndex(Box::new(CheckedBufferSetTarget {
                         root: buffer.root,
                         offset: offset.expression,
-                        captured: offset_place,
                         obligation,
                         target_domain: CheckedTargetDomainObligation::ElementAddress,
                     })),

@@ -11406,7 +11406,6 @@ impl Analyzer<'_, '_> {
                     self.judge_children_reach_parent(std::iter::once(&target.offset), states);
                 let obligation_start = self.obligations.len();
                 if reaches_target {
-                    self.establish_index_capture(target.captured, &target.offset, states);
                     let base = ResolvedPlace::spelled(
                         PlaceRoot::Binding(target.binding),
                         self.is_holder(target.binding),
@@ -11428,7 +11427,6 @@ impl Analyzer<'_, '_> {
                     self.judge_children_reach_parent(std::iter::once(&target.offset), states);
                 let obligation_start = self.obligations.len();
                 if reaches_target {
-                    self.establish_index_capture(target.captured, &target.offset, states);
                     let base =
                         ResolvedPlace::from_path(target.root.binding, target.root.place_path());
                     self.judge_obligation(
@@ -14409,6 +14407,24 @@ impl Analyzer<'_, '_> {
         }
     }
 
+    /// A value-determined set offset keeps its exact slot through RHS
+    /// evaluation. Other offsets need the captured target value, not a
+    /// reread of a binding the RHS may have changed, and remain unknown here.
+    fn commit_index(offset: &CheckedExpression) -> CapturedValue {
+        let term = match offset {
+            CheckedExpression::Constant(CheckedValue::Integer { bits, .. })
+            | CheckedExpression::NamedConstant {
+                value: CheckedValue::Integer { bits, .. },
+                ..
+            } => CapturedTerm::Literal(*bits),
+            CheckedExpression::Constant(CheckedValue::ConstGeneric { declaration, .. }) => {
+                CapturedTerm::Const(*declaration)
+            }
+            _ => return CapturedValue::unknown(),
+        };
+        CapturedValue::new(CaptureId::SubstitutedOffset, term)
+    }
+
     /// The [ENT-5] commit kill of one `set` target, and the goal-origin and
     /// outcome state a whole-place commit invalidates. One target list's
     /// commits are exactly this event per target, on the same edge.
@@ -14443,7 +14459,10 @@ impl Analyzer<'_, '_> {
                     target.fields.clone(),
                 );
                 target_kills.push(KillEvent::Write {
-                    place: element_write_place(self.resolve(&spelled), target.captured),
+                    place: element_write_place(
+                        self.resolve(&spelled),
+                        Self::commit_index(&target.offset),
+                    ),
                     element: true,
                     source: node_path.clone(),
                 });
@@ -14452,7 +14471,10 @@ impl Analyzer<'_, '_> {
                 let spelled =
                     ResolvedPlace::from_path(target.root.binding, target.root.place_path());
                 target_kills.push(KillEvent::Write {
-                    place: element_write_place(self.resolve(&spelled), target.captured),
+                    place: element_write_place(
+                        self.resolve(&spelled),
+                        Self::commit_index(&target.offset),
+                    ),
                     element: true,
                     source: node_path.clone(),
                 });
@@ -16199,7 +16221,10 @@ impl Analyzer<'_, '_> {
                     target.fields.clone(),
                 );
                 events.push(KillEvent::Write {
-                    place: element_write_place(self.resolve(&spelled), target.captured),
+                    place: element_write_place(
+                        self.resolve(&spelled),
+                        Self::commit_index(&target.offset),
+                    ),
                     element: true,
                     source: node_path.clone(),
                 });
@@ -16208,7 +16233,10 @@ impl Analyzer<'_, '_> {
                 let spelled =
                     ResolvedPlace::from_path(target.root.binding, target.root.place_path());
                 events.push(KillEvent::Write {
-                    place: element_write_place(self.resolve(&spelled), target.captured),
+                    place: element_write_place(
+                        self.resolve(&spelled),
+                        Self::commit_index(&target.offset),
+                    ),
                     element: true,
                     source: node_path.clone(),
                 });

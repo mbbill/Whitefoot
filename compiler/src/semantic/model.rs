@@ -2183,7 +2183,6 @@ pub(crate) struct CheckedArraySetTarget {
     pub(crate) element_type: CheckedType,
     pub(crate) length: CheckedConst,
     pub(crate) offset: CheckedExpression,
-    pub(crate) captured: super::places::CapturedValue,
     pub(crate) obligation: NodePath,
     pub(crate) target_domain: CheckedTargetDomainObligation,
 }
@@ -2192,7 +2191,6 @@ pub(crate) struct CheckedArraySetTarget {
 pub(crate) struct CheckedBufferSetTarget {
     pub(crate) root: CheckedBufferRoot,
     pub(crate) offset: CheckedExpression,
-    pub(crate) captured: super::places::CapturedValue,
     pub(crate) obligation: NodePath,
     pub(crate) target_domain: CheckedTargetDomainObligation,
 }
