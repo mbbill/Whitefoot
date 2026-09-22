@@ -334,6 +334,13 @@ pub(super) fn emit_llvm_with_layout(
     text.push_str(&drop_helpers);
     for intrinsic in intrinsics {
         match intrinsic {
+            IntrinsicDeclaration::MemoryCopy => {
+                writeln!(
+                    text,
+                    "declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1 immarg)"
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+            }
             IntrinsicDeclaration::MemoryMove => {
                 writeln!(
                     text,
@@ -742,6 +749,7 @@ struct Incoming {
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum IntrinsicDeclaration {
+    MemoryCopy,
     MemoryMove,
     Overflow {
         name: String,
