@@ -1299,7 +1299,7 @@ The host is MacBookPro18,3 with eight physical/logical CPUs in performance
 levels of six and two cores, Apple clang 21.0.0 and Rust 1.98.1. The baseline
 compiler is an independently built `6fdb6768` image, SHA-256
 `d6ba9286f877df7e2a2d9e7d751d415871b2d2d992d558a2d9e37ad14e3a32c5`.
-The current candidate is `7895c9d0`, SHA-256
+The candidate used for this comparison is `7895c9d0`, SHA-256
 `90711761755287a55b2859c46d03772a862ca0d212287a584992c25c4ef4a563`.
 Its experiment module is byte-identical to the independently built `cabae235`
 candidate from the earlier main revision. Full emitted modules for prefix,
@@ -1308,6 +1308,18 @@ across all three compilers, as is the sequential experiment module. Runtime
 sources and the formal host adapter are unchanged. No metadata was stripped.
 Thus the older baseline remains a matched code comparison after the main
 integration; it is not presented as a newly built current-main compiler.
+
+After integrating main `f3cf41d4`, the built `e100682d` compiler, SHA-256
+`8a11c347fb84d1f6ae323e605f8ab9c7301d1add7e913e5b2ab943186747b395`,
+passes exact correspondence with the retained `7895c9d0` output. All ten
+complete LLVM modules are byte-identical: the eight protected parallel kernels
+listed above, plus the hash experiment's parallel and sequential modules.
+No normalization or metadata removal was used. Runtime sources, WF fixtures
+and the formal host adapter are unchanged. The guarded emission-and-comparison
+stage passed in 1.07 s, with 1.04 s reported for the command itself; it reused
+the existing compiler and performed source emission and byte checks only.
+This extends the dated evidence's applicability to `e100682d` while preserving
+the recorded timing revisions, image hashes and results.
 
 The only parallel module changes are the split-site header length load and
 saturating work arithmetic, plus the two required intrinsic declarations.
