@@ -15,7 +15,7 @@ use super::super::goal::{GoalExpression, GoalOperation, GoalProjection};
 use super::super::model::{
     BindingId, CheckedBooleanOperation, CheckedLoopId, CheckedMeasure, CheckedValue, IntegerType,
 };
-use super::super::places::{CapturedRange, CapturedValue};
+use super::super::places::{CapturedRange, CapturedValue, PlaceStep, ResolvedPlace};
 use super::VerifiedPostconditionSummaryRef;
 use super::affine::{AffineForm, AffineInequality};
 use super::term::{MeasureBound, TermId, TermKind, TermTable, ZERO, type_range};
@@ -308,6 +308,11 @@ pub(crate) struct PostconditionCallSubstitution {
 /// Parent IDs always precede their child in the arena.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum DerivationNode {
+    /// Experimental query-only elimination of one selected reference target.
+    /// Only `conclusion` is concluded; the cases are not new source facts.
+    SelectedTargetRelation {
+        detail: Box<SelectedTargetRelationDetail>,
+    },
     /// The fixed affine projection of an established S4 ordering leaf.
     RequirementAffineImage {
         goal: GoalId,
@@ -688,9 +693,28 @@ pub(crate) struct IndexCaptureSubstitution {
     pub(crate) right_identity: DerivationId,
 }
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct SelectedTargetRelationDetail {
+    pub(crate) conclusion: Relation,
+    pub(crate) holder: BindingId,
+    pub(crate) cases: Vec<SelectedTargetCase>,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct SelectedTargetCase {
+    pub(crate) target: ResolvedPlace,
+    pub(crate) relation: Relation,
+    pub(crate) parent: DerivationId,
+}
+
 impl DerivationNode {
     fn for_each_parent(&self, mut visit: impl FnMut(DerivationId)) {
         match self {
+            Self::SelectedTargetRelation { detail } => {
+                for case in &detail.cases {
+                    visit(case.parent);
+                }
+            }
             Self::UnsignedDivisionProduct {
                 division, domain, ..
             } => {
@@ -796,6 +820,7 @@ impl DerivationNode {
 
     fn parent_count(&self) -> usize {
         match self {
+            Self::SelectedTargetRelation { detail } => detail.cases.len(),
             Self::UnsignedDivisionProduct { .. }
             | Self::TransitiveBound { .. }
             | Self::StrengthenedBound { .. }
@@ -857,6 +882,7 @@ impl DerivationNode {
 
     fn rank(&self) -> u8 {
         match self {
+            Self::SelectedTargetRelation { .. } => 41,
             Self::UnsignedDivisionProduct { .. } => 36,
             Self::SourceBound { .. } => 0,
             Self::SourceDistinct { .. } => 1,
@@ -1501,6 +1527,15 @@ impl DerivationLedger {
                 .nodes
                 .iter()
                 .map(|node| match node {
+                    DerivationNode::SelectedTargetRelation { detail } => {
+                        size_of::<SelectedTargetRelationDetail>()
+                            + detail.cases.capacity() * size_of::<SelectedTargetCase>()
+                            + detail
+                                .cases
+                                .iter()
+                                .map(|case| case.target.path.capacity() * size_of::<PlaceStep>())
+                                .sum::<usize>()
+                    }
                     DerivationNode::JoinBound { parents, .. }
                     | DerivationNode::JoinDistinct { parents, .. }
                     | DerivationNode::JoinGoal { parents, .. }
@@ -1631,6 +1666,13 @@ fn compare_node_ties(left: &DerivationNode, right: &DerivationNode) -> std::cmp:
 
 fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
     match node {
+        DerivationNode::SelectedTargetRelation { detail } => {
+            if index == 0 {
+                Some(detail.holder.0)
+            } else {
+                detail.cases.get(index - 1).map(|case| case.parent.0)
+            }
+        }
         DerivationNode::SourceBound { event, .. }
         | DerivationNode::SourceDistinct { event, .. }
         | DerivationNode::SourceGoal { event, .. } => (index == 0).then_some(event.0),
@@ -1953,6 +1995,11 @@ fn remap_id(id: &mut DerivationId, remap: &[Option<DerivationId>]) {
 
 fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
     match node {
+        DerivationNode::SelectedTargetRelation { detail } => {
+            for case in &mut detail.cases {
+                remap_id(&mut case.parent, remap);
+            }
+        }
         DerivationNode::UnsignedDivisionProduct {
             division, domain, ..
         } => {

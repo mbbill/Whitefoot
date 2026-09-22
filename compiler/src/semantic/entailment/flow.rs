@@ -57,9 +57,10 @@ use super::state::{
     DerivationLedger, DerivationNode, DerivationRootKind, FactState, FlowEventId, FlowEventKind,
     GoalId, GoalNormalization, GoalSign, GoalSupport, GoalTable, IndexCaptureSubstitution,
     IndexSeparationDetail, JoinParent, OutcomeFact, PostconditionCallSubstitution,
-    RangeSeparationDetail, RangeSeparationOrdering, Relation, SourceAffineFactRef,
-    SourceLoopInvariantRef, WordHashMap, close, close_excluding_term, closure_is_seeded,
-    contradiction_without_proofs, join_at, materialize_closure_at, materialize_closure_before_kill,
+    RangeSeparationDetail, RangeSeparationOrdering, Relation, SelectedTargetCase,
+    SelectedTargetRelationDetail, SourceAffineFactRef, SourceLoopInvariantRef, WordHashMap, close,
+    close_excluding_term, closure_is_seeded, contradiction_without_proofs, join_at,
+    materialize_closure_at, materialize_closure_before_kill,
 };
 use super::term::{
     CountedCaptureSide, MeasureBound, MeasurePlacement, PlaceRoot, TermId, TermKind, TermTable,
@@ -354,6 +355,7 @@ impl ProofClosure {
 /// postcondition. Either consumer may additionally provide the unique affine
 /// inequality for a direct-root proposition; the proof entry never invents
 /// another formula.
+#[derive(Clone, Copy)]
 enum ProofGoal<'a> {
     /// One canonical affine target with the right operand retained by its
     /// source normalization for the complete MSR-4 disposition.
@@ -362,6 +364,8 @@ enum ProofGoal<'a> {
         /// The exact right-hand term retained by source normalization, when
         /// it has an L0 spelling. Never reconstructed from coefficients.
         right: Option<TermId>,
+        /// Exact source normalization for the experimental selected-target route.
+        relation: Option<&'a Relation>,
     },
     /// PRF-1 admits written relation premises and judges certificate
     /// redundancy through AUTO alone. Neither query may borrow MSR-4's
@@ -423,6 +427,7 @@ struct NumericAffineTarget {
     right: Option<TermId>,
 }
 
+#[derive(Clone, Copy)]
 struct IntegerDomainGoal<'a> {
     canonical: Option<GoalId>,
     operation: CheckedIntegerOperation,
@@ -463,6 +468,7 @@ enum ProofDisposition {
 /// query.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ProofRoute {
+    SelectedTargets,
     Contradiction,
     SignedOrdinary {
         opaque: bool,
@@ -7590,6 +7596,9 @@ impl Analyzer<'_, '_> {
             ProofDisposition::Unknown => CallGoalDisposition::Unproved,
         };
         let evidence = match (result.disposition, result.route) {
+            (ProofDisposition::Proved, Some(ProofRoute::SelectedTargets)) => {
+                vec![CallGoalEvidence::SelectedTargetsPositive]
+            }
             (ProofDisposition::Proved, Some(ProofRoute::Contradiction)) => {
                 vec![CallGoalEvidence::AllDerivable]
             }
@@ -7650,10 +7659,10 @@ impl Analyzer<'_, '_> {
     /// fixed ordinary closure before the fixed affine rule and constructs the
     /// selected derivation during that same query.
     fn prove(&mut self, context: ProofContext<'_>, goal: ProofGoal<'_>) -> ProofResult {
-        match goal {
-            ProofGoal::Affine { inequality, right } => {
-                self.prove_affine(context, inequality, right)
-            }
+        let result = match goal {
+            ProofGoal::Affine {
+                inequality, right, ..
+            } => self.prove_affine(context, inequality, right),
             ProofGoal::AutomaticAffine { inequality } => {
                 self.prove_affine(context, inequality, None)
             }
@@ -7675,6 +7684,251 @@ impl Analyzer<'_, '_> {
                 let proof = self.prove_normalized_ordering(&context, goal, relation, affine, right);
                 self.project_numeric_upper_bound(&context, proof, upper_bound)
             }
+        };
+        if result.disposition == ProofDisposition::Unknown {
+            self.prove_selected_target_goal(context, goal)
+                .unwrap_or(result)
+        } else {
+            result
+        }
+    }
+
+    /// Experimental final query route. This never changes the fact state and
+    /// never calls `prove` recursively. Range and generation-sensitive captured
+    /// paths are deliberately outside this isolated prototype.
+    fn prove_selected_target_goal(
+        &mut self,
+        context: ProofContext<'_>,
+        goal: ProofGoal<'_>,
+    ) -> Option<ProofResult> {
+        let (canonical, relations, integer_domain) = match goal {
+            ProofGoal::AutomaticAffine { .. } => return None,
+            ProofGoal::Affine { relation, .. } => (None, vec![relation?.clone()], false),
+            ProofGoal::Signed { expression, .. } => {
+                let id = self.intern_goal_expression(expression.clone());
+                (Some(id), vec![self.goals.projection(id)?.clone()], false)
+            }
+            ProofGoal::Ordering { relation, .. } => (None, vec![relation.clone()], false),
+            ProofGoal::BoundedRelation(goal) => {
+                let id = goal
+                    .canonical
+                    .map(|expression| self.intern_goal_expression(expression.clone()));
+                let relation = goal
+                    .request
+                    .as_ref()
+                    .and_then(request_relation)
+                    .or_else(|| id.and_then(|id| self.goals.projection(id).cloned()))?;
+                (id, vec![relation], false)
+            }
+            ProofGoal::NormalizedOrdering { goal, relation, .. } => {
+                let relation = relation
+                    .cloned()
+                    .or_else(|| goal.and_then(|id| self.goals.projection(id).cloned()))?;
+                (goal, vec![relation], false)
+            }
+            ProofGoal::IntegerDomain(goal) => (
+                goal.canonical,
+                goal.components
+                    .iter()
+                    .map(request_relation)
+                    .collect::<Option<Vec<_>>>()?,
+                true,
+            ),
+        };
+        let candidates = relations
+            .iter()
+            .map(|relation| self.selected_target_relations(relation))
+            .collect::<Vec<_>>();
+        if !candidates.iter().any(Option::is_some) {
+            return None;
+        }
+        // All finite substituted terms have been registered before one closure.
+        let closed = context.close(&self.terms, &self.goals, &mut self.derivations);
+        let mut parents = Vec::with_capacity(relations.len());
+        for (relation, candidate) in relations.iter().zip(candidates) {
+            let parent =
+                if let Some(parent) = closed.relation_proof(relation, &mut self.derivations) {
+                    parent
+                } else {
+                    let (holder, cases) = candidate?;
+                    let mut proved = Vec::with_capacity(cases.len());
+                    for (target, substituted) in cases {
+                        let parent = closed.relation_proof(&substituted, &mut self.derivations)?;
+                        proved.push(SelectedTargetCase {
+                            target,
+                            relation: substituted,
+                            parent,
+                        });
+                    }
+                    self.derivations
+                        .intern(DerivationNode::SelectedTargetRelation {
+                            detail: Box::new(SelectedTargetRelationDetail {
+                                conclusion: relation.clone(),
+                                holder,
+                                cases: proved,
+                            }),
+                        })
+                };
+            parents.push(parent);
+        }
+        let derivation = if integer_domain {
+            self.derivations.intern(DerivationNode::IntegerDomain {
+                goal: canonical,
+                parents,
+            })
+        } else {
+            self.goal_numeric_derivation(canonical, relations.first(), *parents.first()?)
+        };
+        Some(ProofResult {
+            disposition: ProofDisposition::Proved,
+            route: Some(ProofRoute::SelectedTargets),
+            derivation: Some(derivation),
+            numeric_upper_bound: None,
+            product_interval: None,
+        })
+    }
+
+    fn selected_target_relations(
+        &mut self,
+        relation: &Relation,
+    ) -> Option<(BindingId, Vec<(ResolvedPlace, Relation)>)> {
+        let mut holder = None;
+        for term in relation.terms() {
+            let place = match self.terms.kind(term) {
+                TermKind::Place(place, _) | TermKind::Measure(_, place) => place,
+                _ => continue,
+            };
+            let PlaceRoot::Binding(binding) = place.root else {
+                continue;
+            };
+            if !self.places.is_reference(binding) {
+                continue;
+            }
+            let targets = self.places.resolve(place.root, &[]);
+            if targets.len() <= 1 {
+                continue;
+            }
+            if holder.is_some_and(|previous| previous != binding) {
+                return None;
+            }
+            holder = Some(binding);
+        }
+        let holder = holder?;
+        let mut targets = self.places.resolve(PlaceRoot::Binding(holder), &[]);
+        targets.sort_by_cached_key(|target| format!("{target:?}"));
+        targets.dedup();
+        if targets.len() < 2
+            || targets
+                .iter()
+                .any(|target| !Self::selected_target_path_exact(target))
+        {
+            return None;
+        }
+        let mut cases = Vec::with_capacity(targets.len());
+        for target in targets {
+            let [left, right] = relation.terms();
+            let substituted_left = self.selected_target_term(left, holder, &target)?;
+            let substituted_right = self.selected_target_term(right, holder, &target)?;
+            let substituted = match relation {
+                Relation::Bound { bound, .. } => Relation::Bound {
+                    left: substituted_left,
+                    right: substituted_right,
+                    bound: *bound,
+                },
+                Relation::Equal { difference, .. } => Relation::Equal {
+                    left: substituted_left,
+                    right: substituted_right,
+                    difference: *difference,
+                },
+                Relation::Distinct { difference, .. } => Relation::Distinct {
+                    left: substituted_left,
+                    right: substituted_right,
+                    difference: *difference,
+                },
+            };
+            cases.push((target, substituted));
+        }
+        Some((holder, cases))
+    }
+
+    fn selected_target_path_exact(place: &ResolvedPlace) -> bool {
+        place.path.iter().all(|step| match step {
+            PlaceStep::Field(_) | PlaceStep::Payload { .. } | PlaceStep::Deref => true,
+            PlaceStep::Index(value) => matches!(
+                value.term,
+                CapturedTerm::Literal(_) | CapturedTerm::Const(_)
+            ),
+            _ => false,
+        })
+    }
+
+    fn selected_target_term(
+        &mut self,
+        term: TermId,
+        holder: BindingId,
+        target: &ResolvedPlace,
+    ) -> Option<TermId> {
+        let kind = self.terms.kind(term).clone();
+        let place = match &kind {
+            TermKind::Place(place, _) | TermKind::Measure(_, place)
+                if place.root == PlaceRoot::Binding(holder) =>
+            {
+                place
+            }
+            _ => return Some(term),
+        };
+        if !Self::selected_target_path_exact(place) {
+            return None;
+        }
+        let mut substituted = target.clone();
+        substituted.path.extend_from_slice(&place.path);
+        match kind {
+            TermKind::Place(_, ty) => {
+                if substituted
+                    .path
+                    .iter()
+                    .any(|step| matches!(step, PlaceStep::Index(_)))
+                {
+                    return None;
+                }
+                Some(self.terms.intern(TermKind::Place(substituted, ty)))
+            }
+            TermKind::Measure(measure, source) => {
+                // Every source measure already owns its complete standing row.
+                // Carry only those type facts, never a mutable value fact.
+                let mut siblings = Vec::new();
+                for cell in [
+                    CheckedMeasure::Length,
+                    CheckedMeasure::Capacity,
+                    CheckedMeasure::Head,
+                ] {
+                    let source_term = self
+                        .terms
+                        .interned(&TermKind::Measure(cell, source.clone()));
+                    let destination = self
+                        .terms
+                        .intern(TermKind::Measure(cell, substituted.clone()));
+                    siblings.push((source_term, destination));
+                }
+                for (source_term, destination) in &siblings {
+                    if let Some(bound) =
+                        source_term.and_then(|source| self.terms.measure_bound(source))
+                    {
+                        let bound = match bound {
+                            MeasureBound::Equal(other) => MeasureBound::Equal(
+                                siblings
+                                    .iter()
+                                    .find(|(source, _)| *source == Some(other))
+                                    .map_or(other, |(_, destination)| *destination),
+                            ),
+                            other => other,
+                        };
+                        self.terms.set_measure_bound(*destination, bound);
+                    }
+                }
+                Some(self.terms.intern(TermKind::Measure(measure, substituted)))
+            }
+            _ => unreachable!(),
         }
     }
 
@@ -9148,6 +9402,7 @@ impl Analyzer<'_, '_> {
                 ProofGoal::Affine {
                     inequality: &stride_target,
                     right: None,
+                    relation: None,
                 },
             );
             let base = self.prove(
@@ -9155,6 +9410,7 @@ impl Analyzer<'_, '_> {
                 ProofGoal::Affine {
                     inequality: &base_target,
                     right: None,
+                    relation: None,
                 },
             );
             if stride.disposition == ProofDisposition::Proved
@@ -9961,6 +10217,7 @@ impl Analyzer<'_, '_> {
                 ProofGoal::Affine {
                     inequality: &inequality,
                     right: None,
+                    relation: None,
                 },
             );
             if proof.disposition == ProofDisposition::Proved {
@@ -12731,19 +12988,21 @@ impl Analyzer<'_, '_> {
                 &mut AffineCheckState::new(),
             )
             .map(|partner| partner.ok());
+        let (target_l0, partner_l0) = self.selected_target_invariant_members(relation);
         let right = self.checked_affine_right_term(&relation.right);
-        let mut members = vec![(target, right)];
+        let mut members = vec![(target, right, target_l0)];
         if let Some(partner) = partner {
             let right = self.checked_affine_right_term(&relation.left);
-            members.push((partner, right));
+            members.push((partner, right, partner_l0));
         }
-        members.into_iter().all(|(member, right)| {
+        members.into_iter().all(|(member, right, relation)| {
             member.is_some_and(|inequality| {
                 self.prove(
                     ProofContext::new(&state.facts, &state.affine),
                     ProofGoal::Affine {
                         inequality: &inequality,
                         right,
+                        relation: relation.as_ref(),
                     },
                 )
                 .disposition
@@ -13019,6 +13278,26 @@ impl Analyzer<'_, '_> {
     /// no discovery: it only recognizes `x - y <= c`, `x <= c`, `c <= x`, or
     /// a constant proposition after the source-written affine arithmetic has
     /// been normalized.
+    fn selected_target_invariant_members(
+        &mut self,
+        relation: &CheckedAffineRelation,
+    ) -> (Option<Relation>, Option<Relation>) {
+        let forward = self.checked_affine_relation_l0(relation);
+        let reverse = if relation.equality {
+            forward.as_ref().and_then(|relation| match relation {
+                Relation::Bound { left, right, bound } => Some(Relation::Bound {
+                    left: *right,
+                    right: *left,
+                    bound: bound.checked_neg()?,
+                }),
+                _ => None,
+            })
+        } else {
+            None
+        };
+        (forward, reverse)
+    }
+
     fn checked_affine_relation_l0(&mut self, relation: &CheckedAffineRelation) -> Option<Relation> {
         /// One leaf of the written relation, in the order the walk reaches it.
         enum SourceLeaf {
@@ -15038,9 +15317,18 @@ impl Analyzer<'_, '_> {
                 } else {
                     (None, None)
                 };
-                let target_goal = |inequality, right| {
+                let (target_l0, partner_l0) = if proof.uses.is_empty() {
+                    self.selected_target_invariant_members(&proof.target)
+                } else {
+                    (None, None)
+                };
+                let target_goal = |inequality, right, relation| {
                     if proof.uses.is_empty() {
-                        ProofGoal::Affine { inequality, right }
+                        ProofGoal::Affine {
+                            inequality,
+                            right,
+                            relation,
+                        }
                     } else {
                         ProofGoal::AutomaticAffine { inequality }
                     }
@@ -15048,7 +15336,7 @@ impl Analyzer<'_, '_> {
                 let target_proved = target.as_ref().is_some_and(|target| {
                     self.prove(
                         ProofContext::new(&state.facts, &state.affine),
-                        target_goal(target, target_right),
+                        target_goal(target, target_right, target_l0.as_ref()),
                     )
                     .disposition
                         == ProofDisposition::Proved
@@ -15056,7 +15344,7 @@ impl Analyzer<'_, '_> {
                     || partner.as_ref().is_some_and(|partner| {
                         self.prove(
                             ProofContext::new(&state.facts, &state.affine),
-                            target_goal(partner, partner_right),
+                            target_goal(partner, partner_right, partner_l0.as_ref()),
                         )
                         .disposition
                             == ProofDisposition::Proved
@@ -15516,6 +15804,7 @@ impl Analyzer<'_, '_> {
                         ProofGoal::Affine {
                             inequality: target,
                             right: None,
+                            relation: None,
                         },
                     )
                     .disposition
@@ -15625,6 +15914,7 @@ impl Analyzer<'_, '_> {
                             ProofGoal::Affine {
                                 inequality: target,
                                 right: Some(counter_limit),
+                                relation: None,
                             },
                         )
                         .disposition
@@ -15656,19 +15946,31 @@ impl Analyzer<'_, '_> {
                                 &mut AffineCheckState::new(),
                             )
                             .map(|partner| partner.ok());
+                        let (target_l0, partner_l0) =
+                            self.selected_target_invariant_members(&invariant.relation);
+                        let advance = |relation: Option<Relation>| {
+                            relation.and_then(|relation| {
+                            let Relation::Bound { left, right, bound } = relation else { return None; };
+                            let is_binder = |term| matches!(self.terms.kind(term), TermKind::Place(place, _) if place.root == PlaceRoot::Binding(*binder) && place.path.is_empty());
+                            Some(Relation::Bound { left, right, bound: bound.checked_sub(i128::from(is_binder(left)))?.checked_add(i128::from(is_binder(right)))? })
+                        })
+                        };
+                        let target_l0 = advance(target_l0);
+                        let partner_l0 = advance(partner_l0);
                         let right = self.checked_affine_right_term(&invariant.relation.right);
-                        let mut members = vec![(next_target, right)];
+                        let mut members = vec![(next_target, right, target_l0)];
                         if let Some(partner) = next_partner {
                             let right = self.checked_affine_right_term(&invariant.relation.left);
-                            members.push((partner, right));
+                            members.push((partner, right, partner_l0));
                         }
-                        let proved = members.into_iter().all(|(member, right)| {
+                        let proved = members.into_iter().all(|(member, right, relation)| {
                             member.is_some_and(|inequality| {
                                 self.prove(
                                     ProofContext::new(&body_state.facts, &body_state.affine),
                                     ProofGoal::Affine {
                                         inequality: &inequality,
                                         right,
+                                        relation: relation.as_ref(),
                                     },
                                 )
                                 .disposition
@@ -17452,4 +17754,39 @@ const fn type_constant(ty: CheckedType) -> Option<CheckedConst> {
 
 const fn measured_kind(ty: CheckedType) -> Option<MeasuredKind> {
     ty.measured()
+}
+
+#[cfg(test)]
+mod selected_target_tests {
+    use super::*;
+    use crate::semantic::places::DescendantTarget;
+
+    #[test]
+    fn selected_targets_reject_generation_sensitive_and_covered_paths() {
+        let root = PlaceRoot::Binding(BindingId(0));
+        for step in [
+            PlaceStep::Index(CapturedValue::unknown()),
+            PlaceStep::Index(CapturedValue::new(
+                CaptureId::Unknown,
+                CapturedTerm::Binding(BindingId(1)),
+            )),
+            PlaceStep::Descendant(DescendantTarget {
+                loop_id: CheckedLoopId(0),
+                holder: BindingId(1),
+                ty: CheckedType::Integer(IntegerType::U64),
+                range: false,
+                readonly: false,
+            }),
+            PlaceStep::Measure(CheckedMeasure::Length),
+        ] {
+            assert!(!Analyzer::selected_target_path_exact(&ResolvedPlace {
+                root,
+                path: vec![step]
+            }));
+        }
+        assert!(Analyzer::selected_target_path_exact(&ResolvedPlace {
+            root,
+            path: vec![PlaceStep::Field(0)]
+        }));
+    }
 }

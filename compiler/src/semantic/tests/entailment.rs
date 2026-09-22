@@ -30,7 +30,7 @@ use super::super::model::{
 // `PlaceStep`, and a term's place carries the whole resolved path rather than
 // a separate deref flag and field list.
 use super::super::places::{CapturedRange, PlaceStep};
-use super::{assert_rule, with_semantics, with_semantics_dark};
+use super::{assert_rule, assert_rule_kind, with_semantics, with_semantics_dark};
 
 fn obligations(source: &[u8], function: &str) -> Vec<ObligationOutcome> {
     with_semantics_dark(source, |outcome| {
@@ -815,6 +815,69 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
         depths.push(depth);
 
         let conclusion = match node {
+            DerivationNode::SelectedTargetRelation { detail } => {
+                assert_relation_terms_resolve(summary, &detail.conclusion);
+                assert!(detail.cases.len() >= 2);
+                let mut targets = std::collections::HashSet::new();
+                for case in &detail.cases {
+                    assert!(
+                        targets.insert(case.target.clone()),
+                        "target alternatives are unique"
+                    );
+                    assert!(matches!(retained_conclusion(&conclusions, case.parent),
+                        DerivationConclusion::Relation(held) if held == &case.relation));
+                    for (source, substituted) in detail
+                        .conclusion
+                        .terms()
+                        .into_iter()
+                        .zip(case.relation.terms())
+                    {
+                        let original = retained_term(summary, source);
+                        let expected = match original {
+                            TermKind::Place(place, ty)
+                                if place.root == PlaceRoot::Binding(detail.holder) =>
+                            {
+                                let mut target = case.target.clone();
+                                target.path.extend_from_slice(&place.path);
+                                TermKind::Place(target.term_identity(), *ty)
+                            }
+                            TermKind::Measure(measure, place)
+                                if place.root == PlaceRoot::Binding(detail.holder) =>
+                            {
+                                let mut target = case.target.clone();
+                                target.path.extend_from_slice(&place.path);
+                                TermKind::Measure(*measure, target.term_identity())
+                            }
+                            other => other.clone(),
+                        };
+                        assert_eq!(retained_term(summary, substituted), &expected);
+                    }
+                    match (&detail.conclusion, &case.relation) {
+                        (
+                            Relation::Bound { bound: left, .. },
+                            Relation::Bound { bound: right, .. },
+                        ) => assert_eq!(left, right),
+                        (
+                            Relation::Equal {
+                                difference: left, ..
+                            },
+                            Relation::Equal {
+                                difference: right, ..
+                            },
+                        )
+                        | (
+                            Relation::Distinct {
+                                difference: left, ..
+                            },
+                            Relation::Distinct {
+                                difference: right, ..
+                            },
+                        ) => assert_eq!(left, right),
+                        _ => panic!("selected-target substitution changed the relation operator"),
+                    }
+                }
+                DerivationConclusion::Relation(detail.conclusion.clone())
+            }
             DerivationNode::SourceBound {
                 relation,
                 left,
@@ -10857,4 +10920,218 @@ fn main() -> status: own ExitStatus pure {
             mechanical_fix: "when the relation must hold, establish the residual with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise restructure the access",
         },
     );
+}
+
+// Experimental joined-target projection: these cases characterize the proposed
+// language extension, not conformance with the unchanged kernel specification.
+fn selected_targets_probe(before: &str, after: &str) -> String {
+    format!(
+        r#"fn examine(flag: own Bool) -> result: own unit pure {{
+  let left = slots_new::<u64, 1>();
+  let right = slots_new::<u64, 1>();
+{before}  let selected = if flag {{
+    give &left;
+  }} else {{
+    give &right;
+  }}
+{after}  return unit;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"#
+    )
+}
+
+#[test]
+fn selected_targets_empty_slots_retain_one_selected_relation() {
+    let source = selected_targets_probe("", "  place_back(window: selected, value: 7_u64);\n");
+    let summary = accepted_entailment(source.as_bytes(), "examine");
+    validate_derivations(&summary);
+    assert!(summary.call_goals.iter().any(|goal| {
+        goal.evidence
+            .contains(&CallGoalEvidence::SelectedTargetsPositive)
+    }));
+    let proofs = summary
+        .derivations
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            DerivationNode::SelectedTargetRelation { detail } => Some(detail),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(!proofs.is_empty());
+    for proof in proofs {
+        assert_eq!(proof.cases.len(), 2);
+        assert!(
+            proof
+                .conclusion
+                .terms()
+                .iter()
+                .all(|term| matches!(retained_term(&summary, *term),
+            TermKind::Measure(_, place) if place.root == PlaceRoot::Binding(proof.holder)))
+        );
+    }
+}
+
+#[test]
+fn selected_targets_one_full_origin_remains_unproved() {
+    let source = selected_targets_probe(
+        "  place_back(window: &right, value: 3_u64);\n",
+        "  place_back(window: selected, value: 7_u64);\n",
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Fn8, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
+    });
+}
+
+#[test]
+fn selected_targets_aliases_keep_the_same_selected_poststate() {
+    let source = selected_targets_probe(
+        "",
+        "  let alias = selected;\n  place_back(window: alias, value: 7_u64);\n  invariant updated: deref(alias).len == 1_u64;\n",
+    );
+    let summary = accepted_entailment(source.as_bytes(), "examine");
+    validate_derivations(&summary);
+}
+
+#[test]
+fn selected_targets_poststate_does_not_update_every_origin() {
+    let source = selected_targets_probe(
+        "",
+        "  place_back(window: selected, value: 7_u64);\n  invariant wrong: left.len == 1_u64;\n",
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Inv1, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedLocalInvariant { .. })
+    });
+}
+
+#[test]
+fn selected_targets_later_origin_write_removes_the_proof() {
+    let source = selected_targets_probe(
+        "",
+        "  invariant initially_empty: deref(selected).len == 0_u64;\n  place_back(window: &right, value: 3_u64);\n  place_back(window: selected, value: 7_u64);\n",
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Fn8, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
+    });
+}
+
+#[test]
+fn selected_targets_rebinding_does_not_restore_the_old_proof() {
+    let source = selected_targets_probe(
+        "",
+        "  invariant initially_empty: deref(selected).len == 0_u64;\n  place_back(window: &right, value: 3_u64);\n  set selected = &right;\n  place_back(window: selected, value: 7_u64);\n",
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Fn8, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
+    });
+}
+
+#[test]
+fn selected_targets_invariant_query_order_does_not_select_acceptance() {
+    for preceding in [
+        "",
+        "  let observed_left = left.len;\n  let observed_right = right.len;\n",
+    ] {
+        let source = selected_targets_probe(
+            preceding,
+            "  invariant empty: deref(selected).len == 0_u64;\n  place_back(window: selected, value: 7_u64);\n",
+        );
+        let summary = accepted_entailment(source.as_bytes(), "examine");
+        validate_derivations(&summary);
+    }
+}
+
+#[test]
+fn selected_targets_continuing_loop_write_does_not_restore_empty() {
+    let source = selected_targets_probe(
+        "",
+        "  for (index in 0_u64..2_u64) {\n    place_back(window: selected, value: 7_u64);\n  }\n",
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Fn8, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
+    });
+}
+
+#[test]
+fn selected_targets_unchanged_loop_origins_keep_their_facts() {
+    let source = selected_targets_probe(
+        "",
+        "  for (index in 0_u64..2_u64) {\n    invariant empty: deref(selected).len == 0_u64;\n  }\n",
+    );
+    let summary = accepted_entailment(source.as_bytes(), "examine");
+    validate_derivations(&summary);
+}
+
+#[test]
+fn selected_targets_two_holders_do_not_form_a_product() {
+    let source = selected_targets_probe(
+        "",
+        "  let other = if flag {\n    give &left;\n  } else {\n    give &right;\n  }\n  invariant unsupported: deref(selected).len == deref(other).len;\n",
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Inv1, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedLocalInvariant { .. })
+    });
+}
+
+#[test]
+fn selected_targets_subscript_and_integer_domain_share_the_route() {
+    let source = selected_targets_probe(
+        "  place_back(window: &left, value: 3_u64);\n  place_back(window: &right, value: 4_u64);\n",
+        "  let observed = deref(selected)[0_u64];\n  let quotient = 4_u64 / deref(selected).len;\n",
+    );
+    let summary = accepted_entailment(source.as_bytes(), "examine");
+    validate_derivations(&summary);
+    assert!(
+        summary
+            .obligations
+            .iter()
+            .all(|obligation| obligation.discharged)
+    );
+}
+
+#[test]
+fn selected_targets_one_holder_substitutes_both_fields_together() {
+    let source = br#"struct Pair {
+  lower: u64;
+  upper: u64;
+}
+
+fn needs_ordered(value: &Pair) -> result: own unit reads(value.lower), reads(value.upper) contract {
+  requires deref(value).lower < deref(value).upper;
+} {
+  let lower = deref(value).lower;
+  let upper = deref(value).upper;
+  return unit;
+}
+
+fn examine(flag: own Bool) -> result: own unit pure {
+  let left = Pair(lower: 1_u64, upper: 2_u64);
+  let right = Pair(lower: 9_u64, upper: 10_u64);
+  if left.lower < left.upper {
+    if right.lower < right.upper {
+      let selected = if flag {
+        give &left;
+      } else {
+        give &right;
+      }
+      needs_ordered(value: selected);
+    }
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = accepted_entailment(source, "examine");
+    validate_derivations(&summary);
+    assert!(summary.call_goals.iter().any(|goal| {
+        goal.evidence
+            .contains(&CallGoalEvidence::SelectedTargetsPositive)
+    }));
 }

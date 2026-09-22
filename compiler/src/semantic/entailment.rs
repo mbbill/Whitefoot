@@ -1045,6 +1045,8 @@ pub(crate) enum CallGoalDisposition {
 /// fixed order documented on [`CallGoalOutcome::evidence`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CallGoalEvidence {
+    /// Experimental all-exact-target L0 derivation of the selected referent.
+    SelectedTargetsPositive,
     AllDerivable,
     OpaquePositive,
     ExactL0Projection,
