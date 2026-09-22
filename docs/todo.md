@@ -70,6 +70,38 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   lowering time on the same source, preserving cleanup, calls and native
   results, before selecting a broader analysis or reuse scheme.
 
+- **First-index search needs a variable-cost expression probe.** The
+  [ordered-batch analysis](../research/investigations/io-model/CONCURRENCY-CATALOG.md#21-parallel-search-with-early-exit-added)
+  avoids mandatory full-input scanning, but its invocation bound does not
+  bound predicate cost. Block helpers that return at local matches remain
+  unqualified. After the current capture, BFS and stencil evidence is complete,
+  make this the next bounded expression probe: preserve the lowest matching
+  index or N on read-only input with a pure, infallible record predicate;
+  compare sequential search, batch folds and local-return helpers with a
+  useful native first-index search. Check all small-input hit positions and
+  absence, then count inspected records and bytes, including work committed
+  in the final wave. A cheap hit followed by a costly record in another helper
+  distinguishes an invocation bound from a cost bound; actual skipped tails
+  and completed helper work distinguish useful early return from a full scan
+  or serial execution. Defer until those active qualifications finish; no
+  executor or new concurrency rule is selected by this follow-up.
+
+- **Runtime DAG fan-in costs remain unqualified.** The
+  [catalog's level decomposition](../research/investigations/io-model/CONCURRENCY-CATALOG.md#5-task-dag-with-dependencies-static-and-dynamic)
+  can add large span, but a denied shared-counter scatter does not establish
+  mandatory global barriers or retirement passes for every representation.
+  Test a runtime-length spine with independent long leaves, two sources
+  notifying two destination owners, and fan-in edges A-to-C, B-to-C, B-to-D.
+  Preserve every task's output and exactly one evaluation per task against
+  an independent topological oracle; compare with a useful edge-triggered
+  native executor and charge routing, initialization, work, span and peak
+  workspace. Overlap along the spine or destination-owned retirement would
+  falsify the corresponding universal level/serial-pass claim, not establish
+  an efficient general DAG solution. Defer while capture, BFS and stencil
+  evidence is qualified. Reopen after that work when a concrete runtime-DAG
+  consumer requires the fan-in contract; begin with bounded source witnesses,
+  not a new executor project.
+
 - **Parallel grain policy needs a dedicated study.** Captured extents are a
   provisional scheduling input, not an established broadly suitable policy.
   The [first same-source trial](../research/investigations/compute-model/DESIGN.md#runtime-extent-trial-result)
