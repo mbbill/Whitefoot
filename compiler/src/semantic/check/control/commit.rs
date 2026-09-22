@@ -319,16 +319,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .live;
         self.judge_commit_admission(&mutation, target_node, atomic_read_out, bindings)?;
         // [WIN-3, STOR-3] "Assigning over any owned place releases the old
-        // value when it is affine." A directly named binding is the one
-        // target whose old value may already be gone: the commit revives an
-        // entry-dead binding, and a right-hand side that reads the target out
+        // value when it is affine." The commit may revive an
+        // entry-dead binding, and a right-hand side that reads any target out
         // takes the value the write would otherwise displace. Both were
         // admitted just above, and neither is readable from the target's type
         // or path, so the judgment that settled them records its answer here
         // for lowering [SET-1, LIV-1, DIAG-2].
-        if let CheckedSetTarget::Place(place) = &mut mutation.target {
-            place.displaces_live_value = !place.declares && root_live_after_rhs && !atomic_read_out;
-        }
+        let displaces_live_value = root_live_after_rhs && !atomic_read_out;
         // Every source rejection of this statement is judged above; a target
         // this compiler cannot lower stops here and nowhere earlier [DIAG-1].
         if let Some(feature) = mutation.unsupported {
@@ -338,7 +335,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // target is a proper prefix of. Writing the storage at the target's
         // own path, or below it, is a content write and invalidates nothing.
         for place in &mutation.place.members {
-            Self::invalidate_references(bindings, place, &InvalidationEvent::PrefixWritten);
+            self.invalidate_references(bindings, place, &InvalidationEvent::PrefixWritten)?;
         }
         if self.commit_reinitializes_binding(&mutation) {
             bindings
@@ -352,6 +349,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 node_path: self.tree.path(node)?.clone(),
                 target: mutation.target,
                 value: value.expression,
+                displaces_live_value,
             },
             effects,
         ))
@@ -458,9 +456,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// right-hand side is a `borrow_expr` rebinds that name.
     ///
     /// The rebinding writes no storage, so it exhibits no effect and takes no
-    /// commit. [REF-1]'s static-shape rule is what bounds it: a loop-carried
-    /// rebinding may change only the index values inside the path and may
-    /// never extend the path through itself.
+    /// commit. A continuing loop rebinding contributes to [REF-1]'s finite
+    /// header summaries before the settled structural walk is published.
     fn check_reference_rebinding(
         &self,
         function: &FunctionSignature,
@@ -491,7 +488,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // [REF-1] only a binding that crosses the current loop's backedge is
         // loop-carried. A local declared inside that loop, and every binding
         // outside a loop, may be rebound to a different path shape.
-        let loop_carried = local.loop_depth < scope.loops.len();
         let value = self.check_expression(function, value_node, bindings, scope.loops.len())?;
         let Some(reference) = value.reference.clone() else {
             // [TYPE-7] a `set` whose target is a reference variable and whose
@@ -521,21 +517,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ),
             );
         }
+        let binding = bindings
+            .get(&declaration)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            .binding;
+        for context in scope.loops {
+            if !context.reference_rebindings.contains(&node) {
+                continue;
+            }
+            let token = super::super::references::LoopReferenceToken {
+                loop_id: context.id,
+                owner: binding,
+            };
+            let summarized = self.loop_reference_summaries.borrow().contains_key(&token);
+            if summarized
+                && self.join_loop_reference_summary(
+                    token,
+                    expected_type,
+                    previous_kind,
+                    &reference.paths,
+                    bindings,
+                )?
+            {
+                return Err(CheckStop::ReferenceSummaryChanged);
+            }
+        }
         let local = bindings
             .get_mut(&declaration)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        if loop_carried
-            && let Some(previous) = &local.reference
-            && !reference.shape_agrees_with(previous)
-        {
-            return self.issue_node(
-                SemanticRule::Ref1,
-                node,
-                SemanticIssueKind::ReferenceShapeChanged {
-                    mechanical_fix: super::super::references::REF1_STATIC_SHAPE,
-                },
-            );
-        }
         local.reference = Some(reference);
         local.live = true;
         Ok(Some(Self::continuing_statement(
@@ -547,11 +556,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     mode: expected_mode,
                     ty: local.ty,
                     declares: false,
-                    // [REF-1] a reference rebinding writes no storage, so
-                    // it displaces no owner.
-                    displaces_live_value: false,
                 }),
                 value: value.expression,
+                // [REF-1] a reference rebinding displaces no owner.
+                displaces_live_value: false,
             },
             value.effects,
         )))

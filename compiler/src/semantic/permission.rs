@@ -722,6 +722,7 @@ impl<'check> Program<'check> {
                 node_path,
                 target,
                 value,
+                ..
             } => {
                 let mut footprint = self.value_footprint(places, value, node_path);
                 set_target_place(places, target, node_path, &mut footprint);

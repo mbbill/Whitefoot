@@ -1,0 +1,31 @@
+enum Chain {
+  End();
+  Next(stamp: u64, tail: Box<Chain>);
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "A bare-pointer cursor traverses an owned chain iteratively across payload-arm exits, with no source wildcard or runtime reference validation.";
+  let end = End();
+  let root = box_new::<Chain>(value: move end);
+  for (i in 0_u64..32_u64) {
+    let item = Next(stamp: i, tail: move root);
+    set root = box_new::<Chain>(value: move item);
+  }
+  let cursor = &root.inner;
+  let total = 0_u64;
+  loop @walk {
+    match deref(cursor) {
+      End() => {
+        break @walk;
+      }
+      Next(stamp: value, tail: rest) => {
+        set total = total +wrap deref(value);
+        set cursor = &deref(rest).inner;
+      }
+    }
+  }
+  if total == 496_u64 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}

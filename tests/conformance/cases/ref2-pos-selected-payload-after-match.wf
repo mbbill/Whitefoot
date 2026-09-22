@@ -1,0 +1,27 @@
+enum Packet {
+  Data(value: u64);
+  Empty();
+}
+
+fn read(packet: &Packet) -> result: own u64 reads(packet) {
+  let fallback = 0_u64;
+  let selected = &fallback;
+  match deref(packet) {
+    Data(value: payload) => {
+      set selected = &deref(payload);
+    }
+    Empty() => {
+    }
+  }
+  return deref(selected);
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "The selected payload still exists after match exit; retaining its reference exports no new variant refinement.";
+  let packet = Data(value: 23_u64);
+  let observed = read(packet: &packet);
+  if observed == 23_u64 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}
