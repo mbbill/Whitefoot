@@ -7,6 +7,116 @@ criterion for deciding whether to pursue it. Entries do not select a design.
 Remove an item when its implementation and checks land, or its validation
 concludes with a recorded disposition; retain any selected follow-up work here.
 
+- **Named-offset writes can leave obsolete measure goals available.** On
+  `c6cd9add`, a guard on `rows[index].len == 1`, followed by
+  `set index = replacement`, lets the old goal survive. Repeating the guard
+  makes its false branch contradictory to that stale goal, and an unproved
+  `rows[index][0]` read is accepted and lowered there. A called witness with
+  row lengths one and zero, index zero and replacement one reaches that
+  empty-row read; the same read without the stale guard is rejected by OP-4.
+  This violates ENT-5's explicit offset support and can admit uninitialized
+  reads. In
+  [proof flow](../compiler/src/semantic/entailment/flow.rs), term invalidation
+  consults `event_kills_offset_support`, while `event_kills_goal` does not.
+  Repair this before relying on indexed measure guards; cover both goal
+  signs, index writes/consumes/scope exits, and stable-index controls. This
+  audit records the defect; the repair must restore the existing rule,
+  not narrow its expected rejection.
+
+- **Temporary and residual cleanup do not consistently use the checked release
+  graph.** Three distinct observations remain on `c6cd9add`. Discarding a
+  `nodrop` result as `mint();` is accepted and lowered, although binding the
+  same result and leaving it live is rejected by PROV-6. Discarding a struct
+  result containing a `Box<u8>` emits no cell free, whereas binding that
+  result emits one. Moving a Box field out of a boxed struct with a tag-only
+  `nocopy enum` sibling passes source checking but fails with backend
+  `InvalidIr`; that sibling has an empty release. The expression-statement
+  path in [control checking](../compiler/src/semantic/check/control.rs),
+  `DropExpression` in [lowering](../compiler/src/lowering/builder.rs), and
+  `owned_take_cleanup` in
+  [place checking](../compiler/src/semantic/check/expressions/places.rs)
+  diverge from ordinary typed cleanup. Unify their use of PROV-6/STOR-3
+  disposition and empty-action handling. Close with exact-rule linear
+  controls and native allocation/release observations for discarded
+  aggregates and empty residuals; emitted LLVM currently confirms the
+  missing free, but no native release trace was taken for that case.
+
+- **Proved index separation does not preserve a bystander reference across a
+  call write.** A saved reference to `values[i].field` is invalidated by a
+  helper writing `values[j]` even with in-range `i < j` requirements; the
+  literal-separated control passes and the possible-overlap control rejects.
+  REF-2/OWN-7/EFF-5 require the current-context separation to participate.
+  [Structural reference invalidation](../compiler/src/semantic/check/references.rs)
+  uses `UnprovedSeparations` before proof flow can answer this question.
+  This is a false rejection, separate from the loop precision study below.
+  Extend the existing proof-to-validity path when repairing this case, with
+  guarded, joined-target and stale-index controls; do not add a second solver.
+
+- **Runtime Array element checking excludes legal fixed Arrays.**
+  `Box<Array<Array<u64, 2>>>` is admitted by TYPE-9, but an ordinary
+  `box_array_filled` call reports unsupported `CompositeValues` in the
+  `buffer_element` path of
+  [type checking](../compiler/src/semantic/check/types.rs).
+  This is a capability gap, not a source-language rejection. Extend the
+  existing element representation and its downstream consumers, with nested
+  array construction, indexed access and cleanup observations; retain this
+  item until that end-to-end path is implemented.
+
+- **Nested Box linear-residual rejection selects the wrong rule.** For a
+  projected consume leaving a linear sibling, both PROV-6 and WIN-3 name
+  the same consuming place; DIAG-1 selects the earlier-defined PROV-6.
+  [Box-content checking](../compiler/src/semantic/check/expressions/places.rs)
+  and `nested_owned_box_take_rejects_a_linear_residual` currently choose
+  WIN-3. Align attribution without changing the rejected program set, and
+  preserve WIN-3 for hole-producing moves without a linear residual. This
+  diagnostic repair is deferred separately from cleanup correctness.
+
+- **Source-envelope resource failures are classified as invocation errors.**
+  The public API reports `SourceEnvelope/Invocation` when `max_sources`
+  is exceeded; [the driver](../compiler/src/driver.rs) maps every
+  `SourceBundle` failure that way, including resource/storage failures.
+  Distinguish these from invalid logical paths using the public failure
+  taxonomy. `max_sources` currently counts injected prelude inputs as well
+  as caller inputs; this is not by itself a defect. Also settle the API's
+  empty-input contract: `check(&[])` accepts after adding the prelude,
+  while the CLI requires a source path. Whether PRE-1 representations count
+  toward PROG-2's source-record requirement needs clarification before
+  changing acceptance. Close with API-level boundary and classification
+  controls, without rewriting source verdicts around an invocation policy.
+
+- **POSIX heap-exhaustion record writers do not retry an interrupted write.**
+  The generated heap record writers abort on every nonpositive `write`
+  result, while the host floor's stack-record writer retries EINTR. This
+  can truncate the promised resource record, not continue execution after
+  allocation refusal. Validate with the existing allocation-refusal observer
+  plus one interrupted record write before selecting the repair; no native
+  interruption experiment has run. Retain platform-specific error handling
+  and best-effort behavior for irrecoverable output failure.
+
+- **Zero-size target address qualification needs a precise domain ruling.**
+  An `Array<Empty>` with count `2^63 + 1` and index `2^63` passes OP-9,
+  source checking and LLVM emission on the current 64-bit target. Its actual
+  stride is zero and allocation is header-only, so a signed GEP index still
+  produces zero displacement; this is not a demonstrated memory error.
+  STOR-6 requires representability in the actual address-index domain, but
+  the target checker does not inspect `BufferIndex.offset`. Determine whether
+  representability constrains that raw logical index or the effective byte
+  displacement, including ordinary facts-off omissions, and test the selected
+  interpretation. The enormous fill loop was not run natively. Keep this as
+  a target-rule clarification, not an asserted incorrect execution.
+
+- **Joined reference proofs lose useful target-relative information.** A
+  reference selecting either of two freshly empty Slots cannot establish the
+  append precondition from both constructors' facts; captured disjoint ranges
+  formed in separate branches also lose their branch-local endpoint images
+  at the join. These safe examples are rejected under the current fixed proof
+  routes, rather than demonstrating an implementation violation. Evaluate a
+  bounded rule for retaining the needed target-relative facts, preserving
+  same-holder identity without claiming that a write changed every possible
+  target. Require matching overlapping and stale-capture controls and a
+  checking-cost comparison before proposing a language change. This is an
+  improvement-validation task, distinct from the bystander defect above.
+
 - **Ordered Vector consumption still makes avoidable transfers.** The ordinary
   prefix-window library reverses a removed suffix before consuming it in
   original order. It is O(n), but the
@@ -209,6 +319,15 @@ concludes with a recorded disposition; retain any selected follow-up work here.
 
 Questions the owner has left open on purpose. None of them is a decision;
 each is resolved by a discussion and a tree change.
+
+- **Invariant-name reservation has conflicting definitions.** OP-1 lists the
+  declaration roles subject to FORM-3 reservation and explicitly excludes
+  other roles; that list omits invariants. TYPE-6 later says header and body
+  invariant names participate in FORM-3. The resolver and existing tests
+  reject an invariant named `cvt`, matching the latter text. Decide whether
+  invariant declarations are covered, then align both normative definitions
+  and their derived tests. Neither implementation behavior nor this audit
+  selects the language rule.
 
 - **Sparse containers over must-consume linear elements need ownership-visible
   slot state.** The maintained

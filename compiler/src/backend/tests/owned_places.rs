@@ -1392,6 +1392,29 @@ void wf_test_release(void *allocation) {{
     )
 }
 
+/// A front removal and back placement wrap the runtime Ring, whose logical
+/// reads and drain must yield 20, 30, and 40 [TYPE-9, WIN-1, OP-10]. The helper
+/// consumes each whole Box while returning its copy scalar, so scope cleanup
+/// frees that cell before the next source step [WIN-3]. The process-tag trace
+/// checks that the removed owner leaves before A5, the remaining owners leave
+/// in drain order, and the empty outer cell leaves last [OP-14].
+#[test]
+fn boxed_runtime_ring_wraps_and_releases_each_owner_in_order() {
+    let source = include_bytes!("../../../../tests/programs/runtime_ring_wrap.wf");
+    let module = compile(source);
+    let observed = retain_calls(&module)
+        .replace("@malloc(", "@wf_test_allocate(")
+        .replace("@free(", "@wf_test_release(");
+    let output = compile_link_and_run(&observed, Some(&allocation_observer(5, 0)), &[]);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(
+        output.stdout,
+        b"A1;A2;A3;A4;F2;A5;F3;F4;F5;F1;",
+        "{output:?}"
+    );
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
 /// A full bounded append returns its input rather than overwriting an element.
 ///
 /// The arena half of this case retired with [STOR-4]: there is one heap
