@@ -102,8 +102,7 @@ fn slab_remove<T, const ceiling: u64, const generation_limit: u64>(slab: &Slab<T
     if generation == handle.generation {
       if deref(slab).cells.inner[index].storage.len > 0_u64 {
         let value = take_back(window: &deref(slab).cells.inner[index].storage);
-        let final_generation = generation_limit;
-        if generation < final_generation {
+        if generation < generation_limit {
           let following_generation = generation + 1_u64;
           set deref(slab).cells.inner[index].generation = following_generation;
           set deref(slab).cells.inner[index].next = deref(slab).free_head;

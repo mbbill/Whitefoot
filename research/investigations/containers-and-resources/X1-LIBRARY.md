@@ -92,10 +92,11 @@ Three different questions must not be collapsed:
 | Specified interface limit | A range over a Ring, even an empty/unwrapped one, is refused by REF-4 | A generic two-span API is unavailable on that representation. A fully initialized copy-element Array is a different available representation. |
 | Resolved snapshot defect | The earlier reserve helper supplied unrestricted u64 capacity to `grow` | OP-9 requires a size bound. The merged library supplies one through `ceiling`; the unbounded research negative remains correctly rejected. |
 
-The candidate layouts below are recommendations for implementation trials,
-not changes to language decisions or adopted library interfaces. No live-tree
-revision is proposed by this research. Existing temporary-reference, global-heap,
-no-hole and no-stored-reference choices remain premises. Their grounds are in
+The family sketches below started as recommendations for implementation trials,
+not adopted library interfaces. The later Vector and v0.63 sections identify
+the executable libraries and their evidence; pending tree revisions stay in
+`design/amendments/` until an owner ruling. Existing temporary-reference,
+global-heap, no-hole and no-stored-reference choices remain premises. Their grounds are in
 the [data-model](../../../design/language/data-model.md),
 [ownership](../../../design/language/ownership.md) and
 [generics](../../../design/language/generics.md) decisions; rules, not those
@@ -115,7 +116,7 @@ to duplicate every library.
 | --- | --- | --- | --- | --- |
 | Vector | `Box<Slots<T>>`; `Slots<T,N>` for inline bounded use | Construct, reserve, append, insert, ordered remove, swap-remove, truncate, ordered consume/drain, final release | OP-9 on growth; index/room facts; exact count changes over references; a consume callback for nodrop T; `free_empty` after complete consumption | O(1) no-growth append; amortized O(1) under geometric growth; O(n-i) ordered insert/remove; O(1) swap-remove; O(n) drain. No owner round trip for mutation. |
 | Deque | `Box<Ring<T>>`, fresh ring plus `append` for growth; fixed Ring for bounded queues | Push/pop both ends, wrap, indexed access, grow/rebase, consume, release | Bounds in logical coordinates; front operations invalidate old slot references; new backing invalidates every old path; source emptied before releasing it | O(1) endpoints and logical access; O(n) growth; one visit per drained element. Generic two-span consumption remains a separate unavailable interface, discussed below. |
-| Slab | `Box<Slots<Cell<T>>>`, a free-list head and generation handles; every materialized Cell is a valid enum | Insert/handle, validate/get, remove, expiry, reuse, exhaustion/limit outcome, grow if selected, final consumption | Swap a valid vacancy with an occupant; return every removed T; never wrap a generation into an old handle's generation; distinguish a slot ID from a physical address | O(1) free-list operations and validation; no payload movement on ordinary reuse. Backing growth moves inline cells; boxing each payload trades that for allocations and indirection. |
+| Slab | `Box<Slots<SlabCell<T>>>`, with `Slots<T,1>` occupancy, a free-list head and generation handles; compare a compact tagged native cell | Insert/handle, validate/get, remove, expiry, reuse, exhaustion/limit outcome, final consumption | Return every removed T; never wrap a generation into an old handle's generation; distinguish a slot ID from a physical address | O(1) free-list operations and validation; no payload movement on ordinary reuse. The bounded library does not grow its backing; its extra occupancy word is a measured cost. |
 | Hash map | One window of valid `Vacant/Deleted/Occupied(K,V)` slots; compare a dense-entry/index-table alternative for large payloads | Construct, collision insertion, duplicate replacement, lookup after tombstone, remove, reuse, growth/rehash, iterate, consume | K and V need not be copy/drop if replacement returns the old pair and final cleanup explicitly consumes them; bounded probing; no assumed behavior laws; preserve every owner during rehash | Hash/equality cost plus probes; ordinary load-dependent expected constant access, capacity-bounded worst-case lookup. Rehash scans old capacity and reinserts live entries; adversarial collisions can make it quadratic. |
 | Priority queue | Slots of T, with an explicit comparison behavior; indexed variant adds a reverse-position map | Push, peek via a local reference/callback, pop, replace top, change priority/remove by handle when selected, heapify, drain | Compare borrowed T; exchange slots then take a boundary value; every sift step progresses along an index; arithmetic domains and child bounds proved independently of comparator laws | O(log n) sifts and O(n) bottom-up heapify; no aggregate owner transfer per level. Count reverse-index repairs in an indexed queue. |
 | Ordered map | Pool-indexed B-tree nodes with fixed-capacity key/value and child windows; compare owned Box-linked nodes | Find, insert, split/promotion, replace, remove, borrow/merge, root contraction, ordered iteration, cleanup | Node and child bounds; distinct node indexes at simultaneous writes; rotations return/move all owners; no key duplication assumed; index stack for paths | O(log n) node visits at balanced height, O(B) local shifts, O(n) full traversal. Bound retained path storage; charge pool validation and node fragmentation. |
@@ -166,7 +167,8 @@ empty old backing. For nodrop T the zero-length fact must reach the owned
 backing that `free_empty` consumes; after a swap or an ordinary owned helper
 return, check whether its declared contracts preserve that fact. An explicit
 length reread is a possible validation cost; silently dropping the old owner
-is not. This complete generic growth chain has not been checked here.
+is not. The generic library instead uses the explicit consuming rebase in the
+v0.63 trial below; this reference-based exchange is not its growth contract.
 
 The merged append row now also publishes
 `destination.len >= entry(source).len`. That is useful when the destination
@@ -194,7 +196,7 @@ separate interface candidate if the restriction is intentional. The first
 library trial must settle a complete nodrop growth route before claiming an
 unbounded growable Deque.
 
-REF-4 deliberately refuses *all* Ring range references. Therefore a function
+REF-4 refuses *all* Ring range references. Therefore a function
 that accepts two `&[T]` extents in queue order cannot obtain them directly
 from Ring, even after testing that a subrange does not wrap.
 
@@ -215,7 +217,7 @@ not evidence that queues in general require a language amendment.
 
 ### Slab: reuse, addresses, and retained membership
 
-One representation sketch is:
+The original enum representation sketch was:
 
 ```wf
 struct Handle {
@@ -241,7 +243,10 @@ is retired instead of wrapping; a reduced-width model should force this path
 in the next implementation's tests. A handle is interpreted relative to the
 supplied slab. Without an additional application identity field it does not
 authenticate a different slab. These are ordinary data contracts under OP-13,
-not new brands or memory-safety authority.
+not new brands or memory-safety authority. The v0.63 insertion trial below
+exposes the missing variant fact after the reverse exchange; the implemented
+Slab therefore uses a one-element window in each cell. The sketch alone is
+not a complete nodrop implementation.
 
 `find_index` may return `Result<u64, unit>` with
 `ensures when Ok(value: i): i < deref(slab).cells.inner.len;`.
@@ -824,3 +829,150 @@ and large owning records, short and longer capacities, and checksum-sensitive
 operation sequences. A runtime branch or extra word is a measured cost;
 acceptance alone does not select it, and a changed ownership or callback
 contract is not a faster implementation of the same operation.
+
+### Executed library boundary
+
+The [Slab](../../../lib/containers/slab.wf) and
+[Deque](../../../lib/containers/deque.wf) sources have complete native callers
+in the formal corpus, reusing its sequential and parallel modes and shared
+allocation observer. Slab covers copy, owned Box and nodrop elements, lazy
+materialization, genuine full outcomes, wrong/expired handles, reuse and
+generation limits zero, one and u64 maximum. Deque adds zero-sized elements,
+zero/one/full capacities, wrapping from both ends, growth and shrink through
+rebase, callback order and reuse. Its precise back-append row also permits an
+existing filled-slot reference to remain valid. The independent release
+ledgers count 19 successful Slab allocations and 21 Deque allocations, including
+the membership caller; both ordinary deallocation and observed images execute.
+Heap allocation itself is total under STOR-8, so these are not allocation-
+refusal tests. Slot exhaustion is a separate ordinary Slab outcome.
+
+The [membership program](../../../tests/programs/containers/slab-membership-program.wf)
+answers the retained-membership question for a concrete composite: removing
+one index preserves the other reader; weak indexes expire on owner deletion;
+the retained composite refuses deletion with two memberships and still with
+one, then permits it after both retire. Its two index fields cover one central
+object. General multi-object indexing and protection from independently
+authored bookkeeping mutations are not established by this example.
+
+The matched [Slab comparison](../../experiments/container-representation/slab-library/RESULTS.md)
+and [Deque comparison](../../experiments/container-representation/deque-library/RESULTS.md)
+own cost conditions and results. Source acceptance and the formal execution
+above are not performance selection evidence.
+
+### Exact unavailable source forms
+
+These are the rejected additions or functions in the linked library's type
+context. They state current rules, not proposed amendments.
+
+| Rejected source | Rule and cause | Implemented alternative |
+| --- | --- | --- |
+| In `slab_new`: `ensures result.cells.inner.len == 0_u64;` | FN-9's result-selector domain does not include an arbitrary aggregate result field. A nominal Deque wrapper's `made.storage.inner.len` has the same limit. | Slab retains its necessary free-list state; the caller establishes length through an ordinary read/branch. Deque needs no extra wrapper state and uses direct `Box<Ring<T>>`, whose `made.inner.len` is admitted. |
+| In `slab_find_index`: `ensures when Ok(value: index): deref(slab).cells.inner[index].storage.len > 0_u64;` | FN-9/CALL-4 do not admit this indexed postcondition target. | Export the outer index bound; use `slab_visit` to keep validation and callback in one helper, or re-read occupancy before direct access. |
+| The signature `fn borrow_out<T>(value: &T) -> result: &T reads(value) {` | GRAM-3 requires `own` at the result; REF-3/FN-1 prohibit reference escape. | Return owned callback data or a validated index. |
+| After `let values = box_ring_new::<u64>(capacity: 4_u64);`: `let count = observe::<u64>(first: &values.inner[0_u64..0_u64], second: &values.inner[0_u64..0_u64]);`, with `observe` taking two `&[T]` arguments | REF-4 refuses even empty Ring ranges. | Per-slot visitation; this remains an explicit missing zero-copy two-span interface. |
+
+The vacant variant does not travel through swap's row to the extracted local.
+This complete generic helper rejects under PROV-6 because the admitted facts
+cannot show that `offered` no longer holds a must-consume T:
+
+```wf
+fn insert<T>(slot: &Option<T>, value: own T) -> result: own Result<unit, T> writes(slot) {
+  match deref(slot) {
+    Some(value: occupied) => {
+      return Err<unit, T>(error: move value);
+    }
+    None() => {
+    }
+  }
+  let offered = Some<T>(value: move value);
+  swap(first: slot, second: &offered);
+  return Ok<unit, T>(value: unit);
+}
+```
+
+The library's `Slots<T,1>` carries vacancy as an ordinary length whose
+place/take contracts are available. No impossible occupied cleanup arm or
+implicit nodrop discard is introduced. A native tagged cell remains a layout
+comparator; the Slab result does not solve every map operation.
+
+Swap also does not publish exchanged measures. Its ordinary write row kills
+both operands' old facts under ENT-5, so this helper fails its FN-9 return
+obligation:
+
+```wf
+fn replace_empty<T>(old: &Box<Ring<T>>, built: own Box<Ring<T>>) -> previous: own Box<Ring<T>> writes(old) contract {
+  requires deref(old).inner.len == 0_u64;
+  ensures previous.inner.len == 0_u64;
+} {
+  swap(first: old, second: &built);
+  return move built;
+}
+```
+
+A reread could validate an empty branch, but would not consume a nonempty
+nodrop remainder on the other branch. The existing
+[atomic-publish probe](../../experiments/container-representation/x1/linear-ring-publish.wf)
+also rejects under OP-12/WIN-3 for a nodrop target. The implemented rebase
+consumes the original owner directly and returns a genuinely new backing;
+no exchange fact is needed. Its counted element loop proves exact length;
+append's current lower-bound contract does not state the two-entry sum.
+
+### Ring range correspondence
+
+The current [range-reference decision](../../../design/language/ownership/range-reference.md)
+still lists Ring. Commit `a907d9d6` adopted that candidate text. The earlier
+`c79188a1` investigation's
+[amendment map](../access-effects/SPEC-AMENDMENT-MAP.md) had asked whether to
+refuse Ring ranges or admit proved non-wrapping ones, recommending refusal
+under its owner-rulings-needed heading. The subsequent `7bc07c04` specification
+draft introduced today's blanket refusal. Neither its commit message nor the
+retained PR #70 discussion supplies a Ring-specific ruling. The earlier
+released v0.59 VIEW-2 had admitted proved non-wrapping views, including empty
+ones. This establishes current tree/spec drift and an unrecovered selection
+ground; it does not establish that the narrowing was unauthorized.
+
+An owner ruling can retain REF-4 and narrow the tree, admit proved contiguous
+Ring ranges with an explicit empty-range rule, or design arbitrary wrapped
+logical ranges. The second requires formation, invalidation and lowering
+evidence; the third also exceeds the currently selected pointer/count range
+representation. This library trial follows REF-4 and leaves that ruling open.
+
+### Compiler corrections exposed by composition
+
+The Slab visitor uncovered a partial-instantiation spelling defect. A generic
+callee binding R to unit while forwarding a type, const or function parameter
+was treated as its own symbolic spelling authority; `move` was then rejected
+as a copy move. OWN-1/FN-2 assigns that authority to the written template, not
+every partly substituted body. The correction compares declaration identities
+with the template's own symbolic substitution. The generic tests retain
+canonical copy-move and repeated-consume negatives; no ownership or overlap
+rule is weakened.
+
+A separate const-guard probe exposed lost source type information:
+
+```wf
+fn increment<const limit: u64>(value: own u64) -> result: own u64 pure {
+  if value < limit {
+    return value + 1_u64;
+  }
+  return value;
+}
+```
+
+The missing implicit maximum prevented ENT-2/ENT-4 from proving the OP-2
+increment domain. A local alias or a redundant written invariant happened to
+supply enough evidence through a different path. Conversely, the affine image
+path assigned u64 bounds even to a signed const parameter, incorrectly
+accepting a symbolic assertion that every i8 parameter is nonnegative.
+This demonstrated an incorrect template judgment, not an executable negative-
+value misuse. MSR-6 already requires the exact declared integer type.
+
+The correction retains that type with the declaration-anchored term and its
+affine image. A read-only declaration-type inventory serves the ordinary
+entailment and isolated refinement contexts, avoiding type propagation through
+every storage-extent and captured-index representation. This distinction
+matters when a u8 const parameter supplies a u64 formal or storage extent:
+the constant must remain one identity with its source bounds. It adds no
+automatic proof family. The corresponding compiler choice is a pending
+checker-facts amendment; domain, insufficient-guard and forwarding regressions
+exercise the existing proof checker.

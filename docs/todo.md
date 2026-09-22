@@ -239,10 +239,41 @@ each is resolved by a discussion and a tree change.
   An unconstrained `K` also admits those linear values under OWN-1 and
   PROV-6. A numeric phase alone cannot prove that a returned enum slot is
   vacant; an occupied variant still contains a key that must be consumed.
-  Investigate an ordinary state encoding or checked variant-state relation
-  that lets rehash move every must-consume key without an impossible cleanup
-  branch. Retain occupancy as program data, and do not add an implicit
-  discard merely to satisfy the checker.
+  The [Slab trial](../research/investigations/containers-and-resources/X1-LIBRARY.md#exact-unavailable-source-forms)
+  uses an inline `Slots<T,1>` per cell and executes insertion, removal, reuse
+  and cleanup for nodrop T; it supplies an ordinary state encoding, at a
+  metadata cost measured against tagged C cells. This does not establish a
+  complete map rehash or select the same layout for it. Reopen for the next
+  owning-map library trial: compare the one-slot encoding and ordinary enum
+  alternatives through collision, replacement, tombstone reuse and rehash,
+  including bytes and helper transfers. Retain occupancy as program data and
+  do not add an implicit discard or impossible cleanup branch to satisfy the
+  checker. A new variant-state relation needs a remaining measured consumer.
+- **Deque still lacks zero-copy two-span access over Ring.** REF-4 rejects
+  every Ring range, even empty and proved non-wrapping ones. The current
+  library's slot visitor is not a substitute for a native consumer accepting
+  two contiguous extents. A fully initialized Array works for copy elements
+  but adds spare-capacity initialization and does not provide arbitrary T.
+  The [exact rejection and correspondence evidence](../research/investigations/containers-and-resources/X1-LIBRARY.md#ring-range-correspondence)
+  also record the live tree's wider wording and the unrecovered narrowing
+  ground. Settle that correspondence with the owner; an extension needs a
+  concrete span consumer, precise empty/non-wrap formation and invalidation
+  rules, native-cost comparison and negative wrap/stale-reference cases.
+  Defer extension while this library tests endpoint and rebase costs; reopen
+  before using it for scatter/gather or another required bulk span consumer.
+- **Deque rebase is an explicit new-owner conversion.** Reference-based
+  replacement currently loses the exchanged owners' measures; append's
+  lower-bound-only contract also lacks the exact sum needed by the library's
+  return contract. The current counted take/place conversion supports nodrop
+  T without an impossible cleanup branch, but its cost must be separated
+  from a two-extent native transfer. The
+  [source limits](../research/investigations/containers-and-resources/X1-LIBRARY.md#exact-unavailable-source-forms)
+  and [cost comparison](../research/experiments/container-representation/deque-library/RESULTS.md)
+  distinguish interface precision from lowering. Keep the explicit conversion
+  for this slice; reopen if a real caller needs automatic reference-based
+  growth or rebase dominates its work. Evaluate the already-open affine
+  contract question below before choosing a new storage operation; require
+  exact length, emptied-old-owner and unchanged element-order evidence.
 - **The automatic-fact menu is a leftover.** [ENT-3] admits a narrow and
   asymmetric set of arithmetic idioms as automatic facts, each added for one
   proof pattern, with no general criterion and no counterpart for rows it
