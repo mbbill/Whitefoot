@@ -352,6 +352,7 @@ int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
     let directory = test_directory();
     let executable = build_linked_executable(&llvm, Some(host), &[], &directory);
     let output = Command::new(executable)
+        .env("WF_WORKERS", "1")
         .output()
         .expect("run checked-reference scheduling price probe");
     assert!(output.status.success(), "{output:?}");
