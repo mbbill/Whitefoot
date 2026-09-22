@@ -443,6 +443,10 @@ impl IrBuilder<'_> {
                             offset,
                             target_domain: subscript.target_domain.into(),
                         },
+                        IrType::Buffer { .. } => IrPlaceStep::BufferElement {
+                            offset,
+                            target_domain: subscript.target_domain.into(),
+                        },
                         IrType::Window { .. } => IrPlaceStep::RunElement {
                             offset,
                             target_domain: subscript.target_domain.into(),

@@ -972,7 +972,8 @@ pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
             | crate::IrPlaceStep::BoxReferent { .. }
             | crate::IrPlaceStep::EnumVariant { .. } => vec![*address],
             crate::IrPlaceStep::RunElement { offset, .. }
-            | crate::IrPlaceStep::ArrayElement { offset, .. } => vec![*address, *offset],
+            | crate::IrPlaceStep::ArrayElement { offset, .. }
+            | crate::IrPlaceStep::BufferElement { offset, .. } => vec![*address, *offset],
         },
         IrOperation::LoopSplit {
             seed,

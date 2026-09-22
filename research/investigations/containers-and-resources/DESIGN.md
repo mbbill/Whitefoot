@@ -1,8 +1,9 @@
 # Containers and resources: the integrated design
 
-The container choices in this earlier integrated dossier are superseded by the
-[empirical architecture selection](REASSESSMENT.md), which states the decision,
-executable evidence, rejected defaults, and first implementation scope. Resource
+The current container comparison is [Containers over x1](X1-LIBRARY.md).
+The [empirical architecture selection](REASSESSMENT.md) records the earlier
+decisions, executable evidence and rejected defaults that superseded the
+container choices in this integrated dossier. Resource
 research below is retained outside that selection. Neither document overrides the
 active specification or adds an approval step.
 

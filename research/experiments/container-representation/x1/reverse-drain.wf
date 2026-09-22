@@ -1,0 +1,62 @@
+nodrop struct Item {
+  number: u64;
+}
+
+struct Seen {
+  sequence: u64;
+}
+
+interface Sink<T, E> {
+  fn accept(env: &E, value: own T) -> result: own unit writes(env);
+}
+
+fn accept_item(env: &Seen, value: own Item) -> result: own unit writes(env) {
+  let Item(number: digit) = move value;
+  let prefix = deref(env).sequence *wrap 10_u64;
+  set deref(env).sequence = prefix +wrap digit;
+  return unit;
+}
+
+binding ItemSink : Sink<Item, Seen> {
+  accept = accept_item;
+}
+
+fn drain<interface Sink<T, E>>(values: &Slots<T, 4>, env: &E) -> result: own unit writes(values), writes(env) contract {
+  ensures deref(values).len == 0_u64;
+} {
+  let count = deref(values).len;
+  let half = count / 2_u64;
+  for (i in 0_u64..half) {
+    let last = count - 1_u64;
+    let other = last - i;
+    swap(first: &deref(values)[i], second: &deref(values)[other]);
+  }
+  loop @empty {
+    let remaining = deref(values).len;
+    if remaining == 0_u64 {
+      break @empty;
+    }
+    let value = take_back(window: values);
+    Sink::accept(env: env, value: move value);
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let values = slots_new::<Item, 4>();
+  let one = Item(number: 1_u64);
+  place_back(window: &values, value: move one);
+  let two = Item(number: 2_u64);
+  place_back(window: &values, value: move two);
+  let three = Item(number: 3_u64);
+  place_back(window: &values, value: move three);
+  let four = Item(number: 4_u64);
+  place_back(window: &values, value: move four);
+  let seen = Seen(sequence: 0_u64);
+  drain::<ItemSink>(values: &values, env: &seen);
+  free_empty(window: move values);
+  if seen.sequence == 1234_u64 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}

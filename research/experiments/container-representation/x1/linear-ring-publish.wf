@@ -1,0 +1,70 @@
+nodrop struct Ticket {
+  id: u64;
+}
+
+fn publish<T>(old: own Box<Ring<T>>, built: own Box<Ring<T>>) -> result: own Box<Ring<T>> pure contract {
+  requires old.inner.len == 0_u64;
+} {
+  free_empty(window: move old);
+  return move built;
+}
+
+fn grow_ring<T>(values: &Box<Ring<T>>, capacity: own u64) -> result: own unit writes(values) contract {
+  requires capacity >= deref(values).inner.cap;
+  requires capacity <= 16_u64;
+} {
+  let built = box_ring_new::<T>(capacity: capacity);
+  append(destination: &built.inner, source: &deref(values).inner);
+  set deref(values) = publish::<T>(old: move deref(values), built: move built);
+  return unit;
+}
+
+fn consume(value: own Ticket) -> observed: own u64 pure {
+  let Ticket(id: number) = move value;
+  return number;
+}
+
+fn drain(values: own Box<Ring<Ticket>>) -> checksum: own u64 pure {
+  let checksum = 0_u64;
+  loop @empty {
+    let remaining = values.inner.len;
+    if remaining == 0_u64 {
+      break @empty;
+    }
+    let taken = take_front(window: &values.inner);
+    let digit = consume(value: move taken);
+    let prefix = checksum *wrap 10_u64;
+    set checksum = prefix +wrap digit;
+  }
+  free_empty(window: move values);
+  return checksum;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let values = box_ring_new::<Ticket>(capacity: 2_u64);
+  let one = Ticket(id: 1_u64);
+  place_back(window: &values.inner, value: move one);
+  let two = Ticket(id: 2_u64);
+  place_back(window: &values.inner, value: move two);
+  let front = take_front(window: &values.inner);
+  let first = consume(value: move front);
+  let three = Ticket(id: 3_u64);
+  place_back(window: &values.inner, value: move three);
+  grow_ring::<Ticket>(values: &values, capacity: 4_u64);
+  let count = values.inner.len;
+  let cap = values.inner.cap;
+  let remaining = drain(values: move values);
+  if first != 1_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if count != 2_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if cap != 4_u64 {
+    return exit_status(code: 3_u8);
+  }
+  if remaining != 23_u64 {
+    return exit_status(code: 4_u8);
+  }
+  return exit_status(code: 0_u8);
+}
