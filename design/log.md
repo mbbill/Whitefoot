@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-21 Admit finite descendant summaries for owned-link cursors
+
+Nodes: compiler/checker-facts, language/effects, language/ownership, language/ownership/exchange, language/ownership/reference-rebinding, language/ownership/reference-validity
+
+Owner-approved: The owner explicitly approved all six amendments presented at e5ac601e in the work line C conversation, after the complete Chinese explanation, independent DCR and owner-directed effects companion follow-up.
+
+Summary: Apply the approved revisions together: retain finite per-root descendant covers separately from current-target identity, preserve selected payload storage beyond match exit, apply ordinary invalidation to every call actual, and exclude possible ancestor exchanges while preserving equal-target exchange. The ordinary typed walk grows finite loop summaries to completion without an acceptance budget. The [wildcard-path investigation](../research/investigations/wildcard-path/DESIGN.md) records the representation, alternatives, executable list/tree/cursor evidence and measured checking-cost limits. Update the affected refused alternatives and remove all six accepted amendments.
+
 ## 2026-09-21 Adopt the measured Vector baseline and qualify kernel composition costs
 
 Nodes: language/data-model/vector-consumption, language/data-model/kernel-minimality

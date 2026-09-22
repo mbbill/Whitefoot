@@ -1,0 +1,30 @@
+struct Node {
+  value: u64;
+  next: Option<Box<Node>>;
+}
+
+fn clear(root: &Node, spare: &Node) -> result: own unit writes(root.next) {
+  set deref(root).next = None<Box<Node>>();
+  return unit;
+}
+
+fn inspect(root: &Node) -> result: own u64 writes(root) {
+  let cursor = root;
+  for (i in 0_u64..2_u64) {
+    match deref(cursor).next {
+      Some(value: child) => {
+        set cursor = &deref(child).inner;
+      }
+      None() => {
+        break;
+      }
+    }
+  }
+  clear(root: root, spare: cursor);
+  return deref(cursor).value;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "An unused reference actual receives invalidation from another actuals ancestor write.";
+  return exit_status(code: 0_u8);
+}

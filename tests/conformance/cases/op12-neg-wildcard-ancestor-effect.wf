@@ -1,0 +1,30 @@
+struct Node {
+  value: u64;
+  next: Option<Box<Node>>;
+}
+
+fn update(value: own Node, root: &Node) -> result: own Node writes(root.next) {
+  set deref(root).next = None<Box<Node>>();
+  return move value;
+}
+
+fn inspect(root: &Node) -> result: own u64 writes(root) {
+  doc "An atomic update cannot reach a possible ancestor of its unknown-depth target.";
+  let cursor = root;
+  for (i in 0_u64..2_u64) {
+    match deref(cursor).next {
+      Some(value: child) => {
+        set cursor = &deref(child).inner;
+      }
+      None() => {
+        break;
+      }
+    }
+  }
+  set deref(cursor) = update(value: move deref(cursor), root: root);
+  return 0_u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

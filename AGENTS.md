@@ -296,6 +296,14 @@ when choosing or revising compiler code structure, including during
 implementation. Record deferred compiler defects and improvement opportunities,
 including their validation, in `docs/todo.md`.
 
+## Communication
+
+Describe compiler and language work with precise, neutral technical wording.
+Avoid unnecessary security or attack-oriented framing when the task is ordinary
+correctness checking; name the concrete rule, failure, and expected behavior.
+Retain necessary technical terms and report material risks accurately. Wording
+must clarify the work, never conceal its purpose or bypass platform safeguards.
+
 ## Data safety
 
 Preserve unrelated user changes in a dirty worktree. Never discard, overwrite,
