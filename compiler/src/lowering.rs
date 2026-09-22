@@ -1797,8 +1797,8 @@ pub struct IrFunction {
     parameters: Vec<(IrValueId, IrType)>,
     /// Original reference formals whose roots have no declared write, copied
     /// from checked effects. Only their exact direct chunk captures inherit
-    /// the fact: rebinding and reconstructed owned captures do not. EFF-5
-    /// also excludes aliasing writes through another formal, so their entry
+    /// the fact: changed reference values and reconstructed owned captures do
+    /// not. EFF-5 also excludes aliasing writes through another formal, so their entry
     /// referents remain valid through the ordinary call, including zero-trip
     /// loops. Scheduling consumes this fact without inferring new lifetimes.
     readonly_reference_parameters: Vec<IrValueId>,
