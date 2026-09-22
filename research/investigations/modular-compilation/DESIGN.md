@@ -14,6 +14,13 @@ language decisions; revise it in place when evidence changes the proposal.
 Remove it only after its grounds are superseded or preserved elsewhere and it
 contains no unique useful evidence.
 
+Revisit: the structural acyclicity requirement remains, but coupling its
+certificate to whole namespace subtrees is under reconsideration. A small
+acyclic dependency change can otherwise require module moves, qualified-name
+changes and edits across consumers. The ordered-tree argument below remains
+valid; it does not establish acceptable change locality. An independently
+declared module order is a comparison candidate, not a selected replacement.
+
 ## Required outcome
 
 1. A module's unchanged bodies do not need to be parsed, resolved, type-checked,
@@ -324,18 +331,20 @@ Select a structural candidate by these criteria: legality uses only the two
 module paths and declared architecture metadata; every permitted edge strictly
 descends one finite order; public and private dependencies follow the same
 rule; shared services can have several consumers; and an illegal direction is
-reported against an existing architectural boundary. These requirements do not
-imply a uniquely best grouping of application responsibilities.
+reported against an existing architectural boundary. Also assess how much
+source and architecture metadata must change when dependencies evolve without
+changing module APIs. These requirements do not imply a uniquely best grouping
+of application responsibilities.
 
 | Candidate | Structural guarantee | Cost and disposition |
 |---|---|---|
 | Imports only to strict descendants | Increasing finite tree depth prevents cycles | Too restrictive for shared services across branches without another mechanism |
 | Imports only to greater directory depth anywhere | Depth alone certifies acyclicity | Rejects equal-depth sharing and makes dependency levels depend on incidental nesting |
-| An explicit rank for every module, with imports only to lower ranks | Each edge can be checked without graph analysis | Viable alternative; flexible interleaving of branches, but directory subtrees do not state a common dependency direction |
-| Ordered sibling subtrees, with each parent after its descendants | Paths and local sibling orders certify acyclicity | Recommended candidate: directory groups carry explicit architectural direction; it intentionally rejects some acyclic cross-branch arrangements |
+| An explicit rank for every module, with imports only to lower ranks | Each edge can be checked without graph analysis | Revisit alongside a centralized sequence of canonical module paths: preserves names when order changes, but rank propagation or shared-order editing can still require coordination |
+| Ordered sibling subtrees, with each parent after its descendants | Paths and local sibling orders certify acyclicity | Revisit: direction is explicit, but some acyclic edits force regrouping and path changes; the proof does not establish practical evolution costs |
 | Arbitrary imports followed by cycle detection | Detects a cycle after composition | Superseded: no structural certificate or prior direction tells an author which new dependency is disallowed |
 
-### Ordered namespace tree
+### Ordered namespace tree: candidate under reconsideration
 
 Annotate each branching namespace with an explicit order of its immediate
 child namespace components, from dependency providers to consumers. This is
@@ -465,6 +474,45 @@ interleaving inside fixed directory groups becomes a requirement, the explicit
 per-module rank alternative is preferable; it retains local acyclicity checks
 without imposing one direction on entire subtrees. Do not hide this difference
 by claiming the ordered-tree model represents every DAG under every layout.
+
+### Dependency changes and source edit locality
+
+Distinguish three cases. Adding an already permitted edge changes its explicit
+dependency declaration and actual uses. Changing a child order can remain one
+architecture edit if all existing edges still pass. A change that requires
+interleaved directions across intact subtrees cannot be repaired by either
+sibling order; regrouping then changes path-derived identities and may require
+many imports, qualified uses and public references to be edited. Only the last
+case necessarily exposes the naming cost of that repair; do not describe every
+dependency edit as a repository-wide move.
+
+Compare an explicit sequence of canonical module paths in the existing build
+description, independent of directory grouping. An import may target only an
+earlier entry. Unique complete membership and strict position descent provide
+the same kind of local acyclicity certificate, while changing the sequence
+does not rename modules or rewrite unchanged qualified references. For the
+two-branch example, `[A/a2, B/b1, B/b2, A/a1]` admits both edges. This candidate
+would apply one position rule to parent/child pairs too; it must not also grant
+unconditional parent-to-descendant permission that bypasses that rule.
+
+This does not promise constant-size repairs. Moving an entry can invalidate
+existing edges and require several entries to move. A genuinely cyclic new
+dependency set has no valid sequence. A centralized order reduces the number
+of files holding the certificate, but becomes shared architectural input for
+concurrent agents; numeric ranks distributed among modules avoid that single
+file while risking multi-module relabeling. Neither representation can be
+claimed to solve edit locality merely because its DAG proof is simple.
+
+Under a fixed certificate and an independent per-edge predicate, both opposing
+directions cannot be permitted: each edge alone is acyclic, but permitting
+both would admit their cycle. Consequently some acyclic additions must change
+the certificate or be refused. This is not a proof that many source files must
+change; certificate maintenance and source-name changes are different costs.
+
+The owner's change-locality concern reopens the ordered-tree recommendation.
+Keep the structural guarantee and path-derived names; compare where the
+dependency certificate lives before selecting their coupling. No replacement
+policy or automatic reordering tool is selected in this discussion refinement.
 
 Parents and children continue to share no private access. A separately
 declared child interface is directly usable when the structural direction
@@ -635,7 +683,7 @@ These families name responsibilities, not a proposed public Rust API:
 |---|---|---|
 | Source formation | Interface/source bytes, selected canonical roots, direct directory inventory, grammar/spec identity | Tokens, canonical trees, source maps |
 | Module surface / lookup | Canonical path components, public/private inventories, direct dependency paths, lookup role and spelling | Stable declaration or diagnostic |
-| Module dependency permission | Canonical source/target paths, descendant relation or divergent-branch order, valid tree inventory | Allowed direct dependency or architectural direction diagnostic |
+| Module dependency permission | Canonical source/target paths and consumed architecture-certificate relations; descendant/divergent-branch order in the tree candidate | Allowed direct dependency or architectural direction diagnostic |
 | Interface correspondence | Resolved public declaration and selected implementation declaration | Matching identity and checked normalized declaration, or diagnostic |
 | Contract / type shape | Resolved declaration, arguments, capabilities and projections | Normalized semantic boundary |
 | Template check | Symbolic body, bounds, callee boundaries and summary availability | Symbolic checked body |
@@ -736,7 +784,7 @@ proof-replay acceptance path.
 
 ### Keep module, call and proof graphs distinct
 
-The ordered namespace tree certifies source-module acyclicity by local checks
+An explicitly declared descending order certifies source-module acyclicity by local checks
 on both interface imports and implementation dependencies. Its declared order
 identifies the forbidden direction before a new edge can form a cycle. Shared
 lower contracts, ordinary function-kind parameters and a combined module are
@@ -755,8 +803,8 @@ common interface may change the public API. Reopen this choice if a concrete
 consumer needs distinct cyclic privacy/distribution boundaries that a shared
 module and ordinary interfaces cannot preserve satisfactorily; doing so would
 reopen the structural source-DAG requirement itself. An acyclic but interleaved
-directory decomposition can instead reopen per-module ranks while preserving
-that requirement.
+directory decomposition is part of the reopened comparison with independent
+module orders while preserving that requirement.
 
 An acyclic module graph does not make actual calls acyclic. Functions inside
 a module may recurse, and binding a function-kind parameter can create
@@ -996,7 +1044,7 @@ or LLVM optimization of unchanged units.
 | Cyclic module dependencies with joint interface formation | Retains separate module boundaries in a cyclic decomposition | Technically viable, but contradicts the structural source-DAG requirement; reopening needs a concrete cyclic-boundary consumer |
 | Only adjacent or descendant directory imports | Tree alone certifies acyclicity | Too restrictive for shared providers across branches; ordered sibling subtrees add a checked sharing direction |
 | Arbitrary cross-subtree imports plus cycle detection | Permits any acyclic grouping | Superseded: the required architecture must certify every permitted edge set before graph analysis |
-| Explicit rank per module | Local strict-decrease proof without requiring subtree direction | Viable alternative if fixed directory groups need interleaved acyclic dependencies; less structural information is carried by each directory boundary |
+| Explicit rank per module or central module sequence | Local strict-decrease proof without requiring subtree direction | Revisit for change locality: names can remain stable, but distributed relabeling or shared-order contention remain costs to evaluate |
 | Direct deep imports plus automatic transitive source visibility | Short import lists | Refused: changing an intermediate module's dependencies would silently change a client's lookup surface |
 | Parent or child inherits private access | Convenient family implementation | Not selected: separately declared modules use one uniform interface rule; keep private cooperating files in one module, and reopen family visibility only for a concrete separate-module consumer |
 | Portable proof/object certificates and new verifier | Untrusted distribution | Not selected: version-private results under the existing compiler trust boundary serve this consumer |
@@ -1023,7 +1071,7 @@ must update the affected rules together, not merely remove PROG-1's prohibition.
 
 | Owner | Before | Proposed change |
 |---|---|---|
-| PROG-1/2/3 | One ordered bundle, no modules, unqualified entry | Selected finite ordered namespace tree certifying public/private source dependency acyclicity by local direction checks; path-derived modules, direct .wf ownership and checked composition |
+| PROG-1/2/3 | One ordered bundle, no modules, unqualified entry | Explicit finite architecture order certifying public/private source dependency acyclicity by local direction checks; revisit subtree coupling versus independent module order; path-derived modules, direct .wf ownership and checked composition |
 | FORM-2/3, GRAM-1/2/3/4/5, DIAG-1 | One root and unqualified name roles | Separate complete interface/source forms, module-qualified names and diagnostics joining declarations and definitions |
 | TYPE-6, CONST-2, FN-3 | Whole-unit identity; non-function top-level visibility follows source order | Path-qualified modules with shared local names; only structurally permitted direct interfaces are visible; ordinary privacy, order-independent top-level names, dependency validity and lexical local scope retained |
 | Public declaration correspondence / type representation | No separate interface or public/private source boundary | Self-contained public semantic declarations, exact normalized callable correspondence, one nominal identity, and checked abstract representation/capability correspondence |
@@ -1038,7 +1086,8 @@ interface imports and complete public declarations in that file, omits a
 second written module name, implementation-side `pub` and namespace blocks,
 and reuses `::` for qualified names. Direct directory membership determines
 implementation records; roots and private dependency bindings are explicit
-build inputs together with explicit child-subtree orders. Exact declaration
+build inputs together with an explicit dependency-order certificate whose
+subtree or independent-module representation is under reconsideration. Exact declaration
 terminators, canonical path/collision and order-consistency rules,
 abstract nominal/capability syntax, normalized correspondence and dependency
 selection syntax remain to be specified. META-5 deltas require the complete
@@ -1183,8 +1232,16 @@ An attempted cycle must contain an individually illegal edge under every valid
 tree order; changing names alone cannot make all its edges legal.
 
 Retain the acyclic two-branch interleaving counterexample as a qualification
-witness for the policy's extra restriction. Compare it with explicit per-module
-ranks before choosing a policy for a consumer that needs that fixed layout.
+witness for the policy's extra restriction. Before selecting the dependency
+certificate, compare ordered subtrees, distributed module ranks and a central
+module sequence on matched dependency additions, removals and reversals with
+unchanged APIs, including that interleaving witness. Count renamed module paths,
+changed imports and qualified uses separately from edited order/rank entries,
+shared configuration conflicts and revalidated permission queries. An existing
+permitted edge needs no order edit; a real cycle must remain impossible. Do not
+claim a locality improvement if it only moves widespread source edits into
+widespread rank edits. Representative consumer and concurrent-writer costs are
+unmeasured; the structural proof alone does not select a certificate layout.
 The strict postorder argument establishes the abstract policy's acyclicity;
 the bounded model check does not certify a future resolver or root loader.
 
@@ -1265,12 +1322,13 @@ remote cache service, new theorem language and incremental native linker do
 not have a requirement here and are not selected.
 
 The pending tree revision replaces the language root's closed-single-unit
-decision with structurally acyclic module dependencies under an ordered
-namespace tree, including private dependencies. It replaces name-resolution's
+decision with structurally acyclic module dependencies under a declared finite
+order, including private dependencies; its coupling to namespace subtrees is
+under reconsideration for change locality. It replaces name-resolution's
 global inventory and top-level order dependence with
 filesystem-qualified modules, direct directory ownership, shared local names
-and complete checked public interfaces. Ancestry and declared sibling order
-constrain permitted edges without creating dependencies or access privileges.
+and complete checked public interfaces. The declared certificate constrains
+permitted edges without creating dependencies or access privileges.
 The proposal also clarifies the compiler root's artifact boundary and adds one
 compiler child for persistent incremental computation. The constitution's safety and
 performance priorities, fixed deterministic proof families, generic
@@ -1287,7 +1345,7 @@ Four uncertainties are implementation acceptance work, not weaker endpoints:
   direct directory membership, namespace/declaration collisions, complete child
   orders and the three-case import predicate. Qualify deep imports, ancestor
   rejection, root binding and ordinary parent/child privacy. Compare explicit
-  module ranks if a consumer needs acyclic interleaving within fixed subtrees;
+  module ranks and a central module sequence for dependency-change locality;
   the ordered-tree rule is stricter than arbitrary DAG acceptance. A separately compiled module
   private to a parent subtree remains a possible capability with no selected
   rule; reopen only for a concrete consumer that cannot use one module's private

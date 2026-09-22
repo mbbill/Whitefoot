@@ -24,14 +24,22 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   interface comparison and cross-file private calls without interface entries.
   Public declaration duplication, build-selection contention and useful module
   sizes remain unmeasured; measure matched collaboration tasks before claiming
-  benefits. Qualify explicit complete sibling-subtree orders, canonical module
+  benefits. Revisit dependency-certificate layout before selecting it: compare
+  ordered namespace subtrees, distributed module ranks and a central module
+  sequence on matched dependency edits with unchanged APIs, recording renamed
+  paths/imports/uses separately from order edits, rank propagation, shared-file
+  contention and permission-query invalidation. A small acyclic change can
+  require broad source edits under subtree ordering; independent order preserves
+  names but does not guarantee a local certificate repair. Costs are unmeasured,
+  and no replacement is selected. For the tree candidate, qualify explicit
+  complete sibling-subtree orders, canonical module
   positions and all selected roots, then validate descendant imports, earlier-
   branch imports and rejection of self/ancestor/reverse edges for both public
   and private dependencies. The design supplies a strict postorder argument and
   a bounded exploratory model check, not a verified implementation. Check order-
   change invalidation without global-rank churn. The rule forbids some acyclic
-  interleaving across intact subtrees; compare explicit module ranks if a real
-  consumer requires that layout, while retaining local structural acyclicity.
+  interleaving across intact subtrees; this is a required comparison witness for
+  the reopened certificate choice, while retaining local structural acyclicity.
   Preserve the absence of transitive access and parent/child privileges. Subtree-
   private separately compiled modules remain an unselected capability: reopen
   for a concrete consumer that cannot use one module's private files, judging
