@@ -62,7 +62,10 @@ observer that records every identity and detects stale/double release. Copy,
 affine Box and nodrop owning chains check retained prefix, callback order,
 empty/singleton cases, same-index swap-remove, reuse and 25 exact-once releases.
 These regressions, rather than the research harness, run in canonical
-`make check`.
+`make check`. The observer synchronizes its ledger for parallel allocation
+and release. The same parallel native image also runs a four-worker,
+32-allocation cross-release control and rejects double, foreign and missing
+release controls; these four executions add no WF compilation or native build.
 
 Measurements run on Apple M1 Pro (8 logical CPUs), arm64 macOS 26.6.2,
 Apple Clang 21.0.0. Each of two cohorts has 11 samples and reverses the

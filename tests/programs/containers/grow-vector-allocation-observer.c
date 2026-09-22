@@ -17,11 +17,13 @@
 // is what catches a missed release walk over an owning element, a double free
 // of a superseded backing, and a release of storage the program never owned.
 #include <inttypes.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "sched/prim.h"
 
 extern int wf_fixture_main(int argc, char **argv);
 
@@ -38,6 +40,19 @@ static Allocation allocations[MAX_ALLOCATIONS];
 static size_t allocation_count;
 static size_t request_count;
 static size_t release_count;
+static atomic_flag ledger_lock = ATOMIC_FLAG_INIT;
+
+// Parallel lowering may allocate and consume independent owners on different
+// workers. The observer's shared ledger needs synchronization even though the
+// source owners themselves are disjoint. Only observation is serialized.
+static void lock_ledger(void) {
+    while (atomic_flag_test_and_set_explicit(&ledger_lock, memory_order_acquire))
+        wf_prim_spin_hint();
+}
+
+static void unlock_ledger(void) {
+    atomic_flag_clear_explicit(&ledger_lock, memory_order_release);
+}
 
 static void require(bool condition, const char *message) {
     if (!condition) {
@@ -47,20 +62,23 @@ static void require(bool condition, const char *message) {
 }
 
 void *wf_observe_allocate(uint64_t bytes) {
-    ++request_count;
     // Allocation is total: the trusted base either hands back storage or ends
     // the process, so this observer never returns null.
     void *pointer = malloc(bytes == 0 ? 1 : (size_t)bytes);
     require(pointer != NULL, "host allocation failed during observation");
-    require(allocation_count < MAX_ALLOCATIONS, "allocation ledger overflow");
     memset(pointer, 0xcc, bytes == 0 ? 1 : (size_t)bytes);
+    lock_ledger();
+    ++request_count;
+    require(allocation_count < MAX_ALLOCATIONS, "allocation ledger overflow");
     allocations[allocation_count++] =
         (Allocation){pointer, bytes, request_count, false};
+    unlock_ledger();
     return pointer;
 }
 
 void wf_observe_release(void *pointer) {
     if (pointer == NULL) return;
+    lock_ledger();
     for (size_t index = 0; index < allocation_count; ++index) {
         Allocation *allocation = &allocations[index];
         if (allocation->pointer != pointer) continue;
@@ -69,20 +87,71 @@ void wf_observe_release(void *pointer) {
         ++release_count;
         memset(pointer, 0xa5,
                allocation->bytes == 0 ? 1 : (size_t)allocation->bytes);
+        unlock_ledger();
         return;
     }
     require(false, "release did not return an allocated address");
 }
 
-int main(void) {
-    int status = wf_fixture_main(0, NULL);
-    if (status != 0) {
-        fprintf(stderr,
-                "vector allocation observer: the fixture returned status %d, "
-                "expected 0\n",
-                status);
-        exit(1);
+enum { OBSERVER_WORKERS = 4, REQUESTS_PER_WORKER = 8 };
+static wf_prim_thread observer_threads[OBSERVER_WORKERS];
+static size_t worker_numbers[OBSERVER_WORKERS];
+static void *cross_release[OBSERVER_WORKERS][REQUESTS_PER_WORKER];
+static _Atomic unsigned started, filled, finished;
+
+static void wait_for_workers(_Atomic unsigned *count) {
+    while (atomic_load_explicit(count, memory_order_acquire) != OBSERVER_WORKERS)
+        wf_prim_yield();
+}
+
+static void exercise_worker(void *argument) {
+    size_t worker = *(size_t *)argument;
+    atomic_fetch_add_explicit(&started, 1, memory_order_acq_rel);
+    wait_for_workers(&started);
+    for (size_t index = 0; index < REQUESTS_PER_WORKER; ++index)
+        cross_release[worker][index] = wf_observe_allocate(index * 8);
+    atomic_fetch_add_explicit(&filled, 1, memory_order_acq_rel);
+    wait_for_workers(&filled);
+    size_t other = (worker + 1) % OBSERVER_WORKERS;
+    for (size_t index = 0; index < REQUESTS_PER_WORKER; ++index)
+        wf_observe_release(cross_release[other][index]);
+    atomic_fetch_add_explicit(&finished, 1, memory_order_acq_rel);
+}
+
+static void exercise_concurrent_observation(void) {
+    for (size_t worker = 0; worker < OBSERVER_WORKERS; ++worker) {
+        worker_numbers[worker] = worker;
+        require(wf_prim_thread_start(&observer_threads[worker], exercise_worker,
+                                    &worker_numbers[worker], 0) == 0,
+                "could not start observer worker");
     }
+    wait_for_workers(&finished);
+}
+
+int main(int argc, char **argv) {
+    if (argc == 2 && strcmp(argv[1], "concurrent") == 0) {
+        exercise_concurrent_observation();
+    } else if (argc == 2 && strcmp(argv[1], "double-release") == 0) {
+        void *pointer = wf_observe_allocate(8);
+        wf_observe_release(pointer);
+        wf_observe_release(pointer);
+    } else if (argc == 2 && strcmp(argv[1], "foreign-release") == 0) {
+        unsigned char *pointer = wf_observe_allocate(8);
+        wf_observe_release(pointer + 1);
+    } else if (argc == 2 && strcmp(argv[1], "missing-release") == 0) {
+        (void)wf_observe_allocate(8);
+    } else {
+        require(argc == 1, "unknown observer control");
+        int status = wf_fixture_main(0, NULL);
+        if (status != 0) {
+            fprintf(stderr,
+                    "vector allocation observer: the fixture returned status %d, "
+                    "expected 0\n",
+                    status);
+            exit(1);
+        }
+    }
+    lock_ledger();
     require(request_count > 0, "the fixture must reach the heap at all");
     require(release_count == allocation_count,
             "every allocation is released exactly once");
@@ -99,5 +168,6 @@ int main(void) {
         free(allocations[index].pointer);
     printf("vector allocation observer: %zu allocations, each released exactly once\n",
            allocation_count);
+    unlock_ledger();
     return 0;
 }
