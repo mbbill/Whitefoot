@@ -25,23 +25,15 @@
 #define CONTRACT "normal"
 #endif
 
-extern uint64_t wf_vector_library_reserved_trace(void *store, uint64_t rounds,
-                                                  uint64_t seed);
-extern uint64_t wf_vector_library_growth_trace(void *store, uint64_t rounds,
-                                                uint64_t seed);
+enum { RECORD_WORDS = 32, CEILING = 8193 };
+extern uint64_t wf_vector_library_word_trace(uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t wf_vector_library_record_trace(uint64_t, uint64_t, uint64_t, uint64_t);
 
 typedef union {
-    struct {
-        size_t bytes;
-        uint64_t magic;
-    } value;
+    struct { size_t bytes; uint64_t magic; } value;
     max_align_t alignment;
 } AllocationHeader;
-
-static size_t allocation_requests;
-static size_t allocation_live;
-static size_t allocation_peak;
-static volatile size_t allocation_fail_at;
+static size_t requests, live_bytes, peak_bytes, requested_bytes;
 static volatile uint64_t observed;
 
 static void require(bool condition, const char *message) {
@@ -52,167 +44,213 @@ static void require(bool condition, const char *message) {
 }
 
 NOINLINE void *wf_cost_allocate(uint64_t bytes) {
-    ++allocation_requests;
-    if (allocation_requests == allocation_fail_at) return NULL;
     require(bytes <= SIZE_MAX - sizeof(AllocationHeader), "allocation extent");
     AllocationHeader *header = malloc(sizeof *header + (size_t)bytes);
     require(header != NULL, "host allocation failure");
     header->value.bytes = (size_t)bytes;
     header->value.magic = UINT64_C(0x766563746f726c69);
-    allocation_live += (size_t)bytes;
-    if (allocation_live > allocation_peak) allocation_peak = allocation_live;
+    ++requests;
+    requested_bytes += (size_t)bytes;
+    live_bytes += (size_t)bytes;
+    if (live_bytes > peak_bytes) peak_bytes = live_bytes;
     return header + 1;
 }
 
 NOINLINE void wf_cost_release(void *pointer) {
     if (pointer == NULL) return;
     AllocationHeader *header = (AllocationHeader *)pointer - 1;
-    require(header->value.magic == UINT64_C(0x766563746f726c69),
-            "allocation identity");
-    require(allocation_live >= header->value.bytes, "live-byte accounting");
-    allocation_live -= header->value.bytes;
+    require(header->value.magic == UINT64_C(0x766563746f726c69), "allocation identity");
+    require(live_bytes >= header->value.bytes, "live-byte accounting");
+    live_bytes -= header->value.bytes;
     header->value.magic = 0;
     free(header);
 }
 
-typedef struct {
-    uint64_t *data;
-    uint64_t capacity;
-    uint64_t length;
-    uint64_t head;
-} Run;
-
-typedef struct {
-    Run storage;
-} Vector;
-
-static HELPER bool vector_new(Vector *values) {
-    uint64_t *data = wf_cost_allocate(0);
-    values->storage = (Run){data, 0, 0, 0};
-    return true;
+static void reset_accounting(void) {
+    require(live_bytes == 0, "allocation left live between calls");
+    requests = peak_bytes = requested_bytes = 0;
 }
 
-static HELPER bool vector_reserve(Vector *values, uint64_t total) {
-    Run *run = &values->storage;
-    if (run->capacity >= total) return true;
-    require(total <= SIZE_MAX / sizeof(uint64_t), "native reserve extent");
-    uint64_t *fresh = wf_cost_allocate(total * sizeof(uint64_t));
-    if (fresh == NULL) return false;
-    for (uint64_t index = 0; index < run->length; ++index)
-        fresh[index] = run->data[run->head + index];
-    wf_cost_release(run->data);
-    *run = (Run){fresh, total, run->length, 0};
-    return true;
+typedef struct { uint64_t words[RECORD_WORDS]; } Record;
+static HELPER uint64_t make_word(uint64_t seed) { return seed; }
+static HELPER Record make_record(uint64_t seed) {
+    Record value;
+    for (size_t i = 0; i < RECORD_WORDS; ++i) value.words[i] = seed + i;
+    return value;
+}
+static HELPER void accept_word(uint64_t *digest, uint64_t value) {
+    *digest = *digest * UINT64_C(131) + value;
+}
+static HELPER void accept_record(uint64_t *digest, Record value) {
+    for (size_t i = 0; i < RECORD_WORDS; ++i)
+        *digest = *digest * UINT64_C(131) + value.words[i];
 }
 
-static HELPER bool vector_append(Vector *values, uint64_t value) {
-    Run *run = &values->storage;
-    if (run->length == run->capacity) {
-        uint64_t total = run->capacity == 0 ? 1 : run->capacity * 2;
-        if (!vector_reserve(values, total)) return false;
-        run = &values->storage;
-    }
-    run->data[run->head + run->length++] = value;
-    return true;
+// Four concrete controls keep element size and the consumption algorithm
+// static, as in WF instantiation; no function pointer or width dispatch enters
+// an element operation. DIRECT differs only inside consuming truncation.
+#define DEFINE_VECTOR(P, T, MAKE, ACCEPT, DIRECT)                              \
+typedef struct { uint64_t length, capacity; T data[]; } P##_Block;              \
+_Static_assert(offsetof(P##_Block, data) == 16, "Slots header extent");          \
+static HELPER P##_Block *P##_new(void) {                                       \
+    P##_Block *block = wf_cost_allocate(sizeof *block);                        \
+    block->length = block->capacity = 0;                                      \
+    return block;                                                            \
+}                                                                            \
+static HELPER uint64_t P##_reserve(P##_Block **owner, uint64_t total) {         \
+    P##_Block *old = *owner;                                                  \
+    if (old->capacity >= total) return old->capacity;                          \
+    P##_Block *fresh = wf_cost_allocate(sizeof *fresh + total * sizeof(T));    \
+    fresh->length = old->length; fresh->capacity = total;                      \
+    memmove(fresh->data, old->data, old->length * sizeof(T));                   \
+    wf_cost_release(old); *owner = fresh;                                    \
+    return total;                                                            \
+}                                                                            \
+static HELPER uint64_t P##_append(P##_Block **owner, T value) {                \
+    if ((*owner)->length == (*owner)->capacity) {                             \
+        uint64_t total = (*owner)->capacity ? (*owner)->capacity * 2 : 1;     \
+        if (total > CEILING) total = CEILING;                                \
+        P##_reserve(owner, total);                                           \
+    }                                                                        \
+    P##_Block *block = *owner;                                                \
+    block->data[block->length++] = value;                                    \
+    return block->length;                                                    \
+}                                                                            \
+static HELPER uint64_t P##_insert(P##_Block **owner, uint64_t at, T value) {    \
+    if ((*owner)->length == (*owner)->capacity) {                             \
+        uint64_t total = (*owner)->capacity ? (*owner)->capacity * 2 : 1;     \
+        if (total > CEILING) total = CEILING;                                \
+        P##_reserve(owner, total);                                           \
+    }                                                                        \
+    P##_Block *block = *owner;                                                \
+    memmove(block->data + at + 1, block->data + at,                            \
+            (block->length - at) * sizeof(T));                               \
+    block->data[at] = value;                                                 \
+    return ++block->length;                                                  \
+}                                                                            \
+static HELPER T P##_remove(P##_Block **owner, uint64_t at) {                   \
+    P##_Block *block = *owner;                                                \
+    T value = block->data[at];                                               \
+    --block->length;                                                         \
+    memmove(block->data + at, block->data + at + 1,                            \
+            (block->length - at) * sizeof(T));                               \
+    return value;                                                            \
+}                                                                            \
+static HELPER T P##_swap_remove(P##_Block **owner, uint64_t at) {              \
+    P##_Block *block = *owner;                                                \
+    uint64_t last = block->length - 1;                                       \
+    T saved = block->data[at];                                               \
+    block->data[at] = block->data[last];                                      \
+    block->data[last] = saved;                                               \
+    T result = block->data[--block->length];                                  \
+    return result;                                                           \
+}                                                                            \
+static HELPER void P##_truncate(P##_Block **owner, uint64_t retained,          \
+                                uint64_t *digest) {                          \
+    P##_Block *block = *owner;                                                \
+    uint64_t count = block->length;                                          \
+    if (DIRECT) {                                                            \
+        for (uint64_t i = retained; i < count; ++i) ACCEPT(digest, block->data[i]); \
+        block->length = retained;                                           \
+    } else {                                                                 \
+        uint64_t half = (count - retained) / 2;                               \
+        for (uint64_t i = 0; i < half; ++i) {                                \
+            uint64_t left = retained + i, right = count - 1 - i;             \
+            T saved = block->data[left];                                    \
+            block->data[left] = block->data[right];                          \
+            block->data[right] = saved;                                      \
+        }                                                                    \
+        while (block->length != retained) ACCEPT(digest, block->data[--block->length]); \
+    }                                                                        \
+}                                                                            \
+static HELPER void P##_drain(P##_Block **owner, uint64_t *digest) {            \
+    P##_truncate(owner, 0, digest);                                           \
+}                                                                            \
+static HELPER void P##_free_empty(P##_Block *owner) { wf_cost_release(owner); } \
+static HELPER void P##_work(P##_Block **owner, uint64_t count, uint64_t seed,  \
+                            uint64_t *digest) {                              \
+    for (uint64_t i = 0; i < count; ++i) P##_append(owner, MAKE(seed + i));    \
+    uint64_t middle = count / 2;                                             \
+    P##_insert(owner, middle, MAKE(seed ^ UINT64_C(11400714819323198485)));    \
+    ACCEPT(digest, P##_remove(owner, middle));                                \
+    if (count) ACCEPT(digest, P##_swap_remove(owner, 0));                      \
+    P##_truncate(owner, (*owner)->length / 2, digest);                         \
+    P##_drain(owner, digest);                                                \
+}                                                                            \
+static HELPER uint64_t P##_round(uint64_t count, uint64_t seed, bool reserve) { \
+    P##_Block *owner = P##_new();                                             \
+    if (reserve) P##_reserve(&owner, count + 1);                              \
+    uint64_t digest = seed;                                                  \
+    P##_work(&owner, count, seed, &digest);                                   \
+    P##_free_empty(owner);                                                    \
+    return digest;                                                           \
+}                                                                            \
+static NOINLINE uint64_t P##_trace(uint64_t count, uint64_t rounds,            \
+                                  uint64_t seed, uint64_t path) {             \
+    uint64_t checksum = seed;                                                \
+    if (path == 2) {                                                         \
+        P##_Block *owner = P##_new();                                         \
+        P##_reserve(&owner, count + 1);                                      \
+        for (uint64_t r = 0; r < rounds; ++r) {                              \
+            uint64_t digest = seed + r;                                     \
+            P##_work(&owner, count, seed + r, &digest);                      \
+            checksum = checksum * UINT64_C(257) + digest;                    \
+        }                                                                    \
+        P##_free_empty(owner);                                                \
+    } else {                                                                 \
+        for (uint64_t r = 0; r < rounds; ++r)                                \
+            checksum = checksum * UINT64_C(257) + P##_round(count, seed + r, path == 0); \
+    }                                                                        \
+    return checksum;                                                         \
 }
 
-static HELPER void vector_exchange_direct(Vector *values, uint64_t left,
-                                          uint64_t right) {
-    Run *run = &values->storage;
-    uint64_t saved = run->data[run->head + left];
-    run->data[run->head + left] = run->data[run->head + right];
-    run->data[run->head + right] = saved;
+DEFINE_VECTOR(word_reverse, uint64_t, make_word, accept_word, 0)
+DEFINE_VECTOR(word_direct, uint64_t, make_word, accept_word, 1)
+DEFINE_VECTOR(record_reverse, Record, make_record, accept_record, 0)
+DEFINE_VECTOR(record_direct, Record, make_record, accept_record, 1)
+
+enum Variant { WHITEFOOT, REVERSE_C, DIRECT_C };
+static NOINLINE uint64_t run(enum Variant variant, bool wide, uint64_t count,
+                            uint64_t rounds, uint64_t seed, uint64_t path) {
+    uint64_t result;
+    if (variant == WHITEFOOT)
+        result = wide ? wf_vector_library_record_trace(count, rounds, seed, path)
+                      : wf_vector_library_word_trace(count, rounds, seed, path);
+    else if (variant == REVERSE_C)
+        result = wide ? record_reverse_trace(count, rounds, seed, path)
+                      : word_reverse_trace(count, rounds, seed, path);
+    else
+        result = wide ? record_direct_trace(count, rounds, seed, path)
+                      : word_direct_trace(count, rounds, seed, path);
+    observed = result;
+    return result;
 }
 
-static HELPER void vector_exchange_matched(Vector *values, uint64_t left,
-                                           uint64_t right) {
-    if (left == right) return;
-    Run *run = &values->storage;
-    uint64_t tail = run->data[run->head + --run->length];
-    uint64_t end = run->length;
-    if (left == end) {
-        uint64_t previous = run->data[run->head + right];
-        run->data[run->head + right] = tail;
-        run->data[run->head + run->length++] = previous;
-        return;
-    }
-    if (right == end) {
-        uint64_t previous = run->data[run->head + left];
-        run->data[run->head + left] = tail;
-        run->data[run->head + run->length++] = previous;
-        return;
-    }
-    uint64_t left_value = run->data[run->head + left];
-    run->data[run->head + left] = tail;
-    uint64_t right_value = run->data[run->head + right];
-    run->data[run->head + right] = left_value;
-    uint64_t saved_tail = run->data[run->head + left];
-    run->data[run->head + left] = right_value;
-    run->data[run->head + run->length++] = saved_tail;
-}
-
-static HELPER bool vector_insert(Vector *values, uint64_t index,
-                                 uint64_t value, bool direct) {
-    uint64_t before = values->storage.length;
-    if (!vector_append(values, value)) return false;
-    for (uint64_t cursor = before; cursor > index; --cursor) {
-        if (direct)
-            vector_exchange_direct(values, cursor - 1, cursor);
-        else
-            vector_exchange_matched(values, cursor - 1, cursor);
-    }
-    return true;
-}
-
-static HELPER uint64_t vector_remove(Vector *values, uint64_t index,
-                                     bool direct) {
-    Run *run = &values->storage;
-    for (uint64_t cursor = index; cursor + 1 < run->length; ++cursor) {
-        if (direct)
-            vector_exchange_direct(values, cursor, cursor + 1);
-        else
-            vector_exchange_matched(values, cursor, cursor + 1);
-    }
-    return run->data[run->head + --run->length];
-}
-
-static HELPER void vector_drain(Vector *values, uint64_t *digest) {
-    Run *run = &values->storage;
-    while (run->length != 0) {
-        uint64_t value = run->data[run->head++];
-        --run->length;
-        *digest = *digest * UINT64_C(131) + value;
-    }
-}
-
-static HELPER void vector_drop(Vector *values) {
-    require(values->storage.length == 0, "native final length");
-    wf_cost_release(values->storage.data);
-}
-
-static NOINLINE uint64_t native_round(uint64_t seed, bool reserve_first,
-                                      bool direct) {
-    Vector values;
-    require(vector_new(&values), "native construction");
-    if (reserve_first) require(vector_reserve(&values, 32), "native reserve");
-    for (uint64_t index = 0; index < 32; ++index)
-        require(vector_append(&values, seed + index), "native append");
-    require(vector_insert(&values, 16, seed, direct), "native insert");
-    uint64_t digest = vector_remove(&values, 16, direct);
-    vector_drain(&values, &digest);
-    vector_drop(&values);
+// Independent logical-order oracle: after swap-removing the first item, the
+// last original item occupies index zero. Truncation visits the suffix before
+// drain visits the retained prefix. It never allocates or mutates a vector.
+static uint64_t oracle_accept(uint64_t digest, uint64_t seed, unsigned words) {
+    for (unsigned word = 0; word < words; ++word)
+        digest = digest * UINT64_C(131) + seed + word;
     return digest;
 }
-
-static NOINLINE uint64_t native_trace(uint64_t rounds, uint64_t seed,
-                                      bool reserve_first, bool direct) {
-    uint64_t digest = seed;
+static uint64_t oracle(uint64_t count, uint64_t rounds, uint64_t seed, bool wide) {
+    unsigned words = wide ? RECORD_WORDS : 1;
+    uint64_t checksum = seed;
     for (uint64_t round = 0; round < rounds; ++round) {
-        uint64_t observed_round =
-            native_round(seed + round, reserve_first, direct);
-        digest = digest * UINT64_C(257) + observed_round;
+        uint64_t base = seed + round;
+        uint64_t digest = oracle_accept(base, base ^ UINT64_C(11400714819323198485), words);
+        if (count) digest = oracle_accept(digest, base, words);
+        uint64_t live = count ? count - 1 : 0;
+        uint64_t retained = live / 2;
+        for (unsigned part = 0; part < 2; ++part) {
+            uint64_t start = part ? 0 : retained, end = part ? retained : live;
+            for (uint64_t at = start; at < end; ++at)
+                digest = oracle_accept(digest, base + (at ? at : count - 1), words);
+        }
+        checksum = checksum * UINT64_C(257) + digest;
     }
-    return digest;
+    return checksum;
 }
 
 static uint64_t nanos(void) {
@@ -220,124 +258,82 @@ static uint64_t nanos(void) {
     LARGE_INTEGER value, frequency;
     assert(QueryPerformanceCounter(&value) != 0);
     assert(QueryPerformanceFrequency(&frequency) != 0);
-    return (uint64_t)((long double)value.QuadPart * 1.0e9L /
-                      frequency.QuadPart);
+    return (uint64_t)((long double)value.QuadPart * 1.0e9L / frequency.QuadPart);
 #else
     struct timespec value;
     assert(clock_gettime(CLOCK_MONOTONIC, &value) == 0);
-    return (uint64_t)value.tv_sec * UINT64_C(1000000000) +
-           (uint64_t)value.tv_nsec;
+    return (uint64_t)value.tv_sec * UINT64_C(1000000000) + (uint64_t)value.tv_nsec;
 #endif
 }
 
-enum Variant { WHITEFOOT, MATCHED_C, LEGACY_C };
-
-static NOINLINE uint64_t batch(enum Variant variant, bool reserve_first,
-                               uint64_t seed, uint64_t rounds,
-                               unsigned repetitions) {
-    uint8_t heap = 0;
-    uint64_t checksum = 0;
-    for (unsigned repetition = 0; repetition < repetitions; ++repetition) {
-        uint64_t next = seed + repetition;
-        if (variant == WHITEFOOT) {
-            checksum += reserve_first
-                            ? wf_vector_library_reserved_trace(&heap, rounds,
-                                                               next)
-                            : wf_vector_library_growth_trace(&heap, rounds,
-                                                             next);
-        } else {
-            checksum += native_trace(rounds, next, reserve_first,
-                                     variant != LEGACY_C);
-        }
-    }
-    observed = checksum;
-    return checksum;
-}
-
-static void reset_accounting(void) {
-    require(allocation_live == 0, "allocation left live between samples");
-    allocation_requests = 0;
-    allocation_peak = 0;
-}
-
 static void check(void) {
-    const uint64_t rounds[] = {0, 1, 3, 17};
+    const uint64_t counts[] = {0, 1, 2, 3, 8, 16, 63, 256, 4096, 8192};
+    const uint64_t rounds[] = {0, 1, 3};
+    const uint64_t seeds[] = {0, 17, UINT64_MAX};
     size_t configurations = 0;
-    size_t executions = 0;
-    for (unsigned path = 0; path < 2; ++path) {
-        bool reserve_first = path == 0;
-        for (unsigned sample = 0; sample < 32; ++sample) {
-            for (unsigned count = 0; count < sizeof rounds / sizeof rounds[0];
-                 ++count) {
-                uint64_t seed = UINT64_C(17) + sample;
-                reset_accounting();
-                uint64_t wf = batch(WHITEFOOT, reserve_first, seed,
-                                    rounds[count], 1);
-                ++executions;
-                size_t wf_requests = allocation_requests;
-                reset_accounting();
-                uint64_t matched = batch(MATCHED_C, reserve_first, seed,
-                                         rounds[count], 1);
-                ++executions;
-                require(wf == matched, "matched-control checksum");
-                require(allocation_requests == wf_requests,
-                        "matched-control allocation count");
-                reset_accounting();
-                uint64_t legacy = batch(LEGACY_C, reserve_first, seed,
-                                        rounds[count], 1);
-                ++executions;
-                require(wf == legacy, "legacy-control checksum");
-                require(allocation_requests == wf_requests,
-                        "legacy-control allocation count");
-                ++configurations;
-            }
-        }
-    }
-    require(configurations == 256, "configuration coverage count");
-    require(executions == 768, "implementation execution coverage count");
-    printf("vector library costs: %zu three-way configurations, %zu implementation executions passed\n",
-           configurations, executions);
+    for (unsigned wide = 0; wide < 2; ++wide)
+        for (unsigned path = 0; path < 3; ++path)
+            for (size_t n = 0; n < sizeof counts / sizeof counts[0]; ++n)
+                for (size_t r = 0; r < sizeof rounds / sizeof rounds[0]; ++r)
+                    for (size_t s = 0; s < sizeof seeds / sizeof seeds[0]; ++s) {
+                        uint64_t expected = oracle(counts[n], rounds[r], seeds[s], wide != 0);
+                        size_t wf_requests = 0, wf_peak = 0, wf_bytes = 0;
+                        for (unsigned v = 0; v < 3; ++v) {
+                            reset_accounting();
+                            uint64_t actual = run((enum Variant)v, wide != 0, counts[n], rounds[r], seeds[s], path);
+                            require(actual == expected, "independent logical-order checksum");
+                            require(live_bytes == 0, "complete cleanup");
+                            if (v == WHITEFOOT) {
+                                wf_requests = requests; wf_peak = peak_bytes; wf_bytes = requested_bytes;
+                            } else {
+                                require(requests == wf_requests, "matched allocation count");
+                                require(peak_bytes == wf_peak, "matched peak backing bytes");
+                                require(requested_bytes == wf_bytes, "matched requested bytes");
+                            }
+                        }
+                        ++configurations;
+                    }
+    require(configurations == 540, "configuration matrix");
+    printf("vector library costs: %zu three-way configurations, %zu executions passed\n",
+           configurations, configurations * 3);
 }
 
 static void measure(void) {
-    const uint64_t rounds = 512;
-    const unsigned repetitions = 64;
-    puts("contract,path,variant,sample,calls,rounds,elapsed_ns,checksum,requests,peak_bytes");
-    for (unsigned path = 0; path < 2; ++path) {
-        bool reserve_first = path == 0;
-        const char *path_name = reserve_first ? "reserved" : "growth";
-        for (unsigned sample = 0; sample < 15; ++sample) {
-            for (unsigned offset = 0; offset < 3; ++offset) {
-                enum Variant variant = (enum Variant)((sample + offset) % 3);
-                reset_accounting();
-                uint64_t before = nanos();
-                uint64_t checksum = batch(variant, reserve_first,
-                                          UINT64_C(101) + sample, rounds,
-                                          repetitions);
-                uint64_t elapsed = nanos() - before;
-                require(allocation_live == 0, "allocation left after sample");
-                printf("%s,%s,%s,%u,%u,%" PRIu64 ",%" PRIu64 ",%" PRIu64
-                       ",%zu,%zu\n",
-                       CONTRACT, path_name,
-                       variant == WHITEFOOT
-                           ? "whitefoot"
-                           : variant == MATCHED_C ? "matched-c" : "legacy-c",
-                       sample,
-                       repetitions, rounds, elapsed, checksum,
-                       allocation_requests, allocation_peak);
-            }
-        }
-    }
+    const uint64_t counts[] = {16, 256, 4096};
+    const char *paths[] = {"reserved", "growth", "reuse"};
+    const char *variants[] = {"whitefoot", "reverse-c", "direct-c"};
+    puts("contract,cohort,element_bytes,path,count,variant,sample,rounds,elapsed_ns,checksum,requests,requested_bytes,peak_bytes");
+    for (unsigned cohort = 0; cohort < 2; ++cohort)
+        for (unsigned wide = 0; wide < 2; ++wide)
+            for (unsigned path = 0; path < 3; ++path)
+                for (size_t n = 0; n < sizeof counts / sizeof counts[0]; ++n)
+                    for (unsigned sample = 0; sample < 11; ++sample) {
+                        uint64_t count = counts[n], rounds = UINT64_C(16384) / count;
+                        uint64_t seed = UINT64_C(101) + sample;
+                        uint64_t expected = oracle(count, rounds, seed, wide != 0);
+                        for (unsigned offset = 0; offset < 3; ++offset) {
+                            unsigned position = (sample + offset) % 3;
+                            unsigned v = cohort ? 2 - position : position;
+                            reset_accounting();
+                            uint64_t before = nanos();
+                            uint64_t checksum = run((enum Variant)v, wide != 0, count, rounds, seed, path);
+                            uint64_t elapsed = nanos() - before;
+                            require(checksum == expected, "timed checksum");
+                            require(live_bytes == 0, "timed cleanup");
+                            printf("%s,%u,%zu,%s,%" PRIu64 ",%s,%u,%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%zu,%zu,%zu\n",
+                                   CONTRACT, cohort, wide ? sizeof(Record) : sizeof(uint64_t),
+                                   paths[path], count, variants[v], sample, rounds, elapsed,
+                                   checksum, requests, requested_bytes, peak_bytes);
+                        }
+                    }
 }
 
 int main(int argc, char **argv) {
     require(argc == 2, "usage: vector-costs check|measure");
-    if (strcmp(argv[1], "check") == 0) {
-        check();
-        return 0;
+    if (strcmp(argv[1], "check") == 0) check();
+    else {
+        require(strcmp(argv[1], "measure") == 0, "usage: vector-costs check|measure");
+        measure();
     }
-    require(strcmp(argv[1], "measure") == 0,
-            "usage: vector-costs check|measure");
-    measure();
     return 0;
 }

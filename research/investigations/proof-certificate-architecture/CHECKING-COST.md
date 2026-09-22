@@ -727,3 +727,208 @@ and invalidation by new terms, an existing measure's changed bound, and an
 existing goal's newly supplied projection. The 1043-test semantic suite and
 all-target Clippy check passed on the candidate. These are correctness
 controls for changed query preparation, not a proof that the compiler is sound.
+
+## Post-x1 context and fallback costs
+
+The follow-up starts at merged main `d47fb7c7` after the reference/window port
+and scatter integration. The earlier measurements above do not measure this
+compiler. Two maintained costs motivate it: materializing an ordinary fallback
+view clones and filters a fact state before closing it, and growing entering
+contexts still pay for query preparation and AUTO traversal. The consumers are
+the current fixed-run library, wfgrep and compute programs, plus the existing
+fixed/growing/control source-certificate generator.
+
+### Selection criteria (before measurement)
+
+Attribute the current compiler first, separating compiler construction from
+source checking. Keep the active specification, admitted automatic families,
+source inventory and proof rules fixed. An optimization must preserve both
+full and ordinary-layer results after kills, joins and materialization; equal
+closure values before candidate removal alone do not establish that property.
+Reuse the existing separate-state eager comparison and source-proof controls.
+
+Compare saved baseline and candidate gate binaries on identical inputs with
+the existing five-alternating-pair runner. Include fixed/growing/control sizes
+16, 64 and 256, fixed-context 4096 uses, and the current fixed-run, wfgrep,
+prefix, histogram and radix-scatter programs. Require identical emitted LLVM
+bytes and retained per-arm hashes; checking cost is not native execution cost.
+Record exploratory attribution separately from selection pairs. Run under the
+host-wide guard without a competing compiler build or benchmark.
+
+Retain a new mechanism only when it addresses an attributed cost and yields at
+least a 1.2x median speedup in its targeted real-program or growing-context
+cell, with all five pairs favoring the candidate. Investigate any protected
+cell increase exceeding both ten percent and one millisecond rather than
+averaging it away. If a candidate misses that line, remove it or identify and
+measure a materially simpler alternative. Report remaining costs and limits;
+these workloads establish no universal checking-time bound. No timeout, fuel,
+source rejection or omitted proof family may select the improvement.
+
+### Entering-context attribution
+
+The first generated-source run used the saved, unmodified `d47fb7c7` gate
+compiler (SHA-256
+`ffe29d38590308caff2fd311b68405af18fd90690f3db09c8dc337891884bdee`).
+The [exploratory rows](../../experiments/proof-use-cost/x1-exploration-2026-09-21.tsv)
+come from `runner ... bench 16,64,256,512,4096 1`, which accepted
+every source. Growing-256 took 23.120 s, while control-256 took 0.544 s and
+fixed-4096 took 0.406 s. These are individual observations, not paired
+selection results; the first process was cold, and growing-512 was sampled.
+
+A two-second native `sample PID 2 1 -file OUTPUT` during growing-512 collected
+1,612 driver-thread samples. All were inside `source_proof_premise_results`;
+1,360 were beneath the call from `affine_target_proof` to `affine_l0_index`,
+with allocation, hashing and rehashing prominent. This window attributes
+repeated query preparation while checking the written premises; it does not
+measure the whole invocation or the final long-target AUTO traversal.
+
+The first candidate keeps the complete ordered affine L0 index beside the
+existing immutable entering-context closure, for the lifetime of the one
+certificate-premise loop. Candidate formation still precedes reuse, and term
+or goal metadata changes invalidate the index with the closed view. The loop
+borrows one unchanged value map; no index crosses a write, join or source
+certificate. Every premise and residual still runs the same ordered proof
+rules. This removes repeated preparation without changing the index contents,
+fact propagation, premise admission, or the specification's AUTO menu.
+
+With the index-reuse compiler saved separately, the next isolation uses the
+existing fixed word hasher for `AffineL0Index.by_terms`, as prescribed by
+`compiler/fact-map-hashing`. This map only finds an entry's position: its
+separate ordered vector owns candidate traversal. Native sampling attributes
+substantial index construction work to SipHash and rehashing. The prediction
+is a further improvement in growing contexts, including the three-use
+control, without changing any entry or traversal order. Compare reuse alone
+with reuse plus hashing before selecting the combined implementation.
+
+### Ordinary-fallback attribution and candidate
+
+On the current sources, baseline single invocations take 0.16 s for
+`fixed_run_library.wf` and 0.94 s for `wfgrep.wf` (wall time with startup and
+LLVM emission). The historical 1.21 s fixed-run result describes a different
+compiler and source. A native sample that follows the wfgrep driver until
+exit observes 756 samples, including 160 beneath `materialize_closure_at`
+and 61 beneath `retain_non_postcondition_candidates` across its callers.
+The shorter fixed-run sample catches only 40 driver samples, eight beneath
+that filtering function; it is insufficient for a whole-run percentage.
+
+The fallback candidate will prepare only the selected ordinary relations and
+signed goals consumed by closure, omitting flow-origin maps and unselected
+candidate storage from the temporary query. It will use the existing ordinary
+closure record and the same closure engine. The input flow state and all of
+its independently live candidates stay untouched; the materialized result
+still retains the ordinary fallback where a call-dependent selection needs
+one. Actual candidate kills and joins keep their existing implementation.
+Compare this against the saved index/hash compiler on fixed-run and wfgrep,
+and compare the projected closure with the existing clone-and-filter path
+through the generated transition checks. The prediction is reduced
+materialization work, with no benefit to proof contexts that never enter
+this fallback. Retain it only if the already recorded real-program criterion
+is met; the samples alone do not establish enough benefit to justify it.
+
+The [candidate patch](../../experiments/proof-use-cost/x1-fallback-query.patch)
+passed the generated 400-flow transition comparison (including direct
+comparison against clone-and-filter ordinary closure) and the focused
+ordinary-fallback survival test. It nevertheless misses the selection line:
+fixed-run falls from 136.233 to 132.510 ms (1.03x, four of five pairs), and
+wfgrep changes from 873.515 to 877.453 ms (1.00x, two of five pairs).
+Every emitted LLVM file is identical across arms. The projection code and
+its experimental assertion are removed from the production candidate; the
+patch remains reproducible evidence of the rejected alternative. The current
+fallback cost remains open. Revisit it when a current workload attributes a
+large enough share to this path, rather than adopting another representation
+for this measured gain. No passing maintained check is removed or narrowed.
+
+The owner-approved revision replaces the single decision at
+`compiler/proof-query-context`, adding reuse of the ordered affine index to
+the existing entering-closure reuse. It keeps the current invalidation,
+traversal-order and cross-flow qualifications. This keeps preparation owned
+by the proof query rather than adding a new live fact layer or another proof
+engine. Its index remains allocated until that certificate-premise loop
+finishes, and changing term or goal information requires rebuilding it.
+The fixed word hasher already follows `compiler/fact-map-hashing`; the
+rejected ordinary-query projection changes no live decision.
+
+### Post-x1 selection
+
+The [raw paired rows](../../experiments/proof-use-cost/x1-pairs-2026-09-21.tsv)
+contain four comparisons, each with five alternating warmed pairs per
+fixture. All 340 timed invocations accepted and emitted identical LLVM bytes
+within each fixture/comparison; every arm retains its SHA-256. Both the
+baseline and final compiler also pass the runner's seven accepted fixtures
+(including 4096 uses) and two PRF-1 negative controls. These measurements use
+the gate profile, Rust 1.98.1 and arm64 macOS 26.6.2. No build or profiler ran
+alongside a paired comparison, and every run held the host-wide check guard.
+
+The saved binaries are identified independently of later documentation:
+
+| Arm | Compiler source | Binary SHA-256 |
+|---|---|---|
+| Baseline | `d47fb7c7` | `ffe29d38590308caff2fd311b68405af18fd90690f3db09c8dc337891884bdee` |
+| Reuse only | `a9a6b7db`, with `AffineL0Index.by_terms` reverted to `HashMap` | `dbd7d72a20f7779c5f6bc3235072b42b2b7ca3c899133c8c653e4222b8304cb9` |
+| Reuse and hashing | `a9a6b7db` | `585b340d09f34fac98a7cc6249e9319946c1683a6601f1aec917f1b9e006c3d6` |
+| Fallback experiment | `a9a6b7db` plus `x1-fallback-query.patch` | `af073680d03b6bab3baca76fd23e51016e29cf69e62b15404ce6f6f127c23529` |
+
+Build the baseline and final arms with `make -C compiler build` at their
+source revisions, saving each executable before switching revisions. The
+ordinary runner invocation for the combined selection is:
+
+```sh
+perl .github/run-check.pl proof-cost-compare \
+  make -C research/experiments/proof-use-cost compare \
+  BASELINE="$BASELINE" CANDIDATE="$CANDIDATE" SIZES=16,64,256,4096 \
+  REAL_SOURCES="../../../tests/programs/fixed_run_library.wf ../../../tests/programs/wfgrep.wf ../../../tests/programs/compute/prefix.wf ../../../tests/programs/compute/histogram.wf ../../../tests/programs/compute/radix_scatter.wf"
+```
+
+`BASELINE` and `CANDIDATE` are absolute paths to the saved executables;
+`WORK_ROOT` can select an external scratch directory. The comparison target
+builds only the Rust runner before timing. Reuse isolation uses sizes `64`,
+baseline versus reuse-only, without real-source additions. Hashing isolation
+uses `16,64,256`, reuse-only versus reuse-and-hashing, with fixed-run and
+wfgrep. Fallback isolation uses `16`, reuse-and-hashing versus the fallback
+experiment, with those two real programs. Compiler construction took
+48.07 s for baseline, 51.88 s for reuse, 45.79 s for hashing and 45.49 s for
+the fallback experiment, separately from these checking measurements.
+
+The `reuse` comparison improves growing-64 from 276.538 to 85.589 ms
+(3.23x), with all five pairs favorable. The `hashing` comparison improves
+growing-256 from 3240.237 to 2392.382 ms (1.35x) and control-256 from 397.353
+to 275.185 ms (1.44x), again in all five pairs. Each selected mechanism
+therefore meets the predeclared criterion on its independently measured
+targeted cell. The `fallback` comparison is the rejected alternative above.
+
+The `combined` comparison measures the selected compiler against baseline:
+
+| Fixture | Baseline median | Candidate median | Speedup |
+|---|---:|---:|---:|
+| Fixed context, 16 uses | 18.251 ms | 18.486 ms | 0.99x |
+| Growing context, 16 pairs/uses | 24.348 ms | 20.728 ms | 1.17x |
+| 16-pair context, three uses | 19.939 ms | 19.294 ms | 1.03x |
+| Fixed context, 64 uses | 20.994 ms | 20.625 ms | 1.02x |
+| Growing context, 64 pairs/uses | 274.154 ms | 67.950 ms | 4.03x |
+| 64-pair context, three uses | 44.085 ms | 32.648 ms | 1.35x |
+| Fixed context, 256 uses | 32.560 ms | 30.306 ms | 1.07x |
+| Growing context, 256 pairs/uses | 21688.950 ms | 2337.396 ms | 9.28x |
+| 256-pair context, three uses | 522.199 ms | 263.639 ms | 1.98x |
+| Fixed context, 4096 uses | 407.712 ms | 376.967 ms | 1.08x |
+| Fixed-run library | 130.582 ms | 133.803 ms | 0.98x |
+| Wfgrep | 832.956 ms | 833.954 ms | 1.00x |
+| Prefix | 31.597 ms | 29.914 ms | 1.06x |
+| Histogram | 34.130 ms | 32.201 ms | 1.06x |
+| Radix scatter | 79.692 ms | 74.507 ms | 1.07x |
+
+No protected-cell increase exceeds both 10 percent and 1 ms. In particular,
+the small fixed-run increase is 2.5 percent; the real-program results do not
+establish a general compiler speedup. The final growing-256 still costs
+2.337 s, and its three-use control still costs 0.264 s. Removing repeated
+index construction does not remove complete closure/index preparation or
+the specified long-target AUTO traversal. The separate 512-pair exploratory
+runs establish acceptance and remaining cost, not a paired performance result
+or a total checking-time bound.
+
+A separate final growing-512 invocation also accepted. Starting a two-second
+native sample three seconds into that invocation collected 1,489 driver
+samples, all inside the target's `affine_target_proof`; 1,310 were beneath
+`affine_residual_proof`, with interval evaluation and residual arithmetic
+prominent. No sample in this window was inside certificate-premise admission
+or affine-index construction. This locates a remaining expensive phase after
+reuse; it is a sampled window, not a whole-run percentage or selection timing.

@@ -142,7 +142,7 @@ fn grow_vector_executes_and_releases_every_allocation_in_both_lowering_modes() {
             .replace("@main(", "@wf_fixture_main(");
         let observer =
             include_str!("../../../tests/programs/containers/grow-vector-allocation-observer.c");
-        let output = build_program_with_driver_arguments(
+        let observed_program = build_program_with_driver_arguments(
             &observed,
             Some(observer),
             &[
@@ -152,14 +152,48 @@ fn grow_vector_executes_and_releases_every_allocation_in_both_lowering_modes() {
                 "-Werror",
                 "-Wno-override-module",
             ],
-        )
-        .run_with_workers(None);
+        );
+        let output = observed_program.run_with_workers(None);
         assert_eq!(output.status.code(), Some(0), "{mode}: {output:?}");
         assert!(output.stderr.is_empty(), "{mode}: {output:?}");
         assert_eq!(
             output.stdout,
-            b"vector allocation observer: 12 allocations, each released exactly once\n",
+            b"vector allocation observer: 25 allocations, each released exactly once\n",
             "{mode}: {output:?}"
         );
+
+        if mode == "parallel" {
+            // Reuse this native image for observer controls: simultaneous
+            // registration and cross-worker release, then three independent
+            // wrong ledgers. No extra WF compilation or C build is needed.
+            let concurrent =
+                observed_program.run_with_workers_and_arguments(None, &[b"concurrent"]);
+            assert_eq!(concurrent.status.code(), Some(0), "{concurrent:?}");
+            assert!(concurrent.stderr.is_empty(), "{concurrent:?}");
+            assert_eq!(
+                concurrent.stdout,
+                b"vector allocation observer: 32 allocations, each released exactly once\n"
+            );
+            for (argument, message) in [
+                ("double-release", "allocation released twice"),
+                (
+                    "foreign-release",
+                    "release did not return an allocated address",
+                ),
+                (
+                    "missing-release",
+                    "every allocation is released exactly once",
+                ),
+            ] {
+                let output =
+                    observed_program.run_with_workers_and_arguments(None, &[argument.as_bytes()]);
+                assert_eq!(output.status.code(), Some(1), "{argument}: {output:?}");
+                assert_eq!(
+                    output.stderr,
+                    format!("vector allocation observer: {message}\n").as_bytes(),
+                    "{argument}: {output:?}"
+                );
+            }
+        }
     }
 }
