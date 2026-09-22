@@ -1381,12 +1381,6 @@ pub(super) fn collect_statement_calls(
             CheckedStatement::Set { target, value, .. } => {
                 match target {
                     CheckedSetTarget::Place(_) => {}
-                    CheckedSetTarget::ArrayIndex(target) => {
-                        collect_expression_calls(caller, &target.offset, calls);
-                    }
-                    CheckedSetTarget::BufferIndex(target) => {
-                        collect_expression_calls(caller, &target.offset, calls);
-                    }
                     CheckedSetTarget::RangeIndex(target) => {
                         for offset in target.offsets() {
                             collect_expression_calls(caller, offset, calls);

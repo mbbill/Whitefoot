@@ -776,55 +776,54 @@ fn every_retired_comparison_name_is_a_free_identifier() {
     }
 }
 
+// OP-1 reserves operation and mode names only in its listed declaration
+// roles. Proof-only invariant declarations select their own lookup domain.
 #[test]
-fn a_dotless_operation_name_is_reserved_from_header_invariant_declarations() {
-    let source = br#"fn probe(limit: own u64) -> result: own unit pure {
-  for (
-    index in 0_u64..limit,
-    invariant cvt: index <= limit
-  ) {
-    break;
-  }
-  return unit;
-}
-"#;
-    with_one_resolution(source, |outcome| {
-        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("a reserved header invariant name must reject: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), ResolutionRule::Form3);
-        assert!(matches!(
-            issue.kind(),
-            ResolutionIssueKind::ReservedName {
-                spelling,
-                declaration_role: ReservedDeclarationRole::Invariant,
-                ..
-            } if spelling == "cvt"
-        ));
-    });
-}
-
-#[test]
-fn a_dotless_operation_name_is_reserved_from_body_invariant_declarations() {
-    let source = br#"fn probe(value: own u64) -> result: own unit pure {
-  invariant cvt: value <= value;
-  return unit;
-}
-"#;
-    with_one_resolution(source, |outcome| {
-        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("a reserved body invariant name must reject: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), ResolutionRule::Form3);
-        assert!(matches!(
-            issue.kind(),
-            ResolutionIssueKind::ReservedName {
-                spelling,
-                declaration_role: ReservedDeclarationRole::Invariant,
-                ..
-            } if spelling == "cvt"
-        ));
-    });
+fn operation_and_mode_names_resolve_as_header_and_body_invariants() {
+    for spelling in ["cvt", "wrap", "defined", "checked", "sat", "strict"] {
+        for header in [false, true] {
+            let declaration = if header {
+                format!(
+                    "  for (\n    index in 0_u64..limit,\n    invariant {spelling}: index <= limit\n  ) {{\n"
+                )
+            } else {
+                format!("  invariant {spelling}: limit <= limit;\n")
+            };
+            let indent = if header { "    " } else { "  " };
+            let close = if header { "    break;\n  }\n" } else { "" };
+            let source = format!(
+                "fn probe(limit: own u64) -> result: own unit pure {{\n{declaration}{indent}invariant scaled: 3_u64 * limit <= 3_u64 * limit {{\n{indent}  use 3 times {spelling};\n{indent}}}\n{close}  return unit;\n}}\n"
+            );
+            with_one_resolution(source.as_bytes(), |outcome| {
+                let ResolutionOutcome::Complete(resolved) = outcome else {
+                    panic!("proof-only spelling must resolve: {outcome:?}");
+                };
+                let declaration = resolved
+                    .declarations()
+                    .iter()
+                    .find(|declaration| {
+                        declaration.role() == DeclarationRole::Invariant
+                            && declaration.spelling() == spelling
+                    })
+                    .expect("invariant declaration exists");
+                let usage = resolved
+                    .lexical_uses()
+                    .iter()
+                    .find(|usage| {
+                        usage.role() == LexicalUseRole::InvariantFact
+                            && usage.spelling() == spelling
+                    })
+                    .expect("named premise exists");
+                assert_eq!(
+                    usage.target(),
+                    ResolvedTarget::Source {
+                        declaration: declaration.id(),
+                        class: DeclarationClass::Invariant,
+                    }
+                );
+            });
+        }
+    }
 }
 
 // Retired with v0.60: `region_names_are_unique_across_the_complete_function`

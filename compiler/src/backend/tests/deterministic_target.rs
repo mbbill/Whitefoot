@@ -1303,14 +1303,12 @@ fn the_heap_resource_record_writer_stays_native_on_the_deterministic_target() {
 }
 "#;
     let module = emit_for_deterministic_target(source);
-    // KEPT AS WRITTEN for the lowering port: the five emitted shapes below are
-    // the `write_once` declaration head, the native `@write` declaration, the
-    // resource-record writer's own loop line, and the two calls. A `&[u8]`
-    // parameter's emitted form may change, so re-derive these against the
-    // ported lowering rather than against v0.59's view descriptor.
+    // The record loop reaches native write through its EINTR retry helper.
+    // Both edges must remain independent of the substituted library call.
     assert!(module.contains("declare void @wf_write_once(ptr %wf.result,"));
     assert!(module.contains("declare i64 @write(i32, ptr, i64)"));
-    assert!(module.contains("%written = call i64 @write(i32 2, ptr %cursor"));
+    assert!(module.contains("%written = call i64 @wf_resource_write(ptr %cursor, i64 %remaining)"));
+    assert!(module.contains("%written = call i64 @write(i32 2, ptr %bytes, i64 %length)"));
     assert!(module.contains("call void @wf_resource_record_abort("));
     assert!(module.contains("call void @wf_write_once("));
     assert!(!module.contains("@wf_test_write_submit"));

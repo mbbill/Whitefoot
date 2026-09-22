@@ -397,6 +397,91 @@ fn each_generated_allocation_form_reaches_its_refusal_record() {
     std::fs::remove_dir_all(directory).expect("remove allocation refusal image");
 }
 
+/// Script only the generated record write, leaving host startup and the floor
+/// untouched. Both record writers must retry EINTR at the same byte offset,
+/// keep positive partial progress, and stop on zero or a different error.
+#[test]
+fn heap_record_writers_retry_interruption_without_losing_partial_progress() {
+    let source = std::str::from_utf8(HEAP_RECORD_LANE)
+        .unwrap()
+        .replace("4000000000000000000_u64", "4_u64");
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
+        let directory = test_directory();
+        let module = super::emit_lowered(source.as_bytes(), overlap);
+        assert_eq!(
+            module.contains("%latch = call ptr @wf__floor_record_latch()"),
+            overlap == super::OverlapLowering::On,
+            "exercise the sequential and latched record writers"
+        );
+        let observed = module
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(")
+            .replace("@write(", "@wf_test_record_write(");
+        let host = format!(
+            "{}\n{}",
+            super::owned_places::allocation_observer_by_process(1),
+            RECORD_WRITE_OBSERVER
+        );
+        let executable = build_linked_executable(&observed, Some(&host), &[], &directory);
+        for schedule in 0..4 {
+            let output = Command::new(&executable)
+                .env("WF_TEST_REFUSE_ALLOCATION", "1")
+                .env("WF_TEST_WRITE_SCHEDULE", schedule.to_string())
+                .current_dir(&directory)
+                .output()
+                .expect("run interrupted heap record writer");
+            assert_eq!(signal_of(&output), Some(libc_sigabrt()), "{output:?}");
+            if schedule < 2 {
+                assert_resource_record(&output.stderr, "heap");
+                assert_eq!(output.stdout, b"X1;W1;W2;W3;", "{output:?}");
+            } else {
+                assert_eq!(output.stderr, b"{\"res", "{output:?}");
+                assert_eq!(output.stdout, b"X1;W1;W2;", "{output:?}");
+            }
+        }
+        std::fs::remove_dir_all(directory).expect("remove interrupted record image");
+    }
+}
+
+const RECORD_WRITE_OBSERVER: &str = r#"
+#include <errno.h>
+#include <unistd.h>
+
+__attribute__((constructor)) static void unbuffer(void) {
+    setvbuf(stdout, NULL, _IONBF, 0);
+}
+
+ssize_t wf_test_record_write(int fd, const void *bytes, size_t length) {
+    static const char record[] = "{\"resource\":\"heap\"}\n";
+    static unsigned calls;
+    static size_t offset;
+    const char *selected = getenv("WF_TEST_WRITE_SCHEDULE");
+    if (selected == NULL || selected[0] < '0' || selected[0] > '3'
+        || selected[1] != '\0') _Exit(90);
+    unsigned schedule = (unsigned)(selected[0] - '0');
+    unsigned step = calls++;
+    if (step >= (schedule < 2 ? 3u : 2u)) _Exit(91);
+    if (fd != 2 || length != sizeof(record) - 1 - offset
+        || memcmp(bytes, record + offset, length) != 0) _Exit(92);
+    printf("W%u;", calls);
+    if ((schedule == 0 && step == 0) || (schedule == 1 && step == 1)) {
+        errno = EINTR;
+        return -1;
+    }
+    if (schedule >= 2 && step == 1) {
+        errno = schedule == 2 ? EINTR : EIO;
+        return schedule == 2 ? 0 : -1;
+    }
+    size_t count = step < 2 ? 5 : length;
+    ssize_t written = write(fd, bytes, count);
+    if (written != (ssize_t)count) _Exit(93);
+    offset += count;
+    /* A positive result remains progress even with stale EINTR. */
+    errno = EINTR;
+    return written;
+}
+"#;
+
 /// Filled and empty windows whose proved byte ceilings fit the selected target
 /// carry no runtime target-domain path. The allocator can still return null,
 /// so each operation keeps its ordinary heap-resource edge, which is the

@@ -13,6 +13,14 @@ Owner-approved: The owner explicitly adopted all five revisions presented for PR
 
 Summary: Apply the five reviewed amendments unchanged. Retain a symbolic integer constant's declaration identity and exact source type through the shared read-only inventory. Correct the storage-versus-range wording and qualify source Ring growth without promising a native copy count. Retain REF-4's Ring-range exclusion as a fresh ruling, not a recovered historical decision, leaving proved-contiguous and two-span admission open to a concrete consumer. Select the ordinary one-slot Slab representation with its measured storage and transfer costs, and direct boxed Ring endpoints with an explicit consuming rebase, without claiming universal native parity or automatic reference-based growth. The [library investigation](../research/investigations/containers-and-resources/X1-LIBRARY.md#slab-and-deque-trial-over-v063), [Slab controls](../research/experiments/container-representation/slab-library/RESULTS.md) and [Deque controls](../research/experiments/container-representation/deque-library/RESULTS.md) supply the grounds and alternatives. Remove the resolved amendments and their directory. The specification is unchanged; this ruling does not authorize a merge.
 
+## 2026-09-22 Resolve source input, zero-stride addressing and proof-name boundaries
+
+Nodes: compiler/prelude-records, compiler/storage-representation, language/name-resolution
+
+Owner-approved: The owner explicitly accepted all three reviewed amendments and both DCR wording corrections after the complete PR #88 handoff at 86e048de, replying that all were agreed. This ruling does not authorize a merge.
+
+Summary: Apply the three reviewed additions unchanged: require caller source records before public prelude injection while preserving the internal transport and complete resource accounting; canonicalize only zero-stride element-address operands while retaining logical coordinates and all layout obligations; and admit invariant IDENT spellings in their separate proof domain without additional operation-name reservation. STOR-6 defines the zero-stride length-bound case, and OP-1/DIAG-1 consistently exclude invariant declarations from that reservation. The [follow-up investigation](../research/investigations/consistency-followups/DESIGN.md) records the discriminating examples, alternatives and remaining validation tasks. Narrow the conformance result-binding explanation and correct the PR's runtime-check claim as reviewed. Remove the three accepted amendments and their directory.
+
 ## 2026-09-22 Retain Array extents through read-only Box helpers
 
 Nodes: compiler/parallel-lowering

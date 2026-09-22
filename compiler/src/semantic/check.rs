@@ -2370,16 +2370,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::Set { target, value, .. } => {
                     match target {
                         CheckedSetTarget::Place(_) => {}
-                        CheckedSetTarget::ArrayIndex(target) => self
-                            .install_expression_call_requirements(
-                                &mut target.offset,
-                                requirements,
-                            )?,
-                        CheckedSetTarget::BufferIndex(target) => self
-                            .install_expression_call_requirements(
-                                &mut target.offset,
-                                requirements,
-                            )?,
                         CheckedSetTarget::RangeIndex(target) => {
                             for offset in target.offsets_mut() {
                                 self.install_expression_call_requirements(offset, requirements)?;
@@ -2579,12 +2569,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::Set { target, value, .. } => {
                     match target {
                         CheckedSetTarget::Place(_) => {}
-                        CheckedSetTarget::ArrayIndex(target) => {
-                            Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
-                        }
-                        CheckedSetTarget::BufferIndex(target) => {
-                            Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
-                        }
                         CheckedSetTarget::RangeIndex(target) => {
                             for offset in target.offsets_mut() {
                                 Self::install_expression_allocation_bounds(offset, bounds)?;
