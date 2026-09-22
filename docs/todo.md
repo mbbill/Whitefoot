@@ -51,16 +51,25 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   when a policy meets explicit representative criteria or its accepted
   tradeoffs are recorded.
 
-- **Stable scatter retains construction and packing costs.** The merged-model
+- **Stable scatter retains construction and packing costs.** The dated merged-model
   [joined-phase result](../research/investigations/compute-model/DESIGN.md#joined-phase-result-2026-09-21)
   identifies about 0.596 ms of chunk initialization and 0.569 ms of packing at
-  W8, against a 1.930 ms ordinary mixed-input call. Optimized code still clears
+  W8, against a 1.930 ms ordinary mixed-input call. That image clears
   and copies a full inactive chunk payload per appended `None`, and expands
   aggregate transfers during input partitioning; borrowed tally/packing reads
-  no longer retain that full-copy cost. Reopen aggregate construction/transport
-  with a fixed-source control and enum/affine correctness coverage. This was
-  deferred from the attribution experiment because eliminating those writes
-  needs a general initialized-value treatment, not a consumer-specific patch.
+  no longer retain that full-copy cost. These observations do not measure
+  current main. A narrower, unverified opportunity is to construct a single-use
+  aggregate directly in its fresh placement destination while retaining full
+  initialization. The observed `None` path could lose its staging copy without
+  skipping the inactive payload clear. Feasibility across ordinary call
+  boundaries and loop re-entry, and the whole-call benefit, remain unestablished.
+  Defer this behind the current pricing, sparse-discovery and baseline work.
+  Reopen when current optimized code reproduces material staging traffic;
+  compare unchanged source, require that transfer to disappear, qualify whole-call
+  wall/CPU results, and preserve enum/affine snapshots, alias behavior, window
+  length updates and exact-once cleanup. Eliminating inactive payload initialization
+  still needs a separate general initialized-value treatment, not a
+  consumer-specific patch.
   A direct `Array` replacement is not admitted: `Chunk` contains `nocopy`
   slots and the fill constructor requires a copy element. Any alternative
   affine construction interface needs its own language/library grounds.
