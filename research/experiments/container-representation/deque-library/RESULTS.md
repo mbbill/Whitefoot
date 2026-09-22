@@ -276,3 +276,47 @@ part of this experiment. Artifact SHA-256 values fix the corrected baseline:
 | `Makefile` | `7fa03e4534e1e3062276b2a40008485d6d1783bcb82171bb901015b4ba54580c` |
 | Raw compiler LLVM | `723ab1d7b246e941e8ec4199619068cc9e59171c1ca4d2944cf70f49acce9c08` |
 | `measurements.csv` | `42b44b68328776a6f12259c25f1f1ee449b01629cf60b852f56f961197919736` |
+
+### Integration verification at dcbfdc0f
+
+After merging main `7127bcb6`, the freshly built compiler at `dcbfdc0f` had
+SHA-256 `9653362a116997dd34558b9da6436dfb343018631b4fabcaa255e420a0c80005`.
+The library, workload and C driver retain their baseline source hashes above.
+The raw WF output and both normal/retained optimized modules are byte-identical
+to the preserved baseline, as are both C controls' optimized IR. Each old/current
+optimized WF module was also compiled with Apple Clang 21.0.0 on the same
+arm64 host using `clang -O2 -Wno-override-module -S -x ir`; the complete
+assembly files compare byte-for-byte equal, without normalization.
+
+| Current artifact | SHA-256 |
+| --- | --- |
+| Normal optimized LLVM | `fa94c2c058791b408fdff75be414408bd830f54e4bfa532e12ad21325ca61cb0` |
+| Retained optimized LLVM | `9a314178b5abc2f1b631f65427bd7ce16b985bfc11b5521138c2ac60391349fd` |
+| Normal old/current assembly | `6ffaa7605a55f50d54cf89308f9f12e92cd31e1d1835e8cc7fc3afcb03c3ec4d` |
+| Retained old/current assembly | `bbb59f2653b7818e0f78b3ae857c933776e96384b09565b7f3ba1372f28cc096` |
+
+This is emitted-module evidence from optimized IR, not a byte-identity claim
+for the complete linked native image. The runtime's C, header and LLVM
+sources and `compiler/runtime.mk` were unchanged. Current normal/retained
+harnesses passed all 2,592 correctness executions again. Incremental
+construction took 0.80 seconds and the executions plus retained-call checks
+took 0.73 seconds. No new timings were collected: the original CSV remains
+the dated baseline, with no claim of a fresh measurement, a different
+toolchain's output, or untested instantiations.
+
+The maintained `probe-scalar-gep` target was executed once in the same guarded
+interval, taking 2.13 seconds for construction and checks. Its baseline,
+fact-only and split-only variants each passed 1,296 oracle executions; reading
+the current scalar `bb32` reproduces 4/4, 1/1 and 4/4 i64 loads/stores. The
+target saves `deque-gep-{baseline,nuw,split}.opt.ll` and corresponding
+`.check.txt` files under `.build/`. Their optimized-IR hashes are:
+
+| Probe variant | SHA-256 |
+| --- | --- |
+| Baseline | `50b2c6766470eea22411ad6664d9bc97cbb5835b1ff5bcbeb997f023df490a4a` |
+| Unsigned fact only | `5b42af64e26d2717df662a72cb9346b0419b83f9fb50a63eb87802f047591e2c` |
+| Split only | `db139c31763151222cbb33b39630699a548eded6192d1ad939c53db028e4a5e6` |
+
+The complete Slab/Deque integration interval took 7.51 seconds. This confirms
+the optional reproduction wiring and bounded code-generation observation;
+it does not add the flag to production lowering or measure a speedup.

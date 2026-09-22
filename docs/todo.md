@@ -347,9 +347,8 @@ each is resolved by a discussion and a tree change.
   library's slot visitor is not a substitute for a native consumer accepting
   two contiguous extents. A fully initialized Array works for copy elements
   but adds spare-capacity initialization and does not provide arbitrary T.
-  The [exact rejection and correspondence evidence](../research/investigations/containers-and-resources/X1-LIBRARY.md#ring-range-correspondence)
-  record the historical mismatch and the fresh ruling retaining REF-4;
-  the tree and specification now agree. An extension needs a
+  The [source analysis](../research/investigations/containers-and-resources/X1-LIBRARY.md#ring-range-correspondence)
+  identifies the missing contiguous-span interface. An extension needs a
   concrete span consumer, precise empty/non-wrap formation and invalidation
   rules, native-cost comparison and negative wrap/stale-reference cases.
   Defer extension while this library tests endpoint and rebase costs; reopen

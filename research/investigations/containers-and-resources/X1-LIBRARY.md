@@ -894,8 +894,16 @@ pre-merge compiler. Main `7127bcb6` adds checker and aggregate-lowering repairs;
 its clean merge also required supplying the const-type inventory to a newly
 added unit-test context. The earlier emission comparison established only the
 const-forwarding repair's correspondence, not the main integration. The
-integrated comparison remains separate evidence; the original timings keep
-their original compiler identity.
+integrated compiler at `dcbfdc0f` was then checked separately: Deque raw and
+optimized IR were byte-identical to the preserved baseline, while Slab's
+optimized IR differed only in SSA names after the alias removal. Compiling
+the old/current optimized modules with Apple Clang 21 on arm64 produced
+byte-identical complete WF module assembly in both normal and retained modes.
+The [Slab integration record](../../experiments/container-representation/slab-library/RESULTS.md#integration-verification-at-dcbfdc0f)
+and [Deque integration record](../../experiments/container-representation/deque-library/RESULTS.md#integration-verification-at-dcbfdc0f)
+give the identities, method and rerun correctness checks. This establishes
+that emitted-module correspondence, not linked-image identity or a new timing
+run; the original CSVs keep their original compiler and measurement identity.
 
 ### Exact unavailable source forms
 

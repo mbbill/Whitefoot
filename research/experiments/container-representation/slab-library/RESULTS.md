@@ -216,3 +216,43 @@ alias-only cleanup:
 | `Makefile` | `25019a08f9977323335004ed2589051e0475aa0cb98165a0a5beed1508a0cd2f` |
 | Raw compiler LLVM | `6d606576f56fe4a635b94b64f90a38a83c7c7583182f5c22bf0a814de8c3e496` |
 | `measurements.csv` | `60a2463b52f7af66e106b4eb5311dd00722965475baa8ec0fc4f457fb35fbe5b` |
+
+### Integration verification at dcbfdc0f
+
+After merging main `7127bcb6` and removing Slab's temporary const alias, the
+compiler at `dcbfdc0f` compiled the unchanged benchmark source with the updated
+library. Compiler SHA-256 was
+`9653362a116997dd34558b9da6436dfb343018631b4fabcaa255e420a0c80005`;
+the current library source was
+`0a8c104e0323a5ffcc10dd2938e0c280d99941cde18dac5a1537f50c3b341eae`.
+The workload, C driver, Makefile and original CSV retained the hashes above.
+
+The normal and retained optimized LLVM differ from the preserved baseline
+only in local SSA names (`%v46` becomes `%v45`, including its inlined form).
+The operations and metadata are unchanged. Each old/current optimized module
+was then compiled with Apple Clang 21.0.0 on the same arm64 host using
+`clang -O2 -Wno-override-module -S -x ir`; both complete assembly files compare
+byte-for-byte equal, without normalization. The two C controls' optimized IR
+also remains byte-identical.
+
+| Current artifact | SHA-256 |
+| --- | --- |
+| Raw compiler LLVM | `6a71943e1d04f9fe256ed9b3783866b7f3cc4096d20e59ecd71a1114601694ed` |
+| Normal optimized LLVM | `ba7ffd1ebf0f8754df96016463fba9ab164782d3d5c1926dd9c6c9055bfb5aa3` |
+| Retained optimized LLVM | `78e7eae9c503cb84bbeb6b4f6240503be360102cae1d6f097c90da539704aa73` |
+| Normal old/current assembly | `a751f36f3f1a1d5605d6fc18a6f438a31c74e065f95a563ffe905f8bc04ca98e` |
+| Retained old/current assembly | `cb709317e39f17fb0c6365a72c487c2955b73048cbb04997303493825d218c8e` |
+
+This compares the emitted WF module via optimized IR, not the complete linked
+native image. The linked runtime's C, header and LLVM sources and
+`compiler/runtime.mk` did not change between the checkpoint and this revision.
+The current normal/retained harnesses passed all 1,728 correctness executions
+again. Incremental construction took 2.34 seconds; those executions and the
+retained-call checks took 0.71 seconds, under the shared guard. The combined
+Slab/Deque integration check, assembly generation and optional Deque probe
+took 7.51 seconds.
+
+No new timing run was needed for the name-only IR change. The original CSV
+remains historical timing evidence, not a fresh measurement of this revision;
+the code comparison is specific to these source instantiations and this
+Clang/arm64 configuration, not a claim about other toolchains or programs.
