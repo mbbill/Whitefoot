@@ -2284,3 +2284,89 @@ seconds; isolated CLI construction took 45.35 seconds, and source checking plus
 LLVM emission took 0.72 seconds. These are construction and qualification
 costs, not a program performance comparison. Sparse-frontier native behavior,
 worker participation and performance remain separate qualification work.
+
+### Records W4 hosted comparison remains unresolved
+
+The formal comparison already reported a `records` W4 suspect at `30198a19`.
+[Run 35706215154](https://github.com/mbbill/Whitefoot/actions/runs/35706215154)
+retains it at `53c68c29905cb9877e32118ac1be79d972df6c31`, whose compiler,
+tests and specification are unchanged from that earlier revision. Its
+[artifact 10684228124](https://github.com/mbbill/Whitefoot/actions/runs/35706215154/artifacts/10684228124)
+identifies the tested merge as `825714ec66e6839201623ae4eca7efd68c789866`
+and baseline as `f3cf41d42cf6324a83c1de0b28e6c0d4e6ff9da8`. The host is
+x86-64 AMD EPYC 9V74, four logical CPUs on two cores, using rustc 1.98.1
+and Ubuntu clang 18.1.3, ordinary `--par` and `-O2`, without alignment
+overrides. Baseline/candidate wall ratios are 1.002281/0.995866/0.898002
+at W1/W2/W4; W4 has four adverse pairs out of five and CPU ratio 0.908317.
+The identical-image control has a FIR W4 suspect at 0.956881, while records
+W4 is 0.990877 and not suspect. Passing the unchanged two-width rule does
+not resolve the repeated records observation.
+
+Static inspection used those hosted LLVM modules and ELF objects, without
+new emission, construction or timing. The records source, host adapter,
+oracle and runtime sources are unchanged from frozen `6fdb6768` through
+baseline `f3cf41d4` and this candidate. All 26 function definitions in the
+retained frozen `records-par.ll.raw` match the hosted baseline after only
+renaming `main` to `wf_fixture_main` and `wf__main_body` to `wf_fixture_body`;
+the latter adds two host adapter functions. This establishes records
+correspondence, not general compiler or cross-platform object equality.
+
+| Hosted records property | Baseline | Candidate |
+| --- | ---: | ---: |
+| Captures / actual task frame | 6 / 104 bytes | 4 / 88 bytes |
+| Iteration work price | 814 | 814 |
+| Optimized splitter / local stack bytes | 679 / 56 | 601 / 56 |
+| Optimized parallel chunk bytes | 440 | 440 |
+| Linked parallel chunk address | `0x2f20` | `0x2ec0` |
+
+Pruning removes unused `end` and `count` captures. The timed caller retains
+pool dispatch, one allocation, one zero-fill, the budget query and split call;
+its outgoing stack arguments fall from six to four. Granted and refused
+splitter paths retain their predicates and call structure while transporting
+fewer values. Both frames fit the same fixed 256-byte runtime slots. All 12
+runtime objects, `runner.o` and `records_oracle.o` are byte-identical between
+arms. The optimized validator and record-summary functions are byte-identical.
+Each parallel/sequential chunk differs at exactly one byte, offset `0x19`:
+the output-pointer stack displacement changes from `0x58` to `0x48`.
+The remaining instruction bytes and loop alias annotations are unchanged.
+Linked placement changes, including runtime addresses, are observed but not
+attributed. No added record-processing work or regression fix is established.
+
+The retained ZIP is `/private/tmp/whitefoot-records-35706215154.zip`, SHA-256
+`141b4354cf37f754070e94b1fb305ad9ad852f33b5ebb81683b6e8631b9e68ac`;
+its extracted directory has the same stem. Within `performance-results`,
+`identity.txt`, `comparison/manifest.txt`, `comparison/paired.tsv` and
+`null/paired.tsv` retain identity, executable hashes and ratios. The
+baseline/candidate `records.o`
+hashes are `bd24e30f2a8c2cfe3da120354967b93dc317ee70d21635dc209032d591c6ef02`
+and `8e6c5d3657dd23eb2ff5f28777410574801f8269f6653258ba30457859ee44cf`.
+From the extracted directory, LLVM 22.1.8 inspection tools reconstruct the
+comparison without executing either image:
+
+```sh
+diff -u performance-baseline/records.ll performance-candidate/records.ll
+for arm in baseline candidate; do
+    llvm-nm --print-size --numeric-sort "performance-$arm/records.o"
+    llvm-nm --print-size --numeric-sort "performance-$arm/records"
+    llvm-objdump -dr --no-show-raw-insn "performance-$arm/records.o"
+    llvm-objcopy --dump-section ".text=$arm.text" \
+        "performance-$arm/records.o" "$arm.inspect.o"
+done
+dd if=baseline.text of=baseline.chunk bs=1 skip=2320 count=440
+dd if=candidate.text of=candidate.chunk bs=1 skip=2224 count=440
+cmp -l baseline.chunk candidate.chunk
+```
+
+The byte comparison reports only `26 130 110` (one-based offset, octal
+values). Existing raw data has wall time, CPU and result counts, without
+scheduling counters. Identical hot work cannot exclude ABI, scheduling or
+placement effects; ARM results or emulation cannot clear this Linux signal.
+A possible next discriminator, **not selected or run**, is one bounded
+records-only W4 paired/null block using the retained Linux images and existing
+`WF_SCHED_REPORT=2` counters. A reproducible participation/steal change would
+support investigating scheduling; unchanged counters would leave ABI and
+placement unresolved, not clear the suspect. Uninformative results would end
+that block without a sweep. Attribution and its validation remain deferred in
+the [formal-compute TODO](../../../docs/todo.md), because a mechanism change
+needs evidence distinguishing these possible causes. No threshold, runtime,
+compiler, specification or correctness-CI change follows from this inspection.

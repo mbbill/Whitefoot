@@ -189,8 +189,19 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   Its identical-image control nevertheless retained a `records` W4 suspect at
   0.962815708 with four adverse pairs. The concrete PR 70 regression is repaired,
   while its cause and the earlier and remaining control variation are not
-  attributed. Keep this item until those observations and the resulting
-  measurement/detection tradeoff are explained.
+  attributed. The [PR 78 hosted records inspection](../research/investigations/compute-model/DESIGN.md#records-w4-hosted-comparison-remains-unresolved)
+  retains repeated W4 suspects at `30198a19` and `53c68c29`: the latter has
+  wall/CPU ratios 0.898002/0.908317 with four adverse pairs, while its records
+  null is not suspect. Exact x86 objects show unchanged hot work and runtime
+  objects alongside reduced capture transport and changed linked placement;
+  they establish no cause or fix. Existing raw data lacks scheduling counters,
+  and ARM or emulated results cannot clear this Linux signal. A retained-image
+  W4 paired/null counter check is a possible discriminator, not selected or
+  run. Defer mechanism changes until evidence distinguishes the possible causes;
+  reopen on selection of a bounded Linux attribution experiment and preserve
+  the suspect if that experiment is uninformative. Keep this item
+  until the observations and measurement/detection tradeoff are explained by
+  discriminating evidence, rather than a later pass or changed threshold.
 
 - **Recursive cleanup has no general bounded-stack lowering.** The current
   emitter recursively calls release actions, so machine-stack use can grow
