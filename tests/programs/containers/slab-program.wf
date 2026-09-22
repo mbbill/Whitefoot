@@ -290,29 +290,46 @@ fn slab_test_zero_capacity() -> failures: own u64 pure {
 }
 
 fn slab_test_boxes() -> failures: own u64 pure {
-  doc "An affine Box payload survives refusal and removal as the original owner. Remaining values are consumed during slab teardown; the allocation observer checks the exact backing and payload release ledger.";
+  doc "A full backing keeps one payload live while two removed Box owners create a two-cell free list. Both are reinserted through that list in reverse removal order, with new generations and expired original handles. Refusal returns the fourth Box unchanged, reuse allocates nothing, and reverse-slot teardown consumes the remaining owners; the observer checks the exact allocation ledger.";
   let failed = 0_u64;
   let seen = SlabTestSeen(sum: 0_u64, count: 0_u64, sequence: 0_u64, visits: 0_u64, last: 0_u64);
-  let slab = slab_new::<Box<SlabTestItem>, 3, 18446744073709551615>(capacity: 2_u64);
+  let slab = slab_new::<Box<SlabTestItem>, 4, 18446744073709551615>(capacity: 3_u64);
   for (id in 1_u64..4_u64) {
     let item_value = SlabTestItem(id: id);
     let item = box_new::<SlabTestItem>(value: item_value);
-    match slab_insert::<Box<SlabTestItem>, 3, 18446744073709551615>(slab: &slab, value: move item) {
+    match slab_insert::<Box<SlabTestItem>, 4, 18446744073709551615>(slab: &slab, value: move item) {
       Ok(value: handle) => {
-        if id == 3_u64 {
+        let expected_index = id - 1_u64;
+        if handle.index != expected_index {
+          set failed = failed +wrap 1_u64;
+        }
+        if handle.generation != 0_u64 {
           set failed = failed +wrap 1_u64;
         }
       }
       Err(error: uninserted) => {
-        if uninserted.inner.id != 3_u64 {
-          set failed = failed +wrap 1_u64;
-        }
         slab_test_consume_box(env: &seen, value: move uninserted);
+        set failed = failed +wrap 1_u64;
       }
     }
   }
+  let fourth_item = SlabTestItem(id: 4_u64);
+  let fourth = box_new::<SlabTestItem>(value: fourth_item);
+  match slab_insert::<Box<SlabTestItem>, 4, 18446744073709551615>(slab: &slab, value: move fourth) {
+    Ok(value: unexpected) => {
+      set failed = failed +wrap 1_u64;
+    }
+    Err(error: uninserted) => {
+      if uninserted.inner.id != 4_u64 {
+        set failed = failed +wrap 1_u64;
+      }
+      slab_test_consume_box(env: &seen, value: move uninserted);
+    }
+  }
   let first = SlabHandle(index: 0_u64, generation: 0_u64);
-  match slab_visit::<SlabTestBoxVisit, 3, 18446744073709551615>(slab: &slab, handle: first, env: &seen) {
+  let second = SlabHandle(index: 1_u64, generation: 0_u64);
+  let retained = SlabHandle(index: 2_u64, generation: 0_u64);
+  match slab_visit::<SlabTestBoxVisit, 4, 18446744073709551615>(slab: &slab, handle: first, env: &seen) {
     Ok(value: observed) => {
       if observed != 1_u64 {
         set failed = failed +wrap 1_u64;
@@ -322,41 +339,130 @@ fn slab_test_boxes() -> failures: own u64 pure {
       set failed = failed +wrap 1_u64;
     }
   }
-  match slab_remove::<Box<SlabTestItem>, 3, 18446744073709551615>(slab: &slab, handle: first) {
+  let removed_first = match slab_remove::<Box<SlabTestItem>, 4, 18446744073709551615>(slab: &slab, handle: first) {
     Some(value: removed) => {
       if removed.inner.id != 1_u64 {
         set failed = failed +wrap 1_u64;
       }
-      slab_test_consume_box(env: &seen, value: move removed);
+      give move removed;
     }
     None() => {
+      slab_free::<SlabTestBoxConsume, 4, 18446744073709551615>(slab: move slab, env: &seen);
+      return 1_u64;
+    }
+  }
+  let removed_second = match slab_remove::<Box<SlabTestItem>, 4, 18446744073709551615>(slab: &slab, handle: second) {
+    Some(value: removed) => {
+      if removed.inner.id != 2_u64 {
+        set failed = failed +wrap 1_u64;
+      }
+      give move removed;
+    }
+    None() => {
+      slab_free::<SlabTestBoxConsume, 4, 18446744073709551615>(slab: move slab, env: &seen);
+      return 1_u64;
+    }
+  }
+  match slab_visit::<SlabTestBoxVisit, 4, 18446744073709551615>(slab: &slab, handle: retained, env: &seen) {
+    Ok(value: observed) => {
+      if observed != 3_u64 {
+        set failed = failed +wrap 1_u64;
+      }
+    }
+    Err(error: expired) => {
       set failed = failed +wrap 1_u64;
     }
   }
-  let fourth_item = SlabTestItem(id: 4_u64);
-  let fourth = box_new::<SlabTestItem>(value: fourth_item);
-  match slab_insert::<Box<SlabTestItem>, 3, 18446744073709551615>(slab: &slab, value: move fourth) {
+  let reused_first = match slab_insert::<Box<SlabTestItem>, 4, 18446744073709551615>(slab: &slab, value: move removed_first) {
     Ok(value: handle) => {
-      if handle.index != first.index {
-        set failed = failed +wrap 1_u64;
-      }
-      if handle.generation != 1_u64 {
-        set failed = failed +wrap 1_u64;
-      }
+      give handle;
     }
     Err(error: uninserted) => {
       slab_test_consume_box(env: &seen, value: move uninserted);
+      slab_free::<SlabTestBoxConsume, 4, 18446744073709551615>(slab: move slab, env: &seen);
+      return 1_u64;
+    }
+  }
+  let reused_second = match slab_insert::<Box<SlabTestItem>, 4, 18446744073709551615>(slab: &slab, value: move removed_second) {
+    Ok(value: handle) => {
+      give handle;
+    }
+    Err(error: uninserted) => {
+      slab_test_consume_box(env: &seen, value: move uninserted);
+      slab_free::<SlabTestBoxConsume, 4, 18446744073709551615>(slab: move slab, env: &seen);
+      return 1_u64;
+    }
+  }
+  if reused_first.index != second.index {
+    set failed = failed +wrap 1_u64;
+  }
+  if reused_first.generation != 1_u64 {
+    set failed = failed +wrap 1_u64;
+  }
+  if reused_second.index != first.index {
+    set failed = failed +wrap 1_u64;
+  }
+  if reused_second.generation != 1_u64 {
+    set failed = failed +wrap 1_u64;
+  }
+  match slab_find_index::<Box<SlabTestItem>, 4, 18446744073709551615>(slab: &slab, handle: first) {
+    Ok(value: unexpected) => {
+      set failed = failed +wrap 1_u64;
+    }
+    Err(error: expired) => {
+    }
+  }
+  match slab_visit::<SlabTestBoxVisit, 4, 18446744073709551615>(slab: &slab, handle: second, env: &seen) {
+    Ok(value: unexpected) => {
+      set failed = failed +wrap 1_u64;
+    }
+    Err(error: expired) => {
+    }
+  }
+  match slab_visit::<SlabTestBoxVisit, 4, 18446744073709551615>(slab: &slab, handle: reused_first, env: &seen) {
+    Ok(value: observed) => {
+      if observed != 1_u64 {
+        set failed = failed +wrap 1_u64;
+      }
+    }
+    Err(error: expired) => {
       set failed = failed +wrap 1_u64;
     }
   }
-  slab_free::<SlabTestBoxConsume, 3, 18446744073709551615>(slab: move slab, env: &seen);
+  match slab_visit::<SlabTestBoxVisit, 4, 18446744073709551615>(slab: &slab, handle: reused_second, env: &seen) {
+    Ok(value: observed) => {
+      if observed != 2_u64 {
+        set failed = failed +wrap 1_u64;
+      }
+    }
+    Err(error: expired) => {
+      set failed = failed +wrap 1_u64;
+    }
+  }
+  match slab_visit::<SlabTestBoxVisit, 4, 18446744073709551615>(slab: &slab, handle: retained, env: &seen) {
+    Ok(value: observed) => {
+      if observed != 3_u64 {
+        set failed = failed +wrap 1_u64;
+      }
+    }
+    Err(error: expired) => {
+      set failed = failed +wrap 1_u64;
+    }
+  }
+  if slab.cells.inner.len != 3_u64 {
+    set failed = failed +wrap 1_u64;
+  }
+  slab_free::<SlabTestBoxConsume, 4, 18446744073709551615>(slab: move slab, env: &seen);
   if seen.sum != 10_u64 {
     set failed = failed +wrap 1_u64;
   }
-  if seen.sequence != 50990346_u64 {
+  if seen.sequence != 68096778_u64 {
     set failed = failed +wrap 1_u64;
   }
   if seen.count != 4_u64 {
+    set failed = failed +wrap 1_u64;
+  }
+  if seen.visits != 5_u64 {
     set failed = failed +wrap 1_u64;
   }
   return failed;
