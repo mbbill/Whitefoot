@@ -58,7 +58,7 @@
 
 use crate::{SemanticIssueKind, SemanticRule};
 
-use super::assert_rule_kind;
+use super::{assert_accepts, assert_rule_kind};
 
 /// [OWN-1] one consuming use kills the whole binding that rooted the place, so
 /// a proved-distinct candidate index pair does not keep a later subscript
@@ -144,4 +144,37 @@ fn main() -> status: own ExitStatus pure {
     assert_rule_kind(source, SemanticRule::Prov6, |kind| {
         matches!(kind, SemanticIssueKind::LinearValuePartiallyConsumed { .. })
     });
+}
+
+/// [PROV-6, WIN-3] the selected field leaves with its caller. Its linearity
+/// therefore imposes no drop obligation on an empty or affine residual.
+#[test]
+fn a_field_consume_judges_only_its_unselected_residual() {
+    for fields in [
+        "  value: T;\n",
+        "  before: Box<u64>;\n  value: T;\n  after: Box<u64>;\n",
+    ] {
+        let source = format!(
+            "struct Holder<T> {{\n{fields}}}\n\nfn take<T>(holder: own Holder<T>) -> value: own T pure {{\n  return move holder.value;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        assert_accepts(source.as_bytes());
+    }
+}
+
+/// The residual inventory must retain an opaque generic member and a
+/// fieldless nodrop nominal even though neither has a runtime drop action.
+#[test]
+fn a_field_consume_cannot_hide_a_linear_residual_without_a_drop_action() {
+    for (declarations, generic, residual) in [
+        ("", "<T>", "T"),
+        ("nodrop enum Token {\n  Live();\n}\n\n", "", "Token"),
+        ("nodrop struct Token {\n}\n\n", "", "Token"),
+    ] {
+        let source = format!(
+            "{declarations}struct Holder{generic} {{\n  value: Box<u64>;\n  residual: {residual};\n}}\n\nfn take{generic}(holder: own Holder{generic}) -> value: own Box<u64> pure {{\n  return move holder.value;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        assert_rule_kind(source.as_bytes(), SemanticRule::Prov6, |kind| {
+            matches!(kind, SemanticIssueKind::LinearValuePartiallyConsumed { .. })
+        });
+    }
 }
