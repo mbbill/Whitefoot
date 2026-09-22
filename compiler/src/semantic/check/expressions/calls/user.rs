@@ -309,7 +309,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // allocating prelude row; [OP-11] refuses a `swap` over a copy place.
         self.reject_allocating_call_under_no_heap(node, signature)?;
         self.reject_swap_over_copy(node, signature)?;
-        if musttail {
+        // A nonself call already carries a deferred direct-self rejection;
+        // its parameters do not share the enclosing function's ordinals.
+        if musttail && signature.declaration == function.declaration {
             self.check_musttail_arguments(node, function, bindings, &actual_paths, &actual_modes)?;
         }
         // [EFF-5] substitute, compare pairwise, then project the surviving

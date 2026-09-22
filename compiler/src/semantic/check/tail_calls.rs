@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use crate::syntax::NodeId;
 use crate::{
     DeclarationClass, DeclarationId, LexicalUseRole, NodePath, Production, ResolvedTarget,
-    SemanticCompilerFailure, SemanticIssueKind, SemanticRule,
+    SemanticCompilerFailure, SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticRule,
 };
 
 use super::super::model::CheckedMode;
@@ -22,17 +22,54 @@ impl Checker<'_, '_, '_, '_> {
         Ok(false)
     }
 
-    fn invalid_musttail<T>(
+    fn record_musttail_rejection(
         &self,
         node: NodeId,
         condition: &'static str,
         subject: Option<String>,
+    ) -> Result<(), CheckStop> {
+        self.musttail_rejections.borrow_mut().push(SemanticIssue {
+            rule: SemanticRule::Fn10,
+            location: SemanticLocation::SourceNode(
+                self.tree.path(node)?.clone(),
+                self.tree.coordinate(node)?,
+            ),
+            kind: SemanticIssueKind::InvalidMusttail { condition, subject },
+        });
+        Ok(())
+    }
+
+    /// A tail marker changes no ordinary call judgment. Collect its refusals
+    /// without publishing a checked program, and let an earlier same-call
+    /// rule win even when its proof is checked after the structural body pass.
+    /// Errors at distinct nodes retain the ordinary checker's deterministic
+    /// order. A later same-call rule, such as EFF-5, cannot hide FN-10 either.
+    pub(super) fn finish_musttail_checks<T>(
+        &self,
+        result: Result<T, CheckStop>,
     ) -> Result<T, CheckStop> {
-        self.issue_node(
-            SemanticRule::Fn10,
-            node,
-            SemanticIssueKind::InvalidMusttail { condition, subject },
-        )
+        let mut pending = std::mem::take(&mut *self.musttail_rejections.borrow_mut()).into_iter();
+        match result {
+            Ok(value) => match pending.next() {
+                Some(issue) => Err(CheckStop::source_issue(issue)),
+                None => Ok(value),
+            },
+            Err(CheckStop::Issue(ordinary)) => {
+                let earlier = pending.find(|tail| {
+                    tail.rule.definition_rank() < ordinary.rule.definition_rank()
+                        && matches!(
+                            (&tail.location, &ordinary.location),
+                            (SemanticLocation::SourceNode(left, _), SemanticLocation::SourceNode(right, _))
+                                if left == right
+                        )
+                });
+                Err(match earlier {
+                    Some(issue) => CheckStop::source_issue(issue),
+                    None => CheckStop::Issue(ordinary),
+                })
+            }
+            Err(stop) => Err(stop),
+        }
     }
 
     /// Check the written position even in clauses and constants, where a call
@@ -57,11 +94,11 @@ impl Checker<'_, '_, '_, '_> {
                 || self.tree.production(parent)? != Production::ReturnStmt
                 || self.tree.children_with(parent, Production::Expr)?.len() != 1
             {
-                return self.invalid_musttail(
+                self.record_musttail_rejection(
                     call,
                     "musttail must be the sole expression of return",
                     None,
-                );
+                )?;
             }
         }
         Ok(())
@@ -79,11 +116,12 @@ impl Checker<'_, '_, '_, '_> {
                 continue;
             }
             if self.tree.is_constructor_call(call)? || self.behavior_call_key(call)?.is_some() {
-                return self.invalid_musttail(
+                self.record_musttail_rejection(
                     call,
                     "musttail requires a direct call to the enclosing function",
                     None,
-                );
+                )?;
+                continue;
             }
             let callee = self
                 .tree
@@ -98,11 +136,11 @@ impl Checker<'_, '_, '_, '_> {
             )?;
             if !matches!(usage.target(), ResolvedTarget::Source { declaration, class: DeclarationClass::Function } if declaration == function.declaration)
             {
-                return self.invalid_musttail(
+                self.record_musttail_rejection(
                     call,
                     "musttail requires a direct call to the enclosing function",
                     None,
-                );
+                )?;
             }
         }
         Ok(())
@@ -130,7 +168,7 @@ impl Checker<'_, '_, '_, '_> {
                     })
                 })
             {
-                return self.invalid_musttail(node, "every musttail reference argument must be rooted at a reference parameter, not current-activation storage", Some(function.parameters[ordinal].name.clone()));
+                return self.record_musttail_rejection(node, "every musttail reference argument must be rooted at a reference parameter, not current-activation storage", Some(function.parameters[ordinal].name.clone()));
             }
         }
         Ok(())
@@ -171,7 +209,7 @@ impl Checker<'_, '_, '_, '_> {
                     .tree
                     .node_with_path(call)
                     .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-                return self.invalid_musttail(
+                return self.record_musttail_rejection(
                     node,
                     "a live reference prevents releasing this owner before the musttail transfer",
                     name,

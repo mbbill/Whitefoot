@@ -496,6 +496,9 @@ enum PreludeType {
 
 struct Checker<'unit, 'classified, 'lexed, 'source> {
     resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
+    /// [DIAG-1, FN-10] retain tail-condition failures until ordinary call
+    /// checking, including FN-8 proofs, can establish a prior same-node rule.
+    musttail_rejections: RefCell<Vec<SemanticIssue>>,
     /// [STOR-8, GRAM-2] whether this compilation unit wrote `program
     /// no_heap;`.
     ///
@@ -665,7 +668,10 @@ fn check_semantics_with<'classified, 'lexed, 'source>(
         })
     };
     let result = preflight.and_then(|()| {
-        Checker::new(&resolved, reject_entailment).and_then(|mut checker| checker.check_program())
+        Checker::new(&resolved, reject_entailment).and_then(|mut checker| {
+            let result = checker.check_program();
+            checker.finish_musttail_checks(result)
+        })
     });
     match result {
         Ok(data) => SemanticOutcome::Complete(Box::new(CheckedProgram {
@@ -1137,6 +1143,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             source_nominal_instances: Vec::new(),
             box_nominals: HashMap::new(),
             result_list_nominals: HashMap::new(),
+            musttail_rejections: RefCell::new(Vec::new()),
             pending_nominals: RefCell::new(Vec::new()),
             pending_instances: RefCell::new(Vec::new()),
             elided_store_brand: std::cell::Cell::new(None),
