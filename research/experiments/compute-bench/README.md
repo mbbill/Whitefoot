@@ -16,6 +16,33 @@ Automatic compiler performance regression is maintained separately in
 scoreboard is manually invoked; its legacy `verdict` reproduces historical
 A/B tables and does not decide a pull-request check.
 
+The narrow [Box-array helper-pricing experiment](../../investigations/compute-model/DESIGN.md#read-only-box-array-helper-work-pricing)
+also retains its WF source, small C oracle and ordinary LLVM adapter here.
+They are owned by that experiment and are retired together when superseded.
+They have no daily gate or framework-scoreboard dependency. Build an image
+from a prebuilt compiler with the explicit manual target, using a different
+scratch directory for each arm:
+
+```sh
+WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl array-reference-build \
+  make -C research/experiments/compute-bench -j2 array-reference-build \
+  WFC=/absolute/path/to/whitefootc WORK=/absolute/scratch/array-reference-arm
+```
+
+Run `WF_WORKERS=4 /absolute/scratch/array-reference-arm/build/array_reference
+candidate 1 16384 512` inside the same verification guard. The arguments are
+arm label, pass number, input words and output rows. Each process checks one
+warmup and five measured calls against a separate complete-output oracle and
+checks the unchanged input after every call. The TSV fields are arm, workers,
+pass, words, rows, sample, wall nanoseconds, process CPU nanoseconds and actual
+steals; sample zero is the warmup. Allocation, oracle calculation, checking
+and release are outside the interval. The LLVM adapter is needed for the
+ordinary range argument ABI and uses the formal host adapter's world selection.
+The recorded five-pass rotation, null comparison, medians and selection
+criterion are in the investigation. The [retained stream](array-reference-work-2026-09-22.tsv)
+adds a leading `comparison` column. Tiny calls have unresolved wall intervals
+on this host and receive no ratio verdict.
+
 ## What "WF" means here, and what it does not
 
 The range-loan consumer is selected with `make KERNELS=stencil verify` or

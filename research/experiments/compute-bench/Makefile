@@ -429,7 +429,7 @@ COMMON_OBJS := $(SHARED_OBJS) $(RUNTIME_OBJS)
 LINK_LIBS := -L$(DEPS)/lib -Wl,-rpath,$(DEPS)/lib -ltbb \
              $(DEPS)/rayon/libwf_compute_bench_rayon.a -ldl -lm
 
-.PHONY: all compiler deps build images verify compare programs-check verdict \
+.PHONY: all compiler deps build images verify compare programs-check verdict array-reference-build \
         verdict-test module-symbols-test baseline-entry-test baseline-check clean clean-deps FORCE
 all: build
 
@@ -443,6 +443,20 @@ compiler:
 	    cargo build --manifest-path $(ROOT)/compiler/Cargo.toml --profile gate \
 	        --bin whitefootc --locked --offline; \
 	fi
+
+# Explicit helper-pricing experiment only; no framework or correctness caller.
+# Retire this target and its three sources when that experiment is superseded.
+# The ordinary adapter chooses the sequential world at WF_WORKERS=1.
+array-reference-build: compiler $(RUNTIME_OBJS)
+	@mkdir -p $(BUILD)
+	$(WFC) --par --emit-llvm array_reference.wf -o $(BUILD)/array_reference.ll
+	awk -f $(HOST_ADAPTER) $(BUILD)/array_reference.ll array_reference_host.ll > $(BUILD)/array_reference-adapted.ll
+	sed -e 's/@main(/@wf_bench_original_main(/g' \
+	    -e 's/@wf__main_body(/@wf_bench_original_body(/g' \
+	    $(BUILD)/array_reference-adapted.ll > $(BUILD)/array_reference-linked.ll
+	$(CC) $(WF_FLAGS) $(BUILD)/array_reference-linked.ll array_reference_bench.c \
+	    $(RUNTIME_OBJS) -lm -o $(BUILD)/array_reference
+	$(SHA256) array_reference.wf array_reference_bench.c array_reference_host.ll $(BUILD)/array_reference
 
 # -------------------------------------------------------------------- deps --
 # `fetch` is the only network step; everything after it is offline. A

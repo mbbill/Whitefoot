@@ -1199,7 +1199,7 @@ collection, adaptive policy or further timing trial is implemented here.
 
 ### Read-only Box-array helper work pricing
 
-The current compiler at `3402048f` loses the runtime extent in a helper over
+The initial check at `3402048f` loses the runtime extent in a helper over
 `&Box<Array<u64>>`: a native observer sees an outer iteration price of 123 at
 input lengths 0, 1, 17, 4,096 and 65,536. An equivalent range helper retains
 prices 10, 15, 95, 20,490 and 327,690, respectively. Both forms return the
@@ -1249,8 +1249,11 @@ control precedes the compiler comparison. Apply the maintained comparison's
 three-percent, two-width noise screen at W1/W2/W4 to this control in either
 direction: two widths consistently favoring one arm in four of five pairs
 make timing inconclusive. The tiny case and W8 remain observations. This
-comparison selects no scheduler constant or new grain
-policy.
+comparison selects no scheduler constant or new grain policy. The cell order
+is primary W1/W2/W4/W8, then tiny W1/W4, rotated left by the pass number minus
+one. Odd passes run baseline then candidate; even passes reverse those arms.
+Reduce each process's five warm calls to medians, then report the median of
+the five paired candidate/baseline ratios.
 
 The native witness on `3402048f` with the repair observes Box-helper prices
 11, 18, 130, 28,683 and 458,763 at the same five lengths, with unchanged
@@ -1274,5 +1277,76 @@ and candidate reject the same-owner case, comparing the referenced field with
 consumption of the complete owner root, and accept the unrelated-owner
 control. This tests the existing EFF-2/OWN-1/EFF-5 safety premise without
 changing a source rule. The four source checks take 0.21 seconds together.
-Focused Rust regression execution and matched-current performance remain
-pending; the cheap native preflight does not stand in for the full gate.
+After integrating main `c6cd9add`, candidate `7895c9d0` passes the five focused
+Rust tests: the seven-arm native regression, total estimates for empty and
+inverted ranges, post-loop continuation accounting, helper-summary lowering
+and the existing EFF-5 alias rejection. Test-image construction took 82.81 s;
+the three native builds within the selected tests took 0.925, 0.791 and
+0.827 s. The conformance pair also passes directly with the current candidate.
+
+#### Matched helper result, 2026-09-22 UTC
+
+The retained [WF source](../../experiments/compute-bench/array_reference.wf),
+[C oracle](../../experiments/compute-bench/array_reference_bench.c) and
+[ordinary ABI adapter](../../experiments/compute-bench/array_reference_host.ll)
+have an explicit manual build target in the existing compute-bench Makefile.
+Their [raw rows](../../experiments/compute-bench/array-reference-work-2026-09-22.tsv)
+retain both the identical-image control and matched comparison, including
+warmups. They are research evidence, with no daily correctness dependency.
+
+The host is MacBookPro18,3 with eight physical/logical CPUs in performance
+levels of six and two cores, Apple clang 21.0.0 and Rust 1.98.1. The baseline
+compiler is an independently built `6fdb6768` image, SHA-256
+`d6ba9286f877df7e2a2d9e7d751d415871b2d2d992d558a2d9e37ad14e3a32c5`.
+The current candidate is `7895c9d0`, SHA-256
+`90711761755287a55b2859c46d03772a862ca0d212287a584992c25c4ef4a563`.
+Its experiment module is byte-identical to the independently built `cabae235`
+candidate from the earlier main revision. Full emitted modules for prefix,
+histogram, BFS, Mandelbrot, records, FIR, quadrature and stencil are identical
+across all three compilers, as is the sequential experiment module. Runtime
+sources and the formal host adapter are unchanged. No metadata was stripped.
+Thus the older baseline remains a matched code comparison after the main
+integration; it is not presented as a newly built current-main compiler.
+
+The only parallel module changes are the split-site header length load and
+saturating work arithmetic, plus the two required intrinsic declarations.
+The old price is 154; the new price is `9 * length + 10`, or 147,466 at the
+primary length. Hash bodies and chunk bodies are unchanged. Native images
+use the ordinary `-std=c11 -pthread -O2 -Wno-override-module` flags and runtime,
+without LTO or extra scheduling instrumentation. Their SHA-256 identities are
+`0cec62229866b74b440de7633a19d1c35b4a2c3db5890d2fe4344aa01030454f`
+(baseline) and
+`ca604f608f6bef8a8da5b10d6fcfd4e5ea1916da603123956aa7e69f899a309e`
+(candidate). Whole-output and unchanged-input checks pass at W1/W4 for both
+primary and tiny fixtures. Native construction took 1.25 s and the oracle
+preflight took 1.04 s; the fixed null and matched timing stages took 2.09 s and
+2.80 s respectively.
+
+The identical-image primary wall ratios at W1/W2/W4 are
+0.9946/1.0006/1.0039, passing the prospective noise screen. Matched results:
+
+| Workers | Baseline wall, ms | Candidate wall, ms | Paired wall ratio | Paired CPU ratio | Faster pairs | Median steals, baseline/candidate |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 10.618 | 10.541 | 0.9926 | 0.9911 | 4/5 | 0/0 |
+| 2 | 10.486 | 5.403 | 0.5159 | 1.0239 | 5/5 | 0/1 |
+| 4 | 10.494 | 2.821 | 0.2698 | 1.0522 | 5/5 | 0/5 |
+| 8 | 10.499 | 1.742 | 0.1659 | 1.1921 | 5/5 | 0/31 |
+
+The preselected W4 criterion passes: 73.0 percent lower paired wall time,
+five of five faster pairs and actual useful steals, with 5.2 percent more
+process CPU. W1 selects the identical sequential world and has no offers.
+The tiny W1/W4 fixture also has no offers, but its single-call wall readings
+quantize to 0 or 1,000 ns and cannot establish an absolute overhead bound;
+no tiny ratio is interpreted. A separate fixed batching diagnostic is pending
+to resolve that observation while retaining these original images and rows.
+
+W8's 19.2 percent CPU increase is a real tradeoff in this comparison. Its
+per-pair CPU ratios range from 1.150 to 1.227. The unchanged policy allows
+64 leaves at W4 and 128 at W8 for this price; median actual steals rise from
+five to 31, and W8 uses the host's two performance levels. Additional
+scheduling and slower-core execution are plausible contributors, but this
+experiment does not isolate their shares. W8 buys a further roughly
+38 percent wall reduction relative to the W4 candidate. Record that cost and
+uncertainty without selecting a new grain, queue or worker-width policy.
+The bounded pricing repair meets its primary criterion; full gate and
+independent completion review remain pending.
