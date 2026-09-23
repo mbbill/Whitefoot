@@ -339,6 +339,13 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   otherwise balanced costly search against a fair native reference, charging
   completed final-wave work, trace perturbation and scheduling cost; the cheap
   early-hit adverse example alone establishes no potential parallel benefit.
+  The [adjacent-helper criterion](../research/investigations/compute-model/DESIGN.md#adjacent-helper-pair-criterion)
+  separates source composition from the missing price by comparing the same
+  two local-return blocks as a counted wave and adjacent calls. Preserve
+  logical prefixes and require completed nonempty predicates on another
+  native thread. Actualizing those calls would leave the counted-loop pricing
+  question open; participation alone establishes no profitability or new
+  general cost input.
   Defer further search pricing work until a concrete consumer requires it;
   reopen with that workload and a criterion that distinguishes useful overlap
   from merely higher worker participation. No lower threshold or new

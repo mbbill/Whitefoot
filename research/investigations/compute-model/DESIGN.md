@@ -2020,6 +2020,98 @@ records the migrated source separately. This correspondence reuses the
 original native qualification without compiler or native reconstruction,
 native execution, or a new performance claim.
 
+### Adjacent helper-pair criterion
+
+The next bounded qualification starts at `7d718329` and changes only how the
+same two local-return helpers are composed. Keep the four-record ordered
+waves and the existing `scan_plain`, `record_hit` and `has_zero` bodies. Pass
+already computed first/middle/end bounds to an ordinary wave helper whose
+first two statements call `scan_plain` on the two contiguous blocks, then
+combine their scalar results with `imin`. Both calls finish before the caller
+decides whether to start another wave. This tests a source decomposition
+under PAR-1; it selects no arbitrary-arity executor or new grain policy.
+
+The current loop's two iterations cannot reach the 130-iteration minimum
+at its price of 2,336. Its indexed offset loads and payload-dependent early
+returns have no available expression in the current work summary. Captured
+scalars, descriptors and original read-only Box headers are available;
+checked bounds could support a different upper-bound policy, but neither
+bounds nor read-only effects establish a representative cost or profitability.
+At fixed lengths and offsets, absent and first-byte-hit payloads still have
+different work. The existing grain-policy and unavailable-helper-extent
+items in `docs/todo.md` retain this general question. The paired-call result
+will qualify a source form, not resolve those policies.
+
+All bounds are parameters at the pair site so a preceding bound-producing
+call cannot consume one member of the intended pair in greedy grouping.
+Inspect the actual group and offered target: a granted bound call is not
+search participation. Any observed grouping interference is a separate
+compiler limitation to retain, not a reason to count that work as a scan.
+Use the existing source, native probe, adapter, Makefile targets and evidence
+stream; add no repository file or harness. Preserve the original modes and
+dated measurements. The existing diagnostic block form remains the logical
+trace reference; its nominal result and pricing do not certify the new
+plain form's actualization.
+
+The fixed four-record controls use T = 1, 65,536 and 1,048,576. All have the
+same input length `2*T + 2` and five offsets for each T. A stated hit is at
+the record's first byte except for the late hit, which is at its last byte.
+Counts below are inspected records / logical byte tests.
+
+| Control | Record lengths and hits | Sequential | Complete paired wave |
+| --- | --- | ---: | ---: |
+| Balanced absence | `[1, T, 1, T]`, no hit | `4 / (2*T + 2)` | `4 / (2*T + 2)` |
+| Balanced late hit | `[1, T, 1, T]`, hit at record 3 | `4 / (2*T + 2)` | `4 / (2*T + 2)` |
+| Cheap first hit, distant expense | `[1, T, T, 1]`, hit at record 0 | `1 / 1` | `3 / (T + 2)` |
+| Both local tails skipped | `[1, T, 1, T]`, hits at records 0 and 2 | `1 / 1` | `2 / 2` |
+
+Before selecting the form, require all of the following:
+
+- Reuse the existing 1,129-fixture oracle matrix for the new form, including
+  empty and partial waves, and compare its lowest index, unchanged inputs and
+  complete logical prefixes with the existing independent `memchr` outcomes.
+  Retain the old loop form as the same-partition control. A small C reference
+  in the existing probe also executes those two blocks, using one native
+  helper and the caller, and joins both before taking the minimum. It carries
+  private prefix records and has no shared cancellation flag. Charge every
+  started block; the sequential C search remains the useful early-hit baseline.
+- Inspect emitted permission, scalar-result offers, frames and the three
+  unchanged plain scan bodies. The intended offered target must be a scan,
+  and the old loop's ordinary split queries must still explain its zero
+  budget. Do not change runtime constants, refusal switches or source work to
+  manufacture participation.
+- In a diagnostic copy of the ordinary paired plain module, add entry/return
+  hooks to `has_zero`. Callbacks in the existing C probe record its range,
+  native thread identity and entry/completion event ordinals. These controls
+  have positive record lengths, so each range identifies its visited record.
+  Use no clock interval, sleep, barrier or wait in the observer. Check actual
+  visited prefixes, including skipped tails, rather than inferring them from
+  the final minimum. Require completed nonempty predicates on the caller and
+  another native thread, with overlapping entry/completion intervals, for
+  both balanced T = 1,048,576 controls. The uninstrumented plain image must
+  independently report a positive per-case steal delta with the verified
+  scan target; diagnostic participation alone is insufficient. Observer
+  hooks and any observer-induced optimization changes remain explicit and
+  supply no production timing result.
+
+Reuse the frozen current-main CLI and ordinary runtime inputs. Run source
+emission, native construction and oracle execution as separate guarded
+stages, each capped at 30 seconds and construction at two jobs. Keep W1 and
+W4 only, exactly one fixed pass per selected image/width over the twelve
+controls; the largest payload is 2,097,154 bytes, within the existing
+16-MiB input domain. Stop on an acceptance/capability failure, changed
+uninstrumented predicate body, wrong index or prefix, changed input, or artifact-identity
+drift. If actual nonempty helper work is absent in that fixed pass,
+the actualization claim fails for this witness; do not expand the inputs or
+lower a threshold after seeing that result. No timing comparison is selected.
+
+**Design suitability.** Two adjacent ordinary calls directly test whether the
+same useful search work can execute on helpers without a loaded-work policy.
+The cost remains completing the other block and joining each ordered wave;
+the cheap-first-hit control preserves that adverse tradeoff. Defer recursive
+wave trees, broader cost transport and performance selection until this
+bounded functional and participation evidence identifies a further need.
+
 ## Sparse destination routing trial (2026-09-21)
 
 This bounded continuation starts at merged `3402048f` and asks whether useful
