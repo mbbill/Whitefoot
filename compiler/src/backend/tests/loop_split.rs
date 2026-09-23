@@ -238,18 +238,24 @@ fn main() -> status: ExitStatus pure {
 }
 "#;
 
-/// A permitted loop that captures three enclosing values and folds under an
-/// operation that is not `+wrap`.
+/// A permitted loop that captures a nonzero record and inline array and folds
+/// under an operation that is not `+wrap`.
 ///
 /// Two things nothing else here reaches. **Captures**: the chunk and the
 /// splitter declare them, the site passes them, and a lane frame carries them
 /// through a thunk — four lists that have to agree on order and type, and a
-/// fixture with no capture at all cannot tell whether they do. The three
+/// fixture with no capture at all cannot tell whether they do. Their fields
 /// differ in value *and* are folded asymmetrically, so a swapped pair moves the
 /// published bytes. **A second combine**: both `ixor` and `+wrap` have identity zero, but the incoming nonzero seed
 /// must reach the left half rather than seeding that half
 /// where the right should be, changes the answer here and not there.
-const CAPTURED_XOR_FOLD: &[u8] = br#"fn mix(seed: u64, salt: u64, rounds: u64) -> result: u64 pure {
+const CAPTURED_XOR_FOLD: &[u8] = br#"struct FoldControls {
+  tag: u8;
+  salt: u64;
+  rounds: u64;
+}
+
+fn mix(seed: u64, salt: u64, rounds: u64) -> result: u64 pure {
   let state = ixor(seed, salt);
   let round = 0_u64;
   loop @rounds {
@@ -268,7 +274,7 @@ const CAPTURED_XOR_FOLD: &[u8] = br#"fn mix(seed: u64, salt: u64, rounds: u64) -
 
 fn low_byte(v: u64) -> result: u8 pure {
   let low = iand(v, 255_u64);
-  match cvt::<u64, u8>(low) {
+  match cvt.checked::<u64, u8>(low) {
     Ok(value: byte) => {
       return byte;
     }
@@ -300,11 +306,17 @@ fn spell(destination: &[u8], at: u64, value: u64) -> result: u64 writes(destinat
 }
 
 fn folded(salt: u64, rounds: u64, stride: u64) -> result: u64 pure {
-  doc "Three captured values, each used differently, folded under ixor.";
+  doc "Copied nonzero record and array captures, folded under ixor.";
+  let controls = FoldControls(tag: 13_u8, salt: salt, rounds: rounds);
+  let strides = array_filled::<u64, 3>(value: stride);
   let total = 12345678901234567890_u64;
   for @points (i in 0_u64..400000_u64) {
-    let stepped = i *wrap stride;
-    let mixed = mix(seed: stepped, salt: salt, rounds: rounds);
+    let copied_controls = controls;
+    let copied_strides = strides;
+    let tag = cvt::<u8, u64>(copied_controls.tag);
+    let step = copied_strides[1_u64] +wrap tag;
+    let stepped = i *wrap step;
+    let mixed = mix(seed: stepped, salt: copied_controls.salt, rounds: copied_controls.rounds);
     set total = ixor(total, mixed);
   }
   return total;
@@ -351,7 +363,7 @@ const INDEPENDENT_MAP: &[u8] = br#"fn mix(seed: u64) -> result: u64 pure {
 
 fn low_byte(v: u64) -> result: u8 pure {
   let low = iand(v, 255_u64);
-  match cvt::<u64, u8>(low) {
+  match cvt.checked::<u64, u8>(low) {
     Ok(value: byte) => {
       return byte;
     }
@@ -810,7 +822,7 @@ __attribute__((constructor)) static void register_outer_budget(void) {
 /// A split that carries captures and folds under a second admitted operation
 /// publishes what the unsplit lowering publishes, at every worker count.
 ///
-/// Both combines have identity zero; the nonzero incoming seed and three
+/// Both combines have identity zero; the nonzero incoming seed and aggregate
 /// captures have to reach the chunk in the order and the types its parameters
 /// declare — through a lane frame and a thunk on the granted edge. Both are
 /// checked against the default compilation of the same source rather than
@@ -849,13 +861,20 @@ fn a_split_loop_carries_its_captures_and_a_second_combine() {
             .iter()
             .find(|function| function.synthesis() == Some(crate::IrSynthesis::Splitter))
             .expect("the fold must split despite its wide surrounding scope");
-        let frame = parallel_lane_frame_layout(host, program, splitter, false)
-            .expect("target frame layout")
-            .expect("the needed capture frame fits");
+        let frame = parallel_lane_frame_layout(
+            host,
+            program.nominals(),
+            program.elements(),
+            splitter.parameters().iter().map(|(_, ty)| *ty),
+            splitter.result(),
+            false,
+        )
+        .expect("target frame layout")
+        .expect("the needed capture frame fits");
         assert_eq!(
             frame.size(),
-            64,
-            "seed, bounds, three captures, budget and result"
+            88,
+            "seed, bounds, a padded 24-byte record, a 24-byte array, budget and result"
         );
         let chunk = program
             .functions()
@@ -866,14 +885,19 @@ fn a_split_loop_carries_its_captures_and_a_second_combine() {
             chunk
                 .value_types()
                 .iter()
-                .any(|ty| matches!(ty, crate::IrType::Array { .. })),
+                .any(|ty| matches!(ty, crate::IrType::Array { length: 512, .. })),
             "the removed capture must leave aggregate type metadata for this regression"
         );
         let storage = crate::backend::storage::FunctionStoragePlan::build(program, chunk)
             .expect("the pruned chunk has valid storage");
         assert!(
-            storage.slots().is_empty(),
-            "removed aggregate capture definitions must not allocate phantom chunk storage"
+            storage.slots().iter().all(|ty| {
+                matches!(
+                    ty,
+                    crate::IrType::Nominal(_) | crate::IrType::Array { length: 3, .. }
+                )
+            }),
+            "only the retained record and array may allocate chunk storage; the removed 512-element capture must leave no phantom slot"
         );
         let mut module = crate::backend::emitter::emit_llvm_with_layout(program, host)
             .expect("the reduced capture ABI must emit")
@@ -887,15 +911,17 @@ fn a_split_loop_carries_its_captures_and_a_second_combine() {
         split.contains("@wf__par_split_"),
         "the fixture's loop must actually split, or this checks nothing:\n{split}"
     );
-    // Three captures, so the chunk takes the seed, both endpoints, and them.
-    // Only the loop's three runtime inputs belong to its parameter ABI.
+    // Aggregate formals use the ordinary indirect function ABI. The seed and
+    // endpoints are the only scalar parameters; both retained payloads travel
+    // by value inside the lane frame and are copied into the chunk's storage.
     let chunk = function_body(&split, &synthesized(&split, "@wf__par_chunk_"));
     let signature = chunk.lines().next().expect("a definition has a signature");
     assert_eq!(
         signature.matches("i64 %").count(),
-        6,
-        "the chunk must declare the seed, both endpoints, and three captures: {signature}"
+        3,
+        "the chunk must declare the seed and both endpoints: {signature}"
     );
+    assert_eq!(signature.matches("ptr ").count(), 2, "{signature}");
 
     let directory = test_directory();
     let reference = Command::new(build_executable(&unsplit, &directory))
@@ -1642,7 +1668,7 @@ const COMBINE_PRELUDE: &str = r#"fn mix(seed: u64) -> result: u64 pure {
 
 fn low_byte(v: u64) -> result: u8 pure {
   let low = iand(v, 255_u64);
-  match cvt::<u64, u8>(low) {
+  match cvt.checked::<u64, u8>(low) {
     Ok(value: byte) => {
       return byte;
     }

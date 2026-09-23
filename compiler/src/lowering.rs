@@ -1,14 +1,15 @@
-//! Target-independent lowering from the semantically checked active Whitefoot specification.
+//! Typed control-flow lowering from the semantically checked Whitefoot specification.
 //!
 //! The private IR records exact value types, nominal construction/projection,
 //! direct calls, erased source proofs, and explicit control-flow edges. It performs
 //! no source admission, label lookup, exhaustiveness decision, or ownership
-//! judgment.
+//! judgment. Optional loop actualization uses the selected target's lane-frame
+//! layout; the value and control-flow representation remains target-neutral.
 
 use crate::semantic::{
-    CheckedBooleanOperation, CheckedElement, CheckedEnumType, CheckedFloatOperation,
-    CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedNumericType,
-    CheckedProgram, CheckedTargetDomainObligation, CheckedType,
+    CheckedBooleanOperation, CheckedConversionMode, CheckedElement, CheckedEnumType,
+    CheckedFloatOperation, CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude,
+    CheckedNumericType, CheckedProgram, CheckedTargetDomainObligation, CheckedType,
 };
 
 mod operands;
@@ -86,7 +87,7 @@ impl IrNominalId {
         self.0
     }
 
-    const fn index(self) -> usize {
+    pub(crate) const fn index(self) -> usize {
         self.0 as usize
     }
 }
@@ -454,8 +455,8 @@ fn lower_type(erasure: TypeLowering<'_>, value: CheckedType) -> Result<IrType, L
     })
 }
 
-const fn lower_numeric_type(value: CheckedNumericType) -> IrType {
-    match value {
+const fn lower_numeric_type(value: CheckedNumericType) -> Result<IrType, LoweringFailure> {
+    Ok(match value {
         CheckedNumericType::Integer(integer) => IrType::Integer {
             width: integer.width(),
             signed: integer.signed(),
@@ -463,7 +464,10 @@ const fn lower_numeric_type(value: CheckedNumericType) -> IrType {
         CheckedNumericType::Float(float) => IrType::Float {
             width: float.width(),
         },
-    }
+        CheckedNumericType::GenericInteger(_) | CheckedNumericType::GenericFloat(_) => {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+    })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -681,6 +685,25 @@ pub enum IrBooleanOperation {
     Or,
     ExclusiveOr,
     Not,
+}
+
+/// The source-selected conversion contract, retained independently of its
+/// concrete endpoints and result representation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IrConversionMode {
+    Exact,
+    Checked,
+    Defined,
+}
+
+impl From<CheckedConversionMode> for IrConversionMode {
+    fn from(value: CheckedConversionMode) -> Self {
+        match value {
+            CheckedConversionMode::Exact => Self::Exact,
+            CheckedConversionMode::Checked => Self::Checked,
+            CheckedConversionMode::Defined => Self::Defined,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1023,6 +1046,7 @@ pub enum IrOperation {
         arguments: Vec<IrValueId>,
     },
     NumericConversion {
+        mode: IrConversionMode,
         source_type: IrType,
         destination_type: IrType,
         value: IrValueId,
@@ -1883,6 +1907,9 @@ impl IrProgram<'_, '_, '_> {
 pub enum LoweringFailure {
     InvalidCheckedProgram,
     CounterOverflow,
+    /// A target-stage layout check during optional loop actualization failed.
+    /// Semantic acceptance has already completed; this is no source verdict.
+    TargetLayout(crate::backend::target::TargetLayoutFailure),
     /// Capability stop: one [PRE-1] record the compiler itself owns -- a
     /// window operation [OP-10], `swap` [OP-11], a construction function
     /// [OP-13] or `free_empty` [OP-14] -- whose body this version does not
@@ -1899,6 +1926,15 @@ pub enum LoweringFailure {
     /// module that names a symbol nothing defines. It is never a source
     /// verdict, so the driver reports it as the unsupported capability it is.
     UnimplementedPreludeRow(&'static str),
+}
+
+impl From<crate::backend::target::TargetLayoutFailure> for LoweringFailure {
+    fn from(failure: crate::backend::target::TargetLayoutFailure) -> Self {
+        match failure {
+            crate::backend::target::TargetLayoutFailure::InvalidIr => Self::InvalidCheckedProgram,
+            other => Self::TargetLayout(other),
+        }
+    }
 }
 
 /// The [PRE-1] records whose bodies the compiler itself emits: the nine
@@ -1942,4 +1978,6 @@ mod builder;
 #[cfg(test)]
 mod tests;
 
-pub use builder::lower_checked;
+#[cfg(test)]
+pub(crate) use builder::lower_checked;
+pub(crate) use builder::lower_checked_with_layout;

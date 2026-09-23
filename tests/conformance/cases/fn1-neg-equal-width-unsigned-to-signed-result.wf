@@ -1,5 +1,5 @@
 fn widen(x: u32) -> result: i32 pure {
-  return cvt::<u32, i32>(x);
+  return cvt.checked::<u32, i32>(x);
 }
 
 fn main() -> status: ExitStatus pure {

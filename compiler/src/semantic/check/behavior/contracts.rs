@@ -300,6 +300,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let elements = self.elements.borrow();
         let const_parameter_types = self.const_generic_types().collect();
         let context = EntailmentContext {
+            declarations: self.resolved.declarations(),
             callees: &[],
             constants: &self.checked_constants,
             constant_ids: &self.constants,

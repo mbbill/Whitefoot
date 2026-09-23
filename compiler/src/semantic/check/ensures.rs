@@ -733,6 +733,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let CheckedStatement::Let { binding, value, .. } = &checked.statement else {
                     return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
                 };
+                self.validate_clause_conversion_domains(
+                    ClauseKind::Postcondition(record),
+                    definition,
+                    value,
+                )?;
                 self.validate_clause_copy_local(
                     ClauseKind::Postcondition(record),
                     definition,
@@ -752,6 +757,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             self.validate_clause_condition(ClauseKind::Postcondition(record), clause, expression)?;
             let condition = self.check_expression(function, expression, bindings, 0)?;
+            self.validate_clause_conversion_domains(
+                ClauseKind::Postcondition(record),
+                clause,
+                &condition.expression,
+            )?;
             if condition.mode != CheckedMode::Own || condition.expression.ty() != CheckedType::Bool
             {
                 return self.issue_node(

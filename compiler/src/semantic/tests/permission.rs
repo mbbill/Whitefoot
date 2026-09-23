@@ -808,7 +808,7 @@ fn a_write_by_the_second_call_over_a_read_by_the_first_is_denied() {
 #[test]
 fn a_propagating_first_statement_is_denied_by_its_exit() {
     let source = br#"fn narrow(v: u32) -> result: Result<u8, NarrowError> pure {
-  return cvt::<u32, u8>(v);
+  return cvt.checked::<u32, u8>(v);
 }
 
 fn probe(v: u32, slot: &Cell) -> result: Result<unit, NarrowError> writes(slot.value) {
@@ -833,7 +833,7 @@ fn probe(v: u32, slot: &Cell) -> result: Result<unit, NarrowError> writes(slot.v
 #[test]
 fn a_propagating_second_statement_is_denied_by_its_exit() {
     let source = br#"fn narrow(v: u32) -> result: Result<u8, NarrowError> pure {
-  return cvt::<u32, u8>(v);
+  return cvt.checked::<u32, u8>(v);
 }
 
 fn probe(v: u32, slot: &Cell) -> result: Result<unit, NarrowError> writes(slot.value) {

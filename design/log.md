@@ -19,6 +19,30 @@ Nodes: compiler/storage-representation
 
 Summary: The owner accepted the recommendation to reject PR #101's inactive-payload initialization amendment. Its [retained same-source comparison](https://github.com/mbbill/Whitefoot/blob/055ec61d12b781712de1ee3bce73e35e29bb9d70/research/experiments/container-representation/map-library/RESULTS.md#completed-comparison-gains-with-unresolved-regressions) fails the prospective selection criterion: wide-map rebuild gains accompany repeated normal wide replacement and retained scalar Slab lookup regressions. Retain the experimental evidence and the existing compiler storage-representation decisions; do not adopt the proposed omission of inactive-payload clearing. This refusal selects the existing lowering without changing source-language rules.
 
+## 2026-09-23 Adopt uniform exact numeric conversions
+
+Nodes: language/numeric-conversion, compiler/numeric-conversion-lowering
+
+Owner-approved: After the final PR #99 handoff and clean DCR at 5d29d4665, the owner explicitly agreed to the revisions: adopt the complete language and compiler proposals, retaining the independent modular-conversion proposal for later work.
+
+Summary: Apply the two reviewed proposal bodies unchanged: uniform exact, checked and domain-query interfaces, same-type bit copies, captured integer Result equality, explicit conversion modes, direct proved lowering and positive-only sufficient bounds within the existing proof machinery. Name the compiler node numeric-conversion-lowering to preserve globally unique node names. The [conversion comparison](../research/investigations/numeric-conversions/DESIGN.md#design-alternatives) records the alternatives and grounds. Defer integer `cvt.wrap` to the maintained TODO because it selects a separate result policy beyond this exact-conversion scope; do not adopt it into the language or this implementation. Remove all three resolved amendments and their directory. The specification and implementation are unchanged by this ruling; it does not authorize a merge.
+
+## 2026-09-23 Fit aggregate loop captures to the selected target
+
+Nodes: compiler/parallel-lowering/two-worlds
+
+Owner-approved: After the final handoff for PR #105 at 55e88e418829aafa8b0b707eda6f07ce7a7f6e6f and PR #100 at 6be774329ca7e585cdcd4a4f82a8efd53830c34e, the owner explicitly approved all three proposals, including this complete PR #105 amendment.
+
+Summary: Apply the reviewed decision and two rejected alternatives unchanged: after needed-capture selection, use shared selected-target layout to rescue a conservatively oversized loop whose transported frame fits, preserving already-fitting paths and direct CFG reuse on real refusal. The [target-fitting investigation](../research/investigations/compute-model/DESIGN.md#selected-target-loop-frame-fitting) supplies the consumer, qualification and limits. Remove the accepted amendment and its directory. The compiler implementation and specification are unchanged by this ruling; it does not authorize a merge.
+
+## 2026-09-23 Defer call-group bridges and DONE-before-help after the cost-control failure
+
+Nodes: compiler/parallel-lowering, compiler/parallel-lowering/parallel-runtime
+
+Owner-approved: The owner explicitly agreed to all three proposals in the final Chinese handoff, including both complete PR #100 rejection additions at revision 6be774329. This entry applies only those two additions.
+
+Summary: Apply the reviewed rejection additions unchanged, preserving every existing Decision. Recovered overlap, passing correctness and the deterministic completed-target benefit leave workload cost unqualified after the [identical-image control](../research/investigations/compute-model/DESIGN.md#amended-cost-result-identical-image-control-failure) failed before candidate or runtime-only timing. Defer both adoptions until a new prospectively qualified cost comparison, without inferring a compiler or runtime regression. Remove the two resolved amendments and their empty directory. The specification and implementation are unchanged by this ruling; it does not authorize a merge.
+
 ## 2026-09-23 State the precise checking ground for named operands
 
 Nodes: language/surface-form, language/surface-form/construction-form

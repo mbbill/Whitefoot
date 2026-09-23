@@ -36,7 +36,7 @@ fn exercise(args: &Args, cwd: &DirectoryRead, files: &HandleFactory) -> status: 
               }
               let scaled = total *wrap 10_u64;
               let mixed = scaled +wrap chunks;
-              let narrowed = cvt::<u64, u8>(mixed);
+              let narrowed = cvt.checked::<u64, u8>(mixed);
               match narrowed {
                 Ok(value: code) => {
                   close_read(factory: files, file: move file);

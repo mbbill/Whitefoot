@@ -1,0 +1,10 @@
+fn observe<T: Int>(value: T) -> result: unit pure {
+  cvt::<T, f64>(value);
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  observe::<u32>(value: 7_u32);
+  observe::<i64>(value: 7_i64);
+  return exit_status(code: 0_u8);
+}

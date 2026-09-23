@@ -1,0 +1,749 @@
+--- a/dag_fanin_probe.cpp
++++ b/dag_fanin_probe.cpp
+@@ -1,8 +1,3 @@
+-// Runtime-DAG investigation only: complete-output Kahn oracle, passive task
+-// events and the pinned oneTBB flow-graph reference. No performance intervals.
+-// The explicit Makefile targets are its only caller; retire with the trial.
+-#include <oneapi/tbb/flow_graph.h>
+-#include <oneapi/tbb/global_control.h>
+-#include <oneapi/tbb/task_arena.h>
+-#include <oneapi/tbb/version.h>
+-
++// Scratch-only PR105 capacity qualification, derived from b68f6777's pinned
++// probe. Keep its generic oracle and comparator; select one disconnected
++// form-0/C1 fixture. No tracing, oneTBB, scheduling controls, or repetitions.
+@@ -11 +6 @@
+-#include <atomic>
++#include <chrono>
+@@ -16 +10,0 @@
+-#include <memory>
+@@ -21,3 +14,0 @@
+-
+-static_assert(TBB_VERSION_MAJOR == 2023 && TBB_VERSION_MINOR == 1 &&
+-              TBB_VERSION_PATCH == 0, "use the existing pinned oneTBB cache");
+@@ -33,9 +23,0 @@
+-void dag_probe_spine(std::uint64_t, const std::uint64_t *, std::uint64_t,
+-                     TaskCell *, std::uint64_t);
+-void dag_probe_spine_phased(std::uint64_t, const std::uint64_t *, std::uint64_t,
+-                            TaskCell *, std::uint64_t);
+-void dag_probe_spine_phased_scalar(std::uint64_t, std::uint64_t, std::uint64_t,
+-                                   TaskCell *, std::uint64_t);
+-void dag_probe_notify(std::uint64_t, const std::uint64_t *, TaskCell *,
+-                      std::uint64_t *, std::uint64_t);
+-void dag_probe_n(std::uint64_t, const std::uint64_t *, TaskCell *, std::uint64_t);
+@@ -50 +31,0 @@
+-namespace tbb = oneapi::tbb;
+@@ -61 +41,0 @@
+-enum class Engine { whitefoot, tbb, phased, scalar, runtime_loop, runtime_tree, runtime_tbb };
+@@ -83,19 +62,0 @@
+-bool native_engine(Engine engine) {
+-    return engine == Engine::tbb || engine == Engine::runtime_tbb;
+-}
+-bool runtime_engine(Engine engine) {
+-    return engine == Engine::runtime_loop || engine == Engine::runtime_tree ||
+-           engine == Engine::runtime_tbb;
+-}
+-const char *engine_name(Engine engine) {
+-    switch (engine) {
+-    case Engine::whitefoot: return "wf";
+-    case Engine::tbb: return "tbb";
+-    case Engine::phased: return "wf-phased";
+-    case Engine::scalar: return "wf-scalar";
+-    case Engine::runtime_loop: return "wf-runtime-loop";
+-    case Engine::runtime_tree: return "wf-runtime-tree";
+-    case Engine::runtime_tbb: return "tbb-runtime";
+-    }
+-    fail("unknown engine");
+-}
+@@ -133,0 +95 @@
++    ready.reserve(count);
+@@ -188,348 +149,0 @@
+-std::vector<Graph> runtime_fixtures(Engine engine) {
+-    std::vector<Graph> result;
+-    auto append = [&](Graph graph) {
+-        const std::size_t count = graph.costs.size();
+-        graph.successors.assign(2 * count, count);
+-        std::vector<std::size_t> used(count);
+-        for (auto edge : graph.edges) {
+-            if (edge.first >= edge.second || edge.second >= count || used[edge.first] == 2)
+-                fail("invalid runtime fixture edge");
+-            graph.successors[2 * edge.first + used[edge.first]++] = edge.second;
+-        }
+-        if (engine == Engine::runtime_tbb) {
+-            result.push_back(std::move(graph));
+-            return;
+-        }
+-        if (count == 0) {
+-            graph.name += "-c0";
+-            result.push_back(std::move(graph));
+-            return;
+-        }
+-        for (unsigned owners : {1, 2, 4}) {
+-            if (owners > count) continue;
+-            Graph owned = graph;
+-            owned.argument = owners;
+-            owned.name += "-c" + std::to_string(owners);
+-            result.push_back(std::move(owned));
+-        }
+-    };
+-    for (std::size_t count = 0; count <= 5; ++count) {
+-        std::vector<std::pair<std::size_t, std::size_t>> possible;
+-        for (std::size_t source = 0; source != count; ++source)
+-            for (std::size_t destination = source + 1; destination != count; ++destination)
+-                possible.emplace_back(source, destination);
+-        const unsigned combinations = 1U << possible.size();
+-        for (unsigned mask = 0; mask != combinations; ++mask) {
+-            Graph graph{Family::runtime, "runtime-" + std::to_string(count) + "-" +
+-                                            std::to_string(mask)};
+-            graph.costs.assign(count, 1);
+-            std::vector<unsigned> in(count), out(count);
+-            bool valid = true;
+-            for (std::size_t bit = 0; bit != possible.size(); ++bit) {
+-                if (!(mask & (1U << bit))) continue;
+-                const auto edge = possible[bit];
+-                if (++out[edge.first] > 2 || ++in[edge.second] > 2) {
+-                    valid = false;
+-                    break;
+-                }
+-                graph.edges.push_back(edge);
+-            }
+-            if (!valid) continue;
+-            if (count == 0) graph.name = "runtime-empty";
+-            if (count == 1) graph.name = "runtime-singleton";
+-            if (count == 3 && mask == 7) graph.name = "runtime-triangle";
+-            if (count == 4 && mask == 33) graph.name = "runtime-disconnected";
+-            append(std::move(graph));
+-        }
+-    }
+-    Graph reverse{Family::runtime, "runtime-reverse-arrival"};
+-    reverse.costs.assign(8, 1);
+-    reverse.edges = {{0, 2}, {2, 6}, {4, 6}};
+-    append(std::move(reverse));
+-    for (bool costly : {false, true}) {
+-        Graph progress{Family::runtime, costly ? "runtime-progress-costly" : "runtime-progress-unit"};
+-        progress.costs.assign(6, 1);
+-        if (costly) progress.costs[0] = progress.costs[3] = expensive;
+-        progress.edges = {{0, 2}, {1, 3}, {1, 4}, {2, 4}, {3, 5}, {4, 5}};
+-        append(std::move(progress));
+-    }
+-    return result;
+-}
+-std::vector<Graph> fixtures(Engine engine) {
+-    if (runtime_engine(engine)) return runtime_fixtures(engine);
+-    std::vector<Graph> result;
+-    for (std::uint64_t length : {0, 1, 2, 4, 7, 8, 9, 16, 32}) {
+-        for (unsigned profile = 0; profile != 4; ++profile) {
+-            if (length == 0 && profile >= 2) continue;
+-            if (engine == Engine::scalar &&
+-                ((length != 0 && length != 1 && length != 32) || profile >= 2)) continue;
+-            Graph graph{Family::spine, "spine-" + std::to_string(length) + "-" +
+-                                         std::to_string(profile)};
+-            graph.argument = length;
+-            graph.scalar_leaf_steps = profile == 1 ? expensive : 1;
+-            graph.costs.assign(2 * length, 1);
+-            for (std::size_t i = 0; i != length; ++i) {
+-                if (profile == 1 || (profile == 2 && i == 0) ||
+-                    (profile == 3 && i + 1 == length)) graph.costs[2 * i + 1] = expensive;
+-                graph.edges.emplace_back(2 * i, 2 * i + 1);
+-                if (i + 1 != length) graph.edges.emplace_back(2 * i, 2 * i + 2);
+-            }
+-            result.push_back(std::move(graph));
+-        }
+-    }
+-    if (engine == Engine::phased || engine == Engine::scalar) return result;
+-    for (unsigned fixture = 0; fixture != 17; ++fixture) {
+-        const unsigned mask = fixture == 16 ? 15 : fixture;
+-        Graph graph{Family::notify, "notify-" + std::to_string(mask) +
+-                                          (fixture == 16 ? "-costly" : "-cheap")};
+-        graph.argument = mask;
+-        graph.costs.assign(4, fixture == 16 ? expensive : 1);
+-        for (unsigned source = 0; source != 2; ++source)
+-            for (unsigned destination = 0; destination != 2; ++destination)
+-                if (mask & (1U << (2 * source + destination)))
+-                    graph.edges.emplace_back(source, destination + 2);
+-        result.push_back(std::move(graph));
+-    }
+-    for (unsigned costs = 0; costs != 16; ++costs)
+-        for (unsigned mode = 0; mode != (engine == Engine::tbb ? 1U : 4U); ++mode)
+-            result.push_back(n_graph(costs, mode));
+-    return result;
+-}
+-RuntimeResult routing_oracle(const Graph &graph) {
+-    const std::size_t count = graph.costs.size();
+-    if (count == 0) return {0, 0, 0};
+-    const std::size_t owners = graph.argument;
+-    if (owners == 0 || owners > count) fail("routing oracle owner count outside domain");
+-    const std::size_t stride = count / owners;
+-    auto owner = [&](std::size_t id) { return std::min(id / stride, owners - 1); };
+-    std::vector<std::uint64_t> crossing_depth(count);
+-    const auto incoming = predecessors(graph);
+-    RuntimeResult result{0, 1, 0};
+-    for (std::size_t id = 0; id != count; ++id) {
+-        for (std::size_t parent : incoming[id]) {
+-            if (parent >= id) fail("routing oracle requires topological IDs");
+-            const std::uint64_t crossing = owner(parent) != owner(id);
+-            result.notices += crossing;
+-            crossing_depth[id] = std::max(crossing_depth[id], crossing_depth[parent] + crossing);
+-        }
+-        result.rounds = std::max(result.rounds, crossing_depth[id] + 1);
+-    }
+-    return result;
+-}
+-struct Event {
+-    std::uint64_t id = 0, thread = 0, value = 0, steps = 0;
+-    bool begin = false;
+-};
+-struct Observation {
+-    std::vector<Event> events;
+-    std::atomic<std::size_t> next{0};
+-    std::atomic<bool> overflow{false};
+-} observation;
+-std::atomic<std::uint64_t> next_thread{1};
+-thread_local std::uint64_t thread_id = 0;
+-void event(std::uint64_t id, bool begin, std::uint64_t value, std::uint64_t steps) {
+-    if (thread_id == 0) thread_id = next_thread.fetch_add(1, std::memory_order_relaxed);
+-    const std::size_t at = observation.next.fetch_add(1, std::memory_order_seq_cst);
+-    if (at >= observation.events.size()) {
+-        observation.overflow.store(true, std::memory_order_relaxed);
+-        return;
+-    }
+-    observation.events[at] = {id, thread_id, value, steps, begin};
+-}
+-struct Trace {
+-    std::vector<std::size_t> begin, end;
+-    std::vector<std::uint64_t> thread;
+-};
+-std::string check_trace(const Graph &graph, const Expected &expected,
+-                        const std::vector<Event> &events, Trace &trace) {
+-    const std::size_t count = graph.costs.size(), absent = events.size();
+-    if (events.size() != 2 * count) return "trace event count mismatch";
+-    trace.begin.assign(count, absent);
+-    trace.end.assign(count, absent);
+-    trace.thread.assign(count, 0);
+-    for (std::size_t at = 0; at != events.size(); ++at) {
+-        const Event &current = events[at];
+-        if (current.id >= count || current.thread == 0) return "trace invalid task/thread ID";
+-        const std::size_t id = static_cast<std::size_t>(current.id);
+-        if (current.begin) {
+-            if (trace.begin[id] != absent) return "trace duplicate task entry";
+-            if (current.steps != graph.costs[id] || current.value != graph.seed)
+-                return "trace task input mismatch";
+-            trace.begin[id] = at;
+-            trace.thread[id] = current.thread;
+-        } else {
+-            if (trace.begin[id] == absent || trace.end[id] != absent)
+-                return "trace missing entry or duplicate exit";
+-            if (trace.thread[id] != current.thread) return "trace recurrence changed thread";
+-            if (current.value != expected.rows[id].value) return "trace task result mismatch";
+-            trace.end[id] = at;
+-        }
+-    }
+-    for (std::size_t id = 0; id != count; ++id)
+-        if (trace.begin[id] == absent || trace.end[id] == absent)
+-            return "trace missing task event";
+-    for (auto edge : graph.edges)
+-        if (trace.end[edge.first] >= trace.begin[edge.second])
+-            return "trace prerequisite not complete";
+-    return {};
+-}
+-bool overlap(const Trace &trace, std::size_t a, std::size_t b) {
+-    return trace.thread[a] != trace.thread[b] &&
+-           std::max(trace.begin[a], trace.begin[b]) < std::min(trace.end[a], trace.end[b]);
+-}
+-void print_trace(const Graph &graph, const Trace &trace) {
+-    std::size_t pairs = 0, progress = 0;
+-    for (std::size_t a = 0; a != graph.costs.size(); ++a)
+-        for (std::size_t b = a + 1; b != graph.costs.size(); ++b)
+-            if (overlap(trace, a, b)) ++pairs;
+-    if (graph.family == Family::spine)
+-        for (std::size_t i = 0; i != graph.argument; ++i)
+-            for (std::size_t j = i + 1; j != graph.argument; ++j) {
+-                const std::size_t leaf = 2 * i + 1, spine = 2 * j;
+-                if (trace.thread[leaf] != trace.thread[spine] &&
+-                    trace.begin[leaf] < trace.begin[spine] &&
+-                    trace.end[spine] < trace.end[leaf]) ++progress;
+-            }
+-    std::printf("overlap\t%s\tpairs=%zu\tspine_progress=%zu", graph.name.c_str(), pairs, progress);
+-    if (graph.family == Family::notify || graph.family == Family::n) {
+-        const bool d_while_a = trace.thread[3] != trace.thread[0] &&
+-            trace.begin[0] < trace.begin[3] && trace.begin[3] < trace.end[0];
+-        const bool c_while_d = trace.thread[2] != trace.thread[3] &&
+-            trace.begin[3] < trace.begin[2] && trace.begin[2] < trace.end[3];
+-        std::printf("\tsources=%u\towners=%u\td_while_a=%u\tc_while_d=%u",
+-                    static_cast<unsigned>(overlap(trace, 0, 1)),
+-                    static_cast<unsigned>(overlap(trace, 2, 3)),
+-                    static_cast<unsigned>(d_while_a), static_cast<unsigned>(c_while_d));
+-    }
+-    if (graph.name.rfind("runtime-progress-", 0) == 0) {
+-        const bool early = trace.thread[3] != trace.thread[0] &&
+-            trace.begin[0] < trace.begin[3] && trace.begin[3] < trace.end[0];
+-        std::printf("\ttask0_task3=%u\ttask3_while_task0=%u",
+-                    static_cast<unsigned>(overlap(trace, 0, 3)), static_cast<unsigned>(early));
+-    }
+-    if (graph.name.rfind("runtime-reverse-arrival", 0) == 0)
+-        std::printf("\ttask4_before_task2=%u",
+-                    static_cast<unsigned>(trace.end[4] < trace.begin[2]));
+-    std::putchar('\n');
+-    for (std::size_t at = 0; at != observation.events.size(); ++at) {
+-        const auto &row = observation.events[at];
+-        std::printf("event\t%s\t%zu\t%llu\t%s\tthread=%llu\tvalue=%016llx\tsteps=%llu\n",
+-                    graph.name.c_str(), at, static_cast<unsigned long long>(row.id),
+-                    row.begin ? "begin" : "end", static_cast<unsigned long long>(row.thread),
+-                    static_cast<unsigned long long>(row.value), static_cast<unsigned long long>(row.steps));
+-    }
+-}
+-// Unlike the Kahn oracle, this evaluates only a node made ready by incoming
+-// oneTBB edge notifications. All nodes/edges exist before any root is seeded.
+-void native_graph(const Graph &graph, const std::uint64_t *costs,
+-                   TaskCell *output, std::uint64_t *receipts,
+-                   tbb::task_arena &arena, bool traced);
+-void whitefoot_graph(Engine engine, const Graph &graph, const std::uint64_t *costs,
+-                      const std::uint64_t *successors, TaskCell *output,
+-                      std::uint64_t *receipts, RuntimeResult &report) {
+-    if (graph.family == Family::runtime) {
+-        dag_probe_runtime(engine == Engine::runtime_tree ? 1 : 0, graph.argument,
+-                           graph.costs.size(), costs, graph.successors.size(), successors,
+-                           graph.costs.size() + 1, output, graph.seed, &report);
+-    } else if (graph.family == Family::spine) {
+-        if (engine == Engine::scalar) {
+-            dag_probe_spine_phased_scalar(graph.argument, graph.scalar_leaf_steps,
+-                                          graph.costs.size(), output, graph.seed);
+-        } else {
+-            const auto entry = engine == Engine::phased ? dag_probe_spine_phased : dag_probe_spine;
+-            entry(graph.argument, costs, graph.costs.size(), output, graph.seed);
+-        }
+-    }
+-    else if (graph.family == Family::notify)
+-        dag_probe_notify(graph.argument, costs, output, receipts, graph.seed);
+-    else dag_probe_n(graph.mode, costs, output, graph.seed);
+-}
+-bool equal(TaskCell a, TaskCell b) {
+-    return a.value == b.value && a.evaluations == b.evaluations;
+-}
+-std::size_t malformed_runtime_controls(Engine engine) {
+-    const std::uint64_t form = engine == Engine::runtime_tree ? 1 : 0;
+-    struct Invalid {
+-        const char *name;
+-        std::uint64_t form, owners;
+-        std::vector<std::uint64_t> costs, successors;
+-    };
+-    const std::vector<Invalid> invalid{
+-        {"short-successors", form, 1, {1, 1}, {2, 2, 2}},
+-        {"long-successors", form, 1, {1, 1}, {2, 2, 2, 2, 2}},
+-        {"out-of-range", form, 1, {1, 1}, {3, 2, 2, 2}},
+-        {"self-edge", form, 1, {1, 1}, {0, 2, 2, 2}},
+-        {"backward-edge", form, 1, {1, 1}, {2, 2, 0, 2}},
+-        {"duplicate-edge", form, 1, {1, 1}, {1, 1, 2, 2}},
+-        {"excess-indegree", form, 2, {1, 1, 1, 1}, {3, 4, 3, 4, 3, 4, 4, 4}},
+-        {"invalid-form", 2, 1, {1, 1}, {2, 2, 2, 2}},
+-        {"zero-owners", form, 0, {1, 1}, {2, 2, 2, 2}},
+-        {"excess-owners", form, 3, {1, 1}, {2, 2, 2, 2}},
+-        {"unrepresentable-owner-matrix", form, ~UINT64_C(0), {1, 1}, {2, 2, 2, 2}},
+-        {"empty-with-owner", form, 1, {}, {}},
+-        {"empty-with-successor", form, 0, {}, {0}}
+-    };
+-    for (const auto &control : invalid) {
+-        std::vector<std::uint64_t> costs(control.costs.size() + 2, guard_value);
+-        std::copy(control.costs.begin(), control.costs.end(), costs.begin() + 1);
+-        const auto original_costs = costs;
+-        std::vector<std::uint64_t> successors(control.successors.size() + 2, guard_value);
+-        std::copy(control.successors.begin(), control.successors.end(), successors.begin() + 1);
+-        const auto original_successors = successors;
+-        Rows output(control.costs.size() + 3, TaskCell{guard_value, ~guard_value});
+-        const Rows original_output = output;
+-        GuardedRuntimeResult returned;
+-        RuntimeResult &report = returned.value;
+-        observation.events.clear();
+-        observation.next.store(0);
+-        observation.overflow.store(false);
+-        dag_probe_runtime(control.form, control.owners, control.costs.size(), costs.data() + 1,
+-                           control.successors.size(), successors.data() + 1,
+-                           control.costs.size() + 1, output.data() + 1, seed_value, &report);
+-        if (!returned.intact() || report.status != 1 || report.rounds != 0 || report.notices != 0)
+-            fail(std::string(control.name) + ": wrong validation result");
+-        if (costs != original_costs || successors != original_successors ||
+-            !std::equal(output.begin(), output.end(), original_output.begin(), equal))
+-            fail(std::string(control.name) + ": validation error changed input/output");
+-        if (observation.next.load() != 0 || observation.overflow.load())
+-            fail(std::string(control.name) + ": validation error executed a task");
+-        std::printf("invalid\t%s\tstatus=1\trounds=0\tnotices=0\toutput_unchanged=1"
+-                    "\tinputs_unchanged=1\tevents=0\n", control.name);
+-    }
+-    return invalid.size();
+-}
+-void print_routing(const Graph &graph, const RuntimeResult &report) {
+-    const std::uint64_t count = graph.costs.size(), owners = graph.argument;
+-    const std::uint64_t stride = count == 0 ? 0 : count / owners;
+-    const std::uint64_t cells = owners * owners, rounds = report.rounds;
+-    std::printf("routing\t%s\towners=%llu\tstride=%llu\tlast_owner_size=%llu"
+-                "\tstatus=%llu\trounds=%llu\tnotices=%llu\taux_words=%llu"
+-                "\tseparate_allocations=%u\tresult_bytes=%zu\n", graph.name.c_str(),
+-                static_cast<unsigned long long>(owners), static_cast<unsigned long long>(stride),
+-                static_cast<unsigned long long>(count == 0 ? 0 : count - (owners - 1) * stride),
+-                static_cast<unsigned long long>(report.status),
+-                static_cast<unsigned long long>(rounds), static_cast<unsigned long long>(report.notices),
+-                static_cast<unsigned long long>(12 * count + 2 * cells + 2 * owners),
+-                count == 0 ? 0U : 7U, sizeof(RuntimeResult));
+-    // Counts of written source operations, not physical allocation high-water marks
+-    // or optimized native load/store counts. The returned notices/rounds are checked.
+-    std::printf("routing-model\t%s\tstate_rows_initialized=%llu\tnotice_rows_initialized=%llu"
+-                "\thead_cells_initialized=%llu\tready_heads_initialized=%llu"
+-                "\treports_initialized=%llu\toutput_cells_initialized=%llu"
+-                "\tvalidation_successor_reads=%llu\ttask_successor_reads=%llu"
+-                "\tnotice_successor_reads=%llu\troot_state_visits=%llu\ttask_ready_visits=%llu"
+-                "\tcost_reads=%llu\tdrain_calls=%llu"
+-                "\thead_resets=%llu\thead_inspections=%llu\tnotice_writes=%llu"
+-                "\tnotice_visits=%llu\treport_writes=%llu\treport_reads=%llu\n",
+-                graph.name.c_str(), static_cast<unsigned long long>(count),
+-                static_cast<unsigned long long>(4 * count), static_cast<unsigned long long>(2 * cells),
+-                static_cast<unsigned long long>(owners), static_cast<unsigned long long>(owners),
+-                static_cast<unsigned long long>(count), static_cast<unsigned long long>(4 * count),
+-                static_cast<unsigned long long>(2 * count), static_cast<unsigned long long>(report.notices),
+-                static_cast<unsigned long long>(count), static_cast<unsigned long long>(count),
+-                static_cast<unsigned long long>(count), static_cast<unsigned long long>(owners * rounds + report.notices),
+-                static_cast<unsigned long long>(cells * rounds),
+-                static_cast<unsigned long long>(cells * rounds), static_cast<unsigned long long>(report.notices),
+-                static_cast<unsigned long long>(report.notices), static_cast<unsigned long long>(owners * rounds),
+-                static_cast<unsigned long long>(owners * rounds));
+-}
+@@ -546,147 +160,3 @@
+-int run_matrix(Engine engine, unsigned workers) {
+-    const bool native = native_engine(engine);
+-    const bool traced = dag_probe_trace_image() != 0;
+-    oracle_control();
+-    // Native mode never enters wf__floor_run, so a second WF pool is absent.
+-    std::unique_ptr<tbb::global_control> limit;
+-    std::unique_ptr<tbb::task_arena> arena;
+-    if (native) {
+-        limit = std::make_unique<tbb::global_control>(tbb::global_control::max_allowed_parallelism,
+-                                                       workers);
+-        arena = std::make_unique<tbb::task_arena>(static_cast<int>(workers), 1);
+-        arena->initialize();
+-    }
+-    std::printf("configuration\tengine=%s\timage=%s\ttotal_participants=%u\trepeats=1\n",
+-                engine_name(engine), traced ? "trace" : "plain", workers);
+-    std::printf("accounting\ttask_cell_bytes=%zu\tevent_bytes=%zu\tphysical_peak=not-measured\n",
+-                sizeof(TaskCell), sizeof(Event));
+-    bool output_control = false, trace_control = false;
+-    std::size_t cases = 0, tasks = 0;
+-    for (const Graph &graph : fixtures(engine)) {
+-        const Expected expected = oracle(graph);
+-        const std::size_t count = graph.costs.size();
+-        const bool runtime = graph.family == Family::runtime;
+-        const TaskCell guard{guard_value, ~guard_value};
+-        Rows storage(count + (runtime ? 3 : 2));
+-        storage.front() = storage.back() = guard;
+-        if (runtime) storage[count + 1] = guard;
+-        if (runtime && !native)
+-            std::fill(storage.begin() + 1, storage.begin() + 1 + count, guard);
+-        std::vector<std::uint64_t> costs(count + 2, guard_value);
+-        std::copy(graph.costs.begin(), graph.costs.end(), costs.begin() + 1);
+-        const auto original_costs = costs;
+-        std::vector<std::uint64_t> successors(graph.successors.size() + 2, guard_value);
+-        std::copy(graph.successors.begin(), graph.successors.end(), successors.begin() + 1);
+-        const auto original_successors = successors;
+-        GuardedRuntimeResult returned;
+-        RuntimeResult &report = returned.value;
+-        std::array<std::uint64_t, 6> receipt_storage{};
+-        receipt_storage.front() = receipt_storage.back() = guard_value;
+-        observation.events.assign(traced ? 2 * count : 0, Event{});
+-        observation.next.store(0);
+-        observation.overflow.store(false);
+-        // The runtime's legacy API name returns successful lane steals.
+-        const unsigned long steals_before = native ? 0 : wf__par_grants();
+-        if (native) native_graph(graph, costs.data() + 1, storage.data() + 1,
+-                                  receipt_storage.data() + 1,
+-                                  *arena, traced);
+-        else whitefoot_graph(engine, graph, costs.data() + 1, successors.data() + 1,
+-                               storage.data() + 1, receipt_storage.data() + 1, report);
+-        if (runtime && !native) {
+-            const auto routing = routing_oracle(graph);
+-            if (!returned.intact() || report.status != 0 || report.rounds != routing.rounds ||
+-                report.notices != routing.notices || report.rounds > graph.argument)
+-                fail(graph.name + ": routing status/round/notice mismatch");
+-        }
+-        Rows actual(storage.begin() + 1, storage.begin() + 1 + count);
+-        const auto mismatch = compare_rows(actual, expected.rows);
+-        if (!mismatch.empty()) fail(graph.name + ": " + mismatch);
+-        if (!equal(storage.front(), guard) || !equal(storage.back(), guard) ||
+-            (runtime && !equal(storage[count + 1], guard)) ||
+-            receipt_storage.front() != guard_value || receipt_storage.back() != guard_value)
+-            fail(graph.name + ": output boundary changed");
+-        if (costs != original_costs)
+-            fail(graph.name + (engine == Engine::scalar ? ": oracle cost metadata changed"
+-                                                       : ": input changed"));
+-        if (successors != original_successors) fail(graph.name + ": successor input changed");
+-        for (std::size_t i = 0; i != 4; ++i)
+-            if (receipt_storage[i + 1] != expected.receipts[i])
+-                fail(graph.name + ": notification receipt mismatch");
+-        const unsigned long steals = native ? 0 : wf__par_grants() - steals_before;
+-        if (!native && workers == 1 && steals != 0) fail("W1 recorded stolen work");
+-        std::printf("case\t%s\ttasks=%zu\tedges=%zu\twork_rounds=%llu\tcritical_rounds=%llu"
+-                    "\tlevel_rounds=%llu\toutput_bytes=%zu\tinput_cost_bytes=%zu"
+-                    "\tsource_notice_init_slots=%u\tsource_notice_inspections=%u"
+-                    "\tobserver_bytes=%zu\tactual_steals=%lu\n",
+-                    graph.name.c_str(), count, graph.edges.size(),
+-                    static_cast<unsigned long long>(expected.work),
+-                    static_cast<unsigned long long>(expected.critical),
+-                    static_cast<unsigned long long>(expected.level), count * sizeof(TaskCell),
+-                    (engine == Engine::scalar ? 1 : count) * sizeof(std::uint64_t),
+-                    !native && graph.family == Family::notify ? 4U : 0U,
+-                    !native && graph.family == Family::notify ? 4U : 0U,
+-                    observation.events.size() * sizeof(Event), steals);
+-        if (runtime) {
+-            std::printf("adjacency\t%s\tsuccessor_slots=%zu\tinput_successor_bytes=%zu"
+-                        "\tinput_numbering=topological\n", graph.name.c_str(),
+-                        graph.successors.size(), graph.successors.size() * sizeof(std::uint64_t));
+-            if (!native) print_routing(graph, report);
+-        }
+-        if (engine == Engine::scalar)
+-            std::printf("input\t%s\trepresentation=scalar\tleaf_steps=%llu"
+-                        "\tsource_cost_bytes=%zu\toracle_cost_bytes=%zu\n",
+-                        graph.name.c_str(), static_cast<unsigned long long>(graph.scalar_leaf_steps),
+-                        sizeof(std::uint64_t), count * sizeof(std::uint64_t));
+-        for (std::size_t id = 0; id != count; ++id)
+-            std::printf("task\t%s\t%zu\tsteps=%llu\tvalue=%016llx\tevaluations=%llu\n",
+-                        graph.name.c_str(), id, static_cast<unsigned long long>(graph.costs[id]),
+-                        static_cast<unsigned long long>(actual[id].value),
+-                        static_cast<unsigned long long>(actual[id].evaluations));
+-        if (graph.family == Family::notify)
+-            std::printf("receipts\t%s\tC_mask=%llu\tC_count=%llu\tD_mask=%llu\tD_count=%llu\n",
+-                        graph.name.c_str(), static_cast<unsigned long long>(receipt_storage[1]),
+-                        static_cast<unsigned long long>(receipt_storage[2]),
+-                        static_cast<unsigned long long>(receipt_storage[3]),
+-                        static_cast<unsigned long long>(receipt_storage[4]));
+-        if (!output_control && count) {
+-            Rows corrupted = actual;
+-            corrupted[0].value ^= 1;
+-            const auto rejected = compare_rows(corrupted, expected.rows);
+-            if (rejected.empty()) fail("output corruption escaped comparator");
+-            std::printf("control\toutput-corruption\trejected=%s\n", rejected.c_str());
+-            output_control = true;
+-        }
+-        if (traced) {
+-            if (observation.overflow.load() || observation.next.load() != 2 * count)
+-                fail(graph.name + ": trace event count/overflow");
+-            Trace trace;
+-            const auto error = check_trace(graph, expected, observation.events, trace);
+-            if (!error.empty()) fail(graph.name + ": " + error);
+-            if (workers == 1)
+-                for (std::size_t a = 0; a != count; ++a)
+-                    for (std::size_t b = a + 1; b != count; ++b)
+-                        if (overlap(trace, a, b)) fail("W1 recorded two active native threads");
+-            print_trace(graph, trace);
+-            if (!trace_control && count) {
+-                auto corrupted = observation.events;
+-                corrupted.pop_back();
+-                Trace discarded;
+-                const auto rejected = check_trace(graph, expected, corrupted, discarded);
+-                if (rejected.empty()) fail("trace corruption escaped comparator");
+-                std::printf("control\ttrace-corruption\trejected=%s\n", rejected.c_str());
+-                trace_control = true;
+-            }
+-        }
+-        ++cases;
+-        tasks += count;
+-    }
+-    if (!output_control || (traced && !trace_control)) fail("missing corruption control");
+-    if (!native && workers == 4 && !wf__par_pool_active()) fail("requested WF pool is absent");
+-    if (runtime_engine(engine) &&
+-        (cases != (native ? 495U : 1471U) || tasks != (native ? 2399U : 7167U)))
+-        fail("runtime adjacency matrix cardinality mismatch");
+-    const std::size_t invalid = runtime_engine(engine) && !native ? malformed_runtime_controls(engine) : 0;
+-    std::printf("PASS\tcases=%zu\ttask_rows=%zu\ttrace=%u", cases, tasks, static_cast<unsigned>(traced));
+-    if (runtime_engine(engine)) std::printf("\tinvalid_cases=%zu\n", invalid);
+-    else std::putchar('\n');
+-    return 0;
++using Clock = std::chrono::steady_clock;
++double milliseconds(Clock::time_point begin, Clock::time_point end) {
++    return std::chrono::duration<double, std::milli>(end - begin).count();
+@@ -693,0 +164,3 @@
++bool equal(TaskCell left, TaskCell right) {
++    return left.value == right.value && left.evaluations == right.evaluations;
++}
+@@ -698 +171 @@
+-    fail("initial qualification requires WF_WORKERS=1 or 4");
++    fail("qualification requires WF_WORKERS=1 or 4");
+@@ -700,5 +173,6 @@
+-Engine selected_engine(const std::string &name) {
+-    for (Engine engine : {Engine::whitefoot, Engine::tbb, Engine::phased, Engine::scalar,
+-                          Engine::runtime_loop, Engine::runtime_tree, Engine::runtime_tbb})
+-        if (name == engine_name(engine)) return engine;
+-    fail("unknown DAG qualification engine: " + name);
++std::size_t selected_count(const char *text) {
++    std::size_t consumed = 0;
++    const unsigned long long value = std::stoull(text, &consumed);
++    if (text[consumed] != '\0' || value == 0 || value > 2400000 || value % 16 != 0)
++        fail("N must be the prospectively selected 16*q, within 2,400,000");
++    return static_cast<std::size_t>(value);
+@@ -706,12 +180,88 @@
+-} // namespace
+-
+-// The entry result feeds the recurrence and the exit consumes its result.
+-// Consequently pure arithmetic cannot move outside these diagnostic markers.
+-// Their atomics perturb scheduling and are never a performance instrument.
+-extern "C" [[gnu::noinline]] std::uint64_t dag_trace_begin(
+-    std::uint64_t id, std::uint64_t steps, std::uint64_t seed) {
+-    // The WF call crosses translation units. The volatile readback also keeps
+-    // the same-TU native recurrence dependent on this call's returned value.
+-    volatile std::uint64_t observed_seed = seed;
+-    event(id, true, seed, steps);
+-    return observed_seed;
++int run_once(std::size_t count, unsigned workers) {
++    // These size assertions make the requested-data inventory concrete for
++    // this native image. Allocator metadata/rounding is covered by 64 MiB;
++    // fixed runtime storage and per-thread stack reservations are separate.
++    static_assert(sizeof(std::size_t) == 8 && sizeof(std::uint64_t) == 8);
++    static_assert(sizeof(std::vector<std::size_t>) <= 24);
++    const std::uint64_t ceiling = 256 * count + UINT64_C(64) * 1024 * 1024;
++    const std::uint64_t oracle_peak = 128 * count + 4096;
++    const std::uint64_t invocation_peak = 200 * count + 4096;
++    if (ceiling >= UINT64_C(768) * 1024 * 1024 ||
++        std::max(oracle_peak, invocation_peak) > ceiling)
++        fail("planned requested data exceeds the published resource ceiling");
++    if (dag_probe_trace_image() != 0) fail("the capacity fixture requires a plain image");
++    oracle_control();
++    const auto setup_begin = Clock::now();
++    Graph graph{Family::runtime, "runtime-disconnected-capacity-c1"};
++    graph.argument = 1;
++    graph.costs.assign(count, 1);
++    graph.successors.assign(2 * count, count);
++    const Expected expected = oracle(graph);
++    if (expected.work != count || expected.critical != 1 || expected.level != 1)
++        fail("disconnected unit-cost oracle accounting differs");
++    const auto oracle_end = Clock::now();
++    const TaskCell guard{guard_value, ~guard_value};
++    Rows storage(count + 3, guard);
++    std::vector<std::uint64_t> costs(count + 2, guard_value);
++    std::copy(graph.costs.begin(), graph.costs.end(), costs.begin() + 1);
++    const auto original_costs = costs;
++    std::vector<std::uint64_t> successors(2 * count + 2, guard_value);
++    std::copy(graph.successors.begin(), graph.successors.end(), successors.begin() + 1);
++    const auto original_successors = successors;
++    GuardedRuntimeResult returned;
++    const auto setup_end = Clock::now();
++    // This counter records successful steals. No other WF task is running,
++    // and static inspection must establish init as the sole executable offer.
++    const unsigned long steals_before = wf__par_grants();
++    const auto invoke_begin = Clock::now();
++    dag_probe_runtime(0, 1, count, costs.data() + 1, 2 * count,
++                      successors.data() + 1, count, storage.data() + 1,
++                      graph.seed, &returned.value);
++    const auto invoke_end = Clock::now();
++    const unsigned long steals = wf__par_grants() - steals_before;
++    if (!returned.intact() || returned.value.status != 0 ||
++        returned.value.rounds != 1 || returned.value.notices != 0)
++        fail("routing status/round/notice mismatch");
++    Rows actual(storage.begin() + 1, storage.begin() + 1 + count);
++    const auto mismatch = compare_rows(actual, expected.rows);
++    if (!mismatch.empty()) fail(mismatch);
++    if (!equal(storage.front(), guard) || !equal(storage[count + 1], guard) ||
++        !equal(storage.back(), guard)) fail("output boundary changed");
++    if (costs != original_costs || successors != original_successors)
++        fail("immutable input or its canary changed");
++    if (workers == 1 && steals != 0) fail("W1 recorded stolen work");
++    if (workers == 4 && !wf__par_pool_active()) fail("requested WF pool is absent");
++    std::uint64_t digest = UINT64_C(14695981039346656037);
++    for (const TaskCell row : actual) {
++        digest = (digest ^ row.value) * UINT64_C(1099511628211);
++        digest = (digest ^ row.evaluations) * UINT64_C(1099511628211);
++    }
++    actual[0].value ^= 1;
++    if (compare_rows(actual, expected.rows).empty()) fail("value corruption escaped comparator");
++    actual[0].value ^= 1;
++    actual[0].evaluations = 2;
++    if (compare_rows(actual, expected.rows).empty()) fail("count corruption escaped comparator");
++    actual[0].evaluations = 1;
++    const auto checked_end = Clock::now();
++    std::printf("configuration\timage=plain\tform=0\towners=1\tparticipants=%u\tN=%zu\trepeats=1\n",
++                workers, count);
++    std::printf("memory\trequested_data_ceiling=%llu\toracle_peak_bound=%llu"
++                "\tinvocation_peak_bound=%llu\tsource_aux_payload=%llu"
++                "\tsource_allocations=7\tobserver_bytes=0\tstack_reservation_per_participant=1073741824"
++                "\tphysical_peak=not-measured\n",
++                static_cast<unsigned long long>(ceiling),
++                static_cast<unsigned long long>(oracle_peak),
++                static_cast<unsigned long long>(invocation_peak),
++                static_cast<unsigned long long>(96 * count + 32));
++    std::printf("timing_ms\tgraph_and_oracle=%.6f\tinput_output_setup=%.6f"
++                "\twhole_call=%.6f\tcomparison=%.6f\n",
++                milliseconds(setup_begin, oracle_end), milliseconds(oracle_end, setup_end),
++                milliseconds(invoke_begin, invoke_end), milliseconds(invoke_end, checked_end));
++    std::printf("PASS\ttask_rows=%zu\tdigest=%016llx\tstatus=%llu\trounds=%llu"
++                "\tnotices=%llu\tactual_steals=%lu\tvalue_corruption=rejected"
++                "\tcount_corruption=rejected\n", count,
++                static_cast<unsigned long long>(digest),
++                static_cast<unsigned long long>(returned.value.status),
++                static_cast<unsigned long long>(returned.value.rounds),
++                static_cast<unsigned long long>(returned.value.notices), steals);
++    return 0;
+@@ -719,44 +268,0 @@
+-extern "C" [[gnu::noinline]] void dag_trace_end(std::uint64_t id, std::uint64_t value) {
+-    event(id, false, value, 0);
+-}
+-namespace {
+-void native_graph(const Graph &graph, const std::uint64_t *costs,
+-                   TaskCell *output, std::uint64_t *receipts,
+-                   tbb::task_arena &arena, bool traced) {
+-    const auto incoming = predecessors(graph);
+-    arena.execute([&] {
+-        tbb::flow::graph flow;
+-        using Node = tbb::flow::continue_node<tbb::flow::continue_msg>;
+-        std::vector<std::unique_ptr<Node>> nodes;
+-        nodes.reserve(graph.costs.size());
+-        for (std::size_t id = 0; id != graph.costs.size(); ++id) {
+-            nodes.push_back(std::make_unique<Node>(flow, [&, id](tbb::flow::continue_msg) {
+-                std::uint64_t mix = 0;
+-                for (std::size_t parent : incoming[id]) mix = rotate(mix, 7) ^ output[parent].value;
+-                const std::uint64_t seed = traced ? dag_trace_begin(id, costs[id], graph.seed)
+-                                                  : graph.seed;
+-                std::uint64_t value = (seed + id) ^ mix;
+-                for (std::uint64_t step = 0; step < costs[id]; ++step) {
+-                    const std::uint64_t shifted = (value << 13) | (value >> 51);
+-                    value = shifted * UINT64_C(6364136223846793005);
+-                    value += UINT64_C(1442695040888963407);
+-                    value ^= step;
+-                }
+-                if (traced) dag_trace_end(id, value);
+-                output[id].value = value;
+-                ++output[id].evaluations;
+-                if (graph.family == Family::notify && id >= 2)
+-                    for (std::size_t parent : incoming[id]) {
+-                        receipts[2 * (id - 2)] |= UINT64_C(1) << parent;
+-                        ++receipts[2 * (id - 2) + 1];
+-                    }
+-                return tbb::flow::continue_msg{};
+-            }));
+-        }
+-        // Registration supplies the continue_node predecessor threshold.
+-        for (auto edge : graph.edges) tbb::flow::make_edge(*nodes[edge.first], *nodes[edge.second]);
+-        for (std::size_t id = 0; id != graph.costs.size(); ++id)
+-            if (incoming[id].empty()) nodes[id]->try_put(tbb::flow::continue_msg{});
+-        flow.wait_for_all();
+-    });
+-}
+@@ -764 +270 @@
+-extern "C" int wf__main_body(int, char **argv) {
++extern "C" int wf__main_body(int argc, char **argv) {
+@@ -766,14 +272,2 @@
+-        return run_matrix(selected_engine(argv[1]), selected_workers());
+-    }
+-    catch (const std::exception &error) {
+-        std::fprintf(stderr, "dag-fanin: %s\n", error.what());
+-        return 2;
+-    }
+-}
+-int main(int argc, char **argv) {
+-    try {
+-        if (argc != 2)
+-            fail("usage: dag_fanin_{plain,trace} wf|tbb|wf-phased|wf-scalar|wf-runtime-loop|wf-runtime-tree|tbb-runtime");
+-        const Engine engine = selected_engine(argv[1]);
+-        if (native_engine(engine)) return run_matrix(engine, selected_workers());
+-        return wf__floor_run(argc, argv);
++        if (argc != 2) fail("usage: dag_capacity N");
++        return run_once(selected_count(argv[1]), selected_workers());
+@@ -781 +275 @@
+-        std::fprintf(stderr, "dag-fanin: %s\n", error.what());
++        std::fprintf(stderr, "dag-capacity: %s\n", error.what());
+@@ -784,0 +279 @@
++int main(int argc, char **argv) { return wf__floor_run(argc, argv); }

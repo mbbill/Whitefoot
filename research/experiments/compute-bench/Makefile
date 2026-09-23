@@ -430,6 +430,10 @@ LINK_LIBS := -L$(DEPS)/lib -Wl,-rpath,$(DEPS)/lib -ltbb \
              $(DEPS)/rayon/libwf_compute_bench_rayon.a -ldl -lm
 
 .PHONY: all compiler deps build images verify compare programs-check verdict array-reference-build \
+        dag-fanin-emit dag-fanin-build dag-fanin-build-inputs dag-fanin-run \
+        dag-fanin-cost-check dag-fanin-cost-run \
+        first-index-emit first-index-build first-index-verify \
+        first-index-pair-build first-index-pair-verify \
         verdict-test module-symbols-test baseline-entry-test baseline-check clean clean-deps FORCE
 all: build
 
@@ -459,6 +463,151 @@ array-reference-build: compiler $(RUNTIME_OBJS)
 	    $(BUILD)/array_reference-linked.ll array_reference_bench.c \
 	    $(RUNTIME_OBJS) -lm -o $(BUILD)/array_reference
 	$(SHA256) array_reference.wf array_reference_bench.c array_reference_host.ll $(BUILD)/array_reference
+
+# Explicit runtime-DAG qualification, separate construction and execution.
+# No compiler/dependency build or daily gate reaches these targets. Retire the
+# probe, adapter and observer with the investigation when they are superseded.
+DAG_SOURCE := $(ROOT)/research/investigations/compute-model/dag-fanin.wf
+DAG_VARIANT ?= default
+DAG_EMIT_FLAGS ?= --par
+DAG_PREFIX := $(BUILD)/dag_fanin_$(DAG_VARIANT)
+DAG_PROBE_OBJECT ?= $(DAG_PREFIX)_probe.o
+DAG_TBB_PREFIX ?= $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-compute-bench/deps
+DAG_TBB_LIBRARY := $(DAG_TBB_PREFIX)/lib/$(if $(filter Darwin,$(shell uname -s)),libtbb.dylib,libtbb.so)
+DAG_NATIVE_FLAGS := -std=c11 -pthread -O2 -Wno-override-module
+DAG_CXX_FLAGS := -std=c++17 -pthread -O2 -Wall -Wextra -Werror -Wpedantic
+DAG_ENGINE ?= wf
+DAG_IMAGE ?= plain
+DAG_WORKERS ?= 1
+
+dag-fanin-emit:
+	@test -x "$(WFC)"
+	@mkdir -p $(BUILD)
+	$(WFC) $(DAG_EMIT_FLAGS) --par-ledger --emit-llvm $(DAG_SOURCE) -o $(DAG_PREFIX).raw.ll > $(DAG_PREFIX).ledger
+	awk -f $(HOST_ADAPTER) $(DAG_PREFIX).raw.ll dag_fanin_host.ll > $(DAG_PREFIX).bound.ll
+	awk -v observed=0 -f dag_fanin_trace.awk $(DAG_PREFIX).bound.ll > $(DAG_PREFIX)_plain.ll.new
+	mv $(DAG_PREFIX)_plain.ll.new $(DAG_PREFIX)_plain.ll
+	awk -v observed=1 -f dag_fanin_trace.awk $(DAG_PREFIX).bound.ll > $(DAG_PREFIX)_trace.ll.new
+	mv $(DAG_PREFIX)_trace.ll.new $(DAG_PREFIX)_trace.ll
+	$(SHA256) $(WFC) $(DAG_SOURCE) dag_fanin_host.ll dag_fanin_trace.awk \
+	    $(DAG_PREFIX).raw.ll $(DAG_PREFIX).ledger $(DAG_PREFIX)_plain.ll \
+	    $(DAG_PREFIX)_trace.ll > $(DAG_PREFIX).emission.sha256
+	@printf '%s\n' 'emission_flags=$(DAG_EMIT_FLAGS)' > $(DAG_PREFIX).emission-flags.txt
+
+dag-fanin-build-inputs:
+	@test -f "$(DAG_PREFIX)_plain.ll" -a -f "$(DAG_PREFIX)_trace.ll" || \
+	    { echo 'dag-fanin: run the separate dag-fanin-emit phase first' >&2; exit 1; }
+	@test -f "$(DAG_TBB_PREFIX)/include/oneapi/tbb/flow_graph.h" -a -f "$(DAG_TBB_LIBRARY)" || \
+	    { echo 'dag-fanin: name an existing pinned cache with DAG_TBB_PREFIX; this target never installs dependencies' >&2; exit 1; }
+
+# Reuse the ordinary library recipes with ordinary CLI flags. In particular,
+# none of compute-bench's historical alignment/vectorization controls reaches
+# this qualification. Use a dedicated WORK directory. Cost arms name the same
+# DAG_PROBE_OBJECT so only one timing-probe object enters their images.
+$(DAG_PROBE_OBJECT): dag_fanin_probe.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(DAG_CXX_FLAGS) -isystem $(DAG_TBB_PREFIX)/include -c $< -o $@
+
+dag-fanin-build: WF_FLAGS := $(DAG_NATIVE_FLAGS)
+dag-fanin-build: dag-fanin-build-inputs $(RUNTIME_OBJS) $(DAG_PROBE_OBJECT)
+	$(CC) $(DAG_NATIVE_FLAGS) -c $(DAG_PREFIX)_plain.ll -o $(DAG_PREFIX)_plain.o
+	$(CC) $(DAG_NATIVE_FLAGS) -c $(DAG_PREFIX)_trace.ll -o $(DAG_PREFIX)_trace.o
+	$(CXX) -pthread -O2 $(DAG_PREFIX)_plain.o $(DAG_PROBE_OBJECT) $(RUNTIME_OBJS) \
+	    -L$(DAG_TBB_PREFIX)/lib -Wl,-rpath,$(DAG_TBB_PREFIX)/lib -ltbb -lm -o $(DAG_PREFIX)_plain
+	$(CXX) -pthread -O2 $(DAG_PREFIX)_trace.o $(DAG_PROBE_OBJECT) $(RUNTIME_OBJS) \
+	    -L$(DAG_TBB_PREFIX)/lib -Wl,-rpath,$(DAG_TBB_PREFIX)/lib -ltbb -lm -o $(DAG_PREFIX)_trace
+	@$(call assert-real-runtime,$(DAG_PREFIX)_plain)
+	@$(call require-strong,$(DAG_PREFIX)_plain,wf__floor_run)
+	@$(call require-strong,$(DAG_PREFIX)_plain,wf__par_acquire_lane)
+	@$(call assert-real-runtime,$(DAG_PREFIX)_trace)
+	@$(call require-strong,$(DAG_PREFIX)_trace,wf__floor_run)
+	@$(call require-strong,$(DAG_PREFIX)_trace,wf__par_acquire_lane)
+	$(SHA256) dag_fanin_probe.cpp $(DAG_TBB_LIBRARY) $(DAG_TBB_PREFIX)/metadata.txt \
+	    $(DAG_PROBE_OBJECT) $(DAG_PREFIX)_plain.o $(DAG_PREFIX)_trace.o $(RUNTIME_OBJS) \
+	    $(DAG_PREFIX)_plain $(DAG_PREFIX)_trace > $(DAG_PREFIX).native.sha256
+	@printf '%s\n' 'native_flags=$(DAG_NATIVE_FLAGS)' 'probe_flags=$(DAG_CXX_FLAGS)' \
+	    'tbb_prefix=$(DAG_TBB_PREFIX)' > $(DAG_PREFIX).native-flags.txt
+
+# This target never builds, emits, times, repeats or retries. Guard each
+# selected process independently so its exit status remains visible.
+dag-fanin-run:
+	@test "$(DAG_IMAGE)" = plain -o "$(DAG_IMAGE)" = trace
+	@case "$(DAG_ENGINE)" in wf|tbb|wf-phased|wf-scalar|wf-runtime-loop|wf-runtime-tree|tbb-runtime) ;; \
+	    *) echo 'dag-fanin: unknown engine' >&2; exit 1 ;; esac
+	@test "$(DAG_WORKERS)" = 1 -o "$(DAG_WORKERS)" = 4
+	WF_WORKERS=$(DAG_WORKERS) $(DAG_PREFIX)_$(DAG_IMAGE) $(DAG_ENGINE)
+
+# Explicit selected research protocol; never reached by any daily gate. The
+# driver guards each construction-free execution phase separately for 30 s.
+dag-fanin-cost-check:
+	perl dag_fanin_cost.pl self-test
+
+dag-fanin-cost-run:
+	perl dag_fanin_cost.pl $(DAG_COST_STAGE) "$(DAG_COST_BASE)" \
+	    "$(DAG_COST_CANDIDATE)" "$(DAG_COST_RESULTS)"
+
+# Explicit untimed first-index expression probe; no correctness-CI caller.
+# Retain its source, oracle and adapter while they support this investigation.
+FIRST_INDEX_SOURCE := $(ROOT)/research/investigations/compute-model/first-index.wf
+.SECONDARY: $(BUILD)/first-index-par.linked.ll $(BUILD)/first-index-seq.linked.ll \
+            $(BUILD)/first-index-observed.linked.ll
+first-index-emit: compiler
+	@mkdir -p $(BUILD)
+	$(WFC) --par --par-ledger --emit-llvm $(FIRST_INDEX_SOURCE) -o $(BUILD)/first-index-par.ll
+	$(WFC) --no-overlap --par-ledger --emit-llvm $(FIRST_INDEX_SOURCE) -o $(BUILD)/first-index-seq.ll
+
+$(BUILD)/first-index-%.linked.ll: $(BUILD)/first-index-%.ll first_index_host.ll $(HOST_ADAPTER)
+	awk -f $(HOST_ADAPTER) $< first_index_host.ll | \
+	    sed -e 's/@main(/@wf_probe_original_main(/g' \
+	        -e 's/@wf__main_body(/@wf_probe_original_body(/g' > $@
+
+$(BUILD)/first-index-%: $(BUILD)/first-index-%.linked.ll first_index_probe.c $(RUNTIME_OBJS)
+	$(CC) $(WF_FLAGS) -Wall -Wextra -Werror $< first_index_probe.c \
+	    $(if $(filter observed,$*),-DWF_FIRST_INDEX_OBSERVED=1,) \
+	    $(RUNTIME_OBJS) -lm -o $@
+
+first-index-build: $(BUILD)/first-index-par $(BUILD)/first-index-seq
+
+first-index-verify:
+	WF_WORKERS=1 $(BUILD)/first-index-seq seq
+	WF_WORKERS=1 $(BUILD)/first-index-par par
+	WF_WORKERS=4 $(BUILD)/first-index-par par
+
+# Diagnostic copy only. Preserve the ordinary module and reject a changed
+# predicate shape or effect attributes instead of silently misinstrumenting it.
+$(BUILD)/first-index-observed.linked.ll: $(BUILD)/first-index-par.linked.ll
+	awk '\
+	    /readnone|readonly|argmemonly|inaccessiblememonly|nosync|speculatable|willreturn|mustprogress|memory\(/ { bad = 1 } \
+	    /^define i1 @wf_has_zero\(\{ ptr, i64 \} %v0\)/ { active = 1; definitions++ } \
+	    active && /^entry:/ { \
+	        print; \
+	        print "  %wfi.data = extractvalue { ptr, i64 } %v0, 0"; \
+	        print "  %wfi.length = extractvalue { ptr, i64 } %v0, 1"; \
+	        print "  call void @wf_probe_predicate_event(ptr %wfi.data, i64 %wfi.length, i64 0)"; \
+	        entries++; next \
+	    } \
+	    active && /^  ret i1 / { \
+	        print "  call void @wf_probe_predicate_event(ptr %wfi.data, i64 %wfi.length, i64 1)"; \
+	        returns++ \
+	    } \
+	    { print } \
+	    active && /^}/ { active = 0 } \
+	    END { \
+	        if (bad || definitions != 1 || entries != 1 || returns != 2) exit 2; \
+	        print "declare void @wf_probe_predicate_event(ptr, i64, i64)" \
+	    }' $< > $@.tmp
+	mv $@.tmp $@
+
+first-index-pair-build: first-index-build $(BUILD)/first-index-observed
+
+# Each invocation is one fixed pass. No ordinary verification or CI target
+# depends on this experiment, and no timing or retry loop is selected.
+first-index-pair-verify:
+	WF_WORKERS=1 $(BUILD)/first-index-seq seq pair
+	WF_WORKERS=1 $(BUILD)/first-index-par par pair
+	WF_WORKERS=4 $(BUILD)/first-index-par par pair
+	WF_WORKERS=1 $(BUILD)/first-index-observed observed pair-observe
+	WF_WORKERS=4 $(BUILD)/first-index-observed observed pair-observe
 
 # -------------------------------------------------------------------- deps --
 # `fetch` is the only network step; everything after it is offline. A

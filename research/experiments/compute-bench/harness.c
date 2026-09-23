@@ -47,9 +47,9 @@ uint64_t wfb_now_ns(void) {
     return (uint64_t)t.tv_sec * UINT64_C(1000000000) + (uint64_t)t.tv_nsec;
 }
 
-/* Process CPU time: every thread of this process, user plus system. The source
-   is selected per host, the way the wall clock above is, because no single
-   call answers this question everywhere.
+/* Process CPU accounting, user plus system. The source is selected per host,
+   the way the wall clock above is, because no single call answers this
+   question everywhere.
 
    CLOCK_PROCESS_CPUTIME_ID is the POSIX answer and is what Linux gives. It is
    NOT the answer on Darwin: there the clock is served from the task's basic
@@ -67,8 +67,8 @@ uint64_t wfb_now_ns(void) {
    here that consults the LIVE threads when it is asked:
    TASK_THREAD_TIMES_INFO sums the user and system time of the threads that
    still exist, and TASK_BASIC_INFO carries the same totals for the ones that
-   have exited; a thread's time therefore moves from the first to the second
-   when it exits and is counted exactly once either way. Both halves are
+   have exited. This covers both categories, but the two separate reads are
+   not an atomic snapshot across thread exit. Both halves are
    `time_value_t`, seconds plus microseconds, and are converted here. That pair
    is held on a READING and not on its documentation, which is what the rejected
    attempt below cost: the hosted `macos-14` leg of run 34668036736, a
@@ -79,6 +79,15 @@ uint64_t wfb_now_ns(void) {
    rows about twice their wall, and the four W=1 serial rows inside half a
    percent of their own wall. A refusal would have been visible rather than
    silent, since the name printed is the source that answered.
+
+   These historical longer-call observations support cumulative worker-CPU
+   coverage, not precise short-interval attribution. The Darwin live-thread
+   API says its totals are only accurate if suspended. Retained short deltas
+   exceed physical interval capacity and cannot establish worker idleness or
+   candidate CPU cost without separate attribution evidence. This leaves the
+   clock choice and wall observations unchanged; see README.md's cpu_us
+   qualification and ../../investigations/compute-model/DESIGN.md under
+   "Follow-up diagnosis of retained identical-image variation".
 
    `proc_pid_rusage(RUSAGE_INFO_V0)` was tried first and REJECTED ON EVIDENCE.
    Its `ri_user_time + ri_system_time` are documented as nanoseconds over the
@@ -216,9 +225,10 @@ WFB_NORETURN void wfb_fail(const char *message) {
    while the runtime's helper lanes go idle and park. A sleeping driver thread
    would hand its CPU back and measure something else.
 
-   It is outside every measured interval. Both clocks are started after this
-   returns, so no part of the gap is in a reported wall or CPU figure -- the
-   whole of what the gap does to a call is in the call's own numbers. */
+   Both clocks are started after this returns, so the gap is outside the wall
+   bracket. The CPU-read positions do not establish that a short delta excludes
+   accounting from an earlier interval; the source's attribution limitation
+   above still applies. */
 static void wfb_wait_gap(unsigned gap_us) {
     uint64_t deadline;
     if (!gap_us) return;
@@ -525,14 +535,14 @@ static int do_time(const wfb_kernel *k, const char *form, unsigned width,
        inside it, so the wall interval still encloses exactly one `call()` plus
        two CPU clock reads and nothing else. The nesting is this way round on
        purpose: wall is the primary measurement and keeps the widest bracket, so
-       no CPU the call spends can fall outside the wall interval, and the two
+       the call's execution fits inside the wall interval, and the two
        nested reads cost 757 ns as a pair where that was timed, on the Linux
        host of the 2026-09-11 agreement record, against a per-call interval of
        milliseconds -- orders below this bundle's own MAD, and the agreement of a
        before/after `compare` on one tree is what checks that rather than the
-       arithmetic. The CPU figure is a process figure, so it counts every
-       worker or lane thread the form started, spinning ones included; that is
-       the point of the column. */
+       arithmetic. The process CPU column targets work across all workers,
+       including spinning, but the short-interval attribution limitation above
+       prevents inferring that each delta precisely covers this call. */
     for (unsigned call = 0; call <= calls; ++call) {
         unsigned long before;
         uint64_t a, ca;

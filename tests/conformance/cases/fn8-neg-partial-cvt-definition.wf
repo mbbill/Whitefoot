@@ -1,0 +1,11 @@
+fn narrow(value: u32) -> result: u8 pure contract {
+  define small = cvt::<u32, u8>(value);
+  requires cvt.defined::<u32, u8>(value);
+  requires small <= 255_u8;
+} {
+  return cvt::<u32, u8>(value);
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

@@ -1,6 +1,7 @@
 //! Conservative textual LLVM emission for the active Whitefoot specification.
 //!
-//! Emission consumes only target-independent IR. It preserves every retained
+//! Emission consumes typed IR after optional loop shapes have been selected for
+//! the same target. It preserves every retained
 //! check, emits no overflow or alias promises, initializes complete aggregate
 //! representations, and keeps a defensive abort edge for enum discriminants.
 
@@ -33,9 +34,10 @@ use super::target::{
 };
 use crate::{
     IrAddressed, IrAllocationObligations, IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation,
-    IrConstant, IrDrop, IrDropSubject, IrEnumType, IrFloatOperation, IrFunction, IrGlobalValue,
-    IrInstruction, IrIntegerOperation, IrNominal, IrNominalId, IrNominalKind, IrOperation,
-    IrOverlap, IrProgram, IrTargetDomainObligation, IrTerminator, IrType, IrValueId, IrWindowShape,
+    IrConstant, IrConversionMode, IrDrop, IrDropSubject, IrEnumType, IrFloatOperation, IrFunction,
+    IrGlobalValue, IrInstruction, IrIntegerOperation, IrNominal, IrNominalId, IrNominalKind,
+    IrOperation, IrOverlap, IrProgram, IrTargetDomainObligation, IrTerminator, IrType, IrValueId,
+    IrWindowShape,
 };
 use buffer::{buffer_fill_done_label, buffer_probe_join_label};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
@@ -87,6 +89,7 @@ impl LlvmModule {
     }
 }
 
+#[cfg(test)]
 pub fn emit_llvm(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendFailure> {
     let target = TargetLayout::host().map_err(BackendFailure::TargetLayout)?;
     emit_llvm_with_layout(program, target)
@@ -129,7 +132,7 @@ pub(crate) fn sequential_entry_symbol(
 }
 
 /// Emits the same ordinary callable ABI with a selected physical target layout.
-pub(super) fn emit_llvm_with_layout(
+pub(crate) fn emit_llvm_with_layout(
     program: &IrProgram<'_, '_, '_>,
     target: TargetLayout,
 ) -> Result<LlvmModule, BackendFailure> {
@@ -1724,10 +1727,18 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 arguments,
             } => self.emit_float(result, ty, *operation, *operand_type, arguments),
             IrOperation::NumericConversion {
+                mode,
                 source_type,
                 destination_type,
                 value,
-            } => self.emit_numeric_conversion(result, ty, *source_type, *destination_type, *value),
+            } => self.emit_numeric_conversion(
+                result,
+                ty,
+                *mode,
+                *source_type,
+                *destination_type,
+                *value,
+            ),
             IrOperation::Reinterpret {
                 source_type,
                 destination_type,
@@ -2193,9 +2204,15 @@ fn ordinary_overlap_lane_frames(
             .functions()
             .get(ordinal as usize)
             .ok_or(BackendFailure::InvalidIr)?;
-        let Some(layout) =
-            parallel_lane_frame_layout(target, program, callee, carries_budget(ordinal))
-                .map_err(BackendFailure::TargetLayout)?
+        let Some(layout) = parallel_lane_frame_layout(
+            target,
+            program.nominals(),
+            program.elements(),
+            callee.parameters().iter().map(|(_, ty)| *ty),
+            callee.result(),
+            carries_budget(ordinal),
+        )
+        .map_err(BackendFailure::TargetLayout)?
         else {
             return Ok(None);
         };

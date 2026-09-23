@@ -513,6 +513,87 @@ fn a_fitting_loop_retains_its_interface_and_one_extra_field_triggers_rescue() {
     }
 }
 
+/// A live array capture must be measured after pruning. The u64 seed, two
+/// bounds, allowance and result occupy 40 bytes; a 216-byte payload fills the
+/// lane exactly. One more byte needs alignment padding and makes 264 bytes.
+#[test]
+fn aggregate_loop_frames_fit_the_selected_target_before_outlining() {
+    use crate::backend::{emitter::emit_llvm_with_layout, target::TargetLayout};
+
+    for target in [
+        TargetLayout::host().expect("supported test target"),
+        TargetLayout::for_triple("x86_64-pc-windows-msvc").expect("supported selected target"),
+    ] {
+        for (length, expected_bytes) in [(1, Some(48)), (216, Some(256)), (217, None)] {
+            let source = format!(
+                "fn folded(values: Array<u8, {length}>) -> result: u64 pure {{\n  let total = 7_u64;\n  for (i in 0_u64..2_u64) {{\n    let copied = values;\n    let byte = copied[0_u64];\n    let word = cvt::<u8, u64>(byte);\n    set total = total +wrap word;\n  }}\n  return total;\n}}\n\nfn main() -> status: ExitStatus pure {{\n  let values = array_filled::<u8, {length}>(value: 19_u8);\n  let total = folded(values: values);\n  return exit_status(code: 0_u8);\n}}\n"
+            );
+            with_checked(source.as_bytes(), |checked| {
+                let program =
+                    super::lower_checked_with_layout(checked, OverlapLowering::On, target)
+                        .expect("array capture lowering must fit or reuse its ordinary body");
+                assert_eq!(program.loop_candidate_constructions, 1);
+                let parent = function(&program, "folded");
+                let split = parent
+                    .blocks()
+                    .iter()
+                    .flat_map(|block| block.instructions())
+                    .find_map(|instruction| match instruction {
+                        IrInstruction::Define {
+                            operation:
+                                IrOperation::LoopSplit {
+                                    splitter, captures, ..
+                                },
+                            ..
+                        } => Some((*splitter, captures)),
+                        _ => None,
+                    });
+                assert_eq!(split.is_some(), expected_bytes.is_some());
+                if let Some((_, captures)) = split {
+                    assert_eq!(captures.len(), 1);
+                    assert!(
+                        matches!(parent.value_type(captures[0]), Some(IrType::Array { length: n, .. }) if n == length)
+                    );
+                } else {
+                    assert_eq!(
+                        parent.counted_ranges.len(),
+                        1,
+                        "the ordinary loop stays at its source site"
+                    );
+                    assert!(
+                        program
+                            .functions()
+                            .iter()
+                            .all(|function| function.synthesis().is_none())
+                    );
+                    assert!(
+                        program
+                            .actualization_ledger()
+                            .iter()
+                            .any(|row| row.contains("declined:")
+                                && row.contains("conservative estimate"))
+                    );
+                }
+                let module = emit_llvm_with_layout(&program, target)
+                    .expect("lowering and emission must use the same target")
+                    .into_string();
+                let frames = module
+                    .lines()
+                    .filter_map(|line| line.split_once("call ptr @wf__par_acquire_lane(i64 "))
+                    .map(|(_, tail)| {
+                        tail.split_once(')')
+                            .expect("closed frame-size argument")
+                            .0
+                            .parse::<u64>()
+                            .expect("constant frame size")
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(frames, expected_bytes.into_iter().collect::<Vec<_>>());
+            });
+        }
+    }
+}
+
 fn with_ir_mode<ResultValue>(
     source: &[u8],
     overlap: OverlapLowering,

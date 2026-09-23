@@ -416,20 +416,81 @@ impl FloatType {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum CheckedConversionMode {
+    Exact,
+    Checked,
+    Defined,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum CheckedNumericType {
     Integer(IntegerType),
     Float(FloatType),
+    GenericInteger(DeclarationId),
+    GenericFloat(DeclarationId),
 }
 
 impl CheckedNumericType {
+    pub(crate) const fn from_type(ty: CheckedType) -> Option<Self> {
+        match ty {
+            CheckedType::Integer(ty) => Some(Self::Integer(ty)),
+            CheckedType::Float(ty) => Some(Self::Float(ty)),
+            CheckedType::GenericInt(declaration) => Some(Self::GenericInteger(declaration)),
+            CheckedType::GenericFloat(declaration) => Some(Self::GenericFloat(declaration)),
+            _ => None,
+        }
+    }
+
     pub(crate) const fn ty(self) -> CheckedType {
         match self {
             Self::Integer(ty) => CheckedType::Integer(ty),
             Self::Float(ty) => CheckedType::Float(ty),
+            Self::GenericInteger(declaration) => CheckedType::GenericInt(declaration),
+            Self::GenericFloat(declaration) => CheckedType::GenericFloat(declaration),
         }
     }
 
-    pub(crate) const fn converts_totally_to(self, destination: Self) -> bool {
+    /// [OP-6] whole-type totality over the finite domains of numeric bounds.
+    /// Repeated parameters denote one type choice, so a symbolic identity is
+    /// total before the independent endpoint domains are enumerated.
+    pub(crate) fn converts_totally_to(self, destination: Self) -> bool {
+        if self == destination {
+            return true;
+        }
+        self.concrete_domain().iter().copied().all(|source| {
+            destination
+                .concrete_domain()
+                .iter()
+                .copied()
+                .all(|destination| {
+                    source == destination || source.concrete_converts_totally_to(destination)
+                })
+        })
+    }
+
+    pub(crate) fn concrete_domain(&self) -> &[Self] {
+        const INTEGERS: [CheckedNumericType; 8] = [
+            CheckedNumericType::Integer(IntegerType::I8),
+            CheckedNumericType::Integer(IntegerType::I16),
+            CheckedNumericType::Integer(IntegerType::I32),
+            CheckedNumericType::Integer(IntegerType::I64),
+            CheckedNumericType::Integer(IntegerType::U8),
+            CheckedNumericType::Integer(IntegerType::U16),
+            CheckedNumericType::Integer(IntegerType::U32),
+            CheckedNumericType::Integer(IntegerType::U64),
+        ];
+        const FLOATS: [CheckedNumericType; 2] = [
+            CheckedNumericType::Float(FloatType::F32),
+            CheckedNumericType::Float(FloatType::F64),
+        ];
+        match self {
+            Self::GenericInteger(_) => &INTEGERS,
+            Self::GenericFloat(_) => &FLOATS,
+            Self::Integer(_) | Self::Float(_) => std::slice::from_ref(self),
+        }
+    }
+
+    const fn concrete_converts_totally_to(self, destination: Self) -> bool {
         match (self, destination) {
             (Self::Integer(source), Self::Integer(destination)) => {
                 source.converts_totally_to(destination)
@@ -450,7 +511,7 @@ impl CheckedNumericType {
             | (Self::Float(destination), Self::Integer(source)) => {
                 source.width() == destination.width()
             }
-            (Self::Float(_), Self::Float(_)) => false,
+            _ => false,
         }
     }
 }
@@ -1854,6 +1915,7 @@ pub(crate) enum CheckedExpression {
     },
     NumericConversion {
         carrier: NodePath,
+        mode: CheckedConversionMode,
         source: CheckedNumericType,
         destination: CheckedNumericType,
         value: Box<CheckedExpression>,

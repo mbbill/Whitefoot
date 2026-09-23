@@ -123,7 +123,7 @@ fn main(inputs: Inputs) -> status: ExitStatus pure {
     let byte = data[cursor];
     let newline = byte == 10_u8;
     if newline {
-      match cvt::<u64, u8>(cursor) {
+      match cvt.checked::<u64, u8>(cursor) {
         Ok(value: narrow) => {
           let first_newline_ok = count < 64_u64;
           if first_newline_ok {
@@ -139,7 +139,7 @@ fn main(inputs: Inputs) -> status: ExitStatus pure {
     }
     let lead = byte == mark;
     if lead {
-      match cvt::<u64, u8>(cursor) {
+      match cvt.checked::<u64, u8>(cursor) {
         Ok(value: narrow_lead) => {
           let first_lead_ok = count < 64_u64;
           if first_lead_ok {
@@ -198,7 +198,7 @@ fn main(inputs: Inputs) -> status: ExitStatus pure {
     let short_byte = data[short_cursor];
     let short_newline = short_byte == 10_u8;
     if short_newline {
-      match cvt::<u64, u8>(short_cursor) {
+      match cvt.checked::<u64, u8>(short_cursor) {
         Ok(value: short_narrow) => {
           let short_newline_ok = count < 64_u64;
           if short_newline_ok {
@@ -214,7 +214,7 @@ fn main(inputs: Inputs) -> status: ExitStatus pure {
     }
     let short_lead = short_byte == mark;
     if short_lead {
-      match cvt::<u64, u8>(short_cursor) {
+      match cvt.checked::<u64, u8>(short_cursor) {
         Ok(value: short_narrow_lead) => {
           let short_lead_ok = count < 64_u64;
           if short_lead_ok {

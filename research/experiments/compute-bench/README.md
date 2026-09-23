@@ -6,7 +6,8 @@ One question, one table per host:
 > tree's `whitefootc` with plain `--par` the fastest thing in the row?**
 
 The framework scoreboard exists to make that comparison honest. The separate
-helper-pricing experiment below uses the same native build support.
+helper-pricing, runtime-DAG and first-index experiments below use the same
+native build support.
 **No number in a framework scoreboard table
 fails a build or a check**: there is no band, no threshold, no timeout, no
 budget and no heuristic anywhere that selects a row, a ranking or a ratio, and
@@ -59,6 +60,286 @@ default remains one call per interval, with no LTO or floating-point changes.
 The diagnostic reports absolute per-call wall and CPU differences separately;
 the recorded CPU interval quantum is 1,000 ns, or 0.244 ns per call after
 normalization. Its fixed paired order and results are in the investigation.
+
+The separate [runtime-DAG fan-in trial](../../investigations/compute-model/DESIGN.md#runtime-dag-fan-in-source-trial-2026-09-23)
+uses `dag_fanin_probe.cpp`, its LLVM host adapter and `dag_fanin_trace.awk`.
+These files serve only the explicit targets below and retire with that trial.
+They do not enter the framework scoreboard or daily correctness checks.
+The [retained qualification stream](dag-fanin-2026-09-23.tsv) records artifact
+identities, complete-matrix checks, selected passive observations and separate
+construction/execution phase costs. Those costs are not benchmark intervals.
+The separately selected cost mode and `dag_fanin_cost.pl` follow the
+[prospective bridge cost protocol](../../investigations/compute-model/DESIGN.md#prospective-cost-qualification-of-the-final-bridge).
+They use the same probe/ABI, with one added four-independent-call control;
+the frozen earlier correctness and overlap records retain their original
+matrix and input identities. The ordinary `dag-fanin-run` target remains an
+untimed correctness run.
+The separate [CPU-accounting diagnostic result and replay recipe](../../investigations/compute-model/DESIGN.md#baseline-cpu-accounting-result-short-interval-attribution-failure)
+use an exact host-only patch retained in the same dated stream. They add no
+maintained probe mode or daily check; offline extraction reconstructs its raw
+data, reduction and source, while native relinking requires the named frozen
+objects and dependency cache.
+The probe compares every task output and exactly-once count with a serial
+Kahn oracle over the original graph edges, and checks input preservation,
+boundary canaries and each notification owner's received source mask/count.
+Its oneTBB reference builds `continue_node` edges directly from the same
+original graph, independently of the WF decompositions and oracle schedule.
+Registering edges supplies the notification thresholds; no constructor
+predecessor count is added a second time.
+
+Cost construction uses the separately frozen main/final compiler emissions
+and ordinary runtime objects. Current compiler/runtime sources and their
+defaults contain restored main behavior; they do not recreate the withdrawn
+candidate arms. Historical reproduction requires explicitly selecting the
+retained compiler and runtime inputs identified by each arm's recorded
+manifests. Set `DAG_PROBE_OBJECT` to the same absolute
+scratch object path for both native builds. The probe's plain-only `measure`
+mode enters the ordinary WF floor without a oneTBB arena. Its fixed batch
+checks final values, cumulative task counts, input preservation and canaries
+outside timing; all measured intervals must reach the published 1 ms floor.
+`make dag-fanin-cost-check` runs only synthetic instrument checks, with no
+compiler build or WF timing. The explicit campaign entry is:
+
+```sh
+make -C research/experiments/compute-bench dag-fanin-cost-run \
+  DAG_COST_STAGE=verify DAG_COST_BASE=/absolute/main_plain \
+  DAG_COST_CANDIDATE=/absolute/final_plain DAG_COST_RESULTS=/absolute/fresh/verify
+```
+
+The driver guards each execution phase separately with a 30-second cap; do
+not wrap the entire multi-phase campaign in a second phase deadline. After
+`verify`, invoke `null` with the baseline image for both paths, then `slow`
+with that same image, then `bridge` with baseline/final paths, always using
+fresh result directories. The driver prints each phase status and retains
+process stdout/stderr, raw samples including labelled warmups, complete
+paired rows and the verdict. Stages are explicit so a failed control cannot
+silently become a candidate comparison. Follow the published stop rules:
+technical/control failure ends all cost work; no retry or batch adjustment
+is allowed. A complete but unqualified bridge comparison permits exactly
+one separately constructed main-LLVM/DONE-first image, `verify-runtime`
+(two candidate correctness processes), and `runtime` comparison. Its cost
+protection has no A/D speed requirement. This driver belongs only to this
+selected investigation and is not a general benchmark framework or a daily
+performance selection entry.
+
+The published bridge cost run stopped at the first null measured batch:
+65,536 cheap N0/W1 calls took 333,000 ns wall and 331,000 ns CPU, below the
+selected 1 ms interval floor. The four preceding correctness matrices passed
+117 cases and 964 task rows each. No null ratio, slowdown control, compiler
+comparison or conditional runtime-only comparison followed, and batching
+was not adjusted. Both candidates lack cost qualification from that session.
+A [separate prospective amendment](../../investigations/compute-model/DESIGN.md#prospective-amendment-one-interval-resolution-correction)
+permits exactly one corrected-resolution campaign before any paired or
+candidate result, with separate data and unchanged thresholds/stop controls.
+It does not relabel the stopped run as a pass. See the
+[cost result](../../investigations/compute-model/DESIGN.md#cost-qualification-result-interval-floor-stop)
+for exact identities, setup-access refusal, separate phase costs and limits.
+
+The one amended campaign completed all forty identical-image cells with the
+larger fixed batches and valid intervals. Its symmetric null failed N12/W4
+on CPU ratio 1.2979956932 and spine-8-1/W4 on wall 1.1949915221 and CPU
+1.1825007904. The other thirty-eight cells stayed within the bands. No
+doubled-work control or candidate/runtime-only comparison followed, and no
+further correction or rerun is selected. The final disposition withdraws both
+production candidates for lack of cost qualification; it does not claim an
+implementation regression or identify the cause of identical-input
+variation. The [amended result](../../investigations/compute-model/DESIGN.md#amended-cost-result-identical-image-control-failure)
+retains all forty rows, raw identities and separate construction/execution
+totals. Ordinary main scheduler behavior and its original tests are restored.
+
+Use an existing compiler, a dedicated scratch work directory, and the existing
+oneTBB cache pinned by `deps.sh` (`3046c8b0c29df995980003ea24f4d78c80ec0c8d`).
+The targets never download dependencies or build a compiler/framework. Run
+source analysis/emission and native construction as separate guarded phases:
+
+```sh
+WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl dag-fanin-emit \
+  make -C research/experiments/compute-bench -j2 dag-fanin-emit \
+  WFC=/absolute/path/to/whitefootc WORK=/absolute/scratch/dag-fanin
+WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl dag-fanin-build \
+  make -C research/experiments/compute-bench -j2 dag-fanin-build \
+  WORK=/absolute/scratch/dag-fanin DAG_TBB_PREFIX=/absolute/existing/deps
+```
+
+The emitted module and complete ordinary runtime use the CLI's `-O2` flags;
+the C++ probe also uses `-O2`, with no historical placement or vectorization
+controls. The cached oneTBB library keeps its recorded build flags.
+The `*.sha256` and `*-flags.txt` files retain construction identities and
+options. Before interpreting trace events, inspect the optimized code to
+confirm that the recurrence consumes the begin hook's returned seed and the
+end hook consumes the recurrence result. The hooks are opaque to WF, and
+the C++ begin hook is noinline with a volatile seed readback.
+
+Run each engine/image/width process once, retaining every result. Each command
+below is a complete matrix, not an individual fixture. The WF matrix contains
+115 cases/956 task rows; the oneTBB matrix contains 67 cases/764 task rows,
+because it runs the original N graph once per weight assignment rather than
+repeating the four WF source orders. Neither target times or retries calls:
+
+```sh
+for engine in wf tbb; do
+  for image in plain trace; do
+    for workers in 1 4; do
+      WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl \
+        "dag-fanin-$engine-$image-W$workers" \
+        make -C research/experiments/compute-bench dag-fanin-run \
+        WORK=/absolute/scratch/dag-fanin DAG_ENGINE="$engine" \
+        DAG_IMAGE="$image" DAG_WORKERS="$workers" || exit
+    done
+  done
+done
+```
+
+The separately selected spine-first comparator uses `DAG_VARIANT=phased`
+with the ordinary `DAG_EMIT_FLAGS=--par`; build it in another dedicated work
+directory. `DAG_ENGINE=wf-phased` selects only the existing 34 spine cases
+(632 task rows), with the same graph oracle and recurrence observer. Run its
+plain and traced images once each at W1/W4. It computes every spine task before
+mapping the original leaf ranges, so the investigation charges those added
+precedences. It introduces neither a worker-count source parameter nor a grain
+override; permission, generated splitting, actual steals and observed overlap
+remain separate facts.
+
+The captured-scalar availability control uses `DAG_VARIANT=scalar` with the
+ordinary `--par` emission and `DAG_ENGINE=wf-scalar`. It selects six existing
+spine graphs: lengths 0, 1 and 32, with uniform leaf steps 1 or 65,536 and
+spine steps 1 (132 task rows). Its one u64 leaf-cost scalar drives the real
+recurrence. The original per-task cost vector remains oracle metadata and is
+not passed to WF; `input` rows report these payloads separately. Use a separate
+work directory and run plain/traced W1/W4 once each. The task contract,
+spine-first phase order and observer are unchanged, with no grain hint.
+
+The [runtime-adjacency probe](../../investigations/compute-model/DESIGN.md#runtime-adjacency-all-predecessor-probe)
+uses `DAG_ENGINE=wf-runtime-loop`, `wf-runtime-tree` or `tbb-runtime` in a
+separate `DAG_VARIANT=runtime` work directory. Its source baseline uses the
+frozen main compiler and main C runtime, independently of the rolling-call
+compiler/runtime trials. Keep the runtime inputs frozen through `ROOT` when
+building from an isolated input tree; `DAG_SOURCE` and `WFC` can be supplied
+explicitly. Qualify source admission and both forms' permission/emission
+ledgers before native construction or execution. Run each selected engine's
+plain/traced W1/W4 matrix once under its own guard after that qualification.
+
+Both WF forms run 1,471 valid cases and 7,167 task rows: every forward graph
+through five vertices with indegree/outdegree at most two, expanded over
+`C=1,2,4` where valid (`C=0` for empty input), followed by the reverse-arrival
+and unit/costly progress witnesses. Empty, singleton, triangle and disconnected
+controls are labelled within the exhaustive set. The oneTBB matrix runs the
+495 distinct graph/work assignments once each, for 2,399 task rows; owner
+counts and WF forms do not duplicate its cases. WF also runs 13 malformed
+input/configuration controls, checking `{status, rounds, notices}={1,0,0}`,
+unchanged input/output bytes and no task events.
+
+The ordinary Kahn oracle still owns every expected task value and count.
+A separate calculation over the original edges checks the exact number of
+cross-owner notices and `1 + maximum cross-owner edges on a path` processing
+rounds, with zero rounds for empty input and `R <= C`. Valid WF calls start
+with nonzero task cells and an extra in-slice sentinel, checking initialization
+of exactly `N` cells. `routing` rows contain checked returned counters;
+`routing-model` rows charge source initialization, routing and head/report
+operations, excluding headers, stack frames and allocator metadata. They are
+source operation counts rather than physical memory measurements. Progress
+rows report actual task-0/task-3 overlap and retain any owner-round delay.
+The new engines reuse the existing recurrence, observer and corruption controls.
+
+The [retained qualification](dag-fanin-2026-09-23.tsv) passed all twelve
+configurations and rejected all malformed-input and corruption controls. In
+the traced W4 costly witness, the recursive source mapping overlapped tasks
+2 and 3, while task 0/task 3 overlap remained absent across its owner rounds.
+The direct native graph overlapped tasks 0 and 3 in its single retained run.
+These observations establish functionality and expose the source ordering
+cost; they do not measure a performance benefit.
+
+Those original aggregate-result calls used the old binder: W1 had an inactive
+pool but still entered the parallel body. The later
+[adapter qualification](../../investigations/compute-model/DESIGN.md#indirect-aggregate-result-adapter-repair-2026-09-23)
+separately checked actual sequential/parallel entry at W1/W4 with unchanged
+task and routing oracles; it adds no timing result.
+
+The traced image records one begin/end pair per serial task recurrence and
+checks exact event counts, IDs, inputs, results, native thread identity and
+completion of every original prerequisite before its consumer begins.
+Overlapping intervals on distinct threads establish observed task overlap;
+the observer's atomics affect scheduling, so these are not timing results.
+Notification owner events begin after notice folding and cover task work only.
+Separate deliberate output-bit and event-deletion controls must be rejected.
+W1/W4 mean total participants; native mode uses a matching oneTBB arena and
+does not start a WF worker pool. Source and observer byte counts are logical
+payloads, excluding allocator metadata, oneTBB internal nodes, runtime lanes,
+native stacks and canaries; no physical peak-memory measurement is claimed.
+`actual_steals` counts tasks actually stolen through the runtime's legacy
+`wf__par_grants` API. The saved initial default rows named that same counter
+`grants`; it does not count offer attempts or successful lane acquisition.
+`DAG_VARIANT` and `DAG_EMIT_FLAGS` allow a separately labelled, explicitly
+selected compiler control without overwriting the ordinary default evidence.
+
+## First-index expression probe
+
+The [first-index investigation](../../investigations/compute-model/DESIGN.md#first-index-search-expression-probe-2026-09-22)
+uses `first_index_probe.c` and `first_index_host.ll` here with its WF source
+beside the investigation. The caller checks plain and diagnostic sequential,
+fixed-batch, doubling-batch and local-return-helper forms against an
+independent `memchr` first-index oracle. It checks complete diagnostic traces
+and unchanged inputs; counters describe source-level work, not physical byte
+traffic. The [retained results](first-index-2026-09-22.tsv) include the failed
+construction attempts and the intentional bad-trace comparison control.
+These files have no daily test, scoreboard or timing caller. Retain them as
+reproducible evidence until superseded or no longer supporting this question.
+
+From the repository root, use a prebuilt compiler and a fresh scratch path.
+Run each stage separately; no target below builds a third-party dependency:
+
+```sh
+search_wfc=/absolute/path/to/whitefootc
+search_build=/absolute/scratch/first-index
+WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl first-index-emit \
+  make -C research/experiments/compute-bench -j2 first-index-emit \
+  WFC="$search_wfc" BUILD="$search_build" WF_ALIGN=
+WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl first-index-build \
+  make -C research/experiments/compute-bench -j2 first-index-build \
+  WFC="$search_wfc" BUILD="$search_build" WF_ALIGN=
+WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl first-index-verify \
+  make -C research/experiments/compute-bench first-index-verify BUILD="$search_build"
+```
+
+The verification stage runs `--no-overlap` at W1 and ordinary `--par` at
+W1/W4. To check the comparison path separately, run the following command;
+it deliberately corrupts one returned trace field and must report expected
+1 versus actual 0 at position 4, with exit status 2:
+
+```sh
+WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl first-index-self-control \
+  env WF_WORKERS=4 "$search_build/first-index-par" par self-control
+```
+
+The [adjacent-helper qualification](../../investigations/compute-model/DESIGN.md#adjacent-helper-pair-native-result)
+adds plain mode 4 with the same two local-return blocks. It compares the
+original counted-block form, its diagnostic trace, and a native two-block
+reference against the same independent outcomes. After emission above, build
+the ordinary images and a separate predicate-event observer, then run the
+fixed pass:
+
+```sh
+WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl first-index-pair-build \
+  make -C research/experiments/compute-bench -j2 first-index-pair-build \
+  WFC="$search_wfc" BUILD="$search_build" WF_ALIGN=
+WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl first-index-pair-verify \
+  make -C research/experiments/compute-bench first-index-pair-verify \
+  BUILD="$search_build"
+```
+
+The target runs `seq pair` at W1 and `par pair` at W1/W4, each over the 1,129
+original fixtures plus twelve fixed controls. It then runs
+`observed pair-observe` at W1/W4 over only those twelve controls. Every selected
+invocation runs once. The matrix checks the plain pair's index and unchanged
+inputs; trace fields belong to the unchanged mode 3 diagnostic and native
+reference. Actual plain predicate prefixes are directly observed only on
+the twelve positive-length controls. The observed W1 stream also supplies
+the copied-stream missing-completion control, which must reject eight expected
+events versus seven supplied without repeating a search. Raw events identify
+records and thread identities; the observed image is not a timing instrument. The native
+reference creates one pthread helper per wave, joins both blocks and validates
+their private prefixes. It establishes the same first-index/work contract,
+not pool competitiveness. None of these targets is a daily gate or benchmark.
 
 ## What "WF" means here, and what it does not
 
@@ -241,7 +522,12 @@ x86_64 `WF_ALIGN` placement control documented below, and called through a
 descriptor-only LLVM IR host adapter. `host-adapter.awk` binds its calls to the
 same execution world as entry: the emitted sequential clone when the worker
 pool is off, and the ordinary parallel symbol otherwise. Selection occurs at
-each host entry, outside the kernel algorithm. LLVM IR also supports versions
+each host entry, outside the kernel algorithm, for assigned results and
+unassigned void calls carrying an explicit result pointer. Calls without a
+matching clone remain unchanged. The binder accepts straight-line wrappers;
+it does not rewrite existing control-flow edges. The
+[aggregate-result repair and qualification](../../investigations/compute-model/DESIGN.md#indirect-aggregate-result-adapter-repair-2026-09-23)
+preserve older results under their recorded binder. LLVM IR also supports versions
 whose source functions have internal linkage. The two emissions are isolated by renaming
 their defined functions and all corresponding references; this preserves
 linkage and optimization attributes and leaves library imports and weak
@@ -714,8 +1000,9 @@ program doing its own sequential work between parallel regions does, while the
 runtime's helper lanes go idle and park. A driver that slept would hand its CPU
 back and measure something else. The wait is the last thing before the clock
 starts — after the previous call's verification and its printf — so no part of
-a gap is inside any reported wall or CPU figure, and the whole of what the gap
-did to a call is in that call's own numbers.
+a gap is inside the wall bracket. CPU reads also follow the gap, but their
+placement alone does not establish that a short counter delta excludes work
+accounted from an earlier interval; see the CPU attribution qualification below.
 
 **It reaches every form identically, references included.** A gap that reached
 only the `wf` row would compare one scheduler's idle policy against another
@@ -865,9 +1152,10 @@ kernel       w form              median_us  mad%  p10..p90_us  cpu_us  ratio  cp
   end-to-end Mandelbrot check behind this bundle's sizing spread 11.3 to 13.4 ms
   on a quiet four-CPU box at width four, which is about eighteen percent.
 - **`cpu_us`** is the same median of medians over **process CPU time** rather
-  than wall, read around the same interval the wall clock brackets, so it counts
-  every thread the form started, spinning and parked ones included. The source
-  is chosen per host and the driver line of `raw.tsv` names the one that was
+  than wall, using counter deltas read around the same call. The intended
+  coverage is CPU spent across the process's threads, including spinning
+  workers; precise attribution to that call needs the qualification below.
+  The source is chosen per host and the driver line of `raw.tsv` names the one
   read as `cpu_clock=`: `CLOCK_PROCESS_CPUTIME_ID` on Linux, **`task_info` on
   Darwin**, `getrusage(RUSAGE_SELF)` as the fallback anywhere the chosen source
   is absent or refuses. Darwin is not on the POSIX clock because it answers that
@@ -879,8 +1167,10 @@ kernel       w form              median_us  mad%  p10..p90_us  cpu_us  ratio  cp
   Darwin source is therefore the task-level pair that does consult the live
   threads when asked: `task_info(TASK_THREAD_TIMES_INFO)` for the threads that
   still exist plus `task_info(TASK_BASIC_INFO)` for the ones that have exited,
-  each `time_value_t` seconds and microseconds, summed. That source is held on a
-  reading and not on its documentation: the hosted `macos-14` leg of run
+  each `time_value_t` seconds and microseconds, summed. These separate reads
+  cover both categories but do not form an atomic snapshot across thread exit.
+  That source is held on a reading and not on its documentation: the hosted
+  `macos-14` leg of run
   34668036736, a three-CPU runner, printed `cpu_clock=task_info` on every driver
   line and returned CPU that grows with the lanes and stops where the CPUs do —
   mandelbrot `static` at W=4 read **107,878 us of CPU against a 36,495 us wall**
@@ -890,13 +1180,23 @@ kernel       w form              median_us  mad%  p10..p90_us  cpu_us  ratio  cp
   the same kind of evidence: on the hosted `macos-14` runner of run 34667394566
   its figures read 0.02 to 0.07 times their own wall and hardly moved with the
   work, which is not a CPU figure and is not a unit error either. The wall clock
-  stays the outermost pair and the two CPU reads are nested inside it, so no CPU
-  a call spends can fall outside the wall interval; the nested pair was timed at
-  757 ns on the Linux host where that was measured (`RESULTS.md`, 2026-09-11),
-  against per-call intervals of milliseconds. A form whose wall time is bought
-  by burning four lanes is indistinguishable from one that is simply fast in
-  `median_us` and is not in `cpu_us`. It is a measurement, never a pass/fail
-  input.
+  stays the outermost pair and the two CPU reads are nested inside it, enclosing
+  call execution; the nested pair was timed at 757 ns on the Linux host where
+  that was measured (`RESULTS.md`, 2026-09-11),
+  against per-call intervals of milliseconds.
+
+  Those historical longer-call observations support cumulative worker-CPU
+  coverage, not precise short-interval attribution. Darwin's live-thread API
+  qualifies its totals as accurate only when suspended. The
+  [retained-data diagnosis](../../investigations/compute-model/DESIGN.md#follow-up-diagnosis-of-retained-identical-image-variation)
+  observes CPU deltas exceeding the host's physical interval capacity. These
+  short deltas therefore cannot establish worker idleness or candidate CPU
+  cost. The separate [fixed accounting diagnostic](../../investigations/compute-model/DESIGN.md#baseline-cpu-accounting-result-short-interval-attribution-failure)
+  also violates that bound in gap counter differences, despite compatible
+  enclosing and lifetime totals; accuracy at longer intervals remains open.
+  This qualification concerns CPU
+  interpretation; the clock choice, raw data and wall measurements are retained.
+  This column is a measurement, never a pass/fail input.
 - **`ratio`** is filled only on `wf` rows. It is the **median of within-pass
   matched pairs**: for each pass, WF's process median divided by the lowest
   process median among the parallel references at that same width, printed with
@@ -909,7 +1209,8 @@ kernel       w form              median_us  mad%  p10..p90_us  cpu_us  ratio  cp
   WF's process CPU median divided by the CPU median of **the reference that was
   fastest by wall in that pass**, and the median of those pairs. The two ratios
   are therefore about the same pairs and can be read side by side --- `ratio`
-  says whether WF finished first, `cpu_r` says what it spent to. Pairing CPU
+  says whether WF finished first, while `cpu_r` compares the reported CPU
+  deltas subject to the attribution limit above. Pairing CPU
   against whichever reference happened to burn least CPU would answer a
   different question and would not line up with the verdict line. It sits beside
   `ratio` as a column rather than in `note` because it is the number the
