@@ -274,17 +274,18 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   [ordered-batch analysis](../research/investigations/io-model/CONCURRENCY-CATALOG.md#21-parallel-search-with-early-exit-added)
   avoids mandatory full-input scanning, but its invocation bound does not
   bound predicate cost. Block helpers that return at local matches remain
-  unqualified. After the current capture, BFS and stencil evidence is complete,
-  make this the next bounded expression probe: preserve the lowest matching
-  index or N on read-only input with a pure, infallible record predicate;
-  compare sequential search, batch folds and local-return helpers with a
-  useful native first-index search. Check all small-input hit positions and
-  absence, then count inspected records and bytes, including work committed
-  in the final wave. A cheap hit followed by a costly record in another helper
-  distinguishes an invocation bound from a cost bound; actual skipped tails
-  and completed helper work distinguish useful early return from a full scan
-  or serial execution. Defer until those active qualifications finish; no
-  executor or new concurrency rule is selected by this follow-up.
+  unqualified. The active
+  [expression criterion](../research/investigations/compute-model/DESIGN.md#first-index-search-expression-probe-2026-09-22)
+  compares sequential search, batch folds and local-return helpers with an
+  independent native sequential first-index reference. Qualify lowest-index
+  results, actual visited prefixes, records and bytes for every small-input
+  hit position and absence; charge every completed helper in the final wave.
+  Distinguish useful local skipping from serial execution and from costly
+  work in another helper. Trace overhead and logical counts do not establish
+  speed, and already-started expensive predicates also affect native parallel
+  search. Defer a broader mechanism until a concrete consumer and qualified
+  evidence establish the missing requirement; no executor, cancellation or
+  new concurrency rule is selected by this probe.
 
 - **General DAG scheduling and competitiveness remain unqualified.** The
   [runtime-adjacency probe](../research/investigations/compute-model/DESIGN.md#runtime-adjacency-all-predecessor-probe)

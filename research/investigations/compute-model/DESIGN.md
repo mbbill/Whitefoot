@@ -1807,6 +1807,98 @@ actual task overlap and preserved fan-in therefore have separate witnesses.
 No matrix was repeated to improve a schedule, and no elapsed-performance claim
 or immediate compiler-policy change follows from this qualification.
 
+## First-index search expression probe (2026-09-22)
+
+This bounded probe starts at merged `3d7fa496` and qualifies the
+[catalog's ordered-batch and local-return forms](../io-model/CONCURRENCY-CATALOG.md#21-parallel-search-with-early-exit-added).
+The result is the lowest matching record index, or N when absent. Inputs are
+read-only framed byte records; the pure, infallible predicate finds a NUL byte
+and may return before the record ends. Record boundaries are checked before
+forming a range reference, and the native fixture supplies monotone,
+in-bounds offsets. Empty records do not match.
+
+Compare ordinary sequential first-index search, `imin` folds over ordered
+batches (including sizes 1, 2, 4, ...), and ordered waves of contiguous
+two-record helpers. Each helper returns at its first local match; the caller
+folds its index and decides whether to stop only after the complete wave.
+PAR-2 judges that caller's counted body, not a return inside the called
+helper. Every helper in a started wave still completes; there is no shared
+stop flag or interruption of another helper's predicate.
+
+Return predicate and helper diagnostics as nominal records. Each counted
+iteration writes its helper's result into its own affine trace slot and uses
+only one accumulator, `imin`. Sum record and byte counts after the join in
+the native observer, so diagnostic accumulators do not deny the permission
+being studied. Trace entries must identify the actual visited record prefix,
+not infer skipped work from the final minimum. Count logical byte tests,
+including every completed helper in the final wave; these are not physical
+memory-traffic or optimized-instruction measurements. Trace construction,
+initialization and storage are diagnostic costs, not a production search
+speed measurement.
+
+The following criteria are fixed before source construction or execution:
+
+- For every N from 0 through 16, check absence and every single matching
+  position. Check every hit mask through N = 8 to distinguish the lowest
+  index from an arbitrary match. Include empty records, short and long
+  nonmatches, and markers at the first, middle and last byte. A small C
+  `memchr`-based first-index search independently supplies the result and
+  per-record logical byte counts; derive each expected helper prefix from
+  those per-record outcomes. Compare complete traces and unchanged input
+  bytes, not only the final index.
+- Use T = 1 and T = 65,536 for two fixed four-record controls. With lengths
+  `[1, T, T, 1]`, only record 0 matching, and helper ranges `[0, 2)` and
+  `[2, 4)`, sequential search visits one record and one byte, a four-item
+  fold visits four records and `2*T + 2` bytes, and local-return helpers
+  visit three records and `T + 2` bytes. The first helper skips record 1;
+  the second completes records 2 and 3. With lengths `[1, T, 1, T]` and
+  matches at records 0 and 2, the helpers visit two records and two bytes,
+  skipping both expensive local tails. Retain both T values and all results.
+- Also retain the catalog's geometric batches `[0]`, then `[1, 2]`: a
+  one-byte nonmatch at 0, a one-byte match at 1, and a T-byte nonmatch at 2
+  cost two bytes sequentially and `T + 2` bytes in the started batches.
+  The invocation bound cannot give a weighted-work bound independent of T.
+- Qualify `--no-overlap` and ordinary `--par` images against the same oracle.
+  Compare plain and diagnostic forms' `--par-ledger` and emitted search
+  helper bodies; trace outputs may change work pricing or lowering, and any
+  difference remains explicit. Establish
+  nonempty search work on another native thread before claiming executed
+  overlap; pool startup, permission, splitter emission or grants alone do
+  not establish it. A separate diagnostic may observe helper entry and
+  completion, but contributes no production timing result. If the ordinary
+  grain policy leaves the candidate serial, report that boundary without
+  changing thresholds to manufacture participation.
+
+The useful C reference is sequential. Already-started, noninterruptible
+expensive predicates can also cost native parallel first-index search. This
+trial can establish Whitefoot's local skipping, completed-wave work and
+current actualization; it cannot establish a universal Whitefoot/native gap,
+a speedup from logical counts, or a reason to select cancellation.
+
+Use one research source beside this investigation, one C oracle/caller and
+one host adapter in `research/experiments/compute-bench`, and an explicit
+target in that bundle's existing Makefile. Retain each only while this
+investigation uses it, including as reproducible evidence; remove it when
+superseded or no longer supporting this question. Reuse the coordinated
+exact-main compiler and existing native runtime. No dependency build, runner framework,
+correctness-CI path, timing comparison, compiler change or specification
+revision is selected. Keep source analysis/emission, native construction and
+oracle execution as separate guarded stages, each capped at 30 seconds with
+at most two build jobs. A proof or capability failure stops native
+construction until classified against the specification. A wrong index or
+trace, changed input, artifact-identity drift or exceeded cap stops the
+qualification and preserves its output; it is not a performance verdict.
+
+**Design suitability.** Local-return helpers may avoid costly suffixes while
+retaining ordinary functions, read-only sharing and a single admitted fold.
+Their costs are ordered joins, diagnostic trace space and completed work in
+other helpers; useful overlap under current pricing remains uncertain. The
+affected scope is this research source and caller, not an executor or a
+language interface. Qualify the bounded form now. Defer any broader
+first-index or cancellation mechanism until a real consumer and evidence
+separate its requirements from the unavoidable cost of already-started
+predicates; no live-tree revision is proposed by this probe.
+
 ## Sparse destination routing trial (2026-09-21)
 
 This bounded continuation starts at merged `3402048f` and asks whether useful
