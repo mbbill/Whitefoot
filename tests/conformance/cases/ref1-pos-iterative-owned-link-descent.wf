@@ -3,7 +3,7 @@ enum Chain {
   Next(stamp: u64, tail: Box<Chain>);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A bare-pointer cursor traverses an owned chain iteratively across payload-arm exits, with no source wildcard or runtime reference validation.";
   let end = End();
   let root = box_new::<Chain>(value: move end);

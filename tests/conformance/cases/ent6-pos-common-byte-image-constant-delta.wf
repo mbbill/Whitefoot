@@ -1,4 +1,4 @@
-fn checked_sum(weights: &[u8]) -> result: own u64 reads(weights) contract {
+fn checked_sum(weights: &[u8]) -> result: u64 reads(weights) contract {
   define bound = deref(weights).len;
   requires bound <= 100_u64;
 } {
@@ -23,7 +23,7 @@ fn checked_sum(weights: &[u8]) -> result: own u64 reads(weights) contract {
   return sum;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "No construction is needed to exercise the join image.";
   return exit_status(code: 0_u8);
 }

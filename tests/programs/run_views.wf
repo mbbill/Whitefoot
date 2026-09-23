@@ -1,4 +1,4 @@
-fn view_total(window: &[u8]) -> total: own u64 reads(window) {
+fn view_total(window: &[u8]) -> total: u64 reads(window) {
   doc "The run is reached through one range reference, whose one measure is len [REF-4, MSR-1].";
   let width = deref(window).len;
   let sum = 0_u64;
@@ -21,7 +21,7 @@ fn view_total(window: &[u8]) -> total: own u64 reads(window) {
   return sum;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Range references over a Slots window replace the retired view values: one reference is passed twice with no move, the window is appended to after that reference's last use, it is drained to empty from the front by remove_at, and a second reference reads back what a write through the first one left.";
   let empty = slots_new::<u8, 4>();
   place_back(window: &empty, value: 3_u8);

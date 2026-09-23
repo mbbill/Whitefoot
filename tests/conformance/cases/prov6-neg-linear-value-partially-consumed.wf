@@ -7,7 +7,7 @@ struct Chunk {
   tickets: Slots<Token, 2>;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "PROV-6: a consume of a proper sub-place of a value one of whose remaining parts is linear abandons the residual the obligation was written for. The refusal is stated over the consume, so it reaches every consuming use of that sub-place, and its restructuring is the destructuring consume of the whole value.";
   let values = array_filled::<u8, 4>(value: 0_u8);
   let run = slots_from_array::<u8, 4>(values: values);

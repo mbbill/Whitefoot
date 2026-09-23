@@ -2,7 +2,7 @@ struct Block {
   bytes: Slots<u8, 4>;
 }
 
-fn pass_block(block: own Block) -> result: own Block pure contract {
+fn pass_block(block: Block) -> result: Block pure contract {
   ensures result.bytes.cap == block.bytes.cap;
   ensures result.bytes.len == block.bytes.len;
 } {
@@ -10,6 +10,6 @@ fn pass_block(block: own Block) -> result: own Block pure contract {
   return move block;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

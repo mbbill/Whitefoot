@@ -3,14 +3,14 @@ enum Choice {
   Long(values: Slots<u8, 8>);
 }
 
-fn needs_one<const n: u64>(values: &Slots<u8, n>) -> result: own unit reads(values.len) contract {
+fn needs_one<const n: u64>(values: &Slots<u8, n>) -> result: unit reads(values.len) contract {
   requires deref(values).len == 1_u64;
 } {
   let observed = deref(values).len;
   return unit;
 }
 
-fn inspect(choose_short: own Bool) -> result: own unit pure {
+fn inspect(choose_short: Bool) -> result: unit pure {
   doc "MSR-3 gives each enum payload field its complete variant-and-field place step. One value-if delivers Short capacity four with established length one or Long capacity eight with established length two to the same match. The Short arm discharges needs_one; the Long arm must not inherit Short's fact and is rejected by FN-8.";
   let choice = if choose_short {
     let short_values = slots_new::<u8, 4>();
@@ -35,6 +35,6 @@ fn inspect(choose_short: own Bool) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

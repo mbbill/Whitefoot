@@ -1,4 +1,4 @@
-fn main(cwd: own DirectoryRead, args: own Args) -> owner: own DirectoryRead pure {
+fn main(cwd: DirectoryRead, args: Args) -> owner: DirectoryRead pure {
   doc "FN-7: ordinary parameter order is chosen by the declaration; there is no standard-input ordinal table. The linear directory is returned explicitly.";
   return move cwd;
 }

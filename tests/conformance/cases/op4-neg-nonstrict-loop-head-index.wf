@@ -1,4 +1,4 @@
-fn scan(data: &[u8]) -> result: own unit reads(data) {
+fn scan(data: &[u8]) -> result: unit reads(data) {
   let count = deref(data).len;
   let cursor = 0_u64;
   loop (
@@ -13,6 +13,6 @@ fn scan(data: &[u8]) -> result: own unit reads(data) {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

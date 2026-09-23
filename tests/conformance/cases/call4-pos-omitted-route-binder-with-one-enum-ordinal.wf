@@ -1,4 +1,4 @@
-fn filled<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
+fn filled<T: copy, const n: u64>(value: T) -> result: Slots<T, n> pure contract {
   ensures result.len == n;
 } {
   doc "Builds a run of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
@@ -7,7 +7,7 @@ fn filled<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure c
   return move built;
 }
 
-fn probe(taken: own Slots<u8, 8>) -> (outcome: own Result<u64, Overflow>, spare: own u64) pure contract {
+fn probe(taken: Slots<u8, 8>) -> (outcome: Result<u64, Overflow>, spare: u64) pure contract {
   ensures when Ok(value: reported): reported == taken.len;
 } {
   doc "Exactly one ordinal has the route's enum type, so the ordinal binder is omitted.";
@@ -15,7 +15,7 @@ fn probe(taken: own Slots<u8, 8>) -> (outcome: own Result<u64, Overflow>, spare:
   return Ok<u64, Overflow>(value: measured), measured;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A route omits its ordinal binder where exactly one declared result ordinal has the route's enum type. That is the one case the omission is admitted in, and it is what keeps a single-result declaration writing no ordinal binder.";
   let run = filled::<u8, 8>(value: 0_u8);
   let (outcome, spare) = probe(taken: move run);

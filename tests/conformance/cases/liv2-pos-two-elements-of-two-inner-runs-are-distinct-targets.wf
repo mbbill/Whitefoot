@@ -1,11 +1,11 @@
-fn stamp(left: &Array<u8, 4>, right: &Array<u8, 4>, value: own u8) -> result: own unit writes(left), writes(right) {
+fn stamp(left: &Array<u8, 4>, right: &Array<u8, 4>, value: u8) -> result: unit writes(left), writes(right) {
   doc "One element write through each reference parameter.";
   set deref(left)[1_u64] = value;
   set deref(right)[1_u64] = value;
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "OWN-7, EFF-5: the overlap relation is over the complete path and not over one offset. The two reference arguments name grid[0] and grid[1], whose index steps are literals with different values, so the call's two substituted write paths are proved disjoint and the pair is admitted; every step below them is relative to its own containing element, and both stamped bytes are read back.";
   let inner_left = array_filled::<u8, 4>(value: 1_u8);
   let inner_right = array_filled::<u8, 4>(value: 3_u8);

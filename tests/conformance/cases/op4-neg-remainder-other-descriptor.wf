@@ -1,4 +1,4 @@
-fn cross_index<const n_small: u64, const n_big: u64>(small: own Slots<u8, n_small>, big: own Slots<u8, n_big>, n: own u64) -> found: own u8 pure contract {
+fn cross_index<const n_small: u64, const n_big: u64>(small: Slots<u8, n_small>, big: Slots<u8, n_big>, n: u64) -> found: u8 pure contract {
   define big_room = big.len;
   requires big_room > 0_u64;
 } {
@@ -8,6 +8,6 @@ fn cross_index<const n_small: u64, const n_big: u64>(small: own Slots<u8, n_smal
   return byte;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

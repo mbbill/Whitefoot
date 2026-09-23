@@ -2,14 +2,14 @@ struct Cell {
   value: i32;
 }
 
-fn store(target: &Cell, source: &Cell) -> result: own unit reads(source.value), writes(target.value) {
+fn store(target: &Cell, source: &Cell) -> result: unit reads(source.value), writes(target.value) {
   doc "The accepted repair: one parameter is the place written and the other is the place read, stated by the row rather than by a mode marker [EFF-1]. The write through `target` reaches exactly the place the caller named when it formed the reference [REF-1, SET-1].";
   let taken = deref(source).value;
   set deref(target).value = taken;
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let v = Cell(value: 1_i32);
   let w = Cell(value: 7_i32);
   store(target: &v, source: &w);

@@ -25,7 +25,7 @@ fn a_write_through_a_reference_kills_the_value_fact_a_requirement_needs() {
         let (mode, term, read, effects, actual) = if borrowed {
             ("&", "deref(value)", "deref(value)", "reads(value)", "value")
         } else {
-            ("own ", "value", "value", "pure", "seen")
+            ("", "value", "value", "pure", "seen")
         };
         let bind = if borrowed {
             String::new()
@@ -41,7 +41,7 @@ fn a_write_through_a_reference_kills_the_value_fact_a_requirement_needs() {
                 ("", "reads(value)")
             };
             let source = format!(
-                "fn overwrite(cell: &u64) -> result: own unit writes(cell) {{\n  set deref(cell) = 9_u64;\n  return unit;\n}}\n\nfn indexed(value: {mode}u64) -> result: own u64 {effects} contract {{\n  requires {term} < 1_u64;\n}} {{\n  let rows = array_filled::<u64, 1>(value: 7_u64);\n  let index = {read};\n  return rows[index];\n}}\n\nfn forward(value: &u64) -> result: own u64 {forward_effect} contract {{\n  requires deref(value) < 1_u64;\n}} {{\n{write}{bind}  return indexed(value: {actual});\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+                "fn overwrite(cell: &u64) -> result: unit writes(cell) {{\n  set deref(cell) = 9_u64;\n  return unit;\n}}\n\nfn indexed(value: {mode}u64) -> result: u64 {effects} contract {{\n  requires {term} < 1_u64;\n}} {{\n  let rows = array_filled::<u64, 1>(value: 7_u64);\n  let index = {read};\n  return rows[index];\n}}\n\nfn forward(value: &u64) -> result: u64 {forward_effect} contract {{\n  requires deref(value) < 1_u64;\n}} {{\n{write}{bind}  return indexed(value: {actual});\n}}\n\nfn main() -> status: ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
             );
             if changed {
                 super::assert_rule_kind(source.as_bytes(), SemanticRule::Fn8, |kind| {
@@ -69,13 +69,13 @@ fn a_write_through_a_reference_kills_the_value_fact_a_requirement_needs() {
 #[test]
 fn a_non_bool_requires_predicate_cites_op5() {
     assert_rule(
-        br#"fn invalid(value: own i32) -> out: own i32 pure contract {
+        br#"fn invalid(value: i32) -> out: i32 pure contract {
   requires value;
 } {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -86,14 +86,14 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn plural_requires_keep_every_source_occurrence_at_the_call() {
-    let source = br#"fn exact(value: own i32) -> out: own i32 pure contract {
+    let source = br#"fn exact(value: i32) -> out: i32 pure contract {
   requires value == 1_i32;
   requires value == 1_i32;
 } {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let value = 1_i32;
   let observed = exact(value: value);
   return exit_status(code: 0_u8);
@@ -134,14 +134,14 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_later_requires_clause_is_not_dropped_after_an_earlier_success() {
-    let source = br#"fn exact(value: own i32) -> out: own i32 pure contract {
+    let source = br#"fn exact(value: i32) -> out: i32 pure contract {
   requires value == 1_i32;
   requires value == 2_i32;
 } {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let value = 1_i32;
   let observed = exact(value: value);
   return exit_status(code: 0_u8);
@@ -178,14 +178,14 @@ fn instantiated_call_goal_arguments(call: &CheckedExpression) -> &[GoalExpressio
 
 #[test]
 fn requires_retains_one_static_goal_without_a_second_expression_tree() {
-    let source = br#"fn bounded(x: own i32) -> result: own i32 pure contract {
+    let source = br#"fn bounded(x: i32) -> result: i32 pure contract {
   define permitted = x >= 0_i32;
   requires permitted;
 } {
   return x;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let x = 7_i32;
   let value = bounded(x: x);
   return exit_status(code: 0_u8);
@@ -221,13 +221,13 @@ fn requires_rejects_user_calls_and_partial_operations() {
 #[test]
 fn requires_is_static_and_keeps_op5_typing() {
     with_semantics(
-        br#"fn admitted(value: own i32) -> result: own i32 pure contract {
+        br#"fn admitted(value: i32) -> result: i32 pure contract {
   requires value >= 0_i32;
 } {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -255,11 +255,11 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
     with_semantics(
-        b"fn f(a: own u64) -> result: own u64 pure contract {\n  \
+        b"fn f(a: u64) -> result: u64 pure contract {\n  \
           define doubled = a *wrap 2_u64;\n  \
           requires doubled <= 16_u64;\n} {\n  \
           return a;\n}\n\n\
-          fn main() -> status: own ExitStatus pure {\n  \
+          fn main() -> status: ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(_) = outcome else {
@@ -271,11 +271,11 @@ fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
     // INV-1 already gives an affine expression, so a bare `+` states a relation
     // rather than requesting an operation.
     with_semantics(
-        b"fn f(x: own i32) -> result: own i32 pure contract {\n  \
+        b"fn f(x: i32) -> result: i32 pure contract {\n  \
           define raised = x + 1_i32;\n  \
           requires raised > x;\n} {\n  \
           return x;\n}\n\n\
-          fn main() -> status: own ExitStatus pure {\n  \
+          fn main() -> status: ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(_) = outcome else {
@@ -287,22 +287,22 @@ fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
     // relation can state its way out of, so admitting it would put a partial
     // operation where no domain obligation discharges it.
     assert_rule(
-        b"fn f(x: own u64) -> result: own u64 pure contract {\n  \
+        b"fn f(x: u64) -> result: u64 pure contract {\n  \
           define half = x / 2_u64;\n  \
           requires half <= x;\n} {\n  \
           return x;\n}\n\n\
-          fn main() -> status: own ExitStatus pure {\n  \
+          fn main() -> status: ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn8,
         SemanticIssueKind::InvalidRequires,
     );
     // Reached only through the infix tail's own atom, never the expr's.
     assert_rule(
-        b"fn f(xs: own Slots<u64, 4>, a: own u64) -> result: own u64 pure contract {\n  \
+        b"fn f(xs: Slots<u64, 4>, a: u64) -> result: u64 pure contract {\n  \
           define sum = a +wrap xs[1_u64];\n  \
           requires sum <= 8_u64;\n} {\n  \
           return a;\n}\n\n\
-          fn main() -> status: own ExitStatus pure {\n  \
+          fn main() -> status: ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn8,
         SemanticIssueKind::InvalidRequires,
@@ -310,11 +310,11 @@ fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
     // A non-consuming datum is itself an admitted definition expression;
     // alpha-expansion substitutes the parameter datum into the requirement.
     with_semantics(
-        b"fn f(x: own i32) -> result: own i32 pure contract {\n  \
+        b"fn f(x: i32) -> result: i32 pure contract {\n  \
           define candidate = x;\n  \
           requires candidate > 0_i32;\n} {\n  \
           return x;\n}\n\n\
-          fn main() -> status: own ExitStatus pure {\n  \
+          fn main() -> status: ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(_) = outcome else {
@@ -336,11 +336,11 @@ fn requires_holds_a_clause_local_to_a_copy_type() {
     // since a range reference is formed by a `borrow_expr` the clause subset
     // already rejects [REF-4].
     assert_rule(
-        b"fn f(a: own u64) -> result: own u64 pure contract {\n  \
+        b"fn f(a: u64) -> result: u64 pure contract {\n  \
           define xs = slots_new::<i32, 4>();\n  \
           requires a < 8_u64;\n} {\n  \
           return a;\n}\n\n\
-          fn main() -> status: own ExitStatus pure {\n  \
+          fn main() -> status: ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn8,
         SemanticIssueKind::InvalidRequires,
@@ -348,14 +348,14 @@ fn requires_holds_a_clause_local_to_a_copy_type() {
     // The symbolic generic pass must intern the checked-arithmetic Result.
     // Its copy payload and copy error make the structural Result copy too.
     with_semantics(
-        br#"fn invalid<T: Int>(x: own T) -> result: own T pure contract {
+        br#"fn invalid<T: Int>(x: T) -> result: T pure contract {
   define raised = x +checked 1_T;
   requires x > 0_T;
 } {
   return x;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -368,11 +368,11 @@ fn main() -> status: own ExitStatus pure {
     );
     // A payload variant remains copy when every payload is copy.
     with_semantics(
-        b"fn f(x: own i32) -> result: own i32 pure contract {\n  \
+        b"fn f(x: i32) -> result: i32 pure contract {\n  \
           define raised = x +checked 1_i32;\n  \
           requires x > 0_i32;\n} {\n  \
           return x;\n}\n\n\
-          fn main() -> status: own ExitStatus pure {\n  \
+          fn main() -> status: ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             assert!(
@@ -384,11 +384,11 @@ fn main() -> status: own ExitStatus pure {
     // The positive control: a copy-typed clause local is still admitted, or
     // the gate above has over-rejected into every clause `let`.
     with_semantics(
-        b"fn f(a: own u64) -> result: own u64 pure contract {\n  \
+        b"fn f(a: u64) -> result: u64 pure contract {\n  \
           define ok = a < 8_u64;\n  \
           requires ok;\n} {\n  \
           return a;\n}\n\n\
-          fn main() -> status: own ExitStatus pure {\n  \
+          fn main() -> status: ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(checked) = outcome else {
@@ -422,14 +422,14 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn ordinary_prelude_calls_in_requires_are_fn8_source_rejections() {
     assert_rule(
-        br#"fn invalid() -> result: own ExitStatus pure contract {
+        br#"fn invalid() -> result: ExitStatus pure contract {
   define status = exit_status(code: 0_u8);
   requires 0_u8 == 0_u8;
 } {
   return exit_status(code: 0_u8);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -440,7 +440,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn requires_locals_are_distinct_from_same_named_body_locals() {
-    let source = br#"fn increment(x: own i32) -> result: own i32 pure contract {
+    let source = br#"fn increment(x: i32) -> result: i32 pure contract {
   define value = x >= 0_i32;
   requires value;
 } {
@@ -448,7 +448,7 @@ fn requires_locals_are_distinct_from_same_named_body_locals() {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let x = 7_i32;
   let value = increment(x: x);
   return exit_status(code: 0_u8);
@@ -469,7 +469,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn goal_templates_ignore_clause_spelling_and_local_sharing() {
-    let source = br#"fn shared(a: own u64, b: own u64) -> result: own u64 pure contract {
+    let source = br#"fn shared(a: u64, b: u64) -> result: u64 pure contract {
   define sum = a +wrap b;
   define below = sum < 100_u64;
   define above = sum > 0_u64;
@@ -479,7 +479,7 @@ fn goal_templates_ignore_clause_spelling_and_local_sharing() {
   return a;
 }
 
-fn duplicated(left: own u64, right: own u64) -> result: own u64 pure contract {
+fn duplicated(left: u64, right: u64) -> result: u64 pure contract {
   define first_sum = left +wrap right;
   define low_half = first_sum < 100_u64;
   define second_sum = left +wrap right;
@@ -490,7 +490,7 @@ fn duplicated(left: own u64, right: own u64) -> result: own u64 pure contract {
   return left;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -520,31 +520,31 @@ fn goal_templates_retain_order_row_and_named_const_identity() {
 
 const second_limit: u64 = 8_u64;
 
-fn baseline(value: own u64) -> result: own u64 pure contract {
+fn baseline(value: u64) -> result: u64 pure contract {
   requires value < first_limit;
 } {
   return value;
 }
 
-fn swapped(value: own u64) -> result: own u64 pure contract {
+fn swapped(value: u64) -> result: u64 pure contract {
   requires first_limit < value;
 } {
   return value;
 }
 
-fn different_row(value: own u64) -> result: own u64 pure contract {
+fn different_row(value: u64) -> result: u64 pure contract {
   requires value <= first_limit;
 } {
   return value;
 }
 
-fn different_const(value: own u64) -> result: own u64 pure contract {
+fn different_const(value: u64) -> result: u64 pure contract {
   requires value < second_limit;
 } {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -575,13 +575,13 @@ fn goal_cell_deref_projection_retains_the_selected_referent_type() {
     // field `inner` rather than a `deref` spelling; the content step still
     // resolves to the one dereference projection, so the retained goal datum
     // is unchanged.
-    let source = br#"fn positive(owner: own Box<i32>) -> result: own Box<i32> pure contract {
+    let source = br#"fn positive(owner: Box<i32>) -> result: Box<i32> pure contract {
   requires owner.inner > 0_i32;
 } {
   return move owner;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -615,14 +615,14 @@ fn goal_field_projection_retains_the_selected_run_type() {
   values: Slots<u8, 2>;
 }
 
-fn measured(envelope: own Envelope) -> result: own Envelope pure contract {
+fn measured(envelope: Envelope) -> result: Envelope pure contract {
   define size = envelope.values.len;
   requires size == size;
 } {
   return move envelope;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -673,28 +673,28 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn concrete_equal_const_arguments_produce_equal_goal_templates() {
     let source =
-        br#"fn left<const n: u64>(value: own Slots<u8, n>) -> result: own Slots<u8, n> pure contract {
+        br#"fn left<const n: u64>(value: Slots<u8, n>) -> result: Slots<u8, n> pure contract {
   define size = value.len;
   requires size == size;
 } {
   return move value;
 }
 
-fn right<const count: u64>(input: own Slots<u8, count>) -> result: own Slots<u8, count> pure contract {
+fn right<const count: u64>(input: Slots<u8, count>) -> result: Slots<u8, count> pure contract {
   define extent = input.len;
   requires extent == extent;
 } {
   return move input;
 }
 
-fn different<const width: u64>(items: own Slots<u8, width>) -> result: own Slots<u8, width> pure contract {
+fn different<const width: u64>(items: Slots<u8, width>) -> result: Slots<u8, width> pure contract {
   define amount = items.len;
   requires amount == amount;
 } {
   return move items;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let left_input = slots_new::<u8, 2>();
   let left_output = left::<2>(value: move left_input);
   let right_input = slots_new::<u8, 2>();
@@ -728,13 +728,13 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn unused_generic_requirement_is_retained_symbolically_without_a_concrete_function() {
-    let source = br#"fn positive<T: Int>(value: own T) -> result: own T pure contract {
+    let source = br#"fn positive<T: Int>(value: T) -> result: T pure contract {
   requires value > 0_T;
 } {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -798,13 +798,13 @@ fn a_nominal_bearing_generic_requirement_survives_the_symbolic_checkpoint_as_met
   right: T;
 }
 
-fn need<T: Int>(pairs: own Slots<Pair<T>, 1>) -> result: own unit pure contract {
+fn need<T: Int>(pairs: Slots<Pair<T>, 1>) -> result: unit pure contract {
   requires pairs.len <= 1_u64;
 } {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -901,14 +901,14 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_derived_const_in_generic_requirement_has_checked_program_owned_structure() {
-    let source = br#"fn need<const n: u64>(value: own Slots<u8, n + 1>) -> result: own Slots<u8, n + 1> pure contract {
+    let source = br#"fn need<const n: u64>(value: Slots<u8, n + 1>) -> result: Slots<u8, n + 1> pure contract {
   define size = value.len;
   requires size == size;
 } {
   return move value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -952,13 +952,13 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn called_generic_keeps_concrete_instances_and_one_symbolic_requirement() {
-    let source = br#"fn positive<T: Int>(value: own T) -> result: own T pure contract {
+    let source = br#"fn positive<T: Int>(value: T) -> result: T pure contract {
   requires value > 0_T;
 } {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let narrow = 1_i32;
   let narrow_result = positive::<i32>(value: narrow);
   let wide = 1_i64;
@@ -1000,19 +1000,19 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn generic_to_generic_discovery_does_not_duplicate_symbolic_requirements() {
-    let source = br#"fn inner<T: Int>(value: own T) -> result: own T pure contract {
+    let source = br#"fn inner<T: Int>(value: T) -> result: T pure contract {
   requires value > 0_T;
 } {
   return value;
 }
 
-fn outer<T: Int>(value: own T) -> result: own T pure contract {
+fn outer<T: Int>(value: T) -> result: T pure contract {
   requires value > 0_T;
 } {
   return inner::<T>(value: value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1077,24 +1077,23 @@ fn main() -> status: own ExitStatus pure {
 /// while the concrete replay folds both occurrences to the selected integer.
 #[test]
 fn const_generic_values_discharge_requirements_through_transitive_forwarding() {
-    let source =
-        br#"fn accept<const expected: u64>(value: own u64) -> result: own unit pure contract {
+    let source = br#"fn accept<const expected: u64>(value: u64) -> result: unit pure contract {
   requires value == expected;
 } {
   return unit;
 }
 
-fn relay<const forwarded: u64>() -> result: own unit pure {
+fn relay<const forwarded: u64>() -> result: unit pure {
   let accepted = accept::<forwarded>(value: forwarded);
   return unit;
 }
 
-fn outer<const ceiling: u64>() -> result: own unit pure {
+fn outer<const ceiling: u64>() -> result: unit pure {
   let relayed = relay::<ceiling>();
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let completed = outer::<7>();
   return exit_status(code: 0_u8);
 }
@@ -1141,19 +1140,18 @@ fn main() -> status: own ExitStatus pure {
 /// unproved in the symbolic schema.
 #[test]
 fn independent_const_generic_values_do_not_become_equal_call_datums() {
-    let source =
-        br#"fn accept<const expected: u64>(value: own u64) -> result: own unit pure contract {
+    let source = br#"fn accept<const expected: u64>(value: u64) -> result: unit pure contract {
   requires value == expected;
 } {
   return unit;
 }
 
-fn invalid<const actual: u64, const expected: u64>() -> result: own unit pure {
+fn invalid<const actual: u64, const expected: u64>() -> result: unit pure {
   let denied = accept::<expected>(value: actual);
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1197,7 +1195,7 @@ fn scalar_growth_bridge_program(
         "  requires length < capacity;"
     };
     format!(
-        r#"fn larger(current: own u64, total: own u64) -> result: own u64 pure contract {{
+        r#"fn larger(current: u64, total: u64) -> result: u64 pure contract {{
   ensures result >= current;
 {total_postcondition}}} {{
   if current >= total {{
@@ -1206,13 +1204,13 @@ fn scalar_growth_bridge_program(
   return total;
 }}
 
-fn require_room(length: own u64, capacity: own u64) -> result: own unit pure contract {{
+fn require_room(length: u64, capacity: u64) -> result: unit pure contract {{
 {room_contract}
 }} {{
   return unit;
 }}
 
-fn prove_growth(length: own u64, capacity: own u64) -> result: own unit pure{length_contract} {{
+fn prove_growth(length: u64, capacity: u64) -> result: unit pure{length_contract} {{
 {nonzero_guard}  if capacity <= 9223372036854775807_u64 {{
     let doubled = capacity + capacity;
     let widened = larger(current: capacity, total: doubled);
@@ -1221,7 +1219,7 @@ fn prove_growth(length: own u64, capacity: own u64) -> result: own unit pure{len
   return unit;
 }}
 
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   return exit_status(code: 0_u8);
 }}
 "#
@@ -1265,19 +1263,19 @@ fn fn8_growth_bridge_requires_each_written_source_fact() {
 /// callee's `part.len <= ceiling` bridge.
 #[test]
 fn fn8_bridge_visits_a_live_measure_before_scalar_bindings() {
-    let source = br#"fn range_ceiling(part: &[u8]) -> ceiling: own u64 reads(part.len) contract {
+    let source = br#"fn range_ceiling(part: &[u8]) -> ceiling: u64 reads(part.len) contract {
   ensures ceiling >= deref(part).len;
 } {
   return deref(part).len;
 }
 
-fn require_room(length: own u64, ceiling: own u64) -> result: own unit pure contract {
+fn require_room(length: u64, ceiling: u64) -> result: unit pure contract {
   requires length < ceiling;
 } {
   return unit;
 }
 
-fn caller(length: own u64, capacity: own u64) -> result: own unit pure contract {
+fn caller(length: u64, capacity: u64) -> result: unit pure contract {
   requires length <= capacity;
   requires capacity <= 2_u64;
 } {
@@ -1293,7 +1291,7 @@ fn caller(length: own u64, capacity: own u64) -> result: own unit pure contract 
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1311,7 +1309,7 @@ fn forward_calls_retain_paths_and_exact_literal_place_and_named_const_images() {
 
 const equal_value_other_const: u64 = 8_u64;
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let local = 3_u64;
   let from_place = below(value: local);
   let from_literal = below(value: 4_u64);
@@ -1320,7 +1318,7 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 
-fn below(value: own u64) -> result: own u64 pure contract {
+fn below(value: u64) -> result: u64 pure contract {
   requires value < requirement_limit;
 } {
   return value;
@@ -1465,13 +1463,13 @@ fn below(value: own u64) -> result: own u64 pure contract {
 fn call_front_end_captures_a_subscript_until_entailment_admits_its_identity() {
     let source = br#"const values: Array<u8, 2> =[3_u8, 3_u8];
 
-fn positive(value: own u8) -> result: own unit pure contract {
+fn positive(value: u8) -> result: unit pure contract {
   requires value < 10_u8;
 } {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   positive(value: values[0_u64]);
   return exit_status(code: 0_u8);
 }
@@ -1558,13 +1556,13 @@ fn main() -> status: own ExitStatus pure {
 fn proved_subscript_actual_reuses_its_stable_goal_identity_at_fn8() {
     let source = br#"const values: Array<u8, 2> =[3_u8, 3_u8];
 
-fn positive(value: own u8) -> result: own unit pure contract {
+fn positive(value: u8) -> result: unit pure contract {
   requires value < 10_u8;
 } {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   if values[0_u64] < 10_u8 {
     positive(value: values[0_u64]);
   }
@@ -1603,19 +1601,19 @@ fn main() -> status: own ExitStatus pure {
 /// caller's reference binding as the root with no projection step.
 #[test]
 fn borrow_substitution_normalizes_a_reborrow_to_the_caller_reference_root() {
-    let source = br#"fn observe(value: &u64) -> result: own unit reads(value) contract {
+    let source = br#"fn observe(value: &u64) -> result: unit reads(value) contract {
   requires deref(value) > 0_u64;
 } {
   let copied = deref(value);
   return unit;
 }
 
-fn proxy(value: &u64) -> result: own unit reads(value) {
+fn proxy(value: &u64) -> result: unit reads(value) {
   observe(value: &deref(value));
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let local = 1_u64;
   observe(value: &local);
   return exit_status(code: 0_u8);
@@ -1700,7 +1698,7 @@ fn main() -> status: own ExitStatus pure {
 /// half is unchanged and is what this case now states.
 #[test]
 fn call_goal_substitutes_type_and_const_arguments() {
-    let source = br#"fn guarded<T: Int, const n: u64>(value: own T, values: own Slots<u8, n>) -> result: own T pure contract {
+    let source = br#"fn guarded<T: Int, const n: u64>(value: T, values: Slots<u8, n>) -> result: T pure contract {
   define positive = value > 0_T;
   define size = values.len;
   define exact = size == size;
@@ -1710,7 +1708,7 @@ fn call_goal_substitutes_type_and_const_arguments() {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let values = slots_new::<u8, 3>();
   let result = guarded::<i32, 3>(value: 4_i32, values: move values);
   return exit_status(code: 0_u8);
@@ -1826,13 +1824,13 @@ fn requires_clause_bare_affine_use_carries_the_static_repair() {
   Value();
 }
 
-fn inspect(holder: own Holder) -> result: own unit pure contract {
+fn inspect(holder: Holder) -> result: unit pure contract {
   requires eeq(holder, holder);
 } {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let holder = Value();
   let held = inspect(holder: move holder);
   return exit_status(code: 0_u8);
@@ -1866,7 +1864,7 @@ fn affine_requirements_publish_only_established_non_l0_ordering_leaves() {
     for (requirement, accepted) in cases {
         // Contract definitions precede every requirement in canonical source.
         let source = format!(
-            "fn room(a: own u64, b: own u64, limit: own u64) -> result: own u64 pure contract {{\n{requirement}\n  requires a <= 16_u64;\n  requires b <= 16_u64;\n}} {{\n  let total = a + b;\n  let remaining = limit - total;\n  return remaining;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+            "fn room(a: u64, b: u64, limit: u64) -> result: u64 pure contract {{\n{requirement}\n  requires a <= 16_u64;\n  requires b <= 16_u64;\n}} {{\n  let total = a + b;\n  let remaining = limit - total;\n  return remaining;\n}}\n\nfn main() -> status: ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
         );
         with_semantics(source.as_bytes(), |outcome| {
             if accepted {
@@ -1911,7 +1909,7 @@ fn affine_requirement_images_keep_copies_but_do_not_retarget_replaced_scalars() 
         ("  set a = 32_u64;\n  let total = a + b;", false),
     ] {
         let source = format!(
-            "fn room(a: own u64, b: own u64, limit: own u64) -> result: own u64 pure contract {{\n  requires a <= 16_u64;\n  requires b <= 16_u64;\n  requires a + b <= limit;\n}} {{\n{body}\n  let remaining = limit - total;\n  return remaining;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+            "fn room(a: u64, b: u64, limit: u64) -> result: u64 pure contract {{\n  requires a <= 16_u64;\n  requires b <= 16_u64;\n  requires a + b <= limit;\n}} {{\n{body}\n  let remaining = limit - total;\n  return remaining;\n}}\n\nfn main() -> status: ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
         );
         with_semantics(source.as_bytes(), |outcome| {
             if accepted {
@@ -1945,7 +1943,7 @@ fn affine_requirement_measure_observations_survive_as_values_without_retargeting
             // `pure`. The subject is unchanged: the scalar copied before the
             // write keeps the bound the requirement gave it, and the measure
             // read after the write does not inherit it.
-            "fn room(values: own Slots<u64, 16>, extra: own u64, limit: own u64) -> result: own u64 pure contract {{\n  requires values.len <= 16_u64;\n  requires extra <= 16_u64;\n  requires values.len + extra <= limit;\n}} {{\n  let old = values.len;\n  let seed = array_filled::<u64, 16>(value: 0_u64);\n  let fresh = slots_from_array::<u64, 16>(values: seed);\n  set values = move fresh;\n  let current = values.len;\n  let total = {observed} + extra;\n  let remaining = limit - total;\n  return remaining;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+            "fn room(values: Slots<u64, 16>, extra: u64, limit: u64) -> result: u64 pure contract {{\n  requires values.len <= 16_u64;\n  requires extra <= 16_u64;\n  requires values.len + extra <= limit;\n}} {{\n  let old = values.len;\n  let seed = array_filled::<u64, 16>(value: 0_u64);\n  let fresh = slots_from_array::<u64, 16>(values: seed);\n  set values = move fresh;\n  let current = values.len;\n  let total = {observed} + extra;\n  let remaining = limit - total;\n  return remaining;\n}}\n\nfn main() -> status: ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
         );
         with_semantics(source.as_bytes(), |outcome| {
             if accepted {
@@ -1993,20 +1991,20 @@ fn affine_requirement_measure_observations_survive_as_values_without_retargeting
 fn a_clause_subscript_names_the_element_it_indexes() {
     let program = |index: &str| {
         format!(
-            r#"fn cell_at(rows: &Array<Slots<u8, 4>, 2>, i: own u64, k: own u64) -> result: own u8 reads(rows) contract {{
+            r#"fn cell_at(rows: &Array<Slots<u8, 4>, 2>, i: u64, k: u64) -> result: u8 reads(rows) contract {{
   requires i < 2_u64;
   requires k < deref(rows)[i].len;
 }} {{
   return deref(rows)[i][k];
 }}
 
-fn read_first(rows: &Array<Slots<u8, 4>, 2>) -> result: own u8 reads(rows) contract {{
+fn read_first(rows: &Array<Slots<u8, 4>, 2>) -> result: u8 reads(rows) contract {{
   requires 1_u64 < deref(rows)[0_u64].len;
 }} {{
   return cell_at(rows: rows, i: {index}, k: 1_u64);
 }}
 
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   return exit_status(code: 0_u8);
 }}
 "#

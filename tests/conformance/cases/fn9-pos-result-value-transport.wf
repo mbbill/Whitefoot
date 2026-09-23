@@ -1,4 +1,4 @@
-fn selected(value: own i32, fail: own Bool) -> result: own Result<i32, Overflow> pure contract {
+fn selected(value: i32, fail: Bool) -> result: Result<i32, Overflow> pure contract {
   ensures when Ok(value: payload): payload == value;
 } {
   if fail {
@@ -8,7 +8,7 @@ fn selected(value: own i32, fail: own Bool) -> result: own Result<i32, Overflow>
   return Ok<i32, Overflow>(value: value);
 }
 
-fn relay(value: own i32, fail: own Bool) -> result: own Result<i32, Overflow> pure contract {
+fn relay(value: i32, fail: Bool) -> result: Result<i32, Overflow> pure contract {
   ensures when Ok(value: payload): payload == value;
 } {
   let outcome = selected(value: value, fail: fail);
@@ -16,13 +16,13 @@ fn relay(value: own i32, fail: own Bool) -> result: own Result<i32, Overflow> pu
   return saved;
 }
 
-fn direct(value: own i32, fail: own Bool) -> result: own Result<i32, Overflow> pure contract {
+fn direct(value: i32, fail: Bool) -> result: Result<i32, Overflow> pure contract {
   ensures when Ok(value: payload): payload == value;
 } {
   return relay(value: value, fail: fail);
 }
 
-fn affine(value: own i32) -> result: own Result<i32, Box<u8>> pure contract {
+fn affine(value: i32) -> result: Result<i32, Box<u8>> pure contract {
   ensures when Ok(value: payload): payload == value;
 } {
   let outcome = Ok<i32, Box<u8>>(value: value);
@@ -30,13 +30,13 @@ fn affine(value: own i32) -> result: own Result<i32, Box<u8>> pure contract {
   return move saved;
 }
 
-fn same(left: own i32, right: own i32) -> result: own unit pure contract {
+fn same(left: i32, right: i32) -> result: unit pure contract {
   requires left == right;
 } {
   return unit;
 }
 
-fn exercise(value: own i32, fail: own Bool, choose: own Bool) -> result: own Result<i32, Overflow> pure contract {
+fn exercise(value: i32, fail: Bool, choose: Bool) -> result: Result<i32, Overflow> pure contract {
   ensures when Ok(value: payload): payload == value;
 } {
   let never_fail = False();
@@ -95,7 +95,7 @@ fn exercise(value: own i32, fail: own Bool, choose: own Bool) -> result: own Res
   return direct(value: extracted, fail: never_fail);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let yes = True();
   let no = False();
   match exercise(value: 7_i32, fail: no, choose: no) {

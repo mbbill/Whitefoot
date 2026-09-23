@@ -1,11 +1,11 @@
 const appended_bytes: Array<u8, 5> =[33_u8, 33_u8, 33_u8, 33_u8, 33_u8];
 
-fn release_run(run: own Box<Slots<u8>>) -> result: own unit pure {
+fn release_run(run: Box<Slots<u8>>) -> result: unit pure {
   doc "There is no release operation: an affine value is released early by moving it into a function that consumes it and ends, which frees this cell here rather than at the caller's scope exit [PROV-6, STOR-3].";
   return unit;
 }
 
-fn bs_new() -> made: own Box<Slots<u8>> pure contract {
+fn bs_new() -> made: Box<Slots<u8>> pure contract {
   ensures made.inner.len == 0_u64;
   ensures made.inner.cap == 0_u64;
 } {
@@ -14,7 +14,7 @@ fn bs_new() -> made: own Box<Slots<u8>> pure contract {
   return move made;
 }
 
-fn bs_reserve(s: &Box<Slots<u8>>, total: own u64) -> result: own unit writes(s) contract {
+fn bs_reserve(s: &Box<Slots<u8>>, total: u64) -> result: unit writes(s) contract {
   requires total >= deref(s).inner.cap;
   requires total <= 9223372036854775791_u64;
   ensures deref(s).inner.cap == total;
@@ -25,7 +25,7 @@ fn bs_reserve(s: &Box<Slots<u8>>, total: own u64) -> result: own unit writes(s) 
   return unit;
 }
 
-fn digest(run: &Box<Slots<u8>>, status: own u64) -> result: own u64 reads(run) {
+fn digest(run: &Box<Slots<u8>>, status: u64) -> result: u64 reads(run) {
   doc "Folds the window into one word, most significant byte first.";
   let result = status;
   let length = deref(run).inner.len;
@@ -38,7 +38,7 @@ fn digest(run: &Box<Slots<u8>>, status: own u64) -> result: own u64 reads(run) {
   return result;
 }
 
-fn growth_trace(seed: own u8, initial: own u64, count: own u64, limit: own u64) -> result: own u64 pure contract {
+fn growth_trace(seed: u8, initial: u64, count: u64, limit: u64) -> result: u64 pure contract {
   requires initial >= 1_u64;
   requires initial <= count;
   requires count <= 1048576_u64;
@@ -87,7 +87,7 @@ fn growth_trace(seed: own u8, initial: own u64, count: own u64, limit: own u64) 
   return digest(run: &grown, status: 1_u64);
 }
 
-fn growth_cases() -> code: own u8 pure {
+fn growth_cases() -> code: u8 pure {
   doc "Three traces: one that grows, one the limit refuses to grow, and one already at its target.";
   let result = growth_trace(seed: 19_u8, initial: 16_u64, count: 32_u64, limit: 64_u64);
   if result == 0_u64 {
@@ -116,7 +116,7 @@ fn growth_cases() -> code: own u8 pure {
   return 0_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The growth policy exercised twice: one string grown to twenty-four slots and filled with twenty bytes, and one grown to eight and filled from a const run through a range reference.";
   let growth_code = growth_cases();
   if growth_code != 0_u8 {

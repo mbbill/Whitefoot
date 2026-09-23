@@ -1,6 +1,6 @@
 const utf8_input: Array<u8, 15> =[65_u8, 194_u8, 162_u8, 226_u8, 130_u8, 172_u8, 240_u8, 159_u8, 152_u8, 128_u8, 194_u8, 65_u8, 255_u8, 226_u8, 130_u8];
 
-fn parse(out: &[u32], src: &[u8]) -> result: own u64 reads(src), writes(out) contract {
+fn parse(out: &[u32], src: &[u8]) -> result: u64 reads(src), writes(out) contract {
   define source_length = deref(src).len;
   define output_length = deref(out).len;
   define enough_output = output_length >= source_length;
@@ -210,7 +210,7 @@ fn parse(out: &[u32], src: &[u8]) -> result: own u64 reads(src), writes(out) con
   return count;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The event run is one inline Slots window of this frame, and the const input table and that window are reached through range references [TYPE-9, REF-4].";
   let output = slots_new::<u32, 15>();
   for @fill_output (

@@ -8,7 +8,7 @@ struct FirFilter {
   delay: DelayLine;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Two constant-capacity Slots windows are appended to full through place_back and then nested inside two records; the taps are read by subscript and the delay line is written one element at a time by the ordinary assignment set r[k] = x [OP-10, WIN-3].";
   let taps = slots_new::<f64, 8>();
   place_back(window: &taps, value: 0.125_f64);

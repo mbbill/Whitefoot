@@ -37,7 +37,7 @@ fn assert_only_rule(source: &[u8], rule: SemanticRule) {
 
 #[test]
 fn counted_range_retains_checked_inputs_binder_and_real_exhaustion() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   for @items (i in 2_u64..1_u64) {
   }
   return exit_status(code: 0_u8);
@@ -80,7 +80,7 @@ fn counted_range_retains_checked_inputs_binder_and_real_exhaustion() {
     });
 
     assert_checks(
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   for @items (i in 18446744073709551614_u64..18446744073709551615_u64) {
   }
   return exit_status(code: 0_u8);
@@ -92,7 +92,7 @@ fn counted_range_retains_checked_inputs_binder_and_real_exhaustion() {
 #[test]
 fn counted_endpoints_require_exact_own_u64_with_type7_exclusive() {
     assert_rule_kind(
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   for @items (i in 0_u32..1_u64) {
   }
   return exit_status(code: 0_u8);
@@ -103,13 +103,13 @@ fn counted_endpoints_require_exact_own_u64_with_type7_exclusive() {
     );
 
     assert_rule(
-        br#"fn walk(start: &u64) -> result: own unit pure {
+        br#"fn walk(start: &u64) -> result: unit pure {
   for @items (i in start..1_u64) {
   }
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -126,7 +126,7 @@ fn main() -> status: own ExitStatus pure {
     // a candidate here — its content is the field `inner` [TYPE-9] and
     // `deref` of a cell is itself a TYPE-7 rejection.
     assert_rule(
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   let origin = 0_u64;
   let start = &origin;
   for @items (i in start..1_u64) {
@@ -141,7 +141,7 @@ fn main() -> status: own ExitStatus pure {
     );
 
     assert_rule(
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   let origin = 0_u64;
   let start = &origin;
   loop @outer {
@@ -159,13 +159,13 @@ fn main() -> status: own ExitStatus pure {
     );
 
     assert_checks(
-        br#"fn walk(lower: &u64, upper: &u64) -> result: own unit reads(lower), reads(upper) {
+        br#"fn walk(lower: &u64, upper: &u64) -> result: unit reads(lower), reads(upper) {
   for @items (i in deref(lower)..deref(upper)) {
   }
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -176,13 +176,13 @@ fn main() -> status: own ExitStatus pure {
 fn counted_endpoints_require_a_preceding_term_or_constant() {
     let subscript = br#"const bounds: Array<u64, 2> =[0_u64, 0_u64];
 
-fn probe() -> result: own unit pure {
+fn probe() -> result: unit pure {
   for @items (i in bounds[0_u64]..bounds[1_u64]) {
   }
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -204,13 +204,13 @@ fn main() -> status: own ExitStatus pure {
   lower: u64;
 }
 
-fn probe(bounds: own Bounds, upper: &u64) -> result: own unit reads(upper) {
+fn probe(bounds: Bounds, upper: &u64) -> result: unit reads(upper) {
   for @items (i in bounds.lower..deref(upper)) {
   }
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -227,7 +227,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn counted_binder_is_not_source_writable_and_is_not_written_through() {
     assert_rule(
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   for @items (i in 0_u64..1_u64) {
     set i = 1_u64;
   }
@@ -242,12 +242,12 @@ fn counted_binder_is_not_source_writable_and_is_not_written_through() {
     );
 
     assert_checks(
-        br#"fn observe(value: &u64) -> result: own unit reads(value) {
+        br#"fn observe(value: &u64) -> result: unit reads(value) {
   let seen = deref(value);
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   for @items (i in 0_u64..1_u64) {
     let copied = i;
     let shared = &i;
@@ -259,12 +259,12 @@ fn main() -> status: own ExitStatus pure {
     );
 
     assert_only_rule(
-        br#"fn overwrite(target: &u64) -> result: own unit writes(target) {
+        br#"fn overwrite(target: &u64) -> result: unit writes(target) {
   set deref(target) = 9_u64;
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   for @items (i in 0_u64..1_u64) {
     overwrite(target: &i);
   }
@@ -278,7 +278,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_counted_binders_reference_does_not_make_it_writable() {
     assert_only_rule(
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   for (i in 0_u64..2_u64) {
     let held = &i;
     let alias = held;
@@ -293,12 +293,12 @@ fn a_counted_binders_reference_does_not_make_it_writable() {
     // The first possible target is writable. The second is the counted
     // binder; checking only the first member must not authorize this call.
     assert_only_rule(
-        br#"fn overwrite(target: &u64) -> result: own unit writes(target) {
+        br#"fn overwrite(target: &u64) -> result: unit writes(target) {
   set deref(target) = 9_u64;
   return unit;
 }
 
-fn examine(flag: own Bool) -> result: own unit pure {
+fn examine(flag: Bool) -> result: unit pure {
   for (i in 0_u64..2_u64) {
     let spare = 0_u64;
     let held = if flag {
@@ -322,7 +322,7 @@ fn counted_body_inherits_own11_and_accepts_body_local_ownership() {
   value: u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let token = Token(value: 1_u64);
   for @items (i in 0_u64..1_u64) {
     let consumed = move token;
@@ -350,7 +350,7 @@ fn main() -> status: own ExitStatus pure {
   value: u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   for @items (i in 0_u64..1_u64) {
     let shared = &i;
     let token = Token(value: i);
@@ -364,7 +364,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn counted_cleanup_is_attached_only_to_taken_body_exits() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   for @items (i in 0_u64..1_u64) {
     let values = box_new::<u64>(value: 1_u64);
     break @items;
@@ -399,11 +399,11 @@ fn counted_return_and_propagate_edges_reuse_exact_cleanup() {
   Bad();
 }
 
-fn source() -> result: own Result<u64, Fail> pure {
+fn source() -> result: Result<u64, Fail> pure {
   return Ok<u64, Fail>(value: 1_u64);
 }
 
-fn leave() -> result: own unit pure {
+fn leave() -> result: unit pure {
   for @items (i in 0_u64..1_u64) {
     let values = box_new::<u64>(value: 1_u64);
     return unit;
@@ -411,7 +411,7 @@ fn leave() -> result: own unit pure {
   return unit;
 }
 
-fn forward() -> result: own Result<unit, Fail> pure {
+fn forward() -> result: Result<unit, Fail> pure {
   for @items (i in 0_u64..1_u64) {
     let values = box_new::<u64>(value: 1_u64);
     let value = propagate source();
@@ -419,7 +419,7 @@ fn forward() -> result: own Result<unit, Fail> pure {
   return Ok<unit, Fail>(value: unit);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -475,7 +475,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn optional_labels_preserve_structural_break_targets_and_invariant_parentage() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   loop @outer {
     loop {
       break;
@@ -556,7 +556,7 @@ fn optional_labels_preserve_structural_break_targets_and_invariant_parentage() {
 #[test]
 fn an_unlabeled_break_requires_an_enclosing_loop() {
     assert_rule(
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   break;
 }
 "#,

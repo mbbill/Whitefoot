@@ -1,17 +1,17 @@
-fn length(window: &Slots<u8, 4>) -> result: own Result<u64, u8> reads(window) contract {
+fn length(window: &Slots<u8, 4>) -> result: Result<u64, u8> reads(window) contract {
   ensures when Ok(value: size): size == deref(window).len;
 } {
   let size = deref(window).len;
   return Ok<u64, u8>(value: size);
 }
 
-fn same_length(left: own u64, right: own u64) -> result: own unit pure contract {
+fn same_length(left: u64, right: u64) -> result: unit pure contract {
   requires left == right;
 } {
   return unit;
 }
 
-fn descriptor_write(window: &Slots<u8, 4>) -> result: own Result<unit, u8> writes(window) contract {
+fn descriptor_write(window: &Slots<u8, 4>) -> result: Result<unit, u8> writes(window) contract {
   requires deref(window).len > 0_u64;
 } {
   let outcome = length(window: window);
@@ -21,6 +21,6 @@ fn descriptor_write(window: &Slots<u8, 4>) -> result: own Result<unit, u8> write
   return Ok<unit, u8>(value: unit);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

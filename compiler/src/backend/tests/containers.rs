@@ -213,14 +213,14 @@ fn taking_then_swapping_keeps_independent_storage_and_orders_the_take() {
   words: Array<u64, 32>;
 }
 
-fn accept(seen: &u64, value: own Row) -> result: own unit writes(seen) {
+fn accept(seen: &u64, value: Row) -> result: unit writes(seen) {
   for (index in 0_u64..32_u64) {
     set deref(seen) = deref(seen) +wrap value.words[index];
   }
   return unit;
 }
 
-fn transfer(values: &Slots<Row, 4>, index: own u64, seen: &u64) -> result: own unit writes(values), writes(seen) contract {
+fn transfer(values: &Slots<Row, 4>, index: u64, seen: &u64) -> result: unit writes(values), writes(seen) contract {
   requires index + 2_u64 <= deref(values).len;
   ensures deref(values).len + 1_u64 == deref(entry(values)).len;
 } {
@@ -230,7 +230,7 @@ fn transfer(values: &Slots<Row, 4>, index: own u64, seen: &u64) -> result: own u
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let values = slots_new::<Row, 4>();
   for @fill (
     index in 0_u64..4_u64,

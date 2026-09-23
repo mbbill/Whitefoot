@@ -1,10 +1,10 @@
 program no_heap;
 
-fn hold(cell: own Box<u8>) -> function_result: own unit pure {
+fn hold(cell: Box<u8>) -> function_result: unit pure {
   doc "Cell content must live in a store the program has. A compilation unit that declares no heap cannot name the cell type at all, and the complete written type is refused exactly where the content type is fixed.";
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

@@ -1,9 +1,9 @@
-fn release_read_file(factory: &HandleFactory, file: own ReadFile) -> result: own unit writes(factory) {
+fn release_read_file(factory: &HandleFactory, file: ReadFile) -> result: unit writes(factory) {
   doc "PRE-1 and EFF-2: close is an explicit ordinary consuming function call. The opaque drop performs no native release, and the consumed by-value parameter contributes no effect entry of its own.";
   let closed = close_read(factory: factory, file: move file);
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

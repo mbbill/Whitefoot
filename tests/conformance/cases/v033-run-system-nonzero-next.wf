@@ -1,4 +1,4 @@
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "Ordinary copy function results use absolute endpoints for a nonzero start. Source receives their bounds through ordinary Result.Ok ensures, with the original byte observations retained.";
   let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
   close_directory(factory: &entry_factory, directory: move unused_cwd);

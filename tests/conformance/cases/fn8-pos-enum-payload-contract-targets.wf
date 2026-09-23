@@ -2,20 +2,20 @@ enum Pair {
   Both(left: u64, right: u64);
 }
 
-fn observe(cell: &u64) -> result: own u64 reads(cell) contract {
+fn observe(cell: &u64) -> result: u64 reads(cell) contract {
   ensures result == deref(cell);
 } {
   return deref(cell);
 }
 
-fn expect_equal(cell: &u64, seen: own u64) -> result: own unit reads(cell) contract {
+fn expect_equal(cell: &u64, seen: u64) -> result: unit reads(cell) contract {
   requires deref(cell) == seen;
 } {
   let sampled = deref(cell);
   return unit;
 }
 
-fn inspect(pair: &Pair) -> result: own unit reads(pair) {
+fn inspect(pair: &Pair) -> result: unit reads(pair) {
   match deref(pair) {
     Both(left: l, right: r) => {
       let observed = observe(cell: l);
@@ -25,7 +25,7 @@ fn inspect(pair: &Pair) -> result: own unit reads(pair) {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let pair = Both(left: 1_u64, right: 0_u64);
   inspect(pair: &pair);
   return exit_status(code: 0_u8);

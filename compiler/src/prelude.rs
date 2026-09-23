@@ -256,25 +256,25 @@ enum ListStop {
     (
         "prelude/args_count.wf",
         PreludeSource::Function,
-        r#"fn args_count(args: &Args) -> result: own u64 reads(args);
+        r#"fn args_count(args: &Args) -> result: u64 reads(args);
 "#,
     ),
     (
         "prelude/arg_get.wf",
         PreludeSource::Function,
-        r#"fn arg_get(args: &Args, position: own u64) -> result: own Result<HostString, ArgError> reads(args);
+        r#"fn arg_get(args: &Args, position: u64) -> result: Result<HostString, ArgError> reads(args);
 "#,
     ),
     (
         "prelude/host_bytes_len.wf",
         PreludeSource::Function,
-        r#"fn host_bytes_len(value: &HostString) -> result: own u64 reads(value);
+        r#"fn host_bytes_len(value: &HostString) -> result: u64 reads(value);
 "#,
     ),
     (
         "prelude/host_copy_bytes.wf",
         PreludeSource::Function,
-        r#"fn host_copy_bytes(value: &HostString, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value), writes(destination) contract {
+        r#"fn host_copy_bytes(value: &HostString, destination: &[u8], start: u64, end: u64) -> result: Result<u64, CopyError> reads(value), writes(destination) contract {
   requires start <= end;
   requires end <= deref(destination).len;
   ensures when Ok(value: next): start <= next;
@@ -285,13 +285,13 @@ enum ListStop {
     (
         "prelude/host_utf8_len.wf",
         PreludeSource::Function,
-        r#"fn host_utf8_len(value: &HostString) -> result: own Result<u64, Utf8Error> reads(value);
+        r#"fn host_utf8_len(value: &HostString) -> result: Result<u64, Utf8Error> reads(value);
 "#,
     ),
     (
         "prelude/host_copy_utf8.wf",
         PreludeSource::Function,
-        r#"fn host_copy_utf8(value: &HostString, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, Utf8CopyError> reads(value), writes(destination) contract {
+        r#"fn host_copy_utf8(value: &HostString, destination: &[u8], start: u64, end: u64) -> result: Result<u64, Utf8CopyError> reads(value), writes(destination) contract {
   requires start <= end;
   requires end <= deref(destination).len;
   ensures when Ok(value: next): start <= next;
@@ -302,19 +302,19 @@ enum ListStop {
     (
         "prelude/relative_path.wf",
         PreludeSource::Function,
-        r#"fn relative_path(value: own HostString) -> result: own Result<RelativePath, PathError> pure;
+        r#"fn relative_path(value: HostString) -> result: Result<RelativePath, PathError> pure;
 "#,
     ),
     (
         "prelude/open_read.wf",
         PreludeSource::Function,
-        r#"fn open_read(factory: &HandleFactory, root: &DirectoryRead, path: &RelativePath) -> result: own Result<ReadFile, IoError> reads(root), reads(path), writes(factory);
+        r#"fn open_read(factory: &HandleFactory, root: &DirectoryRead, path: &RelativePath) -> result: Result<ReadFile, IoError> reads(root), reads(path), writes(factory);
 "#,
     ),
     (
         "prelude/read_at.wf",
         PreludeSource::Function,
-        r#"fn read_at(factory: &HandleFactory, file: &ReadFile, destination: &[u8], file_offset: own u64, start: own u64, end: own u64) -> result: own Result<u64, ReadStop> writes(factory), writes(file), writes(destination) contract {
+        r#"fn read_at(factory: &HandleFactory, file: &ReadFile, destination: &[u8], file_offset: u64, start: u64, end: u64) -> result: Result<u64, ReadStop> writes(factory), writes(file), writes(destination) contract {
   requires start <= end;
   requires end <= deref(destination).len;
   ensures when Ok(value: next): start <= next;
@@ -325,7 +325,7 @@ enum ListStop {
     (
         "prelude/write_once.wf",
         PreludeSource::Function,
-        r#"fn write_once(factory: &HandleFactory, output: &OutputStream, source: &[u8], start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(source), writes(factory), writes(output) contract {
+        r#"fn write_once(factory: &HandleFactory, output: &OutputStream, source: &[u8], start: u64, end: u64) -> result: Result<u64, IoError> reads(source), writes(factory), writes(output) contract {
   requires start <= end;
   requires end <= deref(source).len;
   ensures when Ok(value: next): start <= next;
@@ -336,13 +336,13 @@ enum ListStop {
     (
         "prelude/exit_status.wf",
         PreludeSource::Function,
-        r#"fn exit_status(code: own u8) -> result: own ExitStatus pure;
+        r#"fn exit_status(code: u8) -> result: ExitStatus pure;
 "#,
     ),
     (
         "prelude/open_directory.wf",
         PreludeSource::Function,
-        r#"fn open_directory(factory: &HandleFactory, root: &DirectoryRead, name: &[u8], start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(root), reads(name), writes(factory) contract {
+        r#"fn open_directory(factory: &HandleFactory, root: &DirectoryRead, name: &[u8], start: u64, end: u64) -> result: Result<DirectoryRead, IoError> reads(root), reads(name), writes(factory) contract {
   requires start <= end;
   requires end <= deref(name).len;
 };
@@ -351,13 +351,13 @@ enum ListStop {
     (
         "prelude/open_directory_source.wf",
         PreludeSource::Function,
-        r#"fn open_directory_source(factory: &HandleFactory, directory: &DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(directory), writes(factory);
+        r#"fn open_directory_source(factory: &HandleFactory, directory: &DirectoryRead) -> result: Result<DirectorySource, IoError> reads(directory), writes(factory);
 "#,
     ),
     (
         "prelude/directory_next.wf",
         PreludeSource::Function,
-        r#"fn directory_next(source: &DirectorySource, destination: &[u8], start: own u64, end: own u64) -> (result: own Result<unit, ListStop>, next: own u64, entries: own u64) writes(source), writes(destination) contract {
+        r#"fn directory_next(source: &DirectorySource, destination: &[u8], start: u64, end: u64) -> (result: Result<unit, ListStop>, next: u64, entries: u64) writes(source), writes(destination) contract {
   requires start <= end;
   requires end <= deref(destination).len;
   ensures start <= next;
@@ -368,7 +368,7 @@ enum ListStop {
     (
         "prelude/open_file.wf",
         PreludeSource::Function,
-        r#"fn open_file(factory: &HandleFactory, root: &DirectoryRead, name: &[u8], start: own u64, end: own u64) -> result: own Result<ReadFile, IoError> reads(root), reads(name), writes(factory) contract {
+        r#"fn open_file(factory: &HandleFactory, root: &DirectoryRead, name: &[u8], start: u64, end: u64) -> result: Result<ReadFile, IoError> reads(root), reads(name), writes(factory) contract {
   requires start <= end;
   requires end <= deref(name).len;
 };
@@ -377,25 +377,25 @@ enum ListStop {
     (
         "prelude/close_read.wf",
         PreludeSource::Function,
-        r#"fn close_read(factory: &HandleFactory, file: own ReadFile) -> result: own Result<unit, IoError> writes(factory);
+        r#"fn close_read(factory: &HandleFactory, file: ReadFile) -> result: Result<unit, IoError> writes(factory);
 "#,
     ),
     (
         "prelude/close_directory.wf",
         PreludeSource::Function,
-        r#"fn close_directory(factory: &HandleFactory, directory: own DirectoryRead) -> result: own Result<unit, IoError> writes(factory);
+        r#"fn close_directory(factory: &HandleFactory, directory: DirectoryRead) -> result: Result<unit, IoError> writes(factory);
 "#,
     ),
     (
         "prelude/close_directory_source.wf",
         PreludeSource::Function,
-        r#"fn close_directory_source(factory: &HandleFactory, source: own DirectorySource) -> result: own Result<unit, IoError> writes(factory);
+        r#"fn close_directory_source(factory: &HandleFactory, source: DirectorySource) -> result: Result<unit, IoError> writes(factory);
 "#,
     ),
     (
         "prelude/read_next.wf",
         PreludeSource::Function,
-        r#"fn read_next(factory: &HandleFactory, input: &InputStream, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, ReadStop> writes(factory), writes(input), writes(destination) contract {
+        r#"fn read_next(factory: &HandleFactory, input: &InputStream, destination: &[u8], start: u64, end: u64) -> result: Result<u64, ReadStop> writes(factory), writes(input), writes(destination) contract {
   requires start <= end;
   requires end <= deref(destination).len;
   ensures when Ok(value: next): start <= next;
@@ -406,37 +406,37 @@ enum ListStop {
     (
         "prelude/socket_address_v4.wf",
         PreludeSource::Function,
-        r#"fn socket_address_v4(a: own u8, b: own u8, c: own u8, d: own u8, port: own u16) -> result: own SocketAddress pure;
+        r#"fn socket_address_v4(a: u8, b: u8, c: u8, d: u8, port: u16) -> result: SocketAddress pure;
 "#,
     ),
     (
         "prelude/socket_address_v6.wf",
         PreludeSource::Function,
-        r#"fn socket_address_v6(a: own u16, b: own u16, c: own u16, d: own u16, e: own u16, f: own u16, g: own u16, h: own u16, port: own u16) -> result: own SocketAddress pure;
+        r#"fn socket_address_v6(a: u16, b: u16, c: u16, d: u16, e: u16, f: u16, g: u16, h: u16, port: u16) -> result: SocketAddress pure;
 "#,
     ),
     (
         "prelude/tcp_listen.wf",
         PreludeSource::Function,
-        r#"fn tcp_listen(factory: &HandleFactory, address: &SocketAddress) -> result: own Result<TcpListener, IoError> reads(address), writes(factory);
+        r#"fn tcp_listen(factory: &HandleFactory, address: &SocketAddress) -> result: Result<TcpListener, IoError> reads(address), writes(factory);
 "#,
     ),
     (
         "prelude/tcp_accept.wf",
         PreludeSource::Function,
-        r#"fn tcp_accept(factory: &HandleFactory, listener: &TcpListener) -> result: own Result<AcceptedConnection, IoError> writes(factory), writes(listener);
+        r#"fn tcp_accept(factory: &HandleFactory, listener: &TcpListener) -> result: Result<AcceptedConnection, IoError> writes(factory), writes(listener);
 "#,
     ),
     (
         "prelude/tcp_connect.wf",
         PreludeSource::Function,
-        r#"fn tcp_connect(factory: &HandleFactory, address: &SocketAddress) -> result: own Result<TcpConnection, IoError> reads(address), writes(factory);
+        r#"fn tcp_connect(factory: &HandleFactory, address: &SocketAddress) -> result: Result<TcpConnection, IoError> reads(address), writes(factory);
 "#,
     ),
     (
         "prelude/receive_next.wf",
         PreludeSource::Function,
-        r#"fn receive_next(receive: &TcpReceive, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, ReadStop> writes(receive), writes(destination) contract {
+        r#"fn receive_next(receive: &TcpReceive, destination: &[u8], start: u64, end: u64) -> result: Result<u64, ReadStop> writes(receive), writes(destination) contract {
   requires start <= end;
   requires end <= deref(destination).len;
   ensures when Ok(value: next): start <= next;
@@ -447,7 +447,7 @@ enum ListStop {
     (
         "prelude/send_once.wf",
         PreludeSource::Function,
-        r#"fn send_once(send: &TcpSend, source: &[u8], start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(source), writes(send) contract {
+        r#"fn send_once(send: &TcpSend, source: &[u8], start: u64, end: u64) -> result: Result<u64, IoError> reads(source), writes(send) contract {
   requires start <= end;
   requires end <= deref(source).len;
   ensures when Ok(value: next): start <= next;
@@ -458,31 +458,31 @@ enum ListStop {
     (
         "prelude/close_listener.wf",
         PreludeSource::Function,
-        r#"fn close_listener(factory: &HandleFactory, listener: own TcpListener) -> result: own Result<unit, IoError> writes(factory);
+        r#"fn close_listener(factory: &HandleFactory, listener: TcpListener) -> result: Result<unit, IoError> writes(factory);
 "#,
     ),
     (
         "prelude/close_receive.wf",
         PreludeSource::Function,
-        r#"fn close_receive(factory: &HandleFactory, receive: own TcpReceive) -> result: own Result<unit, IoError> writes(factory);
+        r#"fn close_receive(factory: &HandleFactory, receive: TcpReceive) -> result: Result<unit, IoError> writes(factory);
 "#,
     ),
     (
         "prelude/close_send.wf",
         PreludeSource::Function,
-        r#"fn close_send(factory: &HandleFactory, send: own TcpSend) -> result: own Result<unit, IoError> writes(factory);
+        r#"fn close_send(factory: &HandleFactory, send: TcpSend) -> result: Result<unit, IoError> writes(factory);
 "#,
     ),
     (
         "prelude/box_new.wf",
         PreludeSource::Function,
-        r#"fn box_new<T>(value: own T) -> result: own Box<T> pure;
+        r#"fn box_new<T>(value: T) -> result: Box<T> pure;
 "#,
     ),
     (
         "prelude/array_filled.wf",
         PreludeSource::Function,
-        r#"fn array_filled<T: copy, const n: u64>(value: own T) -> result: own Array<T, n> pure contract {
+        r#"fn array_filled<T: copy, const n: u64>(value: T) -> result: Array<T, n> pure contract {
   ensures result.len == n;
 };
 "#,
@@ -490,7 +490,7 @@ enum ListStop {
     (
         "prelude/slots_new.wf",
         PreludeSource::Function,
-        r#"fn slots_new<T, const n: u64>() -> result: own Slots<T, n> pure contract {
+        r#"fn slots_new<T, const n: u64>() -> result: Slots<T, n> pure contract {
   ensures result.len == 0_u64;
   ensures result.cap == n;
 };
@@ -499,7 +499,7 @@ enum ListStop {
     (
         "prelude/ring_new.wf",
         PreludeSource::Function,
-        r#"fn ring_new<T, const n: u64>() -> result: own Ring<T, n> pure contract {
+        r#"fn ring_new<T, const n: u64>() -> result: Ring<T, n> pure contract {
   ensures result.len == 0_u64;
   ensures result.cap == n;
   ensures result.head == 0_u64;
@@ -509,7 +509,7 @@ enum ListStop {
     (
         "prelude/box_array_filled.wf",
         PreludeSource::Function,
-        r#"fn box_array_filled<T: copy>(count: own u64, value: own T) -> result: own Box<Array<T>> pure contract {
+        r#"fn box_array_filled<T: copy>(count: u64, value: T) -> result: Box<Array<T>> pure contract {
   ensures result.inner.len == count;
 };
 "#,
@@ -517,7 +517,7 @@ enum ListStop {
     (
         "prelude/box_slots_new.wf",
         PreludeSource::Function,
-        r#"fn box_slots_new<T>(capacity: own u64) -> result: own Box<Slots<T>> pure contract {
+        r#"fn box_slots_new<T>(capacity: u64) -> result: Box<Slots<T>> pure contract {
   ensures result.inner.len == 0_u64;
   ensures result.inner.cap == capacity;
 };
@@ -526,7 +526,7 @@ enum ListStop {
     (
         "prelude/box_ring_new.wf",
         PreludeSource::Function,
-        r#"fn box_ring_new<T>(capacity: own u64) -> result: own Box<Ring<T>> pure contract {
+        r#"fn box_ring_new<T>(capacity: u64) -> result: Box<Ring<T>> pure contract {
   ensures result.inner.len == 0_u64;
   ensures result.inner.cap == capacity;
   ensures result.inner.head == 0_u64;
@@ -536,7 +536,7 @@ enum ListStop {
     (
         "prelude/slots_from_array.wf",
         PreludeSource::Function,
-        r#"fn slots_from_array<T, const n: u64>(values: own Array<T, n>) -> result: own Slots<T, n> pure contract {
+        r#"fn slots_from_array<T, const n: u64>(values: Array<T, n>) -> result: Slots<T, n> pure contract {
   ensures result.len == n;
   ensures result.cap == n;
 };
@@ -545,7 +545,7 @@ enum ListStop {
     (
         "prelude/slots_into_array.wf",
         PreludeSource::Function,
-        r#"fn slots_into_array<T, const n: u64>(values: own Slots<T, n>) -> result: own Array<T, n> pure contract {
+        r#"fn slots_into_array<T, const n: u64>(values: Slots<T, n>) -> result: Array<T, n> pure contract {
   requires values.len == n;
   ensures result.len == n;
 };
@@ -554,7 +554,7 @@ enum ListStop {
     (
         "prelude/place_back.wf",
         PreludeSource::Function,
-        r#"fn place_back<W, T>(window: &W, value: own T) -> result: own unit writes(window.next), writes(window.len) contract {
+        r#"fn place_back<W, T>(window: &W, value: T) -> result: unit writes(window.next), writes(window.len) contract {
   requires deref(window).len < deref(window).cap;
   ensures deref(window).len == deref(entry(window)).len + 1_u64;
 };
@@ -563,7 +563,7 @@ enum ListStop {
     (
         "prelude/take_back.wf",
         PreludeSource::Function,
-        r#"fn take_back<W, T>(window: &W) -> value: own T writes(window.last), writes(window.len) contract {
+        r#"fn take_back<W, T>(window: &W) -> value: T writes(window.last), writes(window.len) contract {
   requires deref(window).len > 0_u64;
   ensures deref(window).len + 1_u64 == deref(entry(window)).len;
 };
@@ -572,7 +572,7 @@ enum ListStop {
     (
         "prelude/insert_at.wf",
         PreludeSource::Function,
-        r#"fn insert_at<W, T>(window: &W, index: own u64, value: own T) -> result: own unit writes(window.filled), writes(window.next), writes(window.len) contract {
+        r#"fn insert_at<W, T>(window: &W, index: u64, value: T) -> result: unit writes(window.filled), writes(window.next), writes(window.len) contract {
   requires index <= deref(window).len;
   requires deref(window).len < deref(window).cap;
   ensures deref(window).len == deref(entry(window)).len + 1_u64;
@@ -582,7 +582,7 @@ enum ListStop {
     (
         "prelude/remove_at.wf",
         PreludeSource::Function,
-        r#"fn remove_at<W, T>(window: &W, index: own u64) -> value: own T writes(window.filled), writes(window.len) contract {
+        r#"fn remove_at<W, T>(window: &W, index: u64) -> value: T writes(window.filled), writes(window.len) contract {
   requires index < deref(window).len;
   ensures deref(window).len + 1_u64 == deref(entry(window)).len;
 };
@@ -591,7 +591,7 @@ enum ListStop {
     (
         "prelude/append.wf",
         PreludeSource::Function,
-        r#"fn append<W, X>(destination: &W, source: &X) -> result: own unit writes(destination.free), writes(destination.len), writes(source.filled), writes(source.len) contract {
+        r#"fn append<W, X>(destination: &W, source: &X) -> result: unit writes(destination.free), writes(destination.len), writes(source.filled), writes(source.len) contract {
   requires deref(source).len <= deref(destination).cap - deref(destination).len;
   ensures deref(destination).len >= deref(entry(destination)).len;
   ensures deref(destination).len >= deref(entry(source)).len;
@@ -602,7 +602,7 @@ enum ListStop {
     (
         "prelude/split_off.wf",
         PreludeSource::Function,
-        r#"fn split_off<W, X>(source: &W, index: own u64, destination: &X) -> result: own unit writes(source.filled), writes(source.len), writes(destination.free), writes(destination.len) contract {
+        r#"fn split_off<W, X>(source: &W, index: u64, destination: &X) -> result: unit writes(source.filled), writes(source.len), writes(destination.free), writes(destination.len) contract {
   requires index <= deref(source).len;
   requires deref(source).len - index <= deref(destination).cap - deref(destination).len;
   ensures deref(source).len == index;
@@ -613,7 +613,7 @@ enum ListStop {
     (
         "prelude/grow.wf",
         PreludeSource::Function,
-        r#"fn grow<T>(cell: &Box<Slots<T>>, capacity: own u64) -> result: own unit writes(cell) contract {
+        r#"fn grow<T>(cell: &Box<Slots<T>>, capacity: u64) -> result: unit writes(cell) contract {
   requires capacity >= deref(cell).inner.cap;
   ensures deref(cell).inner.cap == capacity;
   ensures deref(cell).inner.len == deref(entry(cell)).inner.len;
@@ -623,7 +623,7 @@ enum ListStop {
     (
         "prelude/place_front.wf",
         PreludeSource::Function,
-        r#"fn place_front<W, T>(window: &W, value: own T) -> result: own unit writes(window) contract {
+        r#"fn place_front<W, T>(window: &W, value: T) -> result: unit writes(window) contract {
   requires deref(window).len < deref(window).cap;
   ensures deref(window).len == deref(entry(window)).len + 1_u64;
   ensures deref(window).cap == deref(entry(window)).cap;
@@ -635,7 +635,7 @@ enum ListStop {
     (
         "prelude/take_front.wf",
         PreludeSource::Function,
-        r#"fn take_front<W, T>(window: &W) -> value: own T writes(window) contract {
+        r#"fn take_front<W, T>(window: &W) -> value: T writes(window) contract {
   requires deref(window).len > 0_u64;
   ensures deref(window).len + 1_u64 == deref(entry(window)).len;
   ensures deref(window).cap == deref(entry(window)).cap;
@@ -647,13 +647,13 @@ enum ListStop {
     (
         "prelude/swap.wf",
         PreludeSource::Function,
-        r#"fn swap<T>(first: &T, second: &T) -> result: own unit writes(first), writes(second);
+        r#"fn swap<T>(first: &T, second: &T) -> result: unit writes(first), writes(second);
 "#,
     ),
     (
         "prelude/free_empty.wf",
         PreludeSource::Function,
-        r#"fn free_empty<W>(window: own W) -> result: own unit pure contract {
+        r#"fn free_empty<W>(window: W) -> result: unit pure contract {
   requires window.len == 0_u64;
 };
 "#,
@@ -674,7 +674,7 @@ mod tests {
     fn declarations_are_parsed_resolved_and_checked_as_ordinary_signatures() {
         let limits = CompilerLimits::default();
         let bundle = SourceBundle::with_prelude(
-            &[SourceInput::new("ordinary.wf", b"fn transfer(value: own ReadFile) -> result: own ReadFile pure {\n  return move value;\n}\n")],
+            &[SourceInput::new("ordinary.wf", b"fn transfer(value: ReadFile) -> result: ReadFile pure {\n  return move value;\n}\n")],
             limits.source,
         ).expect("ordinary prelude source bundle");
         let LexOutcome::Complete(lexed) = lex(&bundle, limits.lexer) else {

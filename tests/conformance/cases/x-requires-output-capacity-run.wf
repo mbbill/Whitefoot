@@ -1,4 +1,4 @@
-fn copy_bytes(out: &[u8], source: &[u8]) -> function_result: own u64 reads(source), writes(out) contract {
+fn copy_bytes(out: &[u8], source: &[u8]) -> function_result: u64 reads(source), writes(out) contract {
   define out_length = deref(out).len;
   define source_length = deref(source).len;
   requires source_length <= out_length;
@@ -12,7 +12,7 @@ fn copy_bytes(out: &[u8], source: &[u8]) -> function_result: own u64 reads(sourc
   return length;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Equal caller allocations discharge the output-capacity requirement before the call. In the callee, a counted range proves each source read, and that binder fact combines with the requirement to prove each output write. The two substituted effect paths have different roots, so EFF-5 admits the call. Explicit result controls observe the returned length and copied byte.";
   let length = 4_u64;
   let source = array_filled::<u8, 4>(value: 7_u8);

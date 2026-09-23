@@ -1,4 +1,4 @@
-fn wider<T: drop, const n: u64>(one: &Slots<T, n>, two: &Slots<T, n>) -> width: own u64 reads(one), reads(two) {
+fn wider<T: drop, const n: u64>(one: &Slots<T, n>, two: &Slots<T, n>) -> width: u64 reads(one), reads(two) {
   doc "Reports the free slots two windows of one shape share.";
   let left = deref(one).cap - deref(one).len;
   let right = deref(two).cap - deref(two).len;
@@ -9,7 +9,7 @@ fn wider<T: drop, const n: u64>(one: &Slots<T, n>, two: &Slots<T, n>) -> width: 
   return right;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "TYPE-5: one const parameter occupying two container parameter positions is fixed by its written instantiation argument, and every argument position must match the resulting parameter type exactly. The second window's capacity is eight where the instantiation fixed four, so the second argument does not match.";
   let first_values = array_filled::<u8, 4>(value: 0_u8);
   let first = slots_from_array::<u8, 4>(values: first_values);

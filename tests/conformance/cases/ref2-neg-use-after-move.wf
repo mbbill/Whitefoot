@@ -2,7 +2,7 @@ nocopy struct Owner {
   values: Array<u64, 4>;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "REF-2: a move never re-roots an existing reference, so after let w = move v the references formed from v are invalid and are not reinterpreted as references into w.";
   let values = array_filled::<u64, 4>(value: 6_u64);
   let v = Owner(values: values);

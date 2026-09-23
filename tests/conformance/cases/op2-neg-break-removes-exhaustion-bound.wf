@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let sum = 0_u32;
   for (
     i in 0_u64..4_u64,

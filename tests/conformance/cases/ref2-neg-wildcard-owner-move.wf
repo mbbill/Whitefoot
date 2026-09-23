@@ -3,7 +3,7 @@ struct Node {
   next: Option<Box<Node>>;
 }
 
-fn inspect(root: own Node) -> result: own u64 pure {
+fn inspect(root: Node) -> result: u64 pure {
   doc "Moving an ultimate owner invalidates descendant cursors instead of rerooting them.";
   let cursor = &root;
   for (i in 0_u64..2_u64) {
@@ -20,6 +20,6 @@ fn inspect(root: own Node) -> result: own u64 pure {
   return deref(cursor).value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

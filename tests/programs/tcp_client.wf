@@ -1,4 +1,4 @@
-fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+fn factory_refusal(error: &IoError) -> result: Bool reads(error) {
   match deref(error) {
     NotFound(code: native_code, origin: native_origin) => {
       return False();
@@ -87,7 +87,7 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
   }
 }
 
-fn byte_at(store: &[u8], index: own u64) -> result: own u8 reads(store) {
+fn byte_at(store: &[u8], index: u64) -> result: u8 reads(store) {
   doc "Reads one stored byte, delivering zero for a position the range reference does not hold.";
   let room = deref(store).len;
   let inside = index < room;
@@ -98,7 +98,7 @@ fn byte_at(store: &[u8], index: own u64) -> result: own u8 reads(store) {
   return 0_u8;
 }
 
-fn parse_port(digits: &[u8], length: own u64) -> result: own u16 reads(digits) {
+fn parse_port(digits: &[u8], length: u64) -> result: u16 reads(digits) {
   doc "Reads one decimal port out of the argument bytes the invocation supplied; a byte that is not a digit ends the number.";
   let port = 0_u16;
   let ended = 0_u8;
@@ -130,7 +130,7 @@ fn parse_port(digits: &[u8], length: own u64) -> result: own u16 reads(digits) {
   return port;
 }
 
-fn send_all(send: &TcpSend, source: &[u8], length: own u64) -> result: own Result<unit, IoError> reads(source), writes(send) contract {
+fn send_all(send: &TcpSend, source: &[u8], length: u64) -> result: Result<unit, IoError> reads(source), writes(send) contract {
   define source_length = deref(source).len;
   requires length <= source_length;
 } {
@@ -154,7 +154,7 @@ fn send_all(send: &TcpSend, source: &[u8], length: own u64) -> result: own Resul
   return Ok<unit, IoError>(value: unit);
 }
 
-fn publish_all(factory: &HandleFactory, output: &OutputStream, source: &[u8], length: own u64) -> result: own Result<unit, IoError> reads(source), writes(factory), writes(output) contract {
+fn publish_all(factory: &HandleFactory, output: &OutputStream, source: &[u8], length: u64) -> result: Result<unit, IoError> reads(source), writes(factory), writes(output) contract {
   define source_length = deref(source).len;
   requires length <= source_length;
 } {
@@ -178,7 +178,7 @@ fn publish_all(factory: &HandleFactory, output: &OutputStream, source: &[u8], le
   return Ok<unit, IoError>(value: unit);
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "Connects to the loopback port named by the invocation, sends eight bytes through the connection's sending direction, and publishes every byte the peer returns through its receiving direction until the peer stops sending. Each direction is an ordinary linear owner [PRE-1, PROV-6]. The argument scratch, the receive chunk and the eight-byte payload are three inline Slots windows of this frame, and each call reaches one of them through a range reference whose interference the declared rows decide [TYPE-9, REF-4, EFF-5].";
   let Inputs(args: args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: handles, stdin: unused_stdin) = move inputs;
   close_directory(factory: &handles, directory: move unused_cwd);

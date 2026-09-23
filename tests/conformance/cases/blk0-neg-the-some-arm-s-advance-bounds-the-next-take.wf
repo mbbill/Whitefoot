@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The same publication read the other way: split_off publishes deref(source).len == index, so after a split at zero the source is known empty and take_back's requires deref(window).len > 0_u64 is refuted on the one path on which the source's new length is known at all.";
   let source = slots_new::<u64, 8>();
   for (

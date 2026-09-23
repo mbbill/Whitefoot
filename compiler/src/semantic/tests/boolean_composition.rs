@@ -161,7 +161,7 @@ fn assert_comparison_member(
 fn passed_band_guard_establishes_positive_conjuncts_and_discharges_both() {
     let source = br#"const table: Array<u8, 8> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
 
-fn read_pair(low: own u64, high: own u64) -> result: own u8 pure {
+fn read_pair(low: u64, high: u64) -> result: u8 pure {
   let low_ok = low < 8_u64;
   let high_ok = high < 8_u64;
   let both = band(low_ok, high_ok);
@@ -173,7 +173,7 @@ fn read_pair(low: own u64, high: own u64) -> result: own u8 pure {
   return 0_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -193,7 +193,7 @@ fn main() -> status: own ExitStatus pure {
 fn bor_guard_false_edge_establishes_negative_disjuncts_and_discharges() {
     let source = br#"const table: Array<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-fn get(symbol: own u64) -> result: own u8 pure {
+fn get(symbol: u64) -> result: u8 pure {
   let below = symbol < 0_u64;
   let above = symbol >= 4_u64;
   let invalid = bor(below, above);
@@ -204,7 +204,7 @@ fn get(symbol: own u64) -> result: own u8 pure {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -247,7 +247,7 @@ fn main() -> status: own ExitStatus pure {
 /// and record nothing, and `bxor` records nothing on either sign.
 #[test]
 fn disjunctive_signs_and_bxor_record_nothing() {
-    let source = br#"fn classify(a: own u64, b: own u64) -> result: own u64 pure {
+    let source = br#"fn classify(a: u64, b: u64) -> result: u64 pure {
   let a_small = a < 16_u64;
   let b_small = b < 16_u64;
   let both = band(a_small, b_small);
@@ -264,7 +264,7 @@ fn disjunctive_signs_and_bxor_record_nothing() {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -306,7 +306,7 @@ fn main() -> status: own ExitStatus pure {
 fn bnot_flips_recursively_without_rewriting() {
     let source = br#"const table: Array<u8, 8> =[0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8];
 
-fn guard(index: own u64) -> result: own u8 pure {
+fn guard(index: u64) -> result: u8 pure {
   let low = index < 4_u64;
   let high = index >= 8_u64;
   let outside = bor(low, high);
@@ -318,7 +318,7 @@ fn guard(index: own u64) -> result: own u8 pure {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -366,7 +366,7 @@ fn band_requirement_and_guard_share_the_same_conjuncts() {
     // stores and the conjuncts would have to name it.
     let source = br#"const table: Array<u8, 8> =[0_u8, 1_u8, 2_u8, 3_u8, 4_u8, 5_u8, 6_u8, 7_u8];
 
-fn pick(low: own u64, high: own u64) -> result: own u8 pure contract {
+fn pick(low: u64, high: u64) -> result: u8 pure contract {
   define low_ok = low < 8_u64;
   define high_ok = high < 8_u64;
   define both = band(low_ok, high_ok);
@@ -376,7 +376,7 @@ fn pick(low: own u64, high: own u64) -> result: own u8 pure contract {
   return first;
 }
 
-fn caller(low: own u64, high: own u64) -> result: own u8 pure {
+fn caller(low: u64, high: u64) -> result: u8 pure {
   let low_ok = low < 8_u64;
   let high_ok = high < 8_u64;
   let both = band(low_ok, high_ok);
@@ -386,7 +386,7 @@ fn caller(low: own u64, high: own u64) -> result: own u8 pure {
   return 0_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -428,7 +428,7 @@ fn main() -> status: own ExitStatus pure {
 /// `next < deref(input).len` while the nested half still discharges.
 #[test]
 fn band_conjunct_over_a_derived_binding_discharges_like_the_single_bound_pair() {
-    let conjoined = br#"fn read_pair(input: &[u8], at: own u64) -> result: own u8 reads(input) {
+    let conjoined = br#"fn read_pair(input: &[u8], at: u64) -> result: u8 reads(input) {
   let next = at +wrap 1_u64;
   let spare = deref(input).len;
   let at_ok = at < spare;
@@ -442,11 +442,11 @@ fn band_conjunct_over_a_derived_binding_discharges_like_the_single_bound_pair() 
   return 0_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    let separate = br#"fn read_pair(input: &[u8], at: own u64) -> result: own u8 reads(input) {
+    let separate = br#"fn read_pair(input: &[u8], at: u64) -> result: u8 reads(input) {
   let next = at +wrap 1_u64;
   let spare = deref(input).len;
   let at_ok = at < spare;
@@ -462,7 +462,7 @@ fn main() -> status: own ExitStatus pure {
   return 0_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -487,7 +487,7 @@ fn main() -> status: own ExitStatus pure {
 /// false edge, because `-band` carries only disjunctive content.
 #[test]
 fn band_guard_over_a_derived_binding_admits_the_true_edge_only() {
-    let source = br#"fn window(input: &[u8], at: own u64) -> result: own u8 reads(input) {
+    let source = br#"fn window(input: &[u8], at: u64) -> result: u8 reads(input) {
   let next = at +wrap 1_u64;
   let spare = deref(input).len;
   let at_ok = at < spare;
@@ -501,14 +501,14 @@ fn band_guard_over_a_derived_binding_admits_the_true_edge_only() {
   return 0_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
     let summary = entailment(source, "window");
     assert_eq!(summary.obligations.len(), 2);
     assert!(summary.obligations.iter().all(|o| o.discharged));
-    let else_edge = br#"fn window(input: &[u8], at: own u64) -> result: own u8 reads(input) {
+    let else_edge = br#"fn window(input: &[u8], at: u64) -> result: u8 reads(input) {
   let next = at +wrap 1_u64;
   let spare = deref(input).len;
   let at_ok = at < spare;
@@ -521,7 +521,7 @@ fn main() -> status: own ExitStatus pure {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -541,7 +541,7 @@ fn main() -> status: own ExitStatus pure {
 /// same reason as the positive case above.
 #[test]
 fn band_over_derived_bindings_proves_no_unnamed_bound() {
-    let uncovered = br#"fn read_three(input: &[u8], at: own u64) -> result: own u8 reads(input) {
+    let uncovered = br#"fn read_three(input: &[u8], at: u64) -> result: u8 reads(input) {
   let next = at +wrap 1_u64;
   let far = at +wrap 2_u64;
   let spare = deref(input).len;
@@ -556,7 +556,7 @@ fn band_over_derived_bindings_proves_no_unnamed_bound() {
   return 0_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -568,7 +568,7 @@ fn main() -> status: own ExitStatus pure {
         "only the named bound discharges: {:?}",
         summary.obligations
     );
-    let disjoined = br#"fn read_pair(input: &[u8], at: own u64) -> result: own u8 reads(input) {
+    let disjoined = br#"fn read_pair(input: &[u8], at: u64) -> result: u8 reads(input) {
   let next = at +wrap 1_u64;
   let spare = deref(input).len;
   let at_ok = at < spare;
@@ -580,7 +580,7 @@ fn main() -> status: own ExitStatus pure {
   return 0_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;

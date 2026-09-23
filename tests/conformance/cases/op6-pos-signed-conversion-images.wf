@@ -1,8 +1,8 @@
-fn widen_ok(x: own u16) -> result: own i32 pure {
+fn widen_ok(x: u16) -> result: i32 pure {
   return cvt::<u16, i32>(x);
 }
 
-fn to_unsigned(x: own i32) -> result: own u32 pure {
+fn to_unsigned(x: i32) -> result: u32 pure {
   match cvt::<i32, u32>(x) {
     Ok(value: v) => {
       return v;
@@ -13,7 +13,7 @@ fn to_unsigned(x: own i32) -> result: own u32 pure {
   }
 }
 
-fn widen_preserved(value: own u8) -> result: own i16 pure contract {
+fn widen_preserved(value: u8) -> result: i16 pure contract {
   requires value == 200_u8;
   ensures result == 200_i16;
 } {
@@ -21,6 +21,6 @@ fn widen_preserved(value: own u8) -> result: own i16 pure contract {
   return wide;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

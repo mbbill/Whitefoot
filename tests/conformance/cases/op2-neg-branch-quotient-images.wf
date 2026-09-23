@@ -1,4 +1,4 @@
-fn branch_half(count: own u64, choose_left: own Bool) -> result: own u64 pure {
+fn branch_half(count: u64, choose_left: Bool) -> result: u64 pure {
   let quotient = if choose_left {
     let left = count / 2_u64;
     give left;
@@ -10,6 +10,6 @@ fn branch_half(count: own u64, choose_left: own Bool) -> result: own u64 pure {
   return doubled;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A Ring's logical window is two extents, and a range reference has one len, so REF-4 refuses the range step over a Ring at the psuffix itself rather than submitting a non-wrap premise for proof. Without the refusal the range descriptor is one extent over a window that is two, and the read below would reach a byte the run does not own.";
   let run = ring_new::<u8, 4>();
   for (

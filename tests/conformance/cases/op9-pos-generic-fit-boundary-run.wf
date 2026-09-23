@@ -1,4 +1,4 @@
-fn scalar_boundary(count: own u64) -> made: own Box<Slots<u64>> pure contract {
+fn scalar_boundary(count: u64) -> made: Box<Slots<u64>> pure contract {
   requires count <= 2305843009213693951_u64;
 } {
   doc "A scalar element has stride ceiling eight, so the largest admitted count is floor((2^64 - 1) / 8) [OP-9].";
@@ -6,7 +6,7 @@ fn scalar_boundary(count: own u64) -> made: own Box<Slots<u64>> pure contract {
   return move taken;
 }
 
-fn inline_run_boundary(count: own u64) -> made: own Box<Slots<Slots<u64, 2>>> pure contract {
+fn inline_run_boundary(count: u64) -> made: Box<Slots<Slots<u64, 2>>> pure contract {
   requires count <= 768614336404564650_u64;
 } {
   doc "An inline run of two u64 slots plus its stored length has stride ceiling twenty-four, so the largest admitted count is floor((2^64 - 1) / 24) [OP-9].";
@@ -14,7 +14,7 @@ fn inline_run_boundary(count: own u64) -> made: own Box<Slots<Slots<u64, 2>>> pu
   return move taken;
 }
 
-fn stored_cell_boundary(count: own u64) -> made: own Box<Slots<Box<Slots<u8>>>> pure contract {
+fn stored_cell_boundary(count: u64) -> made: Box<Slots<Box<Slots<u8>>>> pure contract {
   requires count <= 2305843009213693951_u64;
 } {
   doc "A stored cell is one pointer, so its stride ceiling is eight and its largest admitted count matches the scalar one [OP-9].";
@@ -22,6 +22,6 @@ fn stored_cell_boundary(count: own u64) -> made: own Box<Slots<Box<Slots<u8>>>> 
   return move taken;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

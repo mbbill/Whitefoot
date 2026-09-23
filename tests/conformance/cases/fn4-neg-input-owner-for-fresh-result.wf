@@ -1,8 +1,8 @@
 interface Factory<T: drop> {
-  fn make(value: own T) -> result: own T pure;
+  fn make(value: T) -> result: T pure;
 }
 
-fn retain(value: own Slots<u8, 4>) -> result: own Slots<u8, 4> pure {
+fn retain(value: Slots<u8, 4>) -> result: Slots<u8, 4> pure {
   doc "Returning the incoming owner is ordinary signature, row and contract matching; handing an owner back does not duplicate it [OWN-1].";
   return move value;
 }
@@ -11,6 +11,6 @@ binding Identity : Factory<Slots<u8, 4>> {
   make = retain;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

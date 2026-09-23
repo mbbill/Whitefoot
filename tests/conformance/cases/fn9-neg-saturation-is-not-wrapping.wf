@@ -1,4 +1,4 @@
-fn clamped_sum(left: own i8, right: own i8) -> result: own i8 pure contract {
+fn clamped_sum(left: i8, right: i8) -> result: i8 pure contract {
   requires left == 100_i8;
   requires right == 100_i8;
   ensures result == -56_i8;
@@ -7,6 +7,6 @@ fn clamped_sum(left: own i8, right: own i8) -> result: own i8 pure contract {
   return clamped;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

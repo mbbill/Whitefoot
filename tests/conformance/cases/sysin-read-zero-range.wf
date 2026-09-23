@@ -1,4 +1,4 @@
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "The ordinary read_next implementation returns Ok(start) without transfer for an empty range. The following nonempty read still observes the first arranged byte.";
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: input) = move inputs;
   close_directory(factory: &entry_factory, directory: move unused_cwd);

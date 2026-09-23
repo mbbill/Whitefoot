@@ -1,4 +1,4 @@
-fn touch_after_move(value: own Slots<u8, 2>) -> result: own u8 pure {
+fn touch_after_move(value: Slots<u8, 2>) -> result: u8 pure {
   doc "Accesses rooted only in local storage contribute no enclosing formal-rooted effect, so the row stays pure after the parameter has been moved into a local.";
   let moved = move value;
   let spare = moved.len;
@@ -12,7 +12,7 @@ fn touch_after_move(value: own Slots<u8, 2>) -> result: own u8 pure {
   }
 }
 
-fn view_after_move(value: own Slots<u8, 2>) -> result: own u8 pure {
+fn view_after_move(value: Slots<u8, 2>) -> result: u8 pure {
   doc "A range reference over the moved local names local storage and likewise retains no parameter effect identity.";
   let moved = move value;
   let spare = moved.len;
@@ -25,6 +25,6 @@ fn view_after_move(value: own Slots<u8, 2>) -> result: own u8 pure {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

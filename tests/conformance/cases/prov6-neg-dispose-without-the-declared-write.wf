@@ -2,13 +2,13 @@ struct Cell {
   count: u64;
 }
 
-fn drain(cell: &Cell) -> code: own u64 pure {
+fn drain(cell: &Cell) -> code: u64 pure {
   doc "EFF-2 checks rows both ways, so the ordinary read this body exhibits through its reference parameter must be declared, and a pure row declares nothing. Before this statement existed the same function exhibited nothing at all and pure was exactly right.";
   let seen = deref(cell).count;
   return seen;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The caller.";
   let cell = Cell(count: 4_u64);
   let seen = drain(cell: &cell);

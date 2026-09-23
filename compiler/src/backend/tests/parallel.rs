@@ -85,24 +85,24 @@ fn fold_module(parallel: bool) -> String {
 }
 
 const LANE_FRAME_LAYOUT_FUNCTIONS: &[u8] =
-    br#"fn exact_frame(values: own Array<u8, 255>) -> result: own u8 pure {
+    br#"fn exact_frame(values: Array<u8, 255>) -> result: u8 pure {
   return values[0_u64];
 }
 
-fn over_frame(values: own Array<u8, 256>) -> result: own u8 pure {
+fn over_frame(values: Array<u8, 256>) -> result: u8 pure {
   return values[0_u64];
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
 
 fn lane_frame_program(length: u64) -> Vec<u8> {
     format!(
-        "fn first(values: own Array<u8, {length}>) -> result: own u8 pure {{\n  \
+        "fn first(values: Array<u8, {length}>) -> result: u8 pure {{\n  \
          return values[0_u64];\n}}\n\n\
-         fn main() -> status: own ExitStatus pure {{\n  \
+         fn main() -> status: ExitStatus pure {{\n  \
          let left_values = array_filled::<u8, {length}>(value: 7_u8);\n  \
          let right_values = array_filled::<u8, {length}>(value: 9_u8);\n  \
          let left = first(values: left_values);\n  \
@@ -127,19 +127,19 @@ fn lane_frame_program(length: u64) -> Vec<u8> {
 /// Both halves of the result are observable: the low byte of the handed-out
 /// call's value, so a lost or unjoined hand-out shows, and a marker the
 /// selected arm writes, so a condition decided wrongly shows too.
-const IF_CONDITION_SIBLING: &[u8] = br#"fn mixdown(a: own u64, b: own u64) -> result: own u64 pure {
+const IF_CONDITION_SIBLING: &[u8] = br#"fn mixdown(a: u64, b: u64) -> result: u64 pure {
   let spun = irotl(a, 13_u32);
   let scattered = imulhi(b, 2654435761_u64);
   let blended = ixor(spun, b);
   return ixor(blended, scattered);
 }
 
-fn odd(v: own u64) -> result: own Bool pure {
+fn odd(v: u64) -> result: Bool pure {
   let low = iand(v, 1_u64);
   return low == 1_u64;
 }
 
-fn last_byte(v: own u64) -> result: own u8 pure {
+fn last_byte(v: u64) -> result: u8 pure {
   let low = iand(v, 255_u64);
   match cvt::<u64, u8>(low) {
     Ok(value: byte) => {
@@ -151,7 +151,7 @@ fn last_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "A pure call handed out while a pure call written as an if condition runs.";
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
   close_directory(factory: &entry_factory, directory: move unused_cwd);
@@ -176,11 +176,11 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
 
 /// Two sibling calls the judgment refuses: the second reads the first's
 /// binding, so condition 1 denies the pair and nothing may be handed out.
-const DEPENDENT_SIBLINGS: &[u8] = br#"fn twice(v: own u64) -> result: own u64 pure {
+const DEPENDENT_SIBLINGS: &[u8] = br#"fn twice(v: u64) -> result: u64 pure {
   return imax(v, v);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let first = twice(v: 3_u64);
   let second = twice(v: first);
   let total = imax(first, second);
@@ -194,27 +194,27 @@ fn main() -> status: own ExitStatus pure {
 /// have to coexist. `par_acquire_lane`, `par_publish`, `par_join`, and `par_release`
 /// are ordinary IDENTs [FORM-3], so nothing may stop a writer from declaring
 /// them.
-const RUNTIME_SHAPED_NAMES: &[u8] = br#"fn par_acquire_lane(x: own u64) -> result: own u64 pure {
+const RUNTIME_SHAPED_NAMES: &[u8] = br#"fn par_acquire_lane(x: u64) -> result: u64 pure {
   return imax(x, x);
 }
 
-fn par_publish(x: own u64) -> result: own u64 pure {
+fn par_publish(x: u64) -> result: u64 pure {
   return imax(x, x);
 }
 
-fn par_join(x: own u64) -> result: own u64 pure {
+fn par_join(x: u64) -> result: u64 pure {
   return imax(x, x);
 }
 
-fn par_release(x: own u64) -> result: own u64 pure {
+fn par_release(x: u64) -> result: u64 pure {
   return imax(x, x);
 }
 
-fn par_thunk_0(x: own u64) -> result: own u64 pure {
+fn par_thunk_0(x: u64) -> result: u64 pure {
   return imax(x, x);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let a = par_acquire_lane(x: 1_u64);
   let b = par_publish(x: 2_u64);
   let c = par_thunk_0(x: 3_u64);
@@ -588,12 +588,11 @@ fn a_call_written_as_an_if_condition_joins_a_compute_overlap_group() {
 /// reaches the header, so every carried value's phi has to name the label the
 /// entry block ends at, and that label is decided before the joins are
 /// written.
-const THREE_MEMBER_GROUP_BEFORE_A_LOOP: &[u8] =
-    br#"fn choose(value: own u64) -> result: own u64 pure {
+const THREE_MEMBER_GROUP_BEFORE_A_LOOP: &[u8] = br#"fn choose(value: u64) -> result: u64 pure {
   return imax(value, value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let prefix = 0_u64;
   let a = choose(value: 1_u64);
   let b = choose(value: 2_u64);
@@ -744,11 +743,11 @@ fn a_mixed_fixture_reports(module: &str, expected: i32) {
 /// about the arguments collapses the sequential frame, and the two lowerings
 /// of the same source are compared on the same terms. The whole result decides
 /// the exit status, so neither build can drop the recursion.
-const DEEP_RECURSION: &str = r#"fn leaf(v: own f64) -> result: own f64 pure {
+const DEEP_RECURSION: &str = r#"fn leaf(v: f64) -> result: f64 pure {
   return fmul.strict(v, 0.5_f64);
 }
 
-fn spine(depth: own u64, v: own f64) -> result: own f64 pure {
+fn spine(depth: u64, v: f64) -> result: f64 pure {
   let done = depth == 0_u64;
   if done {
     return v;
@@ -760,7 +759,7 @@ fn spine(depth: own u64, v: own f64) -> result: own f64 pure {
   return fadd.strict(a, b);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let total = spine(depth: DEPTH_u64, v: 1.0009765625_f64);
   let bits = reinterpret::<f64, u64>(total);
   let low = iand(bits, 1_u64);
@@ -1067,15 +1066,15 @@ fn a_denied_pair_emits_exactly_the_sequential_calls() {
 /// refuses by dropping the group rather than by moving the read.
 #[test]
 fn a_permitted_pair_whose_first_member_is_borrowed_is_not_handed_out() {
-    let borrowed = br#"fn make() -> result: own u64 pure {
+    let borrowed = br#"fn make() -> result: u64 pure {
   return 7_u64;
 }
 
-fn peek(v: &u64) -> result: own u64 reads(v) {
+fn peek(v: &u64) -> result: u64 reads(v) {
   return deref(v);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let first = make();
   let second = make();
   let seen = peek(v: &first);
@@ -1091,15 +1090,15 @@ fn main() -> status: own ExitStatus pure {
     // The same pair with only the *second* member borrowed is handed out: the
     // last member always runs on the calling thread, so its own value is read
     // after the join like every other.
-    let trailing = br#"fn make() -> result: own u64 pure {
+    let trailing = br#"fn make() -> result: u64 pure {
   return 7_u64;
 }
 
-fn peek(v: &u64) -> result: own u64 reads(v) {
+fn peek(v: &u64) -> result: u64 reads(v) {
   return deref(v);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let first = make();
   let second = make();
   let seen = peek(v: &second);
@@ -1472,13 +1471,13 @@ const OWNED_PAIR_RESULTS: &[u8] = br#"struct Pair {
   right: u64;
 }
 
-fn make(seed: own u64) -> result: own Pair pure {
+fn make(seed: u64) -> result: Pair pure {
   let scaled = seed *wrap 3_u64;
   let adjacent = seed +wrap 100_u64;
   return Pair(left: scaled, right: adjacent);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let first = make(seed: 7_u64);
   let second = make(seed: 11_u64);
   if first.left != 21_u64 {
@@ -1734,11 +1733,11 @@ __attribute__((destructor)) static void report(void) {
 /// Linked declarations enter the same ordinary sibling group as source bodies.
 #[test]
 fn a_linked_body_and_source_bodies_use_one_ordinary_call_protocol() {
-    let source = br#"fn choose(value: own u64) -> result: own u64 pure {
+    let source = br#"fn choose(value: u64) -> result: u64 pure {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let first = choose(value: 17_u64);
   let linked = exit_status(code: 0_u8);
   let second = choose(value: 19_u64);
@@ -1762,7 +1761,7 @@ fn main() -> status: own ExitStatus pure {
 /// hoping the worker steals the single task before the caller reaches join.
 #[test]
 fn an_ordinary_worker_helper_can_call_the_linked_io_library() {
-    let source = br#"fn write_byte(inputs: own Inputs) -> result: own u64 pure {
+    let source = br#"fn write_byte(inputs: Inputs) -> result: u64 pure {
   let Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: factory, stdin: input) = move inputs;
   close_directory(factory: &factory, directory: move cwd);
   let bytes = box_array_filled::<u8>(count: 1_u64, value: 88_u8);
@@ -1777,11 +1776,11 @@ fn an_ordinary_worker_helper_can_call_the_linked_io_library() {
   }
 }
 
-fn choose(value: own u64) -> result: own u64 pure {
+fn choose(value: u64) -> result: u64 pure {
   return value;
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   let first = write_byte(inputs: move inputs);
   let second = choose(value: 1_u64);
   if first != second {
@@ -1920,11 +1919,11 @@ __attribute__((destructor)) static void report(void) {
 /// evaluation of every removed member, including members inside a mixed run.
 #[test]
 fn scalar_leaf_control_keeps_mixed_chain_results_and_join_boundary() {
-    let source = br#"fn increment(x: own u64) -> result: own u64 pure {
+    let source = br#"fn increment(x: u64) -> result: u64 pure {
   return x +wrap 1_u64;
 }
 
-fn counted(x: own u64) -> result: own u64 pure {
+fn counted(x: u64) -> result: u64 pure {
   let value = x;
   for (i in 0_u64..17_u64) {
     set value = value +wrap i;
@@ -1932,7 +1931,7 @@ fn counted(x: own u64) -> result: own u64 pure {
   return value;
 }
 
-fn mixed(x: own u64) -> result: own u64 pure {
+fn mixed(x: u64) -> result: u64 pure {
   let a = increment(x: x);
   let b = counted(x: x);
   let c = increment(x: x);
@@ -1944,7 +1943,7 @@ fn mixed(x: own u64) -> result: own u64 pure {
   return partial +wrap e;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let result = mixed(x: 3_u64);
   if result == 290_u64 {
     return exit_status(code: 0_u8);
@@ -2000,11 +1999,11 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn scalar_leaf_control_drops_small_offers_without_clones() {
-    let source = br#"fn twice(x: own u64) -> result: own u64 pure {
+    let source = br#"fn twice(x: u64) -> result: u64 pure {
   return x +wrap x;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let a = twice(x: 3_u64);
   let b = twice(x: 4_u64);
   let value = a +wrap b;
@@ -2071,7 +2070,7 @@ fn recursive_controls_preserve_scalar_and_destination_results() {
             };
             let read = if aggregate { "answer.value" } else { "answer" };
             let source = format!(
-                r#"{declaration}fn fold(depth: own u64, seed: &u64) -> result: own {result} reads(seed) contract {{
+                r#"{declaration}fn fold(depth: u64, seed: &u64) -> result: {result} reads(seed) contract {{
   requires depth <= 5_u64;
 }} {{
   if depth == 0_u64 {{
@@ -2085,7 +2084,7 @@ fn recursive_controls_preserve_scalar_and_destination_results() {
   return {merged};
 }}
 
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   let seed = 2_u64;
   let answer = fold(depth: 5_u64, seed: &seed);
   if {read} == 64_u64 {{
@@ -2263,11 +2262,11 @@ fn main() -> status: own ExitStatus pure {{
 #[test]
 fn recursive_controls_keep_leaf_calls_unchanged() {
     // No descendant compute permission means no clone is needed at the call.
-    let source = br#"fn leaf(x: own u64) -> result: own u64 pure {
+    let source = br#"fn leaf(x: u64) -> result: u64 pure {
   return x +wrap 1_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let a = leaf(x: 1_u64);
   let b = leaf(x: 2_u64);
   let sum = a +wrap b;

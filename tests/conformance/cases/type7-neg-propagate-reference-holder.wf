@@ -2,12 +2,12 @@ nocopy enum StepError {
   Failed();
 }
 
-fn forward(holder: &Result<i32, StepError>) -> function_result: own Result<i32, StepError> reads(holder) {
+fn forward(holder: &Result<i32, StepError>) -> function_result: Result<i32, StepError> reads(holder) {
   doc "Propagation is a consuming context [ERR-3], and the place deref(holder) reaches through a reference parameter is not rooted in a live own-mode binding, so it cannot be consumed and the rejection is OWN-1's.";
   let value = propagate deref(holder);
   return Ok<i32, StepError>(value: value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

@@ -1,4 +1,4 @@
-fn clamp_range(value: own i32, floor: own i32, ceiling: own i32) -> result: own i32 pure contract {
+fn clamp_range(value: i32, floor: i32, ceiling: i32) -> result: i32 pure contract {
   requires value >= floor;
   requires value <= ceiling;
   requires floor >= -100_i32;
@@ -9,7 +9,7 @@ fn clamp_range(value: own i32, floor: own i32, ceiling: own i32) -> result: own 
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let result = clamp_range(value: -7_i32, floor: -50_i32, ceiling: 50_i32);
   if result == -7_i32 {
   } else {

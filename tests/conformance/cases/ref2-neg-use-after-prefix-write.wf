@@ -2,7 +2,7 @@ nocopy struct Owner {
   values: Array<u64, 4>;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "REF-2: a reference is invalidated when a proper prefix of its path is written, and using it after that event is a hard error.";
   let initial = array_filled::<u64, 4>(value: 0_u64);
   let a = Owner(values: initial);

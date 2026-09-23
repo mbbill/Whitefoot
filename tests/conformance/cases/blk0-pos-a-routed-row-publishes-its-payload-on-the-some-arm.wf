@@ -1,4 +1,4 @@
-fn bounded(request: own u64) -> result: own Result<u64, Overflow> pure contract {
+fn bounded(request: u64) -> result: Result<u64, Overflow> pure contract {
   requires request <= 3_u64;
   ensures when Ok(value: granted): granted <= 3_u64;
 } {
@@ -6,7 +6,7 @@ fn bounded(request: own u64) -> result: own Result<u64, Overflow> pure contract 
   return Ok<u64, Overflow>(value: request);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A declaration whose result is an enum states part of its relation list per variant, and publication restricts each routed relation to the arm its route names. The Ok arm binds the payload the route's own binder spelling names, so the bound that route publishes is the caller's and the subscript is discharged from it with no branch on the payload at all.";
   let run = slots_new::<u8, 4>();
   place_back(window: &run, value: 7_u8);

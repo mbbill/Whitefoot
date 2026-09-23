@@ -1,4 +1,4 @@
-fn combine(a0: own u64, b0: own u64, a1: own u64, b1: own u64, a2: own u64, b2: own u64) -> result: own unit pure contract {
+fn combine(a0: u64, b0: u64, a1: u64, b1: u64, a2: u64, b2: u64) -> result: unit pure contract {
   requires a0 <= b0;
   requires a1 <= b1;
   requires a2 <= b2;
@@ -4104,6 +4104,6 @@ fn combine(a0: own u64, b0: own u64, a1: own u64, b1: own u64, a2: own u64, b2: 
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

@@ -1,4 +1,4 @@
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "The start greater than end refutes the ordinary PRE-1 function requirement start <= end. FN-8 rejects the call before lowering; no runtime fallback exists.";
   let Inputs(args: arguments, cwd: root, handles: factory, ..) = move inputs;
   close_directory(factory: &factory, directory: move root);

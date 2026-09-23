@@ -3,7 +3,7 @@ enum State {
   Done();
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A borrow expression is an atom [GRAM-5] forming a reference to the path it names [REF-1], not a reference variable, so it is an ordinary reference scrutinee and matching through it leaves the scrutinee live [OWN-13]; no deref step stands between the borrow expression and the enum it names.";
   let state = Ready();
   match &state {

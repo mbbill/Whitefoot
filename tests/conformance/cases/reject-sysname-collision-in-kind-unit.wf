@@ -1,8 +1,8 @@
-fn open_read(root: own u64, path: own u64) -> function_result: own u64 pure {
+fn open_read(root: u64, path: u64) -> function_result: u64 pure {
   doc "The source declaration duplicates an ordinary PRE-1 function name. Ordinary TYPE-6 declaration inventory rejects the collision; there is no system domain or qualification rank.";
   return root;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

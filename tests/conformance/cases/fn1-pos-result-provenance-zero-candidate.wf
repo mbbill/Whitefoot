@@ -1,10 +1,10 @@
 const base_value: i32 = 5_i32;
 
 interface ConstantSource {
-  fn base() -> result: own i32 pure;
+  fn base() -> result: i32 pure;
 }
 
-fn from_const() -> result: own i32 pure {
+fn from_const() -> result: i32 pure {
   doc "No parameter supplies the result, which is legal by elimination: named `const` storage is the only remaining source, and it is read by value [CONST-2].";
   return base_value;
 }
@@ -13,7 +13,7 @@ binding FromConst : ConstantSource {
   base = from_const;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The zero-input arm of FN-1's result judgment, on the formal-member surface where signature formation is the whole judgment. A result is owned data, so no borrow provenance question arises at all.";
   return exit_status(code: 0_u8);
 }

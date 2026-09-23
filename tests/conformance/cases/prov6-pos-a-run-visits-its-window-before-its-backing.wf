@@ -2,7 +2,7 @@ struct Holder {
   data: Box<Slots<u8>>;
 }
 
-fn hold(value: own u8) -> made: own Holder pure {
+fn hold(value: u8) -> made: Holder pure {
   doc "Takes one two-slot window from the one heap, fills it, and wraps it in the nominal that owns it.";
   let fresh = box_slots_new::<u8>(capacity: 2_u64);
   place_back(window: &fresh.inner, value: value);
@@ -11,7 +11,7 @@ fn hold(value: own u8) -> made: own Holder pure {
   return move wrapped;
 }
 
-fn walk(first: own Holder) -> code: own u8 pure {
+fn walk(first: Holder) -> code: u8 pure {
   doc "PROV-6: a container's elements are visited before its backing is released. The constant-capacity window is frame-resident and reclaims nothing of its own, and its slots hold values that each own one heap cell, so the derived release is the window walk in ascending logical order and each cell is freed after its content.";
   let run = slots_new::<Holder, 4>();
   place_back(window: &run, value: move first);
@@ -36,7 +36,7 @@ fn walk(first: own Holder) -> code: own u8 pure {
   return 0_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The entry builds the first holder and hands it to the walk, whose own window then owns both.";
   let first = hold(value: 3_u8);
   let code = walk(first: move first);

@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The ordinary function promises ExitStatus but returns u8 without a declared conversion. FN-1 rejects that result type mismatch at the return statement, independently of the function name or any launcher.";
   return 0_u8;
 }

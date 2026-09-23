@@ -2,12 +2,12 @@ nodrop struct Token {
   value: u64;
 }
 
-fn abandon(values: own Array<Token, 0>) -> result: own unit pure {
+fn abandon(values: Array<Token, 0>) -> result: unit pure {
   doc "PROV-6: a full Array has the same element-type ownership closure as a window, including when the extent is zero. An empty runtime element set changes the executed element count, not this type-level judgment, so the array stays linear and may not reach the return edge.";
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The rejection is in the helper above; this entry point does nothing.";
   return exit_status(code: 0_u8);
 }

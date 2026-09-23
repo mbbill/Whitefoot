@@ -1,11 +1,11 @@
-fn first_of(table: &Slots<u32, 4>) -> value: own u32 reads(table) contract {
+fn first_of(table: &Slots<u32, 4>) -> value: u32 reads(table) contract {
   requires deref(table).len > 0_u64;
 } {
   doc "A &Slots<u32, 4> parameter is an ordinary shared reference: the run's storage is inline in its owner, the reference is a name for that path, and the window is reached through deref, which is a place form and not a read-through operation.";
   return deref(table)[0_u64];
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The caller's reference lasts through the call and is not retained beyond it.";
   let table = slots_new::<u32, 4>();
   place_back(window: &table, value: 7_u32);

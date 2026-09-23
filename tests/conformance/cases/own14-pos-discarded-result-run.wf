@@ -1,9 +1,9 @@
-fn source(x: &i32) -> result: own i32 reads(x) {
+fn source(x: &i32) -> result: i32 reads(x) {
   doc "A function hands back owned data rather than a reference; the caller keeps the reference it formed.";
   return deref(x);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Discarding the returned owned copy leaves the underlying scalar unchanged and permits its later ordinary read.";
   let v = 5_i32;
   let h = &v;

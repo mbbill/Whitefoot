@@ -3,16 +3,16 @@ struct GrowVector<T, const ceiling: u64> {
 }
 
 interface VectorDrain<T, E> {
-  fn accept(env: &E, value: own T) -> result: own unit writes(env);
+  fn accept(env: &E, value: T) -> result: unit writes(env);
 }
 
-fn grow_vector_new<T, const ceiling: u64>() -> made: own GrowVector<T, ceiling> pure {
+fn grow_vector_new<T, const ceiling: u64>() -> made: GrowVector<T, ceiling> pure {
   doc "One empty vector over a zero-capacity backing window. The caller-selected ceiling is the static capacity domain later reserve, append, and insert calls must prove; zero therefore constructs a useful empty value whose growth operations are unavailable. A runtime-capacity window exists only as the content of a cell [TYPE-9], and allocation is total in the source [STOR-8], so the construction has no refusal arm and hands back no Result.";
   let storage = box_slots_new::<T>(capacity: 0_u64);
   return GrowVector<T, ceiling>(storage: move storage);
 }
 
-fn grow_vector_reserve<T, const ceiling: u64>(values: &GrowVector<T, ceiling>, total: own u64) -> capacity: own u64 writes(values.storage) contract {
+fn grow_vector_reserve<T, const ceiling: u64>(values: &GrowVector<T, ceiling>, total: u64) -> capacity: u64 writes(values.storage) contract {
   requires total <= ceiling;
   ensures capacity == deref(values).storage.inner.cap;
   ensures capacity >= total;
@@ -28,7 +28,7 @@ fn grow_vector_reserve<T, const ceiling: u64>(values: &GrowVector<T, ceiling>, t
   return total;
 }
 
-fn grow_vector_append<T, const ceiling: u64>(values: &GrowVector<T, ceiling>, value: own T) -> length: own u64 writes(values.storage) contract {
+fn grow_vector_append<T, const ceiling: u64>(values: &GrowVector<T, ceiling>, value: T) -> length: u64 writes(values.storage) contract {
   requires deref(values).storage.inner.len < ceiling;
   ensures length == deref(values).storage.inner.len;
   ensures deref(values).storage.inner.len == deref(entry(values)).storage.inner.len + 1_u64;
@@ -63,7 +63,7 @@ fn grow_vector_append<T, const ceiling: u64>(values: &GrowVector<T, ceiling>, va
   return reached;
 }
 
-fn grow_vector_insert<T, const ceiling: u64>(values: &GrowVector<T, ceiling>, index: own u64, value: own T) -> length: own u64 writes(values.storage) contract {
+fn grow_vector_insert<T, const ceiling: u64>(values: &GrowVector<T, ceiling>, index: u64, value: T) -> length: u64 writes(values.storage) contract {
   requires index <= deref(values).storage.inner.len;
   requires deref(values).storage.inner.len < ceiling;
   ensures length == deref(values).storage.inner.len;
@@ -99,7 +99,7 @@ fn grow_vector_insert<T, const ceiling: u64>(values: &GrowVector<T, ceiling>, in
   return reached;
 }
 
-fn grow_vector_remove<T, const ceiling: u64>(values: &GrowVector<T, ceiling>, index: own u64) -> removed: own T writes(values.storage) contract {
+fn grow_vector_remove<T, const ceiling: u64>(values: &GrowVector<T, ceiling>, index: u64) -> removed: T writes(values.storage) contract {
   requires index < deref(values).storage.inner.len;
   ensures deref(values).storage.inner.len + 1_u64 == deref(entry(values)).storage.inner.len;
   ensures deref(values).storage.inner.cap == deref(entry(values)).storage.inner.cap;
@@ -109,7 +109,7 @@ fn grow_vector_remove<T, const ceiling: u64>(values: &GrowVector<T, ceiling>, in
   return move taken;
 }
 
-fn grow_vector_swap_remove<T, const ceiling: u64>(values: &GrowVector<T, ceiling>, index: own u64) -> removed: own T writes(values.storage) contract {
+fn grow_vector_swap_remove<T, const ceiling: u64>(values: &GrowVector<T, ceiling>, index: u64) -> removed: T writes(values.storage) contract {
   requires index < deref(values).storage.inner.len;
   ensures deref(values).storage.inner.len + 1_u64 == deref(entry(values)).storage.inner.len;
   ensures deref(values).storage.inner.cap == deref(entry(values)).storage.inner.cap;
@@ -122,7 +122,7 @@ fn grow_vector_swap_remove<T, const ceiling: u64>(values: &GrowVector<T, ceiling
   return move removed;
 }
 
-fn grow_vector_truncate<interface VectorDrain<T, E>, const ceiling: u64>(values: &GrowVector<T, ceiling>, retained: own u64, env: &E) -> result: own unit writes(values.storage), writes(env) contract {
+fn grow_vector_truncate<interface VectorDrain<T, E>, const ceiling: u64>(values: &GrowVector<T, ceiling>, retained: u64, env: &E) -> result: unit writes(values.storage), writes(env) contract {
   requires retained <= deref(values).storage.inner.len;
   ensures deref(values).storage.inner.len == retained;
   ensures deref(values).storage.inner.cap == deref(entry(values)).storage.inner.cap;
@@ -159,7 +159,7 @@ fn grow_vector_truncate<interface VectorDrain<T, E>, const ceiling: u64>(values:
   return unit;
 }
 
-fn grow_vector_drain<interface VectorDrain<T, E>, const ceiling: u64>(values: &GrowVector<T, ceiling>, env: &E) -> result: own unit writes(values.storage), writes(env) contract {
+fn grow_vector_drain<interface VectorDrain<T, E>, const ceiling: u64>(values: &GrowVector<T, ceiling>, env: &E) -> result: unit writes(values.storage), writes(env) contract {
   ensures deref(values).storage.inner.len == 0_u64;
   ensures deref(values).storage.inner.cap == deref(entry(values)).storage.inner.cap;
 } {
@@ -168,7 +168,7 @@ fn grow_vector_drain<interface VectorDrain<T, E>, const ceiling: u64>(values: &G
   return unit;
 }
 
-fn grow_vector_free_empty<T, const ceiling: u64>(values: own GrowVector<T, ceiling>) -> result: own unit pure contract {
+fn grow_vector_free_empty<T, const ceiling: u64>(values: GrowVector<T, ceiling>) -> result: unit pure contract {
   requires values.storage.inner.len <= 0_u64;
 } {
   doc "Consumes and frees an empty vector, including a vector of must-consume elements. The caller first returns or consumes every element, then the ordinary OP-14 operation releases the backing.";

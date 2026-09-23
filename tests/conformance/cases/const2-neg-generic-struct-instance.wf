@@ -3,7 +3,7 @@ struct Marker<T, const n: u64> {
 
 const marker: Marker<u8, 2> = Marker<u64, 2>();
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "CONST-2 requires the constructor to name the exact declared struct instance. Phantom arguments remain part of nominal identity even when both instances have the same empty layout.";
   return exit_status(code: 0_u8);
 }

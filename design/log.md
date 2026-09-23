@@ -5,6 +5,28 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-23 State the precise checking ground for named operands
+
+Nodes: language/surface-form, language/surface-form/construction-form
+
+Owner-approved: After the DCR handoff clarified that proposal 3 was only a wording correction, the owner explicitly instructed applying it alongside the already approved removal of signature `own` in proposal 1.
+
+Summary: Apply the reviewed construction-form replacement unchanged: labels and declared order detect label/order mismatches, while same-typed values exchanged under otherwise correct labels remain undetected. Retain every operand rule and the approved surface-form replacement below. This ruling resolves the DCR question about the third amendment's disposition and removes its now-resolved TODO; the [boundary comparison](../research/investigations/contract-surface/CALL-BOUNDARY.md#named-operands-remain-independent) supplies the counterexample and evidence. This ruling does not authorize a merge.
+
+## 2026-09-23 Remove written ownership qualifiers from callable signatures
+
+Nodes: language/surface-form
+
+Owner-approved: After reviewing PR #98 and the three proposed node replacements, the owner selected only the first proposal and instructed implementation: remove signature `own`, retaining result names and named operands.
+
+Summary: Apply the reviewed surface-form replacement unchanged. Value parameters write their type, reference parameters retain `&T` or `&[T]`, and result types remain explicitly owned without a written qualifier. Keep result names beside their types and keep ownership transfer, capabilities, effects and proofs unchanged. The [boundary study](../research/investigations/contract-surface/CALL-BOUNDARY.md) records the comparisons and the rejected result-alias alternative. This ruling does not authorize a merge.
+
+## 2026-09-23 Retain result names in signatures
+
+Nodes: language/checks-and-proofs/requires-entry-contract
+
+Summary: Do not adopt the contract-local `results(...)` replacement: it separates result types and names into two ordered lists that must be maintained together, while the existing named result binding keeps name, type and ordinal in one declaration. Remove the refused amendment. The DCR formatting finding concerned only the discarded result-name declaration, so that new production and its proposed formatting are not introduced.
+
 ## 2026-09-23 Adopt the owning HashMap storage and result protocol
 
 Nodes: language/data-model/hash-map-storage

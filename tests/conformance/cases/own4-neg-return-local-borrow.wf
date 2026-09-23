@@ -1,9 +1,9 @@
-fn leak() -> return_value: own i32 pure {
+fn leak() -> return_value: i32 pure {
   doc "A reference formed over a local never leaves the function that formed it; the return hands back owned data instead.";
   let local = 0_i32;
   return &local;
 }
 
-fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

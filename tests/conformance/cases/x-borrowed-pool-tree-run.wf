@@ -8,7 +8,7 @@ struct Cursor {
   position: u64;
 }
 
-fn build(left: &[u64], right: &[u64], cursor: &Cursor, depth: own u32) -> function_result: own Result<u64, PoolError> writes(left), writes(right), writes(cursor.position) {
+fn build(left: &[u64], right: &[u64], cursor: &Cursor, depth: u32) -> function_result: Result<u64, PoolError> writes(left), writes(right), writes(cursor.position) {
   doc "Build a complete tree bottom-up in two parallel runs; index zero is the null sentinel. The three write paths have three distinct roots, so the call site proves them disjoint [EFF-5].";
   let leaves = ishl.wrap(1_u64, depth);
   let start = deref(cursor).position;
@@ -102,7 +102,7 @@ fn build(left: &[u64], right: &[u64], cursor: &Cursor, depth: own u32) -> functi
   return Ok<u64, PoolError>(value: start);
 }
 
-fn checksum(left: &[u64], right: &[u64], root: own u64) -> function_result: own Result<u64, PoolError> reads(left), reads(right) {
+fn checksum(left: &[u64], right: &[u64], root: u64) -> function_result: Result<u64, PoolError> reads(left), reads(right) {
   doc "Walks the built tree through two read-only range references and counts its nodes.";
   let left_room = deref(left).len;
   let left_ok = root < left_room;
@@ -143,7 +143,7 @@ fn checksum(left: &[u64], right: &[u64], root: own u64) -> function_result: own 
   return Ok<u64, PoolError>(value: total);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Two parallel heap-resident runs and a cursor field are handed to the builder as three references with three distinct roots, and the checksum walk takes two read-only range references over the same storage. Bounds and arithmetic failures use explicit typed PoolError results, main maps failures to nonzero statuses, and projected access, caller-visible storage, effects, and owner-only cleanup all use the normal compiler path.";
   let left = box_slots_new::<u64>(capacity: 64_u64);
   for @fill_left (

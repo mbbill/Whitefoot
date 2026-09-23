@@ -2,13 +2,13 @@ struct Slot {
   value: u64;
 }
 
-fn change(cell: &Slot) -> result: own u64 writes(cell.value) {
+fn change(cell: &Slot) -> result: u64 writes(cell.value) {
   doc "Writes the cell it was handed and returns an unrelated number.";
   set deref(cell).value = 9_u64;
   return 7_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Distinct literal elements keep the right-hand side's reference disjoint from the captured commit target, and that reference ends before the following statement writes its own element.";
   let first = Slot(value: 0_u64);
   let second = Slot(value: 0_u64);

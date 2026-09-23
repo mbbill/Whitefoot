@@ -3,13 +3,13 @@ enum RuntimeGapNode {
   Entry(left: Box<RuntimeGapNode>, right: Box<RuntimeGapNode>);
 }
 
-fn boxed_empty() -> made: own Box<RuntimeGapNode> pure {
+fn boxed_empty() -> made: Box<RuntimeGapNode> pure {
   let empty = Empty();
   let cell = box_new::<RuntimeGapNode>(value: move empty);
   return move cell;
 }
 
-fn insert_once(tree: &Box<RuntimeGapNode>) -> inserted: own Bool writes(tree) {
+fn insert_once(tree: &Box<RuntimeGapNode>) -> inserted: Bool writes(tree) {
   doc "Minimal valid-source trigger: allocate a replacement recursive node and commit it over the caller's cell, so the ordinary assignment releases the displaced Empty cell and scope exit releases the resulting tree.";
   match deref(tree).inner {
     Empty() => {
@@ -26,7 +26,7 @@ fn insert_once(tree: &Box<RuntimeGapNode>) -> inserted: own Bool writes(tree) {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Expected success is exit 0; allocation is total, so there is no refusal path to report.";
   let root = boxed_empty();
   let inserted = insert_once(tree: &root);

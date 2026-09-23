@@ -538,7 +538,7 @@ pub enum SemanticIssueKind {
         /// Exact mechanical repair selected by CONST-1.
         mechanical_fix: &'static str,
     },
-    /// Two exact written modes or types disagree.
+    /// Two exact modes or types disagree.
     TypeMismatch {
         /// The exact type, mode, or written form the position requires.
         expected: String,

@@ -1,4 +1,4 @@
-fn unchanged(rows: &Slots<Slots<u8, 4>, 2>, index: own u64) -> result: own u8 reads(rows) contract {
+fn unchanged(rows: &Slots<Slots<u8, 4>, 2>, index: u64) -> result: u8 reads(rows) contract {
   requires index < deref(rows).len;
 } {
   doc "Both signs of an indexed measure goal survive while its named offset is unchanged [ENT-5]. The opposite branches remain unreachable [ENT-4].";
@@ -15,7 +15,7 @@ fn unchanged(rows: &Slots<Slots<u8, 4>, 2>, index: own u64) -> result: own u8 re
   return 0_u8;
 }
 
-fn unrelated_write(rows: &Slots<Slots<u8, 4>, 2>, index: own u64) -> result: own u8 reads(rows) contract {
+fn unrelated_write(rows: &Slots<Slots<u8, 4>, 2>, index: u64) -> result: u8 reads(rows) contract {
   requires index < deref(rows).len;
 } {
   doc "Writing another binding changes no support of either indexed measure goal [ENT-5]. The opposite branches remain unreachable [ENT-4].";
@@ -37,7 +37,7 @@ fn unrelated_write(rows: &Slots<Slots<u8, 4>, 2>, index: own u64) -> result: own
   return 0_u8;
 }
 
-fn literal_offset(rows: &Slots<Slots<u8, 4>, 2>, replacement: own u64) -> result: own u8 reads(rows) contract {
+fn literal_offset(rows: &Slots<Slots<u8, 4>, 2>, replacement: u64) -> result: u8 reads(rows) contract {
   requires 0_u64 < deref(rows).len;
 } {
   doc "Literal offsets have no binding support [ENT-5, MSR-2]. Replacing the independent index binding preserves both signed measure goals over row zero.";
@@ -59,7 +59,7 @@ fn literal_offset(rows: &Slots<Slots<u8, 4>, 2>, replacement: own u64) -> result
   return 0_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "These source controls isolate proof availability without requiring native storage construction.";
   return exit_status(code: 0_u8);
 }

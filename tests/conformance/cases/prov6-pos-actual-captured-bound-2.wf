@@ -3,10 +3,10 @@ struct Note {
 }
 
 interface Inspect<T: drop> {
-  fn inspect(value: &T) -> result: own unit pure;
+  fn inspect(value: &T) -> result: unit pure;
 }
 
-fn ignore(value: &Note) -> result: own unit pure {
+fn ignore(value: &Note) -> result: unit pure {
   doc "Observes nothing, so the row is empty.";
   return unit;
 }
@@ -15,7 +15,7 @@ binding NoteInspect : Inspect<Note> {
   inspect = ignore;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "PROV-6: every actual application must satisfy its group's written linearity bound. Note is affine, which satisfies an affine bound exactly, so this application is admitted where the two linear ones are refused.";
   return exit_status(code: 0_u8);
 }

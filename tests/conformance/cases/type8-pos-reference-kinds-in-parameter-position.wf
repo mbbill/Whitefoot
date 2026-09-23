@@ -1,4 +1,4 @@
-fn total(first: &u64, part: &[u64]) -> result: own u64 reads(first), reads(part) contract {
+fn total(first: &u64, part: &[u64]) -> result: u64 reads(first), reads(part) contract {
   requires deref(part).len > 0_u64;
 } {
   doc "TYPE-8: a reference kind appears as a parameter kind and as a let-bound local, never inside a value.";
@@ -8,7 +8,7 @@ fn total(first: &u64, part: &[u64]) -> result: own u64 reads(first), reads(part)
   return sum;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "TYPE-8: a reference kind is not a value type; every aggregate holds only owned values, and a reference is formed at a borrow expression and handed to a call.";
   let x = 10_u64;
   let a = array_filled::<u64, 4>(value: 2_u64);

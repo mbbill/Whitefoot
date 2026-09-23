@@ -1,4 +1,4 @@
-fn probe(a: own buffer<u8>, b: own buffer<u8>) -> result: own u64 pure {
+fn probe(a: buffer<u8>, b: buffer<u8>) -> result: u64 pure {
   doc "PROOF-1 negative: a's length says nothing about an index into b.";
   let m = len_of(a);
   let i = 0_u64;

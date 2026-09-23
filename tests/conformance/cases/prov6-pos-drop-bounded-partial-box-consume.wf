@@ -3,12 +3,12 @@ struct Inner<T: drop> {
   residual: T;
 }
 
-fn take<T: drop>(owner: own Box<Inner<T>>) -> selected: own Box<u64> pure {
+fn take<T: drop>(owner: Box<Inner<T>>) -> selected: Box<u64> pure {
   doc "PROV-6 and WIN-3: T: drop excludes a linear residual, so this projected Box-content consume is valid for copy and affine T.";
   return move owner.inner.selected;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Instantiate one take template with copy u64 and affine Box<u8> residuals, then check that each selected value is returned intact.";
   let selected_copy_case = box_new::<u64>(value: 41_u64);
   let inner_copy_case = Inner<u64>(selected: move selected_copy_case, residual: 3_u64);

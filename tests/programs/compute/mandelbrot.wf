@@ -1,4 +1,4 @@
-fn escape_count(real: own f64, imaginary: own f64, limit: own u64) -> result: own u64 pure contract {
+fn escape_count(real: f64, imaginary: f64, limit: u64) -> result: u64 pure contract {
   requires limit <= 65536_u64;
 } {
   doc "Returns the first iteration whose squared magnitude exceeds four, or the iteration limit. Iteration zero tests z=0; arithmetic uses separate strict binary64 operations.";
@@ -20,7 +20,7 @@ fn escape_count(real: own f64, imaginary: own f64, limit: own u64) -> result: ow
   return limit;
 }
 
-fn render_points(real: &[f64], imaginary: &[f64], first: own u64, end: own u64, limit: own u64) -> result: own Box<Array<u64>> reads(real), reads(imaginary) contract {
+fn render_points(real: &[f64], imaginary: &[f64], first: u64, end: u64, limit: u64) -> result: Box<Array<u64>> reads(real), reads(imaginary) contract {
   define real_count = deref(real).len;
   define imaginary_count = deref(imaginary).len;
   requires first <= end;
@@ -40,11 +40,11 @@ fn render_points(real: &[f64], imaginary: &[f64], first: own u64, end: own u64, 
   return move output;
 }
 
-fn release_points(output: own Box<Array<u64>>) -> result: own u64 pure {
+fn release_points(output: Box<Array<u64>>) -> result: u64 pure {
   return 0_u64;
 }
 
-fn command_smoke() -> status: own ExitStatus pure {
+fn command_smoke() -> status: ExitStatus pure {
   let real = array_filled::<f64, 3>(value: 0.0_f64);
   let imaginary = array_filled::<f64, 3>(value: 0.0_f64);
   set real[1_u64] = 2.0_f64;
@@ -66,6 +66,6 @@ fn command_smoke() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return command_smoke();
 }

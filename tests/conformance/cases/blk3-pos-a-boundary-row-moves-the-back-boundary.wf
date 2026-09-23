@@ -1,4 +1,4 @@
-fn push(window: &Slots<u8, 4>, value: own u8) -> result: own unit writes(window.next), writes(window.len) contract {
+fn push(window: &Slots<u8, 4>, value: u8) -> result: unit writes(window.next), writes(window.len) contract {
   requires deref(window).len < deref(window).cap;
 } {
   doc "Places one value at the back boundary of a run, declaring exactly the two window parts place_back writes.";
@@ -6,7 +6,7 @@ fn push(window: &Slots<u8, 4>, value: own u8) -> result: own unit writes(window.
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "place_back fills the append slot and moves the back boundary by one, and a source helper may declare the same window-part row the built-in record declares. The helper's own len < cap requirement discharges the record's free-slot requirement, which is the one obligation a caller of this operation carries.";
   return exit_status(code: 0_u8);
 }

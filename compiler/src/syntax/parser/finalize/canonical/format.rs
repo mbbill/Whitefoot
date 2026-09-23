@@ -94,7 +94,7 @@ fn stated_space_open_paren(
             .count())
     };
     match record.production {
-        // `-> (a: own T, b: own U)`: the `(` is the terminal before the first
+        // `-> (a: T, b: U)`: the `(` is the terminal before the first
         // `result_binding`, because the single-result form writes none.
         Production::FnDecl | Production::FnSig => {
             if counted(Production::ResultBinding)? < 2 {

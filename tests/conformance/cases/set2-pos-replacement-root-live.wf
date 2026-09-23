@@ -3,11 +3,11 @@ struct Holder {
   count: u64;
 }
 
-fn consume(h: own Holder) -> result: own unit pure {
+fn consume(h: Holder) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "swap exchanges a field's owner without consuming the root: the root stays live for sibling access and for the later whole-owner transfer, and the old owner ends up the sole owner of the local it was exchanged with.";
   let first = slots_new::<u8, 4>();
   for @fill_first (

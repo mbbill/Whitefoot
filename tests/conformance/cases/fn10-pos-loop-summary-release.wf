@@ -2,7 +2,7 @@ struct Cell {
   value: u64;
 }
 
-fn walk(n: own u64, target: &Cell) -> result: own u64 writes(target) {
+fn walk(n: u64, target: &Cell) -> result: u64 writes(target) {
   if n == 0_u64 {
     return deref(target).value;
   }
@@ -24,7 +24,7 @@ fn walk(n: own u64, target: &Cell) -> result: own u64 writes(target) {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The settled loop summary includes the local owner. Its possible prefix write invalidates held before the tail transfer, so the unreferenced owner can be released.";
   let cell = Cell(value: 0_u64);
   let result = walk(n: 3_u64, target: &cell);

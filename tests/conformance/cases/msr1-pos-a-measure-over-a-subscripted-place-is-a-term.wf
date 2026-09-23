@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "MSR-1: an admitted measure place is formed with subscripts as well as field selections, so grid[0_u64].len is a term over a window of windows. The subscript inside the place is an ordinary OP-4 occurrence and is discharged from the length the outer place_back published; the element read then reaches the inner window's own descriptor in the slot it occupies.";
   let row = slots_new::<u8, 8>();
   place_back(window: &row, value: 5_u8);

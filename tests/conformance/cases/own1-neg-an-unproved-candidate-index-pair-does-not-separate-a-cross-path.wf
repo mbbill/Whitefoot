@@ -3,7 +3,7 @@ nocopy struct Cell {
   weight: u64;
 }
 
-fn invalid(i: own u64, k: own u64) -> result: own unit pure contract {
+fn invalid(i: u64, k: u64) -> result: unit pure contract {
   requires i < 2_u64;
   requires k < 2_u64;
   requires i < k;
@@ -21,6 +21,6 @@ fn invalid(i: own u64, k: own u64) -> result: own unit pure contract {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

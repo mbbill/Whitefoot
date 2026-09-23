@@ -1,4 +1,4 @@
-fn ordered(x: own u8, middle: own u8) -> result: own unit pure contract {
+fn ordered(x: u8, middle: u8) -> result: unit pure contract {
   requires x <= middle;
   requires middle <= 254_u8;
 } {
@@ -9,6 +9,6 @@ fn ordered(x: own u8, middle: own u8) -> result: own unit pure contract {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

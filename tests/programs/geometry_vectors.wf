@@ -4,7 +4,7 @@ struct Vector3<T: Float> {
   z: T;
 }
 
-fn dot3<T: Float>(left: own Vector3<T>, right: own Vector3<T>) -> result: own T pure {
+fn dot3<T: Float>(left: Vector3<T>, right: Vector3<T>) -> result: T pure {
   doc "Both operands arrive by value, and a by-value parameter has no effect entry at all, so the row is the empty one [EFF-1].";
   let total = 0_T;
   let x_product = fmul.strict(left.x, right.x);
@@ -15,7 +15,7 @@ fn dot3<T: Float>(left: own Vector3<T>, right: own Vector3<T>) -> result: own T 
   return fadd.strict(after_y, z_product);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let left32 = Vector3<f32>(x: 1.0_f32, y: 2.0_f32, z: 3.0_f32);
   let right32 = Vector3<f32>(x: 4.0_f32, y: 5.0_f32, z: 6.0_f32);
   let product32 = dot3::<f32>(left: left32, right: right32);

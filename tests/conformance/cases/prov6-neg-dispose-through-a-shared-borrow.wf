@@ -3,13 +3,13 @@ struct Pair {
   spare: u64;
 }
 
-fn look(holder: &Pair) -> size: own u64 reads(holder) {
+fn look(holder: &Pair) -> size: u64 reads(holder) {
   doc "OWN-1: a consuming use requires a place rooted in a live own-mode binding of this function. Content reached through a reference whose row declares only a read may never be moved out, so the rejection is the ordinary one at the complete place.";
   let taken = move deref(holder).page;
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The caller.";
   let values = array_filled::<u8, 4>(value: 0_u8);
   let run = slots_from_array::<u8, 4>(values: values);

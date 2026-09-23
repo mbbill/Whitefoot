@@ -17,7 +17,7 @@ struct ParseOutput {
   next: u64;
 }
 
-fn parse_expression(input: &[u8], offset: own u64) -> result: own Result<ParseOutput, ParseError> reads(input) {
+fn parse_expression(input: &[u8], offset: u64) -> result: Result<ParseOutput, ParseError> reads(input) {
   doc "There is one heap and allocation is total, so a cell formation has no refusal arm and the parser carries only the two errors its own grammar can produce [STOR-8, TYPE-9].";
   let size = deref(input).len;
   let available = offset < size;
@@ -72,7 +72,7 @@ fn parse_expression(input: &[u8], offset: own u64) -> result: own Result<ParseOu
   }
 }
 
-fn evaluate(expression: &Box<Expression>) -> result: own Result<u64, Overflow> reads(expression) {
+fn evaluate(expression: &Box<Expression>) -> result: Result<u64, Overflow> reads(expression) {
   doc "A Box's content is its field inner, and matching through a reference binds each payload as a reference naming the scrutinee path [TYPE-9, OWN-13].";
   match deref(expression).inner {
     Literal(value: literal_value) => {
@@ -86,7 +86,7 @@ fn evaluate(expression: &Box<Expression>) -> result: own Result<u64, Overflow> r
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Parses one prefix expression from a const table read through a range reference, evaluates it, and checks that a truncated input is refused.";
   let input = &prefix_input[0_u64..5_u64];
   let parsed = parse_expression(input: input, offset: 0_u64);

@@ -1,9 +1,9 @@
-fn helper(x: own i32) -> return_value: own i32 pure {
+fn helper(x: i32) -> return_value: i32 pure {
   doc "In-unit helper; every callee name is defined within this compilation unit. Explicit wrapping arithmetic makes the helper total so this case isolates closed-world resolution.";
   return x +wrap 1_i32;
 }
 
-fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: ExitStatus pure {
   doc "PROG-1 closed world: helper is defined in-unit, `==`/True are the prelude+table; no import/extern/dynamic-load construct exists to reach outside the unit.";
   let a = 6_i32;
   let b = helper(x: a);

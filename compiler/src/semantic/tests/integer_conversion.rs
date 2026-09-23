@@ -35,15 +35,14 @@ fn classifies_every_distinct_integer_pair_through_one_conversion_judgment() {
             };
             writeln!(
                 source,
-                "fn convert_{source_name}_{destination_name}(value: own {source_name}) -> result: own {result} pure {{\n  return cvt::<{source_name}, {destination_name}>(value);\n}}\n"
+                "fn convert_{source_name}_{destination_name}(value: {source_name}) -> result: {result} pure {{\n  return cvt::<{source_name}, {destination_name}>(value);\n}}\n"
             )
             .expect("write generated source");
             expected.push((source_type, destination_type, total));
         }
     }
-    source.push_str(
-        "fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
-    );
+    source
+        .push_str("fn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n");
 
     with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
@@ -104,22 +103,22 @@ fn classifies_every_distinct_integer_pair_through_one_conversion_judgment() {
 #[test]
 fn conversion_shape_and_operand_failures_keep_their_rule_owners() {
     assert_rule(
-        b"fn main() -> status: own ExitStatus pure {\n  let value = cvt::<i32, i32>(1_i32);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: ExitStatus pure {\n  let value = cvt::<i32, i32>(1_i32);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Op6,
         SemanticIssueKind::InvalidOperation,
     );
     assert_rule_kind(
-        b"fn main() -> status: own ExitStatus pure {\n  let value = cvt::<i32, i64>(1_i16);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: ExitStatus pure {\n  let value = cvt::<i32, i64>(1_i16);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
     assert_rule(
-        b"fn main() -> status: own ExitStatus pure {\n  let value = cvt::<i32>(1_i32);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: ExitStatus pure {\n  let value = cvt::<i32>(1_i32);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
     assert_rule(
-        b"fn main() -> status: own ExitStatus pure {\n  let flag = True();\n  let value = cvt::<Bool, i32>(flag);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: ExitStatus pure {\n  let flag = True();\n  let value = cvt::<Bool, i32>(flag);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );

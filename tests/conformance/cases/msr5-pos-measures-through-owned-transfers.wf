@@ -2,7 +2,7 @@ struct Block {
   bytes: Slots<u8, 4>;
 }
 
-fn pass_bytes(bytes: own Slots<u8, 4>) -> result: own Slots<u8, 4> pure contract {
+fn pass_bytes(bytes: Slots<u8, 4>) -> result: Slots<u8, 4> pure contract {
   ensures result.cap == bytes.cap;
   ensures result.len == bytes.len;
 } {
@@ -10,7 +10,7 @@ fn pass_bytes(bytes: own Slots<u8, 4>) -> result: own Slots<u8, 4> pure contract
   return move bytes;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "MSR-5: measures survive a chain of owned transfers. A captured capacity and a zero length cross a verified whole-value result relation, nominal construction, a destructuring consume and a Some payload; each step is one of MSR-3's placements, and the invariants at the end read what the first step published. The checks are source obligations; existing container programs own actual append and read behavior.";
   let known = slots_new::<u8, 4>();
   let passed = pass_bytes(bytes: move known);

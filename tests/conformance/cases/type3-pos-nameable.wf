@@ -4,11 +4,11 @@ enum Color {
   Blue();
 }
 
-fn paint(x: &i32, y: &i32) -> function_result: own Color pure {
-  doc "Every mode (own and the single reference form) and every type has a written canonical name requiring no compiler execution.";
+fn paint(x: &i32, y: &i32) -> function_result: Color pure {
+  doc "Each type and parameter kind has a finite canonical source spelling requiring no compiler execution; the type and reference marker determine the kind.";
   return Red();
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

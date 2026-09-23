@@ -9,8 +9,7 @@ use super::{emit, emit_division_obligations};
 /// The normalizer publishes its verified positive-result relation. The caller
 /// consumes that summary directly to discharge exact division; the final
 /// quotient check is an ordinary test oracle.
-const PROVED_UNSIGNED: &[u8] =
-    br#"fn reviewed_positive(value: own u64) -> result: own u64 pure contract {
+const PROVED_UNSIGNED: &[u8] = br#"fn reviewed_positive(value: u64) -> result: u64 pure contract {
   ensures result > 0_u64;
 } {
   if value > 0_u64 {
@@ -20,13 +19,13 @@ const PROVED_UNSIGNED: &[u8] =
   }
 }
 
-fn ratio(n: own u64, d: own u64) -> result: own u64 pure {
+fn ratio(n: u64, d: u64) -> result: u64 pure {
   let divisor = reviewed_positive(value: d);
   let quotient = n / divisor;
   return quotient;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let total = ratio(n: 12_u64, d: 4_u64);
   if total != 3_u64 {
     return exit_status(code: 1_u8);
@@ -102,12 +101,12 @@ fn a_proved_unsigned_site_emits_no_division_guard() {
 /// needs no `traps` row.
 #[test]
 fn a_constant_divisor_site_emits_one_plain_instruction() {
-    const CONSTANT_DIVISOR: &[u8] = br#"fn halve(n: own i32) -> result: own i32 pure {
+    const CONSTANT_DIVISOR: &[u8] = br#"fn halve(n: i32) -> result: i32 pure {
   let q = n / 2_i32;
   return q;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let half = halve(n: 9_i32);
   if half != 4_i32 {
     return exit_status(code: 1_u8);
@@ -130,15 +129,14 @@ fn main() -> status: own ExitStatus pure {
 /// lower to plain instructions; neither may acquire a runtime division guard.
 #[test]
 fn generic_exact_division_emits_no_runtime_guards() {
-    const GENERIC_DIVISION: &[u8] =
-        br#"fn divide<T: Int>(n: own T, d: own T) -> result: own T pure contract {
+    const GENERIC_DIVISION: &[u8] = br#"fn divide<T: Int>(n: T, d: T) -> result: T pure contract {
   requires n /defined d;
 } {
   let q = n / d;
   return q;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let unsigned = divide::<u32>(n: 12_u32, d: 1_u32);
   let signed = divide::<i32>(n: 9_i32, d: 1_i32);
   return exit_status(code: 0_u8);

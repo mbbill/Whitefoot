@@ -2,7 +2,7 @@ struct Counter {
   value: u64;
 }
 
-fn bumped(current: own Counter, step: own u64) -> result: own Counter pure contract {
+fn bumped(current: Counter, step: u64) -> result: Counter pure contract {
   requires current.value +defined step;
 } {
   doc "OP-12: f returns the place's type and has no failure exit, so every declared result ordinal is the place's type.";
@@ -10,7 +10,7 @@ fn bumped(current: own Counter, step: own u64) -> result: own Counter pure contr
   return Counter(value: raised);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "OP-12: set p = f(p, args...), where the first argument of the call is the target place itself, is the atomic in-place update: the old value enters f by value and the result is committed with no program point between. A constructor publishes no field-value fact, so the exact +defined guard establishes the callee requirement.";
   let total = Counter(value: 5_u64);
   if total.value +defined 3_u64 {

@@ -1,9 +1,9 @@
-fn nothing<T>() -> made: own Option<T> pure {
+fn nothing<T>() -> made: Option<T> pure {
   doc "Reports no value at all, over an element type no parameter position mentions.";
   return None<T>();
 }
 
-fn absorb(spare: own Option<Slots<u8, 4>>) -> width: own u64 pure {
+fn absorb(spare: Option<Slots<u8, 4>>) -> width: u64 pure {
   doc "Reports the capacity of the run it was handed, or zero when there is none.";
   match spare {
     None() => {
@@ -15,7 +15,7 @@ fn absorb(spare: own Option<Slots<u8, 4>>) -> width: own u64 pure {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "FN-2: a type parameter that occupies no input position of its declaration is still written at the call and substituted into the result; every instantiation argument is explicit. The specialized `absorb` then observes that the empty result has exactly the element type the caller chose.";
   let spare = nothing::<Slots<u8, 4>>();
   let width = absorb(spare: move spare);

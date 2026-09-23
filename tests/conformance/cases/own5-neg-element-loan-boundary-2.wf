@@ -3,7 +3,7 @@ nocopy struct Row {
   right: u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Moving the owner is now an ordinary consuming use; it invalidates every reference formed from it, and the later use of that reference is the rejection.";
   let row0 = Row(left: 3_u64, right: 4_u64);
   let row1 = Row(left: 3_u64, right: 4_u64);

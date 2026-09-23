@@ -12,11 +12,11 @@ enum Owner {
   Full(value: PairBuffers);
 }
 
-fn abandon(owner: own Owner) -> result: own unit pure {
+fn abandon(owner: Owner) -> result: unit pure {
   return unit;
 }
 
-fn consume(owner: own Owner) -> result: own u8 pure {
+fn consume(owner: Owner) -> result: u8 pure {
   match move owner {
     Empty() => {
       return 0_u8;
@@ -34,7 +34,7 @@ fn consume(owner: own Owner) -> result: own u8 pure {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let abandoned_left = box_slots_new::<u8>(capacity: 1_u64);
   place_back(window: &abandoned_left.inner, value: 7_u8);
   let abandoned_right = box_slots_new::<u8>(capacity: 1_u64);
@@ -62,11 +62,11 @@ fn main() -> status: own ExitStatus pure {
     // is accepted, the wider row fails. The wider row's rejecting rule moved
     // with v0.60: [EFF-1] roots every `effect_path` at a reference parameter
     // and a by-value parameter has no effect entry at all, so `reads(owner)`
-    // over `owner: own Owner` is refused at the row itself rather than at
+    // over `owner: Owner` is refused at the row itself rather than at
     // [EFF-2]'s both-ways comparison against the exhibited set.
     let excessive = std::str::from_utf8(source).unwrap().replace(
-        "fn consume(owner: own Owner) -> result: own u8 pure",
-        "fn consume(owner: own Owner) -> result: own u8 reads(owner)",
+        "fn consume(owner: Owner) -> result: u8 pure",
+        "fn consume(owner: Owner) -> result: u8 reads(owner)",
     );
     let failure = compile_rejection(excessive.as_bytes());
     assert_eq!(failure.rule_id(), Some("EFF-1"));
@@ -171,11 +171,11 @@ fn result_run_transfer_error_and_abandonment_execute() {
 
 #[test]
 fn option_boxed_window_some_none_and_transfer_execute() {
-    let source = br#"fn abandon(value: own Option<Box<Slots<u8>>>) -> result: own unit pure {
+    let source = br#"fn abandon(value: Option<Box<Slots<u8>>>) -> result: unit pure {
   return unit;
 }
 
-fn consume(value: own Option<Box<Slots<u8>>>) -> result: own u8 pure {
+fn consume(value: Option<Box<Slots<u8>>>) -> result: u8 pure {
   match move value {
     None() => {
       return 0_u8;
@@ -193,7 +193,7 @@ fn consume(value: own Option<Box<Slots<u8>>>) -> result: own u8 pure {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let abandoned_bytes = box_slots_new::<u8>(capacity: 1_u64);
   place_back(window: &abandoned_bytes.inner, value: 5_u8);
   let abandoned_some = Some<Box<Slots<u8>>>(value: move abandoned_bytes);

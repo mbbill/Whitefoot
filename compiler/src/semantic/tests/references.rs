@@ -35,7 +35,8 @@ use super::{assert_accepts, assert_rule_kind, with_semantics};
 /// but must not turn two exchanged formals into an unresolved recursive graph.
 #[test]
 fn rebound_parameter_summaries_preserve_every_entry_root() {
-    let source = br#"fn exchange(first: &u64, second: &u64, other: &u64, flag: own Bool) -> result: own unit pure {
+    let source =
+        br#"fn exchange(first: &u64, second: &u64, other: &u64, flag: Bool) -> result: unit pure {
   let saved = first;
   let selected = if flag {
     give first;
@@ -48,7 +49,7 @@ fn rebound_parameter_summaries_preserve_every_entry_root() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -123,7 +124,7 @@ struct Parent {
   right: Holder;
 }
 
-fn inspect(first: &Parent, second: &Parent, flag: own Bool) -> result: own unit reads(first.left.value.inner.payload), reads(second.right.value.inner.payload) {
+fn inspect(first: &Parent, second: &Parent, flag: Bool) -> result: unit reads(first.left.value.inner.payload), reads(second.right.value.inner.payload) {
   let selected = if flag {
     give &deref(first).left;
   } else {
@@ -144,7 +145,7 @@ fn inspect(first: &Parent, second: &Parent, flag: own Bool) -> result: own unit 
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -235,7 +236,7 @@ fn straight_line_recursive_reference_descent_has_finite_origins() {
   next: Option<Box<Node>>;
 }
 
-fn descend(root: &Node) -> result: own unit reads(root.next) {
+fn descend(root: &Node) -> result: unit reads(root.next) {
   let cursor = root;
   match deref(cursor).next {
     Some(value: child) => {
@@ -247,7 +248,7 @@ fn descend(root: &Node) -> result: own unit reads(root.next) {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -303,11 +304,11 @@ fn long_parameter_rebindings_keep_captured_entry_targets() {
         }
         write!(source, "p{index}: &u64").unwrap();
     }
-    source.push_str(") -> result: own unit pure {\n");
+    source.push_str(") -> result: unit pure {\n");
     for index in 0..39 {
         writeln!(source, "  set p{index} = &deref(p{});", index + 1).unwrap();
     }
-    source.push_str("  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n");
+    source.push_str("  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n");
     with_semantics(source.as_bytes(), |outcome| {
         use crate::semantic::places::{PlaceMap, PlaceRoot, ResolvedPlace};
 
@@ -382,7 +383,7 @@ fn a_same_dynamic_index_prefix_replacement_invalidates_the_reference() {
   value: u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let table = slots_new::<Record, 1>();
   let record = Record(value: 7_u8);
   place_back(window: &table, value: move record);
@@ -406,7 +407,7 @@ fn a_whole_nocopy_owner_move_invalidates_its_reference() {
   value: u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let record = Record(value: 7_u8);
   let p = &record;
   let moved = move record;
@@ -428,7 +429,7 @@ fn consuming_box_content_invalidates_a_reference_to_the_whole_box() {
   value: u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let record = Record(value: 7_u8);
   let boxed = box_new::<Record>(value: move record);
   let p = &boxed;
@@ -460,7 +461,7 @@ fn exact_content_and_distinct_literal_index_writes_preserve_references() {
   value: u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let table = slots_new::<Record, 2>();
   let first = Record(value: 7_u8);
   place_back(window: &table, value: move first);
@@ -518,13 +519,13 @@ fn one_actual_cannot_supply_overlapping_declared_effects() {
   second: u8;
 }
 
-fn act(pair: &Pair) -> result: own unit reads(pair.first), writes(pair) {
+fn act(pair: &Pair) -> result: unit reads(pair.first), writes(pair) {
   let old = deref(pair).first;
   set deref(pair).second = old;
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let pair = Pair(first: 1_u8, second: 2_u8);
   act(pair: &pair);
   return exit_status(code: 0_u8);
@@ -536,12 +537,12 @@ fn main() -> status: own ExitStatus pure {
   second: u8;
 }
 
-fn act(pair: &Pair) -> result: own unit writes(pair), writes(pair.first) {
+fn act(pair: &Pair) -> result: unit writes(pair), writes(pair.first) {
   set deref(pair).first = 7_u8;
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let pair = Pair(first: 1_u8, second: 2_u8);
   act(pair: &pair);
   return exit_status(code: 0_u8);
@@ -560,7 +561,7 @@ fn main() -> status: own ExitStatus pure {
 /// contain zero and therefore select the same written window element.
 #[test]
 fn substituted_index_values_do_not_inherit_their_actual_storage_separation() {
-    let source = br#"fn write_two(window: &Slots<u8, 2>, first: own u64, second: own u64) -> result: own unit reads(window.len), writes(window[first]), writes(window[second]) {
+    let source = br#"fn write_two(window: &Slots<u8, 2>, first: u64, second: u64) -> result: unit reads(window.len), writes(window[first]), writes(window[second]) {
   let length = deref(window).len;
   if first < length {
     if second < length {
@@ -571,7 +572,7 @@ fn substituted_index_values_do_not_inherit_their_actual_storage_separation() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let indices = array_filled::<u64, 2>(value: 0_u64);
   let window = slots_new::<u8, 2>();
   place_back(window: &window, value: 7_u8);
@@ -593,7 +594,7 @@ fn main() -> status: own ExitStatus pure {
 /// for the two occurrence-specific actual captures.
 #[test]
 fn indexed_call_separation_accepts_strict_orderings_and_disequality() {
-    let source = br#"fn write_two(window: &Slots<u8, 2>, first: own u64, second: own u64) -> result: own unit reads(window.len), writes(window[first]), writes(window[second]) {
+    let source = br#"fn write_two(window: &Slots<u8, 2>, first: u64, second: u64) -> result: unit reads(window.len), writes(window[first]), writes(window[second]) {
   let length = deref(window).len;
   if first < length {
     if second < length {
@@ -604,7 +605,7 @@ fn indexed_call_separation_accepts_strict_orderings_and_disequality() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let window = slots_new::<u8, 2>();
   place_back(window: &window, value: 7_u8);
   let i = 0_u64;
@@ -620,13 +621,14 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn indexed_call_separation_does_not_retarget_captured_bindings() {
-    let source = br#"fn write_refs(first: &u8, second: &u8) -> result: own unit writes(first), writes(second) {
+    let source =
+        br#"fn write_refs(first: &u8, second: &u8) -> result: unit writes(first), writes(second) {
   set deref(first) = 1_u8;
   set deref(second) = 2_u8;
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let values = array_filled::<u8, 2>(value: 0_u8);
   let i = 0_u64;
   let j = 0_u64;
@@ -647,13 +649,14 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn indexed_call_separation_keeps_formation_proof_after_source_writes() {
-    let source = br#"fn write_refs(first: &u8, second: &u8) -> result: own unit writes(first), writes(second) {
+    let source =
+        br#"fn write_refs(first: &u8, second: &u8) -> result: unit writes(first), writes(second) {
   set deref(first) = 1_u8;
   set deref(second) = 2_u8;
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let values = array_filled::<u8, 2>(value: 0_u8);
   let i = 0_u64;
   let j = 1_u64;
@@ -671,7 +674,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn indexed_call_separation_is_unique_per_call_actual() {
-    let source = br#"fn write_two(window: &Slots<u8, 2>, first: own u64, second: own u64) -> result: own unit reads(window.len), writes(window[first]), writes(window[second]) {
+    let source = br#"fn write_two(window: &Slots<u8, 2>, first: u64, second: u64) -> result: unit reads(window.len), writes(window[first]), writes(window[second]) {
   let length = deref(window).len;
   if first < length {
     if second < length {
@@ -682,7 +685,7 @@ fn indexed_call_separation_is_unique_per_call_actual() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let window = slots_new::<u8, 2>();
   place_back(window: &window, value: 7_u8);
   let i = 0_u64;
@@ -790,7 +793,7 @@ fn a_join_takes_the_union_of_the_path_sets() {
 fn a_joined_dereference_cannot_write_a_possible_constant_target() {
     let source = br#"const permanent: u64 = 1_u64;
 
-fn examine(flag: own Bool) -> result: own unit pure {
+fn examine(flag: Bool) -> result: unit pure {
   let spare = 0_u64;
   let selected = if flag {
     give &spare;
@@ -801,7 +804,7 @@ fn examine(flag: own Bool) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -814,7 +817,7 @@ fn main() -> status: own ExitStatus pure {
 /// Declaring only one incoming path is narrower than the body access.
 #[test]
 fn a_joined_dereference_exhibits_every_possible_parameter_read() {
-    let source = br#"fn choose(flag: own Bool, a: &u64, b: &u64) -> result: own u64 reads(a) {
+    let source = br#"fn choose(flag: Bool, a: &u64, b: &u64) -> result: u64 reads(a) {
   let selected = if flag {
     give a;
   } else {
@@ -823,7 +826,7 @@ fn a_joined_dereference_exhibits_every_possible_parameter_read() {
   return deref(selected);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -842,11 +845,11 @@ fn singleton_reference_aliases_name_one_atomic_update_target() {
   value: u64;
 }
 
-fn retain(old: own Token) -> result: own Token pure {
+fn retain(old: Token) -> result: Token pure {
   return move old;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let token = Token(value: 7_u64);
   let target = &token;
   let alias = &token;
@@ -869,11 +872,11 @@ fn an_overlapping_join_is_not_one_atomic_update_target() {
   value: u64;
 }
 
-fn retain(old: own Token) -> result: own Token pure {
+fn retain(old: Token) -> result: Token pure {
   return move old;
 }
 
-fn examine(flag: own Bool) -> result: own unit pure {
+fn examine(flag: Bool) -> result: unit pure {
   let first = Token(value: 1_u64);
   let second = Token(value: 2_u64);
   let target = if flag {
@@ -886,7 +889,7 @@ fn examine(flag: own Bool) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -900,14 +903,14 @@ fn main() -> status: own ExitStatus pure {
 /// other target's contradictory value.
 #[test]
 fn a_joined_reference_call_actual_checks_every_possible_target() {
-    let source = br#"fn needs_one(value: &u64) -> result: own unit reads(value) contract {
+    let source = br#"fn needs_one(value: &u64) -> result: unit reads(value) contract {
   requires deref(value) == 1_u64;
 } {
   let observed = deref(value);
   return unit;
 }
 
-fn examine(flag: own Bool) -> result: own unit pure {
+fn examine(flag: Bool) -> result: unit pure {
   let a = 1_u64;
   let b = 0_u64;
   let p = if flag {
@@ -919,7 +922,7 @@ fn examine(flag: own Bool) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -933,12 +936,12 @@ fn main() -> status: own ExitStatus pure {
 /// following exact division.
 #[test]
 fn a_reborrow_of_a_joined_reference_kills_facts_for_every_possible_target() {
-    let source = br#"fn zero(target: &u64) -> result: own unit writes(target) {
+    let source = br#"fn zero(target: &u64) -> result: unit writes(target) {
   set deref(target) = 0_u64;
   return unit;
 }
 
-fn examine(flag: own Bool) -> result: own u64 pure {
+fn examine(flag: Bool) -> result: u64 pure {
   let a = 1_u64;
   let b = 1_u64;
   let p = if flag {
@@ -954,7 +957,7 @@ fn examine(flag: own Bool) -> result: own u64 pure {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let flag = False();
   let value = examine(flag: flag);
   return exit_status(code: 0_u8);
@@ -972,7 +975,7 @@ fn main() -> status: own ExitStatus pure {
 /// proper-prefix replacement of either origin invalidates the derived range.
 #[test]
 fn a_reslice_of_a_joined_range_is_invalidated_by_either_origin_replacement() {
-    let source = br#"fn examine(flag: own Bool) -> result: own u8 pure {
+    let source = br#"fn examine(flag: Bool) -> result: u8 pure {
   let a = array_filled::<u8, 2>(value: 1_u8);
   let b = array_filled::<u8, 2>(value: 2_u8);
   let part = if flag {
@@ -986,7 +989,7 @@ fn a_reslice_of_a_joined_range_is_invalidated_by_either_origin_replacement() {
   return deref(first)[0_u64];
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let flag = False();
   let value = examine(flag: flag);
   return exit_status(code: 0_u8);
@@ -1002,12 +1005,12 @@ fn main() -> status: own ExitStatus pure {
 /// branch fact before the exact division is checked.
 #[test]
 fn a_delivered_reference_with_a_returning_alternative_kills_stale_facts() {
-    let source = br#"fn zero(target: &u64) -> result: own unit writes(target) {
+    let source = br#"fn zero(target: &u64) -> result: unit writes(target) {
   set deref(target) = 0_u64;
   return unit;
 }
 
-fn examine(flag: own u64) -> result: own u64 pure {
+fn examine(flag: u64) -> result: u64 pure {
   let value = 1_u64;
   let p = if flag == 1_u64 {
     give &value;
@@ -1021,7 +1024,7 @@ fn examine(flag: own u64) -> result: own u64 pure {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let value = examine(flag: 1_u64);
   return exit_status(code: 0_u8);
 }
@@ -1032,12 +1035,12 @@ fn main() -> status: own ExitStatus pure {
 fn a_written_reference_cannot_select_named_constant_storage() {
     let source = br#"const permanent: u64 = 1_u64;
 
-fn overwrite(target: &u64) -> result: own unit writes(target) {
+fn overwrite(target: &u64) -> result: unit writes(target) {
   set deref(target) = 9_u64;
   return unit;
 }
 
-fn examine(flag: own Bool) -> result: own unit pure {
+fn examine(flag: Bool) -> result: unit pure {
   let spare = 0_u64;
   let original = &permanent;
   let alias = original;
@@ -1060,16 +1063,16 @@ fn examine(flag: own Bool) -> result: own unit pure {
 fn a_constant_can_be_read_by_reference_and_copied_to_writable_storage() {
     let source = br#"const permanent: u64 = 1_u64;
 
-fn observe(value: &u64) -> result: own u64 reads(value) {
+fn observe(value: &u64) -> result: u64 reads(value) {
   return deref(value);
 }
 
-fn overwrite(target: &u64) -> result: own unit writes(target) {
+fn overwrite(target: &u64) -> result: unit writes(target) {
   set deref(target) = 9_u64;
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let copied = observe(value: &permanent);
   overwrite(target: &copied);
   return exit_status(code: 0_u8);
@@ -1086,7 +1089,7 @@ fn a_selected_payload_reference_survives_arm_exit() {
   Idle();
 }
 
-fn examine(packet: &Packet) -> result: own u64 reads(packet) {
+fn examine(packet: &Packet) -> result: u64 reads(packet) {
   let fallback = 7_u64;
   let selected = &fallback;
   match deref(packet) {
@@ -1099,7 +1102,7 @@ fn examine(packet: &Packet) -> result: own u64 reads(packet) {
   return deref(selected);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1110,7 +1113,7 @@ fn main() -> status: own ExitStatus pure {
 /// root borrowed into an outer reference dies on the branch edge.
 #[test]
 fn a_reference_to_an_if_local_dies_at_branch_exit() {
-    let source = br#"fn examine(flag: own Bool) -> result: own u64 pure {
+    let source = br#"fn examine(flag: Bool) -> result: u64 pure {
   let fallback = 7_u64;
   let selected = &fallback;
   if flag {
@@ -1120,7 +1123,7 @@ fn a_reference_to_an_if_local_dies_at_branch_exit() {
   return deref(selected);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1134,7 +1137,7 @@ fn main() -> status: own ExitStatus pure {
 /// another path shape. The new path, kind, and referent type are retained.
 #[test]
 fn a_non_loop_reference_may_change_path_shape() {
-    let source = br#"fn examine() -> result: own u64 pure {
+    let source = br#"fn examine() -> result: u64 pure {
   let first = 7_u64;
   let second = 9_u64;
   let selected = &first;
@@ -1142,7 +1145,7 @@ fn a_non_loop_reference_may_change_path_shape() {
   return deref(selected);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1153,7 +1156,7 @@ fn main() -> status: own ExitStatus pure {
 /// variable's referent type while retaining the old checked type.
 #[test]
 fn a_reference_rebinding_keeps_its_referent_type() {
-    let source = br#"fn examine() -> result: own u64 pure {
+    let source = br#"fn examine() -> result: u64 pure {
   let first = 7_u64;
   let second = 9_u8;
   let selected = &first;
@@ -1161,7 +1164,7 @@ fn a_reference_rebinding_keeps_its_referent_type() {
   return deref(selected);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1174,14 +1177,14 @@ fn main() -> status: own ExitStatus pure {
 /// kinds even when both name the same element type.
 #[test]
 fn a_reference_rebinding_keeps_its_reference_kind() {
-    let source = br#"fn examine() -> result: own u64 pure {
+    let source = br#"fn examine() -> result: u64 pure {
   let values = array_filled::<u64, 2>(value: 7_u64);
   let selected = &values[0_u64];
   set selected = &values[0_u64..1_u64];
   return deref(selected);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1199,7 +1202,7 @@ fn a_selected_payload_reference_survives_value_match_delivery() {
   Idle();
 }
 
-fn examine(packet: &Packet) -> result: own u64 reads(packet) {
+fn examine(packet: &Packet) -> result: u64 reads(packet) {
   let fallback = 7_u64;
   let selected = match deref(packet) {
     Data(value: payload) => {
@@ -1212,7 +1215,7 @@ fn examine(packet: &Packet) -> result: own u64 reads(packet) {
   return deref(selected);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1227,7 +1230,7 @@ fn a_selected_payload_reference_survives_nested_give() {
   Idle();
 }
 
-fn examine(packet: &Packet, choose: own Bool) -> result: own u64 reads(packet) {
+fn examine(packet: &Packet, choose: Bool) -> result: u64 reads(packet) {
   let fallback = 7_u64;
   let selected = if choose {
     match deref(packet) {
@@ -1244,7 +1247,7 @@ fn examine(packet: &Packet, choose: own Bool) -> result: own u64 reads(packet) {
   return deref(selected);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1259,7 +1262,7 @@ fn a_reference_on_a_break_edge_may_change_its_root() {
   Idle();
 }
 
-fn examine(packet: &Packet) -> result: own u64 reads(packet) {
+fn examine(packet: &Packet) -> result: u64 reads(packet) {
   let fallback = 7_u64;
   let selected = &fallback;
   loop @done {
@@ -1276,7 +1279,7 @@ fn examine(packet: &Packet) -> result: own u64 reads(packet) {
   return deref(selected);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1289,7 +1292,7 @@ fn main() -> status: own ExitStatus pure {
 /// ownership-join capability limit.
 #[test]
 fn a_loop_carried_reference_may_change_its_captured_index() {
-    let source = br#"fn inspect(values: &Array<u64, 3>) -> result: own u64 reads(values) {
+    let source = br#"fn inspect(values: &Array<u64, 3>) -> result: u64 reads(values) {
   let selected = &deref(values)[0_u64];
   let result = 0_u64;
   for (i in 0_u64..3_u64) {
@@ -1300,7 +1303,7 @@ fn a_loop_carried_reference_may_change_its_captured_index() {
   return result;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1313,7 +1316,8 @@ fn main() -> status: own ExitStatus pure {
 /// edge may be dropped merely because the body has one syntactic rebinding.
 #[test]
 fn a_counted_reference_continuation_includes_zero_trip_and_backedges() {
-    let source = br#"fn select(values: &Array<u64, 3>, count: own u64) -> result: own u64 reads(values) contract {
+    let source =
+        br#"fn select(values: &Array<u64, 3>, count: u64) -> result: u64 reads(values) contract {
   requires count <= 2_u64;
 } {
   let selected = &deref(values)[0_u64];
@@ -1324,7 +1328,7 @@ fn a_counted_reference_continuation_includes_zero_trip_and_backedges() {
   return deref(selected);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1336,8 +1340,7 @@ fn main() -> status: own ExitStatus pure {
 /// invalid even though the preheader supplied a valid path on the first trip.
 #[test]
 fn a_loop_head_use_observes_a_prior_iteration_window_invalidation() {
-    let source =
-        br#"fn inspect(owner: &Box<Slots<u64>>) -> result: own u64 writes(owner) contract {
+    let source = br#"fn inspect(owner: &Box<Slots<u64>>) -> result: u64 writes(owner) contract {
   requires 0_u64 < deref(owner).inner.len;
   requires deref(owner).inner.cap <= 4_u64;
 } {
@@ -1352,7 +1355,7 @@ fn a_loop_head_use_observes_a_prior_iteration_window_invalidation() {
   return result;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1368,7 +1371,7 @@ fn main() -> status: own ExitStatus pure {
 /// unsafe. A non-continuing invalidation likewise creates no future use.
 #[test]
 fn reforming_before_use_and_noncontinuing_invalidation_are_valid() {
-    let source = br#"fn reform(owner: &Box<Slots<u64>>) -> result: own u64 writes(owner) contract {
+    let source = br#"fn reform(owner: &Box<Slots<u64>>) -> result: u64 writes(owner) contract {
   requires 0_u64 < deref(owner).inner.len;
   requires deref(owner).inner.cap <= 4_u64;
 } {
@@ -1390,7 +1393,7 @@ fn reforming_before_use_and_noncontinuing_invalidation_are_valid() {
   return result;
 }
 
-fn one_trip(owner: &Box<Slots<u64>>) -> result: own u64 writes(owner) contract {
+fn one_trip(owner: &Box<Slots<u64>>) -> result: u64 writes(owner) contract {
   requires 0_u64 < deref(owner).inner.len;
   requires deref(owner).inner.cap <= 4_u64;
 } {
@@ -1404,7 +1407,7 @@ fn one_trip(owner: &Box<Slots<u64>>) -> result: own u64 writes(owner) contract {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1420,7 +1423,7 @@ fn a_break_edge_with_an_unrepaired_invalid_reference_is_rejected() {
   Idle();
 }
 
-fn examine(packet: &Packet) -> result: own u64 writes(packet) {
+fn examine(packet: &Packet) -> result: u64 writes(packet) {
   match deref(packet) {
     Data(value: outer_payload) => {
       let selected = &deref(outer_payload);
@@ -1444,7 +1447,7 @@ fn examine(packet: &Packet) -> result: own u64 writes(packet) {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1464,7 +1467,7 @@ fn a_joined_match_scrutinee_keeps_every_payload_origin() {
   Idle();
 }
 
-fn examine(choose: own Bool) -> result: own u64 pure {
+fn examine(choose: Bool) -> result: u64 pure {
   let first = Data(value: 1_u64);
   let second = Data(value: 2_u64);
   let selected = if choose {
@@ -1483,7 +1486,7 @@ fn examine(choose: own Bool) -> result: own u64 pure {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1502,7 +1505,7 @@ fn an_indexed_match_does_not_treat_index_storage_as_an_enum_origin() {
   Idle();
 }
 
-fn examine() -> result: own u64 pure {
+fn examine() -> result: u64 pure {
   let seed = Data(value: 7_u64);
   let packets = array_filled::<Packet, 2>(value: seed);
   set packets[1_u64] = Data(value: 9_u64);
@@ -1522,7 +1525,7 @@ fn examine() -> result: own u64 pure {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1539,7 +1542,7 @@ fn an_indexed_match_keeps_the_selected_element_as_its_enum_origin() {
   Idle();
 }
 
-fn examine() -> result: own u64 pure {
+fn examine() -> result: u64 pure {
   let seed = Data(value: 7_u64);
   let packets = array_filled::<Packet, 2>(value: seed);
   set packets[1_u64] = Data(value: 9_u64);
@@ -1559,7 +1562,7 @@ fn examine() -> result: own u64 pure {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1578,7 +1581,7 @@ fn an_outer_payload_reference_survives_a_nested_identical_refinement() {
   Idle();
 }
 
-fn examine(packet: &Packet) -> result: own u64 reads(packet), reads(packet.Data.value) {
+fn examine(packet: &Packet) -> result: u64 reads(packet), reads(packet.Data.value) {
   match deref(packet) {
     Data(value: outer_payload) => {
       let saved = &deref(outer_payload);
@@ -1597,7 +1600,7 @@ fn examine(packet: &Packet) -> result: own u64 reads(packet), reads(packet.Data.
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1613,7 +1616,7 @@ fn a_new_selection_survives_the_replaced_outer_refinement() {
   Idle();
 }
 
-fn examine(packet: &Packet) -> result: own u64 writes(packet) {
+fn examine(packet: &Packet) -> result: u64 writes(packet) {
   match deref(packet) {
     Data(value: outer_payload) => {
       let selected = &deref(outer_payload);
@@ -1634,7 +1637,7 @@ fn examine(packet: &Packet) -> result: own u64 writes(packet) {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1646,7 +1649,7 @@ fn main() -> status: own ExitStatus pure {
 /// publish a reference rooted at that local.
 #[test]
 fn a_loop_local_reference_cannot_escape_on_a_give_edge() {
-    let source = br#"fn examine(flag: own Bool) -> result: own u64 pure {
+    let source = br#"fn examine(flag: Bool) -> result: u64 pure {
   let fallback = 7_u64;
   let selected = if flag {
     loop @deliver {
@@ -1660,7 +1663,7 @@ fn a_loop_local_reference_cannot_escape_on_a_give_edge() {
   return deref(selected);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1670,7 +1673,7 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
-const INDEXED_CALL_HELPER: &str = r#"fn write_two(values: &Array<u8, 4>, first: own u64, second: own u64) -> result: own unit writes(values[first]), writes(values[second]) {
+const INDEXED_CALL_HELPER: &str = r#"fn write_two(values: &Array<u8, 4>, first: u64, second: u64) -> result: unit writes(values[first]), writes(values[second]) {
   if first < 4_u64 {
     if second < 4_u64 {
       set deref(values)[first] = 1_u8;
@@ -1680,7 +1683,7 @@ const INDEXED_CALL_HELPER: &str = r#"fn write_two(values: &Array<u8, 4>, first: 
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1718,16 +1721,16 @@ fn assert_indexed_call_proof(label: &str, source: &[u8], require_affine: bool) {
 fn indexed_call_separation_uses_runtime_order_and_disequality_facts() {
     for relation in ["i < j", "j < i", "i != j"] {
         let source = format!(
-            "{INDEXED_CALL_HELPER}\nfn ordered(values: &Array<u8, 4>, i: own u64, j: own u64) -> result: own unit writes(values) {{\n  if {relation} {{\n    write_two(values: values, first: i, second: j);\n  }}\n  return unit;\n}}\n"
+            "{INDEXED_CALL_HELPER}\nfn ordered(values: &Array<u8, 4>, i: u64, j: u64) -> result: unit writes(values) {{\n  if {relation} {{\n    write_two(values: values, first: i, second: j);\n  }}\n  return unit;\n}}\n"
         );
         assert_indexed_call_proof(relation, source.as_bytes(), false);
     }
     let mixed = format!(
-        "{INDEXED_CALL_HELPER}\nfn mixed(values: &Array<u8, 4>, j: own u64) -> result: own unit writes(values) {{\n  if 0_u64 < j {{\n    write_two(values: values, first: 0_u64, second: j);\n  }}\n  return unit;\n}}\n"
+        "{INDEXED_CALL_HELPER}\nfn mixed(values: &Array<u8, 4>, j: u64) -> result: unit writes(values) {{\n  if 0_u64 < j {{\n    write_two(values: values, first: 0_u64, second: j);\n  }}\n  return unit;\n}}\n"
     );
     assert_indexed_call_proof("mixed literal", mixed.as_bytes(), false);
     let affine = format!(
-        "{INDEXED_CALL_HELPER}\nfn affine(values: &Array<u8, 4>, i: own u64, k: own u64) -> result: own unit writes(values) {{\n  if i < 3_u64 {{\n    if 0_u64 < k {{\n      if k < 3_u64 {{\n        let j = i + k;\n        write_two(values: values, first: i, second: j);\n      }}\n    }}\n  }}\n  return unit;\n}}\n"
+        "{INDEXED_CALL_HELPER}\nfn affine(values: &Array<u8, 4>, i: u64, k: u64) -> result: unit writes(values) {{\n  if i < 3_u64 {{\n    if 0_u64 < k {{\n      if k < 3_u64 {{\n        let j = i + k;\n        write_two(values: values, first: i, second: j);\n      }}\n    }}\n  }}\n  return unit;\n}}\n"
     );
     assert_indexed_call_proof("affine successor", affine.as_bytes(), true);
     for body in [
@@ -1735,7 +1738,7 @@ fn indexed_call_separation_uses_runtime_order_and_disequality_facts() {
         "  if i == j {\n    write_two(values: values, first: i, second: j);\n  }\n",
     ] {
         let source = format!(
-            "{INDEXED_CALL_HELPER}\nfn refused(values: &Array<u8, 4>, i: own u64, j: own u64) -> result: own unit writes(values) {{\n{body}  return unit;\n}}\n"
+            "{INDEXED_CALL_HELPER}\nfn refused(values: &Array<u8, 4>, i: u64, j: u64) -> result: unit writes(values) {{\n{body}  return unit;\n}}\n"
         );
         assert_rule_kind(source.as_bytes(), SemanticRule::Eff5, |kind| {
             matches!(kind, SemanticIssueKind::UndischargedCallSeparation { .. })
@@ -1746,13 +1749,13 @@ fn indexed_call_separation_uses_runtime_order_and_disequality_facts() {
 #[test]
 fn indexed_call_separation_obeys_loop_backedges() {
     let first_visit_only = format!(
-        "{INDEXED_CALL_HELPER}\nfn looped(values: &Array<u8, 4>, i: own u64, j: own u64, stop: own Bool) -> result: own unit writes(values) {{\n  if i < j {{\n  }} else {{\n    return unit;\n  }}\n  loop @again {{\n    write_two(values: values, first: i, second: j);\n    set j = i;\n    if stop {{\n      break @again;\n    }}\n  }}\n  return unit;\n}}\n"
+        "{INDEXED_CALL_HELPER}\nfn looped(values: &Array<u8, 4>, i: u64, j: u64, stop: Bool) -> result: unit writes(values) {{\n  if i < j {{\n  }} else {{\n    return unit;\n  }}\n  loop @again {{\n    write_two(values: values, first: i, second: j);\n    set j = i;\n    if stop {{\n      break @again;\n    }}\n  }}\n  return unit;\n}}\n"
     );
     assert_rule_kind(first_visit_only.as_bytes(), SemanticRule::Eff5, |kind| {
         matches!(kind, SemanticIssueKind::UndischargedCallSeparation { .. })
     });
     let every_visit = format!(
-        "{INDEXED_CALL_HELPER}\nfn looped(values: &Array<u8, 4>, i: own u64, j: own u64, stop: own Bool) -> result: own unit writes(values) {{\n  loop @again {{\n    if i < j {{\n      write_two(values: values, first: i, second: j);\n    }}\n    set j = i;\n    if stop {{\n      break @again;\n    }}\n  }}\n  return unit;\n}}\n"
+        "{INDEXED_CALL_HELPER}\nfn looped(values: &Array<u8, 4>, i: u64, j: u64, stop: Bool) -> result: unit writes(values) {{\n  loop @again {{\n    if i < j {{\n      write_two(values: values, first: i, second: j);\n    }}\n    set j = i;\n    if stop {{\n      break @again;\n    }}\n  }}\n  return unit;\n}}\n"
     );
     assert_indexed_call_proof("every loop visit", every_visit.as_bytes(), false);
 }
@@ -1760,20 +1763,20 @@ fn indexed_call_separation_obeys_loop_backedges() {
 #[test]
 fn indexed_call_separation_requires_every_join_predecessor() {
     let one_arm = format!(
-        "{INDEXED_CALL_HELPER}\nfn joined(values: &Array<u8, 4>, i: own u64, j: own u64, choose: own Bool) -> result: own unit writes(values) {{\n  if choose {{\n    let branch_marker = i;\n    if i < j {{\n      let observed = i;\n    }} else {{\n      return unit;\n    }}\n  }} else {{\n    let observed = j;\n  }}\n  write_two(values: values, first: i, second: j);\n  return unit;\n}}\n"
+        "{INDEXED_CALL_HELPER}\nfn joined(values: &Array<u8, 4>, i: u64, j: u64, choose: Bool) -> result: unit writes(values) {{\n  if choose {{\n    let branch_marker = i;\n    if i < j {{\n      let observed = i;\n    }} else {{\n      return unit;\n    }}\n  }} else {{\n    let observed = j;\n  }}\n  write_two(values: values, first: i, second: j);\n  return unit;\n}}\n"
     );
     assert_rule_kind(one_arm.as_bytes(), SemanticRule::Eff5, |kind| {
         matches!(kind, SemanticIssueKind::UndischargedCallSeparation { .. })
     });
     let both_arms = format!(
-        "{INDEXED_CALL_HELPER}\nfn joined(values: &Array<u8, 4>, i: own u64, j: own u64, choose: own Bool) -> result: own unit writes(values) {{\n  if choose {{\n    let branch_marker = i;\n    if i < j {{\n      let observed = i;\n    }} else {{\n      return unit;\n    }}\n  }} else {{\n    let branch_marker = j;\n    if i < j {{\n      let observed = j;\n    }} else {{\n      return unit;\n    }}\n  }}\n  write_two(values: values, first: i, second: j);\n  return unit;\n}}\n"
+        "{INDEXED_CALL_HELPER}\nfn joined(values: &Array<u8, 4>, i: u64, j: u64, choose: Bool) -> result: unit writes(values) {{\n  if choose {{\n    let branch_marker = i;\n    if i < j {{\n      let observed = i;\n    }} else {{\n      return unit;\n    }}\n  }} else {{\n    let branch_marker = j;\n    if i < j {{\n      let observed = j;\n    }} else {{\n      return unit;\n    }}\n  }}\n  write_two(values: values, first: i, second: j);\n  return unit;\n}}\n"
     );
     assert_indexed_call_proof("both join arms", both_arms.as_bytes(), false);
 }
 
 #[test]
 fn indexed_call_separation_uses_ordered_nested_candidates() {
-    let helper = r#"fn write_nested(values: &Array<Array<u8, 4>, 4>, ao: own u64, ai: own u64, bo: own u64, bi: own u64) -> result: own unit writes(values[ao][ai]), writes(values[bo][bi]) {
+    let helper = r#"fn write_nested(values: &Array<Array<u8, 4>, 4>, ao: u64, ai: u64, bo: u64, bi: u64) -> result: unit writes(values[ao][ai]), writes(values[bo][bi]) {
   if ao < 4_u64 {
     if ai < 4_u64 {
       if bo < 4_u64 {
@@ -1787,20 +1790,20 @@ fn indexed_call_separation_uses_ordered_nested_candidates() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
     let outer = format!(
-        "{helper}\nfn outer(values: &Array<Array<u8, 4>, 4>, i: own u64, j: own u64, k: own u64) -> result: own unit writes(values) {{\n  if i < j {{\n    write_nested(values: values, ao: i, ai: k, bo: j, bi: k);\n  }}\n  return unit;\n}}\n"
+        "{helper}\nfn outer(values: &Array<Array<u8, 4>, 4>, i: u64, j: u64, k: u64) -> result: unit writes(values) {{\n  if i < j {{\n    write_nested(values: values, ao: i, ai: k, bo: j, bi: k);\n  }}\n  return unit;\n}}\n"
     );
     assert_indexed_call_proof("outer nested index", outer.as_bytes(), false);
     let inner = format!(
-        "{helper}\nfn inner(values: &Array<Array<u8, 4>, 4>, i: own u64, j: own u64) -> result: own unit writes(values) {{\n  if i < j {{\n    write_nested(values: values, ao: 0_u64, ai: i, bo: 0_u64, bi: j);\n  }}\n  return unit;\n}}\n"
+        "{helper}\nfn inner(values: &Array<Array<u8, 4>, 4>, i: u64, j: u64) -> result: unit writes(values) {{\n  if i < j {{\n    write_nested(values: values, ao: 0_u64, ai: i, bo: 0_u64, bi: j);\n  }}\n  return unit;\n}}\n"
     );
     assert_indexed_call_proof("inner after equal prefix", inner.as_bytes(), false);
     let later = format!(
-        "{helper}\nfn later(values: &Array<Array<u8, 4>, 4>, i: own u64, j: own u64, k: own u64, l: own u64) -> result: own unit writes(values) {{\n  if k < l {{\n    write_nested(values: values, ao: i, ai: k, bo: j, bi: l);\n  }}\n  return unit;\n}}\n"
+        "{helper}\nfn later(values: &Array<Array<u8, 4>, 4>, i: u64, j: u64, k: u64, l: u64) -> result: unit writes(values) {{\n  if k < l {{\n    write_nested(values: values, ao: i, ai: k, bo: j, bi: l);\n  }}\n  return unit;\n}}\n"
     );
     assert_indexed_call_proof("later nested candidate", later.as_bytes(), false);
 }

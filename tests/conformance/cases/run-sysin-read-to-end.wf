@@ -1,4 +1,4 @@
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "The ordinary read_next operation takes the input and shared invocation factory state by reference and declares the writes in its row. Repeated Ok endpoints advance the source total to the arranged twenty-one bytes; a later Err(ReadEnd) ends the loop.";
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: input) = move inputs;
   close_directory(factory: &entry_factory, directory: move unused_cwd);

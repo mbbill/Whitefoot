@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "WIN-2: parts are vocabulary for effect rows and the overlap judgment only, so no program writes one; a write to a part in source position is a hard error at the complete target place.";
   let r = slots_new::<u64, 4>();
   set r.next = 5_u64;

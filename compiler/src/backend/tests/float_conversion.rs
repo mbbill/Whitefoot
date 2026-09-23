@@ -71,7 +71,7 @@ const NUMERIC_TYPES: [NumericType; 10] = [
 
 #[test]
 fn every_total_conversion_with_a_float_endpoint_executes() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let i8_f32 = cvt::<i8, f32>(-8_i8);
   if feq(i8_f32, -8.0_f32) {
   } else {
@@ -157,7 +157,7 @@ fn every_total_conversion_with_a_float_endpoint_executes() {
 
 #[test]
 fn every_partial_conversion_with_a_float_endpoint_has_exact_success_and_failure() {
-    let mut source = String::from("fn main() -> status: own ExitStatus pure {\n");
+    let mut source = String::from("fn main() -> status: ExitStatus pure {\n");
     let mut conversion = 0;
     for source_type in NUMERIC_TYPES {
         for destination_type in NUMERIC_TYPES {
@@ -199,7 +199,7 @@ fn every_partial_conversion_with_a_float_endpoint_has_exact_success_and_failure(
 
 #[test]
 fn partial_conversion_boundaries_never_execute_poisoning_llvm_casts() {
-    let source = br#"fn power_f32(exponent: own u32) -> result: own f32 pure {
+    let source = br#"fn power_f32(exponent: u32) -> result: f32 pure {
   let value = 1.0_f32;
   let counter = 0_u32;
   loop @powers {
@@ -213,7 +213,7 @@ fn partial_conversion_boundaries_never_execute_poisoning_llvm_casts() {
   return value;
 }
 
-fn power_f64(exponent: own u32) -> result: own f64 pure {
+fn power_f64(exponent: u32) -> result: f64 pure {
   let value = 1.0_f64;
   let counter = 0_u32;
   loop @powers {
@@ -227,7 +227,7 @@ fn power_f64(exponent: own u32) -> result: own f64 pure {
   return value;
 }
 
-fn reject_f32_i32(value: own f32) -> result: own Bool pure {
+fn reject_f32_i32(value: f32) -> result: Bool pure {
   let rejected = False();
   match cvt::<f32, i32>(value) {
     Ok(value: converted) => {
@@ -239,7 +239,7 @@ fn reject_f32_i32(value: own f32) -> result: own Bool pure {
   return rejected;
 }
 
-fn reject_f32_u32(value: own f32) -> result: own Bool pure {
+fn reject_f32_u32(value: f32) -> result: Bool pure {
   let rejected = False();
   match cvt::<f32, u32>(value) {
     Ok(value: converted) => {
@@ -251,7 +251,7 @@ fn reject_f32_u32(value: own f32) -> result: own Bool pure {
   return rejected;
 }
 
-fn reject_f64_i64(value: own f64) -> result: own Bool pure {
+fn reject_f64_i64(value: f64) -> result: Bool pure {
   let rejected = False();
   match cvt::<f64, i64>(value) {
     Ok(value: converted) => {
@@ -263,7 +263,7 @@ fn reject_f64_i64(value: own f64) -> result: own Bool pure {
   return rejected;
 }
 
-fn reject_f64_u64(value: own f64) -> result: own Bool pure {
+fn reject_f64_u64(value: f64) -> result: Bool pure {
   let rejected = False();
   match cvt::<f64, u64>(value) {
     Ok(value: converted) => {
@@ -275,7 +275,7 @@ fn reject_f64_u64(value: own f64) -> result: own Bool pure {
   return rejected;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let i32_boundary = power_f32(exponent: 31_u32);
   let rejected_i32_boundary = reject_f32_i32(value: i32_boundary);
   if rejected_i32_boundary {

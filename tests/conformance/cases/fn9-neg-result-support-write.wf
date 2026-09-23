@@ -1,16 +1,16 @@
-fn selected(value: own i32) -> result: own Result<i32, Overflow> pure contract {
+fn selected(value: i32) -> result: Result<i32, Overflow> pure contract {
   ensures when Ok(value: payload): payload == value;
 } {
   return Ok<i32, Overflow>(value: value);
 }
 
-fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
+fn guard(left: i32, right: i32) -> result: unit pure contract {
   requires left == right;
 } {
   return unit;
 }
 
-fn consumer(input: own i32, choose: own Bool) -> result: own Result<unit, Overflow> pure {
+fn consumer(input: i32, choose: Bool) -> result: Result<unit, Overflow> pure {
   let outcome = selected(value: input);
   set input = 0_i32;
   match outcome {
@@ -23,6 +23,6 @@ fn consumer(input: own i32, choose: own Bool) -> result: own Result<unit, Overfl
   return Ok<unit, Overflow>(value: unit);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

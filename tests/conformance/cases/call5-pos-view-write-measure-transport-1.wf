@@ -1,4 +1,4 @@
-fn fill(destination: &[u8], at: own u64) -> result: own u64 writes(destination) {
+fn fill(destination: &[u8], at: u64) -> result: u64 writes(destination) {
   doc "Writes one byte through the range reference and returns the next position.";
   let spare = deref(destination).len;
   let inside = at < spare;
@@ -9,7 +9,7 @@ fn fill(destination: &[u8], at: own u64) -> result: own u64 writes(destination) 
   return next;
 }
 
-fn emit(source: &[u8], length: own u64) -> result: own u64 reads(source) contract {
+fn emit(source: &[u8], length: u64) -> result: u64 reads(source) contract {
   define capacity = deref(source).len;
   requires length <= capacity;
 } {
@@ -21,7 +21,7 @@ fn emit(source: &[u8], length: own u64) -> result: own u64 reads(source) contrac
   return length;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A write through a range reference preserves the caller's saved length image: the projected write reaches the range's element storage and kills no measure over the origin place, so the bound established before the write still discharges the later requirement. An unproved prefix or a whole-window write through an ordinary reference parameter would not.";
   let line = slots_new::<u8, 64>();
   for (

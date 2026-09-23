@@ -4,7 +4,7 @@ enum Sign {
   Pos();
 }
 
-fn sign_of(x: own i32) -> result: own Sign pure {
+fn sign_of(x: i32) -> result: Sign pure {
   doc "Conditional value produced by returning from branches (canonical for return position).";
   if x < 0_i32 {
     return Neg();
@@ -15,7 +15,7 @@ fn sign_of(x: own i32) -> result: own Sign pure {
   }
 }
 
-fn fill_eight() -> total: own u64 pure {
+fn fill_eight() -> total: u64 pure {
   doc "A Slots window appended by place_back under a counted header invariant, then measured.";
   let r = slots_new::<u64, 8>();
   for (
@@ -28,7 +28,7 @@ fn fill_eight() -> total: own u64 pure {
   return n;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "let-initializer match with give and a reference read through deref.";
   let a = 40_i32;
   let p = &a;

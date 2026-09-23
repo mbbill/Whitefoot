@@ -2,7 +2,7 @@ struct StaticBlock {
   bytes: Slots<u8, 4>;
 }
 
-fn take_static(free: &Slots<StaticBlock, 2>) -> block: own StaticBlock writes(free.last), writes(free.len) contract {
+fn take_static(free: &Slots<StaticBlock, 2>) -> block: StaticBlock writes(free.last), writes(free.len) contract {
   requires deref(free).len > 0_u64;
   ensures deref(free).len + 1_u64 == deref(entry(free)).len;
 } {
@@ -11,7 +11,7 @@ fn take_static(free: &Slots<StaticBlock, 2>) -> block: own StaticBlock writes(fr
   return move taken;
 }
 
-fn return_static(free: &Slots<StaticBlock, 2>, block: own StaticBlock) -> result: own unit writes(free.next), writes(free.len) contract {
+fn return_static(free: &Slots<StaticBlock, 2>, block: StaticBlock) -> result: unit writes(free.next), writes(free.len) contract {
   requires deref(free).len < deref(free).cap;
   ensures deref(free).len == deref(entry(free)).len + 1_u64;
 } {
@@ -20,7 +20,7 @@ fn return_static(free: &Slots<StaticBlock, 2>, block: own StaticBlock) -> result
   return unit;
 }
 
-fn plain() -> status: own ExitStatus pure {
+fn plain() -> status: ExitStatus pure {
   doc "A Slots capacity follows its static extent across a nominal pool helper [ENT-2]. The returned block's initialized length is observed dynamically rather than inferred from the capacity type, and the pool's own length is carried by the helpers' declared relations [FN-9, MSR-5].";
   let bytes = slots_new::<u8, 4>();
   place_back(window: &bytes, value: 1_u8);
@@ -52,7 +52,7 @@ fn plain() -> status: own ExitStatus pure {
   return exit_status(code: total);
 }
 
-fn take_boxed(free: &Slots<Box<Slots<u8, 4>>, 2>) -> block: own Box<Slots<u8, 4>> writes(free.last), writes(free.len) contract {
+fn take_boxed(free: &Slots<Box<Slots<u8, 4>>, 2>) -> block: Box<Slots<u8, 4>> writes(free.last), writes(free.len) contract {
   requires deref(free).len > 0_u64;
   ensures deref(free).len + 1_u64 == deref(entry(free)).len;
 } {
@@ -61,7 +61,7 @@ fn take_boxed(free: &Slots<Box<Slots<u8, 4>>, 2>) -> block: own Box<Slots<u8, 4>
   return move taken;
 }
 
-fn boxed() -> status: own ExitStatus pure {
+fn boxed() -> status: ExitStatus pure {
   doc "The boxed helper remains instantiated as the distinct compilation trigger: the capacity of the boxed window is still the static extent of its content type, reached by the ordinary field step inner [TYPE-9, ENT-2].";
   let payload = slots_new::<u8, 4>();
   let cell = box_new::<Slots<u8, 4>>(value: move payload);
@@ -73,7 +73,7 @@ fn boxed() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Runs both pool shapes and reports the boxed one.";
   let first = plain();
   let second = boxed();

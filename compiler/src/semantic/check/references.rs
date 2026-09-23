@@ -505,21 +505,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         Ok(changed)
     }
-    /// [GRAM-3] the written mode of a `param`: `own`, `&`, or the `&[T]`
-    /// range-reference kind, which is written without a `mode` node.
-    pub(super) fn parse_mode(&self, node: NodeId) -> Result<CheckedMode, CheckStop> {
-        let Some(mode) = self.tree.first_child_with(node, Production::Mode)? else {
-            // `param := IDENT ":" (mode type | "&" "[" type "]")`: the second
-            // alternative writes no `mode` node at all [GRAM-2].
-            return Ok(CheckedMode::Range);
-        };
-        if self.has_fixed(mode, crate::FixedTerminal::Own)? {
+    /// [GRAM-3] the parameter kind follows its written prefix, independently
+    /// of type substitution: `T`, `&T`, or `&[T]`.
+    pub(super) fn parse_parameter_mode(&self, node: NodeId) -> Result<CheckedMode, CheckStop> {
+        if !self.has_fixed(node, crate::FixedTerminal::Ampersand)? {
             return Ok(CheckedMode::Own);
         }
-        if self.has_fixed(mode, crate::FixedTerminal::Ampersand)? {
-            return Ok(CheckedMode::Reference);
+        if self.has_fixed(node, crate::FixedTerminal::LeftBracket)? {
+            return Ok(CheckedMode::Range);
         }
-        Err(SemanticCompilerFailure::InvalidCanonicalTree.into())
+        Ok(CheckedMode::Reference)
     }
 
     /// [REF-1] the path set a spelled place root names, read through every

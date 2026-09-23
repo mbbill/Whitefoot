@@ -1,4 +1,4 @@
-fn bounded(a: own u64) -> result: own u64 pure contract {
+fn bounded(a: u64) -> result: u64 pure contract {
   define xs = slots_new::<u64, 4>();
   requires a < 8_u64;
 } {
@@ -6,6 +6,6 @@ fn bounded(a: own u64) -> result: own u64 pure contract {
   return a;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

@@ -1,4 +1,4 @@
-fn read_pair(table: own Slots<u8, 8>, low: own u64, high: own u64) -> result: own u8 pure contract {
+fn read_pair(table: Slots<u8, 8>, low: u64, high: u64) -> result: u8 pure contract {
   requires 8_u64 <= table.len;
 } {
   doc "ENT-3 signed Boolean decomposition: the true edge of band(low_ok, high_ok) establishes both positive operands. Their comparison projections discharge both window subscript obligations.";
@@ -14,7 +14,7 @@ fn read_pair(table: own Slots<u8, 8>, low: own u64, high: own u64) -> result: ow
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A full array converted into a full window supplies the declared length.";
   let seed = array_filled::<u8, 8>(value: 3_u8);
   let table = slots_from_array::<u8, 8>(values: seed);

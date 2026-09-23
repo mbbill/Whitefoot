@@ -3,7 +3,7 @@ struct Node {
   next: Option<Box<Node>>;
 }
 
-fn inspect(root: &Node) -> result: own u64 reads(root) {
+fn inspect(root: &Node) -> result: u64 reads(root) {
   doc "A common subtree cover is not equality of the selected values.";
   let cursor = root;
   for (i in 0_u64..2_u64) {
@@ -22,6 +22,6 @@ fn inspect(root: &Node) -> result: own u64 reads(root) {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

@@ -2,18 +2,18 @@ struct BystanderRecord {
   value: u8;
 }
 
-fn overwrite_bystander(values: &Array<BystanderRecord, 4>, index: own u64) -> result: own unit writes(values[index]) contract {
+fn overwrite_bystander(values: &Array<BystanderRecord, 4>, index: u64) -> result: unit writes(values[index]) contract {
   requires index < 4_u64;
 } {
   set deref(values)[index] = BystanderRecord(value: 9_u8);
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 
-fn inspect_requirement(values: &Array<BystanderRecord, 4>, i: own u64, j: own u64) -> result: own u8 reads(values), writes(values[j]) contract {
+fn inspect_requirement(values: &Array<BystanderRecord, 4>, i: u64, j: u64) -> result: u8 reads(values), writes(values[j]) contract {
   requires i < j;
   requires j < 4_u64;
 } {
@@ -22,7 +22,7 @@ fn inspect_requirement(values: &Array<BystanderRecord, 4>, i: own u64, j: own u6
   return deref(selected);
 }
 
-fn inspect_guard(values: &Array<BystanderRecord, 4>, i: own u64, j: own u64) -> result: own u8 reads(values), writes(values[j]) {
+fn inspect_guard(values: &Array<BystanderRecord, 4>, i: u64, j: u64) -> result: u8 reads(values), writes(values[j]) {
   if j < 4_u64 {
     if i < j {
       let selected = &deref(values)[i].value;
@@ -33,7 +33,7 @@ fn inspect_guard(values: &Array<BystanderRecord, 4>, i: own u64, j: own u64) -> 
   return 0_u8;
 }
 
-fn inspect_capture(values: &Array<BystanderRecord, 4>, i: own u64, j: own u64) -> result: own u8 reads(values), writes(values[j]) contract {
+fn inspect_capture(values: &Array<BystanderRecord, 4>, i: u64, j: u64) -> result: u8 reads(values), writes(values[j]) contract {
   requires i < j;
   requires j < 4_u64;
 } {
@@ -43,7 +43,7 @@ fn inspect_capture(values: &Array<BystanderRecord, 4>, i: own u64, j: own u64) -
   return deref(selected);
 }
 
-fn inspect_unused(values: &Array<BystanderRecord, 4>, i: own u64, j: own u64) -> result: own unit writes(values[j]) contract {
+fn inspect_unused(values: &Array<BystanderRecord, 4>, i: u64, j: u64) -> result: unit writes(values[j]) contract {
   requires i < 4_u64;
   requires j < 4_u64;
 } {
@@ -52,7 +52,7 @@ fn inspect_unused(values: &Array<BystanderRecord, 4>, i: own u64, j: own u64) ->
   return unit;
 }
 
-fn inspect_join(values: &Array<BystanderRecord, 4>, i: own u64, j: own u64, k: own u64, choose: own Bool) -> result: own u8 reads(values), writes(values[j]) contract {
+fn inspect_join(values: &Array<BystanderRecord, 4>, i: u64, j: u64, k: u64, choose: Bool) -> result: u8 reads(values), writes(values[j]) contract {
   requires i < j;
   requires k < j;
   requires j < 4_u64;
@@ -67,7 +67,7 @@ fn inspect_join(values: &Array<BystanderRecord, 4>, i: own u64, j: own u64, k: o
   return deref(selected);
 }
 
-fn inspect_loop(values: &Array<BystanderRecord, 4>, i: own u64, j: own u64) -> result: own unit reads(values), writes(values[j]) contract {
+fn inspect_loop(values: &Array<BystanderRecord, 4>, i: u64, j: u64) -> result: unit reads(values), writes(values[j]) contract {
   requires i < 4_u64;
   requires j < 4_u64;
   requires i < j;
@@ -81,7 +81,7 @@ fn inspect_loop(values: &Array<BystanderRecord, 4>, i: own u64, j: own u64) -> r
   return unit;
 }
 
-fn inspect_direct_write(values: &Array<BystanderRecord, 4>, i: own u64, j: own u64) -> result: own u8 reads(values), writes(values[j]) contract {
+fn inspect_direct_write(values: &Array<BystanderRecord, 4>, i: u64, j: u64) -> result: u8 reads(values), writes(values[j]) contract {
   requires i < 4_u64;
   requires j < 4_u64;
   requires i < j;
@@ -91,12 +91,12 @@ fn inspect_direct_write(values: &Array<BystanderRecord, 4>, i: own u64, j: own u
   return deref(selected);
 }
 
-fn replace_bystander_index(index: &u64, replacement: own u64) -> result: own BystanderRecord writes(index) {
+fn replace_bystander_index(index: &u64, replacement: u64) -> result: BystanderRecord writes(index) {
   set deref(index) = replacement;
   return BystanderRecord(value: 9_u8);
 }
 
-fn inspect_rhs_capture(values: &Array<BystanderRecord, 4>, j: own u64) -> result: own u8 writes(values) contract {
+fn inspect_rhs_capture(values: &Array<BystanderRecord, 4>, j: u64) -> result: u8 writes(values) contract {
   requires 0_u64 < j;
   requires j < 4_u64;
 } {

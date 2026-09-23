@@ -118,11 +118,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut parameters = Vec::new();
         for node in self.tree.children_with(list, Production::Param)? {
             let declaration = self.declaration_at(node, DeclarationRole::Parameter)?;
-            // `param := IDENT ":" (mode type | "&" "[" type "]")` [GRAM-2]:
-            // the range-reference alternative writes no `mode` node at all,
-            // so the mode is read from the node when there is one and is the
-            // `&[T]` kind when there is not [REF-4].
-            let mode = self.parse_mode(node)?;
+            let mode = self.parse_parameter_mode(node)?;
             let ty_node = self
                 .tree
                 .first_child_with(node, Production::Type)?
@@ -149,7 +145,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<(CheckedMode, CheckedType), CheckStop> {
-        // `rtype := "own" type` [GRAM-2]: a result is always owned, because a
+        // `rtype := type` [GRAM-3]: a result is always owned, because a
         // reference never leaves the function that formed it [REF-3].
         let ty = self
             .tree

@@ -33,12 +33,12 @@ fn assert_behavior_site(source: &str, rule: SemanticRule, expected: &str) {
 }
 
 const BOUNDED_GROUP: &str = r#"interface Key<K: copy> {
-  fn hash(value: own K) -> result: own u64 pure contract {
+  fn hash(value: K) -> result: u64 pure contract {
     ensures result <= 99_u64;
   };
 }
 
-fn constant_hash(input: own u64) -> output: own u64 pure contract {
+fn constant_hash(input: u64) -> output: u64 pure contract {
   ensures output <= 99_u64;
 } {
   return 17_u64;
@@ -48,14 +48,14 @@ binding ScalarKey : Key<u64> {
   hash = constant_hash;
 }
 
-fn apply<interface Key<K>>(value: own K) -> out: own u64 pure contract {
+fn apply<interface Key<K>>(value: K) -> out: u64 pure contract {
   ensures out <= 99_u64;
 } {
   let result = Key::hash(value: value);
   return result;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let result = apply::<ScalarKey>(value: 123_u64);
   let bounded = result + 1_u64;
   if bounded == 18_u64 {
@@ -126,13 +126,13 @@ fn group_contracts_publish_only_after_implied_actual_proofs() {
 #[test]
 fn behavior_contract_implication_admits_only_weaker_requires_and_stronger_ensures() {
     let source = r#"interface Refined {
-  fn refine(value: own u64) -> result: own u64 pure contract {
+  fn refine(value: u64) -> result: u64 pure contract {
     requires value <= 10_u64;
     ensures result <= 10_u64;
   };
 }
 
-fn refined(value: own u64) -> result: own u64 pure contract {
+fn refined(value: u64) -> result: u64 pure contract {
   requires value <= 11_u64;
   ensures result <= 9_u64;
 } {
@@ -167,13 +167,13 @@ binding Refinement : Refined {
 #[test]
 fn behavior_contract_implication_keeps_entry_exit_and_result_datums_distinct() {
     let source = r#"interface Grower {
-  fn grow(values: &Slots<u64, 4>) -> result: own u64 writes(values) contract {
+  fn grow(values: &Slots<u64, 4>) -> result: u64 writes(values) contract {
     requires deref(values).len < deref(values).cap;
     ensures result == deref(entry(values)).len;
   };
 }
 
-fn grow_and_count(values: &Slots<u64, 4>) -> result: own u64 writes(values) contract {
+fn grow_and_count(values: &Slots<u64, 4>) -> result: u64 writes(values) contract {
   requires deref(values).len < deref(values).cap;
   ensures result == deref(values).len;
 } {
@@ -193,13 +193,13 @@ binding CountedGrow : Grower {
 #[test]
 fn behavior_contract_implication_uses_routed_payload_types_and_unrouted_premises() {
     let equivalent_route = r#"interface RoutedBound {
-  fn choose(value: own i32) -> outcome: own Result<i32, i32> pure contract {
+  fn choose(value: i32) -> outcome: Result<i32, i32> pure contract {
     requires value < 100_i32;
     ensures when Ok(value: selected): selected <= 99_i32;
   };
 }
 
-fn choose(value: own i32) -> outcome: own Result<i32, i32> pure contract {
+fn choose(value: i32) -> outcome: Result<i32, i32> pure contract {
   requires value < 100_i32;
   ensures when Ok(value: selected): selected < 100_i32;
 } {
@@ -218,12 +218,12 @@ binding RoutedChoice : RoutedBound {
     });
 
     let combined = r#"interface RoutedPair {
-  fn pair() -> (limit: own u64, outcome: own Result<u64, u8>) pure contract {
+  fn pair() -> (limit: u64, outcome: Result<u64, u8>) pure contract {
     ensures when outcome is Ok(value: selected): selected <= limit;
   };
 }
 
-fn pair() -> (limit: own u64, outcome: own Result<u64, u8>) pure contract {
+fn pair() -> (limit: u64, outcome: Result<u64, u8>) pure contract {
   ensures limit >= 10_u64;
   ensures when outcome is Ok(value: selected): selected <= 9_u64;
 } {
@@ -245,12 +245,12 @@ binding RoutedPairChoice : RoutedPair {
 #[test]
 fn behavior_contract_implication_does_not_use_a_different_result_route() {
     let source = r#"interface RoutedPair {
-  fn pair() -> (first: own Result<u64, u8>, second: own Result<u64, u8>) pure contract {
+  fn pair() -> (first: Result<u64, u8>, second: Result<u64, u8>) pure contract {
     ensures when first is Ok(value: selected): selected <= 9_u64;
   };
 }
 
-fn pair() -> (first: own Result<u64, u8>, second: own Result<u64, u8>) pure contract {
+fn pair() -> (first: Result<u64, u8>, second: Result<u64, u8>) pure contract {
   ensures when second is Ok(value: selected): selected <= 9_u64;
 } {
   return Ok<u64, u8>(value: 9_u64), Ok<u64, u8>(value: 9_u64);
@@ -266,10 +266,10 @@ binding RoutedPairChoice : RoutedPair {
 #[test]
 fn bound_atomic_updates_use_the_formal_result_route_boundary() {
     let bound = r#"interface Transform {
-  fn update(value: own Result<u64, Box<u64>>) -> result: own Result<u64, Box<u64>> pure;
+  fn update(value: Result<u64, Box<u64>>) -> result: Result<u64, Box<u64>> pure;
 }
 
-fn routed_update(value: own Result<u64, Box<u64>>) -> result: own Result<u64, Box<u64>> pure contract {
+fn routed_update(value: Result<u64, Box<u64>>) -> result: Result<u64, Box<u64>> pure contract {
   ensures when Ok(value: payload): payload == payload;
 } {
   match move value {
@@ -286,12 +286,12 @@ binding RoutedTransform : Transform {
   update = routed_update;
 }
 
-fn apply<interface Transform>(value: own Result<u64, Box<u64>>) -> result: own Result<u64, Box<u64>> pure {
+fn apply<interface Transform>(value: Result<u64, Box<u64>>) -> result: Result<u64, Box<u64>> pure {
   set value = Transform::update(value: move value);
   return move value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let owner = box_new::<u64>(value: 7_u64);
   let wrapped = Err<u64, Box<u64>>(error: move owner);
   let retained = apply::<RoutedTransform>(value: move wrapped);
@@ -307,7 +307,7 @@ fn main() -> status: own ExitStatus pure {
 
     // The selected actual's own direct boundary still carries its routed
     // result. Only the bound call above is governed by the unrouted formal.
-    let direct = r#"fn routed_update(value: own Result<u64, Box<u64>>) -> result: own Result<u64, Box<u64>> pure contract {
+    let direct = r#"fn routed_update(value: Result<u64, Box<u64>>) -> result: Result<u64, Box<u64>> pure contract {
   ensures when Ok(value: payload): payload == payload;
 } {
   match move value {
@@ -320,7 +320,7 @@ fn main() -> status: own ExitStatus pure {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let owner = box_new::<u64>(value: 7_u64);
   let wrapped = Err<u64, Box<u64>>(error: move owner);
   set wrapped = routed_update(value: move wrapped);
@@ -338,10 +338,10 @@ fn bound_call_rows_keep_formal_and_actual_parameter_namespaces_distinct() {
 }
 
 interface Mixer {
-  fn mix(target: &Pair, alias: &Pair) -> result: own unit reads(alias.right), writes(target.left);
+  fn mix(target: &Pair, alias: &Pair) -> result: unit reads(alias.right), writes(target.left);
 }
 
-fn mix(destination: &Pair, observer: &Pair) -> result: own unit reads(observer.right), writes(destination.left) {
+fn mix(destination: &Pair, observer: &Pair) -> result: unit reads(observer.right), writes(destination.left) {
   let observed = deref(observer).right;
   set deref(destination).left = observed;
   return unit;
@@ -351,11 +351,11 @@ binding PairMixer : Mixer {
   mix = mix;
 }
 
-fn apply<interface Mixer>(value: &Pair) -> result: own unit reads(value.right), writes(value.left) {
+fn apply<interface Mixer>(value: &Pair) -> result: unit reads(value.right), writes(value.left) {
   return Mixer::mix(target: value, alias: value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let pair = Pair(left: 0_u64, right: 1_u64);
   let result = apply::<PairMixer>(value: &pair);
   return exit_status(code: 0_u8);
@@ -380,7 +380,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn bound_allocating_actuals_keep_allocation_metadata_outside_fn4_rows() {
     let source = br#"interface Factory {
-  fn make(value: own u64) -> result: own Box<u64> pure;
+  fn make(value: u64) -> result: Box<u64> pure;
 }
 
 binding Allocate : Factory {
@@ -391,11 +391,11 @@ binding WrappedAllocate : Factory {
   make = heap_leaf;
 }
 
-fn produce<interface Factory>(value: own u64) -> result: own Box<u64> pure {
+fn produce<interface Factory>(value: u64) -> result: Box<u64> pure {
   return Factory::make(value: value);
 }
 
-fn frame_constructions() -> result: own Array<u64, 2> pure {
+fn frame_constructions() -> result: Array<u64, 2> pure {
   let filled = array_filled::<u64, 2>(value: 3_u64);
   let occupied = slots_from_array::<u64, 2>(values: filled);
   let restored = slots_into_array::<u64, 2>(values: move occupied);
@@ -404,23 +404,23 @@ fn frame_constructions() -> result: own Array<u64, 2> pure {
   return restored;
 }
 
-fn heap_leaf(value: own u64) -> result: own Box<u64> pure {
+fn heap_leaf(value: u64) -> result: Box<u64> pure {
   return box_new::<u64>(value: value);
 }
 
-fn heap_transitive(value: own u64) -> result: own Box<u64> pure {
+fn heap_transitive(value: u64) -> result: Box<u64> pure {
   return heap_leaf(value: value);
 }
 
-fn heap_forward(value: own u64) -> result: own Box<u64> pure {
+fn heap_forward(value: u64) -> result: Box<u64> pure {
   return heap_forward_target(value: value);
 }
 
-fn heap_forward_target(value: own u64) -> result: own Box<u64> pure {
+fn heap_forward_target(value: u64) -> result: Box<u64> pure {
   return box_new::<u64>(value: value);
 }
 
-fn heap_cycle_left(stop: own Bool, value: own u64) -> result: own Box<u64> pure {
+fn heap_cycle_left(stop: Bool, value: u64) -> result: Box<u64> pure {
   if stop {
     return heap_cycle_right(stop: stop, value: value);
   } else {
@@ -428,11 +428,11 @@ fn heap_cycle_left(stop: own Bool, value: own u64) -> result: own Box<u64> pure 
   }
 }
 
-fn heap_cycle_right(stop: own Bool, value: own u64) -> result: own Box<u64> pure {
+fn heap_cycle_right(stop: Bool, value: u64) -> result: Box<u64> pure {
   return heap_cycle_left(stop: stop, value: value);
 }
 
-fn frame_cycle_left(stop: own Bool) -> result: own unit pure {
+fn frame_cycle_left(stop: Bool) -> result: unit pure {
   if stop {
     return frame_cycle_right(stop: stop);
   } else {
@@ -440,11 +440,11 @@ fn frame_cycle_left(stop: own Bool) -> result: own unit pure {
   }
 }
 
-fn frame_cycle_right(stop: own Bool) -> result: own unit pure {
+fn frame_cycle_right(stop: Bool) -> result: unit pure {
   return frame_cycle_left(stop: stop);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let made = produce::<Allocate>(value: 7_u64);
   let wrapped = produce::<WrappedAllocate>(value: 8_u64);
   let frame = frame_constructions();
@@ -540,7 +540,7 @@ fn main() -> status: own ExitStatus pure {
     assert_behavior_rule(
         r#"program no_heap;
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let made = box_new::<u64>(value: 7_u64);
   return exit_status(code: 0_u8);
 }
@@ -552,12 +552,12 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn bound_calls_retain_the_formal_requirement_boundary() {
     let source = br#"interface Limited {
-  fn accept(value: own u64) -> result: own u64 pure contract {
+  fn accept(value: u64) -> result: u64 pure contract {
     requires value <= 10_u64;
   };
 }
 
-fn permissive(value: own u64) -> result: own u64 pure contract {
+fn permissive(value: u64) -> result: u64 pure contract {
   requires value <= 11_u64;
 } {
   return value;
@@ -567,13 +567,13 @@ binding PermissiveLimited : Limited {
   accept = permissive;
 }
 
-fn apply<interface Limited>(value: own u64) -> result: own u64 pure contract {
+fn apply<interface Limited>(value: u64) -> result: u64 pure contract {
   requires value <= 10_u64;
 } {
   return Limited::accept(value: value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let result = apply::<PermissiveLimited>(value: 10_u64);
   return exit_status(code: 0_u8);
 }
@@ -634,12 +634,12 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn bound_calls_publish_only_the_formal_postcondition_with_fn4_fn9_authority() {
     let source = br#"interface LimitedResult {
-  fn get() -> result: own u64 pure contract {
+  fn get() -> result: u64 pure contract {
     ensures result <= 10_u64;
   };
 }
 
-fn nine() -> result: own u64 pure contract {
+fn nine() -> result: u64 pure contract {
   ensures result <= 9_u64;
 } {
   return 9_u64;
@@ -649,19 +649,19 @@ binding Nine : LimitedResult {
   get = nine;
 }
 
-fn require_ten(value: own u64) -> result: own unit pure contract {
+fn require_ten(value: u64) -> result: unit pure contract {
   requires value <= 10_u64;
 } {
   return unit;
 }
 
-fn apply<interface LimitedResult>() -> result: own u64 pure {
+fn apply<interface LimitedResult>() -> result: u64 pure {
   let value = LimitedResult::get();
   require_ten(value: value);
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let value = apply::<Nine>();
   return exit_status(code: 0_u8);
 }
@@ -737,12 +737,12 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_bound_routed_relation_follows_a_named_outcome_to_its_selected_arm() {
     let source = r#"interface RoutedIdentity {
-  fn choose(value: own i32) -> outcome: own Result<i32, u8> pure contract {
+  fn choose(value: i32) -> outcome: Result<i32, u8> pure contract {
     ensures when Ok(value: selected): selected == value;
   };
 }
 
-fn choose(value: own i32) -> outcome: own Result<i32, u8> pure contract {
+fn choose(value: i32) -> outcome: Result<i32, u8> pure contract {
   ensures when Ok(value: selected): selected == value;
 } {
   return Ok<i32, u8>(value: value);
@@ -752,13 +752,13 @@ binding RoutedChoice : RoutedIdentity {
   choose = choose;
 }
 
-fn require_same(left: own i32, right: own i32) -> result: own unit pure contract {
+fn require_same(left: i32, right: i32) -> result: unit pure contract {
   requires left == right;
 } {
   return unit;
 }
 
-fn apply<interface RoutedIdentity>(value: own i32) -> result: own unit pure {
+fn apply<interface RoutedIdentity>(value: i32) -> result: unit pure {
   match RoutedIdentity::choose(value: value) {
     Ok(value: selected) => {
       require_same(left: selected, right: value);
@@ -769,7 +769,7 @@ fn apply<interface RoutedIdentity>(value: own i32) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   apply::<RoutedChoice>(value: 7_i32);
   return exit_status(code: 0_u8);
 }
@@ -804,19 +804,19 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_recursive_bound_call_stops_at_fn6_before_summary_publication() {
     let source = r#"interface Identity {
-  fn get(value: own i32) -> result: own i32 pure contract {
+  fn get(value: i32) -> result: i32 pure contract {
     ensures result == value;
   };
 }
 
-fn apply<interface Identity>(value: own i32) -> result: own i32 pure contract {
+fn apply<interface Identity>(value: i32) -> result: i32 pure contract {
   ensures result == value;
 } {
   let selected = Identity::get(value: value);
   return selected;
 }
 
-fn actual(value: own i32) -> result: own i32 pure contract {
+fn actual(value: i32) -> result: i32 pure contract {
   ensures result == value;
 } {
   cycle(value: value);
@@ -827,12 +827,12 @@ binding Selected : Identity {
   get = actual;
 }
 
-fn cycle(value: own i32) -> result: own unit pure {
+fn cycle(value: i32) -> result: unit pure {
   let ignored = apply::<Selected>(value: value);
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let ignored = apply::<Selected>(value: 1_i32);
   return exit_status(code: 0_u8);
 }
@@ -842,15 +842,15 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn raw_function_binders_are_visible_and_emit_no_symbolic_hypotheses() {
-    let source = br#"fn zero() -> result: own u64 pure {
+    let source = br#"fn zero() -> result: u64 pure {
   return 0_u64;
 }
 
-fn apply<fn get() -> result: own u64 pure>() -> result: own u64 pure {
+fn apply<fn get() -> result: u64 pure>() -> result: u64 pure {
   return get();
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let value = apply::<fn zero>();
   let other = apply::<fn zero>();
   return exit_status(code: 0_u8);
@@ -882,45 +882,42 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_nominal_only_function_argument_must_match_its_signature() {
-    let source = r#"struct Holder<fn pick(value: own u64) -> result: own u64 pure> {
+    let source = r#"struct Holder<fn pick(value: u64) -> result: u64 pure> {
   marker: u64;
 }
 
-fn bad(value: own Bool) -> result: own Bool pure {
+fn bad(value: Bool) -> result: Bool pure {
   return value;
 }
 
-fn inspect(value: &Holder<fn bad>) -> result: own unit pure {
+fn inspect(value: &Holder<fn bad>) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
     assert_behavior_site(source, SemanticRule::Fn4, "fn bad");
-    with_semantics(
-        source.replace("own Bool", "own u64").as_bytes(),
-        |outcome| {
-            assert!(
-                matches!(outcome, SemanticOutcome::Complete(_)),
-                "{outcome:?}"
-            );
-        },
-    );
+    with_semantics(source.replace(": Bool", ": u64").as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
 }
 
 #[test]
 fn called_raw_function_mismatches_point_at_the_written_argument() {
-    let source = r#"fn bad(value: own Bool) -> result: own Bool pure {
+    let source = r#"fn bad(value: Bool) -> result: Bool pure {
   return value;
 }
 
-fn apply<fn pick(value: own u64) -> result: own u64 pure>(value: own u64) -> result: own u64 pure {
+fn apply<fn pick(value: u64) -> result: u64 pure>(value: u64) -> result: u64 pure {
   return pick(value: value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let result = apply::<fn bad>(value: 7_u64);
   return exit_status(code: 0_u8);
 }
@@ -939,19 +936,19 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_bound_call_cannot_drop_part_of_a_vector_on_a_written_cycle() {
-    let source = r#"fn stop() -> result: own unit pure {
+    let source = r#"fn stop() -> result: unit pure {
   return unit;
 }
 
-fn first<fn work() -> result: own unit pure>() -> result: own unit pure {
+fn first<fn work() -> result: unit pure>() -> result: unit pure {
   return work();
 }
 
-fn second<fn work() -> result: own unit pure>() -> result: own unit pure {
+fn second<fn work() -> result: unit pure>() -> result: unit pure {
   return first::<fn work>();
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   first::<fn second::<fn stop>>();
   return exit_status(code: 0_u8);
 }
@@ -975,19 +972,19 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn actual_expansion_cycles_include_member_function_arguments() {
     let source = r#"interface Work {
-  fn run() -> result: own unit pure;
+  fn run() -> result: unit pure;
 }
 
 binding Recursive : Work {
   run = drive::<Recursive>;
 }
 
-fn drive<interface Work>() -> result: own unit pure {
+fn drive<interface Work>() -> result: unit pure {
   Work::run();
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1003,10 +1000,10 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn qualified_actual_forwarding_remains_an_acyclic_abbreviation() {
     let source = r#"interface Factory {
-  fn make() -> result: own u64 pure;
+  fn make() -> result: u64 pure;
 }
 
-fn zero() -> result: own u64 pure {
+fn zero() -> result: u64 pure {
   return 0_u64;
 }
 
@@ -1018,7 +1015,7 @@ binding Second : Factory {
   make = First::make;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1054,7 +1051,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn actual_member_aliases_preserve_the_complete_instantiation_cycle() {
     let source = r#"interface Work {
-  fn run() -> result: own u64 pure;
+  fn run() -> result: u64 pure;
 }
 
 binding First : Work {
@@ -1065,19 +1062,19 @@ binding Alias : Work {
   run = First::run;
 }
 
-fn poly<T: drop>() -> result: own u64 pure {
+fn poly<T: drop>() -> result: u64 pure {
   return invoke::<Alias>();
 }
 
-fn trampoline() -> result: own u64 pure {
+fn trampoline() -> result: u64 pure {
   return poly::<u64>();
 }
 
-fn invoke<interface Work>() -> result: own u64 pure {
+fn invoke<interface Work>() -> result: u64 pure {
   return Work::run();
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1103,16 +1100,16 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn instantiation_forwards_all_kinds_and_refuses_constructed_cycles_on_both_paths() {
-    let forward = br#"fn task() -> result: own unit pure {
+    let forward = br#"fn task() -> result: unit pure {
   return unit;
 }
 
-fn repeat<T: copy, const n: u64, fn work() -> result: own unit pure>(value: own T) -> result: own T pure {
+fn repeat<T: copy, const n: u64, fn work() -> result: unit pure>(value: T) -> result: T pure {
   work();
   return repeat::<T, n, fn work>(value: value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let result = repeat::<u64, 1, fn task>(value: 0_u64);
   return exit_status(code: 0_u8);
 }
@@ -1124,11 +1121,11 @@ fn main() -> status: own ExitStatus pure {
         lower_checked(*checked, OverlapLowering::Off)
             .expect("the unchanged vector has a finite direct-call instance graph");
     });
-    let wrapped = r#"fn nested<fn work() -> result: own unit pure>() -> result: own unit pure {
+    let wrapped = r#"fn nested<fn work() -> result: unit pure>() -> result: unit pure {
   return nested::<fn nested::<fn work>>();
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1137,11 +1134,11 @@ fn main() -> status: own ExitStatus pure {
   next: Box<Grow<Box<T>>>;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    let selector = r#"fn relation(value: own u64) -> result: own u64 pure contract {
+    let selector = r#"fn relation(value: u64) -> result: u64 pure contract {
   ensures result == value;
 } {
   return value;
@@ -1182,17 +1179,17 @@ fn assert_issue_slice(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind
 fn missing_entry_diagnostic_salvage_checks_instantiation_before_discovery() {
     let source = "struct Grow<T: drop> {\n  next: Box<Grow<Box<T>>>;\n}\n";
     assert_behavior_rule(source, SemanticRule::Fn6);
-    let source = "fn repeat<T: drop>(value: own T) -> result: own unit pure {\n  let boxed = box_new::<T>(value: move value);\n  repeat::<Box<T>>(value: move boxed);\n  return unit;\n}\n";
+    let source = "fn repeat<T: drop>(value: T) -> result: unit pure {\n  let boxed = box_new::<T>(value: move value);\n  repeat::<Box<T>>(value: move boxed);\n  return unit;\n}\n";
     assert_behavior_rule(source, SemanticRule::Fn6);
 }
 
 #[test]
 fn static_group_bindings_have_no_executable_metadata() {
     let source = br#"interface Zeroed {
-  fn zero() -> result: own i32 pure;
+  fn zero() -> result: i32 pure;
 }
 
-fn make_zero() -> result: own i32 pure {
+fn make_zero() -> result: i32 pure {
   return 0_i32;
 }
 
@@ -1200,7 +1197,7 @@ binding Zero : Zeroed {
   zero = make_zero;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1259,7 +1256,7 @@ fn empty_formal_and_actual_groups_are_valid() {
 binding Empty : Marker {
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1292,7 +1289,7 @@ interface Marker<T: drop> {
 binding Wrapped : Marker<Wrapper<i32>> {
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1323,10 +1320,10 @@ fn formal_member_materializes_its_only_generic_nominal_instance() {
 }
 
 interface Factory {
-  fn make() -> result: own Wrapper<i32> pure;
+  fn make() -> result: Wrapper<i32> pure;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1353,11 +1350,11 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn retired_owned_law_identity_syntax_is_not_admitted() {
     let source = br#"contract InvalidIdentity {
-  fn combine() -> result: own Slots<u8, 1> pure;
+  fn combine() -> result: Slots<u8, 1> pure;
   law identity(combine, zero);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1394,30 +1391,30 @@ fn retired_closed_law_table_has_no_remaining_acceptance_path() {
     for source in [
         br#"contract Semigroup {
   doc "A law uses a semantic name from the closed {associative, commutative, identity} table [FN-4].";
-  fn combine(x: own i32, y: own i32) -> result: own i32 pure;
+  fn combine(x: i32, y: i32) -> result: i32 pure;
   law associative(combine);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#.as_slice(),
         br#"contract BadLaw {
-  fn combine(x: own i32, y: own i32) -> result: own i32 pure;
+  fn combine(x: i32, y: i32) -> result: i32 pure;
   law distributive(combine, combine);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#.as_slice(),
         br#"contract BadMonoid {
   doc "FN-4: signed saturating add is NOT associative ((MAX sat+ 1) sat+ -1 != MAX sat+ (1 sat+ -1)); the stated law must be refuted, not trusted.";
-  fn combine(x: own i64, y: own i64) -> result: own i64 pure;
+  fn combine(x: i64, y: i64) -> result: i64 pure;
   law associative(combine);
 }
 
-fn satadd_signed(x: own i64, y: own i64) -> result: own i64 pure {
+fn satadd_signed(x: i64, y: i64) -> result: i64 pure {
   return x +sat y;
 }
 
@@ -1425,17 +1422,17 @@ conform i64: BadMonoid {
   combine = satadd_signed;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#.as_slice(),
         br#"contract OpaqueMonoid {
   doc "FN-4: a stated law on a fn whose body is not a single table op has no static proof; stated-but-unchecked is a hard reject, never a trusted fact.";
-  fn combine(x: own u64, y: own u64) -> result: own u64 pure;
+  fn combine(x: u64, y: u64) -> result: u64 pure;
   law associative(combine);
 }
 
-fn twostep(x: own u64, y: own u64) -> result: own u64 pure {
+fn twostep(x: u64, y: u64) -> result: u64 pure {
   let t = x +wrap y;
   return t +wrap 1_u64;
 }
@@ -1444,19 +1441,19 @@ conform u64: OpaqueMonoid {
   combine = twostep;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#.as_slice(),
         br#"contract SatMonoid {
   doc "FN-4 stated-and-checked: the exact direct +sat body and closed unsigned table cells discharge these laws.";
-  fn combine(x: own u64, y: own u64) -> result: own u64 pure;
+  fn combine(x: u64, y: u64) -> result: u64 pure;
   law associative(combine);
   law commutative(combine);
   law identity(combine, 0_u64);
 }
 
-fn satadd(x: own u64, y: own u64) -> result: own u64 pure {
+fn satadd(x: u64, y: u64) -> result: u64 pure {
   return x +sat y;
 }
 
@@ -1464,7 +1461,7 @@ conform u64: SatMonoid {
   combine = satadd;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#.as_slice(),
@@ -1476,11 +1473,11 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn retired_law_identity_with_wrong_literal_type_is_a_grammar_error() {
     let source = br#"contract BadIdentity {
-  fn combine(x: own u64, y: own u64) -> result: own u64 pure;
+  fn combine(x: u64, y: u64) -> result: u64 pure;
   law identity(combine, unit);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1492,11 +1489,11 @@ fn retired_law_identity_with_an_earlier_constant_is_a_grammar_error() {
     let source = br#"const zero: u64 = 0_u64;
 
 contract AddIdentity {
-  fn combine(x: own u64, y: own u64) -> result: own u64 pure;
+  fn combine(x: u64, y: u64) -> result: u64 pure;
   law identity(combine, zero);
 }
 
-fn saturating_add(x: own u64, y: own u64) -> result: own u64 pure {
+fn saturating_add(x: u64, y: u64) -> result: u64 pure {
   return x +sat y;
 }
 
@@ -1504,7 +1501,7 @@ conform u64: AddIdentity {
   combine = saturating_add;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1514,11 +1511,11 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn repeated_member_points_at_the_later_signature() {
     let source = br#"interface Repeated {
-  fn value() -> result: own i32 pure;
-  fn value() -> result: own i32 pure;
+  fn value() -> result: i32 pure;
+  fn value() -> result: i32 pure;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1529,7 +1526,7 @@ fn main() -> status: own ExitStatus pure {
             "each interface member name occurs once",
             "a nonmatching behavior argument",
         ),
-        b"fn value() -> result: own i32 pure",
+        b"fn value() -> result: i32 pure",
     );
 }
 
@@ -1538,7 +1535,7 @@ fn retired_numeric_conformance_spelling_is_a_grammar_error() {
     let source = br#"conform i32: Int {
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1555,7 +1552,7 @@ fn actual_header_arguments_match_the_formal_header_arity() {
 binding Invalid : Plain<i32> {
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1573,15 +1570,15 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn incompatible_and_out_of_order_bindings_point_at_the_fn_bind() {
     let source = br#"interface Pair {
-  fn first() -> result: own i32 pure;
-  fn second() -> result: own i32 pure;
+  fn first() -> result: i32 pure;
+  fn second() -> result: i32 pure;
 }
 
-fn make_first() -> result: own i32 pure {
+fn make_first() -> result: i32 pure {
   return 1_i32;
 }
 
-fn make_second() -> result: own i32 pure {
+fn make_second() -> result: i32 pure {
   return 2_i32;
 }
 
@@ -1590,7 +1587,7 @@ binding Reversed : Pair {
   first = make_first;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1608,11 +1605,11 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn missing_binding_points_at_the_complete_actual_declaration() {
     let source = br#"interface Pair {
-  fn first() -> result: own i32 pure;
-  fn second() -> result: own i32 pure;
+  fn first() -> result: i32 pure;
+  fn second() -> result: i32 pure;
 }
 
-fn make_first() -> result: own i32 pure {
+fn make_first() -> result: i32 pure {
   return 1_i32;
 }
 
@@ -1620,7 +1617,7 @@ binding Incomplete : Pair {
   first = make_first;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1640,11 +1637,11 @@ fn retired_source_contract_bound_is_a_grammar_error() {
     let source = br#"contract Marker {
 }
 
-fn generic<T: Marker>() -> result: own unit pure {
+fn generic<T: Marker>() -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1660,10 +1657,10 @@ fn formal_row_comparison_uses_parameter_ordinals_not_binder_spellings() {
     // one path per entry, so the formal's `x, y` and the actual's
     // `first, second` are the same row.
     let source = br#"interface LengthSum {
-  fn sum(x: &Slots<u8, 4>, y: &Slots<u8, 4>) -> result: own u64 reads(x), reads(y);
+  fn sum(x: &Slots<u8, 4>, y: &Slots<u8, 4>) -> result: u64 reads(x), reads(y);
 }
 
-fn add_lengths(first: &Slots<u8, 4>, second: &Slots<u8, 4>) -> result: own u64 reads(first), reads(second) {
+fn add_lengths(first: &Slots<u8, 4>, second: &Slots<u8, 4>) -> result: u64 reads(first), reads(second) {
   let first_length = deref(first).len;
   let second_length = deref(second).len;
   return first_length +wrap second_length;
@@ -1673,7 +1670,7 @@ binding Sum : LengthSum {
   sum = add_lengths;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1697,10 +1694,10 @@ fn formal_range_reference_parameters_compare_by_ordinal() {
     // admitted only in parameter position [TYPE-8, REF-4]; the FN-4 ordinal
     // comparison over it is unchanged.
     let source = br#"interface ByteReader {
-  fn first(values: &[u8]) -> result: own u8 reads(values);
+  fn first(values: &[u8]) -> result: u8 reads(values);
 }
 
-fn read_first(bytes: &[u8]) -> result: own u8 reads(bytes) {
+fn read_first(bytes: &[u8]) -> result: u8 reads(bytes) {
   let spare = deref(bytes).len;
   let ok = 0_u64 < spare;
   if ok {
@@ -1714,7 +1711,7 @@ binding Bytes : ByteReader {
   first = read_first;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;

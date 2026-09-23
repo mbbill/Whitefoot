@@ -1,10 +1,10 @@
-fn write(target: &u64, value: own u64) -> result: own unit writes(target) {
+fn write(target: &u64, value: u64) -> result: unit writes(target) {
   doc "The ordinary declared write projects onto the caller's index binding [EFF-2].";
   set deref(target) = value;
   return unit;
 }
 
-fn examine(rows: &Slots<Slots<u8, 4>, 2>, index: own u64, replacement: own u64) -> result: own u8 reads(rows) contract {
+fn examine(rows: &Slots<Slots<u8, 4>, 2>, index: u64, replacement: u64) -> result: u8 reads(rows) contract {
   requires index < deref(rows).len;
   requires replacement < deref(rows).len;
 } {
@@ -19,7 +19,7 @@ fn examine(rows: &Slots<Slots<u8, 4>, 2>, index: own u64, replacement: own u64) 
   return 0_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The reader body alone exercises the stale negative goal; no native construction is required.";
   return exit_status(code: 0_u8);
 }

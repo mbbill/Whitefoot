@@ -23,7 +23,7 @@ enum SearchStep {
   Found(value: u64);
 }
 
-fn probe(slot: &Slot, key: own u64) -> result: own Probe reads(slot) {
+fn probe(slot: &Slot, key: u64) -> result: Probe reads(slot) {
   match deref(slot) {
     Vacant() => {
       return Stop();
@@ -40,7 +40,7 @@ fn probe(slot: &Slot, key: own u64) -> result: own Probe reads(slot) {
   }
 }
 
-fn search_step(slot: &Slot, key: own u64) -> result: own SearchStep reads(slot) {
+fn search_step(slot: &Slot, key: u64) -> result: SearchStep reads(slot) {
   match deref(slot) {
     Vacant() => {
       return SearchStop();
@@ -57,7 +57,7 @@ fn search_step(slot: &Slot, key: own u64) -> result: own SearchStep reads(slot) 
   }
 }
 
-fn empty_slots() -> result: own Array<Slot, 8> pure {
+fn empty_slots() -> result: Array<Slot, 8> pure {
   doc "Eight vacant slots enter a constant-capacity window, which is then consumed into the full array the map owns.";
   let slots = slots_new::<Slot, 8>();
   let empty0 = Vacant();
@@ -80,7 +80,7 @@ fn empty_slots() -> result: own Array<Slot, 8> pure {
   return move complete;
 }
 
-fn put(slots: own Array<Slot, 8>, key: own u64, payload: own Box<u64>) -> (updated: own Array<Slot, 8>, outcome: own PutOutcome) pure {
+fn put(slots: Array<Slot, 8>, key: u64, payload: Box<u64>) -> (updated: Array<Slot, 8>, outcome: PutOutcome) pure {
   doc "The installation is swap: the offered occupant goes into the slot and the binding comes back holding the slot's previous value.";
   let home = key % 8_u64;
   let first_deleted = 8_u64;
@@ -150,7 +150,7 @@ fn put(slots: own Array<Slot, 8>, key: own u64, payload: own Box<u64>) -> (updat
   return move slots, Full(offered: move payload);
 }
 
-fn find(slots: &Array<Slot, 8>, key: own u64) -> result: own Option<u64> reads(slots) {
+fn find(slots: &Array<Slot, 8>, key: u64) -> result: Option<u64> reads(slots) {
   let home = key % 8_u64;
   for (step in 0_u64..8_u64) {
     let advanced = home +wrap step;
@@ -170,7 +170,7 @@ fn find(slots: &Array<Slot, 8>, key: own u64) -> result: own Option<u64> reads(s
   return None<u64>();
 }
 
-fn remove(slots: own Array<Slot, 8>, key: own u64) -> (updated: own Array<Slot, 8>, removed: own Option<Box<u64>>) pure {
+fn remove(slots: Array<Slot, 8>, key: u64) -> (updated: Array<Slot, 8>, removed: Option<Box<u64>>) pure {
   let home = key % 8_u64;
   for (step in 0_u64..8_u64) {
     let advanced = home +wrap step;
@@ -204,14 +204,14 @@ fn remove(slots: own Array<Slot, 8>, key: own u64) -> (updated: own Array<Slot, 
   return move slots, None<Box<u64>>();
 }
 
-fn allocate_put(slots: own Array<Slot, 8>, key: own u64, value: own u64) -> (updated: own Array<Slot, 8>, outcome: own PutOutcome) pure {
+fn allocate_put(slots: Array<Slot, 8>, key: u64, value: u64) -> (updated: Array<Slot, 8>, outcome: PutOutcome) pure {
   doc "Allocation is total, so the owner is built without a failure arm and every put carries one cell.";
   let offered = box_new::<u64>(value: value);
   let (updated, outcome) = put(slots: move slots, key: key, payload: move offered);
   return move updated, move outcome;
 }
 
-fn check_put(outcome: own PutOutcome, kind: own u64, expected: own u64) -> code: own u8 pure {
+fn check_put(outcome: PutOutcome, kind: u64, expected: u64) -> code: u8 pure {
   match move outcome {
     Inserted() => {
       if kind != 1_u64 {
@@ -240,7 +240,7 @@ fn check_put(outcome: own PutOutcome, kind: own u64, expected: own u64) -> code:
   }
 }
 
-fn check_removed(removed: own Option<Box<u64>>, present: own Bool, expected: own u64) -> code: own u8 pure {
+fn check_removed(removed: Option<Box<u64>>, present: Bool, expected: u64) -> code: u8 pure {
   match move removed {
     None() => {
       if present {
@@ -260,7 +260,7 @@ fn check_removed(removed: own Option<Box<u64>>, present: own Bool, expected: own
   }
 }
 
-fn check_found(found: own Option<u64>, present: own Bool, expected: own u64) -> code: own u8 pure {
+fn check_found(found: Option<u64>, present: Bool, expected: u64) -> code: u8 pure {
   match found {
     None() => {
       if present {
@@ -280,7 +280,7 @@ fn check_found(found: own Option<u64>, present: own Bool, expected: own u64) -> 
   }
 }
 
-fn exercise(seed: own u64) -> code: own u8 pure {
+fn exercise(seed: u64) -> code: u8 pure {
   doc "One complete map trace: insertions, a tombstone, a replacement, lookups past the tombstone, a genuinely full table, and the recycling of a removed owner into a new key.";
   let slots0 = empty_slots();
   let yes = True();
@@ -478,7 +478,7 @@ fn exercise(seed: own u64) -> code: own u8 pure {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   for (seed in 0_u64..16_u64) {
     let code = exercise(seed: seed);
     if code != 0_u8 {

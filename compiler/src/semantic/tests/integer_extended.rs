@@ -7,7 +7,7 @@ use super::{assert_rule, assert_rule_kind, with_semantics};
 
 #[test]
 fn retains_the_complete_nonfloating_integer_family() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let a = 8_i32 / 2_i32;
   let b = 9_i32 % 2_i32;
   let c = iand(a, b);
@@ -63,12 +63,12 @@ fn retains_the_complete_nonfloating_integer_family() {
     });
 
     assert_rule(
-        b"fn main() -> status: own ExitStatus pure {\n  let value = ibswap(1_i8);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: ExitStatus pure {\n  let value = ibswap(1_i8);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
     assert_rule_kind(
-        b"fn main() -> status: own ExitStatus pure {\n  let value = ishl.wrap(1_i8, 1_i8);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: ExitStatus pure {\n  let value = ishl.wrap(1_i8, 1_i8);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -76,7 +76,7 @@ fn retains_the_complete_nonfloating_integer_family() {
 
 #[test]
 fn exhaustion_invariant_proves_exact_shift_counts_below_the_value_width() {
-    let source = br#"fn shift_prefix(limit: own u64) -> result: own unit pure contract {
+    let source = br#"fn shift_prefix(limit: u64) -> result: unit pure contract {
   requires limit <= 31_u64;
 } {
   let amount = 0_u32;
@@ -91,7 +91,7 @@ fn exhaustion_invariant_proves_exact_shift_counts_below_the_value_width() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;

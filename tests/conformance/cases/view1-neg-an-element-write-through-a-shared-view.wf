@@ -1,4 +1,4 @@
-fn peek(window: &[u8]) -> result: own unit reads(window) contract {
+fn peek(window: &[u8]) -> result: unit reads(window) contract {
   requires 1_u64 <= deref(window).len;
 } {
   doc "Declares a read of its range reference and then writes through it.";
@@ -6,7 +6,7 @@ fn peek(window: &[u8]) -> result: own unit reads(window) contract {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The refusal the rule keeps, restated without borrow markers: write authority through a reference parameter is its declared row, so a target reached through a reference whose row declares reads and no writes of that path is not writable [SET-1, EFF-1]. The diagnostic names the resolved root class and the writable classes SET-1 admits.";
   let table = array_filled::<u8, 4>(value: 7_u8);
   let window = &table[0_u64..4_u64];

@@ -5,7 +5,7 @@ struct Item {
 struct Ascending {
 }
 
-fn ascending_compare(env: &Ascending, left: &Item, right: &Item) -> order: own i32 reads(left.rank), reads(right.rank) contract {
+fn ascending_compare(env: &Ascending, left: &Item, right: &Item) -> order: i32 reads(left.rank), reads(right.rank) contract {
   ensures order >= -1_i32;
   ensures order <= 1_i32;
 } {
@@ -20,7 +20,7 @@ fn ascending_compare(env: &Ascending, left: &Item, right: &Item) -> order: own i
 }
 
 interface Order<T, E> {
-  fn compare(env: &E, left: &T, right: &T) -> order: own i32 reads(env), reads(left), reads(right) contract {
+  fn compare(env: &E, left: &T, right: &T) -> order: i32 reads(env), reads(left), reads(right) contract {
     ensures order >= -1_i32;
     ensures order <= 1_i32;
   };
@@ -34,7 +34,7 @@ binding ItemOrder : Order<Item, Ascending> {
   compare = ascending_compare;
 }
 
-fn exchange_at<T>(heap: &Slots<T, 16>, left: own u64, right: own u64) -> result: own unit writes(heap) contract {
+fn exchange_at<T>(heap: &Slots<T, 16>, left: u64, right: u64) -> result: unit writes(heap) contract {
   requires left < deref(heap).len;
   requires right < deref(heap).len;
   ensures deref(heap).len == deref(entry(heap)).len;
@@ -45,7 +45,7 @@ fn exchange_at<T>(heap: &Slots<T, 16>, left: own u64, right: own u64) -> result:
   return unit;
 }
 
-fn sift_rise<interface Order<T, E>>(queue: &Queue<Order<T, E>>, count: own u64, env: &E) -> result: own unit reads(env), writes(queue.heap) contract {
+fn sift_rise<interface Order<T, E>>(queue: &Queue<Order<T, E>>, count: u64, env: &E) -> result: unit reads(env), writes(queue.heap) contract {
   requires deref(queue).heap.len == count;
   requires count >= 1_u64;
   ensures deref(queue).heap.len == count;
@@ -75,7 +75,7 @@ fn sift_rise<interface Order<T, E>>(queue: &Queue<Order<T, E>>, count: own u64, 
   return unit;
 }
 
-fn sift_sink<interface Order<T, E>>(queue: &Queue<Order<T, E>>, count: own u64, env: &E) -> result: own unit reads(env), writes(queue.heap) contract {
+fn sift_sink<interface Order<T, E>>(queue: &Queue<Order<T, E>>, count: u64, env: &E) -> result: unit reads(env), writes(queue.heap) contract {
   requires deref(queue).heap.len == count;
   requires count >= 1_u64;
   ensures deref(queue).heap.len == count;
@@ -113,7 +113,7 @@ fn sift_sink<interface Order<T, E>>(queue: &Queue<Order<T, E>>, count: own u64, 
   return unit;
 }
 
-fn push<interface Order<T, E>>(queue: &Queue<Order<T, E>>, value: own T, env: &E) -> result: own unit reads(env), writes(queue.heap) contract {
+fn push<interface Order<T, E>>(queue: &Queue<Order<T, E>>, value: T, env: &E) -> result: unit reads(env), writes(queue.heap) contract {
   requires 1_u64 <= deref(queue).heap.cap - deref(queue).heap.len;
   ensures deref(queue).heap.len == deref(entry(queue)).heap.len + 1_u64;
 } {
@@ -125,7 +125,7 @@ fn push<interface Order<T, E>>(queue: &Queue<Order<T, E>>, value: own T, env: &E
   return unit;
 }
 
-fn pop<interface Order<T, E>>(queue: &Queue<Order<T, E>>, env: &E) -> minimum: own T reads(env), writes(queue.heap) contract {
+fn pop<interface Order<T, E>>(queue: &Queue<Order<T, E>>, env: &E) -> minimum: T reads(env), writes(queue.heap) contract {
   requires deref(queue).heap.len >= 1_u64;
   ensures deref(queue).heap.len == deref(entry(queue)).heap.len - 1_u64;
 } {
@@ -145,7 +145,7 @@ struct Direction {
   descending: Bool;
 }
 
-fn word_compare(env: &Ascending, left: &u64, right: &u64) -> order: own i32 reads(left), reads(right) contract {
+fn word_compare(env: &Ascending, left: &u64, right: &u64) -> order: i32 reads(left), reads(right) contract {
   ensures order >= -1_i32;
   ensures order <= 1_i32;
 } {
@@ -159,7 +159,7 @@ fn word_compare(env: &Ascending, left: &u64, right: &u64) -> order: own i32 read
   return 0_i32;
 }
 
-fn directed_compare(env: &Direction, left: &Item, right: &Item) -> order: own i32 reads(env.descending), reads(left.rank), reads(right.rank) contract {
+fn directed_compare(env: &Direction, left: &Item, right: &Item) -> order: i32 reads(env.descending), reads(left.rank), reads(right.rank) contract {
   ensures order >= -1_i32;
   ensures order <= 1_i32;
 } {
@@ -187,7 +187,7 @@ binding DirectedOrder : Order<Item, Direction> {
   compare = directed_compare;
 }
 
-fn empty_heap<T>() -> heap: own Slots<T, 16> pure contract {
+fn empty_heap<T>() -> heap: Slots<T, 16> pure contract {
   ensures heap.len == 0_u64;
 } {
   doc "A constant-capacity window starts empty.";
@@ -195,7 +195,7 @@ fn empty_heap<T>() -> heap: own Slots<T, 16> pure contract {
   return move made;
 }
 
-fn priority_round(seed: own u64, entering: own u64) -> (checksum: own u64, next_state: own u64) pure {
+fn priority_round(seed: u64, entering: u64) -> (checksum: u64, next_state: u64) pure {
   doc "Sixteen pseudorandom words enter the queue and leave it in order; the local queue is frame state, so the row stays empty.";
   let checksum = entering;
   let state = seed;
@@ -223,7 +223,7 @@ fn priority_round(seed: own u64, entering: own u64) -> (checksum: own u64, next_
   return checksum, state;
 }
 
-fn priority_trace(seed: own u64, rounds: own u64) -> checksum: own u64 pure {
+fn priority_trace(seed: u64, rounds: u64) -> checksum: u64 pure {
   doc "One commit per statement, so a round's two results are bound together and then committed separately.";
   let checksum = 0_u64;
   let state = seed;
@@ -235,7 +235,7 @@ fn priority_trace(seed: own u64, rounds: own u64) -> checksum: own u64 pure {
   return checksum;
 }
 
-fn directed_demo() -> result: own u8 pure {
+fn directed_demo() -> result: u8 pure {
   doc "The second instantiation, whose comparison reads its own environment.";
   let heap = empty_heap::<Item>();
   let queue = Queue<DirectedOrder>(heap: move heap);
@@ -262,7 +262,7 @@ fn directed_demo() -> result: own u8 pure {
   return 0_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Both generic instantiations execute; an owned scalar supplied to a local window contributes no enclosing effect path, while the environment and window paths retain their actual accesses.";
   let code = directed_demo();
   if code != 0_u8 {

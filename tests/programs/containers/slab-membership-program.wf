@@ -17,7 +17,7 @@ struct MembershipStore {
   second: Option<SlabHandle>;
 }
 
-fn membership_visit(env: &MembershipReads, value: &Box<MembershipValue>) -> result: own u64 reads(value.inner.id), writes(env.calls) {
+fn membership_visit(env: &MembershipReads, value: &Box<MembershipValue>) -> result: u64 reads(value.inner.id), writes(env.calls) {
   set deref(env).calls = deref(env).calls +wrap 1_u64;
   return deref(value).inner.id;
 }
@@ -26,7 +26,7 @@ binding MembershipVisit : SlabVisit<Box<MembershipValue>, MembershipReads, u64> 
   visit = membership_visit;
 }
 
-fn membership_consume(env: &MembershipCleanup, value: own Box<MembershipValue>) -> result: own unit writes(env.count), writes(env.total) {
+fn membership_consume(env: &MembershipCleanup, value: Box<MembershipValue>) -> result: unit writes(env.count), writes(env.total) {
   set deref(env).count = deref(env).count +wrap 1_u64;
   set deref(env).total = deref(env).total +wrap value.inner.id;
   return unit;
@@ -36,7 +36,7 @@ binding MembershipConsume : SlabConsume<Box<MembershipValue>, MembershipCleanup>
   consume = membership_consume;
 }
 
-fn membership_read(slab: &Slab<Box<MembershipValue>, 1, 1>, handle: own SlabHandle) -> id: own u64 reads(slab) {
+fn membership_read(slab: &Slab<Box<MembershipValue>, 1, 1>, handle: SlabHandle) -> id: u64 reads(slab) {
   doc "The fixture uses nonzero IDs. Zero means expiry; the maximal value distinguishes an incorrect callback count from expiry or an observed ID.";
   let env = MembershipReads(calls: 0_u64);
   let found = slab_visit::<MembershipVisit, 1, 1>(slab: slab, handle: handle, env: &env);
@@ -56,7 +56,7 @@ fn membership_read(slab: &Slab<Box<MembershipValue>, 1, 1>, handle: own SlabHand
   }
 }
 
-fn membership_try_delete(store: &MembershipStore, handle: own SlabHandle) -> outcome: own Result<Option<Box<MembershipValue>>, unit> reads(store.first), reads(store.second), writes(store.objects) {
+fn membership_try_delete(store: &MembershipStore, handle: SlabHandle) -> outcome: Result<Option<Box<MembershipValue>>, unit> reads(store.first), reads(store.second), writes(store.objects) {
   doc "This one-object composite owns both indexes and refuses deletion while either membership remains. Its ordinary fields and constructors are not unforgeable; the fixture verifies this protocol, not every separately authored mutation of MembershipStore.";
   match deref(store).first {
     Some(value: held) => {
@@ -76,7 +76,7 @@ fn membership_try_delete(store: &MembershipStore, handle: own SlabHandle) -> out
   return Ok<Option<Box<MembershipValue>>, unit>(value: move removed);
 }
 
-fn membership_weak_indexes() -> code: own u64 pure {
+fn membership_weak_indexes() -> code: u64 pure {
   doc "Two one-entry indexes share an ordinary generational handle. Removing one index preserves the other reader, but deleting the central owner expires remaining indexes; reusing its slot never revives the old generation.";
   let slab = slab_new::<Box<MembershipValue>, 1, 1>(capacity: 1_u64);
   let item = MembershipValue(id: 101_u64);
@@ -173,7 +173,7 @@ fn membership_weak_indexes() -> code: own u64 pure {
   return 0_u64;
 }
 
-fn membership_retained_indexes() -> code: own u64 pure {
+fn membership_retained_indexes() -> code: u64 pure {
   doc "Deleting this composite's sole object is Busy with two memberships and still Busy after removing one; the remaining index reads the same object. Deletion succeeds only after the final membership retires.";
   let slab = slab_new::<Box<MembershipValue>, 1, 1>(capacity: 1_u64);
   let item = MembershipValue(id: 303_u64);
@@ -250,7 +250,7 @@ fn membership_retained_indexes() -> code: own u64 pure {
   return 0_u64;
 }
 
-fn slab_membership_checks() -> code: own u64 pure {
+fn slab_membership_checks() -> code: u64 pure {
   let weak = membership_weak_indexes();
   if weak != 0_u64 {
     return weak;

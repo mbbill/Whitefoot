@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "MSR-3: a placement carries the window's own measures but does not descend through its element positions. The rebind carries the window's length and capacity, so the subscript into the renamed window still discharges, while the element measures an earlier event established die with the consume the rebind performs and the cell exchanged out of that slot arrives with none.";
   let blocks = slots_new::<Box<Slots<u8>>, 2>();
   let first = box_slots_new::<u8>(capacity: 8_u64);

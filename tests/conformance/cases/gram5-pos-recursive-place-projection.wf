@@ -6,12 +6,12 @@ struct OuterProjection {
   inner: InnerProjection;
 }
 
-fn read_projection(outer: &OuterProjection) -> return_value: own i32 reads(outer.inner.value) {
+fn read_projection(outer: &OuterProjection) -> return_value: i32 reads(outer.inner.value) {
   doc "A place rooted at a reference parameter resolves to the path that reference names, and the field suffixes follow it [REF-1].";
   return deref(outer).inner.value;
 }
 
-fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: ExitStatus pure {
   doc "GRAM-5: a structural place base can be followed by multiple field suffixes, each denoting one field projection; the base itself is reached through `deref`, because the parameter is a reference and its referent is named by that one step [TYPE-7].";
   let inner = InnerProjection(value: 42_i32);
   let outer = OuterProjection(inner: inner);

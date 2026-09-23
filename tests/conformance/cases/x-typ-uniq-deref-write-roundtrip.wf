@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Writing Box content with set cell.inner and reading the content back exercises the Box content field step [TYPE-9] together with SET-1's writable-target relation through a live own cell binding; a positive combination that runs to exit 0.";
   let cell = box_new::<i32>(value: 40_i32);
   set cell.inner = 42_i32;

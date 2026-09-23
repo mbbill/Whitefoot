@@ -20,19 +20,19 @@ struct Slot {
   tombstone: Bool;
 }
 
-fn vacant_slot(tombstone: own Bool) -> slot: own Slot pure {
+fn vacant_slot(tombstone: Bool) -> slot: Slot pure {
   let no_entry = None<Entry>();
   return Slot(stored_entry: no_entry, tombstone: tombstone);
 }
 
-fn occupied_slot(key: own u64, value: own u64) -> slot: own Slot pure {
+fn occupied_slot(key: u64, value: u64) -> slot: Slot pure {
   let stored_entry = Entry(key: key, value: value);
   let present = Some<Entry>(value: stored_entry);
   let clear = False();
   return Slot(stored_entry: present, tombstone: clear);
 }
 
-fn view_entry(stored_entry: &Option<Entry>, tombstone: own Bool) -> view: own SlotView reads(stored_entry) {
+fn view_entry(stored_entry: &Option<Entry>, tombstone: Bool) -> view: SlotView reads(stored_entry) {
   match deref(stored_entry) {
     Some(value: present) => {
       return Occupied(key: deref(present).key, value: deref(present).value);
@@ -46,7 +46,7 @@ fn view_entry(stored_entry: &Option<Entry>, tombstone: own Bool) -> view: own Sl
   }
 }
 
-fn empty_slots() -> slots: own Slots<Slot, 8> pure contract {
+fn empty_slots() -> slots: Slots<Slot, 8> pure contract {
   ensures slots.len == 8_u64;
 } {
   let slots = slots_new::<Slot, 8>();
@@ -77,7 +77,7 @@ fn empty_slots() -> slots: own Slots<Slot, 8> pure contract {
   return move slots;
 }
 
-fn insert(slots: &Slots<Slot, 8>, size: own u64, key: own u64, value: own u64) -> (updated_size: own u64, result: own PutResult) writes(slots) contract {
+fn insert(slots: &Slots<Slot, 8>, size: u64, key: u64, value: u64) -> (updated_size: u64, result: PutResult) writes(slots) contract {
   requires 8_u64 <= deref(slots).len;
   ensures deref(slots).len == deref(entry(slots)).len;
   ensures 8_u64 <= deref(slots).len;
@@ -124,7 +124,7 @@ fn insert(slots: &Slots<Slot, 8>, size: own u64, key: own u64, value: own u64) -
   return size, Full();
 }
 
-fn find(slots: &Slots<Slot, 8>, key: own u64) -> result: own Option<u64> reads(slots) contract {
+fn find(slots: &Slots<Slot, 8>, key: u64) -> result: Option<u64> reads(slots) contract {
   requires 8_u64 <= deref(slots).len;
 } {
   let home = key % 8_u64;
@@ -149,7 +149,7 @@ fn find(slots: &Slots<Slot, 8>, key: own u64) -> result: own Option<u64> reads(s
   return None<u64>();
 }
 
-fn remove(slots: &Slots<Slot, 8>, size: own u64, key: own u64) -> (updated_size: own u64, removed: own Option<u64>) writes(slots) contract {
+fn remove(slots: &Slots<Slot, 8>, size: u64, key: u64) -> (updated_size: u64, removed: Option<u64>) writes(slots) contract {
   requires 8_u64 <= deref(slots).len;
   ensures deref(slots).len == deref(entry(slots)).len;
 } {
@@ -179,7 +179,7 @@ fn remove(slots: &Slots<Slot, 8>, size: own u64, key: own u64) -> (updated_size:
   return size, None<u64>();
 }
 
-fn put_code(result: own PutResult) -> code: own u64 pure {
+fn put_code(result: PutResult) -> code: u64 pure {
   match result {
     Inserted() => {
       return 1_u64;
@@ -193,7 +193,7 @@ fn put_code(result: own PutResult) -> code: own u64 pure {
   }
 }
 
-fn option_code(value: own Option<u64>) -> code: own u64 pure {
+fn option_code(value: Option<u64>) -> code: u64 pure {
   match value {
     None() => {
       return 0_u64;
@@ -204,12 +204,12 @@ fn option_code(value: own Option<u64>) -> code: own u64 pure {
   }
 }
 
-fn mix(checksum: own u64, value: own u64) -> result: own u64 pure {
+fn mix(checksum: u64, value: u64) -> result: u64 pure {
   let scaled = checksum *wrap 131_u64;
   return scaled +wrap value;
 }
 
-fn map_trace(seed: own u64, repetitions: own u64) -> checksum: own u64 pure {
+fn map_trace(seed: u64, repetitions: u64) -> checksum: u64 pure {
   let checksum = 0_u64;
   for (round in 0_u64..repetitions) {
     let key_a = seed +wrap round;
@@ -268,7 +268,7 @@ fn map_trace(seed: own u64, repetitions: own u64) -> checksum: own u64 pure {
   return checksum;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let observed = map_trace(seed: 5_u64, repetitions: 3_u64);
   if observed == 15521492327637928880_u64 {
     return exit_status(code: 0_u8);
