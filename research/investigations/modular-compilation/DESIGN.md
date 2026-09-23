@@ -898,16 +898,18 @@ related to hidden storage; preserve proof, ownership and effect obligations
 when comparing representations. Runtime layout and accessor costs need a
 matched implementation comparison before selecting on performance grounds.
 Getter realization and precise-effect qualification remain the obligations
-below, regardless of the eventual field-operation choice.
+below, alongside qualification of the selected field-operation rules.
 
-### Field visibility and structural operations: discussion candidate
+### Field visibility and structural operations
 
 The publication and single-definition choices above supersede the earlier
-split-definition discussion. The following operation policy remains a candidate;
-it introduces no new `readonly` meaning or object-invariant assumption.
+split-definition discussion. The selected operation policy separates access
+permission from ordinary ownership obligations; it introduces no new `readonly`
+meaning or object-invariant assumption. This is proposed module behavior, still
+requiring specification and executable qualification.
 
-For this candidate, direct public fields have the existing field semantics for
-copy reads, references, writes and in-place operations, with ordinary
+Direct public fields have the existing field semantics for copy reads,
+references, writes and in-place operations, with ordinary
 ownership, effects and `readonly` restrictions. Expose independent user data,
 such as a buffer's caller-controlled tag, this way. A changing length related
 to hidden storage can remain private and be observed through an ordinary
@@ -917,14 +919,13 @@ as well as outside it, so it cannot quietly become an external-only access
 restriction. A public writable field does not establish a private invariant.
 
 For a struct with every field public, ordinary construction retains its existing
-rules. If any field is private, the candidate permits external construction
-through declared ordinary functions, not aggregate construction with guessed
+rules. If any field is private, external construction goes through declared
+ordinary functions, not aggregate construction with guessed
 or defaulted private fields. Inside the defining module the complete definition
 permits normal construction. This does not repurpose TYPE-2 `opaque`, whose
 constructor restriction also applies in the defining scope.
 
-Destructive field extraction needs an explicit choice. Under OWN-1/WIN-3, a
-field move consumes its whole owner, releases the other affine parts and
+Under OWN-1/WIN-3, a field move consumes its whole owner, releases the other affine parts and
 rejects if a remaining linear part cannot be consumed. The whole type's
 copy/drop pair alone does not describe the remainder: a non-droppable type
 could owe that property to the extracted public field, a hidden field, or an
@@ -933,16 +934,69 @@ that remainder without a readable interface change. That ground for banning
 every external extraction no longer holds: all fields and their type support
 are now declared in `.wfm`, even though external code cannot name private paths.
 
-Reconsider direct public-field moves and consuming destructuring under ordinary
-residual-release checks. A candidate permits binding only public fields and
-requires every unbound part, private or public, to satisfy the existing release
-rules. A private linear remainder rejects; a public consuming function can
-handle it inside the module. Changing a private field's capability then changes
-a tracked source-operation dependency, not an invisible implementation fact.
-This policy remains unselected pending ownership examples, generic capability
-qualification and access diagnostics; the earlier blanket ban is not retained
-merely because it was proposed for a split representation. Whole-value moves,
-permitted release, ordinary updates and swaps keep their existing rules.
+Permit direct public-field moves and consuming destructuring when ordinary
+residual-release checks pass. An external consume can bind only accessible
+fields; every unbound part, private or public, must satisfy the existing release
+rules. A final `..` covers omitted private fields without granting access or
+waiving their consumption obligations. A private linear remainder rejects;
+a public consuming function can handle it inside the module. Changing a private
+field's capability changes a tracked source-operation dependency, not an
+invisible implementation fact. This retains useful consuming access without
+a separate readable/writable/movable visibility family or a blanket ban on
+mixed-field types. Whole-value moves, permitted release, ordinary updates and
+swaps keep their existing rules. A copy field is read bare, not moved, and all
+existing borrow, effect, opacity and capability-modifier checks still apply.
+
+A minimal witness owns a public affine queue and a private `u64` tag. Moving
+the queue consumes the containing owner and can discard the tag; replacing
+that tag with a private linear resource makes the same extraction reject.
+A reference into the consumed owner becomes invalid; using it later rejects
+under REF-2. Destructuring an opaque operand still rejects under TYPE-2.
+Validate these distinctions, ordinary construction
+only when every field is accessible, and corresponding incremental invalidation
+before claiming compiler support.
+
+### Public capabilities: discussion baseline
+
+The next question is whether modules need a second handwritten copy/drop
+contract now that the complete type definition is in `.wfm`. The recommendation
+is to reuse TYPE-2/OWN-1/PROV-6 derivation from owned components and declaration
+modifiers, and export checked derived facts rather than repeat a capability
+pair in source. This extends existing rules to the proposed boundary; no new
+capability family or module-dependent ownership class is proposed.
+
+Private fields participate exactly like public fields. A struct containing
+only integers remains copy and drop even with every field private. `nocopy`
+removes copy when that is the intended restriction; `nodrop` removes both
+copy and drop. These modifiers restrict the same type inside and outside its
+module. Neither privacy nor a public factory creates an ownership capability,
+and copying a value is distinct from invoking its field constructor.
+
+For an otherwise unmodified `Holder<T>` owning just one field of type `T`,
+the concrete instance has the capabilities of `T`, irrespective of that field's
+visibility. A parameter contributes through components actually owned, not
+merely because it appears in the nominal's argument list. A written `T: copy`
+or `T: drop` is an admission requirement and supplies facts during symbolic body
+checking; an absent bound supplies neither. A concrete copy instance does not
+retroactively license copying in an unbounded generic body. A bound on `T`
+also cannot make a container copy if another owned component prevents it.
+
+`nodrop` requires explicit consumption; it does not require a particular named
+finalization function. Legal structural consumption remains a route under
+PROV-6, including when the enclosing nominal is nodrop but the omitted fields
+are droppable. A genuinely linear private remainder instead prevents external
+structural disposal. Any stronger protocol restricting consumption to one
+operation would be a separate design question, not an inferred benefit of
+privacy or nodrop. Existing compiler-derived release runs no user destructor.
+
+The expected benefit is one authority for capabilities and no manual formula
+to keep synchronized. The cost is that a private field can change a public
+type's derived capabilities or residual-release conditions, requiring public
+surface reporting and precise invalidation. Compare concrete and generic
+instances across a dependency before choosing any additional capability
+annotation; a derived API display can improve readability without becoming a
+second source definition. Logical getter use and object invariants remain
+separate questions.
 
 ### Public interface and generated compiler projections
 
@@ -1762,7 +1816,7 @@ a mixed-field struct and a public struct whose complete field list is private.
 Keep private support in `.wfm`; reject missing support in `.wf`, inaccessible
 types in public signatures/fields, a `public` alias and duplicate/extended struct
 definitions. A public field of a private enclosing type must not publish it.
-Qualify direct reads, writes, disjoint field borrows and the candidate consuming
+Qualify direct reads, writes, disjoint field borrows and the selected consuming
 operations, including droppable and linear private remainders. Reject private
 field access and external construction needing private fields. Derive and check
 all capabilities rather than trusting a type's publication modifier.

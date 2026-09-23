@@ -96,15 +96,28 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   distinguish inspection from mutation. One definition avoids correspondence
   between split field lists, but interface size and reading cost remain
   unmeasured because private representation/support now live in .wfm.
-  The [field-operation candidate](../research/investigations/modular-compilation/DESIGN.md#field-visibility-and-structural-operations-discussion-candidate)
-  now reconsiders ordinary public-field extraction with checked residual
-  release: all private fields are declared in .wfm, so the earlier blanket
-  restriction cannot rest on missing interface information. Validate droppable
-  versus linear private remainders and corresponding invalidation before
-  selecting consuming access rules. Construction with private fields goes
-  through declared functions in the candidate; no hidden field is defaulted.
+  Qualify the selected [field-operation rules](../research/investigations/modular-compilation/DESIGN.md#field-visibility-and-structural-operations):
+  ordinary public-field extraction requires legal residual release, including
+  private fields omitted with ..; only accessible fields can be bound. Validate
+  a public affine queue plus a private u64 tag, then replace that tag with a
+  linear private resource and require rejection of the same extraction.
+  Preserve reference invalidation/use, opaque, copy-field spelling and effect checks.
+  Construction requires every field accessible, so private-field construction
+  outside the module goes through declared functions; nothing is defaulted.
   Preserve current readonly/opaque meanings. Remove this follow-up when the
   selected publication and operation rules have executable qualification.
+  The [capability discussion](../research/investigations/modular-compilation/DESIGN.md#public-capabilities-discussion-baseline)
+  recommends reusing component/modifier derivation without a second handwritten
+  public pair. Qualify private versus public copy components, nocopy/nodrop,
+  conditional Holder<T> instances, symbolic bounds versus concrete properties,
+  and a private component changing exported capabilities or residual release.
+  Distinguish nodrop's explicit-consumption requirement from a designated
+  finalization protocol; lawful structural consumption is not forbidden by
+  that modifier. Benefit: one capability authority; interface readability and
+  cross-module invalidation remain unmeasured. Revisit during imported-type
+  checking, before adding annotations, and remove when the existing derivation
+  and derived API display are qualified or an alternative is selected with
+  evidence. No additional protocol mechanism is selected here.
   A resolved public-surface comparison could focus CI review on visibility,
   signature, field, contract, constant, dependency-identity and derived-capability
   changes. A keyword diff is only a hint. Validate edits outside public-bearing
