@@ -2952,9 +2952,10 @@ either query or branch. Scalar results join through a phi; addressed results
 share the planned destination and take one post-join snapshot. Predecessor
 planning uses the same world selection, and an ensuing ordinary overlap join
 remains the final continuation. The
-[pending amendment](../../../design/amendments/zero-budget-loop-dispatch.md)
-records this choice; no live-tree, specification, proof or runtime-policy
-change is made.
+[original amendment](https://github.com/mbbill/Whitefoot/blob/0fe62339885b3254a4a76214ab5146d2360605b8/design/amendments/zero-budget-loop-dispatch.md)
+recorded this candidate without changing the live tree, specification, proof
+or runtime policy. The [reassessment below](#general-dispatch-reassessment)
+supersedes that proposal.
 
 Entering an empty chunk differs from the splitter's early seed return, so
 entry behavior matters. Current chunk synthesis reconstructs borrowed local
