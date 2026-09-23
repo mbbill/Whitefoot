@@ -4616,6 +4616,156 @@ the [formal-compute TODO](../../../docs/todo.md), because a mechanism change
 needs evidence distinguishing these possible causes. No threshold, runtime,
 compiler, specification or correctness-CI change follows from this inspection.
 
+## Selected-target loop frame fitting
+
+This prospective compiler change starts from main
+`345e2966a45c995d6cebbb7f6b128a66235cd20f`. The separate runtime-DAG trial at
+[`b68f6777`](https://github.com/mbbill/Whitefoot/blob/b68f6777a0ef8c31a41da8a6a785ac6f67e644bb/research/investigations/compute-model/DESIGN.md#runtime-adjacency-all-predecessor-probe)
+reports a permitted ordinary output-initialization loop refused after needed
+captures have already been selected. Its unchanged
+[source](https://github.com/mbbill/Whitefoot/blob/b68f6777a0ef8c31a41da8a6a785ac6f67e644bb/research/investigations/compute-model/dag-fanin.wf)
+has SHA-256
+`1d536089caa1204af95569817760471fd0006613b6c7c6c08ea95a29d1304ffe`.
+The two retained inputs are the output range descriptor and a used `TaskCell`
+value. The current splitter charges 40 fixed bytes, 16 descriptor bytes and
+256 bytes for any nominal, giving 312 against the unchanged 256-byte slot.
+The target representation of `TaskCell` is two u64 fields; the same ordered
+frame would occupy 72 bytes. That is a layout deduction, not an emitted or
+qualified candidate. The prior trial's twelve native configurations qualify
+its original behavior only, and its small inputs do not supply positive grain
+for this initialization. This obstruction is neither unused capture retention
+nor the separate serial fill inside an allocation primitive.
+
+The selected implementation boundary is the final `frame_decline` in
+`lowering/builder/split.rs`, after one completed chunk and existing capture
+pruning but before delayed helper reservation. Retain the initial conservative
+precheck and the complete established path whenever the final conservative
+estimate fits. Only a final estimated refusal asks the existing selected-target
+lane-layout calculation whether the exact transported signature fits. Use
+`Capture.ty`, not the original binding's storage type, in signature order
+`seed, lower, upper, captures..., allowance`, followed by the result. The
+allowance is already a u64 parameter; it must not also be counted as a hidden
+recursion budget. A fit continues through the existing reservation and
+outlining path. A representable slot refusal reuses `splice_chunk` once, with
+its nested helpers, scheduling metadata and cleanup intact and no new call
+around the ordinary loop. Any retained estimate in its ledger is labelled
+conservative rather than presented as exact layout.
+
+Reuse `backend/target.rs`'s `parallel_lane_frame_layout` arithmetic, field
+alignment, padding, address-domain checks and runtime slot test through one
+signature-level query. That query takes the selected target, lowered nominal
+and element tables, ordered parameter types, result type and the existing
+optional recursion-budget flag. Those tables already exist before function
+bodies are built. `LayoutComputer` should read the tables it needs; the
+surrounding program-validation helpers receive the full program explicitly
+where they also need function or constant lookup. Do not create an incomplete
+`IrProgram`, duplicate a nominal-size walker, or introduce a later CFG rewrite.
+The driver selects the target after complete semantic acceptance and passes
+that same target through lowering and emission; target-specific test helpers
+do likewise. Host convenience entry points may delegate to this one path.
+An unrepresentable layout retains `TargetLayout` failure classification and no
+source rule; malformed compiler data remains a compiler failure. A valid
+layout exceeding a lane slot remains an optional scheduling decline.
+
+The affected production set is target layout/query visibility, lowering's
+context and splitter, and driver/error plumbing. Ordinary call layout remains
+a consumer of the same query. The two-world clone rule, source permissions,
+capture reconstruction, CFG reuse, storage representation, runtime policy and
+language rules retain their current grounds. The
+[pending addition](../../../design/amendments/loop-target-fitting.md) to
+`compiler/parallel-lowering/two-worlds` extends its rescue decision; no current
+decision is replaced or retired. No specification or conformance change is
+proposed.
+
+Enlarging lane slots would charge all tasks without resolving the estimator's
+missing type information. A second size calculator could disagree with
+emission on padding or address domains. Passing every candidate to the emitter
+would leave real refusals paying recursive splitter overhead. A later rewrite
+or another lowering of a refused source body would replace the established
+single-construction fallback. Exact fitting before pruning would change the
+chosen capture interface and helper order beyond the demonstrated gap. These
+alternatives do not serve this bounded capability better than the shared
+post-pruning query.
+
+### Prospective qualification
+
+Before implementation, require the following observations:
+
+- Extend existing compiler layout/lowering cases with small nonzero nominal
+  and fixed aggregate payloads, the exact 256-byte boundary and a true oversize,
+  alignment-sensitive padding, and a reduced address domain that fails as
+  `TargetLayout`. Check that an explicit selected target is used for both
+  fitting and emission and that the allowance is counted once. A zero-only
+  initializer cannot qualify aggregate transport.
+- Extend existing native loop coverage, sharing compatible construction, for
+  value snapshots/copies, joined results and source-owned cleanup at W1/W4 and
+  controlled refusal. Retain nested true refusal with an admitted inner split,
+  metadata and cleanup, and the existing candidate-construction counter for
+  increasing refusal depth. Ordinary scalar cases whose conservative frame
+  already fits must retain their capture ABI and emitted modules under the
+  same flags. These properties belong in maintained compiler tests, with no
+  research input or new Rust test binary in the daily gate.
+- Emit the pinned DAG source with frozen main and the candidate under ordinary
+  `--par --emit-llvm --par-ledger`. Record source/compiler/module identities,
+  actual initialization frame size and its emitted price `w`. The saved main
+  compiler has SHA-256
+  `cbffd4dd1ae8641ef03790457181188988bf70cc4af1a53c50c1f406307bb7f9`;
+  rebuild only if its identity or availability requires it. Inspect the
+  reachable `form=0`, `C=1` path before native execution: the owner prefix is
+  empty, report/reset spans are one, and initialization must be the only
+  executable offer source. Emitted offers elsewhere do not establish this.
+- Fix one larger disconnected graph with all task costs one and absent
+  successors encoded by `N`. Let `q=max(1,ceil(150000/max(1,w)))` and
+  `N=16*q`, at most 2,400,000. Choose N once from candidate emission before
+  native outcomes; ordinary W4 grain then permits 16 chunks at an empty
+  entry deque, without a work-floor override. Run the plain main and candidate
+  images once at W1 and W4. Reuse the pinned probe's independent recurrence,
+  full element/count comparison, nonzero initial outputs, unchanged-input and
+  canary checks; require `{status=0, rounds=1, notices=0}`. Record the change
+  in actual steals around this invocation. Candidate W4 worker execution,
+  with initialization isolated as above, is the capability criterion. A zero
+  steal result remains unqualified and is not rerun for a better schedule.
+
+Reuse the
+[pinned probe](https://github.com/mbbill/Whitefoot/blob/b68f6777a0ef8c31a41da8a6a785ac6f67e644bb/research/experiments/compute-bench/dag_fanin_probe.cpp)
+and its LLVM adapter by scratch extraction, recording extraction and bounded
+adaptation commands and digests with the results. The large control uses no
+trace engine, quadratic pair-overlap enumeration, per-task log, or oneTBB
+build. Keep full per-element checks but print only counts and a digest. No
+second permanent benchmark suite or dependency on the separate PR's compiler
+or runtime candidate is introduced.
+
+For this no-edge control, source auxiliary storage is `96*N + 32` payload
+bytes plus seven allocation headers, output is `16*N`, and input costs and
+successors occupy `24*N` bytes. The probe's retained graph, oracle, guarded
+copies and comparison storage must also be inventoried before construction.
+Use a conservative requested-data bound of `256*N + 64 MiB`, below 768 MiB
+at the maximum N; stop if the adapted probe exceeds this bound. The fixed
+runtime storage and one-gibibyte stack reservations per participating thread
+are charged separately; this bound is neither measured RSS nor virtual
+address usage. Initialization, validation, the seven fills, owner work and
+oracle work remain in the whole-call accounting.
+
+Construct and run only after the shared heavy slot is released, through
+`.github/run-check.pl` with two jobs and explicit caps: each research emission,
+native construction and native execution stage has 30 seconds. Record compiler
+and native construction separately from program execution, plus emitted code
+growth and whole-call costs; no elapsed-time success threshold or universal
+speed claim is selected. Applicable focused compiler checks and the canonical
+gate qualify the eventual delivered revision. Stop and reassess if fitting
+requires a broader capture, clone, scheduling or pipeline change, if the
+target/error paths cannot share the existing calculation, if already-fitting
+interfaces change, or if the resource/phase caps prevent the prescribed run.
+
+**Design suitability.** The existing completed candidate and prebuilt type
+tables make a shared signature query the smallest general addition serving
+this consumer. Its cost is explicit target/error plumbing and layout work
+only after an estimated refusal; aggregate transport and actual worker
+participation remain unverified until the checks above. Wider pruning of
+fitting captures and allocation-fill parallelism remain the distinct,
+already-recorded TODO opportunities. This change addresses neither and does
+not use their unmeasured benefits to justify its scope.
+
 ## Query-retained zero-budget dispatch control
 
 The one-site experiment and general implementation below retain their original
