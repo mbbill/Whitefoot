@@ -722,6 +722,67 @@ neither impossibility nor a timing result. Adoption remains provisional and
 runtime benefit unqualified pending the separately labelled runtime arm;
 the failed arm is retained without a favourable rerun.
 
+### Conditional final trial: tail-first publication at a chain root
+
+This prospective trial is conditional and not yet selected: if the separate
+initial-completion-observation arm also fails the preselected A/D criterion,
+consider one final bounded compiler scheduling trial on the same frozen DAG
+source and that runtime. After scalar pruning and complete target frame
+fitting select bridges, a full group qualifies for reordered publication
+only when it has an outgoing selected bridge and no incoming selected bridge.
+This boundary applies to arbitrary retained group width. Other groups keep
+their current publication and retirement order.
+
+At each original call position, prepare the complete operand snapshots in
+source order. Do not reread a source place at publication. Once the qualifying
+group's last call has prepared its operands, acquire and publish its retained
+tail first, followed by the earlier offered members in their original source
+order. Thus B/A becomes capture B, capture A, publish A, publish B, retire B,
+capture/publish D, retire A, inline C, retire D. For a wider group the earlier
+members still retire newest-first. The existing full group's every-pair
+permission, including operand reads and owned consumptions, is the only
+authority for this preparation interval; the exact tail/head verdict still
+owns the bridge. A group receiving an incoming tail is excluded because later
+argument construction may require that tail's joined result: in B/A, D/C,
+F/E, D must publish beside A, while C's arguments may need A to finish.
+
+Preparation preserves immutable backing and owning captures through
+publication and any refused call. Acquisition remains at publication, with
+frame stores only in its granted branch; refusal executes the same captured
+call once at its existing retirement boundary. Every result, release,
+cleanup and exit keeps that boundary. The one final schedule owns publication
+events as well as retirements and phi predecessor labels, so a reordered
+group's continuation names its last actual publication. Sequential clones
+and unbridged groups retain their current emission. No permission query,
+source acceptance rule, runtime deque protocol or executor is added.
+
+The cost is a compiler preparation phase, longer operand live ranges and
+delayed initial publication until the complete group is prepared. It adds no
+offers beyond the current bridge plan and does not increase that plan's peak
+lane slots; spill and workload cost remain unqualified. Later groups and
+joins of pending targets retain ordinary-stack helping and its continuation
+limitation. A target-conditional claim of the oldest deque entry is deferred:
+a separate target precheck followed by the existing steal can claim retained
+work after another thief wins the target. Combining the test with the claim
+would add a runtime claim path, and the existing join/wait fallback could
+still help the retained tail when the target is already running. Moving
+continuations would introduce a substantially broader executor and storage
+change, with no qualified need for that scope in this trial.
+
+Before execution, retain the argument, exact-permission, range-capture,
+mixed-refusal, ownership/cleanup, frame/budget, wide-group/chain and phi
+controls, adding exact publication-order and no-incoming-tail controls. Run
+the same complete 115-case, 956-task source once in each plain/traced W1/W4
+configuration, with original edges, values, counts, negative comparators and
+passive observer unchanged. Require distinct-thread A/D overlap in traced
+W4 mode 3 case 9, inspect all sixteen mode 3 A/B, A/D and C/D counts, and
+compare sequential and unchanged-function bodies. Earlier failed arms remain
+recorded. No favourable rerun or timing claim is allowed. If this final arm
+fails the overlap criterion, defer further compiler/runtime scheduling
+expansion in this investigation; adoption still needs the separately assessed
+correctness and cost evidence. Selection, if made, must update the pending
+lowering amendment before production edits.
+
 **Design suitability.** This bounded extension addresses the missing A/D
 consumer through the existing checked-call path. If bridging is retained,
 argument boundaries, target refusal and continuation labels require one
