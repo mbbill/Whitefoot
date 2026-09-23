@@ -111,6 +111,31 @@ apparently current. A retained investigation need not be moved when
 implementation lands: its design and measurements remain useful evidence,
 while the compiler design tree changes.
 
+### Specification authoring
+
+The active specification states current source-language and toolchain
+judgments, including its normative worked example. Repository approval and
+version-management rules belong to [AGENTS.md](../AGENTS.md), design reasons
+to the language tree, and candidate mechanisms to [ideas](ideas.md).
+Version commentary, approval history, and future-work bookkeeping do not
+belong in the active specification.
+
+State each normative fact once and refer to it elsewhere by rule ID. Express
+conditional structure as total positive rules or table data, without exception
+clauses. These are the [language tree's authoring decisions](../design/language.md),
+not additional source-program judgments.
+Every rule ID has one definition and every bracketed rule reference resolves.
+The conformance runner checks those structural properties; it does not prove
+semantic uniqueness or the absence of exception clauses. Printed review
+inventories, when present, are subordinate to and must match the sets derived
+from the normative definitions.
+
+Surface names label checked invariants defined by the specification, following
+the [lexicon decision](../design/language/surface-form/borrow-lexicon.md).
+Do not borrow backend terms that name lowering consequences. Before borrowing
+another language's conventional name, compare the semantics and record any
+divergence; use that name only when the semantics match.
+
 ## Feedback and implementation boundaries
 
 Use the compiler README's focused development commands for the part being

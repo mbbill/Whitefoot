@@ -1,8 +1,6 @@
 # Kernel Specification v0.66
 
-Prior versions: the immutable `spec/kernel-spec-vN.md` archives. These bytes are this version's identity; nothing else records it.
-
-Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
+Rule IDs are stable; diagnostics cite rule IDs.
 
 ## 1. Scope and conformance
 
@@ -106,7 +104,7 @@ Its canonical spelling is the candidate with the fewest ASCII bytes before `_TYP
 This selection is total, host-independent, and unique; in particular `0.0` and `-0.0` remain distinct.
 Other examples are `1.5_f64` and `6.022e23_f64`.
 `unit`; STRING `"..."` whose interior is a sequence of items, each one raw ASCII-printable byte in U+0020..U+007E other than `"` and `\`, or one of exactly three escapes `\\ \" \n`; no other byte is legal, and each character has exactly one spelling (the escape where one is defined, the raw byte otherwise).
-STRING appears only in `doc` entries; non-ASCII diagnostic text is DEFERRED.
+STRING appears only in `doc` entries.
 There are no boolean literals: `Bool` is a prelude enum (§14).
 Generic-numeric literals `0_T` and `1_T` are legal where `T` is a gparam bound by a numeric contract (`Int` or `Float`, §14), denoting T's additive and multiplicative identity; a concrete type uses `0_i32` and the like, so there is no dual spelling.
 NaN and the infinities are not literals; they are the nullary ops `fnan` and `finf` [OP-1].
@@ -118,10 +116,6 @@ The lowercase spelling follows the primitive-type convention (TYPE-1: primitives
 An integer literal `-?d_T` is legal where its signed value lies in the closed range of T (signed `[-2^(K-1), 2^(K-1)-1]`, unsigned `[0, 2^K-1]`) and it has no leading zeros: the single digit `0` is its own form, a leading `-` is legal for signed T, and `-0` is written `0`.
 A float literal is legal only when it has the unique canonical spelling selected by [FORM-5] and denotes a finite value of its stated TYPE.
 An out-of-range integer, a leading-zero integer, a noncanonical float spelling, or a float decimal that rounds to a non-finite value is a hard error at check time [SCOPE-2]; a literal never denotes a wrapped, truncated, saturated, or undefined value.
-
-[LEX-1] Lexicon policy: surface names label checked invariants, stated in this document self-containedly.
-Names are never borrowed from backend IR vocabulary (e.g. `noalias`), which names lowering consequences, not source invariants; and a name is borrowed from another language's convention only where a divergence census shows the semantics genuinely match.
-Ruling of record: a reference carries no permission marker and is written `&T`, with the range-reference parameter kind written `&[T]` (Rust divergence: whether a callee may write through a reference parameter is stated by its effect row [EFF-1], so a marker would spell that same invariant a second time [FORM-1]).
 
 ## 3. Grammar
 
@@ -157,7 +151,7 @@ An external terminal denotes one predicate over one formed token.
 Anything that cannot take one of those forms is a raw lexical defect with the attribution and exact span in [DIAG-1].
 Raw formation gives every token exactly one context-free shape kind: lower word, upper word, label form, operation-name form, operator form, numeric form, STRING form, or one exact punctuation form.
 Terminal membership then visits every formed token in source-ordinal and token order.
-For each token independently, and without consulting grammar position, name lookup, the operation table, or another token, it evaluates the complete approved set of exact fixed-terminal predicates and external-terminal predicates in this specification and retains every matching predicate.
+For each token independently, and without consulting grammar position, name lookup, the operation table, or another token, it evaluates the complete set of exact fixed-terminal predicates and external-terminal predicates in this specification and retains every matching predicate.
 It rejects the token exactly when that retained set is empty; it never selects one preferred predicate and never tests only the predicates expected at a parser position.
 Grammar derivation later tests the retained predicate sets against its `SELECT_2` rows.
 
@@ -393,7 +387,6 @@ A capability modifier and a generic parameter's capability bound are properties 
 Numeric value conversion is the single explicit op `cvt::<Src, Dst>(x)`.
 Totality is decided by value-preservation, not bit-width: `cvt` returns `own Dst` where every value of Src is exactly representable in Dst, and `own Result<Dst, NarrowError>` for every other distinct numeric pair; it never rounds, truncates, or saturates.
 The exact partition and per-value semantics are [OP-6].
-Deliberate rounding is a separate DEFERRED float-round op family, never `cvt`.
 
 [TYPE-5] Statement-local typing; boundary-explicit facts.
 The factored `call` grammar denotes a construction exactly when its callee is an unqualified TYPEID application. A constructor writes any nominal arguments directly after that TYPEID, never with the function-call `::` introducer; writing the latter is a TYPE-5 error at the complete call. Its operands are named fields under GRAM-8, so a positional operand list is a GRAM-8 error there. Construction is an ordinary expression, not the callable occurrence required by an expression statement or a destructuring result-list let; either statement position rejects it under TYPE-5. These judgments preserve the constructor forms while sharing the strong-LL(2) prefix with qualified member calls.
@@ -592,7 +585,6 @@ A const item is never `move`d or `set`, and no declared row may write a path roo
 It is read via a subscript, a measure member [OP-15], a field suffix, or a `&` reference [REF-1], so a const table may be passed to a consumer.
 A struct-typed const is additionally read via its field suffixes exactly as subscript reads: a copy-scalar selection copies out, and a composite selection keeps the whole-composite read rules.
 A struct-typed const is laid out as one read-only static aggregate in the nominal's ordinary representation.
-Enum-typed consts and written generic construction arguments in const position are DEFERRED with recorded delta: a payload-enum const has no non-consuming read path (a `match` scrutinee is an own place [OWN-13]), and a tag-only-enum const additionally needs a constant-value family no current program demands.
 
 ## 5. Ownership and references
 
@@ -902,7 +894,6 @@ The table below is the normative inventory (columns: op, type domain, signature,
 Let `DotlessOperationNames` be exactly the set of distinct individual operation spellings enumerated in this rule's normative `op` column whose complete spelling satisfies IDENT and contains no dot.
 Let `ModeWords` be exactly the suffix alternatives in FORM-3's active OPNAME formation rule together with the operator-form suffixes of [GRAM-1]; in this version the two carriers share one closed set, `{wrap, defined, checked, sat, strict}`.
 `ReservedLowerNames` is exactly `DotlessOperationNames` union `ModeWords`.
-A printed review list is non-authoritative and, when present, must equal the corresponding derived set.
 
 Each distinct complete spelling in the operation table declares one operation-family identity, even when more than one row carries that spelling; the two `cvt` rows therefore belong to one `cvt` family.
 An OPNAME callee resolves to its exactly spelled operation family.
@@ -979,7 +970,7 @@ The table result type is exact, and the containing construct owns any later mode
 Mode membership is table data: add/subtract/multiply have exact, defined, wrap, checked, and sat; divide/remainder have exact, defined, and checked; negate/absolute have exact, defined, wrap, and checked; shifts have exact, defined, and wrap.
 All these rows are pure.
 
-[OP-3] Float ops that ROUND carry `.strict` (IEEE 754, no reassociation, no contraction) and are the family a future fast-math mode would relax: `fadd.strict` `fsub.strict` `fmul.strict` `fdiv.strict` `fsqrt.strict` `ffma.strict`.
+[OP-3] Float ops that ROUND carry `.strict` (IEEE 754, no reassociation, no contraction): `fadd.strict` `fsub.strict` `fmul.strict` `fdiv.strict` `fsqrt.strict` `ffma.strict`.
 Float ops that are EXACT or exact-selection are dotless: `fneg` `fabs` `fcopysign` `fmin` `fmax` `ffloor` `fceil` `ftrunc` `froundeven` `frem` and the six comparisons.
 Approximation/fast-math modes remain an OPEN numeric-semantics question; a relaxed float op would be introduced as a distinct OPNAME (FORM-1-additive).
 
@@ -1379,8 +1370,8 @@ A `clause_expr` side is an `affine_expr` whose `affine_factor` is an `atom`, a `
 A clause side is that same `affine_expr`, so `ensures rest.len <= vector.len + 1_u64;` states in one clause the relation a `header_invariant` states in one invariant, and the two placements of one relation share one production rather than one spelling each.
 The `+`, `-`, and `*` of a clause side denote the mathematical integer expression [INV-1] fixes and perform no [OP-1] operation, so a clause side creates no [OP-2] domain obligation and admits no runtime value it could overflow; a `clause_op` is exactly the Bool-valued rows of [OP-1], the six comparisons and the five infix `defined` queries, and the arithmetic operators are consumed inside the side.
 A clause is judged by exactly the [OP-5] condition [FN-8] and [FN-9] already apply: the root has exact value mode and type `own Bool`, and every operand is a non-consuming datum or an operation-table form pure and total over its selected operand domain.
-A measure is a place [OP-15], so it reaches a clause and an invariant through the `atom` admission and needs no former, and the motive that widened `affine_factor` to admit a `call` is retired with the formers while the production itself stands for a constructor `call` and for the domain-query rows.
-This rule adds no route, no fact source, and no proof authority; it adds spellings the existing admissions already accept.
+A measure is a place [OP-15], so it reaches a clause and an invariant through the `atom` admission and needs no former; the `call` alternative of `affine_factor` admits a constructor `call` and the domain-query rows.
+These spellings confer no route, fact source, or proof authority beyond the admissions defined here.
 
 [CALL-4] Contract vocabulary, the result ordinal, the routes, and where the relations land.
 The clause operands of [FN-9] are terms [MSR-5], so a measure member of an admitted formal place is an operand with no per-family admission, and so is one of an admitted result place.
@@ -1388,20 +1379,16 @@ A `fn_decl` declares one result or an ordered result list of two or more [GRAM-2
 Every ordinal is a datum of every clause, written as that ordinal's binder spelling, and a single-result declaration is the one-ordinal case of this sentence rather than a second rule.
 A result ordinal's declared type is a fragment integer after concrete [FN-2] substitution [FN-9] or a measured type [MSR-1], and which of the two decides what that ordinal supplies: a fragment ordinal is a datum of the clause as its own value, and a measured ordinal is a datum only as a measure member of that ordinal's place.
 A measure member of a result place is instantiated at that ordinal's own destination [ENT-3.S12] — the place the destination names — exactly as a measure member of a formal place is instantiated at the formal's, and is queried at a selected return over the place that return hands back.
-A measure member of a result place reached through the one field step `inner` of a `Box` result — `result.inner.len` — is admitted in an `ensures_clause`, because the construction rows publish exactly that of a boxed runtime-capacity shape [OP-13, PRE-1, TYPE-9].
-DEFERRED: a measure member of a result place formed with any other field-selection `psuffix`es or subscripts, in place of the bare and `inner`-selected result places this version admits; its delta is numbered rules +0 and grammar productions +0, and it is an admission widening of [FN-9] rather than a new judgment.
+An `ensures_clause` admits a measure member of a result place exactly when that place is the bare result place or is reached through the one field step `inner` of a `Box` result — `result.inner.len`; the construction rows publish the latter for a boxed runtime-capacity shape [OP-13, PRE-1, TYPE-9].
 
 A routed clause is written `when V(f: r):` or `when b is V(f: r):`, where `b` names the result ordinal the route applies to.
 The ordinal binder may be omitted exactly when one declared ordinal has that route's enum type; when two or more do, the route is ambiguous and the declaration is a hard error citing CALL-4 at the `ensures_clause`, `AmbiguousResultRoute`, carrying the restructuring `name the result ordinal the route applies to: write `when b is V(f: r):``.
 The judgment is at the declaration because the ordinal set is fixed there, exactly as [CALL-6]'s consistency judgment is: a route no reader can attribute to one ordinal publishes a fact about a value the writer did not name.
-DEFERRED: a route over any variant of any returned enum type, in place of the prelude `Ok` this version admits; its delta is numbered rules +0 and grammar productions +0, and it is an admission widening of [FN-9] rather than a new judgment.
-It is deferred with the measured result above, because the route identity a clause retains is a prelude declaration ordinal and generalizing it is one change with that widening rather than two.
 
 The destinations are exactly [ENT-3.S12]'s closed list, and a relation reaches a caller only there; [CALL-6] fixes the point at which each is instantiated and the point at which each is established.
-That list gains the one destination a multi-result contract creates, and only a multi-result contract exercises it: **each binder of a destructuring `let`** is the S12 destination for every published relation naming the value that lands there, ordinal i landing at binder i [GRAM-4].
+For a multi-result contract, **each binder of a destructuring `let`** is the S12 destination for every published relation naming the value that lands there, ordinal i landing at binder i [GRAM-4].
 An own-place match of an integer-payload Result selects its transported conditional evidence under [ENT-5]. Measured payloads and destructuring-consume binders receive their measure relations through [MSR-3]'s placement table.
 A published measure of the transferred value or one of its exact owned measured descendants reaches both through [MSR-3]'s payload and destructuring placements; a measure datum carries nothing else.
-DEFERRED: published relations at these positions outside both the integer Result transport judgment of ENT-5 and the measure-placement vocabulary of MSR-3. Its delta is numbered rules +0 and grammar productions +0.
 
 [FN-10] Guaranteed self-tail calls.
 The optional `musttail` atom on a `call` [GRAM-5] requires that call to transfer to the enclosing function without retaining the current activation or growing the stack for that transfer.
@@ -1433,7 +1420,7 @@ A row lists each path at most once per category, and a repeated entry is an EFF-
 `pure` is the unique spelling of the empty row.
 The root IDENT names the storage its reference parameter refers to, so a row never writes `deref`: `writes(cell)`, `reads(cell.inner.len)` [FORM-1].
 Frame residency [STOR-1] is not an allocation by definition, and allocation and release carry no effect entry [STOR-8].
-The spellings `external`, `blocks`, `memory`, `world`, and `capability` are not grammar atoms, effects, retired spellings, or reserved words. They satisfy IDENT wherever any other lowercase identifier does.
+The spellings `external`, `blocks`, `memory`, `world`, and `capability` are not grammar atoms, effects, or reserved words. They satisfy IDENT wherever any other lowercase identifier does.
 
 Every `effect_path` is rooted at one reference parameter of the same callable and continues through field selections, enum payload steps, measure and window-part names [TYPE-10, WIN-2], and whole-index or range positions supplied as arguments. A by-value parameter has no effect entry at all: the call site records the consumption of a `move` argument or the read of a copy argument [EFF-5]. A signature never contains an index expression; an index enters an effect only through an IDENT that resolves to a value parameter of the same callable, evaluated once at the call. A root resolving to a local, a result binder, a by-value parameter, or a non-parameter declaration is an EFF-1 rejection. A bare parameter names the complete state that parameter supplies; a field path names only that structural substate.
 
@@ -1590,7 +1577,7 @@ Whenever no row matches, the diagnostic machine computes each arm's score: the g
 Let `m` be the greatest score at that frontier.
 The failure boundary is the actual lookahead token at position `m`, or the zero-width end-of-source coordinate when that position is `SOURCE_END`.
 The maximal-prefix rows are every row with score `m`.
-The expected-terminal set is the distinct predicates at position `m` in those rows, ordered by their first terminal occurrence in the approved grammar; written terminals precede `SOURCE_END`.
+The expected-terminal set is the distinct predicates at position `m` in those rows, ordered by their first terminal occurrence in the grammar; written terminals precede `SOURCE_END`.
 A direct terminal mismatch is the same calculation with one row and has a singleton expected set.
 
 At every no-row frontier, the following closed attribution rows are tested in order before diagnostic traversal descends.
@@ -1772,7 +1759,7 @@ No result datum is visible in a contract definition, requirement, function body,
 The name of every `header_invariant` and `invariant_stmt` produces one proof-only invariant declaration record that uses TYPE-6's inventory and scope machinery; [INV-1] owns collision and lookup failure in this domain.
 An IDENT premise of `use_premise` produces one lexical-use record querying only that domain; it can never resolve to a value declaration that happens to have the same spelling. A `proof_use`'s own IDENT is the named multiplicity and queries the value domain instead, so the two positions never compete for one spelling.
 These records have no runtime declaration or value identity and participate in deterministic lexical resolution exactly at their stated scopes; OP-1 owns declaration-name reservation.
-The retired law-name and law-argument roles produce no records. A function-formal expansion retains its written declaration and application identities rather than fabricating a second lexical spelling.
+A function-formal expansion retains its written declaration and application identities rather than fabricating a second lexical spelling.
 In an `arm` or `result_route`, the leading TYPEID first resolves globally to an enum variant.
 Later typed checking compares that variant's owner with the scrutinee enum for an arm; a foreign arm variant cites TYPE-6.
 FN-9 separately requires the route's successfully resolved variant and owner to be exactly PRE-1 `Result.Ok`.
@@ -1948,7 +1935,7 @@ An implementation may report unavailable resources, trusted-computing-base failu
 ## 13. Execution overlap
 
 [CAP-1] The kernel defines no writer-visible capability category and no additional concurrency permission. `own`, `&`, path overlap [OWN-7], and the ordinary effect row [EFF-1] are the complete authority and interference vocabulary available to [PAR-1] and [PAR-2].
-This version defines no thread construct. A later thread construct must derive transfer and sharing permission from these same ownership rules and the represented type; it may not add hidden shared mutation to an opaque struct [TYPE-2]. Data-race impossibility is D1 law; general race conditions are out of scope (C004 amended scope).
+The kernel defines no thread construct. Its data-race guarantee is subject to [SCOPE-3]; it does not exclude general race conditions.
 
 [PAR-1] An implementation may execute two adjacent statements of one block with overlapping execution exactly when the first's write paths are disjoint from the second's read and write paths and the second's write paths are disjoint from the first's, using the same path-overlap and index/range-disjointness judgment as [EFF-5] and [OWN-7].
 Read/read overlap is admitted.
@@ -2393,7 +2380,7 @@ Every inhabited concrete [FN-2] instance is rechecked independently after substi
 If concrete instances disagree, the first invalid concrete instance in stable instance order rejects the shared source occurrence.
 
 The fragment joins the trusted computing base exactly as the type and ownership checkers do [SCOPE-3]; a wrong derivation is a compiler defect owned by implementation repair and tests, not a second runtime validation layer.
-Adding a fact source, relation family, closure rule, proof rule, protected operation family, or callable publication surface is an explicit specification amendment [META-5], never implementation strengthening.
+No implementation may add a fact source, relation family, closure rule, proof rule, protected operation family, or callable publication surface beyond those defined here.
 [ENT-2] The fragment constructs one ProofContext for one concrete function body at a time.
 No caller fact is copied into a callee: an ordinary call judges its instantiated [FN-8] goal in the caller's entering state, the callee body begins with its own proved requirement as [ENT-3] source S4, and only a separately FN-9-verified earlier-SCC summary may establish its instantiated normal-result relation back in the caller.
 A fragment type is one member of the closed integer set [OP-2]; relations are over mathematical values, so relations between terms of different fragment types are well-formed and are created only by the sources and flow transports [ENT-3, ENT-5] admit.
@@ -2476,7 +2463,6 @@ The table in this version is:
 ```
 
 Exactly one cell class is *bounded* anywhere — a `Ring`'s `head` — and it is the one cell the two `Ring` rows share: the two front-moving operations `place_front` and `take_front` [OP-10] publish it two-sidedly and no operation re-establishes it exactly, so no derivation may treat a `Ring`'s window origin as a known constant after a front operation.
-The table is data a later version extends with a row per measured type it adds; extending it adds no rule and amends none.
 
 A measure is a logical quantity, and a measured value's window origin is `P.head` where the table gives that cell and slot zero where it does not.
 A measured value's initialized set is the `P.len` slots beginning at that origin taken modulo `P.cap`, and a **logical offset** `i` names the slot at physical offset `(origin + i) mod P.cap`.
@@ -2631,10 +2617,8 @@ Window mutation uses the operations of [OP-10]; a source helper over a written r
 
 *Judgment:* the conservative default for every parameter that is not a range reference.
 *Publishes:* the absence of any call-site-derived or body-derived classification.
-*Amends:* [ENT-5]'s clause (b), whose projected-callee-write kill is now classified by [CALL-1] through [CALL-3] and by nothing else.
 
 [ENT-3] The fact state is defined constructively over the conservative structural normal-control graph [FN-1]: each source below establishes its L0 and signed-goal facts at its stated point; facts flow forward along normal edges; kill events apply on the edges where [ENT-5] places them, with scope-exit kills applied before any join; merge points take the [ENT-5] join and loop heads the [ENT-5] loop rule; and the state queried at any point is the [ENT-4] closure of that flow.
-retired: S8, S10
 Dominated straight-line establishment is a consequence of this construction, not a second definition.
 Nothing else is a fact: a writer's `ensures_clause` is only an FN-9 proof obligation, never a trusted source; a written header or local invariant conclusion has no authority until INV-1 and any applicable PRF-1 certificate prove it; no struct invariant, compiler-invented loop proposition, inferred summary, or unverified user-function result exists.
 S11 is only the compiler-owned consequence of the counted operations [FN-1] actually executes, and S12 exists only from the declaration relations available under FN-9: a separately verified earlier-SCC summary or a PRE-1 supplied declaration, under the publication formula below.
@@ -2763,8 +2747,6 @@ It is the fact a payload path step depends on [REF-1] and the fact [MSR-3]'s PAY
 Its support is that scrutinee place's own storage, so it dies on any [ENT-5] event whose written place overlaps it and on the arm's exit edges by the ordinary join.
 This loss forbids a new payload selection; it does not itself destroy a payload place already captured by a reference [REF-2].
 It establishes no L0 relation and no signed goal; it is an ownership-side refinement consumed by [REF-1], [REF-2] and [OWN-7].
-
-The label S8 is retired, not reused: its midpoint family was struck as an owner-approved version amendment and may return as a later version's monotone addition the day a corpus program writes the shape.
 
 [CALL-6] Publication: how a declared relation becomes a fact, where it is computed, where it is established, and that the set it belongs to is consistent.
 Every published relation in this document is published by exactly one route — [ENT-3.S12]'s, with [ENT-3.S13]'s substitution — and nothing else publishes anything.
@@ -2951,7 +2933,7 @@ A consume or scope exit removes the affected binding-to-image entry but does not
 At a control-flow join, a binding keeps an identical image held on every non-contradictory input.
 Otherwise every input image is first normalized: each delta atom an earlier join minted is folded back into the constant interval it stands for — that atom's coefficient times its interval, added to the input's constant — leaving one non-delta nonconstant form and one closed constant interval.
 If every normalized input then has one identical non-delta nonconstant form, the joined image is that common form plus one fresh delta atom whose interval is exactly the minimum through maximum of the inputs' constant intervals; otherwise the binding receives one fresh full-type atom.
-An input carrying no delta atom normalizes to its own nonconstant form and the closed interval of its own constant, so this is the earlier rule wherever no join has run.
+An input carrying no delta atom normalizes to its own nonconstant form and the closed interval of its own constant.
 A delta atom is an ordinary shared atom everywhere except a join, so a relation formed over it after one join still holds at the next; folding at the join is what makes the joined image the same whether the writer spells one branch set as nested conditionals or as one flat `match`, so acceptance never depends on the shape of the join.
 The join never equates distinct atoms merely because two source expressions have the same spelling.
 A loop's continuing-kill construction similarly replaces every loop-carried mutable binding by a fresh header atom; proved header invariants are the only source-written relations reintroduced over those header images.
@@ -3016,9 +2998,8 @@ An unavailable image or an unrepresentable candidate is skipped without suppress
 
 The consumers are exactly [OP-4] subscript bounds, [OP-2] integer domain, [OP-9] allocation size, [FN-8] requirements, [FN-9] normal-result relations, and [INV-1] invariant targets.
 Each keeps its own normalization — which proposition it forms from its source node — and none keeps a route grant of its own: an operation adds a goal, never a route.
-The per-family route lists this rule replaces are retired, and a family paragraph below states its normalization and then submits.
+Each family paragraph below states its normalization and then submits.
 
-This rule is not widened.
 A derivation outside these exact automatic families requires the explicit [PRF-1] `proof_use` list; this rule admits no additional automatic candidates.
 Step 1 is the disposition's own hazard and is stated first because it is real: in this language an inconsistent published relation is not a wrong fact, it is every fact, which is why [CALL-6] carries a consistency check at the declaration that publishes one.
 
@@ -3212,7 +3193,7 @@ The checker never guesses a source, multiplier, ordering, subset, case split, or
 
 After every use has parsed, resolved, and formed canonically, but before premise admission and combination, the checker applies `AUTO(T)` to the target in the same entering context.
 If it succeeds, the proof block is a redundant source form and compilation rejects at the owning `invariant_stmt`; removing the complete block is the mechanical repair.
-This is a specification-version judgment, not an implementation-dependent warning: [ENT-1] fixes `AUTO` exactly, and changing that accepted family requires a specification amendment.
+This is a source-language judgment, not an implementation-dependent warning: [ENT-1] fixes `AUTO` exactly.
 The checker does not search whether an individual nonduplicate use could be removed.
 At most 4096 `proof_use` entries are admitted by one block; this is a source structural ceiling, not a work or time budget.
 
@@ -3280,14 +3261,6 @@ fn main() -> status: own ExitStatus pure {
 }
 ```
 
-## 17. Spec meta-rules (CI-checked)
+## 17. Language regularity
 
-[META-1] Spec-CI enforces the regularity invariants defined elsewhere: one spelling per construct [FORM-1] and a 1:1 production-to-core-tree-node mapping [GRAM-1].
-Its unique machine-checked content is that no rule ID is defined twice and every cross-reference resolves [META-4].
 [META-2] No context-dependent spellings or rule variants: no rule's meaning depends on surrounding context; defaulting rules do not exist.
-[META-3] No rule carries an exception clause; conditional structure is expressed as total positive rules or table data.
-[META-4] Every normative fact is stated once; other mentions are rule-ID cross-references.
-[META-5] Every change to this artifact declares its spec delta (rules ±, tokens ±, spellings ±, exceptions ±) and its SELECTION GROUND (evidence-selected vs minimality-selected) in the change that makes it.
-This document states the language and carries no commentary about its own versions: no delta declaration, no description of what a version changed, and no selection ground appear in these bytes, and a version's own such text is not retained here after it activates.
-`AGENTS.md` defines the repository's four branch-and-main rules: work-branch changes need no approval, while merging into `main` requires owner approval of the exact tested revision and the records those rules require.
-DEFERRED markers are tracked specification-delta obligations and do not create another approval point.

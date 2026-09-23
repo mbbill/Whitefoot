@@ -176,14 +176,14 @@ Source: [specification and test integrity](../AGENTS.md#specification-and-test-i
 
 - [ ] **T1 — Language evidence.** For a specification amendment, the outgoing
   active bytes are archived unchanged, released archives are untouched, and
-  the active title advances the version. The change declares the [META-5] delta
+  the active title advances the version. The change declares its specification delta
   (rules, tokens, spellings, exceptions) and evidence/minimality selection
   ground. Affected cases/verdicts, generated syntax, compiler and documentation
   follow the amendment. For changed rules or constitutional premises, apply
   R3–R4 below. For conformance changes,
   the PR explains the normative expectation and how the changed evidence tests
-  it. [META-5] is defined in the
-  [active specification](../spec/kernel-spec.md#20-spec-meta-rules-ci-checked).
+  it. Apply the [specification authoring guidance](practice.md#specification-authoring);
+  the approval boundary remains [AGENTS.md rule 4](../AGENTS.md#branch-and-main-boundary).
 - [ ] **T2 — Preserved checks.** Every removed, skipped, narrowed, regenerated
   or weakened test/check has a technical reason consistent with the requested
   change. An implementation gap, crash, timeout or unsupported feature has not
