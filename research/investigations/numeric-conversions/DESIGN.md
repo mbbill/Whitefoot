@@ -189,9 +189,11 @@ returns the integer maximum on that edge, and handles the lower bound and NaN
 separately. It checks 2^63, its predecessor float, negative infinity and NaN.
 These are interface obligations, not details an unspecified cast may choose.
 
-## Options for the next design discussion
+## Design alternatives
 
-All spellings below are sketches, not accepted WF syntax or selected rules.
+The comparison below records the pre-implementation research baseline. At
+that point these spellings were proposals, not accepted WF syntax or selected
+rules.
 
 **A. Additive operations.** Keep existing `cvt` unchanged, add an explicitly
 proved integer conversion such as `cvt.proved::<Src, Dst>(x)` returning Dst,
@@ -221,11 +223,10 @@ not provide rounded float conversion or direct total truncation.
 The recommended proposal is B with C's integer Result evidence. They solve
 different problems, rather than being mutually exclusive alternatives. General
 proof-to-backend assumptions are not required: an admitted bare conversion can
-lower directly under its retained domain proof. No proposal has entered the
-active specification or live tree. A checked equality extension must capture
-the operand's value at conversion and cannot follow later replacement of its
-original variable. The cases and implementation boundaries below make those
-obligations explicit.
+lower directly under its retained domain proof. A checked equality extension
+must capture the operand's value at conversion and cannot follow later
+replacement of its original variable. The cases and implementation boundaries
+below make those obligations explicit.
 
 Direct rounded conversions to float and total float-to-integer saturation are
 separate candidates. Their policy includes ties, overflow/underflow, signed
