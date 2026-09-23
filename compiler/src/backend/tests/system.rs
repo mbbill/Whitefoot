@@ -6,8 +6,10 @@ use crate::{
     ACTIVE_KERNEL_SPEC_HASH, CanonicalOutcome, FinalizeOutcome, IrProgram, LexOutcome,
     OverlapLowering, ParseOutcome, ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput,
     TerminalLimits, TerminalOutcome, audit_canonical, check_semantics, classify_terminals,
-    finalize, lex, lower_checked, parse, resolve,
+    finalize, lex, lower_checked_with_layout, parse, resolve,
 };
+
+use crate::backend::target::TargetLayout;
 
 use super::{
     CANONICAL_LIMITS, FINALIZE_LIMITS, LEX_LIMITS, PARSE_LIMITS, SOURCE_LIMITS, compile,
@@ -40,6 +42,20 @@ pub(super) fn with_mutated_ir_lowering<R>(
     overlap: OverlapLowering,
     run: impl for<'a, 'b, 'c> FnOnce(&mut IrProgram<'a, 'b, 'c>) -> R,
 ) -> R {
+    with_ir_layout(
+        source,
+        overlap,
+        TargetLayout::host().expect("supported test target"),
+        run,
+    )
+}
+
+pub(super) fn with_ir_layout<R>(
+    source: &[u8],
+    overlap: OverlapLowering,
+    target: TargetLayout,
+    run: impl for<'a, 'b, 'c> FnOnce(&mut IrProgram<'a, 'b, 'c>) -> R,
+) -> R {
     let inputs = [SourceInput::new("test.wf", source)];
     let bundle = SourceBundle::with_prelude(&inputs, SOURCE_LIMITS).expect("valid test bundle");
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
@@ -70,7 +86,8 @@ pub(super) fn with_mutated_ir_lowering<R>(
         SemanticOutcome::Complete(checked) => checked,
         other => panic!("ordinary ABI test source must check: {other:?}"),
     };
-    let mut ir = lower_checked(*checked, overlap).expect("checked program must lower");
+    let mut ir = lower_checked_with_layout(*checked, overlap, target)
+        .expect("checked program must lower for the selected target");
     run(&mut ir)
 }
 

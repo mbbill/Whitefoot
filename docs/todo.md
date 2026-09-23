@@ -270,6 +270,17 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   same-image null control, establishes its benefit and clears the protected
   records case before selecting the wider policy.
 
+- **Benchmark world selection does not cover indirect results.** The shared
+  compute host adapter recognizes assigned result calls; an indirect-result
+  `call void` enters the parallel function even at W1, where the inactive pool
+  still makes its split budgets zero. The
+  [target-fitting capacity control](../research/investigations/compute-model/DESIGN.md#selected-target-loop-frame-fitting)
+  records that route and makes no speed claim. Defer extending the adapter
+  until an indirect-result consumer needs a whole-call cost comparison;
+  validate ordinary W1 sequential-world and W4 parallel-world selection for
+  both result ABIs, unchanged complete outputs and real worker participation
+  before using that comparison to select a compiler change.
+
 - **First-index search needs a variable-cost expression probe.** The
   [ordered-batch analysis](../research/investigations/io-model/CONCURRENCY-CATALOG.md#21-parallel-search-with-early-exit-added)
   avoids mandatory full-input scanning, but its invocation bound does not

@@ -1,8 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    IrArrayRoot, IrElement, IrFunction, IrInstruction, IrLayoutCeiling, IrNominalId, IrNominalKind,
-    IrOperation, IrProgram, IrTargetDomainObligation, IrType, IrValueId, IrWindowShape,
+    IrArrayRoot, IrElement, IrFunction, IrInstruction, IrLayoutCeiling, IrNominal, IrNominalId,
+    IrNominalKind, IrOperation, IrProgram, IrTargetDomainObligation, IrType, IrValueId,
+    IrWindowShape,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -23,7 +24,7 @@ pub(crate) enum TargetLayoutFailure {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct TargetLayout {
+pub(crate) struct TargetLayout {
     triple: &'static str,
     data_layout: &'static str,
     address_index_max: u64,
@@ -39,7 +40,7 @@ impl TargetLayout {
     /// machine running them. A spelling not listed here is unsupported rather
     /// than being approximated by a nearby ABI: in particular, the Windows GNU
     /// and MSVC targets do not share a mangling or runtime contract.
-    pub(super) fn for_triple(triple: &str) -> Result<Self, TargetLayoutFailure> {
+    pub(crate) fn for_triple(triple: &str) -> Result<Self, TargetLayoutFailure> {
         match triple {
             "aarch64-apple-darwin" => Ok(Self {
                 triple: "aarch64-apple-darwin",
@@ -89,7 +90,7 @@ impl TargetLayout {
         }
     }
 
-    pub(super) fn host() -> Result<Self, TargetLayoutFailure> {
+    pub(crate) fn host() -> Result<Self, TargetLayoutFailure> {
         #[cfg(all(target_arch = "aarch64", target_os = "macos"))]
         {
             return Self::for_triple("aarch64-apple-darwin");
@@ -176,7 +177,7 @@ impl TargetLayout {
     /// Retains the selected target ABI while replacing only the address-index
     /// domain used by exact aggregate-layout boundary tests.
     #[cfg(test)]
-    pub(super) const fn with_address_index_max_for_test(mut self, maximum: u64) -> Self {
+    pub(crate) const fn with_address_index_max_for_test(mut self, maximum: u64) -> Self {
         self.address_index_max = maximum;
         self
     }
@@ -332,13 +333,7 @@ pub(super) fn plan_target_frame(
     program: &IrProgram<'_, '_, '_>,
     slots: &[TargetFrameSlot],
 ) -> Result<TargetFramePlan, TargetLayoutFailure> {
-    let mut layouts = LayoutComputer {
-        target,
-        program,
-        nominal: HashMap::new(),
-        visiting: HashSet::new(),
-        visiting_elements: HashSet::new(),
-    };
+    let mut layouts = LayoutComputer::new(target, program.nominals(), program.elements());
     let mut physical_fields = Vec::new();
     let mut logical_fields = Vec::with_capacity(slots.len());
     let mut size = 0_u64;
@@ -400,13 +395,7 @@ pub(super) fn element_has_zero_stride(
     program: &IrProgram<'_, '_, '_>,
     element: IrType,
 ) -> Result<bool, TargetLayoutFailure> {
-    let mut layouts = LayoutComputer {
-        target,
-        program,
-        nominal: HashMap::new(),
-        visiting: HashSet::new(),
-        visiting_elements: HashSet::new(),
-    };
+    let mut layouts = LayoutComputer::new(target, program.nominals(), program.elements());
     Ok(layouts.layout(element)?.size == 0)
 }
 
@@ -415,13 +404,7 @@ pub(super) fn validate_static_storage(
     program: &IrProgram<'_, '_, '_>,
     ty: &TargetStorageType,
 ) -> Result<TargetAggregateLayout, TargetLayoutFailure> {
-    let mut layouts = LayoutComputer {
-        target,
-        program,
-        nominal: HashMap::new(),
-        visiting: HashSet::new(),
-        visiting_elements: HashSet::new(),
-    };
+    let mut layouts = LayoutComputer::new(target, program.nominals(), program.elements());
     let layout = layouts
         .storage_layout(ty)
         .map_err(|failure| as_object(failure, TargetObject::Static))?;
@@ -440,7 +423,7 @@ pub(super) fn validate_static_storage(
 /// ordinary parallel hand-out passes the validated byte size to the lane
 /// runtime. Tests inspect both values at exact target and runtime boundaries.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct TargetAggregateLayout {
+pub(crate) struct TargetAggregateLayout {
     size: u64,
     align: u64,
 }
@@ -474,30 +457,28 @@ pub(super) const PARALLEL_LANE_FRAME_ALIGNMENT: u64 = 16;
 /// The lane frame one handed-out call needs: `{ arguments..., result }`, and
 /// one `u64` more where the published callback enters a budget-carrying
 /// variant and must carry that budget across the hand-out.
-pub(super) fn parallel_lane_frame_layout(
+/// Only the lowered type tables and signature are needed, so the loop builder
+/// can ask the same question before it reserves or files synthesized functions.
+pub(crate) fn parallel_lane_frame_layout(
     target: TargetLayout,
-    program: &IrProgram<'_, '_, '_>,
-    function: &IrFunction,
+    nominals: &[IrNominal],
+    elements: &[IrType],
+    parameters: impl IntoIterator<Item = IrType>,
+    result: IrType,
     carries_budget: bool,
 ) -> Result<Option<TargetAggregateLayout>, TargetLayoutFailure> {
-    let mut layouts = LayoutComputer {
-        target,
-        program,
-        nominal: HashMap::new(),
-        visiting: HashSet::new(),
-        visiting_elements: HashSet::new(),
-    };
-    let mut fields = Vec::with_capacity(function.parameters().len() + 1);
-    for (_, ty) in function.parameters() {
+    let mut layouts = LayoutComputer::new(target, nominals, elements);
+    let mut fields = Vec::new();
+    for ty in parameters {
         fields.push(
             layouts
-                .layout(*ty)
+                .layout(ty)
                 .map_err(|failure| as_object(failure, TargetObject::ParallelLaneFrame))?,
         );
     }
     fields.push(
         layouts
-            .layout(function.result())
+            .layout(result)
             .map_err(|failure| as_object(failure, TargetObject::ParallelLaneFrame))?,
     );
     if carries_budget {
@@ -524,13 +505,7 @@ pub(super) fn validate_program(
     target: TargetLayout,
     program: &IrProgram<'_, '_, '_>,
 ) -> Result<(), TargetLayoutFailure> {
-    let mut layouts = LayoutComputer {
-        target,
-        program,
-        nominal: HashMap::new(),
-        visiting: HashSet::new(),
-        visiting_elements: HashSet::new(),
-    };
+    let mut layouts = LayoutComputer::new(target, program.nominals(), program.elements());
 
     for nominal in program.nominals() {
         layouts.layout(IrType::Nominal(nominal.id()))?;
@@ -552,13 +527,14 @@ pub(super) fn validate_program(
             .map_err(|failure| as_object(failure, TargetObject::Static))?;
     }
     for function in program.functions() {
-        validate_function(&mut layouts, function)?;
+        validate_function(&mut layouts, program, function)?;
     }
     Ok(())
 }
 
 fn validate_function(
-    layouts: &mut LayoutComputer<'_, '_, '_, '_>,
+    layouts: &mut LayoutComputer<'_>,
+    program: &IrProgram<'_, '_, '_>,
     function: &IrFunction,
 ) -> Result<(), TargetLayoutFailure> {
     layouts
@@ -570,7 +546,7 @@ fn validate_function(
             .map_err(|failure| as_object(failure, TargetObject::FunctionAbi))?;
     }
     let integer_upper_bounds = target_integer_result_bounds(layouts, function)?;
-    validate_source_call_allocations(layouts, function, &integer_upper_bounds)?;
+    validate_source_call_allocations(layouts, program, function, &integer_upper_bounds)?;
 
     for block in function.blocks() {
         for (_, ty) in block.parameters() {
@@ -586,7 +562,14 @@ fn validate_function(
                 continue;
             };
             layouts.layout(*ty)?;
-            validate_target_obligation(layouts, function, &integer_upper_bounds, *ty, operation)?;
+            validate_target_obligation(
+                layouts,
+                program,
+                function,
+                &integer_upper_bounds,
+                *ty,
+                operation,
+            )?;
         }
     }
     Ok(())
@@ -596,7 +579,8 @@ fn validate_function(
 /// runtime-capacity allocation. The callee stays one out-of-line instance;
 /// the accepted OP-9 upper bound stays on the call whose proof established it.
 fn validate_source_call_allocations(
-    layouts: &mut LayoutComputer<'_, '_, '_, '_>,
+    layouts: &mut LayoutComputer<'_>,
+    program: &IrProgram<'_, '_, '_>,
     function: &IrFunction,
     integer_upper_bounds: &HashMap<IrValueId, u64>,
 ) -> Result<(), TargetLayoutFailure> {
@@ -615,8 +599,7 @@ fn validate_source_call_allocations(
             else {
                 continue;
             };
-            let callee = layouts
-                .program
+            let callee = program
                 .functions()
                 .get(*callee as usize)
                 .ok_or(TargetLayoutFailure::InvalidIr)?;
@@ -653,8 +636,7 @@ fn validate_source_call_allocations(
                     {
                         return Err(TargetLayoutFailure::InvalidIr);
                     }
-                    let IrNominalKind::Box { referent, .. } = layouts
-                        .program
+                    let IrNominalKind::Box { referent, .. } = program
                         .nominal(cell)
                         .ok_or(TargetLayoutFailure::InvalidIr)?
                         .kind()
@@ -741,7 +723,7 @@ struct RuntimeCapacityAllocationLayout {
 /// the header is its selected-target field offset rather than merely its word
 /// count.
 fn runtime_capacity_allocation_layout(
-    layouts: &mut LayoutComputer<'_, '_, '_, '_>,
+    layouts: &mut LayoutComputer<'_>,
     content: IrType,
     ceiling: IrLayoutCeiling,
 ) -> Result<RuntimeCapacityAllocationLayout, TargetLayoutFailure> {
@@ -758,14 +740,15 @@ fn runtime_capacity_allocation_layout(
 }
 
 fn runtime_capacity_layout(
-    layouts: &mut LayoutComputer<'_, '_, '_, '_>,
+    layouts: &mut LayoutComputer<'_>,
     content: IrType,
 ) -> Result<(Layout, RuntimeCapacityAllocationLayout), TargetLayoutFailure> {
     let (element, header_words) = match content {
         IrType::Buffer { element } => (
             layouts
-                .program
-                .element(element)
+                .elements
+                .get(element.index())
+                .copied()
                 .ok_or(TargetLayoutFailure::InvalidIr)?,
             1_u64,
         ),
@@ -775,8 +758,9 @@ fn runtime_capacity_layout(
             capacity: None,
         } => (
             layouts
-                .program
-                .element(element)
+                .elements
+                .get(element.index())
+                .copied()
                 .ok_or(TargetLayoutFailure::InvalidIr)?,
             match shape {
                 IrWindowShape::Slots => 2,
@@ -815,7 +799,7 @@ fn runtime_capacity_layout(
 /// them. Buffer lengths contribute the representation invariant established by
 /// target validation. This metadata never becomes an ambient source fact.
 fn target_integer_result_bounds(
-    layouts: &mut LayoutComputer<'_, '_, '_, '_>,
+    layouts: &mut LayoutComputer<'_>,
     function: &IrFunction,
 ) -> Result<HashMap<IrValueId, u64>, TargetLayoutFailure> {
     let mut bounds = HashMap::new();
@@ -886,7 +870,8 @@ const fn element_count_max(byte_maximum: u64, stride: u64) -> u64 {
 }
 
 fn validate_target_obligation(
-    layouts: &mut LayoutComputer<'_, '_, '_, '_>,
+    layouts: &mut LayoutComputer<'_>,
+    program: &IrProgram<'_, '_, '_>,
     function: &IrFunction,
     integer_upper_bounds: &HashMap<IrValueId, u64>,
     result_type: IrType,
@@ -897,8 +882,7 @@ fn validate_target_obligation(
             if result_type != IrType::Nominal(*nominal) {
                 return Err(TargetLayoutFailure::InvalidIr);
             }
-            let referent = match layouts
-                .program
+            let referent = match program
                 .nominal(*nominal)
                 .ok_or(TargetLayoutFailure::InvalidIr)?
                 .kind()
@@ -932,8 +916,7 @@ fn validate_target_obligation(
             if result_type != IrType::Nominal(*nominal) {
                 return Err(TargetLayoutFailure::InvalidIr);
             }
-            let IrNominalKind::Box { referent, .. } = layouts
-                .program
+            let IrNominalKind::Box { referent, .. } = program
                 .nominal(*nominal)
                 .ok_or(TargetLayoutFailure::InvalidIr)?
                 .kind()
@@ -999,8 +982,7 @@ fn validate_target_obligation(
             obligations,
             ..
         } if obligations.target_domains.is_complete() => {
-            let IrNominalKind::Box { referent, .. } = layouts
-                .program
+            let IrNominalKind::Box { referent, .. } = program
                 .nominal(*nominal)
                 .ok_or(TargetLayoutFailure::InvalidIr)?
                 .kind()
@@ -1066,8 +1048,7 @@ fn validate_target_obligation(
                 IrArrayRoot::Value(value) => function
                     .value_type(*value)
                     .ok_or(TargetLayoutFailure::InvalidIr)?,
-                IrArrayRoot::Constant(id) => layouts
-                    .program
+                IrArrayRoot::Constant(id) => program
                     .constant(*id)
                     .ok_or(TargetLayoutFailure::InvalidIr)?
                     .ty(),
@@ -1091,15 +1072,31 @@ fn validate_target_obligation(
     Ok(())
 }
 
-struct LayoutComputer<'program, 'classified, 'lexed, 'source> {
+struct LayoutComputer<'types> {
     target: TargetLayout,
-    program: &'program IrProgram<'classified, 'lexed, 'source>,
+    nominals: &'types [IrNominal],
+    elements: &'types [IrType],
     nominal: HashMap<IrNominalId, Layout>,
     visiting: HashSet<IrNominalId>,
     visiting_elements: HashSet<IrElement>,
 }
 
-impl LayoutComputer<'_, '_, '_, '_> {
+impl<'types> LayoutComputer<'types> {
+    fn new(
+        target: TargetLayout,
+        nominals: &'types [IrNominal],
+        elements: &'types [IrType],
+    ) -> Self {
+        Self {
+            target,
+            nominals,
+            elements,
+            nominal: HashMap::new(),
+            visiting: HashSet::new(),
+            visiting_elements: HashSet::new(),
+        }
+    }
+
     fn storage_layout(&mut self, ty: &TargetStorageType) -> Result<Layout, TargetLayoutFailure> {
         match ty {
             TargetStorageType::Source(ty) => self.layout(*ty),
@@ -1243,8 +1240,9 @@ impl LayoutComputer<'_, '_, '_, '_> {
             return Err(TargetLayoutFailure::InvalidIr);
         }
         let ty = self
-            .program
-            .element(element)
+            .elements
+            .get(element.index())
+            .copied()
             .ok_or(TargetLayoutFailure::InvalidIr)?;
         let layout = self.layout(ty);
         self.visiting_elements.remove(&element);
@@ -1259,8 +1257,8 @@ impl LayoutComputer<'_, '_, '_, '_> {
             return Err(TargetLayoutFailure::InvalidIr);
         }
         let nominal = self
-            .program
-            .nominal(id)
+            .nominals
+            .get(id.index())
             .ok_or(TargetLayoutFailure::InvalidIr)?;
         if matches!(nominal.kind(), IrNominalKind::Opaque) {
             let layout = Layout {

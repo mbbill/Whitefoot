@@ -5,7 +5,8 @@
 //!
 //! The crate contains one path for the active specification, from ordered sources through the
 //! frontend and direct resolver into semantic and ownership checking, a
-//! target-independent typed control-flow IR, conservative textual LLVM, and a
+//! typed control-flow IR with selected-target optional loop actualization,
+//! conservative textual LLVM, and a
 //! host compiler executable. These stages remain evolvable implementation
 //! APIs, not stable protocols.
 

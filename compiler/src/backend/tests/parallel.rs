@@ -275,6 +275,16 @@ fn selected_target_proves_the_complete_ordinary_lane_frame() {
             .iter()
             .find(|function| function.name() == "over_frame")
             .expect("the over-boundary function must lower");
+        let layout = |target, function: &crate::IrFunction, carries_budget| {
+            parallel_lane_frame_layout(
+                target,
+                program.nominals(),
+                program.elements(),
+                function.parameters().iter().map(|(_, ty)| *ty),
+                function.result(),
+                carries_budget,
+            )
+        };
 
         // KEPT AS WRITTEN for the lowering port: 255 element bytes plus the
         // one-byte result reach the slot exactly only while a constant-capacity
@@ -283,14 +293,14 @@ fn selected_target_proves_the_complete_ordinary_lane_frame() {
         // fixture lengths (255 and 256) must be re-derived from the new layout;
         // the property this case is about is that the exact boundary fits and
         // one byte past it does not.
-        let exact_layout = parallel_lane_frame_layout(host, program, exact, false)
+        let exact_layout = layout(host, exact, false)
             .expect("the exact frame is target-representable")
             .expect("the exact frame fits the lane slot");
         assert_eq!(exact_layout.size(), crate::LANE_FRAME_BYTES);
         assert_eq!(exact_layout.align(), 1);
         assert!(exact_layout.align() <= PARALLEL_LANE_FRAME_ALIGNMENT);
         assert_eq!(
-            parallel_lane_frame_layout(host, program, over, false),
+            layout(host, over, false),
             Ok(None),
             "a target-representable frame beyond the lane capacity must decline overlap"
         );
@@ -299,14 +309,14 @@ fn selected_target_proves_the_complete_ordinary_lane_frame() {
         // the offer rather than overrunning it. The refusal is the existing
         // one: the group's calls run in place.
         assert_eq!(
-            parallel_lane_frame_layout(host, program, exact, true),
+            layout(host, exact, true),
             Ok(None),
             "a frame that exactly fills the slot cannot also carry a budget"
         );
 
         let short_domain = host.with_address_index_max_for_test(crate::LANE_FRAME_BYTES - 1);
         assert_eq!(
-            parallel_lane_frame_layout(short_domain, program, exact, false),
+            layout(short_domain, exact, false),
             Err(TargetLayoutFailure::Unrepresentable(
                 TargetObject::ParallelLaneFrame
             )),
@@ -1006,11 +1016,16 @@ fn the_bootstrap_selects_one_world_once() {
 fn windows_parallel_emission_requires_external_runtime_symbols() {
     let windows = TargetLayout::for_triple("x86_64-pc-windows-msvc")
         .expect("the supported Windows target must have a system row");
-    let module = with_parallel_ir(OVERLAPPING_FOLD, |program| {
-        emit_llvm_with_layout(program, windows)
-            .expect("the overlap fixture must emit for Windows")
-            .into_string()
-    });
+    let module = super::system::with_ir_layout(
+        OVERLAPPING_FOLD,
+        crate::OverlapLowering::On,
+        windows,
+        |program| {
+            emit_llvm_with_layout(program, windows)
+                .expect("the overlap fixture must emit for Windows")
+                .into_string()
+        },
+    );
 
     for declaration in [
         "declare ptr @wf__par_acquire_lane(i64)",
