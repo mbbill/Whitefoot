@@ -199,18 +199,6 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   attributed. Keep this item until those observations and the resulting
   measurement/detection tradeoff are explained.
 
-- **Recursive cleanup has no general bounded-stack lowering.** The current
-  emitter recursively calls release actions, so machine-stack use can grow
-  with owned value depth; its stack ledger reports the release cycle. The
-  [continuation models](../research/investigations/access-effects/cleanup-continuations/README.md)
-  demonstrate fixed-stack, nonallocating walks only for their selected layouts.
-  They establish neither an encoding for all WF types without extra object
-  fields nor its impossibility. Retain the existing lowering while researching
-  how every suspended aggregate, enum, array and window traversal records its
-  continuation. Preserve reverse binding order, declaration order within
-  aggregates, logical window order, and content-before-Box-free order. Close
-  this item when a general implementation and native regressions establish
-  those properties, or a different resource tradeoff is selected explicitly.
 - **Box/window representation costs remain unqualified.** The current runtime-
   capacity Box is one pointer to one header-first allocation; `grow` uses
   allocation, memmove and free. A one-word owner, one allocation and header
@@ -311,6 +299,70 @@ concludes with a recorded disposition; retain any selected follow-up work here.
 Questions the owner has left open on purpose. None of them is a decision;
 each is resolved by a discussion and a tree change.
 
+- **Remaining value-evidence boundaries.** The
+  [investigation](../research/investigations/result-proof-transport/DESIGN.md)
+  leaves three related extensions to assess together: borrowed Result
+  selection and aggregate/indexed storage, multiple Result destinations from
+  one call, and general scalar `give` expressions beyond the existing bare
+  atom. These can remove remaining naming/projection workarounds, but storage
+  invalidation, cross-result guard identity and evaluated-expression images
+  need their own acceptance rules and cost evidence. Reopen when an ordinary
+  library example needs one of these boundaries. Validate matched direct/local/
+  projected programs, alias and descriptor writes, joins, loop iterations and
+  stronger-contract negatives before choosing an extension; do not infer a
+  general refinement system from the local-result implementation. Also assess
+  sharing or projecting per-local conditional fact matrices when many outcomes
+  remain live: 32 outcome additions measured 585 ms versus 23 ms at the
+  baseline, and 32 chained joins measured 721 ms and 214 MiB peak RSS. These
+  are whole compilations of small sources; the benefit and precision tradeoff
+  of sharing/projection remain unverified by that observation. Compare checking
+  time, retained evidence and peak memory
+  on the investigation's scaled sources before selecting that representation
+  improvement. These extensions are deferred because the selected ordinary
+  local composition rule can be validated without widening the storage or
+  predicate vocabulary.
+- **Declaration and call-boundary syntax after the ownership redesign.**
+  Reassess mandatory `own` on value parameters and results, mandatory names
+  for every result including `unit`, and the named-argument/construction-field
+  discipline together. References now have only the `&` form and cannot be
+  returned; result names serve contracts rather than runtime storage. These
+  changes may leave declarations repeating information without improving the
+  callable boundary. Named arguments and fields have a separate transposition
+  rationale and must not be removed merely because they are verbose. Compare
+  complete alternative signature and contract forms on scalar, generic,
+  multi-result and resource APIs. A candidate must preserve explicit boundary
+  types, unambiguous result references, useful mismatch diagnostics and one
+  grammar-defined spelling, without site-dependent inference relief. The
+  benefit and final spelling are unverified; defer selection while result-proof
+  transport is investigated, and reopen at the next syntax-design discussion.
+- **Ownership transfer and reference-access forms.** Audit unnecessary
+  owner-in/owner-out APIs now expressible with reference parameters and exact
+  effect rows, the differing consumption spellings of calls, returns, matches
+  and `propagate`, and repeated `deref`/`&deref` paths. `move` still marks a
+  consumption boundary; `deref` distinguishes a reference holder from its
+  referent and from owned `Box.inner`, so neither is redundant solely because
+  `own` may be. Compare the same container and owned-link operations under
+  proposed forms, preserving copy/drop capabilities, whole-owner consumption,
+  atomic replacement, reference rebinding, invalidation and effect separation.
+  Require the ordinary positive and invalid-use examples to remain explainable
+  by one rule per operation, with no additional runtime checks or transfers.
+  Reduced ceremony is an opportunity, not an established gain. Defer these
+  interface and syntax choices to a dedicated discussion after the current
+  result-proof study; reopen with those same-operation comparisons.
+- **Expression composition and canonical source policy.** Reassess mandatory
+  three-address computation and intermediate names together with the ban on
+  comments and rejection of noncanonical formatting. Compare authoring,
+  local refactoring and diagnostic locality on unchanged algorithms and proof
+  obligations; assess each restriction's concrete purpose rather than treating
+  explicitness or brevity as sufficient grounds. Expression alternatives must
+  specify evaluation order, temporary ownership and cleanup, proof invalidation
+  and parallel-permission granularity while retaining deterministic parsing.
+  Documentation and formatting alternatives must distinguish canonical output
+  from the accepted-input boundary and must grant no proof authority to prose.
+  No relaxation or authoring-cost improvement is established. Defer selection
+  until the syntax review reaches this group; close it only with an explicit
+  disposition supported by these comparisons.
+
 - **Sparse containers over must-consume linear elements need ownership-visible
   slot state.** The maintained
   [owning-map witness](../tests/programs/containers/owning-behavior.wf)
@@ -340,19 +392,20 @@ Items the owner asked to be kept on this list during the redesign recorded in
 `design/language` on 2026-09-19. None of them is a decision; each names the
 condition under which it is taken up.
 
-- **Mutual tail transfers.** [FN-10](../spec/kernel-spec.md) admits direct
-  self calls through `return musttail f(...);`. Extending the guarantee to
-  a different function needs a matching tail-call ABI and target evidence;
-  the current parameter reassignment and entry jump cannot cross a function
-  boundary. Reopen when a real mutually recursive program needs that bound.
-- **Totality and recursion-depth proofs.** Domains that need determinism about
-  resource use will need proved totality (termination) and proved recursion
-  depth as obligation families; the atomic in-place update deliberately
-  requires only a function that returns the place's type with no failure exit.
-  The current recursive-cleanup stack cost is a separate compiler limitation
-  recorded above; the call-site `musttail` guarantee covers only retained
-  activations at marked self transfers. Neither is an implemented
-  source-level recursion-depth proof.
+- **Fixed-resource execution with proved completion — deferred.** Resume from
+  the [research checkpoint](../research/investigations/fixed-resource-execution/README.md#deferred-work-and-resumption),
+  which preserves the stack, recursion, loop, allocation/runtime and cleanup
+  findings, proposals, probes and remaining validation. The goal is no heap,
+  proved completion and peak storage within supplied byte capacities; a depth
+  cap or `program no_heap;` alone does not establish it. Automatic qualification
+  is unimplemented, the diagnostic stack ledger has coverage/geometry gaps,
+  and general recursive release can still grow with value depth. Work is
+  deferred until this topic is explicitly resumed. Start by rechecking the
+  recorded compiler/target assumptions, then the complete acyclic stack-byte
+  inventory; preserve unknown-call/alignment controls and exact budget-boundary
+  cases. Progress proofs and full resource closure follow separately. The
+  checkpoint also retains the consumer conditions for mutual tail transfers,
+  general cleanup lowering and total-work estimation; none is scheduled now.
 - **Facts a contract can carry (after PR 70 merges; owner, 2026-09-20).**
   Three additive widenings, taken up together, each measured:
   (1) Affine `ensures`. A `requires` may already be an affine relation and

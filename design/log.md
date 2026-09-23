@@ -5,6 +5,22 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-22 Align counted-loop value-name reservation
+
+Nodes: language/name-resolution
+
+Owner-approved: The owner explicitly approved the complete counted-binder amendment presented after PR #90's independent review at be149728. This ruling does not authorize a merge.
+
+Summary: Apply the reviewed addition and its refused alternative unchanged. Counted-loop binders follow ordinary let bindings in the operation and mode-word reservation because both introduce ordinary value names; the proof-only invariant domain stays separate. OP-1 now includes the counted binder explicitly, matching DIAG-1 and the existing resolver. The [follow-up investigation](../research/investigations/consistency-followups/DESIGN.md#reserved-names-and-declaration-roles) records the alternatives and boundary cases. Remove the accepted amendment and its directory.
+
+## 2026-09-22 Carry Result evidence through ordinary local value flow
+
+Nodes: language/checks-and-proofs/automatic-facts, compiler/checker-facts
+
+Owner-approved: The owner explicitly directed correction of all five review findings and accepted both complete Result proof-transport amendments after the Chinese PR #87 handoff for ba876003.
+
+Summary: Apply the two reviewed amendments unchanged. Local own Results with integer payloads carry isolated conditional evidence through ordinary transfers and read it only under their own success condition. Reuse the existing weakest-bound joins, support invalidation and continuing-backedge rules, with a private child of the ordinary entailment flow owning evidence operations and the walker retaining event order. The [Result investigation](../research/investigations/result-proof-transport/DESIGN.md) records the composition failures, alternatives, finite representation argument and measured costs behind these choices. Retain the sharing/projection and broader storage questions in TODO, remove the accepted amendments and their directory, and preserve the existing live decisions. This ruling does not authorize a merge.
+
 ## 2026-09-22 Resolve source input, zero-stride addressing and proof-name boundaries
 
 Nodes: compiler/prelude-records, compiler/storage-representation, language/name-resolution

@@ -1,0 +1,14 @@
+enum Chain {
+  End();
+  Link(value: u64, next: Box<Chain>);
+}
+
+fn main() -> status: own ExitStatus pure {
+  let empty = End();
+  let chain = box_new::<Chain>(value: move empty);
+  for (i in 0_u64..100000_u64) {
+    let node = Link(value: i, next: move chain);
+    set chain = box_new::<Chain>(value: move node);
+  }
+  return exit_status(code: 0_u8);
+}
