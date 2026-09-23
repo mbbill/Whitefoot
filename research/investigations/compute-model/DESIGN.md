@@ -3116,7 +3116,7 @@ consumer and suitable native host justify the separate attribution study.
 The affected set is the emitter's dispatch and continuation handling, its
 dispatch-specific tests, this investigation, the TODO and the
 [replacement pending amendment](../../../design/amendments/zero-budget-loop-dispatch.md).
-The branch restores production compiler code to main `3d7fa496`, retaining
+The withdrawal restored production compiler code to then-current main `3d7fa496`, retaining
 useful zero-budget output/cleanup, nested-publication and ordinary continuation
 coverage. The synthetic addressed-result case is retired with the removed
 two-edge destination join it protected; it does not qualify an admitted
