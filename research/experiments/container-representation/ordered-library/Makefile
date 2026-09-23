@@ -10,6 +10,18 @@ LIBRARY_LABEL ?= lib/containers/ordered-map.wf
 SOURCES := $(LIBRARY_SOURCE) ordered-library.wf
 INSERTION_BASELINE_REV ?= 1811f2d01
 INSERTION_RUN ?= initial
+INSERTION_CANDIDATE ?= pair
+ifeq ($(INSERTION_CANDIDATE),pair)
+INSERTION_PREFIX := insertion
+INSERTION_PATCH := insertion-candidate.patch
+INSERTION_SHA := ddc53f3bd12e3682c26ea72f33d94da5da787371afb7461fd7d69d1798aca4ec
+else ifeq ($(INSERTION_CANDIDATE),pair-promotion)
+INSERTION_PREFIX := promotion
+INSERTION_PATCH := promotion-candidate.patch
+INSERTION_SHA := 5514ce2aecdf2a8074dc8897b0457d6858e7ecf16d2d2fa559dfefb6420f2c8f
+else
+$(error INSERTION_CANDIDATE must be pair or pair-promotion)
+endif
 CONTROLS := word-source record-source word-direct record-direct word-avl record-avl
 MODES := normal retained
 CFLAGS := -std=c11 -O2 -Wall -Wextra -Werror
@@ -118,64 +130,72 @@ identities:
 	  done; \
 	} > $(BUILD)/identities.txt
 
-# The candidate is evidence for this discriminator, reconstructed only in the
+# These are the five-path sources frozen for both registered source comparisons.
+# A later driver revision needs its own criterion and evidence identities.
+.PHONY: insertion-driver-identity
+insertion-driver-identity:
+	@printf '%s\n' \
+	  'cd3c8cca4d1332360f4df4cee8f07df43cea030144d683b8044a51d7479be71b  ordered-costs.c' \
+	  '779ffc6065c0c1b46cb0906ae1c14c167e32d385f37b4569ba35603710d90f4d  ordered-library.wf' | shasum -a 256 -c -
+
+# Each candidate is evidence for its discriminator, reconstructed only in the
 # build directory; it is not a second published library implementation.
-$(BUILD)/insertion-baseline-source.wf: Makefile | $(BUILD)
+$(BUILD)/$(INSERTION_PREFIX)-baseline-source.wf: Makefile | $(BUILD)
 	git -C "$(ROOT)" show $(INSERTION_BASELINE_REV):lib/containers/ordered-map.wf > $@
 	@actual=`shasum -a 256 $@ | awk '{ print $$1 }'`; \
 	  test "$$actual" = affaee669a09320aafc9ec5badbea6c11fd95623e1ea8987ad9811742c4b70bb
 
-$(BUILD)/insertion-candidate-source.wf: $(BUILD)/insertion-baseline-source.wf insertion-candidate.patch
-	patch -s -o $@ $< insertion-candidate.patch
+$(BUILD)/$(INSERTION_PREFIX)-candidate-source.wf: $(BUILD)/$(INSERTION_PREFIX)-baseline-source.wf $(INSERTION_PATCH)
+	patch -s -o $@ $< $(INSERTION_PATCH)
 	@actual=`shasum -a 256 $@ | awk '{ print $$1 }'`; \
-	  test "$$actual" = ddc53f3bd12e3682c26ea72f33d94da5da787371afb7461fd7d69d1798aca4ec
+	  test "$$actual" = $(INSERTION_SHA)
 
-insertion-build: $(BUILD)/insertion-baseline-source.wf $(BUILD)/insertion-candidate-source.wf
-	$(MAKE) build BUILD=$(BUILD)/insertion-baseline \
-	  LIBRARY_SOURCE=$(abspath $(BUILD)/insertion-baseline-source.wf)
-	$(MAKE) build BUILD=$(BUILD)/insertion-candidate \
-	  LIBRARY_SOURCE=$(abspath $(BUILD)/insertion-candidate-source.wf)
+insertion-build: insertion-driver-identity $(BUILD)/$(INSERTION_PREFIX)-baseline-source.wf $(BUILD)/$(INSERTION_PREFIX)-candidate-source.wf
+	$(MAKE) build BUILD=$(BUILD)/$(INSERTION_PREFIX)-baseline \
+	  LIBRARY_SOURCE=$(abspath $(BUILD)/$(INSERTION_PREFIX)-baseline-source.wf)
+	$(MAKE) build BUILD=$(BUILD)/$(INSERTION_PREFIX)-candidate \
+	  LIBRARY_SOURCE=$(abspath $(BUILD)/$(INSERTION_PREFIX)-candidate-source.wf)
 
 insertion-verify:
-	$(MAKE) verify BUILD=$(BUILD)/insertion-baseline
-	$(MAKE) verify BUILD=$(BUILD)/insertion-candidate
-	@set -eu; for file in $(BUILD)/insertion-baseline/control-*.ll; do \
-	  cmp "$$file" "$(BUILD)/insertion-candidate/$${file##*/}"; \
+	$(MAKE) verify BUILD=$(BUILD)/$(INSERTION_PREFIX)-baseline
+	$(MAKE) verify BUILD=$(BUILD)/$(INSERTION_PREFIX)-candidate
+	@set -eu; for file in $(BUILD)/$(INSERTION_PREFIX)-baseline/control-*.ll; do \
+	  cmp "$$file" "$(BUILD)/$(INSERTION_PREFIX)-candidate/$${file##*/}"; \
 	  done
-	$(BUILD)/insertion-baseline/ordered-costs-normal$(EXE) clock-resolution > $(BUILD)/insertion-clock.csv
+	$(BUILD)/$(INSERTION_PREFIX)-baseline/ordered-costs-normal$(EXE) clock-resolution > $(BUILD)/$(INSERTION_PREFIX)-clock.csv
 
 # Each fresh arm includes its own native controls. Cohort 1 reverses arm/mode
 # order and the alternating within-cell implementation order. A/A precedes A/B.
 # 2 comparisons * 2 cohorts * 2 arms * 2 modes * 30 cells * 6 samples * 4 variants.
 insertion-measure-only:
 	@set -eu; case '$(INSERTION_RUN)' in initial|repeat) ;; *) exit 1 ;; esac; \
-	  output='$(BUILD)/insertion-$(INSERTION_RUN).csv'; \
+	  output='$(BUILD)/$(INSERTION_PREFIX)-$(INSERTION_RUN).csv'; \
 	  printf '%s\n' 'run,comparison,cohort,arm,image,contract,pair_bytes,path,count,variant,sample,rounds,traces,elapsed_ns,checksum,requests,requested_bytes,peak_nodes,peak_bytes' > "$$output"; \
 	  for comparison in aa ab; do for cohort in 0 1; do \
 	    modes='normal retained'; arms='a b'; command=measure; \
 	    if test "$$cohort" = 1; then modes='retained normal'; arms='b a'; command=measure-reversed; fi; \
 	    for mode in $$modes; do for arm in $$arms; do \
 	      image=baseline; if test "$$comparison-$$arm" = ab-b; then image=candidate; fi; \
-	      $(BUILD)/insertion-$$image/ordered-costs-$$mode$(EXE) $$command > $(BUILD)/insertion-arm.csv; \
+	      $(BUILD)/$(INSERTION_PREFIX)-$$image/ordered-costs-$$mode$(EXE) $$command > $(BUILD)/$(INSERTION_PREFIX)-arm.csv; \
 	      awk -v prefix='$(INSERTION_RUN)'","$$comparison","$$cohort","$$arm","$$image 'NR > 1 { print prefix "," $$0 }' \
-	        $(BUILD)/insertion-arm.csv >> "$$output"; \
+	        $(BUILD)/$(INSERTION_PREFIX)-arm.csv >> "$$output"; \
 	    done; done; \
 	  done; done; \
-	  echo "Complete insertion comparison: $$output"
+	  echo "Complete $(INSERTION_PREFIX) comparison: $$output"
 
 insertion-identities:
-	$(MAKE) identities BUILD=$(BUILD)/insertion-baseline \
-	  LIBRARY_SOURCE=$(abspath $(BUILD)/insertion-baseline-source.wf) LIBRARY_LABEL=insertion-baseline-source.wf
-	$(MAKE) identities BUILD=$(BUILD)/insertion-candidate \
-	  LIBRARY_SOURCE=$(abspath $(BUILD)/insertion-candidate-source.wf) LIBRARY_LABEL=insertion-candidate-source.wf
+	$(MAKE) identities BUILD=$(BUILD)/$(INSERTION_PREFIX)-baseline \
+	  LIBRARY_SOURCE=$(abspath $(BUILD)/$(INSERTION_PREFIX)-baseline-source.wf) LIBRARY_LABEL=$(INSERTION_PREFIX)-baseline-source.wf
+	$(MAKE) identities BUILD=$(BUILD)/$(INSERTION_PREFIX)-candidate \
+	  LIBRARY_SOURCE=$(abspath $(BUILD)/$(INSERTION_PREFIX)-candidate-source.wf) LIBRARY_LABEL=$(INSERTION_PREFIX)-candidate-source.wf
 	@set -eu; { \
-	  printf '%s\n' 'Baseline image identities:'; cat $(BUILD)/insertion-baseline/identities.txt; \
-	  printf '%s\n' 'Candidate image identities:'; cat $(BUILD)/insertion-candidate/identities.txt; \
-	  shasum -a 256 insertion-candidate.patch; \
-	  for file in $(BUILD)/insertion-clock.csv $(BUILD)/insertion-$(INSERTION_RUN).csv; do \
+	  printf '%s\n' 'Baseline image identities:'; cat $(BUILD)/$(INSERTION_PREFIX)-baseline/identities.txt; \
+	  printf '%s\n' 'Candidate image identities:'; cat $(BUILD)/$(INSERTION_PREFIX)-candidate/identities.txt; \
+	  shasum -a 256 $(INSERTION_PATCH); \
+	  for file in $(BUILD)/$(INSERTION_PREFIX)-clock.csv $(BUILD)/$(INSERTION_PREFIX)-$(INSERTION_RUN).csv; do \
 	    shasum -a 256 "$$file" | awk -v label="$${file##*/}" '{ print $$1 "  " label }'; \
 	  done; \
-	} > $(BUILD)/insertion-$(INSERTION_RUN)-identities.txt
+	} > $(BUILD)/$(INSERTION_PREFIX)-$(INSERTION_RUN)-identities.txt
 
 clean:
 	rm -rf $(BUILD)

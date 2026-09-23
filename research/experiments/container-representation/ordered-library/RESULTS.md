@@ -563,3 +563,232 @@ material replacement cost. Retain the baseline source under the registered
 criterion. The evidence does not reject every one-pass or carrier formulation,
 does not select an ordered representation, and does not by itself require a
 language or compiler change.
+
+## Borrowed promotion follow-up
+
+The second candidate also fails the registered no-loss criterion. Normal wide
+replacement at 256 entries is 1.6885 / 1.6003 times the baseline after source-C
+normalization, outside its 3.13% band; at eight entries it is 1.5313 / 1.5620,
+outside 3%. Retained wide replacement at eight and 256 entries also loses in
+both cohorts. Build and larger-count churn gains cannot compensate for those
+losses. No repeat was needed, and no third source candidate was measured. The
+published library remains the baseline.
+
+This is the separately registered
+[borrowed-promotion discriminator](../../../investigations/containers-and-resources/X1-LIBRARY.md#borrowed-promotion-follow-up),
+committed before construction and timing in `8bd165e70`. It keeps the first
+candidate's offered Pair carrier and also borrows one promotion Entry slot;
+recursive insertion returns unit. The [zero-context patch](promotion-candidate.patch)
+reconstructs SHA-256
+`5514ce2aecdf2a8074dc8897b0457d6858e7ecf16d2d2fa559dfefb6420f2c8f`
+from the checked original baseline. It is built only under `.build/`, with no
+edit to the published library. The first candidate's patch, measurements and
+identities remain unchanged. The separate [11,520 raw rows](promotion-initial.csv),
+[identities](promotion-initial-identities.txt) and [clock observation](promotion-clock.csv)
+belong to this comparison; their evidence claim owns their retention.
+
+The five-path WF trace (`779ffc60`) and C driver/controls (`cd3c8cca`) are exactly
+the sources measured for candidate 1. All 13 optimized native control IR files
+match the earlier recorded hashes and match between the new baseline and
+candidate images. Baseline optimized WF IR differs from the earlier rebuilt
+baseline only in its ModuleID path, in both modes. The current Makefile hash
+is `06a09ed6`; it selects the separate patch and `promotion-*` build/evidence
+names, while default targets still reconstruct candidate 1. Full hashes,
+compiler identity, toolchain, OS and architecture are recorded in the new
+identity file. Both earlier datasets and identity files are byte-for-byte
+unchanged; replay of the original four-path dataset remains at `1811f2d01`.
+
+| Stage | Command seconds | Guarded seconds | Registered budget |
+| --- | ---: | ---: | ---: |
+| Construct both images and optimized IR | 11.38 | 11.41 | 120 |
+| Complete checks and clock observation | 3.22 | 3.33 | 40 |
+| One complete A/A then A/B matrix | 14.86 | 14.94 | 60 |
+| Total | 29.46 | 29.68 | Separate stage limits |
+
+Both images, in both modes, pass 330 oracle configurations, 1,320 executions
+and six complete native structural audits per mode. Retained mode still has
+29 marked WF definitions, 26 WF public-operation call sites and 20 such C call
+sites per control translation unit, including audit callers. All 11,520 rows
+are present in 1,920 groups with exactly samples 0–5; checksums agree across
+variants and arms, and every WF/source-C allocation count, requested-byte,
+peak-node and peak-byte observation agrees. All 53 recorded identities were
+checked against the measured files.
+
+The protocol and interpretation are unchanged from the preceding candidate:
+60 cells, fresh A/A followed by A/B, two reversed cohorts, independent controls
+in every arm, one warm-up and five samples, same seeds/batching. Each cohort
+ratio is the median of paired `(WF_B / C_B) / (WF_A / C_A)` ratios. The band is
+the maximum of 3%, either cohort's absolute A/A departure, source-C median
+arm drift over both comparisons/cohorts, and four clock quanta over the
+shortest WF/source-C median interval. Clock resolution and observed grid are
+again 1,000 ns. Direct C and AVL remain cross-checks. Tables use unrounded
+values for decisions and display cohort `0 / 1`; `B/L/C/R/P` have the preceding
+five-path meanings. There is no pooled score or selective rerun.
+
+**Normal borrowed-promotion comparison.**
+
+| Pair bytes | Count | Path | Band | A/A source C | A/B source C | A/B direct C | A/B AVL | Result |
+| ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 16 | 8 | B | 5.56% | 1.0011 / 0.9898 | 0.9495 / 0.9618 | 0.9336 / 0.9750 | 0.9037 / 0.9664 | within |
+| 16 | 256 | B | 4.96% | 1.0000 / 1.0071 | 0.8628 / 0.8817 | 0.8602 / 0.8538 | 0.8621 / 0.8613 | gain |
+| 16 | 4096 | B | 3.00% | 0.9915 / 1.0003 | 0.6670 / 0.6848 | 0.6737 / 0.6795 | 0.6725 / 0.6612 | gain |
+| 16 | 8 | L | 7.02% | 0.9946 / 1.0169 | 1.0000 / 0.9783 | 1.0000 / 0.9862 | 1.0175 / 0.9955 | within |
+| 16 | 256 | L | 10.81% | 1.0074 / 1.0060 | 0.9626 / 0.9075 | 0.9902 / 0.9880 | 1.0014 / 0.9804 | within |
+| 16 | 4096 | L | 3.43% | 0.9981 / 0.9969 | 0.8916 / 0.8753 | 0.8866 / 0.8970 | 0.8807 / 0.8995 | gain |
+| 16 | 8 | C | 3.00% | 0.9709 / 1.0147 | 1.0154 / 1.0656 | 1.0324 / 1.0462 | 1.0169 / 1.0704 | loss |
+| 16 | 256 | C | 4.43% | 1.0087 / 0.9759 | 1.0239 / 1.0607 | 1.0307 / 1.0433 | 1.0360 / 1.0554 | loss |
+| 16 | 4096 | C | 3.00% | 1.0007 / 0.9976 | 0.8341 / 0.8465 | 0.8392 / 0.8491 | 0.8367 / 0.8439 | gain |
+| 16 | 8 | R | 6.31% | 1.0000 / 1.0004 | 1.0000 / 0.9820 | 0.9836 / 1.0230 | 0.9813 / 1.0155 | within |
+| 16 | 256 | R | 7.93% | 1.0104 / 1.0793 | 0.9914 / 0.9848 | 1.0016 / 0.9703 | 0.9792 / 0.9824 | within |
+| 16 | 4096 | R | 3.68% | 0.9888 / 1.0055 | 0.8673 / 0.8776 | 0.8797 / 0.8816 | 0.8680 / 0.8818 | gain |
+| 16 | 8 | P | 10.00% | 1.0000 / 1.0000 | 1.3423 / 1.3750 | 1.3750 / 1.3750 | 1.3719 / 1.3750 | loss |
+| 16 | 256 | P | 4.04% | 1.0081 / 1.0000 | 1.2741 / 1.3454 | 1.3087 / 1.3539 | 1.3750 / 1.3556 | loss |
+| 16 | 4096 | P | 3.00% | 0.9986 / 1.0025 | 0.8957 / 0.8932 | 0.8936 / 0.8898 | 0.8964 / 0.8861 | gain |
+| 264 | 8 | B | 3.00% | 0.9970 / 1.0030 | 0.9270 / 0.9293 | 0.9250 / 0.9318 | 0.9489 / 0.9359 | gain |
+| 264 | 256 | B | 3.00% | 0.9961 / 1.0061 | 0.9176 / 0.9169 | 0.9259 / 0.9237 | 0.9244 / 0.9154 | gain |
+| 264 | 4096 | B | 3.29% | 1.0040 / 1.0046 | 0.8133 / 0.8142 | 0.8183 / 0.8133 | 0.8183 / 0.8075 | gain |
+| 264 | 8 | L | 7.05% | 1.0130 / 0.9948 | 0.9995 / 1.0000 | 0.9988 / 1.0000 | 0.9861 / 1.0000 | within |
+| 264 | 256 | L | 6.64% | 1.0664 / 0.9915 | 0.9788 / 1.0154 | 0.9898 / 1.0100 | 0.9944 / 0.9928 | within |
+| 264 | 4096 | L | 6.29% | 0.9805 / 0.9961 | 0.8915 / 0.9074 | 0.8924 / 0.8952 | 0.8882 / 0.9058 | gain |
+| 264 | 8 | C | 3.00% | 1.0101 / 1.0045 | 1.0310 / 1.0490 | 1.0390 / 1.0485 | 1.0379 / 1.0497 | loss |
+| 264 | 256 | C | 5.53% | 1.0089 / 0.9968 | 1.0156 / 1.0369 | 1.0282 / 1.0516 | 1.0167 / 1.0318 | within |
+| 264 | 4096 | C | 3.00% | 0.9955 / 0.9838 | 0.9405 / 0.9362 | 0.9468 / 0.9396 | 0.9487 / 0.9529 | gain |
+| 264 | 8 | R | 6.20% | 0.9967 / 1.0047 | 1.0017 / 0.9986 | 0.9983 / 0.9997 | 0.9921 / 0.9932 | within |
+| 264 | 256 | R | 3.00% | 0.9964 / 0.9968 | 0.9955 / 1.0037 | 0.9950 / 1.0008 | 0.9968 / 0.9786 | within |
+| 264 | 4096 | R | 4.00% | 1.0079 / 0.9916 | 0.9501 / 0.9476 | 0.9592 / 0.9547 | 0.9773 / 0.9444 | gain |
+| 264 | 8 | P | 3.00% | 0.9982 / 1.0043 | 1.5313 / 1.5620 | 1.5264 / 1.5379 | 1.5443 / 1.5620 | loss |
+| 264 | 256 | P | 3.13% | 1.0064 / 0.9995 | 1.6885 / 1.6003 | 1.7010 / 1.6413 | 1.6773 / 1.6824 | loss |
+| 264 | 4096 | P | 3.70% | 1.0189 / 1.0070 | 1.0836 / 1.1031 | 1.0891 / 1.1005 | 1.1045 / 1.1078 | loss |
+
+**Retained borrowed-promotion comparison.**
+
+| Pair bytes | Count | Path | Band | A/A source C | A/B source C | A/B direct C | A/B AVL | Result |
+| ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 16 | 8 | B | 5.08% | 0.9944 / 1.0000 | 0.8575 / 0.8419 | 0.8600 / 0.8725 | 0.8498 / 0.8576 | gain |
+| 16 | 256 | B | 5.63% | 0.9913 / 0.9882 | 0.7143 / 0.7246 | 0.7220 / 0.7411 | 0.7211 / 0.7167 | gain |
+| 16 | 4096 | B | 4.40% | 1.0165 / 0.9979 | 0.6479 / 0.6410 | 0.6502 / 0.6451 | 0.6333 / 0.6292 | gain |
+| 16 | 8 | L | 5.14% | 1.0060 / 1.0000 | 1.0151 / 1.0011 | 1.0221 / 1.0072 | 1.0280 / 1.0328 | within |
+| 16 | 256 | L | 10.58% | 0.9950 / 0.9680 | 1.0549 / 0.9888 | 1.0627 / 0.9194 | 1.0165 / 0.9598 | within |
+| 16 | 4096 | L | 4.16% | 0.9932 / 0.9876 | 0.8557 / 0.8468 | 0.8771 / 0.8739 | 0.8688 / 0.8513 | gain |
+| 16 | 8 | C | 9.41% | 0.9965 / 0.9960 | 0.9468 / 0.8941 | 0.9289 / 0.9541 | 0.9471 / 0.9424 | within |
+| 16 | 256 | C | 6.03% | 0.9796 / 1.0048 | 0.8931 / 0.8789 | 0.8905 / 0.8747 | 0.8836 / 0.8353 | gain |
+| 16 | 4096 | C | 3.00% | 1.0028 / 1.0059 | 0.8074 / 0.8013 | 0.8023 / 0.7867 | 0.8075 / 0.7935 | gain |
+| 16 | 8 | R | 4.30% | 0.9999 / 1.0000 | 1.0396 / 0.9944 | 0.9944 / 1.0000 | 1.0209 / 1.0000 | within |
+| 16 | 256 | R | 3.00% | 0.9961 / 1.0026 | 0.9987 / 0.9872 | 0.9959 / 0.9976 | 0.9922 / 1.0102 | within |
+| 16 | 4096 | R | 3.00% | 0.9825 / 0.9964 | 0.8816 / 0.8742 | 0.8829 / 0.8743 | 0.8844 / 0.8728 | gain |
+| 16 | 8 | P | 5.41% | 1.0000 / 1.0000 | 1.1775 / 1.1763 | 1.1622 / 1.1757 | 1.1622 / 1.1757 | loss |
+| 16 | 256 | P | 5.54% | 0.9601 / 0.9446 | 1.2252 / 1.2173 | 1.1784 / 1.2430 | 1.1524 / 1.1777 | loss |
+| 16 | 4096 | P | 3.00% | 1.0131 / 1.0077 | 0.8587 / 0.8938 | 0.8722 / 0.8727 | 0.8696 / 0.8865 | gain |
+| 264 | 8 | B | 3.00% | 1.0000 / 1.0243 | 1.0322 / 1.0538 | 1.0213 / 1.0410 | 1.0087 / 1.0409 | loss |
+| 264 | 256 | B | 3.00% | 0.9972 / 0.9947 | 0.9664 / 0.9631 | 0.9666 / 0.9704 | 0.9653 / 0.9822 | gain |
+| 264 | 4096 | B | 3.00% | 1.0271 / 1.0123 | 0.8442 / 0.8289 | 0.8315 / 0.8544 | 0.8341 / 0.8500 | gain |
+| 264 | 8 | L | 3.66% | 1.0000 / 1.0001 | 1.0106 / 1.0005 | 1.0053 / 0.9761 | 1.0053 / 0.9880 | within |
+| 264 | 256 | L | 3.00% | 1.0171 / 1.0120 | 0.9355 / 0.9250 | 0.9387 / 1.0200 | 0.9309 / 0.9199 | gain |
+| 264 | 4096 | L | 4.98% | 0.9876 / 0.9987 | 0.9425 / 0.9243 | 0.9420 / 0.9175 | 0.9362 / 0.9147 | gain |
+| 264 | 8 | C | 5.06% | 0.9892 / 0.9817 | 1.0449 / 1.0572 | 1.0484 / 1.0448 | 1.0401 / 1.0484 | loss |
+| 264 | 256 | C | 3.00% | 1.0011 / 0.9951 | 0.9299 / 0.9351 | 0.9337 / 0.9427 | 0.9420 / 0.9443 | gain |
+| 264 | 4096 | C | 3.00% | 1.0034 / 0.9878 | 0.9046 / 0.8923 | 0.9002 / 0.8947 | 0.8922 / 0.8909 | gain |
+| 264 | 8 | R | 3.70% | 1.0004 / 1.0000 | 0.9950 / 1.0017 | 1.0000 / 1.0016 | 0.9967 / 1.0017 | within |
+| 264 | 256 | R | 3.00% | 1.0001 / 1.0000 | 0.9996 / 0.9959 | 1.0109 / 0.9975 | 1.0105 / 1.0004 | within |
+| 264 | 4096 | R | 3.00% | 1.0035 / 1.0053 | 0.9540 / 0.9547 | 0.9600 / 0.9530 | 0.9583 / 0.9610 | gain |
+| 264 | 8 | P | 3.00% | 1.0000 / 0.9726 | 1.2377 / 1.2129 | 1.2499 / 1.2224 | 1.2507 / 1.2048 | loss |
+| 264 | 256 | P | 3.00% | 0.9982 / 0.9870 | 1.1214 / 1.1298 | 1.1332 / 1.1412 | 1.1321 / 1.1204 | loss |
+| 264 | 4096 | P | 4.57% | 1.0070 / 0.9971 | 0.9539 / 0.9529 | 0.9538 / 0.9388 | 0.9683 / 0.9444 | gain |
+
+The repeated large replacement losses are sufficient to reject this candidate
+without the optional complete repeat. Some smaller effects remain uncertain:
+for example, scalar/count-256 lookup bands exceed 10%, and normal small-count
+churn losses differ in magnitude between cohorts. No conclusion about those
+cells is needed to resolve the candidate. All cells and warm-ups are retained.
+
+Optimized IR confirms the intended private-interface change. In both modes,
+wide `ordered_map_insert_link$instance$93` takes the link plus references to
+the 272-byte offered slot and 288-byte promotion slot. It has no aggregate
+result pointer; recursion passes the same two slot pointers. Its matched-hit
+and unchanged-ancestor paths contain no 288-byte result clearing. The scalar
+helper likewise loses the 40-byte optional-result clears. Private helpers remain
+optimizable under the same public retention policy.
+
+Remaining initialization and owner transfers are visible:
+
+| Path in candidate 2 | Optimized operation in both modes |
+| --- | --- |
+| Below-ceiling public put | One promotion-slot memset: 40 scalar bytes or 288 wide bytes; offered-slot length is stored after its Pair is placed. |
+| Wide offered Pair placement | Normal mode stores 33 words plus the slot length; retained mode copies 264 bytes into the slot plus its length store. |
+| Wide replacement match | Three 264-byte memcpy operations implement the Pair swap; no promotion payload is read or written on that match. |
+| Unchanged ancestor after recursion | One promotion-length load/comparison selects immediate return; no optional aggregate is returned. |
+| Wide replacement public result | One 264-byte memcpy extracts the old Pair into the unchanged returned-owner result, plus result tags and occupancy stores. |
+| Vacant wide leaf | The 264-byte Pair transfers to the promotion entry, followed by 16 zeroed bytes for its vacant right link and the occupancy stores. |
+| Parent accepting a wide promotion | One 280-byte memcpy stages the taken Entry before `insert_item`; ordinary entry shifting/splitting and node allocation still apply. |
+
+The public wide put retains 73/144 load/store instructions in normal optimized
+IR and 23/30 in retained IR, compared with baseline 71/139 and 21/25. The wide
+recursive link has 27/20 and 23/20, compared with candidate 1's 26/20 and 22/20:
+removing its result writes adds an explicit promotion occupancy path instead.
+These are static instruction-site counts across whole functions, not executed
+counts or byte totals. Wide splitting still has its 2,240-byte unused suffix
+initialization; a new root still has 3,920 unused bytes initialized. Those
+allocation paths are unchanged representation costs, not replacement-only work.
+
+The final arm64 prologues also retain material stack frames. These byte counts
+include saved registers and explicit stack subtraction, but do not sum nested
+frames or measure a high-water mark:
+
+| Wide helper | Baseline normal / retained | Candidate 1 normal / retained | Candidate 2 normal / retained |
+| --- | ---: | ---: | ---: |
+| Public put | 928 / 1,184 | 960 / 1,456 | 944 / 1,456 |
+| Recursive insertion link | 800 / 720 | 352 / 368 | 352 / 368 |
+
+The baseline replacement path uses its Boolean search and does not enter the
+listed insertion helper. The borrowed promotion removes aggregate result
+clearing but does not reduce the recursive frame relative to candidate 1;
+Pair-swap and taken-Entry temporaries remain. Its public boundary still
+materializes the carrier and initializes a promotion slot even on replacement.
+
+This follow-up changes the earlier causal inference: removing recursive
+optional results did **not** cure the replacement regression. Their clearing
+was an observed cost, not an established dominant cause. Remaining slot
+initialization, Pair transfers, occupancy branches, stack traffic and inlining
+shape are possible contributors; these measurements do not isolate their
+elapsed shares. Comparing candidate 1 and candidate 2's percentages across
+separate matrices would also not be a direct paired comparison between them.
+
+The source-C control remains baseline-shaped, with the previously documented
+noalias and tag/result-ABI differences. No frozen native control was rewritten.
+The primary evidence is unchanged-control, WF-versus-WF normalization with
+identical public WF result ABIs, not proof that WF and C have identical ABIs.
+All five paths still include construction and cleanup, so large-count lookup,
+range and replacement gains can include the candidate's faster construction.
+This experiment selects neither a default ordered representation nor a compiler
+or language rule.
+
+Reconstruct and replay this follow-up with the existing explicit targets:
+
+```sh
+WHITEFOOT_CHECK_TIMEOUT=120 perl .github/run-check.pl ordered-promotion-build \
+  make -C research/experiments/container-representation/ordered-library insertion-build \
+  INSERTION_CANDIDATE=pair-promotion WHITEFOOTC=/path/to/the/recorded/whitefootc
+WHITEFOOT_CHECK_TIMEOUT=40 perl .github/run-check.pl ordered-promotion-check \
+  make -C research/experiments/container-representation/ordered-library insertion-verify \
+  INSERTION_CANDIDATE=pair-promotion
+WHITEFOOT_CHECK_TIMEOUT=60 perl .github/run-check.pl ordered-promotion-measure \
+  make -C research/experiments/container-representation/ordered-library insertion-measure-only \
+  INSERTION_CANDIDATE=pair-promotion INSERTION_RUN=initial
+make -C research/experiments/container-representation/ordered-library insertion-identities \
+  INSERTION_CANDIDATE=pair-promotion WHITEFOOTC=/path/to/the/recorded/whitefootc \
+  WHITEFOOTC_LABEL=frozen-v0.68-whitefootc
+```
+
+The build checks both frozen driver hashes and both reconstructed library
+hashes. Verification checks the complete oracle, audits, retention and native
+control equality, then records the clock. Outputs use `.build/promotion-*`;
+omitting `INSERTION_CANDIDATE` keeps the earlier `.build/insertion-*` targets.
+A different source or trace requires its own prospective criterion. No research
+target is a correctness-gate dependency.
+
+**Design suitability.** The borrowed promotion is expressible in the existing
+language and removes the intended recursive result transfers, but the complete
+candidate still loses on replacement. Retain the baseline library. Further
+source or lowering work requires a newly motivated experiment; this bounded
+follow-up does not authorize a third candidate or settle the remaining causal
+attribution. No specification rule changed.
