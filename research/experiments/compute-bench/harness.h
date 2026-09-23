@@ -22,16 +22,19 @@ uint64_t wfb_now_ns(void);
    process. Printed in the header. Never subtracted from anything. */
 uint64_t wfb_clock_floor_ns(void);
 
-/* Process CPU time in nanoseconds: every thread of this process summed, user
-   plus system. The source is per host, and harness.c states why each was
-   chosen: task_info's live-thread plus exited-thread totals on Darwin, where
+/* Process CPU accounting in nanoseconds, user plus system. The source is per
+   host, and harness.c states why each was chosen: task_info's live-thread plus
+   exited-thread totals on Darwin, where
    CLOCK_PROCESS_CPUTIME_ID counts only threads that have already exited;
    CLOCK_PROCESS_CPUTIME_ID on any other host that defines it; and
    getrusage(RUSAGE_SELF) as the fallback. It is the whole process and not one
-   thread deliberately: what this bundle wants to know is what a decomposition
-   costs in CPU across every lane or worker it started, which a spinning
-   scheduler shows in and a wall clock hides. Never wall time, and never a
-   pass/fail input. */
+   thread deliberately: the target is decomposition cost across all workers.
+   Cumulative coverage does not establish precise short-interval attribution:
+   Darwin's unsuspended live-thread totals have a freshness limitation, and
+   separate live/exited reads are not an atomic snapshot. Such short deltas
+   cannot diagnose worker idleness or candidate CPU cost without further
+   evidence; see README.md's cpu_us qualification and linked diagnosis.
+   Never wall time, and never a pass/fail input. */
 uint64_t wfb_cpu_ns(void);
 
 /* The name of the source wfb_cpu_ns is actually reading in this process, for

@@ -56,6 +56,124 @@ fn bind_compute_host_adapter(module: &str, adapter: &str) -> String {
     String::from_utf8(output.stdout).expect("adapter LLVM text")
 }
 
+/// The binder used to miss unassigned indirect-result calls. A tiny LLVM/C
+/// consumer checks both result ABIs through the real pool setting, without WF
+/// compilation: one native image, run at W1 and W4. Entry counters distinguish
+/// the actual world even when both worlds return the same complete result.
+#[test]
+fn compute_host_adapter_selects_world_for_both_result_abis() {
+    let module = r#"declare i32 @wf__par_pool_active()
+declare i64 @adapter_value_body(i64, i32)
+declare void @adapter_aggregate_body(ptr, i64, i32)
+declare i64 @wf_adapter_uncloned(i64)
+declare void @wf_adapter_uncloned_output(ptr, i64)
+define i64 @wf_adapter_value(i64 %input) {
+  %value = call i64 @adapter_value_body(i64 %input, i32 1)
+  ret i64 %value
+}
+define i64 @wf__par_seq_adapter_value(i64 %input) {
+  %value = call i64 @adapter_value_body(i64 %input, i32 0)
+  ret i64 %value
+}
+define void @wf_adapter_aggregate(ptr %result, i64 %input) {
+  call void @adapter_aggregate_body(ptr %result, i64 %input, i32 1)
+  ret void
+}
+define void @wf__par_seq_adapter_aggregate(ptr %result, i64 %input) {
+  call void @adapter_aggregate_body(ptr %result, i64 %input, i32 0)
+  ret void
+}
+"#;
+    let adapter = r#"define i64 @adapter_first(ptr %first, ptr %second, i64 %seed) {
+  call void @wf_adapter_aggregate(ptr %first, i64 %seed)
+  %value = call i64 @wf_adapter_value(i64 %seed)
+  call void @wf_adapter_aggregate(ptr %second, i64 %value)
+  %plain = call i64 @wf_adapter_uncloned(i64 %value)
+  ret i64 %plain
+}
+define i64 @adapter_second(ptr %first, ptr %second, ptr %plain, i64 %seed) {
+  %value = call i64 @wf_adapter_value(i64 %seed)
+  call void @wf_adapter_aggregate(ptr %first, i64 %value)
+  call void @wf_adapter_uncloned_output(ptr %plain, i64 %value)
+  call void @wf_adapter_aggregate(ptr %second, i64 %seed)
+  ret i64 %value
+}
+"#;
+    let llvm = bind_compute_host_adapter(module, adapter);
+    let host = r#"#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+extern int wf__floor_run(int, char **);
+extern int wf__par_pool_active(void);
+extern uint64_t adapter_first(uint64_t *, uint64_t *, uint64_t);
+extern uint64_t adapter_second(uint64_t *, uint64_t *, uint64_t *, uint64_t);
+static unsigned value_calls[2], aggregate_calls[2], plain_value_calls, plain_output_calls;
+uint64_t adapter_value_body(uint64_t input, int world) {
+    ++value_calls[world];
+    return input + 11;
+}
+void adapter_aggregate_body(uint64_t *result, uint64_t input, int world) {
+    ++aggregate_calls[world];
+    result[0] = input + 3;
+    result[1] = input * 3 + 1;
+    result[2] = input + 113;
+}
+uint64_t wf_adapter_uncloned(uint64_t input) {
+    ++plain_value_calls;
+    return input + 29;
+}
+void wf_adapter_uncloned_output(uint64_t *result, uint64_t input) {
+    ++plain_output_calls;
+    result[0] = input + 37;
+}
+int wf__main_body(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const char *workers = getenv("WF_WORKERS");
+    if (!workers || (strcmp(workers, "1") && strcmp(workers, "4"))) return 1;
+    unsigned world = !strcmp(workers, "4");
+    if ((wf__par_pool_active() != 0) != world) return 2;
+    struct { uint64_t before, fields[3], after; } cells[5];
+    for (unsigned i = 0; i < 5; ++i) {
+        cells[i].before = UINT64_C(0x1020304050607080) + i;
+        cells[i].after = UINT64_C(0x8070605040302010) + i;
+        for (unsigned j = 0; j < 3; ++j) cells[i].fields[j] = 777;
+    }
+    if (adapter_first(cells[0].fields, cells[1].fields, 17) != 57) return 3;
+    if (adapter_second(cells[2].fields, cells[3].fields, cells[4].fields, 23) != 34) return 4;
+    const uint64_t expected[5][3] = {
+        {20, 52, 130}, {31, 85, 141}, {37, 103, 147}, {26, 70, 136}, {71, 777, 777}
+    };
+    for (unsigned i = 0; i < 5; ++i) {
+        if (cells[i].before != UINT64_C(0x1020304050607080) + i ||
+            cells[i].after != UINT64_C(0x8070605040302010) + i) return 5;
+        for (unsigned j = 0; j < 3; ++j)
+            if (cells[i].fields[j] != expected[i][j]) return 6;
+    }
+    if (value_calls[world] != 2 || value_calls[1 - world] != 0 ||
+        aggregate_calls[world] != 4 || aggregate_calls[1 - world] != 0 ||
+        plain_value_calls != 1 || plain_output_calls != 1) return 7;
+    printf("host adapter worlds PASS: world=%u\n", world);
+    return 0;
+}
+int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+"#;
+    let directory = test_directory();
+    let executable = build_linked_executable(&llvm, Some(host), &[], &directory);
+    for (workers, world) in [("1", 0), ("4", 1)] {
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run host adapter world probe");
+        assert!(output.status.success(), "WF_WORKERS={workers}: {output:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stdout)
+                .contains(&format!("host adapter worlds PASS: world={world}"))
+        );
+    }
+    std::fs::remove_dir_all(directory).expect("remove host adapter world probe");
+}
+
 fn run_compute_oracle(executable: &Path, name: &str, parallel: bool) {
     // A sequential image has no worker world to select. The parallel image
     // additionally tests the pool-off fallback and two real pool widths.
