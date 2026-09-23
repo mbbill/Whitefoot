@@ -1876,3 +1876,32 @@ Supporting that case before optimization needs a separate interference,
 liveness and representation argument. The maintained TODO records that
 scope. Pending tree proposals describe the current trial, not a production
 selection or permission to edit the live tree.
+
+The isolated SSA constructor discriminator also failed, before correctness
+execution or timing. Its local-only revision is
+`fa50c0d873a6c1f9c48d4a87b98890fd295bf4fc`, based on `e31d9422f`; the frozen
+compiler SHA-256 is
+`b95c6167e483010b4a49b294488b047adc7b25494217db9c67b3c0a14e76c29f`.
+All Map/Slab source, harness and shared runtime inputs match the retained A
+identities, and both generated C controls are byte-identical to A. These are
+negative structural observations on the same Apple Clang target, not timings
+or a replacement production implementation:
+
+| Required screen | Observed result |
+| --- | --- |
+| Slab scalar successful lookup no larger than A | 28 executed native instructions versus A's 23 and the first candidate's 27; tag plus two byte stores remain. Fails. |
+| No new large-array expansion | Wide Map put grows from 6 to 105 LLVM loads with 102 insertvalue operations; its native body grows from 113 to 211 instructions. Fails. |
+| Fewer full replacement copies | The matched path has three full 256-byte transfers versus five in the first candidate, but a private exchange call and 48 bytes of payload spills remain. |
+| Vacant/pending construction clears remain absent | Absent in the inspected bodies; separate 272-byte inactive-result clears reappear. |
+| Inputs captured before aggregate store | Present in raw IR; runtime alias qualification was not run after the independent screen failures. |
+
+Compiler construction took 45.23 seconds and artifact emission, linking and
+disassembly 7.13 seconds. Correctness execution and timing each took zero:
+the predeclared stopping rule applied. The prototype remains local, and its
+two-file source-diff SHA-256 is
+`4e4d04400d0ea0ec7c11e25499490a492505b8827f2b828a5cc9ffd39aa21e1f`;
+it is not part of the PR's compiler change. No further constructor form or
+timing replay is selected here. The recommendation is not to adopt the current
+initialization trial: retain its evidence and reopen a distinct optimization
+only with grounds that address these optimizer losses. The pending amendment
+keeps that tradeoff visible for the owner's disposition.

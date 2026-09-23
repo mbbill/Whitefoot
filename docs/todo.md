@@ -189,9 +189,12 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   In the replacement path, private exchange inlining adds stack temporaries
   and payload transfers; in Slab, a small result becomes separate field
   stores rather than one combined store. Their causal shares remain
-  unisolated. Keep this a compiler trial pending a bounded follow-up that
-  preserves the primary gains without the measured losses, or an explicit
-  ruling accepting the tradeoff. Compare the same full consumer matrices,
+  unisolated. The bounded poison-seeded aggregate-store follow-up also failed
+  its structural screen: Slab's successful path grows from 23 to 28 native
+  instructions, and wide Map put expands arrays into 105 LLVM loads. It was
+  stopped before timings. Neither candidate is selected for production;
+  reopening needs a distinct argument addressing those optimizer losses, or
+  an explicit ruling accepting the tradeoff. Compare the same full matrices,
   null controls and ordinary/retained boundaries; preserve the dirty-storage,
   selected-variant, partial-window, linked-body and parallel cleanup checks.
   SSA construction and general aggregate forwarding are separate paths, not
