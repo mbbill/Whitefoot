@@ -21,6 +21,14 @@ Owner-approved: The owner explicitly accepted the complete PR #78 amendment afte
 
 Summary: Apply the two reviewed decisions and rejected alternatives unchanged. Select needed captures only to rescue a frame above the existing lane bound, preserving already-fitting interfaces and helper order. Reuse a still-oversized candidate's completed CFG to avoid exponential nested reconstruction without adding a fallback call, preserving original storage and nested parallel opportunities. Remove the accepted amendment and its directory. The compiler implementation and specification are unchanged; this ruling does not authorize a merge.
 
+## 2026-09-22 Reuse completed numeric closure during Result transport
+
+Nodes: compiler/checker-facts
+
+Owner-approved: The owner explicitly accepted the complete Result closure-reuse supplement after the Chinese PR #92 handoff and clean independent review of revision 11208959.
+
+Summary: Apply the reviewed decision and refused alternative unchanged. Reuse the larger completed ordinary numeric core, share ordinary snapshot preparation at one flow point, and preserve the unaffected core during payload substitution, while retaining isolated contexts, complete candidate sets and ordinary fallbacks. Core size chooses reuse rather than derivability or a work limit; equal-bound witnesses may change. The [Result cost investigation](../research/investigations/result-proof-transport/DESIGN.md#selected-cost-result) provides the matched measurements, correspondence argument and remaining scaling limits. Remove the accepted amendment and its directory. The language specification is unchanged by this ruling; it does not authorize a merge.
+
 ## 2026-09-22 Qualify empty window storage and retain the payload-address fact
 
 Nodes: compiler/storage-representation, compiler/backend-facts

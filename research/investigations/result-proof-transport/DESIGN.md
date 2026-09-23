@@ -575,8 +575,8 @@ that measured case without adding a lifetime analysis or omitting any fact.
 
 This private representation change stays inside FactState and the Result flow
 child. The walker still owns event order, and no additional solver, acceptance
-budget or lifetime analysis is introduced. The proposed supplement is kept in
-`design/amendments/result-closure-reuse.md` pending the owner's ruling. Smaller
+budget or lifetime analysis is introduced. The approved supplement is recorded
+in `design/compiler/checker-facts.md`. Smaller
 predicate sets and last-use tracking are declined for this change because they
 need broader correspondence arguments; the measured question is whether reuse
 of already completed numeric work suffices.
