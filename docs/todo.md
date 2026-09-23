@@ -41,17 +41,16 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   Branch-local range images additionally need target-presence and capture-
   generation information; a plain union of branch images is insufficient.
 
-- **Establish whether the reference-summary depth fallback is source-reachable.**
-  `PlaceMap::resolve_root` returns wholly unresolved beyond 32 recursive summary
-  expansions. Any unresolved child discards the whole alternative set; inspected
-  proof and parallel consumers fail closed, so no partial-origin omission or
-  incorrect acceptance is established. Ordinary aliases are flattened when
-  recorded, and a long source alias chain is not itself a reproducer. Trace
-  checked-source summary construction and test the internal boundary with a
-  shallow sibling; if reachable, replace the depth-dependent precision boundary
-  with source-bounded traversal and explicit cycle handling. Deferred until
-  reference-summary work provides a discriminating source witness or proves the
-  cap redundant; reopen before reusing this resolver for a new proof family.
+- **Distinguish resolved formal anchors from holder queries in proof consumers.**
+  Some entailment support/overlap consumers pass an already resolved formal
+  root back through `PlaceMap::resolve`, which also serves written reference
+  holders. After a parameter rebind this can conservatively add its other
+  observed targets. Audit these calls before changing their interpretation;
+  use entry-anchor/rebound-holder pairs and overlapping controls to establish
+  whether separating the APIs recovers useful precision without omitting an
+  origin. No incorrect acceptance or measured benefit is established. Defer
+  this consumer change to the joined-reference work above; reopen when that
+  work establishes point-current target authority or a real proof needs it.
 
 - **Validate reuse of selected-target element layouts during emission.**
   [Zero-stride addressing](../compiler/src/backend/target.rs) currently queries

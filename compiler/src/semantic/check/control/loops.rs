@@ -8,8 +8,8 @@ use crate::{
 };
 
 use super::super::super::model::{
-    BindingId, CheckedLoopCarriedReference, CheckedLoopId, CheckedLoopInvariant, CheckedMode,
-    CheckedStatement, CheckedType, IntegerType,
+    BindingId, CheckedLoopId, CheckedLoopInvariant, CheckedMode, CheckedStatement, CheckedType,
+    IntegerType,
 };
 use super::super::references::{
     InvalidationEvent, LoopReferenceToken, ReferenceValidity, RequiredReferent,
@@ -77,11 +77,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         id: CheckedLoopId,
         rebound: &HashSet<DeclarationId>,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
-    ) -> Result<(Vec<LoopReferenceEquation>, Vec<CheckedLoopCarriedReference>), CheckStop> {
+    ) -> Result<Vec<LoopReferenceEquation>, CheckStop> {
         let mut declarations = bindings.keys().copied().collect::<Vec<_>>();
         declarations.sort_by_key(|declaration| declaration.index());
         let mut equations = Vec::new();
-        let mut carried = Vec::new();
         for declaration in declarations {
             let local = bindings
                 .get_mut(&declaration)
@@ -118,13 +117,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?
                     .paths
                     .clone_from(&paths);
-                carried.push(CheckedLoopCarriedReference {
-                    binding: token.owner,
-                    paths,
-                });
+                self.record_reference_origins(token.owner, &paths);
             }
         }
-        Ok((equations, carried))
+        Ok(equations)
     }
 
     fn record_reference_rebinding_target(
@@ -581,7 +577,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let rebound =
             self.continuing_reference_rebindings(&executable_statements, &base_bindings)?;
         let mut header_bindings = base_bindings.clone();
-        let (reference_equations, carried_references) =
+        let reference_equations =
             self.enter_loop_reference_header(id, &rebound.holders, &mut header_bindings)?;
         if header_bindings
             .insert(
@@ -710,7 +706,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(StatementResult {
             statement: CheckedStatement::CountedRange {
                 id,
-                carried_references,
                 node_path: self.tree.path(node)?.clone(),
                 binder,
                 lower: lower.expression,
@@ -990,7 +985,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             preserved: preserved.clone(),
         });
         let mut header_bindings = base_bindings.clone();
-        let (reference_equations, carried_references) =
+        let reference_equations =
             self.enter_loop_reference_header(id, &rebound.holders, &mut header_bindings)?;
         let mut body_bindings = header_bindings.clone();
         let allowed_invariant_values = base_keys.iter().copied().collect::<HashSet<_>>();
@@ -1089,7 +1084,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(StatementResult {
             statement: CheckedStatement::Loop {
                 id,
-                carried_references,
                 invariants,
                 body: checked.statements,
                 backedge_drops,

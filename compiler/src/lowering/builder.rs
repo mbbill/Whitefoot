@@ -1105,7 +1105,6 @@ impl<'program> IrBuilder<'program> {
                     invariants: _,
                     body,
                     backedge_drops,
-                    carried_references: _,
                 } => self.lower_loop(*id, body, backedge_drops, give_target.clone())?,
                 CheckedStatement::CountedRange {
                     id,
@@ -1119,7 +1118,6 @@ impl<'program> IrBuilder<'program> {
                     invariants: _,
                     body,
                     backedge_drops,
-                    carried_references: _,
                 } => self.lower_counted_range(
                     *id,
                     node_path,
