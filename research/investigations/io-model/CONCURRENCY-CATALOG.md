@@ -15,10 +15,11 @@ every claim that can be grounded in a measured number in this repository is,
 and every claim that cannot is labelled an estimate with its reasoning.
 
 The executable compute consumers in §§13--15 supersede their earlier range-loan
-predictions. The bounded search evidence in §21 separately qualifies local
-skips and actual helper execution, without a speed comparison. Other sections
-remain analysis of the stated I/O brief, not compiler capability claims or an
-authorization to start I/O work.
+predictions. The bounded trials in §§5 and 21 qualify runtime fan-in and
+local-return search under their stated contracts, including actual helper
+execution, without a speed comparison. Other sections remain analysis of the
+stated I/O brief, not compiler capability claims or an authorization to start
+I/O work.
 
 Nothing here proposes changing the model. Where a rule costs something, the
 cost is priced, not appealed.

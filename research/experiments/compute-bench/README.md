@@ -6,7 +6,8 @@ One question, one table per host:
 > tree's `whitefootc` with plain `--par` the fastest thing in the row?**
 
 The framework scoreboard exists to make that comparison honest. The separate
-helper-pricing and first-index experiments below use the same native build support.
+helper-pricing, runtime-DAG and first-index experiments below use the same
+native build support.
 **No number in a framework scoreboard table
 fails a build or a check**: there is no band, no threshold, no timeout, no
 budget and no heuristic anywhere that selects a row, a ranking or a ratio, and
