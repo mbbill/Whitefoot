@@ -1187,6 +1187,59 @@ run. Expected improvement is reduced descent and owner transfer; possible cost
 is optional-promotion materialization on replacement. This comparison selects
 only between these two library sources, not a default ordered representation.
 
+The candidate fails that criterion. The complete 11,520-row comparison is in
+[the experiment](../../experiments/container-representation/ordered-library/RESULTS.md#single-descent-insertion-candidate).
+Normal wide replacement at 256 entries costs 1.6214/1.6331 times the baseline
+after source-C normalization in the two cohorts, outside the three-percent
+cell band. Other wide replacement sizes and retained replacement also regress.
+Build improvements therefore cannot select this source. No optional repeat was
+needed to establish the loss. Optimized code removes recursive Pair arguments
+but clears a 288-byte optional promotion on each replacement unwind; this
+supports the predicted mechanism without isolating its share of elapsed time.
+The source-C controls retain different tag/result ABI and alias facts; the
+unchanged-control WF-versus-WF comparison, not a claim of ABI equality, decides
+this experiment. The published library stays at the measured baseline.
+
+#### Borrowed promotion follow-up
+
+The observed optional-result cost justifies one further ordinary source
+candidate within the same B-tree. Recursive insertion borrows both the offered
+Pair slot and one caller-owned promotion slot, returning unit. A split places
+an entry in the promotion slot; a parent observes occupancy, takes that owner,
+and either absorbs it or publishes its own split. Matching replacement never
+creates a promotion. The public helper consumes any root promotion and inspects
+the offered slot for insertion versus replacement. This uses the existing
+capacity/occupancy rules, without a recursive-summary assumption, fabricated
+failure arm, new tree shape or new compiler mechanism. The cost still includes
+initializing the one promotion slot and inspecting its length; removing
+recursive results alone does not establish improvement.
+
+Candidate SHA-256 is
+`5514ce2aecdf2a8074dc8897b0457d6858e7ecf16d2d2fa559dfefb6420f2c8f`.
+On the same frozen v0.68 compiler it admits and passes all four maintained
+native modes with exactly 103 allocations released once. This is source and
+ownership evidence before timing. Preserve a separate reconstruction patch;
+the first candidate and all of its failed comparison evidence stay intact.
+
+Before timing, the follow-up reuses the unchanged five-path WF/C/oracle driver,
+native control algorithms, payloads, counts, seeds, batching and public-helper
+policy of the first candidate comparison. Verify their source/optimized-control
+identities before any run. Compare this candidate against the original baseline,
+with a fresh A/A process pair followed by A/B, both reversed cohorts. Retain
+11,520 new rows including warm-up, separate from both earlier matrices. Apply
+the same per-cell normalization, material-change bands, benefit requirement,
+no-loss requirement and complete-repeat rule written above. In particular,
+replacement losses cannot be averaged against build gains. A repeatable material
+loss rejects adoption; one full fixed repeat is allowed only for unresolved
+variation. No third source candidate is part of this follow-up.
+
+Its combined construction/check/timing budgets are 120/40/60 seconds, including
+any permitted repeat; investigate an exceeded stage before extending it. Confirm
+that recursive helpers have no aggregate promotion result and count remaining
+slot initialization and owner transfers in optimized IR. This experiment tests
+the changed ordinary interface contract, not an inactive-storage compiler
+optimization or a promise that zeroing alone caused the previous regression.
+
 ## Ceiling challenges connected to real source contracts
 
 | Challenge and external pressure | Ordinary x1 candidate | What remains to establish |

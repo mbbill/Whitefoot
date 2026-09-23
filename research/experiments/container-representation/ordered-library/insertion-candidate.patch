@@ -1,23 +1,16 @@
 --- ordered-map-baseline.wf
 +++ ordered-map-insertion-candidate.wf
-@@ -116,23 +116,36 @@
-   return Some<OrderedEntry<K, V, OrderedNode<K, V>>>(value: move promoted);
- }
- 
+@@ -119 +119,3 @@
 -fn ordered_map_insert_link<interface OrderedKey<K, E>, V>(link: &Slots<Box<OrderedNode<K, V>>, 1>, pair: OrderedPair<K, V>, env: &E) -> promoted: Option<OrderedEntry<K, V, OrderedNode<K, V>>> reads(env), writes(link) {
 +fn ordered_map_insert_link<interface OrderedKey<K, E>, V>(link: &Slots<Box<OrderedNode<K, V>>, 1>, offered: &Slots<OrderedPair<K, V>, 1>, env: &E) -> promoted: Option<OrderedEntry<K, V, OrderedNode<K, V>>> reads(env), writes(link), writes(offered) contract {
 +  requires deref(offered).len >= 1_u64;
 +} {
-   if deref(link).len > 0_u64 {
+@@ -121 +123 @@
 -    return ordered_map_insert_node::<OrderedKey<K, E>, V>(node: &deref(link)[0_u64].inner, pair: move pair, env: env);
 +    return ordered_map_insert_node::<OrderedKey<K, E>, V>(node: &deref(link)[0_u64].inner, offered: offered, env: env);
-   }
+@@ -122,0 +125 @@
 +  let pair = take_back(window: offered);
-   let after = slots_new::<Box<OrderedNode<K, V>>, 1>();
-   let item = OrderedEntry<K, V, OrderedNode<K, V>>(pair: move pair, after: move after);
-   return Some<OrderedEntry<K, V, OrderedNode<K, V>>>(value: move item);
- }
- 
+@@ -128,2 +131,12 @@
 -fn ordered_map_insert_node<interface OrderedKey<K, E>, V>(node: &OrderedNode<K, V>, pair: OrderedPair<K, V>, env: &E) -> promoted: Option<OrderedEntry<K, V, OrderedNode<K, V>>> reads(env), writes(node) {
 -  let position = ordered_map_search::<OrderedKey<K, E>, V>(node: node, key: &pair.key, env: env);
 +fn ordered_map_insert_node<interface OrderedKey<K, E>, V>(node: &OrderedNode<K, V>, offered: &Slots<OrderedPair<K, V>, 1>, env: &E) -> promoted: Option<OrderedEntry<K, V, OrderedNode<K, V>>> reads(env), writes(node), writes(offered) contract {
@@ -32,21 +25,13 @@
 +      return None<OrderedEntry<K, V, OrderedNode<K, V>>>();
 +    }
 +  }
-   let outcome = if position == 0_u64 {
+@@ -131 +144 @@
 -    let next = ordered_map_insert_link::<OrderedKey<K, E>, V>(link: &deref(node).leading, pair: move pair, env: env);
 +    let next = ordered_map_insert_link::<OrderedKey<K, E>, V>(link: &deref(node).leading, offered: offered, env: env);
-     give move next;
-   } else {
-     let previous = position - 1_u64;
+@@ -135 +148 @@
 -    let next = ordered_map_insert_link::<OrderedKey<K, E>, V>(link: &deref(node).entries[previous].after, pair: move pair, env: env);
 +    let next = ordered_map_insert_link::<OrderedKey<K, E>, V>(link: &deref(node).entries[previous].after, offered: offered, env: env);
-     give move next;
-   }
-   match move outcome {
-@@ -147,18 +160,20 @@
- 
- fn ordered_map_put<interface OrderedKey<K, E>, V, const ceiling: u64>(map: &OrderedMap<K, V, ceiling>, key: K, value: V, env: &E) -> result: OrderedPut<K, V> reads(env), writes(map) {
-   let pair = OrderedPair<K, V>(key: move key, value: move value);
+@@ -150,7 +162,0 @@
 -  if deref(map).root.len > 0_u64 {
 -    let replaced = ordered_map_replace_node::<OrderedKey<K, E>, V>(node: &deref(map).root[0_u64].inner, offered: &pair, env: env);
 -    if replaced {
@@ -54,7 +39,7 @@
 -      return OrderedReturned<K, V>(reason: reason, pair: move pair);
 -    }
 -  }
-   if deref(map).length >= ceiling {
+@@ -157,0 +164,7 @@
 +    if deref(map).root.len > 0_u64 {
 +      let replaced = ordered_map_replace_node::<OrderedKey<K, E>, V>(node: &deref(map).root[0_u64].inner, offered: &pair, env: env);
 +      if replaced {
@@ -62,28 +47,17 @@
 +        return OrderedReturned<K, V>(reason: reason, pair: move pair);
 +      }
 +    }
-     let reason = OrderedFull();
-     return OrderedReturned<K, V>(reason: reason, pair: move pair);
-   }
+@@ -161 +174,3 @@
 -  let promoted = ordered_map_insert_link::<OrderedKey<K, E>, V>(link: &deref(map).root, pair: move pair, env: env);
 +  let offered = slots_new::<OrderedPair<K, V>, 1>();
 +  place_back(window: &offered, value: move pair);
 +  let promoted = ordered_map_insert_link::<OrderedKey<K, E>, V>(link: &deref(map).root, offered: &offered, env: env);
-   match move promoted {
-     None() => {
-     }
-@@ -171,7 +186,14 @@
-       let root = box_new::<OrderedNode<K, V>>(value: move root_node);
-       place_back(window: &deref(map).root, value: move root);
-     }
+@@ -173,0 +189,6 @@
 +  }
 +  if offered.len > 0_u64 {
 +    let replaced = take_back(window: &offered);
 +    free_empty(window: move offered);
 +    let reason = OrderedReplaced();
 +    return OrderedReturned<K, V>(reason: reason, pair: move replaced);
-   }
+@@ -174,0 +196 @@
 +  free_empty(window: move offered);
-   set deref(map).length = deref(map).length + 1_u64;
-   return OrderedInserted<K, V>();
- }

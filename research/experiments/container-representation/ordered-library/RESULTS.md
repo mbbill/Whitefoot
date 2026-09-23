@@ -400,6 +400,15 @@ hashes, both images and their IR are recorded in
 [1,152 rows](measurements.csv) and [identities](identities.txt) are unchanged.
 The separate [11,520 rows](insertion-initial.csv) retain every warm-up and sample.
 
+The measured patch representation (`90c71e4b...`) is preserved at `bc83d10ad`.
+After measurement, context-only blank lines were removed by regenerating a
+zero-context unified diff. The current patch hash is
+`1b008bbf35d48080cae616adf05a4f05962d555e76164bf0c3e97a44e0084f6e`;
+the existing reconstruction target still produces the exact `ddc53f3b...`
+candidate. The historical measured identity file is intentionally unchanged.
+This artifact-hygiene correction changes no candidate bytes, images or samples;
+no timing was rerun.
+
 A/A uses two fresh processes of the same baseline executable. A/B uses the
 rebuilt baseline and candidate. Each comparison has two cohorts; cohort one
 reverses arm/mode order and the alternating within-cell implementation order.
