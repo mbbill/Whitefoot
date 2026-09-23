@@ -1077,7 +1077,8 @@ pointer-sized and take the owner only at the leaf. These are source-level
 alternatives, not a request for a new mechanism. The first must retain
 replacement at the logical ceiling and return an absent offered owner without
 mutation; the second must prove its entry/exit length through each recursive
-helper. Neither alternative is implemented or selected by admission alone.
+helper, or use an ordinary occupancy outcome without assuming a recursive
+postcondition. Neither alternative is selected by admission alone.
 
 Correctness uses an independent sorted oracle and exact owner accounting:
 zero/one entries, root splits, both borrow directions, merges, internal-key
@@ -1093,17 +1094,25 @@ independent sorted-array oracle observes each mutation and traversal; owning
 keys/values, an owned edit result, refusal/retry and hostile comparators share
 an exact serial ledger. Sequential and parallel lowering both pass ordinary
 execution and dirty/quarantined allocation observation. Each observer records
-exactly 64 allocations released once: 22 scalar tree nodes, three owning nodes
-and 39 payload Boxes; payload serials zero through 38 are each consumed once.
-No observer change, compiler change or specification amendment was needed.
+exactly 103 allocations released once: 22 scalar tree nodes, six owning nodes
+and 75 payload Boxes. The original owning trace consumes serials zero through
+38 once; a separate below-ceiling leaf/internal replacement trace consumes
+serials zero through 35 once, checking old owners before final cleanup. The
+observer's existing bounded record array grows from 64 to 256 entries to hold
+the longer trace; its release and misuse checks are unchanged. No compiler
+change or specification amendment was needed.
 
 Clean gate-profile Rust harness construction took 48.84 seconds including its
 guard. The focused corpus test then took 5.05 seconds: 1.174 seconds WF
 compilation, 2.765 seconds native construction and 1.101 seconds across the
 four executions. These establish the selected operation/ownership observations;
 they do not establish native parity, all structural branch counts or a default
-representation. The matched controls and complete canonical gate remain
-separate validation stages.
+representation. The expanded replacement caller subsequently passed the same
+four modes in 5.68 seconds after a 3.94-second incremental Rust construction.
+The complete [matched cost matrix](../../experiments/container-representation/ordered-library/RESULTS.md)
+now preserves 1,152 samples including warm-up: wide-pair costs remain material
+against direct C and AVL, while the scalar/range results are mixed. The complete
+canonical gate remains a separate validation stage.
 
 **Design suitability.** Packed boxed nodes trade more balancing source for
 fewer allocations and avoid pool-wide movement. Bundling edges with separator
@@ -1112,6 +1121,71 @@ the measurements must decide whether that tradeoff is useful. Wide-value
 occupancy remains a representation risk and AVL a meaningful alternative. Indexed composite
 work and prior container/lowering cost questions retain their own scope; this
 trial does not close them or amend the language.
+
+#### Single-descent insertion discriminator
+
+The complete baseline matrix exposes two ordinary source costs: absent puts
+descend twice and carry an owning Pair by value through each insertion level.
+Before timing a replacement, the candidate combines search and insertion below
+the logical ceiling and passes a reference to a one-slot Pair carrier. At a
+leaf it takes the offered owner; replacement exchanges it with the resident
+pair. Carrier occupancy then distinguishes insertion from replacement at the
+public boundary. No recursive ensures is assumed: FN-9 withholds summaries
+inside the same recursive component. At the ceiling, the existing replacement
+search and unchanged-owner refusal stay in place. Split promotion still returns
+an owned optional entry, so replacement may now pay an aggregate result cost
+that the baseline Boolean search avoids. The comparison must expose this risk.
+
+This is one bounded source candidate, not a second tree or a compiler change.
+Its SHA-256 is
+`ddc53f3bd12e3682c26ea72f33d94da5da787371afb7461fd7d69d1798aca4ec`;
+the published baseline is
+`affaee669a09320aafc9ec5badbea6c11fd95623e1ea8987ad9811742c4b70bb`.
+Both have already passed the maintained caller in sequential/parallel lowering,
+ordinary/dirty allocation modes, with the exact 103-allocation and owner ledger.
+That establishes the tested outcomes, not cost selection. Preserve the candidate
+as a reproducible patch in the existing experiment and reconstruct its source
+only in the experiment build directory until selection.
+
+The following criterion is fixed before candidate timings. Keep the original
+1,152 baseline rows and their identities unchanged. Extend the common WF/C/oracle
+trace with a fifth path that only replaces existing keys below the ceiling;
+all five paths include the same construction, visitation and cleanup accounting.
+Retain both pair widths, all three counts, normal/retained public helpers, the
+same deterministic operation stream, one warm-up and five measured samples.
+Native source C stays baseline-shaped, with its existing alias qualifications;
+direct C and AVL stay alternative controls. Only the shared trace and harness
+gain the replacement path. Freeze those sources before any timing.
+
+Build baseline and candidate with the same frozen compiler and native toolchain.
+First run A/A as two fresh processes of the unchanged baseline executable,
+then A/B. Each comparison has two complete cohorts with arm/mode order reversed
+and the within-cell implementation order counterbalanced. Each image/cohort has
+1,440 rows including warm-up; two arms, two cohorts and two comparisons produce
+11,520 new rows. Normalize each WF observation by the source-C observation in
+its own arm/sample, and report direct-C/AVL normalization as cross-checks. Do
+not reuse one control observation for both arms.
+
+For each payload/count/path/mode cell, the material-change band is the largest
+of three percent, the absolute A/A normalized median departure from one in
+either cohort, the unchanged source-C median drift between arms, and four clock
+resolution quanta divided by the smaller measured interval. Selection requires
+an insertion/build or churn improvement beyond that band's lower boundary in
+both cohorts, with no other cell showing a loss beyond its upper boundary in
+either cohort. Confirm removed recursive Pair argument transfers in optimized
+IR; do not assign all elapsed change to copying without isolation. No averaging
+across paths or payloads may hide a replacement regression. If cohort direction
+or unchanged-control variation prevents a determination, allow one repeat of
+the entire fixed matrix and retain all rows; a repeatable material loss rejects
+adoption, and an unresolved result remains inconclusive. No selective cell rerun
+or post hoc narrowing is part of this experiment.
+
+Combined initial construction/correctness/timing budgets are 120/40/60 seconds,
+including that optional full repeat; compiler construction and the canonical
+gate remain separate. An exceeded stage requires investigation before another
+run. Expected improvement is reduced descent and owner transfer; possible cost
+is optional-promotion materialization on replacement. This comparison selects
+only between these two library sources, not a default ordered representation.
 
 ## Ceiling challenges connected to real source contracts
 
