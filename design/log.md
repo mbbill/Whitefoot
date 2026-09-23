@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-23 Adopt the owning HashMap storage and result protocol
+
+Nodes: language/data-model/hash-map-storage
+
+Owner-approved: The owner explicitly adopted both complete PR #95 decisions after the Chinese handoff and clean DCR for revision 623eeebd, replying that they were adopted.
+
+Summary: Apply the reviewed decisions and rejected alternatives unchanged. Select enum buckets with occupancy-only migration through one local pending-owner window and the shared exchange helper, and a shared returned-pair payload with a replacement/refusal reason. Preserve the double-backing peak, dense wide-growth advantage, zero-sized-result cost and remaining transfer qualifications. The [matched map comparison](../research/experiments/container-representation/map-library/RESULTS.md#constant-interface-comparison-and-selected-helper-body) and [compact result control](../research/experiments/container-representation/map-library/RESULTS.md#compact-result-boundary-control) supply the selection grounds. Remove the accepted amendment and its directory. The specification and implementation are unchanged by this ruling; it does not authorize a merge.
+
 ## 2026-09-23 Retain splitter entry after the zero-budget dispatch comparison
 
 Nodes: compiler/parallel-lowering

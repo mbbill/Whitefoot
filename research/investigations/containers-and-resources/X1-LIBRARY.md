@@ -330,6 +330,505 @@ representation study with some noisy controls, not WF emitted-code evidence or
 a comparison against SIMD-group probing. It argues against adding a projected
 layout solely because one branch exists, not for a universal winning layout.
 
+#### Generic owning-map trial after the Ring comparison
+
+The reusable-map trial starts from `e6349b80`, kernel v0.67. Its contract is a
+map over arbitrary owned K and V, including must-consume values, with hash and
+equality supplied through the existing `interface`/`binding` mechanism. Neither
+key nor value requires a separate Box. Collision insertion, replacement that
+returns the previous pair, lookup past deletion, removal, slot reuse, growth
+and rehash, visitation, and explicit final consumption belong to the same
+operation chain. A caller-selected capacity ceiling may return the offered
+pair; allocation itself has no source-visible refusal under STOR-8. Returned
+references, persistent iterators and stable payload addresses are not part of
+this contract.
+
+Borrowed value editing belongs beside read-only lookup: a callback may read
+the stored key, write the selected value and its disjoint environment, and
+return an owned result. Without that form, a counter or wide record update
+would require replacing or removing and reinserting the complete value merely
+because references cannot escape. Ordinary effect rows already express this
+boundary. Validate value-only edits, missing keys, owning children, and unchanged
+map extents; no key mutation or retained reference is implied. Compare a small
+scalar and wide-record edit trace with the same native callback contract before
+claiming that it removes a measured cost.
+
+Before using measurements to select a representation, hold the operation
+trace, supplied behaviors, occupancy, capacity policy and ownership outcomes
+fixed. Compare ordinary enum slots with dense entries plus sparse indexes;
+the Slab's one-element window is an available occupancy encoding, not a
+preselected map layout. Count complete backing and result layouts, sparse and
+dense reserved capacity, allocations, probe work, relocation during growth,
+and helper-boundary transfers. Use both ordinary optimization and retained
+helpers, scalar and wide inline values, and a native C control for the same
+contract. A layout improvement must survive inclusion of reverse-index repair
+and dense-growth costs; reducing table bytes alone does not select it.
+
+The first matched trace uses exact runtime capacities, no cached hash, and
+rehashes each live key through the supplied behavior. Reserve names its target
+capacity. An insertion that exhausts its bounded probe grows geometrically,
+saturating at the caller's ceiling; zero capacity grows to one. Replacement
+still succeeds at that ceiling. Steady-state comparisons use half-full and
+seven-eighths-full tables, with growth measured separately. This simple shared
+policy isolates the representation comparison; it does not select an optimal
+production load factor. The native sparse floor may rebuild directly into a
+new backing and initialize only empty tags. It is not charged WF's temporary
+planning arrays, whole-slot swaps, or zeroed inactive payload bytes.
+
+The correctness discriminator includes hostile equality, collision-heavy and
+full-table traces, zero capacity, replacement at the capacity ceiling, and
+cleanup after every owner-returning outcome. No equality law justifies a
+bound or permits a value to disappear. Rehash must retain all entries without
+asking equality to deduplicate them. If an ordinary formulation fails, retain
+its exact source and separate a specified limit from a compiler defect before
+changing either interface or representation.
+
+The sparse rehash candidate plans destinations in copyable metadata, then
+grows the existing owning backing and permutes complete slots through `swap`.
+This avoids discarding a temporary enum on an unproved vacancy assumption.
+The dense candidate rebuilds only sparse metadata before publication, leaving
+its separate dense owners in place. Both routes need checked complete source;
+neither is selected on an assertion that the other is inexpressible. Temporary
+planning allocations and payload relocation are part of the sparse candidate's
+cost, just as reverse-index maintenance and the dependent lookup are part of
+the dense candidate's cost.
+
+A third admitted ordinary formulation gives each sparse cell
+`Slots<Pair<K,V>, 1>` and a deleted flag. After
+allocating an empty destination with at least the old materialized capacity,
+swap the backing, drain each old cell, and append its single live pair into
+an empty destination window. The ordinary append postcondition establishes
+that the local source is empty, so cleanup needs no assumed enum refinement.
+Hash each owner once; equality is unnecessary. At owner j, at most j-1 of the
+M destinations are filled, so a complete cyclic scan finds a vacancy when
+j <= old capacity <= M. The complete source and its scalar/owning-child
+caller execute in default, sequential and parallel CLI configurations. The
+allocation observer checks all eighteen identities, each released exactly
+once; a zero-capacity rebuild allocates nothing. The vacancy argument is
+not a published numeric contract or a general compiler proof of termination.
+
+That route avoids permutation plans and the bulk old-backing grow copy, but
+costs an extra word per cell: 32 rather than 24 bytes for the scalar pair,
+280 rather than 272 for the wide pair. It also retains both payload backings
+during migration. Ignoring fixed headers, growing C to M has peak bytes
+`(C+M)*(B+8)`, versus the enum route's `(C+M)*B+8*M`: about 8*C more bytes.
+Same-capacity rebuilding needs a second full payload backing rather than
+only the enum route's metadata. Empty-cell construction and local cell/append
+transfers remain costs to inspect. Its comparison criterion is material
+copying/permutation cost or a split between sparse lookup/edit and dense
+growth. Compare both growth and same-capacity rebuild, scalar and wide values,
+with retained helpers. Do not reject it as inexpressible or infer a smaller
+peak from fewer allocations.
+
+The first matched timings trigger that additional comparison. At capacity
+4096 and seven-eighths occupancy, the first cohort's wide growth trace takes
+about 0.70 of the sparse time for dense storage under normal optimization,
+and 0.74 with retained helpers, while ordinary sparse lookup and edit win
+elsewhere. The same sparse growth is about 1.78 times its direct native
+control but 1.21/1.04 times its planned-algorithm C control. The
+[comparison record](../../experiments/container-representation/map-library/RESULTS.md)
+owns the complete paired samples and both cohorts; these particular results
+motivate a discriminator, not a layout selection. Extend the ordinary
+one-slot route only far enough to compare its admitted owning operation chain
+and matched growth/rehash traces. Count its larger cells and double-backing
+peak, as well as actual transfer work. Select it only if the observed benefit
+justifies those costs for the exposed contract; do not extend the full timing
+matrix merely because a third representation exists.
+
+The bounded discriminator uses only scalar/wide growth and same-capacity
+rehash at capacity 4096 with 3584 entries, under the original seeds, complete
+traces, optimization modes and reversed cohorts. Draining the old window
+visits buckets in descending order, whereas the original direct C floor
+visits ascending buckets. Retain that floor, then separate descending enum
+storage, descending one-slot storage, the source's cell-take/append algorithm
+in C, and the WF source. Keep the original sparse/dense implementations in
+the same run as references. This prevents a changed insertion order or
+source migration algorithm from being attributed solely to layout.
+
+The extra per-bucket word is not yet established as necessary for direct
+migration. An additional source discriminator keeps the enum buckets and
+uses one local `Slots<Pair<K,V>,1>` as the pending-owner carrier: pop and
+match the old slot, stage its pair, probe by occupancy, exchange at the
+vacancy, and restage any complete pair the exchange returns. An empty
+carrier ends that owner's migration. The earlier PROV-6 rejection concerned
+an unconsumed displaced enum, not this exhaustive ownership protocol.
+That formulation admits and executes against the unchanged scalar and
+owning-child callers under sequential lowering. Their exact allocation
+ledgers fall from 29/14 to 15/12, each identity released once: six initial
+backings, five growths and four same-capacity rebuilds for the scalar chain;
+ten children and two backings for the owning chain. The local staging window
+allocates nothing. It therefore joins the same four rebuild cells before
+charging direct migration the larger bucket layout. Each attempt hashes
+the current staged key and never uses equality to deduplicate. Transfer
+costs and paired timings are recorded in the same comparison: scalar growth
+improves, while wide growth retains substantial staging and result work.
+Admission and the conceptual vacancy argument alone select neither
+implementation nor representation.
+
+The optimized migration path exposes one further source choice before
+promotion: it calls the general exchange helper even though migration needs
+only to consume the displaced enum, not to construct a public insertion
+result. A bounded alternative puts the same swap and exhaustive enum match
+inside rebuild, restoring any displaced pair to the same pending window.
+It may remove a wide intermediate result and let ordinary optimization use
+the just-observed vacancy; no variant is discarded on that observation.
+Select this form only if the unchanged owning and hostile-behavior callers
+pass, its emitted migration removes the result construction without adding
+storage, and the same four rebuild cells support the cost improvement.
+The public insertion interface and helper-retention policy stay fixed.
+
+The direct route exposes a separate contract boundary. After extending a
+fresh `previous` backing to `capacity`, it publishes that owner with
+`swap(first: &deref(map).cells, second: &previous)`. PRE-1 declares only
+`writes(first), writes(second)` for swap. OP-11 exchanges both values and
+keeps their ownership live, but MSR-3 does not define swap as a measure-fact
+placement, and CALL-6 has no declared postcondition to publish. Consequently
+the previous `previous.inner.len == capacity` proof does not establish
+`deref(map).cells.inner.len == capacity` afterward. Re-reading the actual
+extent permits bounded migration; it does not establish an entry/exit
+monotonicity promise. This is the current proof contract, not a lost owner or
+an observed lowering defect. Keep that limitation in the existing contract
+backlog rather than add a runtime branch solely to satisfy an ensures.
+
+Result layout is a separate source choice. The initial common result has three
+variants, `Inserted`, `Replaced(previous: Pair<K,V>)`, and
+`Full(offered: Pair<K,V>)`. Current product layout reserves both Pair regions.
+An ordinary alternative is `Inserted | Returned(reason: ReturnReason,
+pair: Pair<K,V>)`, with tag-only `Replaced / Full` reasons. It preserves every
+ownership outcome while sharing one payload region, at the cost of a nested
+match. For an eight-byte-aligned Pair of 16 or 264 bytes, the current layout
+calculation predicts 40 or 536 bytes for the original and 24 or 272 bytes for
+the shared form. A zero-byte Pair instead grows from four to eight bytes; this
+is not an unconditional layout win. These are layout deductions, not timings.
+Compare the same replacement and refusal/retry consumers under both source
+forms before choosing either the public result or a compiler optimization.
+Keep initialization, construction and consuming projection transfers separate
+from the result's reserved width. The native control already has one Pair
+region, so its matching semantic outcome alone does not establish ABI parity
+with the initial WF result.
+
+The first reusable library uses the compact returned-pair result and direct
+enum migration through the shared exchange helper. Its complete
+[public caller](../../../tests/programs/containers/hash-map-program.wf)
+uses no representation fields and executes collision, replacement after a
+tombstone, removal, reuse, bounded growth, rehash, borrowed editing and final
+consumption. Separate key/value identities distinguish returning the old pair
+from merely returning an equivalent offered key. Must-consume children,
+zero-sized pairs, inconsistent equality and a fresh owned callback result
+exercise the same source. The allocator observer accounts for seventeen
+backings, ten child Boxes and the callback's returned Box, each released once.
+The formal program test bundles the actual library; it has no research input.
+
+The source selection has two distinct grounds. Sharing the public result's
+payload reduces the measured wide replacement and churn cost as well as its
+reserved width. Direct enum migration removes the planning arrays and avoids
+the extra word in every one-slot bucket. The selected helper source's wide
+growth trace is about 0.93 of the planned sparse source, but remains
+1.64--1.69 times the direct C floor with the same descending migration
+direction and 1.25--1.34 times the dense WF source. Same-capacity rehash also
+retains two complete backings. These are reasons to preserve dense storage and
+lowering improvements as measured opportunities, not to call this a universal
+fastest map. The C floor, source-shaped C, raw paired samples and peak-byte
+accounting remain separate in the
+[comparison](../../experiments/container-representation/map-library/RESULTS.md#constant-interface-comparison-and-selected-helper-body).
+No application-frequency distribution is inferred from the test matrix.
+
+The inline-exchange criterion above was **not fully met**. Holding the compact
+public interface fixed removes the private result's stack slot, call and
+Inserted clearing, but reversed ABBA source controls do not establish a stable
+independent timing benefit after the unchanged C controls' variation is
+accounted for. The library therefore retains the shared exchange helper. The
+inline source and its measurements remain a replayable rejected alternative,
+not the delivered library or evidence that the removed clear alone costs the
+observed timing difference. No compiler implementation, source-language rule
+or conformance evidence is changed. The pending storage amendment records the
+two proposed library choices; the proof-contract and remaining performance limits stay in
+[`docs/todo.md`](../../../docs/todo.md).
+
+The following complete controls retain the trial's proof boundaries under
+kernel v0.67 and the compiler identified in the comparison's
+[build identities](../../experiments/container-representation/map-library/RESULTS.md#sample-and-build-identities).
+Each standalone program and each listed variant was checked by guarded LLVM
+emission with that executable; apply variants independently to their stated
+baseline. The reported rejection is the first diagnostic, not a claim that
+every alternative formulation fails. For a standalone block saved as
+`control.wf`, the invocation is:
+
+```sh
+perl .github/run-check.pl map-proof-control compiler/target/gate/whitefootc --emit-llvm control.wf -o control.ll
+```
+
+**Contract formation and publication.** This complete baseline accepts:
+
+```wf
+struct Counter {
+  length: u64;
+}
+
+fn scalar(map: &Counter) -> result: own unit writes(map) {
+  set deref(map) = Counter(length: deref(map).length);
+  return unit;
+}
+
+fn append_proof(values: &Slots<u64, 1>, value: own u64) -> outcome: own Result<unit, unit> writes(values) contract {
+  requires deref(values).len < deref(values).cap;
+  ensures deref(values).len == deref(entry(values)).len + 1_u64;
+} {
+  place_back(window: values, value: value);
+  return Ok<unit, unit>(value: unit);
+}
+
+fn replace(cells: &Box<Slots<u64>>) -> result: own unit writes(cells) {
+  let previous = box_slots_new::<u64>(capacity: 1_u64);
+  place_back(window: &previous.inner, value: 7_u64);
+  invariant prepared: previous.inner.len == 1_u64;
+  swap(first: cells, second: &previous);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+```
+
+The exact variants are:
+
+1. Replace `scalar`'s first line with these three lines:
+
+   ```wf
+   fn scalar(map: &Counter) -> result: own unit writes(map) contract {
+     ensures deref(map).length >= deref(entry(map)).length;
+   } {
+   ```
+
+   The first diagnostic is FN-9 `InvalidPostconditionRelation` at that clause.
+   FN-9 gives exit-state denotation to a written reference's measures, and
+   MSR-3's `entry` adds no scalar snapshot family. Ordinary counter reads and
+   writes remain available.
+2. In `append_proof`, replace its ensures with
+   `ensures when Ok(value: success): deref(values).len == deref(entry(values)).len + 1_u64;`.
+   The first diagnostic is FN-9 `InvalidPostconditionSelector` at `Ok`.
+   FN-9's routed form requires an integer success payload. The accepted
+   baseline instead publishes an unrouted exit-measure relation from a
+   `Result<unit, unit>` function; such relations are also legal on a plain
+   unit-returning function. Unit results do not prohibit ensures generally.
+3. Add the enum below, change `append_proof`'s result type from
+   `Result<unit, unit>` to `DenseProofPut`, replace its ensures with
+   `ensures when DenseProofReplaced(previous: old_value): deref(values).len == deref(entry(values)).len + 1_u64;`,
+   and replace its return with `return DenseProofReplaced(previous: value);`.
+   The first diagnostic is FN-9 `InvalidPostconditionSelector` at
+   `DenseProofReplaced`. FN-9 admits only the prelude `Result.Ok` route, so a
+   custom `Inserted / Replaced / Full` result cannot publish a relation for
+   each outcome. An unconditional insertion interval alone does not prove
+   that the Full arm preserves length before a retry.
+
+   ```wf
+   enum DenseProofPut {
+     DenseProofInserted();
+     DenseProofReplaced(previous: u64);
+   }
+   ```
+
+4. Replace `replace`'s first line with these three lines:
+
+   ```wf
+   fn replace(cells: &Box<Slots<u64>>) -> result: own unit writes(cells) contract {
+     ensures deref(cells).inner.len == 1_u64;
+   } {
+   ```
+
+   The first diagnostic is FN-9 `UndischargedPostcondition` at its return,
+   with relation `deref(cells).inner.len = 1` and disposition `Unproved`.
+   PRE-1 declares swap's writes without an ensures; ENT-5 kills the supported
+   facts, MSR-3 has no swap placement, and CALL-6 has no relation to publish.
+   Starting from this variant, replacing only the swap statement with
+   `set deref(cells) = move previous;` accepts through MSR-3's ordinary
+   placement. That control discards the old destination owner; it does not
+   implement the map's exchange-and-migrate algorithm.
+
+**Equality at a call after a counted loop.** This complete baseline accepts:
+
+```wf
+struct Holder {
+  cells: Box<Slots<u64>>;
+}
+
+fn preserve(cells: &Box<Slots<u64>>) -> result: own unit writes(cells) contract {
+  requires deref(cells).inner.cap <= 1_u64;
+  ensures deref(cells).inner.len == deref(entry(cells)).inner.len;
+  ensures deref(cells).inner.cap == deref(entry(cells)).inner.cap;
+} {
+  let capacity = deref(cells).inner.cap;
+  grow(cell: cells, capacity: capacity);
+  return unit;
+}
+
+fn apply(cells: &Box<Slots<u64>>, plan: &Box<Array<u64>>) -> result: own unit writes(cells), writes(plan) contract {
+  requires deref(cells).inner.cap <= 1_u64;
+  requires deref(plan).inner.len <= deref(cells).inner.len;
+  requires deref(plan).inner.len >= deref(cells).inner.len;
+} {
+  grow(cell: cells, capacity: 1_u64);
+  if deref(plan).inner.len > 0_u64 {
+    set deref(plan).inner[0_u64] = 0_u64;
+  }
+  return unit;
+}
+
+fn nested(holder: &Holder, capacity: own u64) -> result: own unit writes(holder.cells) contract {
+  requires deref(holder).cells.inner.cap <= 1_u64;
+  requires deref(holder).cells.inner.len == capacity;
+  requires capacity <= 1_u64;
+} {
+  let plan = box_array_filled::<u64>(count: capacity, value: 0_u64);
+  for (
+    index in 0_u64..capacity,
+    invariant retained: deref(holder).cells.inner.len == capacity,
+    invariant planned: plan.inner.len == capacity,
+    invariant bounded: deref(holder).cells.inner.cap <= 1_u64
+  ) {
+    preserve(cells: &deref(holder).cells);
+  }
+  invariant equal_extent: plan.inner.len == deref(holder).cells.inner.len;
+  apply(cells: &deref(holder).cells, plan: &plan);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let cells = box_slots_new::<u64>(capacity: 1_u64);
+  place_back(window: &cells.inner, value: 7_u64);
+  let holder = Holder(cells: move cells);
+  if holder.cells.inner.cap <= 1_u64 {
+    if holder.cells.inner.len == 1_u64 {
+      nested(holder: &holder, capacity: 1_u64);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+```
+
+Replace only `apply`'s paired length requirements with
+`requires deref(plan).inner.len == deref(cells).inner.len;`. The first
+diagnostic is FN-8 `UndischargedCallRequirement` at the call to `apply`, with
+instantiated goal `plan.inner.len == deref(holder).cells.inner.len` and
+disposition `Unproved`. Removing only that call from this rejected variant
+accepts, including the immediately preceding `equal_extent` invariant.
+INV-1 splits equality into two affine inequalities; ENT-6's affine
+normalization of signed FN-8 goals admits ordering leaves only. Ordinary
+L0 equality remains available, but these affine premises do not take that
+route. The paired requirements preserve exact equality without runtime work.
+
+**Conditional loop preservation.** This complete source rejects:
+
+```wf
+fn preserve(values: &Box<Slots<u64>>) -> result: own unit writes(values) contract {
+  requires deref(values).inner.cap <= 1_u64;
+  ensures deref(values).inner.len == deref(entry(values)).inner.len;
+  ensures deref(values).inner.cap == deref(entry(values)).inner.cap;
+} {
+  let capacity = deref(values).inner.cap;
+  grow(cell: values, capacity: capacity);
+  return unit;
+}
+
+fn conditional(values: &Box<Slots<u64>>, enabled: own Bool) -> result: own unit writes(values) contract {
+  requires deref(values).inner.cap <= 1_u64;
+  ensures deref(values).inner.len == deref(entry(values)).inner.len;
+} {
+  let count = deref(values).inner.len;
+  for (
+    index in 0_u64..count,
+    invariant retained: deref(values).inner.len == count,
+    invariant bounded: deref(values).inner.cap <= 1_u64
+  ) {
+    if enabled {
+      preserve(values: values);
+    }
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let values = box_slots_new::<u64>(capacity: 1_u64);
+  place_back(window: &values.inner, value: 7_u64);
+  let enabled = True();
+  conditional(values: &values, enabled: enabled);
+  if values.inner.len != 1_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+```
+
+The first diagnostic is INV-1 `UndischargedLoopInvariant`, name `retained`,
+obligation `Backedge`, with diagnostic relation `deref(values).len <= count`.
+Adding `invariant restored: deref(values).inner.len == count;` immediately
+after `preserve` inside the true arm leaves that same first rejection.
+Replacing the entire loop body with the following accepts:
+
+```wf
+let before = deref(values).inner.len;
+let before_capacity = deref(values).inner.cap;
+if enabled {
+  preserve(values: values);
+}
+invariant rejoined: deref(values).inner.len == count;
+invariant rejoined_capacity: deref(values).inner.cap <= 1_u64;
+```
+
+Removing only the `before_capacity` binding and `rejoined_capacity` invariant
+from this accepted body moves the first rejection to INV-1's `bounded`
+backedge obligation, relation `deref(values).cap <= 1_u64`. Replacing the
+original loop body with the unconditional `preserve(values: values);` also
+accepts. ENT-5 joins closed L0 relations over every reaching branch; ENT-6
+retains only canonically identical affine inequalities over their immutable
+images. Capturing both current measures supplies connections across this
+small conditional. The rejected form does not establish a general inability
+to preserve measures through conditionals.
+
+The full sparse candidate remains a separate unresolved case. Use
+[sparse-map.wf](https://github.com/mbbill/Whitefoot/blob/c206655d898ea32de9995bca2b19444c92c1f973/research/experiments/container-representation/map-library/sparse-map.wf)
+and its
+[sparse-check.wf driver](https://github.com/mbbill/Whitefoot/blob/c206655d898ea32de9995bca2b19444c92c1f973/research/experiments/container-representation/map-library/sparse-check.wf)
+from `c206655d898ea32de9995bca2b19444c92c1f973`, bundled in that order for
+`--emit-llvm`. In `sparse_map_rebuild`, replace only this loop-body statement:
+
+```wf
+sparse_map_clear_deleted::<K, V>(cells: &deref(map).cells, index: index);
+```
+
+with:
+
+```wf
+let deleted = sparse_map_is_deleted::<K, V>(slot: &deref(map).cells.inner[index]);
+let current_extent = deref(map).cells.inner.len;
+if deleted {
+  sparse_map_canonicalize::<K, V>(cells: &deref(map).cells, index: index);
+}
+invariant unchanged_extent: deref(map).cells.inner.len == current_extent;
+invariant rejoined_extent: deref(map).cells.inner.len == capacity;
+```
+
+Keep the existing helper and every other line. The first diagnostic is INV-1
+`UndischargedLoopInvariant`, name `rebuilt_extent`, obligation `Backedge`,
+with diagnostic relation `deref(map).cells.len <= capacity`. This reproduces
+the full candidate's failure despite its written post-join bridges. Whether
+that remaining refusal is required by the fixed proof rules or is a compiler
+defect has not been established. The admitted candidate retains the
+length-preserving helper around the conditional tombstone operation; that
+helper does not relocate live payloads, and its call structure remains part
+of the matched source-cost comparison. Neither this failed formulation nor
+the admitted small control settles the full candidate's normative diagnosis.
+
+The maintained [TODO](../../../docs/todo.md) remains the owner of unresolved
+issues. This trial reopens must-consume sparse slot state, aggregate result
+transfer costs, and any contract boundary its actual source crosses. Ring
+two-span access, automatic reference-based rebase, ordered-drain movement,
+header-plus-tail storage, retained membership, fixed-resource execution and
+generic checking cost retain their own evidence and reopening conditions.
+A passing map does not resolve those independent questions. New evidence
+updates the existing entry rather than creating a second backlog here.
+
 ### Priority queue and ordered map
 
 A priority queue compares two local references through an interface and swaps
