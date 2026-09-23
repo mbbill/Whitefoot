@@ -1100,6 +1100,47 @@ A large unexplained cost reopens a bounded implementation/algorithm comparison
 before broadening the slice. No universal parity threshold or new mechanism
 follows from acceptance, copy counts or a single timing.
 
+The registered matrix has 30 workload cells: `u64` (8 bytes) and an inline
+`nocopy`/`nodrop` 32-word owner (256 bytes), each at lengths 16, 256 and 4096,
+for reserved pop/push churn, reserved replace-top churn, geometric fill/pop,
+initialized-prefix bottom-up heapify/pop, and initialized-prefix setup/cleanup.
+The wide inline owner stresses movement; nested Box ownership and exact
+release identities belong to the separate formal caller. Each cell compares
+WF, source-shaped full-slot-swap C, and direct hole-sift C in normal and
+retained-public-operation modes, with seven deterministic samples and two reversed
+cohorts: 2,520 rows. The sample work target is 16,384 scalar or 4,096 wide
+items, with fixed repetitions of at least one. Complete traces include their
+construction, comparator and consume callbacks, growth where selected, and
+cleanup; setup/cleanup is a separately reported trace rather than a subtracted
+estimate. All implementations use the same accounting allocator and backing
+header, capacity policy, input stream, comparator, ownership outcomes and
+callback order. Report requested and peak backing bytes, including zero-capacity
+headers and simultaneous old/new allocations during growth.
+Retained mode preserves `new`, `len`, `reserve`, `push`, `peek`, `pop`,
+`replace_top`, `heapify`, `drain`, `free`, and payload callbacks. Private
+child-selection, room-making and sift helpers remain ordinarily optimizable
+in both languages; inspect their actual surviving calls without forcing a
+separate boundary. A normal/retained difference does not isolate call latency.
+
+Before timing, both C implementations and the WF scalar/owning traces must
+match an independent sorted-sequence oracle, checksum and allocation ledger
+over the full operation chain. The hypotheses are that full-slot swaps explain
+part of the wide direct-C gap, retained aggregate boundaries may add transfers,
+and a remaining scalar gap against source-shaped C may expose address or
+comparison lowering. These are hypotheses, not conclusions from transfer
+counts. The hole-sift control distinguishes algorithms, not language parity.
+Use emitted code and actual transfer/comparison counts to attribute a gap;
+report remaining uncertainty and the direction in each cohort. The selection
+criterion above requires improvement beyond unchanged-control variation in
+both cohorts before selecting an optimization. Construction has a 60-second
+budget and the full timing matrix another 60 seconds; investigate an overrun
+before extending either. Build and execution time remain separate. The
+explicit experiment Makefile and its `RESULTS.md` own the reproducible evidence
+under `research/experiments/container-representation/priority-library`; no
+ordinary correctness gate depends on that research directory. Retire its
+sources or harness when the comparison is superseded and no maintained claim
+depends on their replay.
+
 **Design suitability.** A boxed prefix and borrowed comparator build on the
 current generic witness, preserve arbitrary ownership and give the indexed
 consumer a reusable heap core. The proposed nonempty interface needs the
@@ -1108,6 +1149,72 @@ transfers need the matched experiment. Indexed updates and the full ordered
 chain remain required following slices. The existing cost and language
 questions keep their own reopening criteria rather than becoming implied
 prerequisites for this implementation.
+
+### PriorityQueue source and proof boundary
+
+The [ordinary library](../../../lib/containers/priority-queue.wf) now implements
+the proposed operation chain. The maintained
+[caller](../../../tests/programs/containers/priority-queue-program.wf) admits
+and executes under sequential and CLI-parallel lowering on the unchanged
+v0.68 compiler. Its independent insertion-sort oracle checks scalar ordering;
+separate identity ledgers check droppable Box owners, wide nodrop owners,
+refusal/retry, replacement, drain/reuse and partial final cleanup. Always-equal,
+always-positive and cyclic comparisons still finish and preserve every owner.
+Both native allocation observers report exactly 63 allocations, each released
+once: 23 backings and 40 payload Boxes. Full canonical-gate and cost evidence
+remain separate from these focused checks.
+
+The public-length discriminator succeeds: testing `priority_queue_len` supplies
+the ordinary contract fact needed to call peek, replace-top and pop without
+reading the queue's representation. A fieldless zero-byte element also admits
+all sift arithmetic with ceiling `18446744073709551615`. Unit is one byte on
+this target and cannot serve as that zero-byte qualification control.
+
+Two exact refused forms explain the extra source proof work. With
+`parents = count / 2_u64`, after the leaf exit has established `at < parents`,
+the automatic proof alone does not establish:
+
+```wf
+invariant children: 2_u64 * at + 2_u64 <= count;
+```
+
+The library supplies INV-1's ordinary finite certificate instead:
+
+```wf
+invariant children: 2_u64 * at + 2_u64 <= count {
+  use (2_u64 * parents <= count);
+  use 2 times (at < parents);
+}
+```
+
+For mutable child selection, the following branch is semantically bounded,
+but its post-join strict index bound is not retained by ENT-6:
+
+```wf
+let best = left;
+if right < count {
+  let sibling_order = PriorityOrder::compare(env: env, left: &deref(queue).storage.inner[right], right: &deref(queue).storage.inner[left]);
+  if sibling_order < 0_i32 {
+    set best = right;
+  }
+}
+invariant selected: best < count;
+```
+
+Here `left = 2*at+1` and `right = 2*at+2`. The joined offset interval is
+`[1,2]`, while the separately proved child arithmetic gives only
+`2*at+2 <= count`; the stronger right-child guard is not a fact common to
+every predecessor. The read-only `priority_queue_child` helper proves the
+bound at each selected return and publishes it through FN-9. This adds no
+run-time guard or source acceptance exception. Private helper inlining remains
+an ordinary optimizer choice in both cost modes.
+
+Internal sift contracts state their loop-header length facts as paired
+inequalities. Drain additionally restates preserved capacity at its loop exit,
+following the existing Deque form. These are ordinary proof spellings, not
+compiler or specification changes. Generic array snapshot forwarding, indexed
+position repair and the full ordered-container chain are not claims made by
+this first queue implementation.
 
 ## Vector consumption trial
 

@@ -1,0 +1,817 @@
+struct PriorityTestEmpty {
+}
+
+struct PriorityTestDirection {
+  reverse: Bool;
+  mode: u64;
+}
+
+struct PriorityTestSequence {
+  values: Array<u64, 16>;
+  count: u64;
+  next: u64;
+  failures: u64;
+}
+
+fn priority_test_sequence(count: u64) -> result: PriorityTestSequence pure {
+  let values = array_filled::<u64, 16>(value: 0_u64);
+  return PriorityTestSequence(values: values, count: count, next: 0_u64, failures: 0_u64);
+}
+
+fn priority_test_sort(sequence: &PriorityTestSequence, count: u64) -> result: unit writes(sequence.values) contract {
+  requires count <= 16_u64;
+} {
+  doc "The order oracle sorts a separate scalar array by insertion and adjacent exchanges. It does not inspect heap positions or call the queue comparator.";
+  for (index in 0_u64..count) {
+    let at = index;
+    loop @insert (
+      invariant live: at < count,
+      invariant bounded: count <= 16_u64
+    ) {
+      if at == 0_u64 {
+        break @insert;
+      }
+      let previous = at - 1_u64;
+      if deref(sequence).values[previous] <= deref(sequence).values[at] {
+        break @insert;
+      }
+      let earlier = deref(sequence).values[previous];
+      let later = deref(sequence).values[at];
+      set deref(sequence).values[previous] = later;
+      set deref(sequence).values[at] = earlier;
+      set at = previous;
+    }
+  }
+  return unit;
+}
+
+fn priority_test_expect(env: &PriorityTestSequence, value: u64) -> result: unit writes(env) {
+  let at = deref(env).next;
+  if at < deref(env).count {
+    if at < 16_u64 {
+      if value != deref(env).values[at] {
+        set deref(env).failures = deref(env).failures +wrap 1_u64;
+      }
+    } else {
+      set deref(env).failures = deref(env).failures +wrap 1_u64;
+    }
+  } else {
+    set deref(env).failures = deref(env).failures +wrap 1_u64;
+  }
+  set deref(env).next = at +wrap 1_u64;
+  return unit;
+}
+
+fn priority_test_word_compare(env: &PriorityTestEmpty, left: &u64, right: &u64) -> order: i32 reads(left), reads(right) {
+  if deref(left) < deref(right) {
+    return -1_i32;
+  }
+  if deref(left) > deref(right) {
+    return 1_i32;
+  }
+  return 0_i32;
+}
+
+binding PriorityTestWords : PriorityOrder<u64, PriorityTestEmpty> {
+  compare = priority_test_word_compare;
+}
+
+fn priority_test_word_read(env: &PriorityTestEmpty, value: &u64) -> result: u64 reads(value) {
+  return deref(value);
+}
+
+fn priority_test_word_release(env: &PriorityTestEmpty, value: u64) -> result: unit pure {
+  return unit;
+}
+
+fn priority_test_scalar() -> failures: u64 pure {
+  let failures = 0_u64;
+  let env = PriorityTestEmpty();
+  let expected = priority_test_sequence(count: 13_u64);
+  let queue = priority_queue_new::<u64, 13>();
+  let initial = priority_queue_len::<u64, 13>(queue: &queue);
+  if initial != 0_u64 {
+    set failures = failures +wrap 1_u64;
+  }
+  priority_queue_drain::<PriorityTestWords, PriorityTestSequence, fn priority_test_expect, 13>(queue: &queue, order_env: &env, consume_env: &expected);
+  let zero_reserve = priority_queue_reserve::<u64, 13>(queue: &queue, total: 0_u64);
+  if zero_reserve != 0_u64 {
+    set failures = failures +wrap 1_u64;
+  }
+  for (index in 0_u64..13_u64) {
+    let mixed = index * 17_u64;
+    let shifted = mixed + 5_u64;
+    let value = shifted % 7_u64;
+    set expected.values[index] = value;
+    let pushed = priority_queue_push::<PriorityTestWords, 13>(queue: &queue, value: value, env: &env);
+    match pushed {
+      Ok(value: accepted) => {
+      }
+      Err(error: returned) => {
+        set failures = failures +wrap 1_u64;
+      }
+    }
+    let expected_capacity = 13_u64;
+    if index < 8_u64 {
+      set expected_capacity = 8_u64;
+    }
+    if index < 4_u64 {
+      set expected_capacity = 4_u64;
+    }
+    if index < 2_u64 {
+      set expected_capacity = 2_u64;
+    }
+    if index == 0_u64 {
+      set expected_capacity = 1_u64;
+    }
+    if queue.storage.inner.cap != expected_capacity {
+      set failures = failures +wrap 1_u64;
+    }
+    let length = priority_queue_len::<u64, 13>(queue: &queue);
+    let expected_length = index + 1_u64;
+    if length != expected_length {
+      set failures = failures +wrap 1_u64;
+    }
+  }
+  priority_test_sort(sequence: &expected, count: 13_u64);
+  let refused = priority_queue_push::<PriorityTestWords, 13>(queue: &queue, value: 99_u64, env: &env);
+  match refused {
+    Ok(value: accepted) => {
+      set failures = failures +wrap 1_u64;
+    }
+    Err(error: returned) => {
+      if returned != 99_u64 {
+        set failures = failures +wrap 1_u64;
+      }
+    }
+  }
+  let full = priority_queue_len::<u64, 13>(queue: &queue);
+  if full != 13_u64 {
+    set failures = failures +wrap 1_u64;
+  }
+  if full > 0_u64 {
+    let top = priority_queue_peek::<u64, PriorityTestEmpty, u64, fn priority_test_word_read, 13>(queue: &queue, env: &env);
+    let replaced = priority_queue_replace_top::<PriorityTestWords, 13>(queue: &queue, value: 3_u64, env: &env);
+    if top != expected.values[0_u64] {
+      set failures = failures +wrap 1_u64;
+    }
+    if replaced != expected.values[0_u64] {
+      set failures = failures +wrap 1_u64;
+    }
+    set expected.values[0_u64] = 3_u64;
+    priority_test_sort(sequence: &expected, count: 13_u64);
+  } else {
+    set failures = failures +wrap 1_u64;
+  }
+  let retained = priority_queue_reserve::<u64, 13>(queue: &queue, total: 6_u64);
+  if retained != 13_u64 {
+    set failures = failures +wrap 1_u64;
+  }
+  priority_queue_drain::<PriorityTestWords, PriorityTestSequence, fn priority_test_expect, 13>(queue: &queue, order_env: &env, consume_env: &expected);
+  priority_queue_drain::<PriorityTestWords, PriorityTestSequence, fn priority_test_expect, 13>(queue: &queue, order_env: &env, consume_env: &expected);
+  if expected.next != 13_u64 {
+    set failures = failures +wrap 1_u64;
+  }
+  if queue.storage.inner.cap != 13_u64 {
+    set failures = failures +wrap 1_u64;
+  }
+  let reused = priority_queue_push::<PriorityTestWords, 13>(queue: &queue, value: 11_u64, env: &env);
+  match reused {
+    Ok(value: accepted) => {
+    }
+    Err(error: returned) => {
+      set failures = failures +wrap 1_u64;
+    }
+  }
+  let reusable_length = priority_queue_len::<u64, 13>(queue: &queue);
+  if reusable_length > 0_u64 {
+    let removed = priority_queue_pop::<PriorityTestWords, 13>(queue: &queue, env: &env);
+    if removed != 11_u64 {
+      set failures = failures +wrap 1_u64;
+    }
+  } else {
+    set failures = failures +wrap 1_u64;
+  }
+  priority_queue_free::<u64, PriorityTestEmpty, fn priority_test_word_release, 13>(queue: move queue, env: &env);
+  return failures +wrap expected.failures;
+}
+
+fn priority_test_scalar_heapify() -> failures: u64 pure {
+  let failures = 0_u64;
+  let env = PriorityTestEmpty();
+  let expected = priority_test_sequence(count: 7_u64);
+  let storage = box_slots_new::<u64>(capacity: 7_u64);
+  for (
+    index in 0_u64..7_u64,
+    invariant room: storage.inner.len <= index,
+    invariant capacity_low: storage.inner.cap >= 7_u64,
+    invariant capacity_high: storage.inner.cap <= 7_u64
+  ) {
+    let mixed = index * 11_u64;
+    let shifted = mixed + 3_u64;
+    let value = shifted % 17_u64;
+    set expected.values[index] = value;
+    place_back(window: &storage.inner, value: value);
+  }
+  priority_test_sort(sequence: &expected, count: 7_u64);
+  let queue = priority_queue_heapify::<PriorityTestWords, 11>(storage: move storage, env: &env);
+  let capacity = priority_queue_reserve::<u64, 11>(queue: &queue, total: 9_u64);
+  if capacity != 9_u64 {
+    set failures = failures +wrap 1_u64;
+  }
+  loop @pop {
+    let length = priority_queue_len::<u64, 11>(queue: &queue);
+    if length == 0_u64 {
+      break @pop;
+    }
+    let top = priority_queue_peek::<u64, PriorityTestEmpty, u64, fn priority_test_word_read, 11>(queue: &queue, env: &env);
+    let removed = priority_queue_pop::<PriorityTestWords, 11>(queue: &queue, env: &env);
+    if top != removed {
+      set failures = failures +wrap 1_u64;
+    }
+    priority_test_expect(env: &expected, value: removed);
+  }
+  priority_queue_free::<u64, PriorityTestEmpty, fn priority_test_word_release, 11>(queue: move queue, env: &env);
+  if expected.next != 7_u64 {
+    set failures = failures +wrap 1_u64;
+  }
+  return failures +wrap expected.failures;
+}
+
+fn priority_test_singleton() -> failures: u64 pure {
+  let failures = 0_u64;
+  let env = PriorityTestEmpty();
+  let expected = priority_test_sequence(count: 1_u64);
+  set expected.values[0_u64] = 9_u64;
+  let queue = priority_queue_new::<u64, 1>();
+  let reserved = priority_queue_reserve::<u64, 1>(queue: &queue, total: 1_u64);
+  let pushed = priority_queue_push::<PriorityTestWords, 1>(queue: &queue, value: 4_u64, env: &env);
+  match pushed {
+    Ok(value: accepted) => {
+    }
+    Err(error: returned) => {
+      set failures = failures +wrap 1_u64;
+    }
+  }
+  let length = priority_queue_len::<u64, 1>(queue: &queue);
+  if length > 0_u64 {
+    let old = priority_queue_replace_top::<PriorityTestWords, 1>(queue: &queue, value: 9_u64, env: &env);
+    if old != 4_u64 {
+      set failures = failures +wrap 1_u64;
+    }
+  } else {
+    set failures = failures +wrap 1_u64;
+  }
+  priority_queue_free::<u64, PriorityTestSequence, fn priority_test_expect, 1>(queue: move queue, env: &expected);
+  if expected.next != 1_u64 {
+    set failures = failures +wrap 1_u64;
+  }
+  return failures +wrap expected.failures;
+}
+
+struct PriorityTestPayload {
+  id: u64;
+  key: u64;
+}
+
+nodrop struct PriorityTestTicket {
+  child: Box<PriorityTestPayload>;
+  a: u64;
+  b: u64;
+  c: u64;
+  d: u64;
+  e: u64;
+  f: u64;
+  g: u64;
+}
+
+struct PriorityTestLedger {
+  releases: Array<u64, 16>;
+  sequence: Array<u64, 16>;
+  count: u64;
+  failures: u64;
+}
+
+fn priority_test_ledger() -> result: PriorityTestLedger pure {
+  let releases = array_filled::<u64, 16>(value: 0_u64);
+  let sequence = array_filled::<u64, 16>(value: 0_u64);
+  return PriorityTestLedger(releases: releases, sequence: sequence, count: 0_u64, failures: 0_u64);
+}
+
+fn priority_test_fail(ledger: &PriorityTestLedger) -> result: unit writes(ledger) {
+  set deref(ledger).failures = deref(ledger).failures +wrap 1_u64;
+  return unit;
+}
+
+fn priority_test_release(env: &PriorityTestLedger, value: Box<PriorityTestPayload>) -> result: unit writes(env) {
+  let id = value.inner.id;
+  if id < 16_u64 {
+    set deref(env).releases[id] = deref(env).releases[id] +wrap 1_u64;
+  } else {
+    priority_test_fail(ledger: env);
+  }
+  let at = deref(env).count;
+  if at < 16_u64 {
+    set deref(env).sequence[at] = id;
+  } else {
+    priority_test_fail(ledger: env);
+  }
+  set deref(env).count = at +wrap 1_u64;
+  return unit;
+}
+
+fn priority_test_payload(id: u64, key: u64) -> result: Box<PriorityTestPayload> pure {
+  let value = PriorityTestPayload(id: id, key: key);
+  return box_new::<PriorityTestPayload>(value: value);
+}
+
+fn priority_test_ticket(id: u64) -> result: PriorityTestTicket pure {
+  let key = id % 2_u64;
+  let child = priority_test_payload(id: id, key: key);
+  let a = id +wrap 11_u64;
+  let b = id +wrap 22_u64;
+  let c = id +wrap 33_u64;
+  let d = id +wrap 44_u64;
+  let e = id +wrap 55_u64;
+  let f = id +wrap 66_u64;
+  let g = id +wrap 77_u64;
+  return PriorityTestTicket(child: move child, a: a, b: b, c: c, d: d, e: e, f: f, g: g);
+}
+
+fn priority_test_ticket_release(env: &PriorityTestLedger, value: PriorityTestTicket) -> result: unit writes(env) {
+  let PriorityTestTicket(child: child, a: a, b: b, c: c, d: d, e: e, f: f, g: g) = move value;
+  let id = child.inner.id;
+  let key = id % 2_u64;
+  let expected_a = id +wrap 11_u64;
+  let expected_b = id +wrap 22_u64;
+  let expected_c = id +wrap 33_u64;
+  let expected_d = id +wrap 44_u64;
+  let expected_e = id +wrap 55_u64;
+  let expected_f = id +wrap 66_u64;
+  let expected_g = id +wrap 77_u64;
+  if child.inner.key != key {
+    priority_test_fail(ledger: env);
+  }
+  if a != expected_a {
+    priority_test_fail(ledger: env);
+  }
+  if b != expected_b {
+    priority_test_fail(ledger: env);
+  }
+  if c != expected_c {
+    priority_test_fail(ledger: env);
+  }
+  if d != expected_d {
+    priority_test_fail(ledger: env);
+  }
+  if e != expected_e {
+    priority_test_fail(ledger: env);
+  }
+  if f != expected_f {
+    priority_test_fail(ledger: env);
+  }
+  if g != expected_g {
+    priority_test_fail(ledger: env);
+  }
+  priority_test_release(env: env, value: move child);
+  return unit;
+}
+
+fn priority_test_owner_compare(env: &PriorityTestEmpty, left: &Box<PriorityTestPayload>, right: &Box<PriorityTestPayload>) -> order: i32 reads(left), reads(right) {
+  if deref(left).inner.key < deref(right).inner.key {
+    return -1_i32;
+  }
+  if deref(left).inner.key > deref(right).inner.key {
+    return 1_i32;
+  }
+  return 0_i32;
+}
+
+binding PriorityTestOwners : PriorityOrder<Box<PriorityTestPayload>, PriorityTestEmpty> {
+  compare = priority_test_owner_compare;
+}
+
+fn priority_test_ticket_compare(env: &PriorityTestDirection, left: &PriorityTestTicket, right: &PriorityTestTicket) -> order: i32 reads(env), reads(left), reads(right) {
+  if deref(env).mode == 1_u64 {
+    return 0_i32;
+  }
+  if deref(env).mode == 2_u64 {
+    return 2147483647_i32;
+  }
+  if deref(env).mode == 3_u64 {
+    let first = deref(left).child.inner.id % 3_u64;
+    let second = deref(right).child.inner.id % 3_u64;
+    if first == second {
+      return 0_i32;
+    }
+    let advanced = first + 1_u64;
+    let successor = advanced % 3_u64;
+    if successor == second {
+      return -2147483648_i32;
+    }
+    return 2147483647_i32;
+  }
+  let first = deref(left).child.inner.key;
+  let second = deref(right).child.inner.key;
+  let left_id = deref(left).child.inner.id;
+  let right_id = deref(right).child.inner.id;
+  let order = 0_i32;
+  if first < second {
+    set order = -1_i32;
+  } else if first > second {
+    set order = 1_i32;
+  } else {
+    if left_id < right_id {
+      set order = -1_i32;
+    }
+    if left_id > right_id {
+      set order = 1_i32;
+    }
+  }
+  if deref(env).reverse {
+    if order < 0_i32 {
+      return 1_i32;
+    }
+    if order > 0_i32 {
+      return -1_i32;
+    }
+  }
+  return order;
+}
+
+binding PriorityTestTickets : PriorityOrder<PriorityTestTicket, PriorityTestDirection> {
+  compare = priority_test_ticket_compare;
+}
+
+fn priority_test_ticket_read(env: &PriorityTestEmpty, value: &PriorityTestTicket) -> result: u64 reads(value) {
+  return deref(value).child.inner.id;
+}
+
+fn priority_test_owner_outcome(outcome: Result<unit, Box<PriorityTestPayload>>, ledger: &PriorityTestLedger) -> result: unit writes(ledger) {
+  match outcome {
+    Ok(value: accepted) => {
+    }
+    Err(error: returned) => {
+      priority_test_fail(ledger: ledger);
+      priority_test_release(env: ledger, value: move returned);
+    }
+  }
+  return unit;
+}
+
+fn priority_test_ticket_outcome(outcome: Result<unit, PriorityTestTicket>, ledger: &PriorityTestLedger) -> result: unit writes(ledger) {
+  match outcome {
+    Ok(value: accepted) => {
+    }
+    Err(error: returned) => {
+      priority_test_fail(ledger: ledger);
+      priority_test_ticket_release(env: ledger, value: move returned);
+    }
+  }
+  return unit;
+}
+
+fn priority_test_check_releases(ledger: &PriorityTestLedger, count: u64) -> result: unit writes(ledger) contract {
+  requires count < 16_u64;
+} {
+  if deref(ledger).count != count {
+    priority_test_fail(ledger: ledger);
+  }
+  if deref(ledger).releases[0_u64] != 0_u64 {
+    priority_test_fail(ledger: ledger);
+  }
+  for (offset in 0_u64..count) {
+    let id = offset + 1_u64;
+    if deref(ledger).releases[id] != 1_u64 {
+      priority_test_fail(ledger: ledger);
+    }
+  }
+  return unit;
+}
+
+fn priority_test_owning_drop() -> failures: u64 pure {
+  let env = PriorityTestEmpty();
+  let ledger = priority_test_ledger();
+  let queue = priority_queue_new::<Box<PriorityTestPayload>, 3>();
+  for (index in 0_u64..3_u64) {
+    let id = index + 1_u64;
+    let owner = priority_test_payload(id: id, key: id);
+    let pushed = priority_queue_push::<PriorityTestOwners, 3>(queue: &queue, value: move owner, env: &env);
+    priority_test_owner_outcome(outcome: move pushed, ledger: &ledger);
+  }
+  let offered_owner = priority_test_payload(id: 4_u64, key: 4_u64);
+  let refused = priority_queue_push::<PriorityTestOwners, 3>(queue: &queue, value: move offered_owner, env: &env);
+  match refused {
+    Ok(value: accepted) => {
+      priority_test_fail(ledger: &ledger);
+    }
+    Err(error: returned) => {
+      if returned.inner.id != 4_u64 {
+        priority_test_fail(ledger: &ledger);
+      }
+      let full = priority_queue_len::<Box<PriorityTestPayload>, 3>(queue: &queue);
+      if full != 3_u64 {
+        priority_test_fail(ledger: &ledger);
+      }
+      if full > 0_u64 {
+        let removed = priority_queue_pop::<PriorityTestOwners, 3>(queue: &queue, env: &env);
+        priority_test_release(env: &ledger, value: move removed);
+      }
+      let retried = priority_queue_push::<PriorityTestOwners, 3>(queue: &queue, value: move returned, env: &env);
+      priority_test_owner_outcome(outcome: move retried, ledger: &ledger);
+    }
+  }
+  let replacement = priority_test_payload(id: 5_u64, key: 5_u64);
+  let length = priority_queue_len::<Box<PriorityTestPayload>, 3>(queue: &queue);
+  if length > 0_u64 {
+    let removed = priority_queue_replace_top::<PriorityTestOwners, 3>(queue: &queue, value: move replacement, env: &env);
+    priority_test_release(env: &ledger, value: move removed);
+  } else {
+    priority_test_fail(ledger: &ledger);
+    priority_test_release(env: &ledger, value: move replacement);
+  }
+  priority_queue_drain::<PriorityTestOwners, PriorityTestLedger, fn priority_test_release, 3>(queue: &queue, order_env: &env, consume_env: &ledger);
+  for (index in 0_u64..5_u64) {
+    let expected_id = index + 1_u64;
+    if ledger.sequence[index] != expected_id {
+      priority_test_fail(ledger: &ledger);
+    }
+  }
+  for (index in 0_u64..2_u64) {
+    let id = index + 6_u64;
+    let owner = priority_test_payload(id: id, key: id);
+    let pushed = priority_queue_push::<PriorityTestOwners, 3>(queue: &queue, value: move owner, env: &env);
+    priority_test_owner_outcome(outcome: move pushed, ledger: &ledger);
+  }
+  priority_queue_free::<Box<PriorityTestPayload>, PriorityTestLedger, fn priority_test_release, 3>(queue: move queue, env: &ledger);
+  if ledger.sequence[5_u64] != 7_u64 {
+    priority_test_fail(ledger: &ledger);
+  }
+  if ledger.sequence[6_u64] != 6_u64 {
+    priority_test_fail(ledger: &ledger);
+  }
+  priority_test_check_releases(ledger: &ledger, count: 7_u64);
+  return ledger.failures;
+}
+
+fn priority_test_owning_wide() -> failures: u64 pure {
+  let reverse = True();
+  let env = PriorityTestDirection(reverse: reverse, mode: 0_u64);
+  let empty = PriorityTestEmpty();
+  let ledger = priority_test_ledger();
+  let storage = box_slots_new::<PriorityTestTicket>(capacity: 3_u64);
+  for (
+    index in 0_u64..3_u64,
+    invariant room: storage.inner.len <= index,
+    invariant capacity_low: storage.inner.cap >= 3_u64,
+    invariant capacity_high: storage.inner.cap <= 3_u64
+  ) {
+    let id = index + 1_u64;
+    let owner = priority_test_ticket(id: id);
+    place_back(window: &storage.inner, value: move owner);
+  }
+  let queue = priority_queue_heapify::<PriorityTestTickets, 5>(storage: move storage, env: &env);
+  for (index in 0_u64..2_u64) {
+    let id = index + 4_u64;
+    let owner = priority_test_ticket(id: id);
+    let pushed = priority_queue_push::<PriorityTestTickets, 5>(queue: &queue, value: move owner, env: &env);
+    priority_test_ticket_outcome(outcome: move pushed, ledger: &ledger);
+  }
+  let length = priority_queue_len::<PriorityTestTicket, 5>(queue: &queue);
+  if length > 0_u64 {
+    let top = priority_queue_peek::<PriorityTestTicket, PriorityTestEmpty, u64, fn priority_test_ticket_read, 5>(queue: &queue, env: &empty);
+    if top != 5_u64 {
+      priority_test_fail(ledger: &ledger);
+    }
+  } else {
+    priority_test_fail(ledger: &ledger);
+  }
+  let offered_owner = priority_test_ticket(id: 6_u64);
+  let refused = priority_queue_push::<PriorityTestTickets, 5>(queue: &queue, value: move offered_owner, env: &env);
+  match refused {
+    Ok(value: accepted) => {
+      priority_test_fail(ledger: &ledger);
+    }
+    Err(error: returned) => {
+      if returned.child.inner.id != 6_u64 {
+        priority_test_fail(ledger: &ledger);
+      }
+      let full = priority_queue_len::<PriorityTestTicket, 5>(queue: &queue);
+      if full != 5_u64 {
+        priority_test_fail(ledger: &ledger);
+      }
+      if full > 0_u64 {
+        let removed = priority_queue_pop::<PriorityTestTickets, 5>(queue: &queue, env: &env);
+        priority_test_ticket_release(env: &ledger, value: move removed);
+      }
+      let retried = priority_queue_push::<PriorityTestTickets, 5>(queue: &queue, value: move returned, env: &env);
+      priority_test_ticket_outcome(outcome: move retried, ledger: &ledger);
+    }
+  }
+  let replacement = priority_test_ticket(id: 7_u64);
+  let ready = priority_queue_len::<PriorityTestTicket, 5>(queue: &queue);
+  if ready > 0_u64 {
+    let removed = priority_queue_replace_top::<PriorityTestTickets, 5>(queue: &queue, value: move replacement, env: &env);
+    priority_test_ticket_release(env: &ledger, value: move removed);
+  } else {
+    priority_test_fail(ledger: &ledger);
+    priority_test_ticket_release(env: &ledger, value: move replacement);
+  }
+  priority_queue_drain::<PriorityTestTickets, PriorityTestLedger, fn priority_test_ticket_release, 5>(queue: &queue, order_env: &env, consume_env: &ledger);
+  let expected = array_filled::<u64, 7>(value: 0_u64);
+  set expected[0_u64] = 5_u64;
+  set expected[1_u64] = 3_u64;
+  set expected[2_u64] = 7_u64;
+  set expected[3_u64] = 1_u64;
+  set expected[4_u64] = 6_u64;
+  set expected[5_u64] = 4_u64;
+  set expected[6_u64] = 2_u64;
+  for (index in 0_u64..7_u64) {
+    if ledger.sequence[index] != expected[index] {
+      priority_test_fail(ledger: &ledger);
+    }
+  }
+  for (index in 0_u64..2_u64) {
+    let id = index + 8_u64;
+    let owner = priority_test_ticket(id: id);
+    let pushed = priority_queue_push::<PriorityTestTickets, 5>(queue: &queue, value: move owner, env: &env);
+    priority_test_ticket_outcome(outcome: move pushed, ledger: &ledger);
+  }
+  priority_queue_free::<PriorityTestTicket, PriorityTestLedger, fn priority_test_ticket_release, 5>(queue: move queue, env: &ledger);
+  if ledger.sequence[7_u64] != 8_u64 {
+    priority_test_fail(ledger: &ledger);
+  }
+  if ledger.sequence[8_u64] != 9_u64 {
+    priority_test_fail(ledger: &ledger);
+  }
+  priority_test_check_releases(ledger: &ledger, count: 9_u64);
+  return ledger.failures;
+}
+
+fn priority_test_inconsistent(mode: u64) -> failures: u64 pure {
+  doc "Always equal, always positive including self-comparison, and cyclic order have no sorted-order oracle. Heapify, removal, replacement, reuse and final cleanup must nevertheless finish and consume each distinct owner once.";
+  let reverse = False();
+  let env = PriorityTestDirection(reverse: reverse, mode: mode);
+  let ledger = priority_test_ledger();
+  let storage = box_slots_new::<PriorityTestTicket>(capacity: 5_u64);
+  for (
+    index in 0_u64..5_u64,
+    invariant room: storage.inner.len <= index,
+    invariant capacity_low: storage.inner.cap >= 5_u64,
+    invariant capacity_high: storage.inner.cap <= 5_u64
+  ) {
+    let id = index + 1_u64;
+    let owner = priority_test_ticket(id: id);
+    place_back(window: &storage.inner, value: move owner);
+  }
+  let queue = priority_queue_heapify::<PriorityTestTickets, 5>(storage: move storage, env: &env);
+  let length = priority_queue_len::<PriorityTestTicket, 5>(queue: &queue);
+  if length > 0_u64 {
+    let removed = priority_queue_pop::<PriorityTestTickets, 5>(queue: &queue, env: &env);
+    priority_test_ticket_release(env: &ledger, value: move removed);
+  } else {
+    priority_test_fail(ledger: &ledger);
+  }
+  let replacement = priority_test_ticket(id: 6_u64);
+  let ready = priority_queue_len::<PriorityTestTicket, 5>(queue: &queue);
+  if ready > 0_u64 {
+    let removed = priority_queue_replace_top::<PriorityTestTickets, 5>(queue: &queue, value: move replacement, env: &env);
+    priority_test_ticket_release(env: &ledger, value: move removed);
+  } else {
+    priority_test_fail(ledger: &ledger);
+    priority_test_ticket_release(env: &ledger, value: move replacement);
+  }
+  priority_queue_drain::<PriorityTestTickets, PriorityTestLedger, fn priority_test_ticket_release, 5>(queue: &queue, order_env: &env, consume_env: &ledger);
+  for (index in 0_u64..2_u64) {
+    let id = index + 7_u64;
+    let owner = priority_test_ticket(id: id);
+    let pushed = priority_queue_push::<PriorityTestTickets, 5>(queue: &queue, value: move owner, env: &env);
+    priority_test_ticket_outcome(outcome: move pushed, ledger: &ledger);
+  }
+  priority_queue_free::<PriorityTestTicket, PriorityTestLedger, fn priority_test_ticket_release, 5>(queue: move queue, env: &ledger);
+  priority_test_check_releases(ledger: &ledger, count: 8_u64);
+  return ledger.failures;
+}
+
+fn priority_test_unit_compare(env: &PriorityTestEmpty, left: &unit, right: &unit) -> order: i32 pure {
+  return 2147483647_i32;
+}
+
+binding PriorityTestUnits : PriorityOrder<unit, PriorityTestEmpty> {
+  compare = priority_test_unit_compare;
+}
+
+fn priority_test_unit_release(env: &PriorityTestSequence, value: unit) -> result: unit writes(env) {
+  set deref(env).next = deref(env).next +wrap 1_u64;
+  return unit;
+}
+
+struct PriorityTestZero {
+}
+
+fn priority_test_zero_compare(env: &PriorityTestEmpty, left: &PriorityTestZero, right: &PriorityTestZero) -> order: i32 pure {
+  return 2147483647_i32;
+}
+
+binding PriorityTestZeros : PriorityOrder<PriorityTestZero, PriorityTestEmpty> {
+  compare = priority_test_zero_compare;
+}
+
+fn priority_test_zero_release(env: &PriorityTestSequence, value: PriorityTestZero) -> result: unit writes(env) {
+  set deref(env).next = deref(env).next +wrap 1_u64;
+  return unit;
+}
+
+fn priority_test_zero_size() -> failures: u64 pure {
+  let failures = 0_u64;
+  let env = PriorityTestEmpty();
+  let seen = priority_test_sequence(count: 0_u64);
+  let zero = priority_queue_new::<unit, 0>();
+  let refused = priority_queue_push::<PriorityTestUnits, 0>(queue: &zero, value: unit, env: &env);
+  match refused {
+    Ok(value: accepted) => {
+      set failures = failures +wrap 1_u64;
+    }
+    Err(error: returned) => {
+    }
+  }
+  let zero_length = priority_queue_len::<unit, 0>(queue: &zero);
+  if zero_length != 0_u64 {
+    set failures = failures +wrap 1_u64;
+  }
+  priority_queue_drain::<PriorityTestUnits, PriorityTestSequence, fn priority_test_unit_release, 0>(queue: &zero, order_env: &env, consume_env: &seen);
+  priority_queue_free::<unit, PriorityTestSequence, fn priority_test_unit_release, 0>(queue: move zero, env: &seen);
+  let empty = box_slots_new::<unit>(capacity: 0_u64);
+  let empty_heap = priority_queue_heapify::<PriorityTestUnits, 0>(storage: move empty, env: &env);
+  priority_queue_free::<unit, PriorityTestSequence, fn priority_test_unit_release, 0>(queue: move empty_heap, env: &seen);
+  let queue = priority_queue_new::<PriorityTestZero, 18446744073709551615>();
+  let capacity = priority_queue_reserve::<PriorityTestZero, 18446744073709551615>(queue: &queue, total: 18446744073709551615_u64);
+  if capacity != 18446744073709551615_u64 {
+    set failures = failures +wrap 1_u64;
+  }
+  for (index in 0_u64..3_u64) {
+    let value = PriorityTestZero();
+    let pushed = priority_queue_push::<PriorityTestZeros, 18446744073709551615>(queue: &queue, value: value, env: &env);
+    match pushed {
+      Ok(value: accepted) => {
+      }
+      Err(error: returned) => {
+        set failures = failures +wrap 1_u64;
+      }
+    }
+  }
+  let length = priority_queue_len::<PriorityTestZero, 18446744073709551615>(queue: &queue);
+  if length > 0_u64 {
+    let removed = priority_queue_pop::<PriorityTestZeros, 18446744073709551615>(queue: &queue, env: &env);
+    priority_test_zero_release(env: &seen, value: removed);
+  } else {
+    set failures = failures +wrap 1_u64;
+  }
+  priority_queue_drain::<PriorityTestZeros, PriorityTestSequence, fn priority_test_zero_release, 18446744073709551615>(queue: &queue, order_env: &env, consume_env: &seen);
+  priority_queue_free::<PriorityTestZero, PriorityTestSequence, fn priority_test_zero_release, 18446744073709551615>(queue: move queue, env: &seen);
+  if seen.next != 3_u64 {
+    set failures = failures +wrap 1_u64;
+  }
+  return failures;
+}
+
+fn main() -> status: ExitStatus pure {
+  doc "The reusable library runs its complete scalar, drop-owning and wide nodrop chains. A separate insertion-sort oracle checks duplicate scalar priorities and heapify order; stateful descending order has an explicit tie-breaker. Distinct payload and wide-field identities survive growth, refusal and retry, pop, replace-top, drain, reuse and partial final consumption. Inconsistent comparisons still terminate and preserve owners. Zero capacity and zero-sized payloads include a u64-max logical capacity. The shared native observer checks every allocation identity and exact release.";
+  let scalar = priority_test_scalar();
+  if scalar != 0_u64 {
+    return exit_status(code: 1_u8);
+  }
+  let heapify = priority_test_scalar_heapify();
+  if heapify != 0_u64 {
+    return exit_status(code: 2_u8);
+  }
+  let singleton = priority_test_singleton();
+  if singleton != 0_u64 {
+    return exit_status(code: 3_u8);
+  }
+  let owned = priority_test_owning_drop();
+  if owned != 0_u64 {
+    return exit_status(code: 4_u8);
+  }
+  let wide = priority_test_owning_wide();
+  if wide != 0_u64 {
+    return exit_status(code: 5_u8);
+  }
+  let equal = priority_test_inconsistent(mode: 1_u64);
+  if equal != 0_u64 {
+    return exit_status(code: 6_u8);
+  }
+  let greater = priority_test_inconsistent(mode: 2_u64);
+  if greater != 0_u64 {
+    return exit_status(code: 7_u8);
+  }
+  let cyclic = priority_test_inconsistent(mode: 3_u64);
+  if cyclic != 0_u64 {
+    return exit_status(code: 8_u8);
+  }
+  let zero_size = priority_test_zero_size();
+  if zero_size != 0_u64 {
+    return exit_status(code: 9_u8);
+  }
+  return exit_status(code: 0_u8);
+}

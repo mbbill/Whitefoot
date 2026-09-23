@@ -270,3 +270,22 @@ fn hash_map_operations_preserve_owned_pairs_in_both_lowering_modes() {
     // Box returned by the borrowed edit callback and consumed by its caller.
     execute_container_program("hash-map", &sources, 28, false);
 }
+
+#[test]
+fn priority_queue_orders_and_preserves_every_owner_in_both_lowering_modes() {
+    let sources: [(&str, &[u8]); 2] = [
+        (
+            "lib/containers/priority-queue.wf",
+            include_bytes!("../../../lib/containers/priority-queue.wf"),
+        ),
+        (
+            "containers/priority-queue-program.wf",
+            include_bytes!("../../../tests/programs/containers/priority-queue-program.wf"),
+        ),
+    ];
+    // Twenty-three backings and forty payload Boxes. The independent source
+    // oracle sorts a separate array and checks each owner identity. The native
+    // ledger additionally observes actual releases, including growth, refused
+    // owner retry, zero capacity and zero-sized u64-max logical capacity.
+    execute_container_program("priority-queue", &sources, 63, false);
+}

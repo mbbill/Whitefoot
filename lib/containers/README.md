@@ -10,6 +10,7 @@ its code no special source-language status, import behavior or native ABI.
 | [deque.wf](deque.wf) | Reference-taking endpoints, logical visitation and drain over `Box<Ring<T>>`; explicit consuming rebase produces a new backing. No automatic endpoint growth or zero-copy two-span interface. |
 | [slab.wf](slab.wf) | One bounded backing with lazily materialized slots, generation handles, reuse, expiry, exhaustion returning the offered owner, and explicit consumption. Handles are relative to the supplied slab. |
 | [hash-map.wf](hash-map.wf) | Generic owning keys and values with supplied hash/equality, growing insertion, removal, borrowed lookup/edit, rehash, and explicit consumption. No stable bucket index or payload address. |
+| [priority-queue.wf](priority-queue.wf) | Growing boxed binary heap with supplied comparison, proved-nonempty borrowed peek and owning pop/replacement, bottom-up heapify, ordered drain, and explicit final consumption. |
 
 The caller-selected capacity ceiling supplies the size bound for each concrete
 allocation. See [the writer pattern](../../docs/patterns.md#p2-choose-the-storage-shape-from-its-occupancy-rule)
@@ -37,6 +38,25 @@ removed owned pair. Supply a `HashMapConsume` binding to `hash_map_free` and
 owners. Hash/equality consistency determines ordinary map contents; ownership
 and bounded probing do not assume those laws. Neither iteration order nor
 stable indices are promised.
+
+`PriorityQueue<T, ceiling>` starts empty at zero capacity. A `PriorityOrder<T, E>`
+binding compares borrowed elements using a borrowed environment; a negative
+comparison puts the left element first. `priority_queue_push` grows from zero
+to one, then doubles or saturates at the ceiling, and returns the offered owner
+in `Err` when the length has reached that ceiling. `priority_queue_reserve`
+takes a caller-proved total within the ceiling. `priority_queue_len` publishes
+the relation used to prove nonemptiness for callback-based `priority_queue_peek`,
+owning `priority_queue_pop`, and `priority_queue_replace_top`.
+
+`priority_queue_heapify` consumes an initialized `Box<Slots<T>>` and builds the
+heap bottom-up in O(n), without allocating. `priority_queue_drain` consumes in
+pop order in O(n log n) while retaining capacity; `priority_queue_free` consumes
+in reverse physical-slot order in O(n) and releases the backing. Both accept
+explicit consuming callbacks for arbitrary elements, including `nodrop` owners.
+Ordering requires a consistent comparator and environment, but bounded sift
+progress and ownership preservation hold for every returning comparator. Equal
+priorities have no stability guarantee, and no operation promises stable slot
+identity or an escaping reference.
 
 From the repository root, after building `whitefootc`:
 
