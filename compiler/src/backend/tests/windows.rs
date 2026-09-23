@@ -274,9 +274,13 @@ fn main() -> status: own ExitStatus pure {
                 TargetObject::RuntimeSizedAllocation
             ))
         );
-        crate::backend::emitter::emit_llvm_with_layout(program, exact)
+        let mut module = crate::backend::emitter::emit_llvm_with_layout(program, exact)
             .expect("the exact allocation boundary emits")
-            .into_string()
+            .into_string();
+        module.push_str(
+            &crate::driver::launcher::render(program, "main").expect("ordinary test launcher"),
+        );
+        module
     });
     let observed = super::owned_places::retain_calls(&module)
         .replace("@malloc(", "@wf_observe_window_allocate(");
