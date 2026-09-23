@@ -417,3 +417,328 @@ paired-call-2026-09-23	emission-par-time	compiler command real=0.04s user=0.04s 
 paired-call-2026-09-23	emission-seq-command	WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl first-index-pair-seq-emission <current-compiler-artifact>/whitefootc --no-overlap --emit-llvm --par-ledger research/investigations/compute-model/first-index.wf -o <scratch-root>/first-index-seq.ll
 paired-call-2026-09-23	emission-seq-time	compiler command real=0.04s user=0.04s sys=0.00s; guarded stage=0.11s; exit=0; limit=30s
 paired-call-2026-09-23	emission-attempts	one source revision; both emissions pass on first attempt; raw logs and modules preserved; no compiler/native construction or native execution in these emission stages
+paired-call-native-2026-09-23	execution-revision	7639d989c30757bd5cadaca15b9621541668c1c1; initial criterion published at 719c6d8b before source construction; missing-completion control published at 7639d989c before native construction/execution
+paired-call-native-2026-09-23	selection	one fixed pass: seq W1 pair; par W1 pair; par W4 pair; observed W1 pair-observe; observed W4 pair-observe; no repeats, timing campaign or extra Whitefoot call for negative control
+paired-call-native-2026-09-23	native-construction	reused twelve current-main runtime objects from the 2026-09-23 main-345e DAG qualification; no compiler, runtime or third-party construction in this stage
+paired-call-native-2026-09-23	native-flags	-std=c11 -pthread -O2 -Wno-override-module -Wall -Wextra -Werror; link -lm; observed image additionally -DWF_FIRST_INDEX_OBSERVED=1; no scheduling, refusal or frontier overrides in the commands
+paired-call-native-2026-09-23	environment-observation	after execution WF_WORKERS, WF_SPLIT_WORK, WF_SCHED_REPORT and WF_IO_HELPERS were unset; this is not a saved pre-run environment dump
+paired-call-native-2026-09-23	native-build-log-sha256	1acedcc9bd99a2eb970094b813a69560e7c453f0b513e726cb767bddd9cd9377
+paired-call-native-2026-09-23	native-oracle-log-sha256	3e425e280d336d5b878d69d913096802d3c7f8af33e7a83b2bd9a5b21aa17108
+paired-call-native-2026-09-23	native-input-manifests-sha256	before=after=7d54af209b9c52ddcd5e1b328930bde30e27ee9fbacbfe174a444bf2917394a7; twenty inputs byte-identical; all shasum checks pass after construction and execution
+paired-call-native-2026-09-23	native-output-manifests-sha256	before=after=1cf2a63b0da4a8d3c2e1dd455361a8c17b7c6dd92cd2d1c82c752c57fbbd0d91; six artifacts byte-identical; all shasum checks pass after execution
+paired-call-native-2026-09-23	observer-diff-sha256	1911cb6d96b4a2f16fdf1e1418cd7dbea62e746f335b457d3040e885ffdcb4af
+paired-call-native-2026-09-23	observer-correspondence	ordinary linked module plus two range extracts, three event calls and one declaration only; stripping those additions restores ordinary linked bytes; no effect attribute changes; callbacks and resulting optimization perturbations remain diagnostic costs
+paired-call-native-2026-09-23	native-contract	one new pthread helper plus caller per ordered wave; two private prefixes, complete join, minimum index, no cancellation; each native prefix compared with independent memchr outcomes; no pool performance comparison
+paired-call-native-2026-09-23	coverage	1141-case matrix directly checks mode4 index/input including empty/partial waves; 365120 trace fields belong to unchanged WF mode3 diagnostic plus native paired reference, not mode4 returned traces; mode4 logical-prefix correspondence uses identical read-only scan bodies, two-block bounds and complete-wave minimum/stop; actual mode4 predicate events cover only twelve positive-length four-record controls at W1/W4
+paired-call-native-2026-09-23	result	both balanced T=1048576 plain W4 controls have one scan steal; each observed counterpart completes four nonempty predicates, two caller/two helper, with two cross-thread overlapping pairs; old counted-block and diagnostic trace steals remain zero
+paired-call-native-2026-09-23	adverse-result	cheap-first/distant-expense T=1048576 completes records0,2,3 and 1048578 logical byte tests versus native sequential1/1; both-local-tails completes only records0,2 and two byte tests
+paired-call-native-2026-09-23	negative-control	copied observed W1 balanced-absence T=1 stream removes completion ordinal2; same validator rejects predicate-event-count expected8 actual7; raw eight-event stream preserved; no additional Whitefoot call
+paired-call-native-2026-09-23	claims	bounded two-call source form qualifies actual helper search with local skips; no search speed, pool competitiveness, cancellation-policy, loaded-work pricing or PGO conclusion
+paired-call-native-2026-09-23	native-input	56448719a4139a11c9fa300751a037c1c59dc72c3734c11c2a4bf98a1faa0ecc  research/experiments/compute-bench/first_index_probe.c
+paired-call-native-2026-09-23	native-input	241fe63702263505d09645adc58780c41679eea38a04ddd3ead6f494fc056d12  research/experiments/compute-bench/first_index_host.ll
+paired-call-native-2026-09-23	native-input	7a3e330431436651fbcbfeeaf450f3fd7ae097de5a64448b7da817c3c1d8ec02  research/experiments/compute-bench/Makefile
+paired-call-native-2026-09-23	native-input	4e04bcf39eee9edfb02bbec182cf4bbf0d5f2e577003ec3a193dbce143c40813  tests/programs/compute/host-adapter.awk
+paired-call-native-2026-09-23	native-input	f57f7447e55a447aeac2bac8d02d021e8fc13b3d3ff07330fd5780d07d48e247  .github/run-check.pl
+paired-call-native-2026-09-23	native-input	e0c9e83219b50d488d09a8be992d575b35a170792fd402c2ae7b14c11cb2f589  research/investigations/compute-model/first-index.wf
+paired-call-native-2026-09-23	native-input	4207968d8126496c15c77f7d90741e4db89b2a78e58e180affd2261fdc6efb93  <scratch-root>/first-index-par.ll
+paired-call-native-2026-09-23	native-input	ec4e3efd8db8b8dec6d2b1c1c6672b2daf426295aaf14816f648225ded178cf7  <scratch-root>/first-index-seq.ll
+paired-call-native-2026-09-23	native-input	8342e7ea0b8d6a0817d543e8c05e807c96527393945e95597718ba9a27ce722d  <main-runtime-objects>/floor.o
+paired-call-native-2026-09-23	native-input	0655633c69666fcce21bf67258101aedb49c914fc50a6cc8edbfe22a8315e645  <main-runtime-objects>/sched_core.o
+paired-call-native-2026-09-23	native-input	c3a5140b8221a57d27a510995ae37c7b33a64ebc87ec9f9286b99ece649bce45  <main-runtime-objects>/sched_prim_host.o
+paired-call-native-2026-09-23	native-input	e04734d7a1ddbe9083b47570ca2854963803b88a7197628bed2ca66cb4924d5c  <main-runtime-objects>/sched_entry.o
+paired-call-native-2026-09-23	native-input	75cb971977625c9b05adcf74b14989544ccbf61b0a81fe4843ec72226eb36c61  <main-runtime-objects>/completion_runtime.o
+paired-call-native-2026-09-23	native-input	d95b24c2367aa6dcf60a9d9e4e36acf79fa502d4ded856f244c6f4afcf28aa10  <main-runtime-objects>/completion_wait_host.o
+paired-call-native-2026-09-23	native-input	fb4ee3f397da5bcee9188332d56fb3c854b931b4c1f07b4c8350a9c941891937  <main-runtime-objects>/completion_file_adapter.o
+paired-call-native-2026-09-23	native-input	1d1fe1c3033038fc69cd031e32b5eff6e85571da89176f85e442f52f0fb1b940  <main-runtime-objects>/completion_file_posix.o
+paired-call-native-2026-09-23	native-input	af91032f29dc1b1c22dcf43099d933303ff3b1e4741a93122f987bdbdb70c4ec  <main-runtime-objects>/completion_bridge.o
+paired-call-native-2026-09-23	native-input	e389769ac8c9f38af9cd00e5bc5d56d3c180dff5985fb81ddfff63dfa89eb453  <main-runtime-objects>/completion_linux_io_uring.o
+paired-call-native-2026-09-23	native-input	685d56fcf6c89bbddf8d1921b44952bb909dd0362715817babbacd64da8898c3  <main-runtime-objects>/ordinary_values_c.o
+paired-call-native-2026-09-23	native-input	d578790251750de1a10ef95e1265d028184cc1d18f0c40d78e88c5ee8f1fcd80  <main-runtime-objects>/ordinary_values_ll.o
+paired-call-native-2026-09-23	native-output	37b1ab72c39bdb594c91129eaf7f453af5f6ea84de0efe91a891bff77e6150ad  <scratch-root>/first-index-par.linked.ll
+paired-call-native-2026-09-23	native-output	85059ec8d504d4af12eb430c5f0b91963c4189ee2ca9a0ce5d1c0694e478801d  <scratch-root>/first-index-seq.linked.ll
+paired-call-native-2026-09-23	native-output	3378df5886777d5bc9d940900c524d9a508a750bce0b8301d2c3f0406a5d367a  <scratch-root>/first-index-observed.linked.ll
+paired-call-native-2026-09-23	native-output	639642719107045b012896c6dad997711849f6757eb28cd4dc66572b3e4f2556  <scratch-root>/first-index-par
+paired-call-native-2026-09-23	native-output	9691a7694307ec3c4ffeaa0f532718edefffbe3c2b9722e72c13d0a2f056baf0  <scratch-root>/first-index-seq
+paired-call-native-2026-09-23	native-output	17f751774212e95db9b62d6c59ea644427cc9d346b87110d7d95861ffc24905d  <scratch-root>/first-index-observed
+paired-call-native-2026-09-23	native-build-command	WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl first-index-pair-native-build make -C research/experiments/compute-bench -j2 BUILD=<scratch-root> RUNTIME_OBJS="<main-runtime-objects>/floor.o <main-runtime-objects>/sched_core.o <main-runtime-objects>/sched_prim_host.o <main-runtime-objects>/sched_entry.o <main-runtime-objects>/completion_runtime.o <main-runtime-objects>/completion_wait_host.o <main-runtime-objects>/completion_file_adapter.o <main-runtime-objects>/completion_file_posix.o <main-runtime-objects>/completion_bridge.o <main-runtime-objects>/completion_linux_io_uring.o <main-runtime-objects>/ordinary_values_c.o <main-runtime-objects>/ordinary_values_ll.o" WF_FLAGS="-std=c11 -pthread -O2 -Wno-override-module" first-index-pair-build
+paired-call-native-2026-09-23	native-build-time	command real=0.57s user=0.80s sys=0.16s; guarded stage=0.65s; exit=0; limit=30s; first attempt
+paired-call-native-2026-09-23	native-oracle-command	WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl first-index-pair-native-oracle make -C research/experiments/compute-bench BUILD=<scratch-root> first-index-pair-verify
+paired-call-native-2026-09-23	native-oracle-time	command real=1.16s user=0.13s sys=0.15s; guarded stage=1.19s; exit=0; limit=30s; first attempt
+paired-call-native-2026-09-23	oracle-output	== START first-index-pair-native-oracle (limit 30s): make -C research/experiments/compute-bench BUILD=<scratch-root> first-index-pair-verify ==
+paired-call-native-2026-09-23	oracle-output	WF_WORKERS=1 <scratch-root>/first-index-seq seq pair
+paired-call-native-2026-09-23	oracle-output	control	seq	1	other-helper	T=1	mode=4	index=0	records=3	bytes=3	plain-steals=0	trace-steals=0	phase=matrix	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):2/2;
+paired-call-native-2026-09-23	oracle-output	control	seq	1	local-tails	T=1	mode=4	index=0	records=2	bytes=2	plain-steals=0	trace-steals=0	phase=matrix	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):1/1;
+paired-call-native-2026-09-23	oracle-output	control	seq	1	geometric-final-wave	T=1	mode=4	index=1	records=3	bytes=3	plain-steals=0	trace-steals=0	phase=matrix	loop-steals=0	native-first-records=2	native-first-bytes=2	prefixes=[0,2):2/2;[2,3):1/1;
+paired-call-native-2026-09-23	oracle-output	control	seq	1	other-helper	T=65536	mode=4	index=0	records=3	bytes=65538	plain-steals=0	trace-steals=0	phase=matrix	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):2/65537;
+paired-call-native-2026-09-23	oracle-output	control	seq	1	local-tails	T=65536	mode=4	index=0	records=2	bytes=2	plain-steals=0	trace-steals=0	phase=matrix	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):1/1;
+paired-call-native-2026-09-23	oracle-output	control	seq	1	geometric-final-wave	T=65536	mode=4	index=1	records=3	bytes=65538	plain-steals=0	trace-steals=0	phase=matrix	loop-steals=0	native-first-records=2	native-first-bytes=2	prefixes=[0,2):2/2;[2,3):1/65536;
+paired-call-native-2026-09-23	oracle-output	control	seq	1	balanced-absent	T=1	mode=4	index=4	records=4	bytes=4	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=4	prefixes=[0,2):2/2;[2,4):2/2;
+paired-call-native-2026-09-23	oracle-output	control	seq	1	balanced-late-hit	T=1	mode=4	index=3	records=4	bytes=4	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=4	prefixes=[0,2):2/2;[2,4):2/2;
+paired-call-native-2026-09-23	oracle-output	control	seq	1	other-helper	T=1	mode=4	index=0	records=3	bytes=3	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):2/2;
+paired-call-native-2026-09-23	oracle-output	control	seq	1	local-tails	T=1	mode=4	index=0	records=2	bytes=2	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):1/1;
+paired-call-native-2026-09-23	oracle-output	control	seq	1	balanced-absent	T=65536	mode=4	index=4	records=4	bytes=131074	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=131074	prefixes=[0,2):2/65537;[2,4):2/65537;
+paired-call-native-2026-09-23	oracle-output	control	seq	1	balanced-late-hit	T=65536	mode=4	index=3	records=4	bytes=131074	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=131074	prefixes=[0,2):2/65537;[2,4):2/65537;
+paired-call-native-2026-09-23	oracle-output	control	seq	1	other-helper	T=65536	mode=4	index=0	records=3	bytes=65538	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):2/65537;
+paired-call-native-2026-09-23	oracle-output	control	seq	1	local-tails	T=65536	mode=4	index=0	records=2	bytes=2	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):1/1;
+paired-call-native-2026-09-23	oracle-output	control	seq	1	balanced-absent	T=1048576	mode=4	index=4	records=4	bytes=2097154	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=2097154	prefixes=[0,2):2/1048577;[2,4):2/1048577;
+paired-call-native-2026-09-23	oracle-output	control	seq	1	balanced-late-hit	T=1048576	mode=4	index=3	records=4	bytes=2097154	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=2097154	prefixes=[0,2):2/1048577;[2,4):2/1048577;
+paired-call-native-2026-09-23	oracle-output	control	seq	1	other-helper	T=1048576	mode=4	index=0	records=3	bytes=1048578	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):2/1048577;
+paired-call-native-2026-09-23	oracle-output	control	seq	1	local-tails	T=1048576	mode=4	index=0	records=2	bytes=2	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):1/1;
+paired-call-native-2026-09-23	oracle-output	summary	seq	1	cases=1141	index-comparisons=4564	trace-fields=365120	input-bytes=9540464	plain-steals=0	trace-steals=0	loop-steals=0	native-waves=1758	observed=0	actualization-failures=0
+paired-call-native-2026-09-23	oracle-output	WF_WORKERS=1 <scratch-root>/first-index-par par pair
+paired-call-native-2026-09-23	oracle-output	control	par	1	other-helper	T=1	mode=4	index=0	records=3	bytes=3	plain-steals=0	trace-steals=0	phase=matrix	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):2/2;
+paired-call-native-2026-09-23	oracle-output	control	par	1	local-tails	T=1	mode=4	index=0	records=2	bytes=2	plain-steals=0	trace-steals=0	phase=matrix	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):1/1;
+paired-call-native-2026-09-23	oracle-output	control	par	1	geometric-final-wave	T=1	mode=4	index=1	records=3	bytes=3	plain-steals=0	trace-steals=0	phase=matrix	loop-steals=0	native-first-records=2	native-first-bytes=2	prefixes=[0,2):2/2;[2,3):1/1;
+paired-call-native-2026-09-23	oracle-output	control	par	1	other-helper	T=65536	mode=4	index=0	records=3	bytes=65538	plain-steals=0	trace-steals=0	phase=matrix	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):2/65537;
+paired-call-native-2026-09-23	oracle-output	control	par	1	local-tails	T=65536	mode=4	index=0	records=2	bytes=2	plain-steals=0	trace-steals=0	phase=matrix	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):1/1;
+paired-call-native-2026-09-23	oracle-output	control	par	1	geometric-final-wave	T=65536	mode=4	index=1	records=3	bytes=65538	plain-steals=0	trace-steals=0	phase=matrix	loop-steals=0	native-first-records=2	native-first-bytes=2	prefixes=[0,2):2/2;[2,3):1/65536;
+paired-call-native-2026-09-23	oracle-output	control	par	1	balanced-absent	T=1	mode=4	index=4	records=4	bytes=4	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=4	prefixes=[0,2):2/2;[2,4):2/2;
+paired-call-native-2026-09-23	oracle-output	control	par	1	balanced-late-hit	T=1	mode=4	index=3	records=4	bytes=4	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=4	prefixes=[0,2):2/2;[2,4):2/2;
+paired-call-native-2026-09-23	oracle-output	control	par	1	other-helper	T=1	mode=4	index=0	records=3	bytes=3	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):2/2;
+paired-call-native-2026-09-23	oracle-output	control	par	1	local-tails	T=1	mode=4	index=0	records=2	bytes=2	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):1/1;
+paired-call-native-2026-09-23	oracle-output	control	par	1	balanced-absent	T=65536	mode=4	index=4	records=4	bytes=131074	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=131074	prefixes=[0,2):2/65537;[2,4):2/65537;
+paired-call-native-2026-09-23	oracle-output	control	par	1	balanced-late-hit	T=65536	mode=4	index=3	records=4	bytes=131074	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=131074	prefixes=[0,2):2/65537;[2,4):2/65537;
+paired-call-native-2026-09-23	oracle-output	control	par	1	other-helper	T=65536	mode=4	index=0	records=3	bytes=65538	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):2/65537;
+paired-call-native-2026-09-23	oracle-output	control	par	1	local-tails	T=65536	mode=4	index=0	records=2	bytes=2	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):1/1;
+paired-call-native-2026-09-23	oracle-output	control	par	1	balanced-absent	T=1048576	mode=4	index=4	records=4	bytes=2097154	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=2097154	prefixes=[0,2):2/1048577;[2,4):2/1048577;
+paired-call-native-2026-09-23	oracle-output	control	par	1	balanced-late-hit	T=1048576	mode=4	index=3	records=4	bytes=2097154	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=2097154	prefixes=[0,2):2/1048577;[2,4):2/1048577;
+paired-call-native-2026-09-23	oracle-output	control	par	1	other-helper	T=1048576	mode=4	index=0	records=3	bytes=1048578	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):2/1048577;
+paired-call-native-2026-09-23	oracle-output	control	par	1	local-tails	T=1048576	mode=4	index=0	records=2	bytes=2	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):1/1;
+paired-call-native-2026-09-23	oracle-output	summary	par	1	cases=1141	index-comparisons=4564	trace-fields=365120	input-bytes=9540464	plain-steals=0	trace-steals=0	loop-steals=0	native-waves=1758	observed=0	actualization-failures=0
+paired-call-native-2026-09-23	oracle-output	WF_WORKERS=4 <scratch-root>/first-index-par par pair
+paired-call-native-2026-09-23	oracle-output	control	par	4	other-helper	T=1	mode=4	index=0	records=3	bytes=3	plain-steals=1	trace-steals=0	phase=matrix	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):2/2;
+paired-call-native-2026-09-23	oracle-output	control	par	4	local-tails	T=1	mode=4	index=0	records=2	bytes=2	plain-steals=0	trace-steals=0	phase=matrix	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):1/1;
+paired-call-native-2026-09-23	oracle-output	control	par	4	geometric-final-wave	T=1	mode=4	index=1	records=3	bytes=3	plain-steals=0	trace-steals=0	phase=matrix	loop-steals=0	native-first-records=2	native-first-bytes=2	prefixes=[0,2):2/2;[2,3):1/1;
+paired-call-native-2026-09-23	oracle-output	control	par	4	other-helper	T=65536	mode=4	index=0	records=3	bytes=65538	plain-steals=1	trace-steals=0	phase=matrix	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):2/65537;
+paired-call-native-2026-09-23	oracle-output	control	par	4	local-tails	T=65536	mode=4	index=0	records=2	bytes=2	plain-steals=0	trace-steals=0	phase=matrix	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):1/1;
+paired-call-native-2026-09-23	oracle-output	control	par	4	geometric-final-wave	T=65536	mode=4	index=1	records=3	bytes=65538	plain-steals=1	trace-steals=0	phase=matrix	loop-steals=0	native-first-records=2	native-first-bytes=2	prefixes=[0,2):2/2;[2,3):1/65536;
+paired-call-native-2026-09-23	oracle-output	control	par	4	balanced-absent	T=1	mode=4	index=4	records=4	bytes=4	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=4	prefixes=[0,2):2/2;[2,4):2/2;
+paired-call-native-2026-09-23	oracle-output	control	par	4	balanced-late-hit	T=1	mode=4	index=3	records=4	bytes=4	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=4	prefixes=[0,2):2/2;[2,4):2/2;
+paired-call-native-2026-09-23	oracle-output	control	par	4	other-helper	T=1	mode=4	index=0	records=3	bytes=3	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):2/2;
+paired-call-native-2026-09-23	oracle-output	control	par	4	local-tails	T=1	mode=4	index=0	records=2	bytes=2	plain-steals=1	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):1/1;
+paired-call-native-2026-09-23	oracle-output	control	par	4	balanced-absent	T=65536	mode=4	index=4	records=4	bytes=131074	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=131074	prefixes=[0,2):2/65537;[2,4):2/65537;
+paired-call-native-2026-09-23	oracle-output	control	par	4	balanced-late-hit	T=65536	mode=4	index=3	records=4	bytes=131074	plain-steals=1	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=131074	prefixes=[0,2):2/65537;[2,4):2/65537;
+paired-call-native-2026-09-23	oracle-output	control	par	4	other-helper	T=65536	mode=4	index=0	records=3	bytes=65538	plain-steals=1	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):2/65537;
+paired-call-native-2026-09-23	oracle-output	control	par	4	local-tails	T=65536	mode=4	index=0	records=2	bytes=2	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):1/1;
+paired-call-native-2026-09-23	oracle-output	control	par	4	balanced-absent	T=1048576	mode=4	index=4	records=4	bytes=2097154	plain-steals=1	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=2097154	prefixes=[0,2):2/1048577;[2,4):2/1048577;
+paired-call-native-2026-09-23	oracle-output	actualization	par	4	balanced-absent	T=1048576	evidence=plain-scan-steal	pass=yes
+paired-call-native-2026-09-23	oracle-output	control	par	4	balanced-late-hit	T=1048576	mode=4	index=3	records=4	bytes=2097154	plain-steals=1	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=2097154	prefixes=[0,2):2/1048577;[2,4):2/1048577;
+paired-call-native-2026-09-23	oracle-output	actualization	par	4	balanced-late-hit	T=1048576	evidence=plain-scan-steal	pass=yes
+paired-call-native-2026-09-23	oracle-output	control	par	4	other-helper	T=1048576	mode=4	index=0	records=3	bytes=1048578	plain-steals=1	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):2/1048577;
+paired-call-native-2026-09-23	oracle-output	control	par	4	local-tails	T=1048576	mode=4	index=0	records=2	bytes=2	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):1/1;
+paired-call-native-2026-09-23	oracle-output	summary	par	4	cases=1141	index-comparisons=4564	trace-fields=365120	input-bytes=9540464	plain-steals=526	trace-steals=0	loop-steals=0	native-waves=1758	observed=0	actualization-failures=0
+paired-call-native-2026-09-23	oracle-output	WF_WORKERS=1 <scratch-root>/first-index-observed observed pair-observe
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=1	ordinal=1	kind=enter	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=1	ordinal=2	kind=return	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=1	ordinal=3	kind=enter	record=1	offset=1	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=1	ordinal=4	kind=return	record=1	offset=1	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=1	ordinal=5	kind=enter	record=2	offset=2	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=1	ordinal=6	kind=return	record=2	offset=2	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=1	ordinal=7	kind=enter	record=3	offset=3	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=1	ordinal=8	kind=return	record=3	offset=3	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	1	balanced-absent	T=1	completed=4	caller=4	helper=0	overlaps=0
+paired-call-native-2026-09-23	oracle-output	self-control	observed	1	missing-completion	removed-ordinal=2	rejected=predicate-event-count	expected=8	actual=7
+paired-call-native-2026-09-23	oracle-output	control	observed	1	balanced-absent	T=1	mode=4	index=4	records=4	bytes=4	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=4	prefixes=[0,2):2/2;[2,4):2/2;
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=1	ordinal=1	kind=enter	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=1	ordinal=2	kind=return	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=1	ordinal=3	kind=enter	record=1	offset=1	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=1	ordinal=4	kind=return	record=1	offset=1	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=1	ordinal=5	kind=enter	record=2	offset=2	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=1	ordinal=6	kind=return	record=2	offset=2	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=1	ordinal=7	kind=enter	record=3	offset=3	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=1	ordinal=8	kind=return	record=3	offset=3	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	1	balanced-late-hit	T=1	completed=4	caller=4	helper=0	overlaps=0
+paired-call-native-2026-09-23	oracle-output	control	observed	1	balanced-late-hit	T=1	mode=4	index=3	records=4	bytes=4	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=4	prefixes=[0,2):2/2;[2,4):2/2;
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	other-helper	T=1	ordinal=1	kind=enter	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	other-helper	T=1	ordinal=2	kind=return	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	other-helper	T=1	ordinal=3	kind=enter	record=2	offset=2	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	other-helper	T=1	ordinal=4	kind=return	record=2	offset=2	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	other-helper	T=1	ordinal=5	kind=enter	record=3	offset=3	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	other-helper	T=1	ordinal=6	kind=return	record=3	offset=3	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	1	other-helper	T=1	completed=3	caller=3	helper=0	overlaps=0
+paired-call-native-2026-09-23	oracle-output	control	observed	1	other-helper	T=1	mode=4	index=0	records=3	bytes=3	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):2/2;
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	local-tails	T=1	ordinal=1	kind=enter	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	local-tails	T=1	ordinal=2	kind=return	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	local-tails	T=1	ordinal=3	kind=enter	record=2	offset=2	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	local-tails	T=1	ordinal=4	kind=return	record=2	offset=2	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	1	local-tails	T=1	completed=2	caller=2	helper=0	overlaps=0
+paired-call-native-2026-09-23	oracle-output	control	observed	1	local-tails	T=1	mode=4	index=0	records=2	bytes=2	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):1/1;
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=65536	ordinal=1	kind=enter	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=65536	ordinal=2	kind=return	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=65536	ordinal=3	kind=enter	record=1	offset=1	length=65536	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=65536	ordinal=4	kind=return	record=1	offset=1	length=65536	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=65536	ordinal=5	kind=enter	record=2	offset=65537	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=65536	ordinal=6	kind=return	record=2	offset=65537	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=65536	ordinal=7	kind=enter	record=3	offset=65538	length=65536	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=65536	ordinal=8	kind=return	record=3	offset=65538	length=65536	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	1	balanced-absent	T=65536	completed=4	caller=4	helper=0	overlaps=0
+paired-call-native-2026-09-23	oracle-output	control	observed	1	balanced-absent	T=65536	mode=4	index=4	records=4	bytes=131074	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=131074	prefixes=[0,2):2/65537;[2,4):2/65537;
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=65536	ordinal=1	kind=enter	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=65536	ordinal=2	kind=return	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=65536	ordinal=3	kind=enter	record=1	offset=1	length=65536	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=65536	ordinal=4	kind=return	record=1	offset=1	length=65536	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=65536	ordinal=5	kind=enter	record=2	offset=65537	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=65536	ordinal=6	kind=return	record=2	offset=65537	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=65536	ordinal=7	kind=enter	record=3	offset=65538	length=65536	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=65536	ordinal=8	kind=return	record=3	offset=65538	length=65536	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	1	balanced-late-hit	T=65536	completed=4	caller=4	helper=0	overlaps=0
+paired-call-native-2026-09-23	oracle-output	control	observed	1	balanced-late-hit	T=65536	mode=4	index=3	records=4	bytes=131074	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=131074	prefixes=[0,2):2/65537;[2,4):2/65537;
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	other-helper	T=65536	ordinal=1	kind=enter	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	other-helper	T=65536	ordinal=2	kind=return	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	other-helper	T=65536	ordinal=3	kind=enter	record=2	offset=65537	length=65536	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	other-helper	T=65536	ordinal=4	kind=return	record=2	offset=65537	length=65536	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	other-helper	T=65536	ordinal=5	kind=enter	record=3	offset=131073	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	other-helper	T=65536	ordinal=6	kind=return	record=3	offset=131073	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	1	other-helper	T=65536	completed=3	caller=3	helper=0	overlaps=0
+paired-call-native-2026-09-23	oracle-output	control	observed	1	other-helper	T=65536	mode=4	index=0	records=3	bytes=65538	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):2/65537;
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	local-tails	T=65536	ordinal=1	kind=enter	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	local-tails	T=65536	ordinal=2	kind=return	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	local-tails	T=65536	ordinal=3	kind=enter	record=2	offset=65537	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	local-tails	T=65536	ordinal=4	kind=return	record=2	offset=65537	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	1	local-tails	T=65536	completed=2	caller=2	helper=0	overlaps=0
+paired-call-native-2026-09-23	oracle-output	control	observed	1	local-tails	T=65536	mode=4	index=0	records=2	bytes=2	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):1/1;
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=1048576	ordinal=1	kind=enter	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=1048576	ordinal=2	kind=return	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=1048576	ordinal=3	kind=enter	record=1	offset=1	length=1048576	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=1048576	ordinal=4	kind=return	record=1	offset=1	length=1048576	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=1048576	ordinal=5	kind=enter	record=2	offset=1048577	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=1048576	ordinal=6	kind=return	record=2	offset=1048577	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=1048576	ordinal=7	kind=enter	record=3	offset=1048578	length=1048576	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-absent	T=1048576	ordinal=8	kind=return	record=3	offset=1048578	length=1048576	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	1	balanced-absent	T=1048576	completed=4	caller=4	helper=0	overlaps=0
+paired-call-native-2026-09-23	oracle-output	control	observed	1	balanced-absent	T=1048576	mode=4	index=4	records=4	bytes=2097154	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=2097154	prefixes=[0,2):2/1048577;[2,4):2/1048577;
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=1048576	ordinal=1	kind=enter	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=1048576	ordinal=2	kind=return	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=1048576	ordinal=3	kind=enter	record=1	offset=1	length=1048576	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=1048576	ordinal=4	kind=return	record=1	offset=1	length=1048576	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=1048576	ordinal=5	kind=enter	record=2	offset=1048577	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=1048576	ordinal=6	kind=return	record=2	offset=1048577	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=1048576	ordinal=7	kind=enter	record=3	offset=1048578	length=1048576	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	balanced-late-hit	T=1048576	ordinal=8	kind=return	record=3	offset=1048578	length=1048576	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	1	balanced-late-hit	T=1048576	completed=4	caller=4	helper=0	overlaps=0
+paired-call-native-2026-09-23	oracle-output	control	observed	1	balanced-late-hit	T=1048576	mode=4	index=3	records=4	bytes=2097154	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=2097154	prefixes=[0,2):2/1048577;[2,4):2/1048577;
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	other-helper	T=1048576	ordinal=1	kind=enter	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	other-helper	T=1048576	ordinal=2	kind=return	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	other-helper	T=1048576	ordinal=3	kind=enter	record=2	offset=1048577	length=1048576	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	other-helper	T=1048576	ordinal=4	kind=return	record=2	offset=1048577	length=1048576	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	other-helper	T=1048576	ordinal=5	kind=enter	record=3	offset=2097153	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	other-helper	T=1048576	ordinal=6	kind=return	record=3	offset=2097153	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	1	other-helper	T=1048576	completed=3	caller=3	helper=0	overlaps=0
+paired-call-native-2026-09-23	oracle-output	control	observed	1	other-helper	T=1048576	mode=4	index=0	records=3	bytes=1048578	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):2/1048577;
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	local-tails	T=1048576	ordinal=1	kind=enter	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	local-tails	T=1048576	ordinal=2	kind=return	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	local-tails	T=1048576	ordinal=3	kind=enter	record=2	offset=1048577	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	1	local-tails	T=1048576	ordinal=4	kind=return	record=2	offset=1048577	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	1	local-tails	T=1048576	completed=2	caller=2	helper=0	overlaps=0
+paired-call-native-2026-09-23	oracle-output	control	observed	1	local-tails	T=1048576	mode=4	index=0	records=2	bytes=2	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):1/1;
+paired-call-native-2026-09-23	oracle-output	summary	observed	1	cases=12	index-comparisons=48	trace-fields=3840	input-bytes=8914560	plain-steals=0	trace-steals=0	loop-steals=0	native-waves=12	observed=1	actualization-failures=0
+paired-call-native-2026-09-23	oracle-output	WF_WORKERS=4 <scratch-root>/first-index-observed observed pair-observe
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=1	ordinal=1	kind=enter	record=0	offset=0	length=1	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=1	ordinal=2	kind=return	record=0	offset=0	length=1	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=1	ordinal=3	kind=enter	record=1	offset=1	length=1	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=1	ordinal=4	kind=return	record=1	offset=1	length=1	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=1	ordinal=5	kind=enter	record=2	offset=2	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=1	ordinal=6	kind=return	record=2	offset=2	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=1	ordinal=7	kind=enter	record=3	offset=3	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=1	ordinal=8	kind=return	record=3	offset=3	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	4	balanced-absent	T=1	completed=4	caller=2	helper=2	overlaps=0
+paired-call-native-2026-09-23	oracle-output	control	observed	4	balanced-absent	T=1	mode=4	index=4	records=4	bytes=4	plain-steals=1	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=4	prefixes=[0,2):2/2;[2,4):2/2;
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=1	ordinal=1	kind=enter	record=0	offset=0	length=1	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=1	ordinal=2	kind=return	record=0	offset=0	length=1	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=1	ordinal=3	kind=enter	record=1	offset=1	length=1	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=1	ordinal=4	kind=return	record=1	offset=1	length=1	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=1	ordinal=5	kind=enter	record=2	offset=2	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=1	ordinal=6	kind=return	record=2	offset=2	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=1	ordinal=7	kind=enter	record=3	offset=3	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=1	ordinal=8	kind=return	record=3	offset=3	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	4	balanced-late-hit	T=1	completed=4	caller=2	helper=2	overlaps=0
+paired-call-native-2026-09-23	oracle-output	control	observed	4	balanced-late-hit	T=1	mode=4	index=3	records=4	bytes=4	plain-steals=1	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=4	prefixes=[0,2):2/2;[2,4):2/2;
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	other-helper	T=1	ordinal=1	kind=enter	record=2	offset=2	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	other-helper	T=1	ordinal=2	kind=return	record=2	offset=2	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	other-helper	T=1	ordinal=3	kind=enter	record=3	offset=3	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	other-helper	T=1	ordinal=4	kind=return	record=3	offset=3	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	other-helper	T=1	ordinal=5	kind=enter	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	other-helper	T=1	ordinal=6	kind=return	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	4	other-helper	T=1	completed=3	caller=3	helper=0	overlaps=0
+paired-call-native-2026-09-23	oracle-output	control	observed	4	other-helper	T=1	mode=4	index=0	records=3	bytes=3	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):2/2;
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	local-tails	T=1	ordinal=1	kind=enter	record=2	offset=2	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	local-tails	T=1	ordinal=2	kind=return	record=2	offset=2	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	local-tails	T=1	ordinal=3	kind=enter	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	local-tails	T=1	ordinal=4	kind=return	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	4	local-tails	T=1	completed=2	caller=2	helper=0	overlaps=0
+paired-call-native-2026-09-23	oracle-output	control	observed	4	local-tails	T=1	mode=4	index=0	records=2	bytes=2	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):1/1;
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=65536	ordinal=1	kind=enter	record=2	offset=65537	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=65536	ordinal=2	kind=return	record=2	offset=65537	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=65536	ordinal=3	kind=enter	record=3	offset=65538	length=65536	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=65536	ordinal=4	kind=enter	record=0	offset=0	length=1	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=65536	ordinal=5	kind=return	record=0	offset=0	length=1	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=65536	ordinal=6	kind=enter	record=1	offset=1	length=65536	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=65536	ordinal=7	kind=return	record=3	offset=65538	length=65536	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=65536	ordinal=8	kind=return	record=1	offset=1	length=65536	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	4	balanced-absent	T=65536	completed=4	caller=2	helper=2	overlaps=2
+paired-call-native-2026-09-23	oracle-output	control	observed	4	balanced-absent	T=65536	mode=4	index=4	records=4	bytes=131074	plain-steals=1	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=131074	prefixes=[0,2):2/65537;[2,4):2/65537;
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=65536	ordinal=1	kind=enter	record=2	offset=65537	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=65536	ordinal=2	kind=return	record=2	offset=65537	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=65536	ordinal=3	kind=enter	record=3	offset=65538	length=65536	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=65536	ordinal=4	kind=enter	record=0	offset=0	length=1	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=65536	ordinal=5	kind=return	record=0	offset=0	length=1	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=65536	ordinal=6	kind=enter	record=1	offset=1	length=65536	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=65536	ordinal=7	kind=return	record=3	offset=65538	length=65536	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=65536	ordinal=8	kind=return	record=1	offset=1	length=65536	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	4	balanced-late-hit	T=65536	completed=4	caller=2	helper=2	overlaps=2
+paired-call-native-2026-09-23	oracle-output	control	observed	4	balanced-late-hit	T=65536	mode=4	index=3	records=4	bytes=131074	plain-steals=1	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=131074	prefixes=[0,2):2/65537;[2,4):2/65537;
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	other-helper	T=65536	ordinal=1	kind=enter	record=2	offset=65537	length=65536	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	other-helper	T=65536	ordinal=2	kind=enter	record=0	offset=0	length=1	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	other-helper	T=65536	ordinal=3	kind=return	record=0	offset=0	length=1	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	other-helper	T=65536	ordinal=4	kind=return	record=2	offset=65537	length=65536	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	other-helper	T=65536	ordinal=5	kind=enter	record=3	offset=131073	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	other-helper	T=65536	ordinal=6	kind=return	record=3	offset=131073	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	4	other-helper	T=65536	completed=3	caller=2	helper=1	overlaps=1
+paired-call-native-2026-09-23	oracle-output	control	observed	4	other-helper	T=65536	mode=4	index=0	records=3	bytes=65538	plain-steals=1	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):2/65537;
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	local-tails	T=65536	ordinal=1	kind=enter	record=2	offset=65537	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	local-tails	T=65536	ordinal=2	kind=return	record=2	offset=65537	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	local-tails	T=65536	ordinal=3	kind=enter	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	local-tails	T=65536	ordinal=4	kind=return	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	4	local-tails	T=65536	completed=2	caller=2	helper=0	overlaps=0
+paired-call-native-2026-09-23	oracle-output	control	observed	4	local-tails	T=65536	mode=4	index=0	records=2	bytes=2	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):1/1;
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=1048576	ordinal=1	kind=enter	record=2	offset=1048577	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=1048576	ordinal=2	kind=return	record=2	offset=1048577	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=1048576	ordinal=3	kind=enter	record=3	offset=1048578	length=1048576	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=1048576	ordinal=4	kind=enter	record=0	offset=0	length=1	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=1048576	ordinal=5	kind=return	record=0	offset=0	length=1	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=1048576	ordinal=6	kind=enter	record=1	offset=1	length=1048576	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=1048576	ordinal=7	kind=return	record=3	offset=1048578	length=1048576	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-absent	T=1048576	ordinal=8	kind=return	record=1	offset=1	length=1048576	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	4	balanced-absent	T=1048576	completed=4	caller=2	helper=2	overlaps=2
+paired-call-native-2026-09-23	oracle-output	control	observed	4	balanced-absent	T=1048576	mode=4	index=4	records=4	bytes=2097154	plain-steals=1	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=2097154	prefixes=[0,2):2/1048577;[2,4):2/1048577;
+paired-call-native-2026-09-23	oracle-output	actualization	observed	4	balanced-absent	T=1048576	evidence=predicate-overlap	pass=yes
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=1048576	ordinal=1	kind=enter	record=2	offset=1048577	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=1048576	ordinal=2	kind=return	record=2	offset=1048577	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=1048576	ordinal=3	kind=enter	record=3	offset=1048578	length=1048576	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=1048576	ordinal=4	kind=enter	record=0	offset=0	length=1	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=1048576	ordinal=5	kind=return	record=0	offset=0	length=1	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=1048576	ordinal=6	kind=enter	record=1	offset=1	length=1048576	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=1048576	ordinal=7	kind=return	record=3	offset=1048578	length=1048576	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	balanced-late-hit	T=1048576	ordinal=8	kind=return	record=1	offset=1	length=1048576	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	4	balanced-late-hit	T=1048576	completed=4	caller=2	helper=2	overlaps=2
+paired-call-native-2026-09-23	oracle-output	control	observed	4	balanced-late-hit	T=1048576	mode=4	index=3	records=4	bytes=2097154	plain-steals=1	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=4	native-first-bytes=2097154	prefixes=[0,2):2/1048577;[2,4):2/1048577;
+paired-call-native-2026-09-23	oracle-output	actualization	observed	4	balanced-late-hit	T=1048576	evidence=predicate-overlap	pass=yes
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	other-helper	T=1048576	ordinal=1	kind=enter	record=2	offset=1048577	length=1048576	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	other-helper	T=1048576	ordinal=2	kind=enter	record=0	offset=0	length=1	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	other-helper	T=1048576	ordinal=3	kind=return	record=0	offset=0	length=1	thread=1
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	other-helper	T=1048576	ordinal=4	kind=return	record=2	offset=1048577	length=1048576	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	other-helper	T=1048576	ordinal=5	kind=enter	record=3	offset=2097153	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	other-helper	T=1048576	ordinal=6	kind=return	record=3	offset=2097153	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	4	other-helper	T=1048576	completed=3	caller=2	helper=1	overlaps=1
+paired-call-native-2026-09-23	oracle-output	control	observed	4	other-helper	T=1048576	mode=4	index=0	records=3	bytes=1048578	plain-steals=1	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):2/1048577;
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	local-tails	T=1048576	ordinal=1	kind=enter	record=2	offset=1048577	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	local-tails	T=1048576	ordinal=2	kind=return	record=2	offset=1048577	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	local-tails	T=1048576	ordinal=3	kind=enter	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-event	observed	4	local-tails	T=1048576	ordinal=4	kind=return	record=0	offset=0	length=1	thread=0
+paired-call-native-2026-09-23	oracle-output	predicate-summary	observed	4	local-tails	T=1048576	completed=2	caller=2	helper=0	overlaps=0
+paired-call-native-2026-09-23	oracle-output	control	observed	4	local-tails	T=1048576	mode=4	index=0	records=2	bytes=2	plain-steals=0	trace-steals=0	phase=fixed	loop-steals=0	native-first-records=1	native-first-bytes=1	prefixes=[0,2):1/1;[2,4):1/1;
+paired-call-native-2026-09-23	oracle-output	summary	observed	4	cases=12	index-comparisons=48	trace-fields=3840	input-bytes=8914560	plain-steals=8	trace-steals=0	loop-steals=0	native-waves=12	observed=1	actualization-failures=0
+paired-call-native-2026-09-23	oracle-output	real 1.16
+paired-call-native-2026-09-23	oracle-output	user 0.13
+paired-call-native-2026-09-23	oracle-output	sys 0.15
+paired-call-native-2026-09-23	oracle-output	== END first-index-pair-native-oracle: 1.19 s, exit 0 ==

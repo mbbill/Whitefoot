@@ -2143,6 +2143,88 @@ Each compiler command took 0.04 seconds (`user` 0.04, `sys` 0.00); each
 separate guarded stage took 0.11 seconds under its 30-second cap. These are
 emission costs, with no compiler reconstruction or search timing comparison.
 
+### Adjacent helper-pair native result
+
+The single fixed pass at `7639d989c` meets the prospective functional and
+participation criterion. Each of sequential W1, parallel W1 and parallel W4
+passes 1,141 cases (the original 1,129 plus twelve controls), 4,564 index
+comparisons and 9,540,464 unchanged input bytes. Its 365,120 trace-field
+comparisons cover the unchanged WF mode 3 diagnostic and the native two-block
+reference, which completes 1,758 waves per image. Both sets of prefixes match
+the independent record outcomes. The plain pair records 0, 0 and 526 steals
+respectively; the original counted-block and diagnostic
+forms record zero throughout. Each observed image passes the twelve controls,
+48 index comparisons, 3,840 trace fields and 8,914,560 unchanged input bytes.
+
+The new plain mode's matrix covers indices and unchanged inputs, including
+empty and partial waves; it does not return a trace of every execution.
+Complete logical-prefix correspondence follows from the byte-identical
+read-only scan bodies, identical two-block bounds (including an empty final
+block), and the same complete-wave minimum and stopping condition. The mode 3
+diagnostic and native reference check those expected prefixes across the
+matrix. Entry/return events directly check the new plain mode's actual
+prefixes only on the twelve positive-length, four-record controls at W1/W4,
+as selected by the observer criterion.
+
+The W4 fixed-control observations below retain every participation outcome.
+Observer columns belong to a separate diagnostic image; a stolen task with
+no overlapping predicate intervals does not satisfy the overlap criterion.
+All W1 controls have zero steals and only caller predicates.
+
+| T | Control | Plain steals | Observed caller / helper predicates | Observed overlapping pairs |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | Balanced absence | 0 | 2 / 2 | 0 |
+| 1 | Balanced late hit | 0 | 2 / 2 | 0 |
+| 1 | Cheap first hit, distant expense | 0 | 3 / 0 | 0 |
+| 1 | Both local tails skipped | 1 | 2 / 0 | 0 |
+| 65,536 | Balanced absence | 0 | 2 / 2 | 2 |
+| 65,536 | Balanced late hit | 1 | 2 / 2 | 2 |
+| 65,536 | Cheap first hit, distant expense | 1 | 2 / 1 | 1 |
+| 65,536 | Both local tails skipped | 0 | 2 / 0 | 0 |
+| 1,048,576 | Balanced absence | 1 | 2 / 2 | 2 |
+| 1,048,576 | Balanced late hit | 1 | 2 / 2 | 2 |
+| 1,048,576 | Cheap first hit, distant expense | 1 | 2 / 1 | 1 |
+| 1,048,576 | Both local tails skipped | 0 | 2 / 0 | 0 |
+
+Both required balanced T = 1,048,576 controls execute all four nonempty
+predicates. In each observed stream, the caller's long record 3 spans event
+ordinals 3--7 and the helper's long record 1 spans 6--8. These are overlapping
+predicate lifetimes, not a clock measurement. The observer also confirms the
+local skips: the cheap-first-hit control visits records 0, 2 and 3, retaining
+1,048,578 logical byte tests versus the sequential reference's one; the
+both-tails control visits only records 0 and 2, with two byte tests. The
+native reference has the same completed prefixes and charges all started
+blocks; it uses a new pthread per wave and supplies no worker-pool performance
+comparison or cancellation claim.
+
+The observed LLVM copy adds only two range extracts, three event calls and
+one declaration to the ordinary linked module. Removing those lines restores
+the original bytes; no effect attribute was changed. Callback and resulting
+optimization perturbations remain diagnostic costs. The negative control,
+published at `7639d989c` before execution, removes completion ordinal 2 from
+a copy of the observed W1 T = 1 absence stream. The same validator rejects
+eight expected events versus seven supplied, while the raw stream retains
+all eight. No Whitefoot call was repeated.
+
+The separate guarded native construction and oracle stages pass on their
+first attempts: command/guard times are 0.57/0.65 and 1.16/1.19 seconds. They
+reuse twelve current-main runtime objects, with no compiler, runtime or
+third-party build. All twenty construction inputs and six output artifacts
+match their before/after hashes. The evidence stream retains the commands,
+identities and complete oracle output; [reproduction commands](../../experiments/compute-bench/README.md#first-index-expression-probe)
+use the existing manual targets. These are validation costs, not search
+timings.
+
+**Design suitability.** The ordinary two-call form qualifies bounded parallel
+search with the existing predicate contract and local skips. It adds no
+general recursive executor. The counted-loop pricing gap remains: at fixed
+T, the absence and both-tails controls have identical offsets and descriptors
+but different work, so even exact record spans would not predict early exit.
+Safety bounds and read-only facts do not select a representative price.
+Keep this source form as a qualified option; defer loaded-work policy, PGO
+and speed claims until a representative consumer and a prospective performance
+criterion justify measuring their costs.
+
 ## Sparse destination routing trial (2026-09-21)
 
 This bounded continuation starts at merged `3402048f` and asks whether useful

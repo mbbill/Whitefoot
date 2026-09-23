@@ -310,6 +310,36 @@ WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl first-index-self-control \
   env WF_WORKERS=4 "$search_build/first-index-par" par self-control
 ```
 
+The [adjacent-helper qualification](../../investigations/compute-model/DESIGN.md#adjacent-helper-pair-native-result)
+adds plain mode 4 with the same two local-return blocks. It compares the
+original counted-block form, its diagnostic trace, and a native two-block
+reference against the same independent outcomes. After emission above, build
+the ordinary images and a separate predicate-event observer, then run the
+fixed pass:
+
+```sh
+WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl first-index-pair-build \
+  make -C research/experiments/compute-bench -j2 first-index-pair-build \
+  WFC="$search_wfc" BUILD="$search_build" WF_ALIGN=
+WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl first-index-pair-verify \
+  make -C research/experiments/compute-bench first-index-pair-verify \
+  BUILD="$search_build"
+```
+
+The target runs `seq pair` at W1 and `par pair` at W1/W4, each over the 1,129
+original fixtures plus twelve fixed controls. It then runs
+`observed pair-observe` at W1/W4 over only those twelve controls. Every selected
+invocation runs once. The matrix checks the plain pair's index and unchanged
+inputs; trace fields belong to the unchanged mode 3 diagnostic and native
+reference. Actual plain predicate prefixes are directly observed only on
+the twelve positive-length controls. The observed W1 stream also supplies
+the copied-stream missing-completion control, which must reject eight expected
+events versus seven supplied without repeating a search. Raw events identify
+records and thread identities; the observed image is not a timing instrument. The native
+reference creates one pthread helper per wave, joins both blocks and validates
+their private prefixes. It establishes the same first-index/work contract,
+not pool competitiveness. None of these targets is a daily gate or benchmark.
+
 ## What "WF" means here, and what it does not
 
 The range-loan consumer is selected with `make KERNELS=stencil verify` or

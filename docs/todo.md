@@ -335,17 +335,19 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   exposes a concrete input missing from current wave prices: data-dependent
   record lengths and early exit leave the same static estimate for one-byte
   and 65,536-byte records, and the small permitted waves receive no split
-  budget. Useful overlap remains unverified. Validate an absent/late-hit or
-  otherwise balanced costly search against a fair native reference, charging
-  completed final-wave work, trace perturbation and scheduling cost; the cheap
-  early-hit adverse example alone establishes no potential parallel benefit.
-  The [adjacent-helper criterion](../research/investigations/compute-model/DESIGN.md#adjacent-helper-pair-criterion)
-  separates source composition from the missing price by comparing the same
-  two local-return blocks as a counted wave and adjacent calls. Preserve
-  logical prefixes and require completed nonempty predicates on another
-  native thread. Actualizing those calls would leave the counted-loop pricing
-  question open; participation alone establishes no profitability or new
-  general cost input.
+  budget. The [adjacent-helper result](../research/investigations/compute-model/DESIGN.md#adjacent-helper-pair-native-result)
+  qualifies another source composition: the same two local-return blocks in
+  ordinary calls execute nonempty absent/late-hit predicates on the caller
+  and a helper, with observed overlapping lifetimes and preserved prefixes.
+  The old counted form still has zero budget, and the cheap-first-hit case
+  still pays for the other started block. A native two-block reference
+  confirms the work contract, not pool competitiveness. At fixed offsets and
+  descriptor lengths, payload-dependent early exit still changes actual work;
+  bounds/read-only facts alone do not supply a representative price.
+  Validate profitability on a representative costly search against a fair
+  native reference, charging completed final-wave work, observer perturbation
+  and scheduling/profile costs. The functional participation result selects
+  no loaded-read, PGO or general grain policy.
   Defer further search pricing work until a concrete consumer requires it;
   reopen with that workload and a criterion that distinguishes useful overlap
   from merely higher worker participation. No lower threshold or new
