@@ -413,6 +413,40 @@ pricing are separate opportunities; neither these observations nor the
 cutoff control establish a performance improvement or select a replacement
 policy.
 
+### Captured-scalar availability control
+
+The next bounded source control uses the saved `345e2966a`-equivalent compiler
+to distinguish an unavailable per-iteration load from an available scalar
+work bound. Add `dag_spine_phased_scalar(count, leaf_steps, output, seed)`:
+spine tasks cost one, and the captured `leaf_steps` actually controls every
+leaf recurrence through the unchanged `phased_leaf`, `evaluate` and
+`dag_task` helpers. Select lengths 0, 1 and 32 with uniform leaf costs 1 and
+65,536, six cases and 132 task rows. On this subfamily the array-loaded and
+scalar forms have identical task values, IDs, counts, original edges and
+two-phase ordering. Retain the added precedences and span of that ordering.
+The scalar form supplies one u64 cost parameter; the oracle's cost vector
+remains separately charged host metadata, not source input or a work hint.
+
+Before native construction, inspect permission, captures and the emitted
+work query. The discriminating prediction is a price depending on
+`leaf_steps`, making the length-32 costly map eligible for splitting while
+the preserved array-loaded form stays at 199. Cheap, empty and single-leaf
+controls must remain correct; predict zero budget for cheap work, while
+empty/single-leaf ranges offer no independent pair. Keep either pricing
+outcome. The current summary pass follows three
+call edges, exactly the existing chunk-to-leaf-to-evaluate-to-task chain;
+if scalar pricing stays static, attribute summary propagation before inferring
+a need for loaded-value aggregation. Do not change compiler policy, helper
+depth, grain, task work or add padding to obtain the predicted result.
+
+After emission, run only the six scalar cases once per ordinary/traced image
+at W1/W4, reusing the original oracle, observer, canaries, unchanged-input and
+corruption controls. Compare with the already retained array-loaded rows;
+do not rerun earlier matrices. Retain absent overlap as an outcome and make
+no timing comparison. Source emission, native construction and each selected
+matrix remain separate 30-second guarded stages with at most two build jobs.
+This source representation control adds no specification or production change.
+
 ## Bounded call-group bridge trial
 
 The selected compiler experiment retains consecutive full call groups while
