@@ -560,14 +560,13 @@ retain the existing lowering.
 ### Runtime limitation and cost obligation
 
 The runtime's newest-first premise changes at a bridge: B may need joining
-while newer A is still pending. Its current join pops local work before
+while newer A is still pending. The baseline join pops local work before
 checking target completion, so even an already-completed B can make the
-owner execute A before returning b. A separate deterministic native probe
-will characterize that protocol through the delivered deque operations.
-Checking DONE before popping is only a possible separately qualified change:
-if B is incomplete at that check and the owner starts A inline, B's later
-completion cannot resume the owner continuation until A returns. The
-experiment retains ordinary stacks and selects no continuation migration,
+owner execute A before returning b. The deterministic protocol comparison
+below selects an initial completion observation as a separate runtime
+candidate. If B is incomplete at that check and the owner starts A inline,
+B's later completion cannot resume the owner continuation until A returns.
+The experiment retains ordinary stacks and selects no continuation migration,
 arbitrary target removal or ready-task executor.
 
 Each bridge adds at most one tail offer and its capture/join/release work;
@@ -576,6 +575,92 @@ than the original group, subject to the unchanged slot refusal path. The N
 order can have two pending frames where the old groups had one. These costs
 and the runtime limitation make useful overlap an empirical requirement;
 removing an emitted precedence alone does not establish a useful speedup.
+
+### Initial completion observation
+
+The prospective criterion, published in PR #100 before execution, compares
+one baseline and one candidate image through the real lane acquire, publish,
+steal, execute, join and release operations. Publish B, synchronously steal
+and execute B under another lane identity, restore the owner, publish A,
+then join B. Record whether A ran before that join returned. A separate
+pending-B control must still allow newer A to execute before B. Both arms
+must preserve frame results, exactly one execution, an empty deque with all
+slots returned, and reuse of the released B slot. There are no worker threads,
+sleeps or scheduling assumptions in these ordering cases; the guard thread
+only enforces the deadline. This is a protocol observation, not a task-overlap
+or performance measurement.
+
+The candidate adds only an acquire load of target state and an observed-DONE
+return before the initial owner pop. The identical callback probe ran five
+callbacks per image, once each, with these results:
+
+| Arm | Newer A ran during the completed-B join | Pending-B join helped A | Results, exact once, empty deque and slot reuse |
+|---|---:|---:|---|
+| Baseline | Yes | Yes | Pass |
+| Initial completion observation | No | Yes | Pass |
+
+The input identities for this characterization are:
+
+| Input | SHA-256 |
+|---|---|
+| Baseline `core.c` | `48f0080fd5c43e9e07691a05936c36e232b76d1bde309b6f53bc912176ac3285` |
+| Candidate `core.c` | `34d3b11558eab79bd2188005adbea267c70a3f53fe97cfa2a7b6cdc20f98fba3` |
+| Shared scratch probe | `c1a55c6e62231c239a4f2d0b12eb6f0eda810eb0256de8e57c5af99682ce13ff` |
+
+Apple clang 21.0.0 on arm64-apple-darwin25.6.0 built both images with C11,
+`-O2 -g -Wall -Wextra -Werror -Wpedantic -pthread`, eight lane slots and
+statistics enabled. Entry and host objects were shared. Generated dependency
+files identify the respective copied core and identical maintained headers;
+input hashes agree before and after. Separate 30-second guarded phases used
+at most two build jobs: construction took 0.27 seconds, and running both
+images took 0.68 seconds, excluding time waiting for another guard owner.
+These are construction and test costs, not workload timing results.
+
+This result selects observed-DONE-before-help as a bounded runtime candidate
+for the bridge trial. An acquire read of the executor's existing SC DONE
+publication makes its preceding result writes visible. The offering owner
+alone joins and releases the slot; its home is immutable, and the executor
+already touches no frame content after DONE. The candidate changes no waiter,
+wake, slot or deque ownership rule. It adds an acquire load and branch to the
+pending-target path and avoids the pop's SC writes or claim when DONE is
+observed. Their workload cost remains unqualified. Completion after a pending
+observation can still leave the owner inside a newer helper until it returns.
+
+The maintained regression is in the existing
+[`deque_probe.c`](../../../compiler/src/backend/sched/deque_probe.c): before
+worker startup, strict completed/pending cases also check untouched deque
+indices for the completed join, result order, exact once and slot reuse in
+both cases before joining the newer offer, for six callbacks total. The
+original 200,000-task concurrent stress follows unchanged; its steal bounds
+exclude and separately verify the single deterministic protocol steal. No
+new executable, runtime feature flag, test target or research dependency is
+introduced.
+
+The maintained revision passed the existing statistics-on/off deque targets,
+all scheduler smoke modes, and both statistics-on/off ThreadSanitizer deque
+targets on the same host. Each deque image ran the strict ordering/reuse cases
+and its complete 200,000-task stress once; no sanitizer report occurred.
+Smoke includes nested joins, completion-tail and registered-wait reuse,
+capacity/refusal, delayed thieves across ring wraps, and startup controls.
+Separate construction and execution phases stayed below their initial
+30-second caps with at most two build jobs:
+
+| Phase | Existing targets or images | Elapsed |
+|---|---|---:|
+| Ordinary construction | Two deque images and `sched-smoke` | 0.49 s |
+| Ordinary execution | `sched-deque-test sched-smoke` | 1.11 s |
+| TSan construction | Both deque TSan images | 0.35 s |
+| TSan execution | `sched-deque-tsan` | 4.06 s |
+
+The tested core SHA-256 is
+`79aefbd14afd647ed22ae5806e57785aee23d3f8136fb003507b5f2fa4d6f625`,
+and the maintained probe SHA-256 is
+`1e26dd2dd9666b8275b7174c5118d6c54468bcab5adbcc3a52839feb27c91390`.
+All captured source, header and Makefile input hashes remained unchanged
+before and after the four phases. These native observations do not provide
+exhaustive concurrency coverage, qualify workload overlap or establish a
+performance benefit. The separately labelled workload arm retains its own
+criterion and result.
 
 ### Prospective qualification
 
@@ -616,16 +701,168 @@ decision: newest-first still holds within each retirement set, but an older
 target can remain below a retained newer offer. No live tree or specification
 rule is changed by this author experiment.
 
-**Design suitability.** This bounded extension serves the missing A/D
-consumer through the existing checked-call path. Its representation cost is
-justified by argument boundaries, target refusal and continuation labels
-that must agree on one schedule. Lowering, scalar selection, imported loop
+### Compiler-only arm with the baseline runtime
+
+The `rolling-main-runtime` rows in the
+[measurement record](../../experiments/compute-bench/dag-fanin-2026-09-23.tsv)
+report one complete 115-case, 956-task matrix for each plain/traced W1/W4
+configuration. All four passed their value, exactly-once, input and canary
+checks; both traced images also passed the original edge and event checks,
+and every negative comparator control was rejected. The emitted N mode 3
+order is publish B, publish A, retire B, publish D, retire A, execute C,
+retire D. All nine sequential clone bodies are byte-identical to the
+same-source main baseline, as are the unbridged notification and spine bodies.
+Across the sixteen traced W4 mode 3 assignments, observed A/B, A/D and C/D
+overlap counts were 7, 0 and 0; the original baseline counts were 8, 0 and 8.
+In the preselected long-A/long-D case 9, A began at event 0 and ended at 3
+on thread 1; B began at 1 and ended at 2 on thread 3; D ran at events 4–5
+and C at 6–7, both on thread 1. Thus the A/D overlap criterion failed despite
+the selected publication order. These single schedule observations establish
+neither impossibility nor a timing result. Adoption remains provisional and
+runtime benefit unqualified pending the separately labelled runtime arm;
+the failed arm is retained without a favourable rerun.
+
+**Design suitability.** This bounded extension addresses the missing A/D
+consumer through the existing checked-call path. If bridging is retained,
+argument boundaries, target refusal and continuation labels require one
+consistent schedule; the failed overlap criterion has not justified adopting
+that representation cost. Lowering, scalar selection, imported loop
 CFG metadata, frame fitting, ordinary call emission, labels, clone/frontier
 selection and storage lifetime consumers are affected. Keep their existing
 responsibilities; defer singleton-group bridges, broader pending-call
 scheduling and stronger runtime policy until a concrete remaining consumer
 and qualified evidence justify them. The investigation remains the owner of
 the experiment; pending amendments are removed when ruled on.
+
+## Runtime-adjacency all-predecessor probe
+
+This prospective source probe asks whether destination ownership can execute
+runtime-supplied fan-in while retaining every predecessor value until the last
+arrival. It reuses `dag_task`, `evaluate`, `TaskCell`, the existing Kahn oracle,
+passive observer and oneTBB graph reference. Graph size, edges and task work
+counts are inputs; no graph pattern selects a written call sequence. Source
+construction follows publication of this protocol and freezing the earlier
+native inputs. This is a functional and structure study, not a timing study
+or a new executor, compiler policy or specification rule.
+
+### Contract and source formulation
+
+Use `N` task costs and `2*N` successor slots, with `N` denoting an absent edge.
+Every present edge has `source < destination < N`; each source has at most two
+distinct successors and each destination at most two predecessors. Fold
+predecessor values in ascending source-ID order with the existing rotate/xor
+operation, regardless of arrival order. Evaluate every task exactly once,
+including isolated tasks, and preserve the input arrays. An ordinary validation
+error precedes all task execution for malformed lengths, edges, degree,
+configuration or unrepresentable workspace dimensions; output cells remain
+unchanged on that error. Required size arithmetic is checked before allocation.
+
+The proposed entry is `dag_runtime(form, owners, costs, successors, output,
+seed) -> DagRunResult { status, rounds, notices }`, with three u64 result fields.
+Form zero selects the owner loop and form one the recursive map; success returns
+`{0, rounds, notices}`, invalid input `{1, 0, 0}` and valid empty input
+`{0, 0, 0}`. `N = costs.len` and `output.len >= N` is a source precondition;
+initialize exactly those `N` output
+cells only after validation. Empty input uses zero owners. Nonempty input
+requires `1 <= C = owners <= N`. Select the explicit probe domain
+`N <= 1073741823` (`2^30-1`) before admission: it keeps owner/stride and matrix
+products within the selected 64-bit allocation layout without allocation-tight
+recursive product preconditions. Confirm header offsets before source emission;
+larger input domains remain unqualified. Set `stride = N / C`: the first `C-1`
+owners take adjacent `stride`-cell ranges, and the final owner takes the
+remainder. Destination ownership is `min(id / stride, C-1)`. This preserves
+task IDs and uses neither empty owners nor padded tasks.
+
+Each owner exclusively updates its vertices' pending counts, predecessor mix,
+first-arriving source ID, intrusive ready links and output cells. Drain initial
+roots before inspecting incoming notices. After each notice makes a task ready,
+an iterative helper immediately drains that task and every newly ready local
+successor before inbox inspection continues. Cross-owner edges produce notices
+in the sender's private row of the next head matrix and its original edge-slot
+storage. Alternating notice buffers and matrices make the prior round immutable;
+every owner call joins before the buffers exchange roles. Count emitted notices
+in one report per owner and stop when no report contains work, with at most `C`
+rounds. A source graph validation error is distinct from a failed oracle check
+on an admitted implementation.
+
+Compare two ordinary mappings of this same helper and partition. PAR-2 maps the
+`C-1` equal ranges, then executes the explicit remainder call after that join;
+record this extra ordering as well as its actual work-price query. A balanced
+recursive map splits owner intervals and their mutable ranges and uses PAR-1
+sibling calls, including the final owner. At `C=4` its source tree has seven
+mapper calls, three fork/join points and depth two per round. Its isolated tree
+has at most three outstanding offers, all retired before the next round.
+Inspect captures, recursion-budget lowering and actual offers; the loop's zero
+budget does not establish that the recursive form is unavailable. No grain
+override, synthetic work, forced wait or padding selects either outcome.
+
+### Bounds and prospective qualification
+
+Supplied topological IDs make owner index nondecreasing along every edge and
+strictly increasing across owners. Complete local draining therefore executes
+a task by the round equal to the maximum number of cross-owner edges on a path
+to it, at most `C-1`. Thus processing rounds `R <= C` under this fixed partition.
+This does not cover arbitrary vertex labels: topological sorting, renumbering,
+edge remapping and restoring output IDs would require separately charged work
+and storage. Shared input numbering is an explicit premise of both references.
+
+Let `E` be present edges and `W` the sum of task work counts. Charge validation,
+every two-slot adjacency inspection, initial state/output construction, notice
+writes and visits, all `C*C` matrix resets and head inspections per round,
+reports, joins and final result handling. The candidate's work is
+`O(N + E + W + C*C*R)`, hence `O(N + E + W + C^3)` under the stated premise.
+Span includes the slowest owner's serial task/notice work in every round,
+initialization and the loop form's separate tail; independence within one owner
+does not itself expose additional parallelism.
+
+A concrete accounting target uses four u64 state fields per vertex, two notice
+buffers of `2*N` `{ next, value }` slots, two `C*C` head matrices, `C` initial
+owner heads and `C` reports. Derive a notice's source ID from its original edge
+slot. Auxiliary storage is `12*N + 2*C*C + 2*C` u64 words; supplied `TaskCell`
+output adds `2*N`, input costs/successors add `3*N`, and the run result adds
+three words. Headers, padding, allocation lifetimes, mapper activations, runtime
+offer slots, observer storage
+and native graph objects remain separate charges. Verify actual layout and
+captures before interpreting this as anything beyond a source accounting target.
+
+The fixed initial qualification is:
+
+- All valid forward graphs through five vertices with the stated degree bounds,
+  using unit task costs, plus explicit empty, singleton, transitive-triangle and
+  disconnected controls. Use `C=1,2,4` where `C <= N`, and `C=0` for empty input.
+  Check uneven owner ranges. The triangle `0->1, 0->2, 1->2` distinguishes
+  final-predecessor retirement from first discovery.
+- An eight-vertex reverse-arrival control with edges `0->2, 2->6, 4->6` and unit
+  costs: at `C=4`, predecessor 4 can arrive one round before predecessor 2.
+  The six-node progress witness has edges `0->2, 1->3, 1->4, 2->4, 3->5, 4->5`,
+  costs 65,536 for tasks 0 and 3 and one elsewhere, plus its all-unit control.
+  Its `C=4` owners are exactly `{0}`, `{1}`, `{2}`, `{3,4,5}`, separating the
+  costly task 0 from the source of task 3; `C=1/2` are controls, not an isolation
+  of that handoff. Retain any cross-owner delay and absent overlap rather than
+  changing the partition or repeating execution to obtain a favorable schedule.
+  An absent task-3/task-0 overlap diagnoses this owner-round formulation's added
+  barrier, not a universal limit on other ordinary source formulations.
+- Malformed length/configuration, out-of-range, self/backward, duplicate-edge
+  and excessive-indegree controls must return validation error with no task
+  events or output changes. Reuse intentional output-corruption and event-loss
+  controls on valid executions.
+- First establish source admission, complete permission/emission ledgers and
+  retained ordinary fallbacks for both forms. Then run each admitted form once
+  in ordinary/traced images at W1/W4. Run the independent native matrix once per
+  distinct graph/work assignment, not once per owner count or WF formulation.
+  Check all task values/counts, unchanged inputs, canaries, trace prerequisites,
+  round bound and full routing/initialization counts. Permission, emitted offers
+  and observed task overlap remain separate results.
+
+Keep construction, native building and each selected execution as separate
+30-second guarded stages with at most two build jobs, reusing the saved compiler
+and pinned native dependency when correspondence permits. A concrete admission,
+oracle or resource-bound failure ends that stage for diagnosis; a zero-offer or
+zero-overlap observation is retained without a profitability conclusion. Extend
+only the existing DAG source, adapter, probe and explicit experiment wiring,
+with results in this investigation and its current evidence stream. The task
+recurrence, generic oracle and observer need no new workload engine. No timing
+or model extension follows before these source and functional facts are known.
 
 ## Sparse destination routing trial (2026-09-21)
 
