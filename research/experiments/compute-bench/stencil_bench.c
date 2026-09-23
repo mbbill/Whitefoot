@@ -5,10 +5,10 @@
 #include "backend.h"
 #include "harness.h"
 
-extern void wf_bench_stencil_par(uint64_t, uint64_t, uint64_t, double **, uint64_t *);
-extern void wf_bench_stencil_seq(uint64_t, uint64_t, uint64_t, double **, uint64_t *);
-extern void wf_bench_stencil_par_release(double *, uint64_t);
-extern void wf_bench_stencil_seq_release(double *, uint64_t);
+extern void wf_bench_stencil_par(uint64_t, uint64_t, uint64_t, double **, uint64_t *, void **);
+extern void wf_bench_stencil_seq(uint64_t, uint64_t, uint64_t, double **, uint64_t *, void **);
+extern void wf_bench_stencil_par_release(void *);
+extern void wf_bench_stencil_seq_release(void *);
 
 typedef struct {
     size_t width, height;
@@ -59,11 +59,11 @@ static size_t dimension(const char *name, size_t fallback) {
     return (size_t)parsed;
 }
 static double *expected, *output;
+static void *output_held;
 static stencil_release release_output;
 
-static void native_release(double *grid, uint64_t length) {
-    (void)length;
-    free(grid);
+static void native_release(void *held) {
+    free(held);
 }
 
 static void prepare(unsigned workers) {
@@ -92,12 +92,13 @@ static size_t call(const char *form, unsigned workers) {
         int sequential = !strcmp(form, "wf-seq");
         stencil_entry entry = sequential ? wf_bench_stencil_seq : wf_bench_stencil_par;
         release_output = sequential ? wf_bench_stencil_seq_release : wf_bench_stencil_par_release;
-        entry(grid_width, grid_height, grid_steps, &output, &length);
+        entry(grid_width, grid_height, grid_steps, &output, &length, &output_held);
         if (length != cells) fail("generated output length");
     } else {
         const wfb_backend *backend = wfb_backend_named(form);
         if (!backend || !backend->map) fail("unknown reference");
         output = native_run(grid_width, grid_height, grid_steps, backend, workers);
+        output_held = output;
         release_output = native_release;
     }
     return cells;
@@ -105,8 +106,9 @@ static size_t call(const char *form, unsigned workers) {
 
 static size_t check(void) {
     size_t compared = compare(expected, output, grid_width * grid_height);
-    release_output(output, (uint64_t)compared);
+    release_output(output_held);
     output = NULL;
+    output_held = NULL;
     return compared;
 }
 
@@ -114,9 +116,10 @@ static const wfb_backend *verify_backend;
 static unsigned verify_workers;
 
 static void native_entry(uint64_t width, uint64_t height, uint64_t steps,
-                          double **out, uint64_t *length) {
+                          double **out, uint64_t *length, void **held) {
     *out = native_run((size_t)width, (size_t)height, (size_t)steps, verify_backend, verify_workers);
     *length = width * height;
+    *held = *out;
 }
 
 static size_t verify(const char *form, unsigned workers) {

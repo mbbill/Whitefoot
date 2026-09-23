@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-22 Rescue oversized loop frames without repeated lowering
+
+Nodes: compiler/parallel-lowering/two-worlds
+
+Owner-approved: The owner explicitly accepted the complete PR #78 amendment after the reviewed handoff at 37fb6336, replying that the amendment was agreed.
+
+Summary: Apply the two reviewed decisions and rejected alternatives unchanged. Select needed captures only to rescue a frame above the existing lane bound, preserving already-fitting interfaces and helper order. Reuse a still-oversized candidate's completed CFG to avoid exponential nested reconstruction without adding a fallback call, preserving original storage and nested parallel opportunities. Remove the accepted amendment and its directory. The compiler implementation and specification are unchanged; this ruling does not authorize a merge.
+
 ## 2026-09-22 Qualify empty window storage and retain the payload-address fact
 
 Nodes: compiler/storage-representation, compiler/backend-facts

@@ -9,6 +9,36 @@ extern void wf_bench_radix_scatter_seq(const uint64_t *, uint64_t, uint32_t, uin
 extern void wf_bench_radix_scatter_par_release(void *);
 extern void wf_bench_radix_scatter_seq_release(void *);
 
+#ifdef WFB_SCATTER_PHASES
+/* Only the separate diagnostic image calls these fully joined boundaries.
+ * Printing and result checking happen outside the harness's timed interval. */
+static struct { uint64_t wall, cpu; unsigned long steals; } phase_marks[9];
+static unsigned phase_count, phase_call;
+void wf_scatter_phase(int32_t event) {
+    if (event == 0) phase_count = 0;
+    if (event < 0 || event >= 9 || (unsigned)event != phase_count)
+        fail("scatter phase order");
+    phase_marks[event].wall = wfb_now_ns();
+    phase_marks[event].cpu = wfb_cpu_ns();
+    phase_marks[event].steals = wf__par_grants();
+    ++phase_count;
+}
+static void report_phases(void) {
+    if (!phase_count) return; /* Uninstrumented sequential/direct controls. */
+    if (phase_count != 9) fail("incomplete scatter phases");
+    for (unsigned i = 1; i < 9; ++i)
+        (void)printf("# scatter_phase\t%u\t%u\t%llu\t%llu\t%lu\n", phase_call, i,
+                     (unsigned long long)(phase_marks[i].wall - phase_marks[i - 1].wall),
+                     (unsigned long long)(phase_marks[i].cpu - phase_marks[i - 1].cpu),
+                     phase_marks[i].steals - phase_marks[i - 1].steals);
+    ++phase_call;
+    phase_count = 0;
+}
+#define observe_phase(event) wf_scatter_phase(event)
+#else
+#define observe_phase(event) ((void)0)
+#endif
+
 static const wfb_backend *backend;
 static unsigned width, frontier;
 static int direct;
@@ -114,21 +144,30 @@ static void native_entry(const uint64_t *input, uint64_t n, uint32_t bit,
         *output = job.output;
         *length = lows + highs;
     } else {
+        observe_phase(0);
         job.chunks = allocate(blocks, sizeof(chunk));
+        observe_phase(1);
         backend->map(backend, width, blocks, partition_chunk, &job);
+        observe_phase(2);
         size_t lows = 0, highs = 0;
         for (size_t b = 0; b < blocks; ++b) {
             lows += job.chunks[b].low_count;
             highs += job.chunks[b].high_count;
         }
+        observe_phase(3);
         uint64_t *low = allocate(capacity, sizeof(uint64_t));
         uint64_t *high = allocate(capacity, sizeof(uint64_t));
         pack_job pack = {job.chunks, blocks, low, high, frontier};
+        observe_phase(4);
         pack_task(&pack);
+        observe_phase(5);
         uint64_t *result = allocate(lows + highs, sizeof(uint64_t));
+        observe_phase(6);
         copy_job low_copy = {low, result, lows}, high_copy = {high, result + lows, highs};
         backend->fork2(backend, width, copy_task, &low_copy, copy_task, &high_copy);
+        observe_phase(7);
         free(job.chunks); free(low); free(high);
+        observe_phase(8);
         *output = result;
         *length = lows + highs;
     }
@@ -183,6 +222,9 @@ static size_t call(const char *form, unsigned workers) {
     return count;
 }
 static size_t check(void) {
+#ifdef WFB_SCATTER_PHASES
+    report_phases();
+#endif
     size_t checked = compare(output, expected, count);
     for (size_t i = 0; i < count; ++i)
         if (input[i] != key_at(i, shape, selected_bit)) fail("timed input modified");

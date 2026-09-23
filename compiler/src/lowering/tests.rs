@@ -346,6 +346,173 @@ fn runtime_helper_extents_reach_the_outer_split_estimate() {
     }
 }
 
+/// Each loop really needs all 32 scalars, so capture selection cannot rescue
+/// any frame. The source grows linearly with depth; final IR alone would not
+/// reveal repeated construction discarded by a refusing ancestor.
+fn nested_wide_frame_source(depth: usize) -> String {
+    use std::fmt::Write;
+
+    let parameters = (0..32)
+        .map(|index| format!("a{index}: own u64"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut source = format!(
+        "fn folded(source: &Box<Array<u64>>, {parameters}) -> result: own u64 reads(source) {{\n"
+    );
+    for level in 0..depth {
+        let indent = "  ".repeat(level + 1);
+        writeln!(source, "{indent}let total{level} = 0_u64;").expect("write fixture");
+        writeln!(
+            source,
+            "{indent}for @level{level} (i{level} in 0_u64..2_u64) {{"
+        )
+        .expect("write fixture");
+    }
+    let indent = "  ".repeat(depth + 1);
+    writeln!(source, "{indent}let bias1 = a0 +wrap a1;").expect("write fixture");
+    for index in 2..32 {
+        writeln!(
+            source,
+            "{indent}let bias{index} = bias{} +wrap a{index};",
+            index - 1
+        )
+        .expect("write fixture");
+    }
+    writeln!(source, "{indent}let extent = deref(source).inner.len;").expect("write fixture");
+    writeln!(source, "{indent}let combined = bias31 +wrap extent;").expect("write fixture");
+    for level in (0..depth).rev() {
+        let indent = "  ".repeat(level + 1);
+        let contribution = if level + 1 == depth {
+            "combined".to_owned()
+        } else {
+            format!("total{}", level + 1)
+        };
+        writeln!(
+            source,
+            "{indent}  set total{level} = total{level} +wrap {contribution};"
+        )
+        .expect("write fixture");
+        writeln!(source, "{indent}}}").expect("write fixture");
+    }
+    source.push_str("  return total0;\n}\n\nfn main() -> status: own ExitStatus pure {\n");
+    source.push_str("  let input = box_array_filled::<u64>(count: 1_u64, value: 0_u64);\n");
+    let arguments = (0..32)
+        .map(|index| format!("a{index}: {index}_u64"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    writeln!(
+        source,
+        "  let observed = folded(source: &input, {arguments});"
+    )
+    .expect("write fixture");
+    writeln!(source, "  if observed == {}_u64 {{", 497_u64 << depth).expect("write fixture");
+    source.push_str("    return exit_status(code: 0_u8);\n  } else {\n    return exit_status(code: 1_u8);\n  }\n}\n");
+    source
+}
+
+#[test]
+fn nested_frame_refusals_lower_each_candidate_once() {
+    for depth in [1, 2, 4, 6] {
+        let source = nested_wide_frame_source(depth);
+        with_ir_mode(source.as_bytes(), OverlapLowering::On, |program| {
+            assert_eq!(
+                program.loop_candidate_constructions, depth,
+                "count construction before refusal, including work absent from final IR"
+            );
+            assert_eq!(
+                program
+                    .actualization_ledger()
+                    .iter()
+                    .filter(|row| row.contains("declined:"))
+                    .count(),
+                depth,
+                "every genuinely wide loop must decline once"
+            );
+            assert!(
+                program
+                    .functions()
+                    .iter()
+                    .all(|function| function.synthesis().is_none())
+            );
+            let function = function(program, "folded");
+            assert_eq!(function.counted_ranges.len(), depth);
+            assert_eq!(
+                function.readonly_reference_parameters,
+                [function.parameters[0].0]
+            );
+            let u64_type = IrType::Integer {
+                width: 64,
+                signed: false,
+            };
+            for range in &function.counted_ranges {
+                assert!(range.blocks.end <= function.blocks.len());
+                assert!(range.blocks.contains(&range.continuation.index()));
+                assert_eq!(function.value_type(range.lower), Some(u64_type));
+                assert_eq!(function.value_type(range.upper), Some(u64_type));
+            }
+            crate::emit_llvm(program).expect("the reused ordinary graph must emit");
+        });
+    }
+}
+
+#[test]
+fn a_fitting_loop_retains_its_interface_and_one_extra_field_triggers_rescue() {
+    for (capture_count, retained) in [(27, 27), (28, 1)] {
+        let parameters = (0..capture_count)
+            .map(|index| format!("a{index}: own u64"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let arguments = (0..capture_count)
+            .map(|index| format!("a{index}: {index}_u64"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let source = format!(
+            "fn folded({parameters}) -> result: own u64 pure {{\n  let total = 0_u64;\n  for @items (i in 0_u64..2_u64) {{\n    set total = total +wrap a0;\n  }}\n  return total;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  let total = folded({arguments});\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        with_ir_mode(source.as_bytes(), OverlapLowering::On, |program| {
+            assert_eq!(program.loop_candidate_constructions, 1);
+            let source = function(program, "folded");
+            let (chunk, captures) = source
+                .blocks
+                .iter()
+                .flat_map(|block| &block.instructions)
+                .find_map(|instruction| match instruction {
+                    IrInstruction::Define {
+                        operation:
+                            IrOperation::LoopSplit {
+                                chunk, captures, ..
+                            },
+                        ..
+                    } => Some((*chunk, captures)),
+                    _ => None,
+                })
+                .expect("the fitting or rescued loop must split");
+            assert_eq!(captures.len(), retained);
+            assert_eq!(
+                program.functions()[chunk as usize].parameters.len(),
+                retained + 3
+            );
+            // Observe the frame actually requested by this one split through
+            // the public emitter, without reaching into target-private layout.
+            let module = crate::emit_llvm(program)
+                .expect("the fitting or rescued graph must emit")
+                .into_string();
+            let frame_bytes = module
+                .lines()
+                .filter_map(|line| line.split_once("call ptr @wf__par_acquire_lane(i64 "))
+                .map(|(_, call)| {
+                    call.split_once(')')
+                        .expect("closed lane-acquisition call")
+                        .0
+                        .parse::<u64>()
+                        .expect("the emitted frame has a constant byte count")
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(frame_bytes, [if capture_count == 27 { 256 } else { 48 }]);
+        });
+    }
+}
+
 fn with_ir_mode<ResultValue>(
     source: &[u8],
     overlap: OverlapLowering,

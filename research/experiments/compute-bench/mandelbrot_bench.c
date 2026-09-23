@@ -57,11 +57,11 @@
 #define MB_GRAIN ((size_t)64)
 
 extern void wf_bench_mandelbrot_par(const double *, const double *, uint64_t, uint64_t,
-                                    uint64_t **, uint64_t *);
-extern void wf_bench_mandelbrot_par_release(uint64_t *, uint64_t);
+                                    uint64_t **, uint64_t *, void **);
+extern void wf_bench_mandelbrot_par_release(void *);
 extern void wf_bench_mandelbrot_seq(const double *, const double *, uint64_t, uint64_t,
-                                    uint64_t **, uint64_t *);
-extern void wf_bench_mandelbrot_seq_release(uint64_t *, uint64_t);
+                                    uint64_t **, uint64_t *, void **);
+extern void wf_bench_mandelbrot_seq_release(void *);
 
 /* Volatile temporaries force each specified binary64 rounding in the oracle.
  * This is outside timing. */
@@ -94,6 +94,7 @@ typedef struct {
     double *x, *y, *held_x, *held_y;
     uint64_t *expected;
     uint64_t *output;
+    void *output_held;
     int output_from_wf;
     size_t n, grain;
     uint64_t limit, iterations;
@@ -162,12 +163,13 @@ static void native_chunk(void *opaque, size_t chunk) {
 static void release(Work *w) {
     if (!w->output) return;
     if (w->output_from_wf) {
-        if (w->grain == 0) wf_bench_mandelbrot_seq_release(w->output, w->n);
-        else wf_bench_mandelbrot_par_release(w->output, w->n);
+        if (w->grain == 0) wf_bench_mandelbrot_seq_release(w->output_held);
+        else wf_bench_mandelbrot_par_release(w->output_held);
     } else {
         free(w->output);
     }
     w->output = NULL;
+    w->output_held = NULL;
 }
 
 /* One complete call on `w`. This is the whole timed interval and nothing
@@ -180,9 +182,9 @@ static void run(Work *w, const char *form, unsigned width, int poison) {
          * modules: 0 marks the --no-overlap module's buffer. */
         w->grain = strcmp(form, "wf-seq") ? MB_GRAIN : 0;
         if (!strcmp(form, "wf-seq"))
-            wf_bench_mandelbrot_seq(w->x, w->y, w->n, w->limit, &out, &length);
+            wf_bench_mandelbrot_seq(w->x, w->y, w->n, w->limit, &out, &length, &w->output_held);
         else
-            wf_bench_mandelbrot_par(w->x, w->y, w->n, w->limit, &out, &length);
+            wf_bench_mandelbrot_par(w->x, w->y, w->n, w->limit, &out, &length, &w->output_held);
         if (length != w->n) wfb_fail("mandelbrot: generated length");
         w->output = out;
         w->output_from_wf = 1;
