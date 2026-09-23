@@ -1411,6 +1411,8 @@ primary experiment or its clock-unresolved individual-call rows.
 
 ## Query-retained zero-budget dispatch control
 
+### Prospective protocol, published at c4e96d64
+
 This prospective development control starts from main
 `7127bcb6f48a0664d31a856ef54e21010bb2c238`, including the Buffer representation
 and checker changes in #84. It does not include the pending capture amendment
@@ -1515,5 +1517,120 @@ source recognition or a scheduler change. Production selection would require
 ordinary compiler tests for zero/nonzero budgets, empty/inverted ranges,
 map/reduction seeds, nested loops, cleanup and CFG/phi continuation, with its
 design amendment and deferred opportunities recorded in the existing TODO.
-This is preparation for that decision, not a production implementation or a
-change to the frozen PR78 review scope.
+At publication this was preparation for that decision, not a production
+implementation or a change to the frozen PR78 review scope.
+
+### Query-retained control result, 2026-09-22
+
+The frozen main-7127 control meets its prospective useful-lead criterion.
+The [dated evidence](../../experiments/compute-bench/query-retained-dispatch-2026-09-22.tsv)
+retains all 240 call rows, including first-call CPU, invocation order, all
+paired ratios, hashes, commands and the exact control/caller patches. Exactly
+one null and one main action ran, with every output checked and no extra
+input, repetition or replacement session.
+
+| Action | Width | Five paired B/A wall ratios | Median wall ratio | Median CPU ratio |
+|---|---|---|---:|---:|
+| Identical A/A | W1 | 0.979661, 0.995525, 0.959309, 0.990721, 0.947377 | 0.979661 | 0.979566 |
+| Identical A/A | W4 | 0.973999, 0.987581, 1.081364, 0.978329, 0.949190 | 0.978329 | 0.984452 |
+| A/B | W1 | 1.034792, 1.038415, 0.998710, 1.013452, 1.029674 | 1.029674 | 1.028801 |
+| A/B | W4 | 0.763206, 0.851518, 0.832559, 0.783404, 0.728371 | 0.783404 | 0.790007 |
+
+The maximum absolute null drift D is 0.081363656, from W4 pass 2. The W4
+median benefit is 0.216595743 and all five pairs beat 0.95. The W1 paired
+median nevertheless records a 2.97 percent regression. It remains unexplained;
+identical normalized W1 instructions neither clear that observation nor
+establish its cause. No rerun was used to resolve it.
+
+Median process medians for main A/B are 28.721208/29.824542 ms wall and
+28.687/29.816 ms CPU at W1; at W4 they are 16.561500/13.047000 ms wall and
+60.283/47.624 ms CPU. Median first-call wall/CPU are
+36.291459/36.254 versus 34.455750/34.429 ms at W1 and
+21.379708/67.564 versus 18.800792/55.762 ms at W4. These arm medians describe
+the samples; selection uses within-pass ratios. The median successful-steal
+counts are 0/0 at W1 and 167/167 at W4, which do not attribute the time change.
+
+Qualification passed all four full matrices, each checking 3,387,721 values.
+The separate ordinary-row helper observed actual budgets 0 and 1 for spans
+1,022 and 32,768 at weight 17, with exactly one matching chunk/split path
+event each and bitwise full-row oracle agreement. No runtime answer was
+forced. The helper's own contract admits the wide input; the full stencil
+entry was never called beyond its width bound. Empty/inverted inner ranges
+remain outside this diagnostic's coverage.
+
+Raw IR differs only at the selected call; all four queries and seven W1
+clone definitions agree. Optimized code changes exactly five definitions:
+the row helper, outer chunks 39/41 and splitters 38/40. Direct pixel inlining
+moves three range-conflict checks into outer row preheaders and introduces
+a stride guard, while retaining the per-row query and positive-budget
+splitter. Strict floating-point grouping, eight-pixel vector work,
+allocation, initialization, cleanup and release agree. Object text grows
+from 8,808 to 11,208 bytes, a 2,400-byte or 27.25 percent cost. The measured
+gain therefore belongs to the combined dispatch, inlining and alias-check
+motion, not isolated recursive-entry overhead or scheduler behavior.
+
+The original optimized inspection failed after generating its artifacts:
+its assembly extractor assumed `.cfi_endproc`, absent from five leaf W1
+functions. The root agent authorized a read-only correction against those
+frozen files, using actual `-- End function` boundaries, the exact seven
+symbols and a no-nested-definition check. All seven normalized assembly
+bodies then agreed, as had their optimized LLVM bodies. Original script,
+failure, generated hashes and correction remain retained; no native image
+was rebuilt and the first inspection is not reported as passing. An earlier
+runner-header concern was a preparation misdiagnosis: its saved bytes already
+contained tabs. The explicit `printf` spelling changed clarity, not a failed
+run. A guard rejection before oracle execution was scheduling overhead only.
+
+Guarded costs in seconds were compiler 46.34, emission 0.83, native
+construction 2.56, aggregate full oracles 1.27, observed helper 0.33, original
+inspection 0.55, null 5.09 and main 5.00. The static extractor correction
+took 0.01 s. Full real/user/system costs are retained in the dated evidence.
+All native stages stayed below 30 seconds; the compiler stayed below 120
+seconds at two jobs.
+
+### Current-main correspondence and general implementation
+
+After merging main `95b21cfd98cef3be3fb94a92486aa57b418cc0ae`, a fresh compiler
+was built from clean `a5784dcf76c22746714c91d8cf3e17044a025c00`, whose compiler,
+tests and specification match that main revision. The immutable baseline CLI
+SHA-256 is `95a56584361fe0debc284f803af0676f972305ca7b3586fc6ec6e97f2f4c893d`.
+Its stencil parallel LLVM, sequential LLVM and ledger match the frozen-7127
+outputs byte for byte. Build cost was 46.97 s and the separate emission and
+comparison cost 1.04 s. This is static correspondence, not a new timing result
+or a relabeling of the frozen images.
+
+The selected general implementation keeps the existing query and work
+estimate at every overlapping-world `LoopSplit`. A zero answer calls its
+existing overlapping chunk; a positive answer retains the splitter and its
+exact allowance. The sequential world still calls its existing chunk without
+either query or branch. Scalar results join through a phi; addressed results
+share the planned destination and take one post-join snapshot. Predecessor
+planning uses the same world selection, and an ensuing ordinary overlap join
+remains the final continuation. The
+[pending amendment](../../../design/amendments/zero-budget-loop-dispatch.md)
+records this choice; no live-tree, specification, proof or runtime-policy
+change is made.
+
+Entering an empty chunk differs from the splitter's early seed return, so
+entry behavior matters. Current chunk synthesis reconstructs borrowed local
+Box storage, then reaches the counted-range bound test before source body
+work. Reconstruction uses an existing valid pointer and target header offset,
+without reading elements/headers, allocating, publishing or taking cleanup
+ownership. Seed/capture snapshots and work pricing already occur at the
+caller in either path. Empty or inverted chunks return the incoming seed;
+nested queries remain behind the loop test. Focused qualification reuses the
+maintained degenerate-range and Box-reference pricing cases, extends cleanup
+and nested-publication observations, and adds an emitter-level aggregate
+result case for the addressed ABI without inventing an admitted aggregate
+reduction.
+
+**Design suitability.** A local caller branch keeps the existing query,
+chunk, splitter, ABI and runtime responsibilities. A synthesized dispatch
+wrapper could avoid new caller CFG, but adds helper/ABI ownership and still
+depends on inlining for the measured opportunity; it is deferred. The branch
+adds positive-path work and may increase code size. The one-site result does
+not establish the all-site candidate's speed or W1 protection: focused
+correctness, candidate optimized-code inspection, canonical checks and the
+maintained hosted comparison remain required. Its unresolved W1 outcome and
+code-growth tradeoff are retained in [TODO](../../../docs/todo.md), rather
+than resolved by another exploratory timing trial.

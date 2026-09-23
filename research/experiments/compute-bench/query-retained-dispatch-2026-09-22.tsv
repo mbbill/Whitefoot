@@ -1,0 +1,595 @@
+# Query-retained zero-budget dispatch: frozen main7127 development control, 2026-09-22.
+# Published protocol c4e96d647cfb1ce1d73e5afb209e1c243128beb7; source7127bcb6f48a0664d31a856ef54e21010bb2c238.
+# Documentary paths are normalized: $REPO is the source checkout, $SCRATCH the frozen7127 trial, $CURRENT_MAIN_SCRATCH the fresh95 correspondence, and $DEPS the existing dependency cache.
+# Original logs/manifests remain in scratch; their retained hashes identify original bytes, not the path-normalized rendering here. Patch hunk bodies and all numeric rows are unchanged.
+# A ordinary --par; B changes exactly one wf_stencil_row call from splitter34 to query-retained zero/chunk35, positive/splitter34 dispatch. Both use the same repaired caller/seq/runtime/support/link order.
+# Sole timed input1024x4096x16; WF_WORKERS=width; one first+five warm checked calls, five paired passes W1/W4, zero gap; no pinning, runtime floor override, extra cells or retries.
+# Null maps both labels to exact A; main maps A/B to their exact images. All40 invocation trailers report outputs=compared=25165824; all40 stderr files empty; each call checks4194304 output values.
+# Reduction: per process median of five warm samples; B/A within pass+width; criterion at least4/5 W4<=.95 and 1-median(W4)>D=max(abs(nullratio-1)) across all10 null pairs.
+# Result D=.081363655708; mainW4 ratios .763205616,.851518099,.832559208,.783404257,.728370781; median .783404257182 (benefit .216595742818), CPUmedian .790007133023;5/5 qualify.
+# MainW1 paired median1.029673688099, CPU1.028800771695: observed2.97% wall regression, unexplained despite identical normalized W1 instructions; retained, not cleared as noise.
+# Native qualification: A/B x W1/W4 each compares3387721 values; observed ordinary-row helper at widths1024/32770 forwards real queries(span1022/32768,weight17), observes budgets0/1 and chunk/split paths, compares entire output row with maintained independent C oracle.
+# The wide helper satisfies its own contract; it is not an out-of-contract full stencil call. Empty/inverted inner ranges are not covered by this diagnostic.
+# Optimized changes: exactly row helper, outer chunks39/41 and splitters38/40; pixel work inlines, three alias conflict checks hoist to outer row preheaders, new width&2^60 stride guard; strict four2-double-vector/eight-pixel add/multiply grouping retained. Query remains per row.
+# All other optimized definitions, allocation/cleanup/release, generic inner chunk/splitter and seven W1 clones agree. Text8808->11208bytes (+2400,+27.25%). This is a coupled dispatch/inlining/alias-motion effect, not standalone query/entry cost or scheduler attribution.
+# Original optimized inspection generated frozen files but exited255: extractor assumed .cfi_endproc, absent from five leaf W1 functions. Root agent authorized static repair only; actual -- End function boundaries, exact7symbols/no nested definitions, comments/incidental labels normalized; all7 assembly bodies agree, no regeneration/rebuild/retry.
+# Preparation clarification: original executed-order header already contained actual tabs; explicit printf format improved clarity, did not fix a failed-run bug. Dry-run null/main executed no native images. Old recipe retained below.
+# Scheduling-only oracle guard rejection75 occurred before execution; full-oracles.run.log is the sole actual four-matrix stage. External live owners were never removed.
+# Costs seconds guard(real/user/sys): compiler46.34(46.28/79.27/1.13); emission.83(.79/.23/.08); native2.56(2.46/2.75/.75); fulloracles1.27(1.22/.43/.06); helper.33(.25/.00/.00); originalinspection.55(.47/.36/.07)exit255; staticrepair(.01/.01/.00); null5.09(5.06/7.13/.49); main5.00(4.95/6.78/.50).
+# Fresh main95 correspondence is separate, unmeasured: clean a5784dcf76c22746714c91d8cf3e17044a025c00 merged main95b21cfd98cef3be3fb94a92486aa57b418cc0ae. New compiler46.97(46.91/79.25/1.29), dualemission1.04(.93/.27/.05); raw --par, --no-overlap, and ledger byte-identical to frozen7127.
+# Reproduction: start at protocol commit; build cargo --manifest-path compiler/Cargo.toml --profile gate --bin whitefootc --locked --offline with fresh CARGO_TARGET_DIR,CARGO_BUILD_JOBS=2 under perl .github/run-check.pl (120s); all other native stages30s.
+# Emit whitefootc --par --par-ledger --emit-llvm tests/programs/compute/stencil.wf -o A.raw.ll (stdout ledger), and --no-overlap -o seq.raw.ll. Apply retained exact control patch to raw B; apply retained caller patch once for both arms.
+# Bind each raw module using tests/programs/compute/host-adapter.awk + stencil_host.ll; namespace via research/experiments/compute-bench/module-symbols.awk prefix=wfb_stencil_par (or seq),api=wf_bench_stencil,mode=par(or seq).
+# Native construction recipe is retained below as historical commands, not a maintained runner. Qualification: each image verify wf 1/4; helper qualification uses separate observed module, never a timing image.
+# Optimize module with /usr/bin/clang -std=c11 -pthread -O2 -Wno-override-module -S [-emit-llvm]; retain arithmetic/cleanup and seven W1 body comparisons, actual boundaries and hashes.
+# Timing invocation for each retained order row: env WF_WORKERS=W WFB_STENCIL_GRID=large WFB_STENCIL_WIDTH=1024 WFB_STENCIL_HEIGHT=4096 WFB_GAP_US=0 IMAGE time wf W PASS 5. Null IMAGE=A for both arms. Root check output/error/order/provenance before main; numericalD is not a pre-main gate.
+# No research path is consumed by CI. This file owns the dated result and reproducible evidence; remove only when superseded evidence retains the measured decisions and their limitations.
+# clang-version.txt	Apple clang version 21.0.0 (clang-2100.3.34.2)
+# clang-version.txt	Target: arm64-apple-darwin25.6.0
+# clang-version.txt	Thread model: posix
+# clang-version.txt	InstalledDir: /Library/Developer/CommandLineTools/usr/bin
+# rustc-version.txt	rustc 1.98.1 (48a229cea 2026-09-01)
+# cargo-version.txt	cargo 1.98.1 (797e8a9bc 2026-08-05)
+# host.txt	Darwin25.6.0, arm64 T6000, 8 logical CPUs; personal hostname omitted.
+# sources.sha256	f01d32b8eeaa329f89f0f502bf6bd39e6816d9a3aebd32e616294c689141a0eb  $REPO/compiler/src/backend/emitter/parallel.rs
+# sources.sha256	96b5b4c7a2342644d2883541a0ee2a259d1a81243b7b1b4d690653b5beae9728  $REPO/research/experiments/compute-bench/Makefile
+# sources.sha256	e1f5e20e713af5be3102a835b98fddc2d69ff76a0bcc9b65460a08d4fd299a7d  $REPO/research/experiments/compute-bench/harness.c
+# sources.sha256	19786dc7ca771afd76753fe50cc67020f7eca453541ef4f6ff4d1b59cbfcda02  $REPO/research/experiments/compute-bench/stencil_bench.c
+# sources.sha256	69a94c11eac439e44bd50b81dabf2c1d5da4398878836bfad478a8e46004e352  $REPO/tests/programs/compute/stencil.wf
+# sources.sha256	56296d659cc133ddaf80aa36f7a0d38d190726068a7100c7dae3bf27d5d4fd67  $REPO/tests/programs/compute/stencil_host.ll
+# sources.sha256	b5d407f9da3e25805ebfd316ae4db5588e6ac2092eb06409211e91e741cec5ff  $REPO/tests/programs/compute/stencil_oracle.c
+# sources.sha256	3bc169864a6b1ea320a7f2c48cc623c9630ed4e08dbab6b0078c2d9ab76c8eab  $SCRATCH/stencil_bench.c
+# emission.sha256	815ab101be4f4bb1cc41e9c19cea9b1452ba9231f88f434e47e0cfc59eb22ce6  $SCRATCH/compiler-target/gate/whitefootc
+# emission.sha256	ee98e8b983c4f7f055c06d68c86702202e6c449d35a00fc1ced0a5fc458b55f8  $SCRATCH/stencil-A.bound.ll
+# emission.sha256	ac3f2fc023f9249a39b96b44cc5dc98a92894360889586b824b77f70fd18c5ce  $SCRATCH/stencil-A.ll
+# emission.sha256	78550b6cc4b0ef6807ca9db7d2d07ed3864a111685d1fdaef948634608342454  $SCRATCH/stencil-A.raw.ll
+# emission.sha256	ae62386fa9d3afd7d564a0621dbf51efbb3e9f1189afcd5e91805c04873e1f78  $SCRATCH/stencil-seq.bound.ll
+# emission.sha256	3dca4775971dc2dd700cf90f5a076664a00bebb889f6c0bc921d66c34251511e  $SCRATCH/stencil-seq.ll
+# emission.sha256	44e482cecef9d6b9daebf8fce03adea93a824753fef034205f70dc2288b3eb5f  $SCRATCH/stencil-seq.raw.ll
+# emission.sha256	7fe5195013111217f5f77f5bd652cba2184bc90819566e26e54b7369be32a0fd  $SCRATCH/stencil-A.ledger
+# control.sha256	15b40e59822d86d0018794248bf598efa1032ec6addfb4047bdd69be4bd77013  $SCRATCH/stencil-B.raw.ll
+# control.sha256	b214e91b874eda01008245a3ca8ae1b45748fc6f5bf3c2a644a5c1bd459d255d  $SCRATCH/stencil-B-observed.raw.ll
+# prepared.sha256	ab7cc0f659b2769476cbd13bc915afa675fb1ed83f5cfa4318d11bedc0409170  stencil-B-observed.bound.ll
+# prepared.sha256	07ae8767300094c6b9fc7fef26f7771905c4e034c48a71d1b55afd1767f0a300  stencil-B-observed.ll
+# prepared.sha256	b214e91b874eda01008245a3ca8ae1b45748fc6f5bf3c2a644a5c1bd459d255d  stencil-B-observed.raw.ll
+# prepared.sha256	257abac9afab8296cd6fa65f054e3e7f989647151e09abce9e203718982a4a52  stencil-B.bound.ll
+# prepared.sha256	ba62a475ccf6865084d7a74332f3bf4ea852d06b05ecccd818c74a8bef4c19a7  stencil-B.ll
+# prepared.sha256	15b40e59822d86d0018794248bf598efa1032ec6addfb4047bdd69be4bd77013  stencil-B.raw.ll
+# prepared.sha256	6cb1fdb1c40c5eb643570e16b503a50b95f044fb9f9fb0e7e1694a0775bd7c9a  helper-qualification.c
+# prepared.sha256	7d63d7eca1045e87f8b0320e8180d41d0a7c460ef8f41d56baa63925e9cc9ca2  helper-qualification.ll
+# prepared.sha256	474ea873daf235edb028aedbc53e6c3dbaeec36ac93b2e589949d918e4af9498  helper-adapter.ll
+# prepared.sha256	0278eb76d84695ff36953ecfe7ddfd488afb1fb89f1869c185e0f3166dd5ed51  caller.patch
+# prepared.sha256	d9281ba19dc5b1a6479a3263be48699196e98a802bda127282fb5e6fab52355a  control.patch
+# timing-recipe.sha256	32b879fa7d82db4b354e1454e717690daa2d87d66f522410707d42dfe220fe21  timing-runner.sh
+# timing-recipe.sha256	1e7fdbdb8eed934ac8170c09350d6ccea57d7b95ec85270ce836642bd54821cb  order.tsv
+# timing-recipe.sha256	984cd820068509b1ba51ce9c13ddbb0c56bb9af4aa464335fe9667b611781d78  check-order.awk
+# timing-recipe.sha256	38f8d3121da8ec87a9a8822bd46452919d23bf03b7e9c613c6b85f1d94ff9c8d  check-timing-output.awk
+# native/images-and-objects.sha256	8d896ef81840c7fe976dc0599e35b618b38c333c4c5d65396f78691187ab920a  $SCRATCH/native/backend_parlay.o
+# native/images-and-objects.sha256	5155b807e27e331326c59e43e19e6649a0d9f2d573af490911597b4e533d4bcf  $SCRATCH/native/backend_rayon.o
+# native/images-and-objects.sha256	4435d68ca9a6adb63a155e33d5a79f6bb8c7dd7cb2b3b2663645d75e6351a6cf  $SCRATCH/native/backend_serial.o
+# native/images-and-objects.sha256	a1f4a3a30a16662e55a0209821608f126e57099cba36533bb0f7912fed29956e  $SCRATCH/native/backend_static.o
+# native/images-and-objects.sha256	5ee600aa3de1cc66310e826ff456185045a24b27885064bbc5ac3233bf13d97d  $SCRATCH/native/backend_tbb.o
+# native/images-and-objects.sha256	af91032f29dc1b1c22dcf43099d933303ff3b1e4741a93122f987bdbdb70c4ec  $SCRATCH/native/completion_bridge.o
+# native/images-and-objects.sha256	fb4ee3f397da5bcee9188332d56fb3c854b931b4c1f07b4c8350a9c941891937  $SCRATCH/native/completion_file_adapter.o
+# native/images-and-objects.sha256	1d1fe1c3033038fc69cd031e32b5eff6e85571da89176f85e442f52f0fb1b940  $SCRATCH/native/completion_file_posix.o
+# native/images-and-objects.sha256	e389769ac8c9f38af9cd00e5bc5d56d3c180dff5985fb81ddfff63dfa89eb453  $SCRATCH/native/completion_linux_io_uring.o
+# native/images-and-objects.sha256	75cb971977625c9b05adcf74b14989544ccbf61b0a81fe4843ec72226eb36c61  $SCRATCH/native/completion_runtime.o
+# native/images-and-objects.sha256	d95b24c2367aa6dcf60a9d9e4e36acf79fa502d4ded856f244c6f4afcf28aa10  $SCRATCH/native/completion_wait_host.o
+# native/images-and-objects.sha256	8342e7ea0b8d6a0817d543e8c05e807c96527393945e95597718ba9a27ce722d  $SCRATCH/native/floor.o
+# native/images-and-objects.sha256	cdc5b58b83e4ae0a1532fbda64b5b531984c685cb3145d040a772168fd2f5ac2  $SCRATCH/native/harness.o
+# native/images-and-objects.sha256	d0c216c1bd98bea4c5d4ed9ee264ac45894cb85f024fd8f7706912730d6af7d7  $SCRATCH/native/helper-qualification-c.o
+# native/images-and-objects.sha256	7038fad8b07b57013810870b51116de4e7eb91862abe9eb92886c90f49adc703  $SCRATCH/native/helper-qualification-ll.o
+# native/images-and-objects.sha256	685d56fcf6c89bbddf8d1921b44952bb909dd0362715817babbacd64da8898c3  $SCRATCH/native/ordinary_values_c.o
+# native/images-and-objects.sha256	d578790251750de1a10ef95e1265d028184cc1d18f0c40d78e88c5ee8f1fcd80  $SCRATCH/native/ordinary_values_ll.o
+# native/images-and-objects.sha256	0655633c69666fcce21bf67258101aedb49c914fc50a6cc8edbfe22a8315e645  $SCRATCH/native/sched_core.o
+# native/images-and-objects.sha256	e04734d7a1ddbe9083b47570ca2854963803b88a7197628bed2ca66cb4924d5c  $SCRATCH/native/sched_entry.o
+# native/images-and-objects.sha256	c3a5140b8221a57d27a510995ae37c7b33a64ebc87ec9f9286b99ece649bce45  $SCRATCH/native/sched_prim_host.o
+# native/images-and-objects.sha256	3a599b5e117cdfade2ab1e8fbe8ebcb569a2cbad7a75be76fee53bfbe973d262  $SCRATCH/native/stencil-A.o
+# native/images-and-objects.sha256	a9006cc601f21e948591c959b92a7a7507b6d345b8859d456f6e50062d78b214  $SCRATCH/native/stencil-B.o
+# native/images-and-objects.sha256	afa0311bf31b57157793e3ccd15b0f3ce1e2d0fbae5dd0f684faa55fc8a5893a  $SCRATCH/native/stencil-seq.o
+# native/images-and-objects.sha256	8abe2ca92a84109c07ef41f31850e6f3dbba1aa50c58c8ba04f797cea144038f  $SCRATCH/native/stencil_bench.o
+# native/images-and-objects.sha256	d02c07e95b7f8e303070244545f7b16bbd7a74cc841d9a171dc46480993858fa  $SCRATCH/native/stencil-A
+# native/images-and-objects.sha256	0b5d2db57291e2dc0c7decfc73713a935f044b21918508acc4a2a54a597200b5  $SCRATCH/native/stencil-B
+# native/images-and-objects.sha256	60180ff0a3adad55508411a8e96bde7a8fafb0385f4dd318a905571db486556b  $SCRATCH/native/helper-qualification
+# native/dependencies.sha256	61fec48dc42829dc97943d72051ab2ca00786f97d198c412db1042b2b08e3188  $DEPS/lib/libtbb.dylib
+# native/dependencies.sha256	5908bab9d6de77a0ce8608e32d312459360f1ec63baf57cb8559bbd250fdd5ac  $DEPS/rayon/libwf_compute_bench_rayon.a
+# inspection-before-repair.sha256	0620eb2ae5d8eb93c4fd32dcb4ed2f217b8406ee30942a0e2b2f046a0bbd9962  optimized/stencil-A.ll
+# inspection-before-repair.sha256	8f68e52865e3b6ae53d5346635cf5cf464b1754395f96d868bccf1ed0e8e4e68  optimized/stencil-A.s
+# inspection-before-repair.sha256	d6325ba94978ab3c29872e3b2ed200e4ea3403119475002c4078b1cbf48d43d5  optimized/stencil-B.ll
+# inspection-before-repair.sha256	79e15008adf3a2be23eab73c7895bb728629fc3953f4e9cbb0160b5df0aa7abc  optimized/stencil-B.s
+# inspection-before-repair.sha256	e3e517df77fab88f58673aafa397a7ec10e7239f9707d4dafb4a152148aea36c  optimized/stencil-A.object-size.txt
+# inspection-before-repair.sha256	62b03016936800517dc8a962dd23d2b8510448c213afea34451c3d4a9e02fcae  optimized/stencil-B.object-size.txt
+# inspection-before-repair.sha256	452389249b3424fd5a3d3752f0622245c3de63b43f326b23a5cea41a7cb99610  optimized/stencil-A.object-symbols.txt
+# inspection-before-repair.sha256	c042aa00529d766eb42ba65de51caa58740e8983b8c3cf9a755440b1807b3051  optimized/stencil-B.object-symbols.txt
+# inspection-before-repair.sha256	95d68d7416cfb71eb16ed4f7aae311a5aa82df0ae8c35270622df23b806dfc0a  optimized/w1-comparison.tsv
+# inspection-before-repair.sha256	8c67cdf76bba18c1395e86ec0da3ea04045c387eea0678b16d583d915809f5fa  compare-w1.pl
+# inspection-before-repair.sha256	c249ae2fd4217ecef73818673ac6e87d0bcb4460fbfbfe091bac29713d7a262e  inspect.sh
+# inspection-before-repair.sha256	0d540ffa49b48398926be5f708e3c4314c2a745a345e72f5150ee282ec2dbe95  optimized-inspection.log
+# optimized/w1-comparison.tsv	ll	wfb_stencil_par_wf__par_seq__par_chunk_35	identical	151b15d44b001de276a525f5faf2721ca1df2d44458d6b0a0e699bf053e6e9f9	151b15d44b001de276a525f5faf2721ca1df2d44458d6b0a0e699bf053e6e9f9
+# optimized/w1-comparison.tsv	ll	wfb_stencil_par_wf__par_seq__par_chunk_37	identical	c5197a254a9af21046fc0ec493ae1ea8f1c3db0336594defbc5db8aa7b193823	c5197a254a9af21046fc0ec493ae1ea8f1c3db0336594defbc5db8aa7b193823
+# optimized/w1-comparison.tsv	ll	wfb_stencil_par_wf__par_seq__par_chunk_39	identical	c48fd640053fab34c68a02f90f5cf2918f894b6b5710f2b02022b0478bfd1835	c48fd640053fab34c68a02f90f5cf2918f894b6b5710f2b02022b0478bfd1835
+# optimized/w1-comparison.tsv	ll	wfb_stencil_par_wf__par_seq__par_chunk_41	identical	c2caa86830331ce9dcd78d8c16e04464674dfca73757b16a0754528d20784a92	c2caa86830331ce9dcd78d8c16e04464674dfca73757b16a0754528d20784a92
+# optimized/w1-comparison.tsv	ll	wfb_stencil_par_wf__par_seq_main	identical	fe90a8bf3b15ad4cc889f82f56c3088c9b703b6d356473e7488e3215ebe722b4	fe90a8bf3b15ad4cc889f82f56c3088c9b703b6d356473e7488e3215ebe722b4
+# optimized/w1-comparison.tsv	ll	wfb_stencil_par_wf__par_seq_stencil	identical	6ff223a2e6eafa7a75412f45a8ee8d02ee52c4eee741ec6a035ba1e9961d35fb	6ff223a2e6eafa7a75412f45a8ee8d02ee52c4eee741ec6a035ba1e9961d35fb
+# optimized/w1-comparison.tsv	ll	wfb_stencil_par_wf__par_seq_stencil_row	identical	c8859a278ee7dcd504c5fad07d24d5de040592d09f0dd5be7d4ebbf4a0a3a1a4	c8859a278ee7dcd504c5fad07d24d5de040592d09f0dd5be7d4ebbf4a0a3a1a4
+# optimized/w1-assembly-fixed.tsv	s	wfb_stencil_par_wf__par_seq__par_chunk_35	identical	34621f850c5b65ef6de156d224ed96aec88e913a435c58a0ed1d24f536b79df9	34621f850c5b65ef6de156d224ed96aec88e913a435c58a0ed1d24f536b79df9
+# optimized/w1-assembly-fixed.tsv	s	wfb_stencil_par_wf__par_seq__par_chunk_37	identical	7ca0ecfdeec78995298673916e0e080067a5b1ba89e06f151eda3f9b0df9b112	7ca0ecfdeec78995298673916e0e080067a5b1ba89e06f151eda3f9b0df9b112
+# optimized/w1-assembly-fixed.tsv	s	wfb_stencil_par_wf__par_seq__par_chunk_39	identical	5ddc52317320de321e857020fc45d76daa2924a89a07a3dc516c90fe35da8128	5ddc52317320de321e857020fc45d76daa2924a89a07a3dc516c90fe35da8128
+# optimized/w1-assembly-fixed.tsv	s	wfb_stencil_par_wf__par_seq__par_chunk_41	identical	82662260210abb11f062c00bd6d5fcfddb4d8e15c66495275e29ce50dda1a829	82662260210abb11f062c00bd6d5fcfddb4d8e15c66495275e29ce50dda1a829
+# optimized/w1-assembly-fixed.tsv	s	wfb_stencil_par_wf__par_seq_main	identical	fd706b2b42d7986e7418b7e053ef35315b9d4c17e875372ea5860d7c20bb81b5	fd706b2b42d7986e7418b7e053ef35315b9d4c17e875372ea5860d7c20bb81b5
+# optimized/w1-assembly-fixed.tsv	s	wfb_stencil_par_wf__par_seq_stencil	identical	59ec17a62f8477c3555cc0fedcf20dfe7b63d7b9915c090407a618254bd5b857	59ec17a62f8477c3555cc0fedcf20dfe7b63d7b9915c090407a618254bd5b857
+# optimized/w1-assembly-fixed.tsv	s	wfb_stencil_par_wf__par_seq_stencil_row	identical	7fa0d41938eb4bf27ee56b49835ead493d5d6bdbdff906e77ec7497a852b1db9	7fa0d41938eb4bf27ee56b49835ead493d5d6bdbdff906e77ec7497a852b1db9
+# old-preparation-recipe	481fd0e43f166ef3eff30b3ab99d227e86edf800da49ec23cdd9c63376116fe4  timing-runner.sh
+# old-preparation-recipe	1e7fdbdb8eed934ac8170c09350d6ccea57d7b95ec85270ce836642bd54821cb  order.tsv
+# old-preparation-recipe	984cd820068509b1ba51ce9c13ddbb0c56bb9af4aa464335fe9667b611781d78  check-order.awk
+# old-preparation-recipe	38f8d3121da8ec87a9a8822bd46452919d23bf03b7e9c613c6b85f1d94ff9c8d  check-timing-output.awk
+# current-main95-provenance	a5784dcf76c22746714c91d8cf3e17044a025c00
+# current-main95-provenance	378522166bd536d4c39c2353bdaeccc0d6397656
+# current-main95-provenance	88ce2d92bffa00456c0a40690e9af673364e2679
+# current-main95-provenance	rustc 1.98.1 (48a229cea 2026-09-01)
+# current-main95-provenance	cargo 1.98.1 (797e8a9bc 2026-08-05)
+# current-main95-emission	95a56584361fe0debc284f803af0676f972305ca7b3586fc6ec6e97f2f4c893d  $CURRENT_MAIN_SCRATCH/baseline-whitefootc
+# current-main95-emission	78550b6cc4b0ef6807ca9db7d2d07ed3864a111685d1fdaef948634608342454  $CURRENT_MAIN_SCRATCH/stencil-A.raw.ll
+# current-main95-emission	44e482cecef9d6b9daebf8fce03adea93a824753fef034205f70dc2288b3eb5f  $CURRENT_MAIN_SCRATCH/stencil-seq.raw.ll
+# current-main95-emission	7fe5195013111217f5f77f5bd652cba2184bc90819566e26e54b7369be32a0fd  $CURRENT_MAIN_SCRATCH/stencil-A.ledger
+# control.patch	--- stencil-A.raw.ll	2026-09-22 03:19:33
+# control.patch	+++ stencil-B.raw.ll	2026-09-22 03:22:50
+# control.patch	@@ -243,7 +243,16 @@
+# control.patch	   %t1 = icmp ugt i64 %v6, %v7
+# control.patch	   %t2 = select i1 %t1, i64 %t0, i64 0
+# control.patch	   %t3 = call i64 @wf__par_split_budget(i64 %t2, i64 17)
+# control.patch	-  %v9 = call i8 @wf__par_split_34(i8 %v8, i64 %v7, i64 %v6, { ptr, i64 } %v0, { ptr, i64 } %v1, { ptr, i64 } %v2, { ptr, i64 } %v3, i64 %v4, i64 %v6, i64 %t3)
+# control.patch	+  %zbd.zero = icmp eq i64 %t3, 0
+# control.patch	+  br i1 %zbd.zero, label %zbd.chunk, label %zbd.split
+# control.patch	+zbd.chunk:
+# control.patch	+  %zbd.chunk.result = call i8 @wf__par_chunk_35(i8 %v8, i64 %v7, i64 %v6, { ptr, i64 } %v0, { ptr, i64 } %v1, { ptr, i64 } %v2, { ptr, i64 } %v3, i64 %v4, i64 %v6)
+# control.patch	+  br label %zbd.done
+# control.patch	+zbd.split:
+# control.patch	+  %zbd.split.result = call i8 @wf__par_split_34(i8 %v8, i64 %v7, i64 %v6, { ptr, i64 } %v0, { ptr, i64 } %v1, { ptr, i64 } %v2, { ptr, i64 } %v3, i64 %v4, i64 %v6, i64 %t3)
+# control.patch	+  br label %zbd.done
+# control.patch	+zbd.done:
+# control.patch	+  %v9 = phi i8 [ %zbd.chunk.result, %zbd.chunk ], [ %zbd.split.result, %zbd.split ]
+# control.patch	   ret i64 %v4
+# control.patch	 }
+# control.patch	 
+# caller.patch	--- $REPO/research/experiments/compute-bench/stencil_bench.c	2026-09-22 03:02:56
+# caller.patch	+++ stencil_bench.c	2026-09-22 03:15:10
+# caller.patch	@@ -5,10 +5,10 @@
+# caller.patch	 #include "backend.h"
+# caller.patch	 #include "harness.h"
+# caller.patch	 
+# caller.patch	-extern void wf_bench_stencil_par(uint64_t, uint64_t, uint64_t, double **, uint64_t *);
+# caller.patch	-extern void wf_bench_stencil_seq(uint64_t, uint64_t, uint64_t, double **, uint64_t *);
+# caller.patch	-extern void wf_bench_stencil_par_release(double *, uint64_t);
+# caller.patch	-extern void wf_bench_stencil_seq_release(double *, uint64_t);
+# caller.patch	+extern void wf_bench_stencil_par(uint64_t, uint64_t, uint64_t, double **, uint64_t *, void **);
+# caller.patch	+extern void wf_bench_stencil_seq(uint64_t, uint64_t, uint64_t, double **, uint64_t *, void **);
+# caller.patch	+extern void wf_bench_stencil_par_release(void *);
+# caller.patch	+extern void wf_bench_stencil_seq_release(void *);
+# caller.patch	 
+# caller.patch	 typedef struct {
+# caller.patch	     size_t width, height;
+# caller.patch	@@ -59,11 +59,11 @@
+# caller.patch	     return (size_t)parsed;
+# caller.patch	 }
+# caller.patch	 static double *expected, *output;
+# caller.patch	+static void *output_held;
+# caller.patch	 static stencil_release release_output;
+# caller.patch	 
+# caller.patch	-static void native_release(double *grid, uint64_t length) {
+# caller.patch	-    (void)length;
+# caller.patch	-    free(grid);
+# caller.patch	+static void native_release(void *held) {
+# caller.patch	+    free(held);
+# caller.patch	 }
+# caller.patch	 
+# caller.patch	 static void prepare(unsigned workers) {
+# caller.patch	@@ -92,12 +92,13 @@
+# caller.patch	         int sequential = !strcmp(form, "wf-seq");
+# caller.patch	         stencil_entry entry = sequential ? wf_bench_stencil_seq : wf_bench_stencil_par;
+# caller.patch	         release_output = sequential ? wf_bench_stencil_seq_release : wf_bench_stencil_par_release;
+# caller.patch	-        entry(grid_width, grid_height, grid_steps, &output, &length);
+# caller.patch	+        entry(grid_width, grid_height, grid_steps, &output, &length, &output_held);
+# caller.patch	         if (length != cells) fail("generated output length");
+# caller.patch	     } else {
+# caller.patch	         const wfb_backend *backend = wfb_backend_named(form);
+# caller.patch	         if (!backend || !backend->map) fail("unknown reference");
+# caller.patch	         output = native_run(grid_width, grid_height, grid_steps, backend, workers);
+# caller.patch	+        output_held = output;
+# caller.patch	         release_output = native_release;
+# caller.patch	     }
+# caller.patch	     return cells;
+# caller.patch	@@ -105,8 +106,9 @@
+# caller.patch	 
+# caller.patch	 static size_t check(void) {
+# caller.patch	     size_t compared = compare(expected, output, grid_width * grid_height);
+# caller.patch	-    release_output(output, (uint64_t)compared);
+# caller.patch	+    release_output(output_held);
+# caller.patch	     output = NULL;
+# caller.patch	+    output_held = NULL;
+# caller.patch	     return compared;
+# caller.patch	 }
+# caller.patch	 
+# caller.patch	@@ -114,9 +116,10 @@
+# caller.patch	 static unsigned verify_workers;
+# caller.patch	 
+# caller.patch	 static void native_entry(uint64_t width, uint64_t height, uint64_t steps,
+# caller.patch	-                          double **out, uint64_t *length) {
+# caller.patch	+                          double **out, uint64_t *length, void **held) {
+# caller.patch	     *out = native_run((size_t)width, (size_t)height, (size_t)steps, verify_backend, verify_workers);
+# caller.patch	     *length = width * height;
+# caller.patch	+    *held = *out;
+# caller.patch	 }
+# caller.patch	 
+# caller.patch	 static size_t verify(const char *form, unsigned workers) {
+# construct.sh	#!/bin/sh
+# construct.sh	# Prepared only. Invoke once under the shared 30-second guard after authorization.
+# construct.sh	set -eu
+# construct.sh	set -x
+# construct.sh	test "${ZERO_BUDGET_NATIVE_APPROVED:-}" = c4e96d647cfb1ce1d73e5afb209e1c243128beb7
+# construct.sh	root=$REPO
+# construct.sh	scratch=$SCRATCH
+# construct.sh	bench=$root/research/experiments/compute-bench
+# construct.sh	native=$scratch/native
+# construct.sh	deps=$DEPS
+# construct.sh	test "$(uname -m)" = arm64
+# construct.sh	test "$(git -C "$root" rev-parse HEAD)" = c4e96d647cfb1ce1d73e5afb209e1c243128beb7
+# construct.sh	test -z "$(git -C "$root" status --porcelain)"
+# construct.sh	cd "$scratch"
+# construct.sh	shasum -a 256 -c sources.sha256
+# construct.sh	shasum -a 256 -c emission.sha256
+# construct.sh	shasum -a 256 -c control.sha256
+# construct.sh	shasum -a 256 -c prepared.sha256
+# construct.sh	test ! -e "$native"
+# construct.sh	test ! -e "$deps/parlay-unavailable.txt"
+# construct.sh	test -f "$deps/include/parlay/parallel.h"
+# construct.sh	test -f "$deps/lib/libtbb.dylib"
+# construct.sh	test -f "$deps/rayon/libwf_compute_bench_rayon.a"
+# construct.sh	mkdir "$native"
+# construct.sh	printf '%s\n' '/* Same available-Parlay header content as the existing make deps recipe. */' > "$native/parlay_status.h"
+# construct.sh	shasum -a 256 "$deps/lib/libtbb.dylib" "$deps/rayon/libwf_compute_bench_rayon.a" > "$native/dependencies.sha256"
+# construct.sh	rg --files "$root/compiler/src/backend" "$bench" "$root/tests/programs/compute" "$deps/include" "$deps/rayon" | rg '\.(c|h|cpp|hpp|ll)$' | LC_ALL=C sort | xargs shasum -a 256 > "$native/native-source-inputs.sha256"
+# construct.sh	set -- "$native/floor.o" "$native/sched_core.o" "$native/sched_prim_host.o" \
+# construct.sh	  "$native/sched_entry.o" "$native/completion_runtime.o" "$native/completion_wait_host.o" \
+# construct.sh	  "$native/completion_file_adapter.o" "$native/completion_file_posix.o" \
+# construct.sh	  "$native/completion_bridge.o" "$native/completion_linux_io_uring.o" \
+# construct.sh	  "$native/ordinary_values_c.o" "$native/ordinary_values_ll.o"
+# construct.sh	make -C "$bench" -j2 BUILD="$native" DEPS="$deps" WORK="$scratch/harness-work" \
+# construct.sh	  "$@" "$native/harness.o" "$native/backend_serial.o" "$native/backend_static.o" \
+# construct.sh	  "$native/backend_tbb.o" "$native/backend_parlay.o" "$native/backend_rayon.o"
+# construct.sh	cflags='-std=c11 -O3 -g -Wall -Wextra -Werror -Wpedantic -pthread -fno-fast-math -ffp-contract=off -fno-vectorize -fno-slp-vectorize -fno-lto'
+# construct.sh	wf_flags='-std=c11 -pthread -O2 -Wno-override-module'
+# construct.sh	/usr/bin/clang $cflags -I"$bench" -I"$native" -c "$scratch/stencil_bench.c" -o "$native/stencil_bench.o"
+# construct.sh	/usr/bin/clang $wf_flags -c "$scratch/stencil-seq.ll" -o "$native/stencil-seq.o"
+# construct.sh	for arm in A B; do
+# construct.sh	  /usr/bin/clang $wf_flags -c "$scratch/stencil-$arm.ll" -o "$native/stencil-$arm.o"
+# construct.sh	  /usr/bin/clang++ -pthread -fno-lto "$native/stencil_bench.o" "$native/harness.o" \
+# construct.sh	    "$native/backend_serial.o" "$native/backend_static.o" "$native/backend_tbb.o" \
+# construct.sh	    "$native/backend_parlay.o" "$native/backend_rayon.o" "$native/stencil-$arm.o" \
+# construct.sh	    "$native/stencil-seq.o" "$@" -L"$deps/lib" -Wl,-rpath,"$deps/lib" \
+# construct.sh	    -ltbb "$deps/rayon/libwf_compute_bench_rayon.a" -ldl -lm -o "$native/stencil-$arm"
+# construct.sh	done
+# construct.sh	/usr/bin/clang $cflags -c "$scratch/helper-qualification.c" -o "$native/helper-qualification-c.o"
+# construct.sh	/usr/bin/clang $wf_flags -c "$scratch/helper-qualification.ll" -o "$native/helper-qualification-ll.o"
+# construct.sh	/usr/bin/clang -pthread -fno-lto "$native/helper-qualification-c.o" "$native/helper-qualification-ll.o" \
+# construct.sh	  "$@" -lm -o "$native/helper-qualification"
+# construct.sh	for image in "$native/stencil-A" "$native/stencil-B" "$native/helper-qualification"; do
+# construct.sh	  nm -m "$image" > "$image.nm"
+# construct.sh	  for symbol in wf__par_publish wf__par_split_budget wf__par_recursion_budget wf__floor_run wf__par_acquire_lane; do
+# construct.sh	    awk -v name="_$symbol" '$NF==name && /\(__TEXT,__text\) external/ && !/weak/ {ok=1} END {exit !ok}' "$image.nm"
+# construct.sh	  done
+# construct.sh	done
+# construct.sh	shasum -a 256 "$native"/*.o "$native/stencil-A" "$native/stencil-B" "$native/helper-qualification" > "$native/images-and-objects.sha256"
+# artifact-sha256	32b879fa7d82db4b354e1454e717690daa2d87d66f522410707d42dfe220fe21	timing-runner.sh
+# artifact-sha256	984cd820068509b1ba51ce9c13ddbb0c56bb9af4aa464335fe9667b611781d78	check-order.awk
+# artifact-sha256	38f8d3121da8ec87a9a8822bd46452919d23bf03b7e9c613c6b85f1d94ff9c8d	check-timing-output.awk
+# artifact-sha256	b962d958e8fd9d95529e40fafb360e9b69bc63bcc3f758eb87d4a660729dd8b6	reduce-timing.pl
+# artifact-sha256	a9bd297ec7ddd331987039c4dd93ff7b52441f4ed1fa8e8910bf8cc91b180557	native/native-source-inputs.sha256
+# artifact-sha256	67dd37d2643312acb2d01834d31fb410118c9d5b429ce4fa2dc8a8c0cdb9f0a9	timing-null/raw.sha256
+# artifact-sha256	8824547d65393e1ad7c921b97f26c1d96ae8f97059928803085058a0b7c68eda	timing-main/raw.sha256
+# artifact-sha256	b2ddfd224003d4454fab30b5d9d1a6a6413a9a24ba985a75eb65be74a129a518	optimized/body-comparison.tsv
+# artifact-sha256	0f61a223d6a6fffd63303da31ed9fa043b61296667cfee7c6f9f4c707ad37a44	compare-w1-fixed.pl
+# pair	action	workers	pass	A_wall_ns	B_wall_ns	wall_B_A	A_cpu_ns	B_cpu_ns	cpu_B_A	A_steals	B_steals	A_first_wall_ns	B_first_wall_ns	A_first_cpu_ns	B_first_cpu_ns
+# pair	null	1	0	28832666	28246250	0.979661402106	28824000	28235000	0.979565639745	0	0	34274542	33779500	34236000	33765000
+# pair	null	1	1	28656250	28528000	0.995524536532	28647000	28518000	0.995496910671	0	0	34926209	34266500	34840000	34254000
+# pair	null	1	2	29329875	28136417	0.959309134458	29322000	28127000	0.959245617625	0	0	34640666	34474792	34632000	34465000
+# pair	null	1	3	29197791	28926875	0.990721352859	29189000	28918000	0.990715680565	0	0	34638167	33898500	34617000	33886000
+# pair	null	1	4	29207833	27670833	0.947377129964	29183000	27663000	0.947914881952	0	0	34609375	36198875	34589000	36123000
+# pair	null	4	0	16984959	16543334	0.973999054104	61555000	60974000	0.990561286654	158	171	25306375	22029917	71914000	68172000
+# pair	null	4	1	16583792	16377833	0.987580705306	60267000	60174000	0.998456866942	178	162	21010500	21247416	67935000	67201000
+# pair	null	4	2	16613167	17964875	1.081363655708	60834000	58860000	0.967551040537	162	138	21441125	21955792	67727000	67681000
+# pair	null	4	3	16905959	16539584	0.978328647313	60974000	60026000	0.984452389543	173	134	22105708	21785584	68884000	65449000
+# pair	null	4	4	16823958	15969125	0.949189542675	59752000	58670000	0.981891819521	155	152	21497959	22556250	67439000	69394000
+# pair	main	1	0	29012042	30021417	1.034791587576	29005000	30015000	1.034821582486	0	0	37975125	34399375	37924000	34388000
+# pair	main	1	1	28721208	29824542	1.038415306209	28687000	29816000	1.039355805766	0	0	37746167	33577667	37675000	33561000
+# pair	main	1	2	28328750	28292209	0.998710108988	28319000	28282000	0.998693456690	0	0	34419000	34728000	34407000	34709000
+# pair	main	1	3	28647334	29032709	1.013452386180	28624000	29017000	1.013729737283	0	0	36291459	34492709	36254000	34468000
+# pair	main	1	4	29036667	29898292	1.029673688099	29027000	29863000	1.028800771695	0	0	34665875	34455750	34594000	34429000
+# pair	main	4	0	17095000	13047000	0.763205615677	61197000	45545000	0.744235828554	147	166	21379708	17718833	67564000	55178000
+# pair	main	4	1	16561500	14102417	0.851518099206	59732000	48381000	0.809967856425	178	168	20906583	19564250	66213000	57993000
+# pair	main	4	2	15993958	13315917	0.832559207671	58965000	47457000	0.804833375731	161	167	23258542	17787334	74031000	55392000
+# pair	main	4	3	16443458	12881875	0.783404257182	61028000	47851000	0.784082716130	167	171	21265042	18800792	67525000	55762000
+# pair	main	4	4	17541375	12776625	0.728370780512	60283000	47624000	0.790007133023	171	164	22434500	18960000	69575000	56676000
+# order-null	invocation	pass	workers	arm	image
+# order-null	1	0	1	A	$SCRATCH/native/stencil-A
+# order-null	2	0	1	B	$SCRATCH/native/stencil-A
+# order-null	3	0	4	A	$SCRATCH/native/stencil-A
+# order-null	4	0	4	B	$SCRATCH/native/stencil-A
+# order-null	5	1	4	B	$SCRATCH/native/stencil-A
+# order-null	6	1	4	A	$SCRATCH/native/stencil-A
+# order-null	7	1	1	B	$SCRATCH/native/stencil-A
+# order-null	8	1	1	A	$SCRATCH/native/stencil-A
+# order-null	9	2	1	A	$SCRATCH/native/stencil-A
+# order-null	10	2	1	B	$SCRATCH/native/stencil-A
+# order-null	11	2	4	A	$SCRATCH/native/stencil-A
+# order-null	12	2	4	B	$SCRATCH/native/stencil-A
+# order-null	13	3	4	B	$SCRATCH/native/stencil-A
+# order-null	14	3	4	A	$SCRATCH/native/stencil-A
+# order-null	15	3	1	B	$SCRATCH/native/stencil-A
+# order-null	16	3	1	A	$SCRATCH/native/stencil-A
+# order-null	17	4	1	A	$SCRATCH/native/stencil-A
+# order-null	18	4	1	B	$SCRATCH/native/stencil-A
+# order-null	19	4	4	A	$SCRATCH/native/stencil-A
+# order-null	20	4	4	B	$SCRATCH/native/stencil-A
+# order-main	invocation	pass	workers	arm	image
+# order-main	1	0	1	A	$SCRATCH/native/stencil-A
+# order-main	2	0	1	B	$SCRATCH/native/stencil-B
+# order-main	3	0	4	A	$SCRATCH/native/stencil-A
+# order-main	4	0	4	B	$SCRATCH/native/stencil-B
+# order-main	5	1	4	B	$SCRATCH/native/stencil-B
+# order-main	6	1	4	A	$SCRATCH/native/stencil-A
+# order-main	7	1	1	B	$SCRATCH/native/stencil-B
+# order-main	8	1	1	A	$SCRATCH/native/stencil-A
+# order-main	9	2	1	A	$SCRATCH/native/stencil-A
+# order-main	10	2	1	B	$SCRATCH/native/stencil-B
+# order-main	11	2	4	A	$SCRATCH/native/stencil-A
+# order-main	12	2	4	B	$SCRATCH/native/stencil-B
+# order-main	13	3	4	B	$SCRATCH/native/stencil-B
+# order-main	14	3	4	A	$SCRATCH/native/stencil-A
+# order-main	15	3	1	B	$SCRATCH/native/stencil-B
+# order-main	16	3	1	A	$SCRATCH/native/stencil-A
+# order-main	17	4	1	A	$SCRATCH/native/stencil-A
+# order-main	18	4	1	B	$SCRATCH/native/stencil-B
+# order-main	19	4	4	A	$SCRATCH/native/stencil-A
+# order-main	20	4	4	B	$SCRATCH/native/stencil-B
+action	invocation	arm	kernel	form	workers	pass	call	phase	wall_ns	cpu_ns	outputs	steals
+null	1	A	stencil	wf	1	0	0	first	34274542	34236000	4194304	0
+null	1	A	stencil	wf	1	0	1	warm	28451541	28441000	4194304	0
+null	1	A	stencil	wf	1	0	2	warm	28996708	28963000	4194304	0
+null	1	A	stencil	wf	1	0	3	warm	27573542	27565000	4194304	0
+null	1	A	stencil	wf	1	0	4	warm	29318625	29309000	4194304	0
+null	1	A	stencil	wf	1	0	5	warm	28832666	28824000	4194304	0
+null	2	B	stencil	wf	1	0	0	first	33779500	33765000	4194304	0
+null	2	B	stencil	wf	1	0	1	warm	28246250	28235000	4194304	0
+null	2	B	stencil	wf	1	0	2	warm	28527833	28518000	4194304	0
+null	2	B	stencil	wf	1	0	3	warm	27900792	27886000	4194304	0
+null	2	B	stencil	wf	1	0	4	warm	29510000	29503000	4194304	0
+null	2	B	stencil	wf	1	0	5	warm	27622916	27609000	4194304	0
+null	3	A	stencil	wf	4	0	0	first	25306375	71914000	4194304	179
+null	3	A	stencil	wf	4	0	1	warm	17823709	64975000	4194304	156
+null	3	A	stencil	wf	4	0	2	warm	17528875	62562000	4194304	141
+null	3	A	stencil	wf	4	0	3	warm	16984959	61555000	4194304	158
+null	3	A	stencil	wf	4	0	4	warm	16650416	60703000	4194304	165
+null	3	A	stencil	wf	4	0	5	warm	16596625	60035000	4194304	169
+null	4	B	stencil	wf	4	0	0	first	22029917	68172000	4194304	161
+null	4	B	stencil	wf	4	0	1	warm	16588875	61492000	4194304	158
+null	4	B	stencil	wf	4	0	2	warm	16543334	60974000	4194304	171
+null	4	B	stencil	wf	4	0	3	warm	17168292	62440000	4194304	171
+null	4	B	stencil	wf	4	0	4	warm	16222833	57356000	4194304	172
+null	4	B	stencil	wf	4	0	5	warm	16250792	60609000	4194304	147
+null	5	B	stencil	wf	4	1	0	first	21247416	67201000	4194304	150
+null	5	B	stencil	wf	4	1	1	warm	16190125	59754000	4194304	162
+null	5	B	stencil	wf	4	1	2	warm	16301542	60088000	4194304	173
+null	5	B	stencil	wf	4	1	3	warm	16638750	60811000	4194304	172
+null	5	B	stencil	wf	4	1	4	warm	16683209	60670000	4194304	161
+null	5	B	stencil	wf	4	1	5	warm	16377833	60174000	4194304	146
+null	6	A	stencil	wf	4	1	0	first	21010500	67935000	4194304	139
+null	6	A	stencil	wf	4	1	1	warm	16472167	60267000	4194304	166
+null	6	A	stencil	wf	4	1	2	warm	17054166	59484000	4194304	164
+null	6	A	stencil	wf	4	1	3	warm	16583792	60509000	4194304	178
+null	6	A	stencil	wf	4	1	4	warm	16664041	60514000	4194304	178
+null	6	A	stencil	wf	4	1	5	warm	15908916	59794000	4194304	180
+null	7	B	stencil	wf	1	1	0	first	34266500	34254000	4194304	0
+null	7	B	stencil	wf	1	1	1	warm	29125500	29115000	4194304	0
+null	7	B	stencil	wf	1	1	2	warm	28528000	28518000	4194304	0
+null	7	B	stencil	wf	1	1	3	warm	28368750	28357000	4194304	0
+null	7	B	stencil	wf	1	1	4	warm	28406625	28398000	4194304	0
+null	7	B	stencil	wf	1	1	5	warm	30190708	30181000	4194304	0
+null	8	A	stencil	wf	1	1	0	first	34926209	34840000	4194304	0
+null	8	A	stencil	wf	1	1	1	warm	29576167	29527000	4194304	0
+null	8	A	stencil	wf	1	1	2	warm	28656250	28647000	4194304	0
+null	8	A	stencil	wf	1	1	3	warm	28525917	28518000	4194304	0
+null	8	A	stencil	wf	1	1	4	warm	28537417	28530000	4194304	0
+null	8	A	stencil	wf	1	1	5	warm	28684458	28674000	4194304	0
+null	9	A	stencil	wf	1	2	0	first	34640666	34632000	4194304	0
+null	9	A	stencil	wf	1	2	1	warm	28261125	28254000	4194304	0
+null	9	A	stencil	wf	1	2	2	warm	29427625	29417000	4194304	0
+null	9	A	stencil	wf	1	2	3	warm	28980167	28971000	4194304	0
+null	9	A	stencil	wf	1	2	4	warm	29329875	29322000	4194304	0
+null	9	A	stencil	wf	1	2	5	warm	29742292	29700000	4194304	0
+null	10	B	stencil	wf	1	2	0	first	34474792	34465000	4194304	0
+null	10	B	stencil	wf	1	2	1	warm	28385166	28366000	4194304	0
+null	10	B	stencil	wf	1	2	2	warm	27984458	27976000	4194304	0
+null	10	B	stencil	wf	1	2	3	warm	28039958	28028000	4194304	0
+null	10	B	stencil	wf	1	2	4	warm	28302459	28291000	4194304	0
+null	10	B	stencil	wf	1	2	5	warm	28136417	28127000	4194304	0
+null	11	A	stencil	wf	4	2	0	first	21441125	67727000	4194304	162
+null	11	A	stencil	wf	4	2	1	warm	16535625	60834000	4194304	162
+null	11	A	stencil	wf	4	2	2	warm	16262583	60244000	4194304	155
+null	11	A	stencil	wf	4	2	3	warm	16613167	60444000	4194304	175
+null	11	A	stencil	wf	4	2	4	warm	18139500	61977000	4194304	149
+null	11	A	stencil	wf	4	2	5	warm	17500000	62531000	4194304	194
+null	12	B	stencil	wf	4	2	0	first	21955792	67681000	4194304	152
+null	12	B	stencil	wf	4	2	1	warm	18523375	58860000	4194304	161
+null	12	B	stencil	wf	4	2	2	warm	17964875	58384000	4194304	136
+null	12	B	stencil	wf	4	2	3	warm	18254750	56447000	4194304	137
+null	12	B	stencil	wf	4	2	4	warm	15924583	59110000	4194304	138
+null	12	B	stencil	wf	4	2	5	warm	15884542	58865000	4194304	162
+null	13	B	stencil	wf	4	3	0	first	21785584	65449000	4194304	141
+null	13	B	stencil	wf	4	3	1	warm	16850208	59651000	4194304	135
+null	13	B	stencil	wf	4	3	2	warm	17142250	59008000	4194304	131
+null	13	B	stencil	wf	4	3	3	warm	16539584	60026000	4194304	166
+null	13	B	stencil	wf	4	3	4	warm	16461167	60752000	4194304	121
+null	13	B	stencil	wf	4	3	5	warm	16199958	60145000	4194304	134
+null	14	A	stencil	wf	4	3	0	first	22105708	68884000	4194304	161
+null	14	A	stencil	wf	4	3	1	warm	16835458	61132000	4194304	189
+null	14	A	stencil	wf	4	3	2	warm	16480792	60974000	4194304	174
+null	14	A	stencil	wf	4	3	3	warm	16905959	60382000	4194304	168
+null	14	A	stencil	wf	4	3	4	warm	17123625	61223000	4194304	173
+null	14	A	stencil	wf	4	3	5	warm	17236208	60739000	4194304	148
+null	15	B	stencil	wf	1	3	0	first	33898500	33886000	4194304	0
+null	15	B	stencil	wf	1	3	1	warm	28600208	28590000	4194304	0
+null	15	B	stencil	wf	1	3	2	warm	28741333	28733000	4194304	0
+null	15	B	stencil	wf	1	3	3	warm	28926875	28918000	4194304	0
+null	15	B	stencil	wf	1	3	4	warm	29487667	29479000	4194304	0
+null	15	B	stencil	wf	1	3	5	warm	28955625	28945000	4194304	0
+null	16	A	stencil	wf	1	3	0	first	34638167	34617000	4194304	0
+null	16	A	stencil	wf	1	3	1	warm	32025667	32020000	4194304	0
+null	16	A	stencil	wf	1	3	2	warm	30803875	30763000	4194304	0
+null	16	A	stencil	wf	1	3	3	warm	29197791	29189000	4194304	0
+null	16	A	stencil	wf	1	3	4	warm	28193833	28179000	4194304	0
+null	16	A	stencil	wf	1	3	5	warm	28966834	28959000	4194304	0
+null	17	A	stencil	wf	1	4	0	first	34609375	34589000	4194304	0
+null	17	A	stencil	wf	1	4	1	warm	29207833	29198000	4194304	0
+null	17	A	stencil	wf	1	4	2	warm	29114209	29102000	4194304	0
+null	17	A	stencil	wf	1	4	3	warm	28220542	28199000	4194304	0
+null	17	A	stencil	wf	1	4	4	warm	29212083	29183000	4194304	0
+null	17	A	stencil	wf	1	4	5	warm	32780000	32739000	4194304	0
+null	18	B	stencil	wf	1	4	0	first	36198875	36123000	4194304	0
+null	18	B	stencil	wf	1	4	1	warm	30343625	30334000	4194304	0
+null	18	B	stencil	wf	1	4	2	warm	27670833	27663000	4194304	0
+null	18	B	stencil	wf	1	4	3	warm	27843084	27834000	4194304	0
+null	18	B	stencil	wf	1	4	4	warm	27640333	27632000	4194304	0
+null	18	B	stencil	wf	1	4	5	warm	27616375	27606000	4194304	0
+null	19	A	stencil	wf	4	4	0	first	21497959	67439000	4194304	177
+null	19	A	stencil	wf	4	4	1	warm	16397292	59752000	4194304	179
+null	19	A	stencil	wf	4	4	2	warm	16984834	57776000	4194304	154
+null	19	A	stencil	wf	4	4	3	warm	16823958	61288000	4194304	171
+null	19	A	stencil	wf	4	4	4	warm	16599375	59455000	4194304	155
+null	19	A	stencil	wf	4	4	5	warm	17536834	60897000	4194304	140
+null	20	B	stencil	wf	4	4	0	first	22556250	69394000	4194304	161
+null	20	B	stencil	wf	4	4	1	warm	16997500	59985000	4194304	167
+null	20	B	stencil	wf	4	4	2	warm	16737834	61235000	4194304	113
+null	20	B	stencil	wf	4	4	3	warm	15878542	58585000	4194304	152
+null	20	B	stencil	wf	4	4	4	warm	15451125	57073000	4194304	127
+null	20	B	stencil	wf	4	4	5	warm	15969125	58670000	4194304	156
+main	1	A	stencil	wf	1	0	0	first	37975125	37924000	4194304	0
+main	1	A	stencil	wf	1	0	1	warm	29145416	29121000	4194304	0
+main	1	A	stencil	wf	1	0	2	warm	29610208	29601000	4194304	0
+main	1	A	stencil	wf	1	0	3	warm	28787917	28772000	4194304	0
+main	1	A	stencil	wf	1	0	4	warm	29001917	28994000	4194304	0
+main	1	A	stencil	wf	1	0	5	warm	29012042	29005000	4194304	0
+main	2	B	stencil	wf	1	0	0	first	34399375	34388000	4194304	0
+main	2	B	stencil	wf	1	0	1	warm	29426959	29403000	4194304	0
+main	2	B	stencil	wf	1	0	2	warm	28962875	28949000	4194304	0
+main	2	B	stencil	wf	1	0	3	warm	30021417	30015000	4194304	0
+main	2	B	stencil	wf	1	0	4	warm	30537375	30529000	4194304	0
+main	2	B	stencil	wf	1	0	5	warm	30121083	30111000	4194304	0
+main	3	A	stencil	wf	4	0	0	first	21379708	67564000	4194304	192
+main	3	A	stencil	wf	4	0	1	warm	16835541	60978000	4194304	158
+main	3	A	stencil	wf	4	0	2	warm	16832792	61197000	4194304	141
+main	3	A	stencil	wf	4	0	3	warm	18004334	65787000	4194304	147
+main	3	A	stencil	wf	4	0	4	warm	17095000	60229000	4194304	145
+main	3	A	stencil	wf	4	0	5	warm	17463500	61425000	4194304	180
+main	4	B	stencil	wf	4	0	0	first	17718833	55178000	4194304	156
+main	4	B	stencil	wf	4	0	1	warm	12567750	45545000	4194304	166
+main	4	B	stencil	wf	4	0	2	warm	12987958	46816000	4194304	174
+main	4	B	stencil	wf	4	0	3	warm	14463708	47986000	4194304	158
+main	4	B	stencil	wf	4	0	4	warm	13047000	44461000	4194304	168
+main	4	B	stencil	wf	4	0	5	warm	13136916	44840000	4194304	139
+main	5	B	stencil	wf	4	1	0	first	19564250	57993000	4194304	149
+main	5	B	stencil	wf	4	1	1	warm	14395958	50519000	4194304	173
+main	5	B	stencil	wf	4	1	2	warm	13184917	48301000	4194304	172
+main	5	B	stencil	wf	4	1	3	warm	13177542	48381000	4194304	168
+main	5	B	stencil	wf	4	1	4	warm	14102417	47735000	4194304	163
+main	5	B	stencil	wf	4	1	5	warm	14992667	50561000	4194304	150
+main	6	A	stencil	wf	4	1	0	first	20906583	66213000	4194304	161
+main	6	A	stencil	wf	4	1	1	warm	16561500	59087000	4194304	178
+main	6	A	stencil	wf	4	1	2	warm	16450167	58786000	4194304	199
+main	6	A	stencil	wf	4	1	3	warm	16339208	59732000	4194304	146
+main	6	A	stencil	wf	4	1	4	warm	17316209	60579000	4194304	176
+main	6	A	stencil	wf	4	1	5	warm	17463708	63018000	4194304	179
+main	7	B	stencil	wf	1	1	0	first	33577667	33561000	4194304	0
+main	7	B	stencil	wf	1	1	1	warm	28993166	28979000	4194304	0
+main	7	B	stencil	wf	1	1	2	warm	29824542	29816000	4194304	0
+main	7	B	stencil	wf	1	1	3	warm	31298625	31290000	4194304	0
+main	7	B	stencil	wf	1	1	4	warm	30557334	30549000	4194304	0
+main	7	B	stencil	wf	1	1	5	warm	28118708	28110000	4194304	0
+main	8	A	stencil	wf	1	1	0	first	37746167	37675000	4194304	0
+main	8	A	stencil	wf	1	1	1	warm	28721208	28687000	4194304	0
+main	8	A	stencil	wf	1	1	2	warm	30581250	30572000	4194304	0
+main	8	A	stencil	wf	1	1	3	warm	28244000	28235000	4194304	0
+main	8	A	stencil	wf	1	1	4	warm	29112416	29105000	4194304	0
+main	8	A	stencil	wf	1	1	5	warm	28494959	28486000	4194304	0
+main	9	A	stencil	wf	1	2	0	first	34419000	34407000	4194304	0
+main	9	A	stencil	wf	1	2	1	warm	28159333	28150000	4194304	0
+main	9	A	stencil	wf	1	2	2	warm	27917666	27902000	4194304	0
+main	9	A	stencil	wf	1	2	3	warm	28706958	28691000	4194304	0
+main	9	A	stencil	wf	1	2	4	warm	28858208	28837000	4194304	0
+main	9	A	stencil	wf	1	2	5	warm	28328750	28319000	4194304	0
+main	10	B	stencil	wf	1	2	0	first	34728000	34709000	4194304	0
+main	10	B	stencil	wf	1	2	1	warm	28226125	28216000	4194304	0
+main	10	B	stencil	wf	1	2	2	warm	30527792	30459000	4194304	0
+main	10	B	stencil	wf	1	2	3	warm	32483625	30372000	4194304	0
+main	10	B	stencil	wf	1	2	4	warm	28292209	28282000	4194304	0
+main	10	B	stencil	wf	1	2	5	warm	27813625	27805000	4194304	0
+main	11	A	stencil	wf	4	2	0	first	23258542	74031000	4194304	153
+main	11	A	stencil	wf	4	2	1	warm	17027458	61170000	4194304	161
+main	11	A	stencil	wf	4	2	2	warm	16313667	59759000	4194304	175
+main	11	A	stencil	wf	4	2	3	warm	15993958	58965000	4194304	120
+main	11	A	stencil	wf	4	2	4	warm	15558459	57375000	4194304	139
+main	11	A	stencil	wf	4	2	5	warm	15924875	58886000	4194304	176
+main	12	B	stencil	wf	4	2	0	first	17787334	55392000	4194304	183
+main	12	B	stencil	wf	4	2	1	warm	13513625	46387000	4194304	167
+main	12	B	stencil	wf	4	2	2	warm	13315917	48293000	4194304	173
+main	12	B	stencil	wf	4	2	3	warm	12471125	45899000	4194304	152
+main	12	B	stencil	wf	4	2	4	warm	12824125	47457000	4194304	170
+main	12	B	stencil	wf	4	2	5	warm	13343833	48383000	4194304	166
+main	13	B	stencil	wf	4	3	0	first	18800792	55762000	4194304	176
+main	13	B	stencil	wf	4	3	1	warm	13172667	47851000	4194304	171
+main	13	B	stencil	wf	4	3	2	warm	12881875	47542000	4194304	153
+main	13	B	stencil	wf	4	3	3	warm	12878583	48036000	4194304	183
+main	13	B	stencil	wf	4	3	4	warm	12556916	47204000	4194304	150
+main	13	B	stencil	wf	4	3	5	warm	13326291	49027000	4194304	177
+main	14	A	stencil	wf	4	3	0	first	21265042	67525000	4194304	160
+main	14	A	stencil	wf	4	3	1	warm	16362792	60305000	4194304	155
+main	14	A	stencil	wf	4	3	2	warm	18036167	63852000	4194304	167
+main	14	A	stencil	wf	4	3	3	warm	16443458	61215000	4194304	145
+main	14	A	stencil	wf	4	3	4	warm	16516875	61028000	4194304	180
+main	14	A	stencil	wf	4	3	5	warm	16004333	59964000	4194304	179
+main	15	B	stencil	wf	1	3	0	first	34492709	34468000	4194304	0
+main	15	B	stencil	wf	1	3	1	warm	28885042	28874000	4194304	0
+main	15	B	stencil	wf	1	3	2	warm	28097500	28085000	4194304	0
+main	15	B	stencil	wf	1	3	3	warm	29348500	29331000	4194304	0
+main	15	B	stencil	wf	1	3	4	warm	29131208	29118000	4194304	0
+main	15	B	stencil	wf	1	3	5	warm	29032709	29017000	4194304	0
+main	16	A	stencil	wf	1	3	0	first	36291459	36254000	4194304	0
+main	16	A	stencil	wf	1	3	1	warm	29271250	29261000	4194304	0
+main	16	A	stencil	wf	1	3	2	warm	28094166	28070000	4194304	0
+main	16	A	stencil	wf	1	3	3	warm	28647334	28624000	4194304	0
+main	16	A	stencil	wf	1	3	4	warm	27899000	27887000	4194304	0
+main	16	A	stencil	wf	1	3	5	warm	30285917	30257000	4194304	0
+main	17	A	stencil	wf	1	4	0	first	34665875	34594000	4194304	0
+main	17	A	stencil	wf	1	4	1	warm	29464750	29456000	4194304	0
+main	17	A	stencil	wf	1	4	2	warm	27647584	27639000	4194304	0
+main	17	A	stencil	wf	1	4	3	warm	29272417	29264000	4194304	0
+main	17	A	stencil	wf	1	4	4	warm	29036667	29027000	4194304	0
+main	17	A	stencil	wf	1	4	5	warm	28666167	28658000	4194304	0
+main	18	B	stencil	wf	1	4	0	first	34455750	34429000	4194304	0
+main	18	B	stencil	wf	1	4	1	warm	28727250	28716000	4194304	0
+main	18	B	stencil	wf	1	4	2	warm	29898292	29863000	4194304	0
+main	18	B	stencil	wf	1	4	3	warm	28348916	28284000	4194304	0
+main	18	B	stencil	wf	1	4	4	warm	30036666	30029000	4194304	0
+main	18	B	stencil	wf	1	4	5	warm	30723834	30714000	4194304	0
+main	19	A	stencil	wf	4	4	0	first	22434500	69575000	4194304	169
+main	19	A	stencil	wf	4	4	1	warm	16578083	60199000	4194304	166
+main	19	A	stencil	wf	4	4	2	warm	18123583	61483000	4194304	171
+main	19	A	stencil	wf	4	4	3	warm	17113625	58991000	4194304	173
+main	19	A	stencil	wf	4	4	4	warm	18246209	61213000	4194304	152
+main	19	A	stencil	wf	4	4	5	warm	17541375	60283000	4194304	178
+main	20	B	stencil	wf	4	4	0	first	18960000	56676000	4194304	150
+main	20	B	stencil	wf	4	4	1	warm	12663584	47117000	4194304	147
+main	20	B	stencil	wf	4	4	2	warm	13042959	47639000	4194304	164
+main	20	B	stencil	wf	4	4	3	warm	13095583	47647000	4194304	181
+main	20	B	stencil	wf	4	4	4	warm	12776625	47624000	4194304	187
+main	20	B	stencil	wf	4	4	5	warm	12519042	46185000	4194304	139

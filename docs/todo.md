@@ -147,6 +147,21 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   that case supplies both the benefit and the availability evidence; pricing
   must not infer a separate source lifetime.
 
+- **Zero-budget dispatch retains code-growth and W1 uncertainty.** The
+  [query-retained one-site control](../research/investigations/compute-model/DESIGN.md#query-retained-control-result-2026-09-22)
+  meets its W4 criterion, but grows module text by 2,400 bytes and measures a
+  2.97 percent W1 paired-median regression despite identical normalized W1
+  instructions. It couples dispatch, pixel inlining and alias-check motion;
+  it establishes neither standalone entry cost nor the benefit of applying
+  the branch at every site. Keep the general candidate's optimized text and
+  unchanged-query/W1 evidence distinct from that timing result. Defer another
+  local attribution trial while canonical correctness and the maintained
+  hosted comparison qualify the candidate. Reopen if those controls retain a
+  regression or code growth affects a representative workload; then compare
+  a bounded direct-branch/wrapper or layout control with identical-image
+  drift, full output checks, CPU and first-call costs. Close when those costs
+  are attributed or their measured tradeoff is explicitly accepted.
+
 - **Stable scatter has low parallel utilization and unresolved costs.** The
   [reference-model trial](../research/investigations/compute-model/DESIGN.md#reference-model-scatter-result-2026-09-20)
   removes the owned tally/packing transfers and verifies nonempty helper work

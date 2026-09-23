@@ -49,8 +49,8 @@ use parallel::{
     HandedOut, LoopSplitSite, PARALLEL_POOL_QUERY_DECLARATION, PARALLEL_POOL_QUERY_FALLBACK,
     PARALLEL_RECURSION_BUDGET_DECLARATION, PARALLEL_RECURSION_BUDGET_FALLBACK,
     PARALLEL_RUNTIME_DECLARATIONS, PARALLEL_RUNTIME_FALLBACK, PARALLEL_SPLIT_BUDGET_DECLARATION,
-    PARALLEL_SPLIT_BUDGET_FALLBACK, ParallelThunks, par_done_label, sequential_clone_set,
-    sequential_clone_symbol,
+    PARALLEL_SPLIT_BUDGET_FALLBACK, ParallelThunks, loop_split_done_label, par_done_label,
+    sequential_clone_set, sequential_clone_symbol,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1522,6 +1522,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                         edge.predecessor,
                         self.block(edge.predecessor)?,
                         &self.overlaps,
+                        self.sequential_clones.is_none(),
                     )
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
@@ -2399,10 +2400,15 @@ fn overlap_join_tail(overlaps: &[IrOverlap], result: IrValueId) -> Option<IrValu
 }
 
 /// Account for every instruction that opens an LLVM block when naming phis.
-fn block_exit_label(block_id: IrBlockId, block: &IrBlock, overlaps: &[IrOverlap]) -> String {
+fn block_exit_label(
+    block_id: IrBlockId,
+    block: &IrBlock,
+    overlaps: &[IrOverlap],
+    overlapping_world: bool,
+) -> String {
     let mut label = block_label(block_id);
     for (index, instruction) in block.instructions().iter().enumerate() {
-        definition_exit_label(block_id, index, instruction, &mut label);
+        definition_exit_label(block_id, index, instruction, overlapping_world, &mut label);
         if let IrInstruction::Define { result, .. } = instruction
             && let Some(last) = overlap_join_tail(overlaps, *result)
         {
@@ -2418,9 +2424,15 @@ fn definition_exit_label(
     _block_id: IrBlockId,
     _index: usize,
     instruction: &IrInstruction,
+    overlapping_world: bool,
     label: &mut String,
 ) {
     match instruction {
+        IrInstruction::Define {
+            result,
+            operation: IrOperation::LoopSplit { .. },
+            ..
+        } if overlapping_world => *label = loop_split_done_label(*result),
         IrInstruction::Define {
             result,
             operation:
