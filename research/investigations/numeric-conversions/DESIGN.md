@@ -243,15 +243,23 @@ Use the compiler built from `5dd9d5d7` (its compiler tree equals `033f44a9`).
 The recorded probe run reused that already-built, gate-validated compiler;
 the executable SHA-256 was
 `c57f989b1b0073769d4999266f3353143d758b2f400c26a74e8d260b684afe33`.
-The commands below use an existing scratch directory. Follow the repository's
-shared verification guard when constructing/running native programs.
+Run from this investigation's checkout root, whose compiler sources retain
+that baseline. The setup below creates scratch space and builds the compiler
+there. To reuse an existing binary from the same revision instead, skip the
+build and set `numeric_compiler` to its absolute path. The generated-code
+comparison requires the Clang version recorded above. Native construction and
+execution both run under the repository's shared verification guard.
 
 ```sh
-whitefootc --emit-llvm -o "$scratch/conversions.ll" research/investigations/numeric-conversions/probes.wf
-clang -O2 -S -emit-llvm -x ir "$scratch/conversions.ll" -o "$scratch/conversions-O2.ll"
-clang -O2 -S -x ir "$scratch/conversions.ll" -o "$scratch/conversions-O2.s"
-perl .github/run-check.pl numeric-native-probe whitefootc -o "$scratch/conversions" research/investigations/numeric-conversions/probes.wf
-"$scratch/conversions"
+numeric_scratch="$(mktemp -d "${TMPDIR:-/tmp}/wf-numeric-conversions.XXXXXX")"
+numeric_compiler="$numeric_scratch/target/gate/whitefootc"
+perl .github/run-check.pl numeric-compiler-build cargo build --manifest-path compiler/Cargo.toml --target-dir "$numeric_scratch/target" --profile gate --bin whitefootc --locked --offline
+"$numeric_compiler" --emit-llvm -o "$numeric_scratch/conversions.ll" research/investigations/numeric-conversions/probes.wf
+clang -O2 -S -emit-llvm -x ir "$numeric_scratch/conversions.ll" -o "$numeric_scratch/conversions-O2.ll"
+clang -O2 -S -x ir "$numeric_scratch/conversions.ll" -o "$numeric_scratch/conversions-O2.s"
+perl .github/run-check.pl numeric-native-probe sh -c '
+  "$1" -o "$2/conversions" "$3" && "$2/conversions"
+' sh "$numeric_compiler" "$numeric_scratch" research/investigations/numeric-conversions/probes.wf
 ```
 
 The three separate negative/capability probes use the same `--emit-llvm` path:
