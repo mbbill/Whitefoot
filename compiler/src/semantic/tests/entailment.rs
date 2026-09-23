@@ -8981,7 +8981,7 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
             .count(),
         18
     );
-    // v0.64 retires required roots for a direct match's first assignment.
+    // Result transport retires required roots for a direct match's first assignment.
     // An unused assignment no longer forces a special retained proof. Source
     // call identities and exact masks remain checked above; focused tests
     // check ordinary assignments by consuming their facts in obligations.
