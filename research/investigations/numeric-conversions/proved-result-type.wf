@@ -1,0 +1,10 @@
+fn bounded(value: own u32) -> result: own u8 pure contract {
+  requires value <= 255_u32;
+} {
+  return cvt::<u32, u8>(value);
+}
+
+fn main() -> status: own ExitStatus pure {
+  let byte = bounded(value: 255_u32);
+  return exit_status(code: byte);
+}

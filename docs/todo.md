@@ -7,22 +7,35 @@ criterion for deciding whether to pursue it. Entries do not select a design.
 Remove an item when its implementation and checks land, or its validation
 concludes with a recorded disposition; retain any selected follow-up work here.
 
-- **Audit numeric conversion coverage and unnecessary fallible interfaces.**
-  The known starting case is integer low-bit narrowing: `cvt::<u32, u8>(x)`
-  preserves the numeric value and returns `Result`, while `reinterpret` only
-  admits its listed equal-width pairs. Masking with `iand(x, 255_u32)` before
-  `cvt` expresses the low-byte result but still exposes `Result`; there is no
-  direct total truncating conversion. Survey similar gaps across integer widths
-  and signedness, bit reinterpretation, saturation, and floating-point rounding
-  or narrowing, distinguishing existing compositions from missing operations.
-  Use small source examples and boundary controls to define each desired
-  behavior, including negative values, range edges, and relevant NaN/infinity
-  cases. Assess whether a clearer total operation or proved-domain form removes
-  unnecessary source branching without weakening exact conversion or proof
-  requirements; inspect ordinary emitted code before claiming a runtime cost
-  or improvement. Additional gaps and performance costs are unverified. Defer
-  operation selection and implementation to the requested conversion review;
-  reopen when that review starts or a real numeric workload needs a workaround.
+- **Select numeric conversion interfaces and evidence improvements.** The
+  [source and lowering survey](../research/investigations/numeric-conversions/DESIGN.md)
+  separates four concrete questions: total low-bit truncation, exact conversion
+  under a proved domain, checked integer Ok-payload equality, and rounded or
+  saturated float conversion. On Apple Clang 21 arm64, a masked low-byte wrapper
+  optimizes to truncation alone, while a requirement-bounded wrapper retains
+  comparisons and selection; a stated LLVM-assumption control removes them.
+  No timing benefit or general optimizer guarantee is established. Checked
+  narrowing also loses the equality needed by a round-trip array index under
+  current ENT-3.S5. Compare an explicit exact/checked/domain family with retained
+  APIs plus Result evidence and qualified proof transport; do not silently
+  change exact `cvt` semantics. Float policy must fix NaNs, signed zero,
+  rounding and endpoint behavior, especially nonrepresentable i64 maxima.
+  Select rules with the owner before implementation. Validate direct/named
+  Results, replacement, joins and loops against stale-value controls and
+  proof-state costs; qualify any cost claim on a concrete consumer. Remove
+  resolved parts when selected rules and their ordinary-path evidence land.
+
+- **Numeric generic conversion remains unimplemented.** The
+  [generic witness](../research/investigations/numeric-conversions/generic-conversion.wf)
+  discards `cvt::<T, f64>` inside an Int-generic function called with u32 and
+  i64, but compilation reports `Unsupported: Generics`; every instantiated
+  pair is distinct and numeric. This is a compiler capability gap, separate
+  from selecting new conversion semantics. Validate symbolic formation and
+  concrete total/checked instances without inferring a uniform return type
+  or misreporting the gap as invalid source. Implementation is deferred from
+  the conversion-design survey; reopen for the next numeric-generic repair
+  or an ordinary generic numeric consumer, and remove when those controls
+  pass through the existing compiler path.
 
 - **Validate further sharing of dense Result evidence when larger consumers need it.**
   The [cost comparison](../research/investigations/result-proof-transport/DESIGN.md#selected-cost-result)
