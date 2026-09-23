@@ -427,12 +427,11 @@ Copying stays near startup cost. Independent calls add immutable call datums;
 joins retain several conditional contexts. Both expose steep growth: at 32
 steps, candidate compilation is about 25 times baseline for outcome additions
 and 28 times for joins. This supports an executable local transport experiment,
-not a claim of cheap general refinement checking. Matrix sharing/projection is
-a concrete TODO with these measurements as its baseline. Defer that change
-until a matched precision/cost experiment or a real program needs many live
-outcomes: ordinary composition and maintained programs can be exercised without
-it, and changing the stored fact set needs its own correspondence argument.
-No acceptance limit hides the measured cost.
+not a claim of cheap general refinement checking. Matrix sharing/projection
+was deferred pending a matched precision/cost experiment or a real-program
+cost signal. The maintained-program comparison below supplies that signal and
+reopens implementation cost. Changing the stored fact set still needs a
+correspondence argument. No acceptance limit hides the measured cost.
 
 Reproduce on macOS from this branch. Set `wf_result_compiler` to the prebuilt
 baseline or candidate executable, and create `wf_result_scratch` as above.
@@ -451,6 +450,191 @@ byte-for-byte identical, while the runtime transport case executes the newly
 accepted success and error paths. This is evidence of erased transport on
 these inputs; runtime representations and lowering were not changed.
 
+### Maintained-program cost and optimization criterion
+
+A second comparison on the same host uses the exact pre-merge parent
+`e8e1c411` and the merged implementation `a1aa1aa7` (the same tree as merge
+`8d6da723`). The six maintained workloads' source files are unchanged. Both
+compilers use the gate profile; one warmup per compiler/workload precedes five
+alternating paired samples. The timed operation remains the complete
+`--emit-llvm` invocation, with no compiler build, native linking or execution.
+[program-cost.csv](program-cost.csv) retains the samples; like the scale data,
+it serves this representation comparison and can be retired when superseded.
+
+| Workload | Before transport ms | With transport ms | Before MiB | With MiB |
+|---|---:|---:|---:|---:|
+| Dense container control | 33.407 | 33.626 | 15.95 | 15.53 |
+| Grayscale conversion | 24.089 | 25.164 | 12.14 | 11.92 |
+| Telemetry packet | 25.816 | 27.263 | 12.86 | 12.56 |
+| Prefix expression | 23.593 | 23.953 | 11.25 | 11.34 |
+| wfgrep | 824.066 | 847.021 | 249.52 | 252.27 |
+| Raw DEFLATE vectors | 227.915 | 697.128 | 78.22 | 115.53 |
+
+The DEFLATE ranges are 227.076-233.065 ms before and 691.773-697.451 ms after;
+all six final LLVM pairs are byte-identical. This exposes a real-program
+regression, rather than establishing a whole-suite slowdown or attributing
+cost to a specific checker function. The DEFLATE workload has many direct
+matches and separate checking functions; it is not the synthetic workload's
+33 simultaneous local outcomes.
+
+Before selecting an optimization, require unchanged acceptance and retained
+proof validity, including ordinary fallback candidates, conditional guard
+isolation, replacement, support kills, joins and loop boundaries. Compare
+against the unoptimized compiler on identical maintained and scaled inputs,
+with prebuilt binaries and alternating samples. The practical target is to
+bring DEFLATE within 25% of the pre-transport cost and cut both 32-step outcome
+and join costs by at least half, without a reproducible regression above 10%
+on the other maintained workloads. These are experiment selection criteria,
+not compiler acceptance limits. A missed criterion requires investigating the
+remaining cost; it does not justify weakening proof rules. Profile first;
+prefer preserving the existing closure's completed work over introducing
+another solver or omitting facts. Any representation choice must state its
+correspondence argument before it is selected by timing.
+
+The paired comparison is available through the existing research runner:
+
+```sh
+rustc --edition=2024 -O research/investigations/result-proof-transport/probe.rs -o "$wf_result_scratch/probe"
+perl .github/run-check.pl result-proof-cost "$wf_result_scratch/probe" \
+  "$wf_result_before" "$wf_result_scratch/comparison" \
+  --compare "$wf_result_after" "$PWD"
+```
+
+It emits every sample to `comparison.csv`, includes the six maintained
+workloads and all twelve existing scale inputs, and compares the emitted LLVM
+after every paired round. Compiler construction remains a separate command;
+both paths must name prebuilt gate-profile executables.
+
+The first attribution used macOS `sample` on the unoptimized `a1aa1aa7`
+compiler during the DEFLATE invocation: 316 of 470 sampled driver stacks had
+`close_with_row_pruning` at their leaf. Major callers included ordinary
+pre-kill closure following Result selection. This single short sample locates
+an investigation target, not a precise phase-time partition. Code inspection
+then found that importing an equal or weaker bound marked a closed cell fresh
+even when its selected numeric value did not change. Reimporting a closed
+Result snapshot therefore scheduled ordinary matrix cells for closure again.
+
+The isolated first experiment preserves the full layer's closure record when
+a new candidate cannot improve its selected bound, and separately preserves
+the ordinary layer's record when no non-call candidate improves that layer.
+A new disequality matters only to a layer that did not already contain it.
+Every distinct proof candidate is still stored: a weaker or equal candidate
+can become necessary after another proof's support is killed. This is an
+implementation correction under the existing incremental-closure decision;
+it does not select a different witness or numeric fact family. The matched
+timing comparison tests whether these unnecessary fresh marks explain the
+observed regression before changing conditional-state representation.
+
+That isolated change (`b9e11c81`, with test/research additions at `f2c22f52`)
+reduces DEFLATE from 700.756 to 371.629 ms against current unoptimized main
+`1b916975`; its five-sample ranges are 692.687-710.006 and 368.197-373.060 ms.
+This supports the attribution but misses the practical target, so it does not
+end the investigation.
+
+### Closure reuse and correspondence
+
+The selected implementation preserves the closed numeric core when starting and
+substituting a conditional context through the existing copy-on-write fact
+stores. A fresh context takes the already materialized ordinary numeric
+snapshot, drops writer-origin and opaque-goal
+metadata, and uses the existing term kill to remove private payload parameters.
+Its numeric bound and disequality candidates, including ordinary fallbacks,
+are exactly the previous filtered import. Removing metadata cannot remove a
+numeric consequence because materialization precedes that projection; opaque
+goals themselves have never been part of Result transport.
+
+Substitution similarly starts with the materialized numeric snapshot, kills
+the substituted source term, and reinstalls the mapped incident candidates
+with their ResultTransport parents. Nonincident candidates are unchanged. This
+produces exactly the old candidate substitution set while preserving the closed
+core among unaffected terms. A destination already present may introduce new
+paths; the existing insertion and kill records require those paths to close
+normally. No claim that arbitrary substitution preserves a complete closure is
+needed. Both layers retain their separate candidates and closure records.
+
+It prepares one ordinary snapshot per predecessor at a join, kill or scope
+exit, then imports that same snapshot into each independent Result.
+Previously each import rematerialized an unchanged ordinary state with a new
+snapshot event. The facts and support are identical at this shared flow point;
+the materialized witness can be shared. No conditional context is shared
+between distinct guards.
+
+Refreshing also reuses an ordinary core covering more registered terms than
+the conditional core: repeated calls add immutable datums after earlier
+contexts were captured. It filters private payload parameters from the ordinary
+snapshot, then imports every original conditional candidate. This is exactly
+the previous candidate union, including all ordinary fallbacks. Core size only
+chooses a reuse opportunity; all fresh and weakened cells still undergo the
+existing closure. Candidate/provenance sets are preserved, while a different
+valid equal-bound witness may win when import order reverses. Contradictory
+contexts remain absorbing. The direct correspondence test compares both an
+unseeded context and one with an older closed core, including S12 removal.
+
+The narrower variant at `16fed4e5` reused the ordinary core only when the
+conditional context had none. It reduced the 32-join case to about 264 ms and
+106 MiB but left independent outcomes at about 374 ms: existing smaller cores
+still repeated closure over later call datums. Reusing the larger core addresses
+that measured case without adding a lifetime analysis or omitting any fact.
+
+This private representation change stays inside FactState and the Result flow
+child. The walker still owns event order, and no additional solver, acceptance
+budget or lifetime analysis is introduced. The approved supplement is recorded
+in `design/compiler/checker-facts.md`. Smaller
+predicate sets and last-use tracking are declined for this change because they
+need broader correspondence arguments; the measured question is whether reuse
+of already completed numeric work suffices.
+
+### Selected cost result
+
+The final compiler code is `f16eea6b`, compared with unoptimized `1b916975` in
+the same environment and gate profile as the maintained-program measurement.
+[optimization-cost.csv](optimization-cost.csv) retains every warmup and measured
+sample, including the isolated first experiment and the pre-feature comparison.
+The table gives medians of five alternating pairs and maximum measured RSS;
+the CSV retains each range. All eighteen workloads produce identical LLVM in
+every paired round.
+
+| Workload | Unoptimized ms | Optimized ms | Peak MiB before / after |
+|---|---:|---:|---:|
+| Dense container control | 33.812 | 34.370 | 16.62 / 16.78 |
+| Grayscale | 24.751 | 24.500 | 11.95 / 12.45 |
+| Telemetry | 28.538 | 27.336 | 12.59 / 12.58 |
+| Prefix expression | 24.038 | 24.122 | 11.17 / 11.30 |
+| Wfgrep | 839.589 | 833.489 | 247.44 / 244.06 |
+| Raw DEFLATE vectors | 691.728 | 279.112 | 111.45 / 86.58 |
+| Copies 4 | 19.929 | 19.967 | 10.12 / 10.22 |
+| Copies 8 | 20.644 | 20.453 | 10.38 / 10.36 |
+| Copies 16 | 21.507 | 21.606 | 11.14 / 11.05 |
+| Copies 32 | 23.873 | 25.577 | 12.61 / 12.59 |
+| Independent outcomes 4 | 21.353 | 20.391 | 10.53 / 10.53 |
+| Independent outcomes 8 | 25.268 | 21.949 | 12.25 / 11.45 |
+| Independent outcomes 16 | 61.832 | 28.451 | 19.41 / 17.08 |
+| Independent outcomes 32 | 591.040 | 61.515 | 57.75 / 36.23 |
+| Joins 4 | 21.827 | 21.469 | 10.73 / 10.75 |
+| Joins 8 | 28.364 | 25.689 | 13.19 / 12.80 |
+| Joins 16 | 79.097 | 50.528 | 33.59 / 24.14 |
+| Joins 32 | 728.315 | 267.276 | 214.42 / 105.83 |
+
+DEFLATE falls by 59.6%, independent outcomes by 89.6%, and joins by 63.3%.
+The DEFLATE ranges are 687.905-698.689 and 276.630-280.973 ms; the final
+median is 22.5% above the original pre-feature 227.915 ms, meeting the stated
+25% target. Both large scale cases exceed the 50% reduction criterion. Other
+maintained workloads show no regression above 10%; the copying scale control
+at 32 steps increases by 1.704 ms (7.1%). These whole-CLI observations do not
+establish zero transport overhead or a whole-suite speedup.
+
+A fresh paired comparison against pre-feature `e8e1c411` confirms the target:
+DEFLATE is 225.091 ms (222.413-228.038) before transport and 275.585 ms
+(274.754-279.796) after this optimization, a 22.4% increase. The final code
+still costs 62.147 ms versus 22.377 ms for 32 independent outcomes, and
+265.133 ms versus 26.281 ms for 32 joins. The feature's proof work has not
+become free, even though the selected reduction criteria are met.
+
+The representation still stores a dense matrix per live conditional value,
+and a join still processes every surviving context. The remaining scaling
+opportunity and its reopening criterion are kept in TODO; broader storage or
+last-use analysis is not necessary to meet this measured target.
+
 ## Candidate evidence and remaining validation
 
 With the candidate compiler, the same current runner accepts `--candidate`
@@ -461,14 +645,22 @@ perl .github/run-check.pl result-proof-probe "$wf_result_scratch/probe" \
   "$wf_result_compiler" "$wf_result_scratch/results" --candidate
 ```
 
-The unified path, after removing the old direct-match and selected-receiver
-code, passes all 35 candidate probes: 25 accepts and 10 expected rejections.
-The compiler's 950 semantic unit tests pass, including independent retained-DAG
+The original unified path, after removing the old direct-match and selected-receiver
+code, passed all 35 candidate probes: 25 accepts and 10 expected rejections.
+Its 950 semantic unit tests passed, including independent retained-DAG
 arithmetic/substitution checks and the maintained real-program proof inventory.
 A first complete library run exposed eight expectations for the retired rules;
 those expectations were revised against the amendment and the semantic suite
 was rerun. Complete gate results and their tested revision are reported in
 [PR #87](https://github.com/mbbill/Whitefoot/pull/87).
+
+The cost revision repeats all 35 probes and adds implementation-specific
+observations to the maintained tests: exact candidate-set agreement for
+substitution into an existing destination and refresh from a larger core,
+before and after S12 removal; equal-value witness replacement and fallback;
+and eager complete-closure comparison at every proof point in the existing
+Result value-transport and conditional-join cases. These protect candidate
+provenance and closure records without duplicating normative case ownership.
 
 The formal corpus adds a runtime value-transport case and a conditional-join
 case, and negative cases for replacement, mutable support, guard isolation,
@@ -492,7 +684,8 @@ Design suitability: a private child of the existing entailment flow owns
 conditional evidence construction, selection and joins. The parent retains
 ordinary event order and callable authority; no second solver, runtime state
 or body-private interprocedural summary is introduced. Dense per-local contexts
-have the measured cost above; sharing/projection is a follow-up with explicit
-precision and cost criteria. This evidence does not constitute a general
+reuse the ordinary numeric core under the measured criteria above; further
+storage sharing remains a follow-up with explicit precision and cost criteria.
+This evidence does not constitute a general
 soundness certificate; the independent review and current validation status
 belong to the PR.

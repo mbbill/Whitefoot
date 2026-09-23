@@ -35,6 +35,20 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   operation selection and implementation to the requested conversion review;
   reopen when that review starts or a real numeric workload needs a workaround.
 
+- **Validate further sharing of dense Result evidence when larger consumers need it.**
+  The [cost comparison](../research/investigations/result-proof-transport/DESIGN.md#selected-cost-result)
+  still places 32 independent outcomes at about 62 ms and 32 joins at about
+  265 ms, versus 22 and 26 ms before value-associated proof transport. A dense
+  matrix remains per live value and every surviving context participates in a
+  join. Sharing more unchanged ordinary cells may reduce this cost, but the
+  benefit and representation complexity remain unmeasured. Require matched
+  time/RSS improvement on a larger real consumer, identical acceptance and
+  valid retained proofs, and candidate/fallback preservation through support
+  kills and joins. Defer a broader storage change because numeric-core reuse
+  meets the recorded real-program and scale targets; reopen when more live
+  Results or wider storage support makes this cost material. The language
+  extensions below remain a separate question.
+
 - **Joined reference proofs lose useful target-relative information.** A
   reference selecting either of two freshly empty Slots cannot establish the
   append precondition from both constructors' facts; captured disjoint ranges
@@ -482,15 +496,9 @@ each is resolved by a discussion and a tree change.
   library example needs one of these boundaries. Validate matched direct/local/
   projected programs, alias and descriptor writes, joins, loop iterations and
   stronger-contract negatives before choosing an extension; do not infer a
-  general refinement system from the local-result implementation. Also assess
-  sharing or projecting per-local conditional fact matrices when many outcomes
-  remain live: 32 outcome additions measured 585 ms versus 23 ms at the
-  baseline, and 32 chained joins measured 721 ms and 214 MiB peak RSS. These
-  are whole compilations of small sources; the benefit and precision tradeoff
-  of sharing/projection remain unverified by that observation. Compare checking
-  time, retained evidence and peak memory
-  on the investigation's scaled sources before selecting that representation
-  improvement. These extensions are deferred because the selected ordinary
+  general refinement system from the local-result implementation. Conditional
+  fact representation cost is the separate compiler defect above. These
+  language extensions are deferred because the selected ordinary
   local composition rule can be validated without widening the storage or
   predicate vocabulary.
 - **Declaration and call-boundary syntax after the ownership redesign.**
