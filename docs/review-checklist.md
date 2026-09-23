@@ -114,7 +114,8 @@ Source: [repository hygiene](../AGENTS.md#repository-structure-and-hygiene).
 - [ ] **A4 — Artifact hygiene.** No scratch output, personal filesystem path,
   credential, or machine-local setup has leaked into the diff. New/modified
   artifacts use English. Tooling uses the project's native path unless its
-  different role justifies another tool; the two agent entry files agree.
+  different role justifies another tool; `AGENTS.md` remains the single
+  agent-instruction source.
 
 ## D. Documentation — changed prose, comments or examples
 
