@@ -1090,6 +1090,23 @@ The existing conformance negative keeps its verdict and body; only its
 incorrect same-category explanation is corrected. This changes no language
 rule or lowering policy.
 
+The next failure was a transitive nominal allocation layout, not an OP-9
+source rejection. A generic `empty_store<T, fn consume>` constructs
+`Slab<Envelope<T>>` and passes a specialized envelope consumer to cleanup.
+During template checking the allocator's nominal element can still contain
+the outer `T`; a shallow concrete-substitution test treated that nominal as
+resolved and raised `InvalidResolution`. The repair uses the existing
+recursive substitution stabilization on the allocation operation's arguments.
+Only an actually unresolved type/const vector defers its schema obligation;
+concrete replay still computes and proves the same byte ceiling. The
+`transitive_nominal_allocation_layouts_remain_symbolic_until_replay` regression
+checks an unused schema, its concrete invocation, the exact 16-byte-stride
+u64 allocation bound, and OP-9 rejection one element above it. The boundary
+positive is semantic evidence, not a claim that the selected native target
+can allocate that extent. This repair changes neither OP-9 nor the target
+layout limit. It removes the semantic failure in the complete composite;
+its subsequent executable nominal inventory still needs lowering validation.
+
 | Candidate or control | Discriminating property |
 | --- | --- |
 | Compose the current public heap and scan to repair positions | Establishes an ordinary executable fallback, but an O(n) scan after each update/removal fails the selected O(log n) indexed-operation requirement. It is not the proposed production path. |
