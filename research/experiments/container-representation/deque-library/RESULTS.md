@@ -459,3 +459,17 @@ retained scalar reverse results vary more in the new cohort, and the samples
 still have one-microsecond granularity. The evidence supports retaining the
 same lowering-improvement questions, not asserting a speedup, regression
 threshold or general native parity from small ratio differences.
+
+Requalification after main PR #87 used merge `fd41dcc8` (main `8d6da723`),
+which releases v0.65, and compiler SHA-256
+`0ab0f5730590828c511d0a0d4d90d3131654377ea020e5634f5a0800ff9edb96`.
+Fresh normal and retained optimized WF modules compare byte-for-byte equal
+to the saved v0.64 artifacts in the table above, without normalization;
+both C-control modules are unchanged too. Library, workload, harness,
+native runtime inputs and both CSVs retain their identities. Gate-profile
+compiler construction took 46.75 seconds; Deque emission/optimization
+through the same four Make targets took 0.27 seconds, and the shared
+`slab-deque-v65-emission` interval took 1.14 seconds. This confirms emitted
+WF module correspondence on the recorded Apple Clang 21 / arm64
+configuration. No native relink, execution, probe or timing was repeated;
+the v0.64 CSV remains the dated measured cohort, not a fresh v0.65 result.

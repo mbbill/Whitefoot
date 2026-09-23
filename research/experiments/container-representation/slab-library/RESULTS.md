@@ -309,3 +309,17 @@ Deque emission and its changed-code assembly comparison, took 48.38 seconds.
 No Slab relink, correctness execution or measurement was repeated; the
 original CSV remains historical evidence qualified by this exact
 optimized-module comparison on Apple Clang 21 / arm64.
+
+Requalification after main PR #87 used merge `fd41dcc8` (main `8d6da723`),
+which releases v0.65, and compiler SHA-256
+`0ab0f5730590828c511d0a0d4d90d3131654377ea020e5634f5a0800ff9edb96`.
+Fresh normal and retained optimized WF modules compare byte-for-byte equal
+to the saved v0.64 artifacts, without normalization; both C-control modules
+are unchanged too. The library, workload, harness, native runtime inputs
+and CSV retain their identities. Gate-profile compiler construction took
+46.75 seconds; Slab emission/optimization through the same four Make targets
+took 0.72 seconds, and the shared `slab-deque-v65-emission` interval took
+1.14 seconds. This confirms emitted-module correspondence on the recorded
+Apple Clang 21 / arm64 configuration. No native relink, execution, probe or
+timing was repeated, and no historical measurement is relabelled as a new
+v0.65 result.
