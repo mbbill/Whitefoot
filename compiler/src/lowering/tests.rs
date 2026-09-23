@@ -450,9 +450,7 @@ fn nested_frame_refusals_lower_each_candidate_once() {
                 assert_eq!(function.value_type(range.lower), Some(u64_type));
                 assert_eq!(function.value_type(range.upper), Some(u64_type));
             }
-            let layout = crate::backend::target::TargetLayout::host().expect("supported test host");
-            crate::backend::emitter::emit_llvm_with_layout(program, layout)
-                .expect("the reused ordinary graph must emit");
+            crate::emit_llvm(program).expect("the reused ordinary graph must emit");
         });
     }
 }
@@ -474,7 +472,7 @@ fn a_fitting_loop_retains_its_interface_and_one_extra_field_triggers_rescue() {
         with_ir_mode(source.as_bytes(), OverlapLowering::On, |program| {
             assert_eq!(program.loop_candidate_constructions, 1);
             let source = function(program, "folded");
-            let (splitter, chunk, captures) = source
+            let (chunk, captures) = source
                 .blocks
                 .iter()
                 .flat_map(|block| &block.instructions)
@@ -482,13 +480,10 @@ fn a_fitting_loop_retains_its_interface_and_one_extra_field_triggers_rescue() {
                     IrInstruction::Define {
                         operation:
                             IrOperation::LoopSplit {
-                                splitter,
-                                chunk,
-                                captures,
-                                ..
+                                chunk, captures, ..
                             },
                         ..
-                    } => Some((*splitter, *chunk, captures)),
+                    } => Some((*chunk, captures)),
                     _ => None,
                 })
                 .expect("the fitting or rescued loop must split");
@@ -497,16 +492,23 @@ fn a_fitting_loop_retains_its_interface_and_one_extra_field_triggers_rescue() {
                 program.functions()[chunk as usize].parameters.len(),
                 retained + 3
             );
-            let layout = crate::backend::target::TargetLayout::host().expect("supported test host");
-            let frame = crate::backend::target::parallel_lane_frame_layout(
-                layout,
-                program,
-                &program.functions()[splitter as usize],
-                false,
-            )
-            .expect("valid frame layout")
-            .expect("the selected frame fits");
-            assert_eq!(frame.size(), if capture_count == 27 { 256 } else { 48 });
+            // Observe the frame actually requested by this one split through
+            // the public emitter, without reaching into target-private layout.
+            let module = crate::emit_llvm(program)
+                .expect("the fitting or rescued graph must emit")
+                .into_string();
+            let frame_bytes = module
+                .lines()
+                .filter_map(|line| line.split_once("call ptr @wf__par_acquire_lane(i64 "))
+                .map(|(_, call)| {
+                    call.split_once(')')
+                        .expect("closed lane-acquisition call")
+                        .0
+                        .parse::<u64>()
+                        .expect("the emitted frame has a constant byte count")
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(frame_bytes, [if capture_count == 27 { 256 } else { 48 }]);
         });
     }
 }
