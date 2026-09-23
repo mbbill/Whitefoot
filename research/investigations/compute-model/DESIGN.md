@@ -1990,6 +1990,22 @@ not timed search comparisons. All 50 recorded runtime/probe input and artifact
 hashes checked unchanged after execution. The bounded probe ends here, with
 no executor, cancellation, grain-policy or live-tree revision selected.
 
+### Main correspondence (2026-09-23)
+
+After merging main `9bed1c33`, the unchanged source was checked and emitted
+with gate CLI
+`f883886c1a0ab3c292419aa9ede5353b41656b9bb30256148bdb016ac0208fbc`.
+Its 380 tracked compiler/specification inputs match that main revision; the
+saved CLI was reused and its original construction cost is unrecorded.
+Both complete raw LLVM modules are byte-identical to the original `3d7fa496`
+modules, and all 52 parallel and 43 sequential ledger records match exactly.
+The separate guarded emission stages took 0.62 and 0.10 seconds under their
+30-second caps. The same evidence stream retains these identities and
+comparisons separately. Native inputs and the original artifacts remain
+unchanged, so the existing native qualification is reused without native
+reconstruction or execution; this supplies no new performance measurement
+and does not relabel the original dated result.
+
 ## Sparse destination routing trial (2026-09-21)
 
 This bounded continuation starts at merged `3402048f` and asks whether useful

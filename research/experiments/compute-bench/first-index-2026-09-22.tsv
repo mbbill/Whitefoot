@@ -315,3 +315,34 @@ raw	oracle	== END first-index-oracle: 0.42 s, exit 0 ==
 verification	post-run-input-check	all 39 runtime input hashes and 11 probe input/artifact hashes passed shasum -a 256 -c after all execution
 verification	self-control	expected exit 2: mode 0 trace field 4 expected 1 actual 0; not a failed qualification run
 verification	native-result	seq W1, par W1, par W4 each: 1129 fixtures; 9032 index comparisons; 722560 trace fields; 2503616 unchanged input bytes; zero plain and trace steals
+correspondence-2026-09-23	main	9bed1c331097e7e87d6380de9fd26ce9afc3d272
+correspondence-2026-09-23	probe-head	a8660767e0a40e146fea56cc5cfdadc7f25645dc
+correspondence-2026-09-23	compiler-sha256	f883886c1a0ab3c292419aa9ede5353b41656b9bb30256148bdb016ac0208fbc
+correspondence-2026-09-23	reference-commit	3738222a16f8ca9dbcf2be2cef49e9bf358b8075
+correspondence-2026-09-23	compiler-tree	1e3fc486558f15731bffde6bb7d7bb7a2951742a
+correspondence-2026-09-23	spec-tree	7ef746f023363d95dda187942f217ec2afa8ae22
+correspondence-2026-09-23	input-correspondence	380 tracked compiler/specification inputs match main; all 170 depfile inputs present and no newer than binary
+correspondence-2026-09-23	input-manifest-sha256	50d8b002e45ce45d0c0140c6ffbb99781515a1b4cb473c0b03b478fcb08a6651
+correspondence-2026-09-23	parallel-module-sha256	a53b4bb11c4a7afd2deec259315a9a57361b295de79a3ad23fe359cac8ce53c6
+correspondence-2026-09-23	sequential-module-sha256	425e04f657904ec9906785aa012a242c6b8d4885bbe3a9f570d4a2acd5f94e4f
+correspondence-2026-09-23	parallel-ledger-sha256	c0b4bdc15c5566734785c0dc410e72c9a35efa55c3aa3178c4f4f667ecd7c00b
+correspondence-2026-09-23	sequential-ledger-sha256	3f79e99182f4b0a5ea8fc41c0b942ccfe698e9866eb3488b264a00f89424afd9
+correspondence-2026-09-23	construction	reused gate CLI; original construction cost unrecorded; no compiler or native construction in this action
+correspondence-2026-09-23	comparison	parallel raw LLVM byte-identical
+correspondence-2026-09-23	comparison	sequential raw LLVM byte-identical
+correspondence-2026-09-23	comparison	parallel ledger byte-identical
+correspondence-2026-09-23	comparison	sequential ledger byte-identical
+correspondence-2026-09-23	comparison	      52 <current-compiler-artifact>/current-par.ledger
+correspondence-2026-09-23	comparison	      43 <current-compiler-artifact>/current-seq.ledger
+correspondence-2026-09-23	comparison	      95 total
+correspondence-2026-09-23	emission-par	== START first-index-9bed-par-correspondence (limit 30s): <current-compiler-artifact>/whitefootc --par --emit-llvm --par-ledger research/investigations/compute-model/first-index.wf -o <current-compiler-artifact>/first-index-par.ll ==
+correspondence-2026-09-23	emission-par	real 0.55
+correspondence-2026-09-23	emission-par	user 0.05
+correspondence-2026-09-23	emission-par	sys 0.00
+correspondence-2026-09-23	emission-par	== END first-index-9bed-par-correspondence: 0.62 s, exit 0 ==
+correspondence-2026-09-23	emission-seq	== START first-index-9bed-seq-correspondence (limit 30s): <current-compiler-artifact>/whitefootc --no-overlap --emit-llvm --par-ledger research/investigations/compute-model/first-index.wf -o <current-compiler-artifact>/first-index-seq.ll ==
+correspondence-2026-09-23	emission-seq	real 0.04
+correspondence-2026-09-23	emission-seq	user 0.04
+correspondence-2026-09-23	emission-seq	sys 0.00
+correspondence-2026-09-23	emission-seq	== END first-index-9bed-seq-correspondence: 0.10 s, exit 0 ==
+correspondence-2026-09-23	reuse	both complete raw modules and all 52 parallel/43 sequential ledger records match original bytes; original source/modules/logs unchanged by before/after hashes; reuse original native evidence without reconstruction or execution
