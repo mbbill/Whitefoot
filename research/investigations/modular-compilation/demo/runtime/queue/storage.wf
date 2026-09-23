@@ -1,0 +1,22 @@
+alias Task = app::data::Job;
+
+nocopy struct Queue {
+  storage: Ring<Task, capacity>;
+}
+
+fn new_storage() -> storage: own Ring<Task, capacity> pure contract {
+  ensures storage.len == 0_u64;
+  ensures storage.cap == capacity;
+  ensures storage.head == 0_u64;
+} {
+  doc "A module-private constructor used by operations.wf. No declaration in queue.wfm is needed for this internal call.";
+  let built = ring_new::<Task, capacity>();
+  return move built;
+}
+
+observe fn len(queue: &Queue) -> result: own u64 reads(queue) contract {
+  ensures result <= capacity;
+} {
+  doc "The executable getter reads one built-in Ring measure. Its proposed logical realization must be checked from this projection, without assuming its own contract.";
+  return deref(queue).storage.len;
+}

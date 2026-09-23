@@ -1,0 +1,4 @@
+fn boxed_copy<T: copy>(value: own T) -> result: own Box<T> pure {
+  doc "Copies a value into one owned heap cell. The kernel target never instantiates this helper; the inspect target uses it for Report.";
+  return box_new::<T>(value: value);
+}

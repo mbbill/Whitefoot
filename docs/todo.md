@@ -81,6 +81,15 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   preserving requirements, runtime/logical getter agreement and useful
   footprints without runtime proof work; name aliases do not supply that mechanism.
   Copying hidden paths into a public interface does not satisfy self-containment.
+  The [complete queue demo](../research/investigations/modular-compilation/demo/README.md)
+  provides a smaller source witness with provisional notation, not validation.
+  Its constructor also requires abstract aggregate-result observations,
+  proof-only result views and transport through construction/return/binding;
+  merely admitting getter calls does not supply those FN-8/FN-9 extensions.
+  Qualify both entries and the documented rejection/edit probes through the
+  real module compiler when available, including getter realization and
+  runtime-result agreement. Retain the broader GrowVector and precise-effect
+  criteria; the small FIFO does not resolve them.
   Establish component-proof composition, exercise graph-edge deletion and
   SCC changes despite acyclic module imports, and qualify complete LLVM
   planning/cache dependencies. Compare one indivisible LLVM unit per module

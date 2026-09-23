@@ -1,0 +1,16 @@
+root app = ".";
+
+app::data: [];
+app::runtime::queue: [app::data];
+app::runtime: [app::data, app::runtime::queue];
+app::kernel: [app::data, app::runtime::queue, app::runtime];
+app::tools::inspect: [app::data, app::runtime::queue, app::runtime];
+
+target kernel {
+  entry app::kernel::start;
+  no_heap;
+}
+
+target inspect {
+  entry app::tools::inspect::run;
+}

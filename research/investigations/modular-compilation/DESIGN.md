@@ -21,6 +21,14 @@ determine dependency direction. Earlier-only references certify acyclicity;
 changing the declared graph does not itself rename modules. The format below
 is a design sketch, not implemented grammar.
 
+The [complete source specimen](demo/README.md) makes this direction concrete:
+five modules form a fixed-capacity job queue, a function-kind batch consumer,
+an allocation-free entry and a heap-using tool. It includes every interface
+and body, the root graph, a reading order, expected behavior and predicted
+edit effects. Its provisional abstract-capability and logical-getter notation
+is identified explicitly; it is not an executable project or validation of
+the still-missing judgments.
+
 ## Required outcome
 
 1. A module's unchanged bodies do not need to be parsed, resolved, type-checked,
@@ -1444,8 +1452,26 @@ carry GrowVector through an external wrapper and function-kind formal, relate
 runtime getter results to logical observations, preserve its requirements and
 useful effects, and demonstrate correct fact invalidation after mutation.
 A by-value abstract type still needs checked private layout/capability/release
-facts. No getter-admission syntax, effect abstraction or automatic proof family
-is selected here; the existing P2 remains open until those judgments are specified.
+facts. No final getter-admission syntax, effect abstraction or automatic proof
+family is selected here; the existing P2 remains open until those judgments
+are specified.
+
+The [queue specimen](demo/README.md#proposed-notation-used-here) uses
+`observe fn len` to show one public callable in runtime calls, operation
+contracts, a client wrapper and a function-kind formal. The explicit marker
+makes the promised logical use readable without exposing the body; it is a
+notation under evaluation, not a completed admission judgment. Its constructor
+also makes a further requirement concrete: `len(queue: &made)` must describe
+an abstract aggregate result and survive construction, return and binding.
+Current FN-8 forbids both calls and borrows in contracts, and FN-9 does not
+admit that aggregate-result observation. A complete proposal therefore needs
+typed result views, appropriate result-binder scope and placement transport,
+not just permission to spell an accessor call. The specimen's nongeneric
+`nocopy struct Queue: drop;` makes its whole capability pair explicit without
+settling conditional generic capability syntax. Whole-object effects are
+adequate for this FIFO demonstration, but do not replace the precise-effect
+GrowVector qualification above. These assumptions remain research obligations
+rather than new language or live-tree decisions.
 
 The first implementation should connect graph formation, qualified/alias
 resolution, complete interface correspondence and checked composition to the

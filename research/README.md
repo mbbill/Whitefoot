@@ -45,7 +45,10 @@ they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge bounda
   self-contained public interfaces, file-local name aliases, one root file for
   ordered module dependencies, persistent proof dependencies, and incremental
   cross-module optimization through object generation, with ordinary final
-  linking.
+  linking. A [complete source demo](investigations/modular-compilation/demo/README.md)
+  follows a queue through shared libraries, a no-heap entry and a heap-using
+  tool; its graph, interfaces and bodies illustrate proposed syntax, not
+  currently executable compiler behavior.
 
 Open research questions and evidence links are in [ideas](../docs/ideas.md);
 known compiler defects and implementation costs are in [todo](../docs/todo.md).

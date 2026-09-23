@@ -1,0 +1,13 @@
+struct Job {
+  tag: u8;
+  payload: u8;
+}
+
+struct Report {
+  first_tag: u8;
+  second_tag: u8;
+  digest: u8;
+  remaining: u64;
+}
+
+fn boxed_copy<T: copy>(value: own T) -> result: own Box<T> pure;

@@ -1,0 +1,17 @@
+alias fifo = app::runtime::queue;
+alias Job = app::data::Job;
+alias Report = app::data::Report;
+
+fn run_two<fn take(queue: &fifo::Queue) -> job: own Job writes(queue) contract {
+  requires fifo::len(queue: queue) > 0_u64;
+  ensures fifo::len(queue: queue) + 1_u64 == fifo::len(queue: entry(queue));
+}>(queue: &fifo::Queue) -> report: own Report writes(queue) contract {
+  requires fifo::len(queue: queue) >= 2_u64;
+  ensures fifo::len(queue: queue) + 2_u64 == fifo::len(queue: entry(queue));
+} {
+  doc "The function-kind argument is monomorphized to a direct call. The first call's postcondition proves that the second call still has one job available.";
+  let first = take(queue: queue);
+  let second = take(queue: queue);
+  let remaining = fifo::len(queue: queue);
+  return summarize(first: first, second: second, remaining: remaining);
+}

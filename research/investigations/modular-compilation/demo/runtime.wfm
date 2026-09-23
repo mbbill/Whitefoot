@@ -1,0 +1,12 @@
+alias Queue = app::runtime::queue::Queue;
+alias len = app::runtime::queue::len;
+alias Job = app::data::Job;
+alias Report = app::data::Report;
+
+fn run_two<fn take(queue: &Queue) -> job: own Job writes(queue) contract {
+  requires len(queue: queue) > 0_u64;
+  ensures len(queue: queue) + 1_u64 == len(queue: entry(queue));
+}>(queue: &Queue) -> report: own Report writes(queue) contract {
+  requires len(queue: queue) >= 2_u64;
+  ensures len(queue: queue) + 2_u64 == len(queue: entry(queue));
+};

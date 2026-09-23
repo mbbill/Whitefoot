@@ -1,0 +1,25 @@
+alias Work = app::data::Job;
+
+fn new() -> made: own Queue pure contract {
+  ensures len(queue: &made) == 0_u64;
+} {
+  let storage = new_storage();
+  let built = Queue(storage: move storage);
+  return move built;
+}
+
+fn push(queue: &Queue, job: own Work) -> result: own unit writes(queue) contract {
+  requires len(queue: queue) < capacity;
+  ensures len(queue: queue) == len(queue: entry(queue)) + 1_u64;
+} {
+  place_back(window: &deref(queue).storage, value: job);
+  return unit;
+}
+
+fn pop(queue: &Queue) -> job: own Work writes(queue) contract {
+  requires len(queue: queue) > 0_u64;
+  ensures len(queue: queue) + 1_u64 == len(queue: entry(queue));
+} {
+  let taken = take_front(window: &deref(queue).storage);
+  return taken;
+}
