@@ -1,8 +1,8 @@
-alias Job = crate::data::Job;
-alias Report = crate::data::Report;
-alias store = crate::data::boxed_copy;
-alias fifo = crate::runtime::queue;
-alias runtime = crate::runtime;
+alias Job = pkg::data::Job;
+alias Report = pkg::data::Report;
+alias store = pkg::data::boxed_copy;
+alias fifo = pkg::runtime::queue;
+alias runtime = pkg::runtime;
 
 fn run() -> status: own ExitStatus pure {
   doc "Runs the same batch and keeps a copy of its report in one heap cell. The cell receives its ordinary derived release on every return edge.";

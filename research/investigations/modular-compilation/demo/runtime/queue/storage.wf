@@ -1,4 +1,4 @@
-alias Task = crate::data::Job;
+alias Task = pkg::data::Job;
 
 nocopy struct Queue {
   storage: Ring<Task, capacity>;

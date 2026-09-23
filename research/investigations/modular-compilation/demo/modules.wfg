@@ -1,14 +1,14 @@
-crate::data: [];
-crate::runtime::queue: [crate::data];
-crate::runtime: [crate::data, crate::runtime::queue];
-crate::kernel: [crate::data, crate::runtime::queue, crate::runtime];
-crate::tools::inspect: [crate::data, crate::runtime::queue, crate::runtime];
+pkg::data: [];
+pkg::runtime::queue: [pkg::data];
+pkg::runtime: [pkg::data, pkg::runtime::queue];
+pkg::kernel: [pkg::data, pkg::runtime::queue, pkg::runtime];
+pkg::tools::inspect: [pkg::data, pkg::runtime::queue, pkg::runtime];
 
 target kernel {
-  entry crate::kernel::start;
+  entry pkg::kernel::start;
   no_heap;
 }
 
 target inspect {
-  entry crate::tools::inspect::run;
+  entry pkg::tools::inspect::run;
 }

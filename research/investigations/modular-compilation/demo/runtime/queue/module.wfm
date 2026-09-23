@@ -1,4 +1,4 @@
-alias Job = crate::data::Job;
+alias Job = pkg::data::Job;
 
 const capacity: u64 = 4_u64;
 

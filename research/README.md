@@ -43,7 +43,7 @@ they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge bounda
   the cubic closure, relaxing only which equal-bound L0 derivation is retained.
 - [Modular compilation](investigations/modular-compilation/DESIGN.md):
   self-contained `module.wfm` interfaces beside their implementation files,
-  a fixed `crate::` root qualifier, file-local name aliases, one root file for
+  a fixed `pkg::` root qualifier, file-local name aliases, one root file for
   ordered module dependencies, persistent proof dependencies, and incremental
   cross-module optimization through object generation, with ordinary final
   linking. A [complete source demo](investigations/modular-compilation/demo/README.md)

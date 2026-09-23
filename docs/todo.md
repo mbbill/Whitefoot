@@ -24,18 +24,21 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   interface/source and alias grammars with qualified-name factoring; naive
   segmented paths make value/call alternatives share `IDENT ::` prefixes.
   Validate the implicit primary root at the sole graph's directory and the
-  fixed `crate::` qualifier in graph/interface/implementation contexts. A
+  fixed `pkg::` qualifier in graph/interface/implementation contexts. A
   library's internal qualifier must bind to its selected owning root, not the
   consuming application's root; it must not require a user-chosen app/lib name
   or activate the library's own graph. Qualify explicit external names such
   as std independently from the compiler-owned prelude. Complete the external
   binding format and dependency-name environments before claiming reusable
-  cross-crate source: test import-name changes, multiple selected versions,
+  cross-package source: test import-name changes, multiple selected versions,
   references to the primary root from another root and cache separation when
   equal textual paths resolve to distinct source identities. These are open
   design/validation tasks, deferred because the current demo has one source
-  crate; reopen with the first external-library consumer. Do not infer edges
-  from dependency-name bindings or imported graph files.
+  package; reopen when external-library composition is explicitly selected.
+  External-library binding and library-to-library dependencies are deferred
+  beyond the next single-package implementation; no binding syntax, version
+  resolver or graph-import tooling is selected. Do not infer edges from
+  dependency-name bindings or imported graph files.
   Validate canonical roots, row uniqueness, earlier-target
   checks, graph closure and public/implementation lookup against the same row.
   Reject undeclared references even to earlier or transitively reachable

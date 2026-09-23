@@ -251,7 +251,7 @@ module-private declarations, and local spelling collisions still need ordinary
 diagnostics. Splitting a file inside the same module does not grant privacy.
 
 Local uses resolve against the full inventory; dependency uses have an
-explicit root-qualified path such as `crate::counters::advance`, possibly
+explicit root-qualified path such as `pkg::counters::advance`, possibly
 abbreviated by a file-local alias. Module roots, aliases and local names have
 unambiguous ownership. There is no wildcard import, implicit
 transitive import, overload search or cross-module namespace extension.
@@ -291,9 +291,9 @@ one particular executable requires the heap.
 Introduce one header form, illustrated here before ordinary declarations:
 
 ```text
-alias vec = crate::containers::vector;
-alias Vector = crate::containers::vector::Vector;
-alias append = crate::containers::vector::append;
+alias vec = pkg::containers::vector;
+alias Vector = pkg::containers::vector::Vector;
+alias append = pkg::containers::vector::append;
 ```
 
 The file can then use `vec::append`, `Vector` or `append` in the roles their
@@ -314,8 +314,8 @@ An interface must declare its own abbreviations, rather than obtain them from
 implementation files. This keeps reading and concurrent editing local.
 
 Every alias target is a complete root-qualified path beginning with the fixed
-`crate` qualifier or an explicitly selected external dependency name.
-Resolution binds that root in the source's owning-crate context before forming
+`pkg` qualifier or an explicitly selected external dependency name.
+Resolution binds that root in the source's owning-package context before forming
 the canonical identity. It names a module or a source declaration spelling,
 with no file-local alias on the
 right-hand side, relative-parent search, wildcard, grouped import, supplied
@@ -334,7 +334,7 @@ by expected type. Owner-dependent member labels are unchanged: aliases do not
 rename fields, named arguments, payload-field variant labels or result labels.
 Wrong-class uses receive the ordinary domain error. Duplicate alias names
 reject, and every occupied domain obeys the existing collision/no-shadowing
-rules. The `crate` qualifier cannot be rebound, and module aliases cannot
+rules. The `pkg` qualifier cannot be rebound, and module aliases cannot
 shadow an external dependency root available in that source context. They
 occupy the file's IDENT binding space but have no value or callable use.
 
@@ -362,20 +362,21 @@ and no public re-export. The spelling `alias` avoids overloading WF's existing
 is a clarity choice, not a claim of unavoidable ambiguity. The complete
 qualified-name grammar still requires qualification before implementation.
 
-### Fixed current-crate qualifier
+### Fixed current-package qualifier
 
 There is one active `modules.wfg` for a build. Its directory is the primary
 source root, without a declaration such as `root app = ".";` and without a
 choice between application, library or project-name prefixes. Use the fixed
-qualifier `crate::` for the current source crate. A crate here is a selected
+qualifier `pkg::` for the current source package. A package here is a selected
 source root and its dependency identity; it is not a module, executable
 target or LLVM compilation unit. Both a library and an executable's sources
-use the same spelling. Merely having a source root does not create a module
-node or grant any dependency edge.
+use the same spelling. The abbreviation names the package role without
+adopting Rust's term for its compilation unit. Merely having a source root
+does not create a module node or grant any dependency edge.
 
-In the active graph, `crate::` denotes its primary root. In a `.wfm` or `.wf`,
+In the active graph, `pkg::` denotes its primary root. In a `.wfm` or `.wf`,
 it denotes the selected root that owns that source. Thus a library selected
-under a dependency name such as `math` still writes `crate::vector` internally;
+under a dependency name such as `math` still writes `pkg::vector` internally;
 that use resolves to the selected library's vector module, not the importing
 application's vector module. This context comes from explicit source ownership,
 not a search for a nearer graph file. The active graph still registers all
@@ -384,28 +385,32 @@ not import another graph as a dependency authority.
 
 An external source dependency retains an explicit name such as `std` or
 `math`. Its binding selects an actual dependency identity, not a second
-identity for each spelling. External names and the source's owning-crate
+identity for each spelling. External names and the source's owning-package
 context must be recorded resolver inputs. The complete external-binding
 format, including dependency-name environments, multiple selected versions
 and references to the primary root from another root, remains qualification
-work; the single-crate demo does not claim to exercise that system. All such
+work; the single-package demo does not claim to exercise that system. All such
 selection must remain explicit in the one graph, and no name binding grants
 a module edge. The compiler-owned prelude remains distinct from an ordinary
-source library called `std`.
+source library called `std`. External-library selection and library-to-library
+dependencies are deferred beyond the next implementation, which covers the
+primary package's module DAG. No external binding syntax, version resolver or
+graph-import tooling is selected here; reopen that design when external-library
+composition is explicitly selected.
 
 The directory of the unique graph already answers where the primary root
 starts. A freely chosen local prefix therefore added a naming decision without
-solving that problem. A fixed current-crate qualifier [E13] instead distinguishes
+solving that problem. A fixed current-package qualifier [E13] instead distinguishes
 own-source references from named dependencies and lets library-internal names
 survive selection under a caller's dependency name. It is not needed for the
-DAG proof. Own-crate root-qualified paths use this one form rather than a
+DAG proof. Own-package root-qualified paths use this one form rather than a
 second implicit-root spelling; ordinary local names and file-local aliases
 remain available.
 
 ### Filesystem namespace paths and module ownership
 
-Within a selected root, `vector/module.wfm` declares `crate::vector`, and
-`vector/other/module.wfm` declares `crate::vector::other` in that root's source
+Within a selected root, `vector/module.wfm` declares `pkg::vector`, and
+`vector/other/module.wfm` declares `pkg::vector::other` in that root's source
 context. The directory path alone supplies the name; `module.wfm` is a fixed
 interface filename, not a namespace component. There is no independent
 module-name declaration or directory-to-namespace remapping. Distinct selected
@@ -422,9 +427,9 @@ vector/
     core.wf
 ```
 
-The direct `.wf` records beside `vector/module.wfm` implement `crate::vector`.
+The direct `.wf` records beside `vector/module.wfm` implement `pkg::vector`.
 The direct `.wf` records beside `vector/other/module.wfm` implement
-`crate::vector::other`. Neither the
+`pkg::vector::other`. Neither the
 child interface nor its implementation is part of the parent implementation.
 Do not recursively collect `**/*.wf`. A selected implementation record must
 have `module.wfm` in its immediate owning directory; an unmatched
@@ -494,31 +499,31 @@ must have been declared earlier. The following is illustrative notation,
 not accepted build grammar:
 
 ```text
-crate::shared::memory: [];
-crate::vector::other: [crate::shared::memory];
-crate::vector: [crate::shared::memory, crate::vector::other];
-crate::kernel: [crate::shared::memory];
-crate::tools::image: [crate::shared::memory, crate::vector];
+pkg::shared::memory: [];
+pkg::vector::other: [pkg::shared::memory];
+pkg::vector: [pkg::shared::memory, pkg::vector::other];
+pkg::kernel: [pkg::shared::memory];
+pkg::tools::image: [pkg::shared::memory, pkg::vector];
 
 target kernel {
-  entry crate::kernel::start;
+  entry pkg::kernel::start;
   no_heap;
 }
 
 target image_tool {
-  entry crate::tools::image::run;
+  entry pkg::tools::image::run;
 }
 ```
 
 The proposed schema is zero or more explicit external-root bindings, one or
 more module rows, and zero or more named target declarations, in that order.
-No binding declares or renames the primary `crate` root. A target contains
+No binding declares or renames the primary `pkg` root. A target contains
 one entry and optionally `no_heap;`; it cannot change module edges or roots.
 Target names are unique IDENT labels for build selection, not source aliases.
 The graph's directory fixes the primary root. External source locations, when
 written as paths, are explicit relative to that directory, not the process
 working directory or an environment search path. External names and every
-ordinary module-path component use WF's IDENT spelling; `crate` is the fixed
+ordinary module-path component use WF's IDENT spelling; `pkg` is the fixed
 leading qualifier. Implementation
 filenames do not become identifiers. Selected roots and paths must have one
 unambiguous canonical interpretation on supported hosts; multiple names for
@@ -673,10 +678,10 @@ access; prefixes without `.wfm` are still namespaces rather than modules.
 The former ordered-subtree counterexample becomes directly expressible:
 
 ```text
-crate::a::a2: [];
-crate::b::b1: [];
-crate::b::b2: [crate::a::a2];
-crate::a::a1: [crate::b::b1];
+pkg::a::a2: [];
+pkg::b::b1: [];
+pkg::b::b2: [pkg::a::a2];
+pkg::a::a1: [pkg::b::b1];
 ```
 
 Both `a/a1 -> b/b1` and `b/b2 -> a/a2` are legal with unchanged paths. No
@@ -726,7 +731,7 @@ hash or changed numeric position must not invalidate all body proofs.
 The graph file makes dependency declarations inspectable in one place. A
 reader of a `.wfm` still sees its complete public signatures, contracts and
 external references, including every file-local alias, without implementation
-browsing. The owning-crate context and explicitly selected dependency
+browsing. The owning-package context and explicitly selected dependency
 interfaces resolve those references; the graph supplies the root selections
 and permissions, not missing declaration text or implementation-only names.
 
@@ -949,7 +954,7 @@ These families name responsibilities, not a proposed public Rust API:
 | Query | Relevant inputs | Reusable output |
 |---|---|---|
 | Source formation | Interface/source bytes, selected canonical roots, direct directory inventory, grammar/spec identity | Tokens, canonical trees, source maps |
-| Module surface / lookup | Owning-crate identity, explicit external bindings, path components, public/private inventories, relevant file aliases, direct dependency paths, lookup role and spelling | Stable resolved declaration or diagnostic |
+| Module surface / lookup | Owning-package identity, explicit external bindings, path components, public/private inventories, relevant file aliases, direct dependency paths, lookup role and spelling | Stable resolved declaration or diagnostic |
 | Graph formation / edge validation | Root graph bytes, canonical module inventory, exact adjacency rows and earlier-target relations | Resolved roots, stable per-module dependency sets, target declarations and valid order certificate, or located graph diagnostic |
 | Target composition / heap requirement | Selected target, bound entry, declared module closure, concrete call/layout/release/native summaries and target requirement | Checked source composition, current execution closure and satisfied environment requirement, or diagnostic |
 | Module dependency permission | Canonical source/target identities and membership in the source's normalized adjacency row | Allowed direct dependency or missing-edge diagnostic |
@@ -974,7 +979,7 @@ untouched files and bodies.
 Graph parsing projects roots, per-module edges and individual target records
 separately. The source's selected owning root and the external bindings it
 actually resolves are tracked inputs: identical text such as
-`crate::vector::Vector` in two crates must not select one cache identity.
+`pkg::vector::Vector` in two packages must not select one cache identity.
 Conversely an importer's name for a library does not by itself rename all
 internal declarations when the selected identity and bindings stay the same.
 Source checking produces reusable declarations, proofs and heap
@@ -1360,7 +1365,7 @@ must update the affected rules together, not merely remove PROG-1's prohibition.
 |---|---|---|
 | PROG-1/2/3, FN-7 | One ordered bundle, no modules, build-selected unqualified entry | One graph's directory fixes the primary source root; explicit external-root selection, ordered adjacency and named entry targets share that graph; source composition follows declared module closure while ordinary startup obligations remain required |
 | FORM-2/3, GRAM-1/2/3/4/5, DIAG-1 | One root and unqualified name roles | Complete interface/source and root-graph forms, file alias headers, qualified names and diagnostics joining graph rows, aliases, declarations and definitions |
-| TYPE-6, CONST-2, FN-3 | Whole-unit identity; non-function top-level visibility follows source order | Directory-named modules with fixed module.wfm interfaces and shared local names; crate resolves to the source's owning root, external names select explicit dependencies, and only permitted direct interfaces are visible; ordinary privacy, dependency validity and lexical local scope retained |
+| TYPE-6, CONST-2, FN-3 | Whole-unit identity; non-function top-level visibility follows source order | Directory-named modules with fixed module.wfm interfaces and shared local names; pkg resolves to the source's owning root, external names select explicit dependencies, and only permitted direct interfaces are visible; ordinary privacy, dependency validity and lexical local scope retained |
 | Public declaration correspondence / type representation | No separate interface or public/private source boundary | Function declarations without executable bodies in .wfm; exact normalized callable correspondence; either complete public record schemas or abstract public structs with checked private representation/capability correspondence and one nominal identity |
 | Type/ownership/release consumers | Descriptions in one inventory | Same judgments over imported descriptions; privacy grants no storage or release exemption |
 | FN-2/4/6/9, ENT-3.S12 | Whole-unit instances and summary identities | Same instance and SCC rules across modules, with current cached claims and availability |
@@ -1377,8 +1382,8 @@ There is no second module-name declaration, source import list,
 implementation-side `pub` or namespace block. Direct directory membership
 determines implementation records. The one project-root graph file fixes the
 primary root by its location, selects external roots, and lists ordered modules
-with their exact direct dependencies and named entry targets. Current-crate
-references use the fixed `crate::` qualifier in the owning source context.
+with their exact direct dependencies and named entry targets. Current-package
+references use the fixed `pkg::` qualifier in the owning source context.
 The graph's proposed name is `modules.wfg`; exact external-binding,
 graph/target/alias syntax, declaration terminators,
 canonical path/collision rules, abstract nominal/capability syntax and
@@ -1389,7 +1394,7 @@ here.
 | Current implementation owner | Required structural change |
 |---|---|
 | `source.rs`, syntax/canonical rendering | Canonical selected roots, direct directory snapshots, interface/source and graph grammar roots, stable path/item identity and source maps |
-| `resolution/engine*` | Owning-crate and external-root resolution, canonical path namespaces, root-graph adjacency and earlier-target validation, file-local aliases, direct-dependency permission checks, shared local inventories, public closure, correspondence and positive/negative lookup dependencies |
+| `resolution/engine*` | Owning-package and external-root resolution, canonical path namespaces, root-graph adjacency and earlier-target validation, file-local aliases, direct-dependency permission checks, shared local inventories, public closure, correspondence and positive/negative lookup dependencies |
 | `semantic/check.rs`, `check/generics*` | Query-owned body/instance checking and reusable owned results instead of whole-unit borrow chains |
 | `semantic/entailment*`, `postcondition.rs` | Stable claims, retained derivations, current SCC availability and composition |
 | `semantic/model.rs`, allocation/permission consumers | Stable identities and tracked fixed-point/target dependencies |
@@ -1467,8 +1472,9 @@ and expose limits; they are not measurements of WF or proofs of this design.
 - **E13 — [Rust crate qualifier](https://doc.rust-lang.org/reference/paths.html#crate).**
   `crate` resolves from the current crate's root. This is a comparator for one
   fixed own-source qualifier, not a reason to adopt Rust's other path forms,
-  crate build boundaries or package machinery. WF retains its one explicit
-  module graph and separately tracked checking/backend partitions.
+  crate build boundaries or package machinery. WF uses the spelling `pkg`
+  and retains its one explicit module graph and separately tracked
+  checking/backend partitions.
 - **E14 — [Rust module filenames](https://doc.rust-lang.org/reference/items/modules.html#module-source-filenames).**
   Rust permits a named sibling source file or a directory's `mod.rs`, but not
   both for one module. WF has no compatibility requirement to retain two forms;
@@ -1477,8 +1483,11 @@ and expose limits; they are not measurements of WF or proofs of this design.
 
 ## Implementation entry and remaining semantic work
 
-The selected name/graph design can now be translated into the active
-specification and the compiler. That translation is implementation work;
+The selected single-package name/graph design can now be translated into the
+active specification and the compiler. External-library selection, dependency
+bindings and library-to-library composition are deferred; the external-root
+constraints below describe a future extension, not a prerequisite for the
+next implementation. That translation is implementation work;
 this investigation does not claim that a syntax sketch is already a complete
 language amendment. No second checker or temporary trusted-interface path is
 needed for the first usable multi-module build.
@@ -1488,7 +1497,7 @@ The remaining responsibilities are concrete:
 | Area | Required behavior and evidence |
 |---|---|
 | Graph and source formation | The sole modules.wfg fixes the primary root, explicitly selects external roots, orders exact edges and names entry targets with optional no-heap. Architecture, source-module composition and concrete execution closure remain distinct. Each registered directory's module.wfm contains declarations and no executable bodies. Verify complete binding/graph/target/interface/source grammars and canonical renderings with ordinary generator/parser checks. |
-| Identity and lookup | The fixed crate qualifier binds to the source's selected owning root; external dependency-name environments need explicit graph-owned selection. Resolved module/declaration identity is separate from spelling, source revision, physical placement and graph row position. Equal text in distinct crates is distinct; moving a body between files requires equivalent resolved aliases and root context for reuse. |
+| Identity and lookup | The fixed pkg qualifier binds to the source's selected owning root; external dependency-name environments need explicit graph-owned selection. Resolved module/declaration identity is separate from spelling, source revision, physical placement and graph row position. Equal text in distinct packages is distinct; moving a body between files requires equivalent resolved aliases and root context for reuse. |
 | Public correspondence | Form interfaces without reading implementation bodies; compare implementation headers by resolved type/const/function identities and normalized contracts. A matching declaration still needs its checked body and current composition evidence. |
 | Proof composition | Keep FN-6/FN-9 template, instance and recursive-component rules separate from the source DAG. Callers may reuse an unchanged claim only with current availability/evidence; deletion must retract dependencies and rebuild affected fixed points. |
 | Representation and abstract contracts | Public records declare their complete field schema in `.wfm`; abstract public structs declare their name/generics/capabilities there and bind to one private representation. Public getter declarations belong in the interface, their bodies in implementation. Logical getter use and precise public effects need the checked judgments below. |
@@ -1651,7 +1660,7 @@ independently of the selected target; adding an unregistered module on disk must
 name collision. No implementation filename introduces another namespace.
 
 Check that neither an application nor a library declares a local root nickname:
-both use `crate::`. Reject attempts to rebind that qualifier. Qualify graph
+both use `pkg::`. Reject attempts to rebind that qualifier. Qualify graph
 paths against the primary root and source paths against their selected owning
 roots. Reuse unchanged library sources under different consumer dependency
 names without rebinding internal paths to those consumers. Complete and test

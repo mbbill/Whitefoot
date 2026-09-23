@@ -1,6 +1,6 @@
-alias model = crate::data;
-alias fifo = crate::runtime::queue;
-alias run_two = crate::runtime::run_two;
+alias model = pkg::data;
+alias fifo = pkg::runtime::queue;
+alias run_two = pkg::runtime::run_two;
 
 fn start() -> status: own ExitStatus pure {
   doc "An allocation-free entry workload, not a bootable operating system. Its queue owns fixed-capacity storage by value.";
