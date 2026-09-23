@@ -1,0 +1,63 @@
+--- ordered-map-baseline.wf
++++ ordered-map-insertion-candidate.wf
+@@ -119 +119,3 @@
+-fn ordered_map_insert_link<interface OrderedKey<K, E>, V>(link: &Slots<Box<OrderedNode<K, V>>, 1>, pair: OrderedPair<K, V>, env: &E) -> promoted: Option<OrderedEntry<K, V, OrderedNode<K, V>>> reads(env), writes(link) {
++fn ordered_map_insert_link<interface OrderedKey<K, E>, V>(link: &Slots<Box<OrderedNode<K, V>>, 1>, offered: &Slots<OrderedPair<K, V>, 1>, env: &E) -> promoted: Option<OrderedEntry<K, V, OrderedNode<K, V>>> reads(env), writes(link), writes(offered) contract {
++  requires deref(offered).len >= 1_u64;
++} {
+@@ -121 +123 @@
+-    return ordered_map_insert_node::<OrderedKey<K, E>, V>(node: &deref(link)[0_u64].inner, pair: move pair, env: env);
++    return ordered_map_insert_node::<OrderedKey<K, E>, V>(node: &deref(link)[0_u64].inner, offered: offered, env: env);
+@@ -122,0 +125 @@
++  let pair = take_back(window: offered);
+@@ -128,2 +131,12 @@
+-fn ordered_map_insert_node<interface OrderedKey<K, E>, V>(node: &OrderedNode<K, V>, pair: OrderedPair<K, V>, env: &E) -> promoted: Option<OrderedEntry<K, V, OrderedNode<K, V>>> reads(env), writes(node) {
+-  let position = ordered_map_search::<OrderedKey<K, E>, V>(node: node, key: &pair.key, env: env);
++fn ordered_map_insert_node<interface OrderedKey<K, E>, V>(node: &OrderedNode<K, V>, offered: &Slots<OrderedPair<K, V>, 1>, env: &E) -> promoted: Option<OrderedEntry<K, V, OrderedNode<K, V>>> reads(env), writes(node), writes(offered) contract {
++  requires deref(offered).len >= 1_u64;
++} {
++  doc "The borrowed offered slot remains occupied by the old pair on replacement, and insertion empties it at the vacant leaf. The public caller observes these two ordinary outcomes; no same-component postcondition summary is assumed.";
++  let position = ordered_map_search::<OrderedKey<K, E>, V>(node: node, key: &deref(offered)[0_u64].key, env: env);
++  if position < deref(node).entries.len {
++    let order = OrderedKey<K, E>::compare(env: env, left: &deref(offered)[0_u64].key, right: &deref(node).entries[position].pair.key);
++    if order == 0_i32 {
++      swap(first: &deref(node).entries[position].pair, second: &deref(offered)[0_u64]);
++      return None<OrderedEntry<K, V, OrderedNode<K, V>>>();
++    }
++  }
+@@ -131 +144 @@
+-    let next = ordered_map_insert_link::<OrderedKey<K, E>, V>(link: &deref(node).leading, pair: move pair, env: env);
++    let next = ordered_map_insert_link::<OrderedKey<K, E>, V>(link: &deref(node).leading, offered: offered, env: env);
+@@ -135 +148 @@
+-    let next = ordered_map_insert_link::<OrderedKey<K, E>, V>(link: &deref(node).entries[previous].after, pair: move pair, env: env);
++    let next = ordered_map_insert_link::<OrderedKey<K, E>, V>(link: &deref(node).entries[previous].after, offered: offered, env: env);
+@@ -150,7 +162,0 @@
+-  if deref(map).root.len > 0_u64 {
+-    let replaced = ordered_map_replace_node::<OrderedKey<K, E>, V>(node: &deref(map).root[0_u64].inner, offered: &pair, env: env);
+-    if replaced {
+-      let reason = OrderedReplaced();
+-      return OrderedReturned<K, V>(reason: reason, pair: move pair);
+-    }
+-  }
+@@ -157,0 +164,7 @@
++    if deref(map).root.len > 0_u64 {
++      let replaced = ordered_map_replace_node::<OrderedKey<K, E>, V>(node: &deref(map).root[0_u64].inner, offered: &pair, env: env);
++      if replaced {
++        let reason = OrderedReplaced();
++        return OrderedReturned<K, V>(reason: reason, pair: move pair);
++      }
++    }
+@@ -161 +174,3 @@
+-  let promoted = ordered_map_insert_link::<OrderedKey<K, E>, V>(link: &deref(map).root, pair: move pair, env: env);
++  let offered = slots_new::<OrderedPair<K, V>, 1>();
++  place_back(window: &offered, value: move pair);
++  let promoted = ordered_map_insert_link::<OrderedKey<K, E>, V>(link: &deref(map).root, offered: &offered, env: env);
+@@ -173,0 +189,6 @@
++  }
++  if offered.len > 0_u64 {
++    let replaced = take_back(window: &offered);
++    free_empty(window: move offered);
++    let reason = OrderedReplaced();
++    return OrderedReturned<K, V>(reason: reason, pair: move replaced);
+@@ -174,0 +196 @@
++  free_empty(window: move offered);

@@ -77,13 +77,13 @@ implementation replaces individual candidate conclusions.
 
 ## Findings and boundaries
 
-The later trials establish four reusable ordinary-value libraries: Vector,
-Deque, Slab and HashMap, within the contracts in the
-[current completion matrix](#current-completion-boundary-at-v068). The initial
-[x1 probes](../../experiments/container-representation/x1/RESULTS.md) established
-only indexed vacancy exchange and linear-movement ordered drain. Neither
-those probes nor the four libraries establish complete priority/ordered
-families or native parity for every operation.
+The initial study identified ordinary-value representations for six families.
+Its two narrow owned-element operations have checked/native evidence in the
+[x1 probes](../../experiments/container-representation/x1/RESULTS.md): indexed
+vacancy exchange with a must-consume element, and a generic ordered drain with
+linear element movement. The later [completion matrix](#current-completion-boundary-at-v068)
+now records all six complete libraries and their indexed composition in this
+delivery; native parity remains a measured question for each operation.
 
 Three different questions must not be collapsed:
 
@@ -94,8 +94,8 @@ Three different questions must not be collapsed:
 | Resolved snapshot defect | The earlier reserve helper supplied unrestricted u64 capacity to `grow` | OP-9 requires a size bound. The merged library supplies one through `ceiling`; the unbounded research negative remains correctly rejected. |
 
 The family sketches below started as recommendations for implementation trials,
-not adopted library interfaces. The later Vector and v0.63 sections identify
-the executable libraries, their evidence and the selected boundaries. Existing temporary-reference,
+not adopted library interfaces. The current completion matrix and later trials
+identify the executable libraries, their evidence and the selected boundaries. Existing temporary-reference,
 global-heap, no-hole and no-stored-reference choices remain premises. Their grounds are in
 the [data-model](../../../design/language/data-model.md),
 [ownership](../../../design/language/ownership.md) and
@@ -850,18 +850,420 @@ whether one syntax is shorter.
 
 Pool-indexed nodes make descent a scalar-ID loop under REF-1. Store an explicit
 index path for rebalancing and reacquire references after growth or mutation;
-avoid silently re-searching from the root after every iterator step. At the
-v0.60 baseline Box-linked nodes used recursion because loop-carried path
-extension was refused. Current v0.68 REF-1 admits descendant cursors through
-finite loop summaries, and REF-2 preserves an already selected payload
-reference after its match arm ends. The maintained
-[owned-link caller](../../../tests/programs/owned_link_cursors.wf) exercises
-iterative list edits and tree descent; the
-[cursor investigation](../wildcard-path/DESIGN.md) records its limits.
-Recompare pool-indexed nodes, Box-linked cursors and recursion under those
-current rules. A complete ordered container, independent-cursor separation
-and its costs are not established by that traversal witness; an extra
-mechanism still needs a concrete remaining operation or performance problem.
+avoid silently re-searching from the root after every iterator step. The early
+snapshot refused loop-carried Box descent; current REF-1/REF-2 admit it, as
+[owned_link_cursors.wf](../../../tests/programs/owned_link_cursors.wf) exercises.
+Its affine list edit does not establish linear atomic replacement for arbitrary
+owning K/V. Independent cursors under one descendant cover also do not acquire
+equality or disjointness merely from matching suffixes. The current
+[cursor design](../wildcard-path/DESIGN.md) supplies those distinctions; compare
+actual pool, recursive and cursor algorithms before proposing more machinery.
+
+### Ordered map trial at v0.68
+
+**Prospective experiment, not library adoption.** Starting at `345e2966a`, test
+whether a complete arbitrary-K/V B-tree can retain ordinary ownership at useful
+cost. The consumer is a reusable map and an ordinary writer that builds an
+owning record index, replaces and edits records, removes keys, visits bounded
+ranges and consumes the remainder. The existing scalar
+[leaf split](../../../tests/programs/containers/ordered.wf) is only one component.
+This trial selects boxed nodes before the family sketch's pool candidate to
+avoid whole-pool relocation and a new node-ID protocol; measurements may reject
+that choice. The initial ownership probe below supports only its bounded
+transfer and cleanup protocol, not yet the complete map.
+
+Use one common pair region, fixed fanout, and an explicit root vacancy:
+
+```wf
+struct OrderedPair<K, V> { key: K; value: V; }
+struct OrderedEntry<K, V, N> {
+  pair: OrderedPair<K, V>;
+  after: Slots<Box<N>, 1>;
+}
+struct OrderedNode<K, V> {
+  leading: Slots<Box<OrderedNode<K, V>>, 1>;
+  entries: Slots<OrderedEntry<K, V, OrderedNode<K, V>>, 15>;
+}
+struct OrderedMap<K, V, const ceiling: u64> {
+  root: Slots<Box<OrderedNode<K, V>>, 1>;
+  length: u64;
+}
+enum OrderedReturnReason { OrderedReplaced(); OrderedFull(); }
+enum OrderedPut<K, V> {
+  OrderedInserted();
+  OrderedReturned(reason: OrderedReturnReason, pair: OrderedPair<K, V>);
+}
+interface OrderedKey<K, E> {
+  fn compare(env: &E, left: &K, right: &K) -> order: i32 reads(env), reads(left), reads(right);
+}
+```
+
+The generic `N` in `OrderedEntry` avoids a forward nominal reference: writing
+`Box<OrderedNode<K,V>>` before declaring `OrderedNode` rejects as invisible
+under TYPE-6 (the resolution diagnostic is classified TYPE-5). The later node
+can instantiate that earlier entry with itself. This ordinary type argument
+changes neither storage nor the ownership protocol.
+
+The complete library and maintained caller using these shapes now admit and
+execute as recorded below; the representation remains a cost candidate.
+K/V have no copy/drop bound. The ceiling
+limits logical entries; nodes grow by fixed-size Box
+allocation, with no allocation-failure result. Replacement remains available
+at the ceiling. A consistent comparator and environment determine map order;
+negative/zero/positive results suffice, without a -1/0/1 requirement. Every
+descent and local loop must terminate independently of comparison laws,
+provided callbacks return. Environment-backed order is already exercised by
+[the generic priority witness](../../../tests/conformance/cases/run-generic-priority-behavior.wf).
+
+In the API shapes below, M abbreviates `OrderedMap<K,V,ceiling>`, E is the
+comparison environment, and F is a disjoint callback environment. Generic
+function-kind parameters follow the existing HashMap callback forms:
+
+| Operation and typed arguments | Owned result and behavior |
+| --- | --- |
+| `ordered_map_new::<K,V,ceiling>()` | M, initially empty. |
+| `ordered_map_len(map: &M)` | u64; observation requires no caller knowledge of node fields. |
+| `ordered_map_put(map: &M, key: K, value: V, env: &E)` | `OrderedPut<K,V>`; insertion, old complete pair on replacement, or offered pair on logical Full. |
+| `ordered_map_lookup(map: &M, key: &K, key_env: &E, visit_env: &F)` | `Result<R,unit>` from an observing callback, or absent. |
+| `ordered_map_edit(map: &M, key: &K, key_env: &E, edit_env: &F)` | `Result<R,unit>` from a value-editing callback, or absent; the stored key stays read-only. |
+| `ordered_map_remove(map: &M, key: &K, env: &E)` | `Option<OrderedPair<K,V>>`; caller owns every removed key and value. |
+| `ordered_map_each(map: &M, env: &F)` | unit; visit every pair in order. |
+| `ordered_map_range(map: &M, lower: &K, upper: &K, key_env: &E, visit_env: &F)` | unit; ordered half-open `[lower,upper)` visit, empty for equal/inverted bounds under lawful order. |
+| `ordered_map_free(map: M, env: &F)` | unit; explicitly consume every remaining pair and release all nodes. |
+
+Observe/visit callbacks read key and value and write their environment; edit
+reads key and writes value/environment, and may return arbitrary owned R.
+Consume takes owned K and V and writes its environment. Lookup/each/range read
+the map; put/edit/remove write it. All comparisons read their explicit key and
+environment paths. Each callback row is disjoint from other supplied paths
+under EFF-5. No operation requires a borrowed result, stored reference, stable
+node address or caller-proved internal shape invariant. Free's consume order
+is unspecified; the ordered visitor is a separate operation.
+
+The complete mutation chain is part of the experiment, including deletion:
+
+- B-tree promotion moves a complete median pair, so it needs no cloned key.
+  Each entry owns the subtree following its pair; the node's one leading link
+  owns the preceding subtree. Upper entries move together with their links.
+  Parent insertion shifts its filled prefix; re-form child selections afterward.
+- Borrow exchanges the parent separator with a sibling boundary pair and
+  swaps the carried entry's following link with the receiving or donating
+  node's leading link. Prove distinct entry indexes below one captured parent,
+  rather than trusting independent cursors.
+- Merge first extracts the right child Box, then reads its local entry count,
+  places the separator with that node's leading link and appends its entries
+  into the left child. Append empties the local source; subsequent Box
+  consumption/destructuring carries the empty fact to `free_empty`. Capacity
+  depends on entry counts alone, without a separate child-count relation.
+- Internal deletion takes a successor pair from the right subtree and then
+  repairs underflow on return. An underflow at child zero borrows or merges
+  with its right sibling; other children use their left sibling. Insertion
+  similarly carries a promoted entry upward and splits a full receiving node.
+  This bottom-up protocol keeps temporary ownership explicit. Root contraction
+  extracts the root before inspecting its entry
+  count. For an empty root, move its zero-or-one leading link into the now-empty
+  root window and consume the emptied locals. Every detached owner is
+  reinstalled, returned or consumed.
+- Range traversal visits internal pairs as well as leaves, with O(h+k) node
+  work for k results at height h under lawful order. Full visitation/cleanup
+  is O(n); recursively consuming suffixes needs no stored reference stack.
+
+The bounded probe isolates split, merge and root contraction; the maintained
+caller supplies the complete insertion/deletion chain below. OP-12's
+affine/copy update does not admit a linear `set link = f(move link)`. Swapping
+through local None preserves owners but does not publish the vacant variant
+needed to discard a linear temporary; explicit one-slot windows avoid that
+assumption. MSR-3 does not transport nested measures through window extraction.
+PRE-1's `split_off` does not publish the destination's exact transferred count;
+reread measures and use real control flow where needed. REF-3 forbids escaping
+references, and OWN-7/OP-11 retain their alias/ancestry obligations. Do not add
+an impossible Some cleanup arm, silently drop an owner, or call an internal
+shape refusal Full. If these API outcomes cannot express an actual required
+path, report its exact source/rule boundary before altering the contract.
+
+The original two-window candidate had `entries: Slots<Pair,15>` and
+`children: Slots<Box<Node>,16>`. A generic nodrop probe of split, merge, root
+contraction and complete cleanup admits and executes with counted
+take/place/reverse transfers: LLVM admission 0.08 seconds, native construction
+0.62 seconds, all 15 pairs consumed. Replacing its counted split with
+`split_off(source: &deref(left).entries, index: 8_u64, destination: &deref(right).entries)`
+rejects the written `ensures deref(right).entries.len == 7_u64` at FN-9
+(0.03 seconds), since PRE-1 publishes no corresponding destination relation.
+This is a contract limit, not a compiler defect. The counted version costs
+additional movement, which the matched source control must retain.
+
+Deletion also needs the bound on the separate child window after extracting
+a node. A bound on its entry count alone supplies no relation to that other
+window. With only the two entry-count bounds `left.entries.len <= 7` and
+`right.entries.len <= 7`, removing the independent child-count requirements
+from the otherwise admitted merge refuses this statement under FN-8:
+
+```wf
+append(destination: &deref(left).children, source: &deref(right).children);
+```
+
+It cannot prove the required
+`right.children.len <= left.children.cap - left.children.len`; the actual
+frozen-compiler check took 0.03 seconds. No language rule derives that relation
+from the entries' lengths. The bundled candidate above removes this
+particular capacity premise by attaching each following edge to its separator
+entry. Its zero-or-one links are ordinary data, not stored references or a
+new proof mechanism. Its nodrop split, sibling borrow/merge and root-contraction
+probe builds in 0.62 seconds and executes in 0.44 seconds, consuming all 15
+pairs on the expected merged branch. The full map subsequently passes the
+independent operation-chain oracle below; cost measurements remain outstanding.
+A two-window implementation with a genuine
+checked operation protocol remains an alternative; an impossible failure arm
+added only to discharge its missing relation does not establish that protocol.
+
+| Alternative | Ground for retaining it, and present scope |
+| --- | --- |
+| Boxed AVL | Complete find/edit/replace/remove and range visitation via two one-slot links and a balance enum; rotations transfer Box owners. Per-entry allocation and dependent loads may lose to B-tree fanout, while wide payload occupancy may win. Include a bounded native comparison before claiming a default winner; no second WF library is budgeted initially. |
+| Pool-indexed B-tree | Materialized vacant nodes can retain empty windows and copied child IDs, avoiding extraction/cleanup problems. Growth relocates materialized node storage and adds ID validation/reuse work. Existing Slab is bounded and its visit is read-only; it is not already this growing node pool. |
+| B+ tree | A copied leaf separator requires copy/clone K; stable IDs to centrally owned keys avoid that bound but add ownership, indirection and separator-refresh protocols. Retain for a concrete scan/identity requirement, without assuming the scalar split generalizes. |
+
+Current [target layout](../../../compiler/src/backend/target.rs) gives both
+`Option<Box<Node>>` and `Slots<Box<Node>,1>` 16 bytes; a native nullable pointer
+is 8. Do not charge an extra word to Slots relative to WF Option. Repeated Pair
+fields in Leaf/Branch variants duplicate storage under the current product
+enum layout. For eight-byte-aligned pair size P, the bundled node is `15P+264`
+bytes: 504 for P=16 and 4,224 for P=264, before allocation overhead. It spends
+120 bytes more than the initial two-window node (`15P+144`). At 7--15 entries
+per non-root node the new shape reserves about 72--34 or 604--282 bytes per live
+pair. The lower-space two-window/direct C controls must not be relabelled as
+layout-matched to this candidate.
+A WF binary node with two links and a three-state balance enum is about P+40.
+These are layout deductions; occupancy and timings remain measurements.
+
+**Comparison budget and criteria, fixed before coding/timing.** Implement one
+complete WF B-tree, a source-shaped C B-tree and a direct C B-tree. Both C
+controls are required; compare ordinary optimization and a retained-public-helper
+mode with public operations and callbacks kept out of line in every language.
+Private node helpers remain ordinarily optimizable. Match comparator and
+callback work, ownership outcomes and ceiling policy. The source-shaped control
+matches WF headers/branches/transfers; the direct control may use efficient
+native layout and movement. Add one complete native AVL within this matrix if
+feasible; without it report B-tree costs without claiming a default ordered
+representation. No fanout sweep, second WF tree or new language mechanism is
+part of this first budget. Initial program construction is bounded to 120
+seconds, complete correctness execution to 40 seconds and the timing matrix to
+60 seconds, measured separately; compiler builds and the canonical gate have
+their own recorded costs. Investigate any exceeded stage before extending its
+budget, and record the reason before another run. These experimental budgets
+never select source acceptance.
+
+| Axis | Bounded selection |
+| --- | --- |
+| Payload | 16-byte scalar pairs and 264-byte inline pairs; separate owning/nodrop correctness instances. |
+| Live count | 8, 256 and 4,096: one leaf and sizes forcing multiple levels with fanout 16. |
+| Work | Build; balanced hit/miss lookups; fixed-cardinality remove/reinsert and replacement churn; bounded range visits; final cleanup. Identical deterministic operation streams and callback digests across controls. |
+| Sampling | One warm-up and five paired samples with alternating execution order; shared batching, build time separate. Investigate abnormal stage cost; repeat only for unresolved variance or changed code. |
+| Accounting | Execution time, allocations, node occupancy, reserved/peak bytes, pair/pointer transfers, retained guards and generated helper code. |
+
+Reject whole-node copying per descent, quadratic full traversal/cleanup, or
+comparator-dependent termination before interpreting timings. Split/merge work
+must stay O(B), with no relocation of unrelated nodes. A representation
+dominated across this matrix lacks default-selection grounds; explain mixed
+results by workload instead of declaring universal native parity or an upfront
+winner. Any proposed compiler/proof improvement needs the completed ordinary
+consumer and an isolated material cost or exact rule discrepancy.
+
+The first admitted source leaves two concrete insertion costs for that
+comparison: it searches for replacement before a second descent for an absent
+key, and passes the offered Pair by value through recursive insertion. The
+source C control must preserve both. If either materially separates it from
+the direct control, a single descent could combine replacement with insertion,
+while an ordinary one-slot Pair carrier could keep descending arguments
+pointer-sized and take the owner only at the leaf. These are source-level
+alternatives, not a request for a new mechanism. The first must retain
+replacement at the logical ceiling and return an absent offered owner without
+mutation; the second must prove its entry/exit length through each recursive
+helper, or use an ordinary occupancy outcome without assuming a recursive
+postcondition. Neither alternative is selected by admission alone.
+
+Correctness uses an independent sorted oracle and exact owner accounting:
+zero/one entries, root splits, both borrow directions, merges, internal-key
+deletion, contraction to empty, reuse, equal-key replacement with distinct
+owners, edit returning an owned value, empty/inverted ranges and partial final
+cleanup. Hostile comparisons check bounded progress and ownership, not sorted
+semantics. The owning/nodrop chain must cover every operation above.
+
+The complete [library](../../../lib/containers/ordered-map.wf) and
+[maintained caller](../../../tests/programs/containers/ordered-map-program.wf)
+now pass that chain through the existing container corpus harness. The
+independent sorted-array oracle observes each mutation and traversal; owning
+keys/values, an owned edit result, refusal/retry and hostile comparators share
+an exact serial ledger. Sequential and parallel lowering both pass ordinary
+execution and dirty/quarantined allocation observation. Each observer records
+exactly 103 allocations released once: 22 scalar tree nodes, six owning nodes
+and 75 payload Boxes. The original owning trace consumes serials zero through
+38 once; a separate below-ceiling leaf/internal replacement trace consumes
+serials zero through 35 once, checking old owners before final cleanup. The
+observer's existing bounded record array grows from 64 to 256 entries to hold
+the longer trace; its release and misuse checks are unchanged. No compiler
+change or specification amendment was needed.
+
+Clean gate-profile Rust harness construction took 48.84 seconds including its
+guard. The focused corpus test then took 5.05 seconds: 1.174 seconds WF
+compilation, 2.765 seconds native construction and 1.101 seconds across the
+four executions. These establish the selected operation/ownership observations;
+they do not establish native parity, all structural branch counts or a default
+representation. The expanded replacement caller subsequently passed the same
+four modes in 5.68 seconds after a 3.94-second incremental Rust construction.
+The complete [matched cost matrix](../../experiments/container-representation/ordered-library/RESULTS.md)
+now preserves 1,152 samples including warm-up: wide-pair costs remain material
+against direct C and AVL, while the scalar/range results are mixed. The complete
+canonical gate remains a separate validation stage.
+
+**Design suitability.** Packed boxed nodes trade more balancing source for
+fewer allocations and avoid pool-wide movement. Bundling edges with separator
+ownership removes a cross-window capacity premise at an explicit space cost;
+the measurements must decide whether that tradeoff is useful. Wide-value
+occupancy remains a representation risk and AVL a meaningful alternative. Indexed composite
+work and prior container/lowering cost questions retain their own scope; this
+trial does not close them or amend the language.
+
+#### Single-descent insertion discriminator
+
+The complete baseline matrix exposes two ordinary source costs: absent puts
+descend twice and carry an owning Pair by value through each insertion level.
+Before timing a replacement, the candidate combines search and insertion below
+the logical ceiling and passes a reference to a one-slot Pair carrier. At a
+leaf it takes the offered owner; replacement exchanges it with the resident
+pair. Carrier occupancy then distinguishes insertion from replacement at the
+public boundary. No recursive ensures is assumed: FN-9 withholds summaries
+inside the same recursive component. At the ceiling, the existing replacement
+search and unchanged-owner refusal stay in place. Split promotion still returns
+an owned optional entry, so replacement may now pay an aggregate result cost
+that the baseline Boolean search avoids. The comparison must expose this risk.
+
+This is one bounded source candidate, not a second tree or a compiler change.
+Its SHA-256 is
+`ddc53f3bd12e3682c26ea72f33d94da5da787371afb7461fd7d69d1798aca4ec`;
+the published baseline is
+`affaee669a09320aafc9ec5badbea6c11fd95623e1ea8987ad9811742c4b70bb`.
+Both have already passed the maintained caller in sequential/parallel lowering,
+ordinary/dirty allocation modes, with the exact 103-allocation and owner ledger.
+That establishes the tested outcomes, not cost selection. Preserve the candidate
+as a reproducible patch in the existing experiment and reconstruct its source
+only in the experiment build directory until selection.
+
+The following criterion is fixed before candidate timings. Keep the original
+1,152 baseline rows and their identities unchanged. Extend the common WF/C/oracle
+trace with a fifth path that only replaces existing keys below the ceiling;
+all five paths include the same construction, visitation and cleanup accounting.
+Retain both pair widths, all three counts, normal/retained public helpers, the
+same deterministic operation stream, one warm-up and five measured samples.
+Native source C stays baseline-shaped, with its existing alias qualifications;
+direct C and AVL stay alternative controls. Only the shared trace and harness
+gain the replacement path. Freeze those sources before any timing.
+
+Build baseline and candidate with the same frozen compiler and native toolchain.
+First run A/A as two fresh processes of the unchanged baseline executable,
+then A/B. Each comparison has two complete cohorts with arm/mode order reversed
+and the within-cell implementation order counterbalanced. Each image/cohort has
+1,440 rows including warm-up; two arms, two cohorts and two comparisons produce
+11,520 new rows. Normalize each WF observation by the source-C observation in
+its own arm/sample, and report direct-C/AVL normalization as cross-checks. Do
+not reuse one control observation for both arms.
+
+For each payload/count/path/mode cell, the material-change band is the largest
+of three percent, the absolute A/A normalized median departure from one in
+either cohort, the unchanged source-C median drift between arms, and four clock
+resolution quanta divided by the smaller measured interval. Selection requires
+an insertion/build or churn improvement beyond that band's lower boundary in
+both cohorts, with no other cell showing a loss beyond its upper boundary in
+either cohort. Confirm removed recursive Pair argument transfers in optimized
+IR; do not assign all elapsed change to copying without isolation. No averaging
+across paths or payloads may hide a replacement regression. If cohort direction
+or unchanged-control variation prevents a determination, allow one repeat of
+the entire fixed matrix and retain all rows; a repeatable material loss rejects
+adoption, and an unresolved result remains inconclusive. No selective cell rerun
+or post hoc narrowing is part of this experiment.
+
+Combined initial construction/correctness/timing budgets are 120/40/60 seconds,
+including that optional full repeat; compiler construction and the canonical
+gate remain separate. An exceeded stage requires investigation before another
+run. Expected improvement is reduced descent and owner transfer; possible cost
+is optional-promotion materialization on replacement. This comparison selects
+only between these two library sources, not a default ordered representation.
+
+The candidate fails that criterion. The complete 11,520-row comparison is in
+[the experiment](../../experiments/container-representation/ordered-library/RESULTS.md#single-descent-insertion-candidate).
+Normal wide replacement at 256 entries costs 1.6214/1.6331 times the baseline
+after source-C normalization in the two cohorts, outside the three-percent
+cell band. Other wide replacement sizes and retained replacement also regress.
+Build improvements therefore cannot select this source. No optional repeat was
+needed to establish the loss. Optimized code removes recursive Pair arguments
+but clears a 288-byte optional promotion on each replacement unwind. This is
+an observed transfer cost, not an isolated or dominant share of elapsed time;
+the follow-up below tests its removal.
+The source-C controls retain different tag/result ABI and alias facts; the
+unchanged-control WF-versus-WF comparison, not a claim of ABI equality, decides
+this experiment. The published library stays at the measured baseline.
+
+#### Borrowed promotion follow-up
+
+The observed optional-result cost justifies one further ordinary source
+candidate within the same B-tree. Recursive insertion borrows both the offered
+Pair slot and one caller-owned promotion slot, returning unit. A split places
+an entry in the promotion slot; a parent observes occupancy, takes that owner,
+and either absorbs it or publishes its own split. Matching replacement never
+creates a promotion. The public helper consumes any root promotion and inspects
+the offered slot for insertion versus replacement. This uses the existing
+capacity/occupancy rules, without a recursive-summary assumption, fabricated
+failure arm, new tree shape or new compiler mechanism. The cost still includes
+initializing the one promotion slot and inspecting its length; removing
+recursive results alone does not establish improvement.
+
+Candidate SHA-256 is
+`5514ce2aecdf2a8074dc8897b0457d6858e7ecf16d2d2fa559dfefb6420f2c8f`.
+On the same frozen v0.68 compiler it admits and passes all four maintained
+native modes with exactly 103 allocations released once. This is source and
+ownership evidence before timing. Preserve a separate reconstruction patch;
+the first candidate and all of its failed comparison evidence stay intact.
+
+Before timing, the follow-up reuses the unchanged five-path WF/C/oracle driver,
+native control algorithms, payloads, counts, seeds, batching and public-helper
+policy of the first candidate comparison. Verify their source/optimized-control
+identities before any run. Compare this candidate against the original baseline,
+with a fresh A/A process pair followed by A/B, both reversed cohorts. Retain
+11,520 new rows including warm-up, separate from both earlier matrices. Apply
+the same per-cell normalization, material-change bands, benefit requirement,
+no-loss requirement and complete-repeat rule written above. In particular,
+replacement losses cannot be averaged against build gains. A repeatable material
+loss rejects adoption; one full fixed repeat is allowed only for unresolved
+variation. No third source candidate is part of this follow-up.
+
+Its combined construction/check/timing budgets are 120/40/60 seconds, including
+any permitted repeat; investigate an exceeded stage before extending it. Confirm
+that recursive helpers have no aggregate promotion result and count remaining
+slot initialization and owner transfers in optimized IR. This experiment tests
+the changed ordinary interface contract, not an inactive-storage compiler
+optimization or a promise that zeroing alone caused the previous regression.
+
+The follow-up also fails its criterion. The complete
+[11,520-row comparison](../../experiments/container-representation/ordered-library/RESULTS.md#borrowed-promotion-follow-up)
+records normal wide replacement ratios of 1.6885/1.6003 at 256 entries, outside
+the 3.13% band, and 1.5313/1.5620 at eight entries, outside 3%. Retained wide
+replacement at both sizes also loses. Build and larger-count churn gains do
+not cancel those losses. No repeat was needed; both exact source candidates
+remain rejected, the published baseline stays unchanged, and there is no third
+candidate in this comparison.
+
+Optimized recursive insertion has no aggregate result or optional-result
+clearing in either mode. The public operation still initializes one 40/288-byte
+promotion slot, and wide Pair placement, swap and returned-owner extraction
+remain. A promoted Entry is staged only when a parent accepts it. Recursive
+wide frames remain 352/368 bytes in normal/retained modes, unchanged from the
+first candidate. These observations do not isolate execution counts or elapsed
+shares. Removing recursive aggregate results did not cure the replacement
+regression and does not establish their earlier clearing as its dominant cause.
+The two candidate percentages come from separate baseline comparisons, not a
+direct paired comparison between candidates. Further source or lowering work
+needs a new discriminator for the remaining per-put storage, owner movement,
+occupancy and frame costs; [the maintained TODO](../../../docs/todo.md) retains
+that attribution task alongside node construction/cleanup and occupancy work.
 
 ## Ceiling challenges connected to real source contracts
 
@@ -1359,7 +1761,7 @@ restoration. The cursor row records its subsequent change:
 | `count(part: &ring[0_u64..0_u64])` in [ring-range.wf](../../experiments/container-representation/x1/ring-range.wf) | REF-4 | Element visitation, copying into Slots, or a full copy-element Array with two physical spans. Only the last preserves zero-copy ranges, and it requires initialization/filler. |
 | `ensures deref(destination).len == deref(entry(destination)).len + deref(entry(source)).len;` in [append-contract.wf](../../experiments/container-representation/x1/append-contract.wf) | FN-9 admits only one datum plus a constant on each relation side | Reread lengths and use ordinary control flow where necessary; an affine postcondition extension is separately proposed work, not assumed here. |
 | `struct Record { header: Header; tail: Array<u8>; }` (declaration fragment) | TYPE-9 permits a runtime-capacity shape only directly as Box content | Encoded byte block, or a separate Box for the tail. Neither is an implicitly packed typed trailing member. |
-| `set cursor = &deref(cursor).next.Some.value.inner;` carried by a loop (path fragment) | The v0.60 REF-1 static-shape restriction and REF-2 arm boundary | Superseded by current REF-1 descendant summaries and REF-2 selected-place retention. Every new payload selection still needs a current variant fact, and destructive ancestor writes still invalidate references. [The current caller](../../../tests/programs/owned_link_cursors.wf) supplies iterative traversal/edit evidence, not a complete ordered map. |
+| `set cursor = &deref(cursor).next.Some.value.inner;` carried by a loop (path fragment) | Historical baseline refusal, superseded by current REF-1/REF-2 | Current [owned cursor tests](../../../tests/programs/owned_link_cursors.wf) exercise iterative descent and affine edits. Each new payload selection still needs its current variant fact, and destructive ancestor writes invalidate references. Linear atomic replacement and independently selected cursor aliasing retain their separate limits; no musttail claim follows. |
 | An `ensures` exporting a returned handle's indexed generation/variant relation | FN-9's relation datums and routes exclude that shape | Return a bounded scalar index, then validate/match locally or inside the consuming callback. Measure repeated checks before widening contracts. |
 
 ## Library home and evidence after the merge
@@ -1375,11 +1777,12 @@ filesystem parent components are not source-envelope names. No separate
 Makefile, test group, import mechanism or library ABI is restored.
 
 This ownership split makes the implementation available to user programs
-without making test support or research models library dependencies. Keep
-the other container fixtures as fixtures until they meet a reusable contract:
+without making test support or research models library dependencies. The
+narrower container fixtures remain component evidence:
 `priority.wf` is a u64 heap of capacity 16, `ordered.wf` exercises leaf splits,
 and the behavior map requires droppable keys and fixes the payload to a Box.
-Their useful coverage does not establish the complete generic families.
+The complete generic families have separate sources and callers in the
+completion matrix below.
 
 At that restoration baseline the GrowVector caller covered scalar and owned droppable Box elements,
 zero capacity, doubling, ceiling saturation, insertion, removal and drain.
@@ -1392,13 +1795,13 @@ Vector trial below supplies the expanded ownership and current cost evidence.
 
 ## Current completion boundary at v0.68
 
-This PR #104 branch contains Vector, Deque, Slab, HashMap, PriorityQueue and
-the complete indexed consumer. The completed OrderedMap has separate pinned
-work-branch evidence below; its absence from this branch's source bundle is
-not an unimplemented operation claim. This matrix supersedes the earlier
-implementation-order recommendation. Later sections retain their original
-experimental revisions. Completing an operation/ownership chain does not
-close its performance or language questions in
+This consolidated delivery contains Vector, Deque, Slab, HashMap,
+PriorityQueue and OrderedMap, plus the complete multi-object indexed consumer.
+All seven operation chains use local source and maintained callers. The
+matrix supersedes the earlier implementation-order recommendation; the trial
+sections retain their original measured revisions and rejected alternatives.
+Completing an operation/ownership chain does not close its performance or
+language questions in
 [the maintained TODO](../../../docs/todo.md).
 
 | Family or consumer | Established operation chain and source scope | Remaining cost boundary |
@@ -1409,15 +1812,15 @@ close its performance or language questions in
 | [HashMap](../../../lib/containers/hash-map.wf) | Generic owning collision/replacement/removal/reuse, lookup/edit, growth/rehash, visitation and consumption | Selected map chain complete. Inactive-storage lowering is the separate PR #101 comparison; wide result/migration costs and double-backing peaks retain their own evidence. |
 | [PriorityQueue](../../../lib/containers/priority-queue.wf) | Arbitrary-T growth, peek/pop/replace-top, heapify, ordered drain and physical cleanup; copy/drop/nodrop callers and exact release ledgers | Plain chain and [matched comparison](../../experiments/container-representation/priority-library/RESULTS.md) complete, with qualified result-boundary and wide-sift costs. The [shared no-op comparison](#measured-shared-core-proposal) shows no repeatable material regression; its remaining single-cohort possible benefit is not a speedup claim. |
 | Indexed composite | [Multi-object weak/retained caller](../../../tests/programs/containers/indexed-membership-program.wf): Slab ownership, HashMap ID lookup/replacement, indexed reschedule/removal with reverse-position repair, expiry/reuse and complete owner cleanup | Complete correctness chain passes both lowering modes and exact 129-allocation ledgers. The [matched comparison](../../experiments/container-representation/indexed-library/RESULTS.md#measured-result) supports qualified shared-core reuse: all 48 indexed cells stay within variation in both series, while native costs depend on payload and operation. Independent tickets, unforgeable membership and surviving references remain unestablished; this is no native-parity claim. |
-| OrderedMap | External [PR #103 library at 44ea33691](https://github.com/mbbill/Whitefoot/blob/44ea33691f42c82c76f03819fe09ac8619fc4faa/lib/containers/ordered-map.wf): arbitrary owning keys/values, find/edit/insert/replace, split/promotion, delete/borrow/merge/root contraction, ordered/range visitation and complete cleanup; the [maintained caller](https://github.com/mbbill/Whitefoot/blob/44ea33691f42c82c76f03819fe09ac8619fc4faa/tests/programs/containers/ordered-map-program.wf) checks 103 allocations and each owner identity. | The [complete baseline comparison and two rejected insertion trials](https://github.com/mbbill/Whitefoot/blob/44ea33691f42c82c76f03819fe09ac8619fc4faa/research/experiments/container-representation/ordered-library/RESULTS.md) preserve replacement, node-transfer and occupancy costs; no default tree or native-parity claim. |
+| [OrderedMap](../../../lib/containers/ordered-map.wf) | Arbitrary owning keys/values, find/edit/insert/replace, split/promotion, delete/borrow/merge/root contraction, ordered/range visitation and complete cleanup; the [maintained caller](../../../tests/programs/containers/ordered-map-program.wf) checks 103 allocations and each owner identity | The [complete baseline comparison and two rejected insertion trials](../../experiments/container-representation/ordered-library/RESULTS.md) preserve replacement, node-transfer and occupancy costs; no default tree or native-parity claim. |
 
-The maintained library and composite callers are registered through
+The six libraries' maintained callers and the indexed composite are registered
+through
 [`compiler/tests/programs/containers.rs`](../../../compiler/tests/programs/containers.rs)
 with sequential/parallel lowering and exact allocation-release ledgers. Those
 checks establish their stated operation/ownership coverage, not native parity.
-The pinned OrderedMap links are evidence only: this branch imports none of
-that branch's source or gate wiring. No research experiment is a correctness-gate
-dependency.
+Research comparisons retain their measured source identities and explicit
+replay commands; no research experiment is a correctness-gate dependency.
 
 The composite exposed three compiler defects repaired under existing rules:
 FN-4 read-under-write refinement, transitive nominal allocation layouts and

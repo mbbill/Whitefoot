@@ -322,3 +322,22 @@ fn indexed_memberships_match_the_model_and_release_every_owner_in_both_lowering_
     // dictionary membership, sorted expiration and exact owner identities.
     execute_container_program("indexed-membership", &sources, 129, false);
 }
+
+#[test]
+fn ordered_map_mutations_match_sorted_oracle_and_preserve_every_owner_in_both_lowering_modes() {
+    let sources: [(&str, &[u8]); 2] = [
+        (
+            "lib/containers/ordered-map.wf",
+            include_bytes!("../../../lib/containers/ordered-map.wf"),
+        ),
+        (
+            "containers/ordered-map-program.wf",
+            include_bytes!("../../../tests/programs/containers/ordered-map-program.wf"),
+        ),
+    ];
+    // Twenty-two scalar nodes, six owning nodes, and seventy-five payload
+    // Boxes. The additional owning map checks leaf and internal replacement
+    // below its ceiling: three nodes and thirty-six payloads add 39 to the
+    // original 64-allocation public mutation and traversal chain.
+    execute_container_program("ordered-map", &sources, 103, false);
+}
