@@ -296,13 +296,262 @@ requiring newer GEP-flag syntax or making emitted syntax depend on a
 build-time compiler that may differ from the actual IR consumer. It does not
 establish that the two candidates have equal full-matrix cost. The target's
 four-case `nuw` comparison still needs a recent LLVM; this run does not test
-LLVM 18 or Apple Clang 15 compatibility of production output. The full
-normal/retained scalar/record timing comparison and actual older-consumer
-qualification are still pending. General padded-header/extent/index
+LLVM 18 or Apple Clang 15 compatibility of production output. The paired
+production comparison below follows this probe; actual older-consumer
+qualification remains a separate obligation. General padded-header/extent/index
 qualification needs its own proof; this four-site experiment does not
 establish it. These selected u64 sites do not qualify every alignment,
 zero-stride step or maximum admitted index, and the preserved historical
 CSV files are not measurements of this candidate.
+
+#### Paired production lowering matrix, 2026-09-22
+
+The production candidate in `302845b8` emits the nonnegative-index assumption
+after ordinary target qualification. It is compared with the saved v0.65
+compiler above, using the same library, workload, C source, seeds, allocator
+observer and unchanged `check`/`measure` targets. The baseline compiler source
+tree at `1b916975` is identical to `4e0903e9`, which produced that saved
+compiler. The candidate compiler SHA-256 is
+`9ad894ff6733c5e3efb489e98544bfcc61a5716dee5b976ac68d02713991a182`.
+No source rule, container interface or payload representation changes in
+this comparison. Its selection criterion was recorded before timing in
+[X1's address investigation](../../../investigations/containers-and-resources/X1-LIBRARY.md#ring-payload-address-qualification).
+
+Four independent build directories ran in the order baseline-A, candidate-A,
+candidate-B, baseline-B. All construction preceded those four executions.
+Within each execution the existing driver still reverses normal/retained
+order, reverses C/WF cohort order, and rotates the first implementation over
+eleven samples. All 10,368 correctness executions passed, including checksum,
+exact request/byte/peak ledgers and zero live bytes. All 25,344 timing rows
+have matching independent checksums and exact ledgers. Timed allocations
+succeed; these rows do not inject allocation refusal or replace the formal
+tests of the language's resource-abort outcome.
+
+The compressed [paired samples](measurements-ring-addressing.csv.gz) add
+`experiment,build,sweep,order` to the unchanged fifteen-column CSV.
+`experiment=production` contains the 25,344 main-matrix rows; removing those
+four columns reconstructs each original CSV byte-for-byte. Each main file
+contains 576 groups of eleven samples. The later placement discriminator
+adds 6,336 rows with `experiment=placement`, described below; these are not
+pooled into the main table. For each matched run/cohort/mode/payload/path/
+capacity, first take the eleven-sample median; then compute candidate/baseline.
+The normalized ratio is `(candidate WF / candidate loop-C) /
+(baseline WF / baseline loop-C)`. Each table row summarizes 24 such ratios
+(two sweeps, two runs, two cohorts, three capacities), without weighting by
+an assumed application mix. Entries are median [minimum, maximum]. Values
+below one favor the candidate. The final column is the median candidate
+WF/loop-C cost, not a transfer-only or whole-language parity measure.
+
+| Mode | Payload bytes | Path | Candidate/baseline | Normalized candidate/baseline | Candidate/loop-C |
+| --- | ---: | --- | --- | --- | ---: |
+| Normal | 8 | Forward churn | 0.526 [0.495, 0.562] | 0.533 [0.515, 0.552] | 1.233 |
+| Normal | 8 | Reverse churn | 0.991 [0.943, 1.064] | 0.991 [0.972, 1.018] | 1.206 |
+| Normal | 8 | Wrapped rebase | 0.753 [0.708, 0.801] | 0.753 [0.731, 0.778] | 1.414 |
+| Normal | 8 | Setup/cleanup | 0.700 [0.604, 0.735] | 0.713 [0.614, 0.735] | 1.380 |
+| Normal | 256 | Forward churn | 0.998 [0.960, 1.040] | 0.999 [0.988, 1.008] | 0.993 |
+| Normal | 256 | Reverse churn | 1.000 [0.994, 1.055] | 1.000 [0.995, 1.019] | 0.998 |
+| Normal | 256 | Wrapped rebase | 0.975 [0.949, 1.010] | 0.974 [0.958, 1.000] | 0.972 |
+| Normal | 256 | Setup/cleanup | 0.989 [0.956, 1.045] | 0.988 [0.975, 1.013] | 0.960 |
+| Retained | 8 | Forward churn | 1.006 [0.975, 1.073] | 1.000 [0.971, 1.022] | 1.007 |
+| Retained | 8 | Reverse churn | 1.071 [1.037, 1.130] | 1.071 [1.048, 1.088] | 1.087 |
+| Retained | 8 | Wrapped rebase | 0.998 [0.907, 1.037] | 0.996 [0.912, 1.012] | 1.058 |
+| Retained | 8 | Setup/cleanup | 0.975 [0.927, 1.006] | 0.987 [0.921, 1.000] | 0.987 |
+| Retained | 256 | Forward churn | 1.004 [0.946, 1.044] | 1.002 [0.982, 1.024] | 0.986 |
+| Retained | 256 | Reverse churn | 0.999 [0.959, 1.055] | 1.001 [0.962, 1.033] | 0.955 |
+| Retained | 256 | Wrapped rebase | 0.982 [0.942, 1.026] | 0.979 [0.925, 0.989] | 0.944 |
+| Retained | 256 | Setup/cleanup | 1.011 [0.970, 1.040] | 1.005 [0.992, 1.017] | 0.971 |
+
+The main scalar forward result repeats at both larger capacities in both
+version orders. At 256 elements, baseline WF/loop-C is 2.302–2.349 and the
+candidate is 1.209–1.238; at 4096, these are 2.280–2.304 and 1.204–1.261.
+Scalar `wf_deque_library_trace$instance$37`'s optimized forward loop `bb32`
+changes from four i64 loads and four stores to one payload load and one
+payload store. Its header values remain in SSA until the loop exits. The
+remaining approximately 20–26% gap against C is not attributed by this
+comparison. Retained forward results near one show that this is primarily
+an inlined-path optimization, not a necessary reference-call transfer cost.
+
+There is also a repeatable adverse result: retained scalar reverse churn
+is slower in every matched group. Its normalized median is 1.072 in sweep A
+and 1.071 in the reversed sweep B. Per-capacity normalized ranges are
+1.072–1.088 at 16, 1.053–1.086 at 256, and 1.048–1.070 at 4096.
+Disassembly of the measured retained executables finds identical instruction
+sequences in scalar `pop_back$46` (12 instructions), `push_front$47`
+(15 instructions), and `trace$37` (130 instructions, with local branch
+targets compared relative to its entry), as well as the scalar make/accept
+helpers. The trace entry is unchanged, but the two endpoint entries move
+from `0x100002c54`/`0x100002c84` to `0x100002c34`/`0x100002c64`.
+Code placement is therefore a concrete confounder; it has not yet been
+isolated as the cause. There is no added instruction or data dependency in
+those retained scalar bodies that establishes an intrinsic assumption cost.
+This unresolved loss prevents claiming that the predeclared selection
+criterion is fully met. It must not be averaged away by the forward gain.
+
+A scratch layout discriminator added only `align 128` to scalar
+`pop_back$46` in each retained input, preserving every other input byte.
+The two resulting images place `pop_back`/`push_front` at the same addresses,
+`0x100002d00`/`0x100002d30`, with the same instructions. However, both also
+move the trace and make/accept callbacks by 96 bytes relative to their
+respective originals. The trace becomes `0x10000266c`; the callbacks become
+`0x100002400`/`0x100002404`. All five functions still have identical
+instruction sequences across all four images. This fails the predeclared
+control that the original caller position remain unchanged. Construction
+took 0.193/0.187 seconds; the guarded audit stopped after 0.53 seconds with
+exit 255, before any oracle or timing execution. It produced no timing CSV
+and neither establishes nor refutes the placement explanation. The local
+`.build/ring-align128-clang21/isolation.txt` audit has SHA-256
+`14f1669e875e8de6e9d5993ca5cc62fb2eebe7c214cf1a07ff76141bd64d44f3`.
+This experimental alignment is not a production policy.
+
+A final scratch discriminator inserted eight unexecuted AArch64 `nop`
+instructions immediately before the candidate's scalar `pop_back` symbol,
+after the preceding function's `ret`, without raising section alignment.
+Assembly-and-link controls with no padding first matched all 269 function
+symbols' addresses and instructions against the original executables. With
+the 32-byte gap, the five relevant candidate bodies match the original
+baseline's addresses and instructions: both endpoints return to
+`0x100002c54`/`0x100002c84`, and the trace and callbacks retain their original
+positions. This instrument passed its isolation control and both 1,296-case
+native oracles before measurement.
+
+The unchanged retained driver then ran baseline-control A, candidate-pad32 A,
+candidate-pad32 B, baseline-control B, collecting 1,584 rows per invocation.
+The same eleven-sample medians and loop-C normalization give these scalar
+reverse-churn ratios; ranges cover the two cohorts in each sweep:
+
+| Capacity | Sweep A raw | Sweep A normalized | Sweep B raw | Sweep B normalized |
+| ---: | --- | --- | --- | --- |
+| 16 | 1.072–1.072 | 1.072–1.072 | 1.000–1.000 | 1.000–1.000 |
+| 256 | 1.079–1.079 | 1.079–1.079 | 1.007–1.007 | 1.007–1.007 |
+| 4096 | 1.057–1.063 | 1.056–1.057 | 1.000–1.000 | 0.994–1.000 |
+
+The loss therefore does **not** collapse in both orders. Loop-C drift is
+only 1.000–1.006; the final baseline-control itself becomes slower relative
+to C, while the padded candidate remains around 1.088 times C. Across the
+twelve pairs the normalized median is 1.031 [0.994, 1.079], but that pooled
+number hides the order difference. This does not isolate the original loss
+as an endpoint-placement cost. It leaves the approximately seven-percent
+production result unexplained; no further instrument was selected here.
+The eight inserted instructions are an experiment, not production lowering.
+
+Construction took 0.783 seconds, the two oracles 0.871 seconds, and four
+measurement invocations 6.159 seconds; the complete guard took 7.96 seconds
+and exited zero. All 6,336 added rows pass the same ledger/checksum/group
+checks. They use synthetic `run=0` because the direct driver's fourteen-column
+CSV has no outer Makefile run. Removing the four metadata columns and that
+synthetic run reconstructs the four driver files exactly. Their identities,
+in execution order, are:
+
+| Placement CSV | SHA-256 |
+| --- | --- |
+| Baseline A | `258289076c757d1157ee2e6b39d4c7f0e14cf3228c77bb090d43c00a7815e7dd` |
+| Candidate A | `65e46fb51712c2914e39c0ca2ce4d435f54a2eb57d1272419b44c5f8af5a305c` |
+| Candidate B | `61a176e0fbfe938626e2b13d74e38488e8364e51ace8c7b3113cc69260d5fceb` |
+| Baseline B | `6815e72005ab437791e166821b5b79070637c3432beba4aee199c76524d1c264` |
+
+The other production-matrix cells do not show a similarly material slowdown
+in every matched group. Retained wide setup at capacity 256 has a 1.006–1.016 normalized
+ratio, but raw ratios straddle one. All elapsed samples are quantized to
+1,000 ns. Small changes near one percent, and wide traces dominated by the
+32-word checksum, do not establish a precise gain or parity. Setup figures
+include materialization and cleanup; they are not subtracted to manufacture
+isolated endpoint latency. Normal/retained differences include inlining,
+visibility and ABI effects, rather than isolating copies alone.
+
+For this workload, deleting only the candidate's one `llvm.assume`
+declaration, eight `%*.nonnegative = icmp sge i64 ..., 0` instructions and
+eight corresponding intrinsic calls makes its **raw** LLVM byte-identical
+to the baseline. That comparison does not normalize optimized instructions.
+The zero-capacity layout repair does not alter this positive-capacity
+workload's emission. A/B native binaries are byte-identical for each version
+and mode; their optimized WF files differ only in the `ModuleID` path.
+Both C optimized controls are byte-identical in all four builds. Raw hashes:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Baseline raw WF | `a32c7d14640f6f855f67149281fa839c65d3d30597c96bc50d8de8e012fa32b6` |
+| Candidate raw WF | `5b5b17dc021f3425262827b53102b2575a443195a70162cdf914c7a4c9c9f3d1` |
+| Baseline-A CSV | `e0ebeae12a0f306aba09b0bdc4c933bf05d9268086ab29905074eacbcc2de9fe` |
+| Candidate-A CSV | `caf683e900ab2e093795f4935c8eae1b9580ca2a8b6167b9d2cfe5c8c74aeb59` |
+| Candidate-B CSV | `66eed1aab51f17f5ea53884769e42dd6cca0dc286cb0f3985cc88b01aa85bc67` |
+| Baseline-B CSV | `0d22c847124a86cd57dae986e5c96fdef50a254ef24d1984b2851077eca0d811` |
+| Paired `.csv.gz`, 31,680 production/placement rows | `4d81bf2d9f4c17ea1f0336b4e2042edd3b2f5746e38f4be26438bcf76bf5e16b` |
+
+Reproduction uses the existing targets, not a second harness. Set
+`BASELINE_WHITEFOOTC` and `CANDIDATE_WHITEFOOTC` to the binaries with the
+identities above. Under one repository guard, construct the four independent
+`BUILD=.build/ring-<version>-<sweep>-clang21` directories using each version's
+compiler and `CLANG=/usr/bin/clang`, requesting these six existing targets:
+
+```sh
+make -C research/experiments/container-representation/deque-library \
+  WHITEFOOTC="$WHITEFOOTC" CLANG=/usr/bin/clang BUILD="$BUILD" \
+  "$BUILD/deque-costs-normal" "$BUILD/deque-costs-retained" \
+  "$BUILD/deque-library-normal.opt.ll" "$BUILD/deque-library-retained.opt.ll" \
+  "$BUILD/control-normal.opt.ll" "$BUILD/control-retained.opt.ll"
+```
+
+After all four constructions, invoke the unchanged `measure` target in
+baseline-A, candidate-A, candidate-B, baseline-B order, with the same compiler
+and build arguments. Retain each `BUILD/measurements.csv` and its identity.
+Use `perl .github/run-check.pl <label> /bin/sh -c '<commands>'` around the
+whole sequence. This read-only check verifies the packed sample groups,
+allocation formulas and cross-implementation checksum agreement; the native
+`check` target remains the independent logical-order and live-allocation oracle:
+
+```sh
+ruby -rcsv -rzlib <<'RUBY'
+path = 'research/experiments/container-representation/deque-library/measurements-ring-addressing.csv.gz'
+rows = CSV.parse(Zlib::GzipReader.open(path, &:read), headers: true)
+keys = rows.headers - %w[sample elapsed_ns checksum]
+groups = rows.group_by { |r| keys.map { |k| r[k] } }
+raise 'sample groups' unless groups.values.all? { |g| g.map { |r| r['sample'].to_i }.sort == (0..10).to_a }
+checksums = {}
+rows.each do |r|
+  n, width, rounds, traces = %w[count element_bytes rounds traces].map { |k| Integer(r[k]) }
+  expected = if r['path'] == 'wrapped-rebase'
+    bytes = 48 + (3*n + 1)*width
+    [2*rounds*traces, rounds*bytes*traces, rounds.zero? ? 0 : bytes]
+  else
+    [traces, (24 + n*width)*traces, 24 + n*width]
+  end
+  raise 'allocation ledger' unless %w[requests requested_bytes peak_bytes].map { |k| Integer(r[k]) } == expected
+  key = %w[element_bytes path count sample rounds traces].map { |k| r[k] }
+  raise 'checksum disagreement' if checksums.key?(key) && checksums[key] != r['checksum']
+  checksums[key] = r['checksum']
+end
+puts "#{rows.size} rows: sample groups, allocation ledgers and checksums agree"
+RUBY
+```
+
+The observed costs below separate construction from the
+correctness phase and the following timed-driver phase; the latter two
+include their Make/driver overhead.
+
+| Version/order | Construction seconds | Correctness seconds | Timing phase seconds |
+| --- | ---: | ---: | ---: |
+| Baseline-A | 1.64 | 0.711 | 5.687 |
+| Candidate-A | 1.90 | 0.652 | 5.658 |
+| Candidate-B | 1.63 | 0.492 | 5.662 |
+| Baseline-B | 1.62 | 0.527 | 5.683 |
+
+The complete guarded invocation took 33.55 seconds and exited 2 **after**
+the four successful Clang 21 matrices: its subsequent LLVM 22 native
+baseline construction failed in `deque-costs-normal` code generation with
+`fatal error: error in backend: Unsupported stack probing method` and
+`clang frontend command failed with exit code 70`. The generated baseline
+LLVM retains `"probe-stack"="__chkstk_darwin"`; it was not removed to obtain
+a result. No LLVM 22 native correctness or timing result is claimed.
+
+A separate 0.96-second guarded invocation used LLVM 22.1.8, commit
+`ca7933e47d3a3451d81e72ac174dcb5aa28b59d1`, to build only the existing four
+optimized-IR targets for baseline and candidate. All eight unmodified WF/C
+modules parsed and optimized. Its scalar forward loop likewise changes
+from four loads/stores to one each. This qualifies parsing and optimization
+only; Apple Clang 21 is the sole native/timing toolchain of this matrix.
+Neither result claims local Apple Clang 15 availability or LLVM 18 native
+qualification. The historical `measurements.csv` and
+`measurements-v0.64.csv` remain unchanged.
 
 ### Instrumentation correction
 

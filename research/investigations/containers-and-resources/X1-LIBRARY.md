@@ -1191,3 +1191,60 @@ representation proposal is in `compiler/storage-representation`. This keeps
 the representation repair independent of the optional optimization and needs
 neither a second table of per-address qualification nor a public compiler
 switch. No source rule or container contract changes.
+
+### Retained reverse-path discriminator
+
+The first complete Clang 21 baseline/candidate sweeps show a reproducible
+retained-scalar reverse-churn regression, about seven percent after the
+in-binary C normalization, alongside the large forward-path gain. Independent
+disassembly comparisons find identical reverse-loop and endpoint-helper
+instructions, register dependencies and memory operations. The loop stays at
+the same address, but both endpoint helpers move 32 bytes earlier. This is
+evidence of a code-placement difference, not yet evidence that placement
+causes the timing difference.
+
+Before additional timing, the discriminator is to give both scratch retained
+modules' scalar `pop_back` definition 128-byte alignment. Verify that the
+two endpoint helpers then occupy identical addresses and preserve their
+instructions, and that the calling loop remains unchanged; otherwise the
+experiment does not isolate the proposed cause. Use the existing native
+oracle and counterbalanced retained measurements, with the same source,
+seeds and C controls. If the regression collapses after this normalization,
+report the production-layout cost as placement-sensitive; if it persists,
+keep the regression unexplained. The scratch alignment is an instrument,
+not a proposed production alignment policy or a reason to select facts by
+element identity.
+
+The 128-byte-alignment construction failed that isolation check: it made
+the two endpoint addresses agree, but the linker also moved both complete
+WF text regions by 96 bytes, including the trace and callbacks. No oracle
+or timing was run on those images. The follow-up instrument therefore keeps
+the original section alignment and adds exactly 32 bytes of unreachable
+text padding before the candidate's scalar `pop_back` symbol. Before timing,
+verify against the original binaries that the trace and callbacks retain
+their addresses and instructions and both endpoints recover the original
+baseline addresses and instructions. If this narrower construction also
+fails isolation, do not time it or reinterpret the first experiment as a
+success. This padding is likewise confined to scratch evidence.
+
+The 32-byte padding control met the isolation checks and passed both native
+oracles. Its two measurement orders disagree: the normalized retained scalar
+reverse ratio stays about 1.06–1.08 in the first pair, then approaches one in
+the reversed pair because the last baseline itself slows. The original
+production-layout regression therefore remains unexplained; neither the
+first alignment failure nor the second mixed result establishes a particular
+cache or branch-prediction cause. No padding enters production.
+
+The predeclared selection criterion is **not fully met**. The proposal for
+the owner is to retain the qualified fact provisionally for its reproducible
+inline scalar forward and rebase improvements, explicitly accepting the
+recorded retained-reverse cost and its unresolved cause. The alternative is
+to remove the optional fact and deliver the independently verified
+zero-capacity representation repair alone. No application-frequency
+distribution has been measured, so the results do not establish that every
+Deque consumer benefits from the tradeoff. The pending backend-facts
+amendment proposes the first choice; it is not an owner ruling or a claim
+that the original criterion passed. Reopen that choice for a consumer
+dominated by retained reverse calls, a changed native toolchain, or a further
+material regression under the same matched-contract comparison. The
+maintained TODO keeps the remaining scalar gap and cost attribution open.
