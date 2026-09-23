@@ -530,16 +530,6 @@ each is resolved by a discussion and a tree change.
   These language extensions are deferred because the selected ordinary
   local composition rule can be validated without widening the storage or
   predicate vocabulary.
-- **Named-operand decision grounds.** The construction-form decision describes
-  same-typed transposition protection too broadly: labels and declared order
-  reject label/order mismatches, while exchanging values under otherwise
-  correct labels remains legal. The
-  [boundary comparison](../research/investigations/contract-surface/CALL-BOUNDARY.md#named-operands-remain-independent)
-  preserves the counterexample. Narrow that explanation at the next owner
-  review of this decision, verifying it against paired label-order and
-  value-swap cases. This editorial correction was outside the selected
-  removal of signature `own`; no operand-rule change or productivity claim
-  is established, and its wording still requires an owner ruling.
 - **Ownership transfer and reference-access forms.** Audit unnecessary
   owner-in/owner-out APIs now expressible with reference parameters and exact
   effect rows, the differing consumption spellings of calls, returns, matches
@@ -547,8 +537,9 @@ each is resolved by a discussion and a tree change.
   consumption boundary; `deref` distinguishes a reference holder from its
   referent and from owned `Box.inner`, so neither is redundant solely because
   the signature `own` qualifier was. Compare the same container and owned-link
-  operations under proposed forms, preserving copy/drop capabilities, whole-owner consumption,
-  atomic replacement, reference rebinding, invalidation and effect separation.
+  operations under proposed forms, preserving copy/drop capabilities,
+  whole-owner consumption, atomic replacement, reference rebinding,
+  invalidation and effect separation.
   Require the ordinary positive and invalid-use examples to remain explainable
   by one rule per operation, with no additional runtime checks or transfers.
   Reduced ceremony is an opportunity, not an established gain. Defer these

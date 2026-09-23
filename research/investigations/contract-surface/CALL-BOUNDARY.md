@@ -195,11 +195,10 @@ for label order. `difference(left: 2_u32, right: 7_u32)` remains well-formed:
 labels cannot prove which values the writer intended. Construction fields of
 the same type have the same limitation.
 
-The earlier proposed editorial correction to
-`language/surface-form/construction-form` would narrow its transposition
-ground to that exact protection. It was not selected for this change; its
-wording follow-up remains in the grouped TODO. No positional form, reordered
-arguments, shorthand or field rule is introduced.
+The `language/surface-form/construction-form` decision states that exact
+label/order protection and its limit, instead of claiming that labels detect
+same-typed value swaps. No positional form, reordered arguments, shorthand
+or field rule is introduced.
 
 ## Implementation structure and validation boundary
 
