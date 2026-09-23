@@ -464,6 +464,7 @@ mod tests {
             requirements: Vec::new(),
             postconditions: Vec::new(),
             body: None,
+            reference_origins: Vec::new(),
             body_disposition: Default::default(),
             allocates: false,
             call_separations: Vec::new(),
