@@ -1,3 +1,0 @@
-Node: compiler/parallel-lowering
-
-Decision: Retain runtime-query entry through the overlapping splitter, with the sequential world's direct chunk unchanged, because the [general zero-budget caller branch](../../research/investigations/compute-model/DESIGN.md#general-dispatch-reassessment) lacks a demonstrated general benefit and regresses records in a qualified comparison, including the sequential path that never executes it, instead of adopting that all-site branch or an unqualified wrapper, noinline or alignment replacement. Caller and placement effects remain unresolved; any replacement must demonstrate benefit and qualify both worlds.
