@@ -283,8 +283,9 @@ fn ordered_map_mutations_match_sorted_oracle_and_preserve_every_owner_in_both_lo
             include_bytes!("../../../tests/programs/containers/ordered-map-program.wf"),
         ),
     ];
-    // Twenty-two scalar nodes, three owning nodes, and thirty-nine payload
-    // Boxes. One caller covers the complete public mutation and traversal
-    // chain; the existing harness adds both lowering and allocator modes.
-    execute_container_program("ordered-map", &sources, 64, false);
+    // Twenty-two scalar nodes, six owning nodes, and seventy-five payload
+    // Boxes. The additional owning map checks leaf and internal replacement
+    // below its ceiling: three nodes and thirty-six payloads add 39 to the
+    // original 64-allocation public mutation and traversal chain.
+    execute_container_program("ordered-map", &sources, 103, false);
 }

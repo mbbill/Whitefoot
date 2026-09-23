@@ -1,0 +1,290 @@
+struct OrderedCostDigest {
+  ordered: u64;
+  sum: u64;
+  parity: u64;
+  consumed: u64;
+}
+
+nocopy struct OrderedCostRecord {
+  words: Array<u64, 32>;
+}
+
+interface OrderedCostElement<T: drop> {
+  fn make(seed: u64) -> value: T pure;
+  fn observe(env: &OrderedCostDigest, key: &u64, value: &T) -> result: u64 reads(key), reads(value), writes(env);
+  fn visit(env: &OrderedCostDigest, key: &u64, value: &T) -> result: unit reads(key), reads(value), writes(env);
+  fn edit(env: &OrderedCostDigest, key: &u64, value: &T) -> result: u64 reads(key), writes(value), writes(env);
+  fn consume(env: &OrderedCostDigest, key: u64, value: T) -> result: unit writes(env);
+}
+
+fn ordered_cost_mix(value: u64) -> result: u64 pure {
+  let shifted1 = ishr(value, 30_u32);
+  let mixed1 = ixor(value, shifted1);
+  let first = mixed1 *wrap 13787848793156543929_u64;
+  let shifted2 = ishr(first, 27_u32);
+  let mixed2 = ixor(first, shifted2);
+  let second = mixed2 *wrap 10723151780598845931_u64;
+  let shifted3 = ishr(second, 31_u32);
+  return ixor(second, shifted3);
+}
+
+fn ordered_cost_ordered(env: &OrderedCostDigest, value: u64) -> result: unit writes(env) {
+  let prefix = deref(env).ordered *wrap 131_u64;
+  set deref(env).ordered = prefix +wrap value;
+  return unit;
+}
+
+fn ordered_cost_consumed(env: &OrderedCostDigest, value: u64) -> result: unit writes(env) {
+  set deref(env).sum = deref(env).sum +wrap value;
+  let mixed = ordered_cost_mix(value: value);
+  set deref(env).parity = ixor(deref(env).parity, mixed);
+  set deref(env).consumed = deref(env).consumed +wrap 1_u64;
+  return unit;
+}
+
+fn ordered_cost_finish(digest: OrderedCostDigest) -> result: u64 pure {
+  let first = ordered_cost_mix(value: digest.ordered);
+  let second = ordered_cost_mix(value: digest.sum);
+  let pair = ixor(first, second);
+  let combined = ixor(pair, digest.parity);
+  let count = digest.consumed *wrap 11400714819323198485_u64;
+  return ixor(combined, count);
+}
+
+fn ordered_cost_compare(env: &unit, left: &u64, right: &u64) -> result: i32 reads(left), reads(right) {
+  if deref(left) < deref(right) {
+    return -7_i32;
+  }
+  if deref(left) > deref(right) {
+    return 9_i32;
+  }
+  return 0_i32;
+}
+
+binding OrderedCostKey : OrderedKey<u64, unit> {
+  compare = ordered_cost_compare;
+}
+
+fn ordered_cost_word_make(seed: u64) -> value: u64 pure {
+  return seed;
+}
+
+fn ordered_cost_word_content(key: &u64, value: &u64) -> result: u64 reads(key), reads(value) {
+  let prefix = deref(key) *wrap 131_u64;
+  return prefix +wrap deref(value);
+}
+
+fn ordered_cost_word_observe(env: &OrderedCostDigest, key: &u64, value: &u64) -> result: u64 reads(key), reads(value), writes(env) {
+  let content = ordered_cost_word_content(key: key, value: value);
+  ordered_cost_ordered(env: env, value: content);
+  return content;
+}
+
+fn ordered_cost_word_visit(env: &OrderedCostDigest, key: &u64, value: &u64) -> result: unit reads(key), reads(value), writes(env) {
+  let content = ordered_cost_word_content(key: key, value: value);
+  ordered_cost_ordered(env: env, value: content);
+  return unit;
+}
+
+fn ordered_cost_word_edit(env: &OrderedCostDigest, key: &u64, value: &u64) -> result: u64 reads(key), writes(value), writes(env) {
+  set deref(value) = deref(value) +wrap 1_u64;
+  let content = ordered_cost_word_content(key: key, value: value);
+  ordered_cost_ordered(env: env, value: content);
+  return content;
+}
+
+fn ordered_cost_word_consume(env: &OrderedCostDigest, key: u64, value: u64) -> result: unit writes(env) {
+  let content = ordered_cost_word_content(key: &key, value: &value);
+  ordered_cost_consumed(env: env, value: content);
+  return unit;
+}
+
+fn ordered_cost_record_make(seed: u64) -> value: OrderedCostRecord pure {
+  let words = array_filled::<u64, 32>(value: 0_u64);
+  for (index in 0_u64..32_u64) {
+    set words[index] = seed +wrap index;
+  }
+  return OrderedCostRecord(words: words);
+}
+
+fn ordered_cost_record_content(key: &u64, value: &OrderedCostRecord) -> result: u64 reads(key), reads(value) {
+  let content = deref(key);
+  for (index in 0_u64..32_u64) {
+    let prefix = content *wrap 131_u64;
+    set content = prefix +wrap deref(value).words[index];
+  }
+  return content;
+}
+
+fn ordered_cost_record_observe(env: &OrderedCostDigest, key: &u64, value: &OrderedCostRecord) -> result: u64 reads(key), reads(value), writes(env) {
+  let content = ordered_cost_record_content(key: key, value: value);
+  ordered_cost_ordered(env: env, value: content);
+  return content;
+}
+
+fn ordered_cost_record_visit(env: &OrderedCostDigest, key: &u64, value: &OrderedCostRecord) -> result: unit reads(key), reads(value), writes(env) {
+  let content = ordered_cost_record_content(key: key, value: value);
+  ordered_cost_ordered(env: env, value: content);
+  return unit;
+}
+
+fn ordered_cost_record_edit(env: &OrderedCostDigest, key: &u64, value: &OrderedCostRecord) -> result: u64 reads(key), writes(value), writes(env) {
+  for (index in 0_u64..32_u64) {
+    set deref(value).words[index] = deref(value).words[index] +wrap 1_u64;
+  }
+  let content = ordered_cost_record_content(key: key, value: value);
+  ordered_cost_ordered(env: env, value: content);
+  return content;
+}
+
+fn ordered_cost_record_consume(env: &OrderedCostDigest, key: u64, value: OrderedCostRecord) -> result: unit writes(env) {
+  let content = ordered_cost_record_content(key: &key, value: &value);
+  ordered_cost_consumed(env: env, value: content);
+  return unit;
+}
+
+binding OrderedCostWord : OrderedCostElement<u64> {
+  make = ordered_cost_word_make;
+  observe = ordered_cost_word_observe;
+  visit = ordered_cost_word_visit;
+  edit = ordered_cost_word_edit;
+  consume = ordered_cost_word_consume;
+}
+
+binding OrderedCostWide : OrderedCostElement<OrderedCostRecord> {
+  make = ordered_cost_record_make;
+  observe = ordered_cost_record_observe;
+  visit = ordered_cost_record_visit;
+  edit = ordered_cost_record_edit;
+  consume = ordered_cost_record_consume;
+}
+
+fn ordered_cost_put_result<interface OrderedCostElement<T>>(offered: OrderedPut<u64, T>, digest: &OrderedCostDigest) -> result: unit writes(digest) {
+  match move offered {
+    OrderedInserted() => {
+      ordered_cost_ordered(env: digest, value: 0_u64);
+    }
+    OrderedReturned(reason: return_reason, pair: returned_pair) => {
+      match return_reason {
+        OrderedReplaced() => {
+          ordered_cost_ordered(env: digest, value: 1_u64);
+        }
+        OrderedFull() => {
+          ordered_cost_ordered(env: digest, value: 2_u64);
+        }
+      }
+      let OrderedPair(key: key, value: value) = move returned_pair;
+      OrderedCostElement<T>::consume(env: digest, key: key, value: move value);
+    }
+  }
+  return unit;
+}
+
+fn ordered_cost_taken_result<interface OrderedCostElement<T>>(taken: Option<OrderedPair<u64, T>>, digest: &OrderedCostDigest) -> result: unit writes(digest) {
+  match move taken {
+    Some(value: pair) => {
+      ordered_cost_ordered(env: digest, value: 1_u64);
+      let OrderedPair(key: key, value: value) = move pair;
+      OrderedCostElement<T>::consume(env: digest, key: key, value: move value);
+    }
+    None() => {
+      ordered_cost_ordered(env: digest, value: 0_u64);
+    }
+  }
+  return unit;
+}
+
+fn ordered_cost_lookup_result(found: Result<u64, unit>, digest: &OrderedCostDigest) -> result: unit writes(digest) {
+  match found {
+    Ok(value: content) => {
+      ordered_cost_ordered(env: digest, value: 1_u64);
+    }
+    Err(error: missing) => {
+      ordered_cost_ordered(env: digest, value: 0_u64);
+    }
+  }
+  return unit;
+}
+
+fn ordered_cost_trace<interface OrderedCostElement<T>>(count: u64, rounds: u64, seed: u64, path: u64) -> result: u64 pure contract {
+  requires count <= 8192_u64;
+} {
+  let map = ordered_map_new::<u64, T, 8192>();
+  let key_env = unit;
+  let digest = OrderedCostDigest(ordered: seed, sum: 0_u64, parity: 0_u64, consumed: 0_u64);
+  if count > 0_u64 {
+    for (index in 0_u64..count) {
+      let multiplied = index *wrap 73_u64;
+      let rank = multiplied % count;
+      let doubled = rank *wrap 2_u64;
+      let key = doubled +wrap 1_u64;
+      let value_seed = seed +wrap index;
+      let value = OrderedCostElement<T>::make(seed: value_seed);
+      let inserted = ordered_map_put::<OrderedCostKey, T, 8192>(map: &map, key: key, value: move value, env: &key_env);
+      ordered_cost_put_result::<OrderedCostElement<T>>(offered: move inserted, digest: &digest);
+    }
+    let initial_length = ordered_map_len::<u64, T, 8192>(map: &map);
+    ordered_cost_ordered(env: &digest, value: initial_length);
+    for (round in 0_u64..rounds) {
+      for (index in 0_u64..count) {
+        let multiplied = index *wrap 73_u64;
+        let rank = multiplied % count;
+        let doubled = rank *wrap 2_u64;
+        let key = doubled +wrap 1_u64;
+        if path == 1_u64 {
+          let found = ordered_map_lookup::<OrderedCostKey, T, OrderedCostDigest, u64, fn OrderedCostElement<T>::observe, 8192>(map: &map, key: &key, key_env: &key_env, visit_env: &digest);
+          ordered_cost_lookup_result(found: found, digest: &digest);
+          let missing_key = key -wrap 1_u64;
+          let absent = ordered_map_lookup::<OrderedCostKey, T, OrderedCostDigest, u64, fn OrderedCostElement<T>::observe, 8192>(map: &map, key: &missing_key, key_env: &key_env, visit_env: &digest);
+          ordered_cost_lookup_result(found: absent, digest: &digest);
+        } else if path == 2_u64 {
+          let round_offset = round *wrap count;
+          let offset = round_offset +wrap index;
+          let scaled = offset *wrap 2_u64;
+          let base = seed +wrap count;
+          let next = base +wrap scaled;
+          let value = OrderedCostElement<T>::make(seed: next);
+          let replaced = ordered_map_put::<OrderedCostKey, T, 8192>(map: &map, key: key, value: move value, env: &key_env);
+          ordered_cost_put_result::<OrderedCostElement<T>>(offered: move replaced, digest: &digest);
+          let edited = ordered_map_edit::<OrderedCostKey, T, OrderedCostDigest, u64, fn OrderedCostElement<T>::edit, 8192>(map: &map, key: &key, key_env: &key_env, edit_env: &digest);
+          ordered_cost_lookup_result(found: edited, digest: &digest);
+          let taken = ordered_map_remove::<OrderedCostKey, T, 8192>(map: &map, key: &key, env: &key_env);
+          ordered_cost_taken_result::<OrderedCostElement<T>>(taken: move taken, digest: &digest);
+          let reinsert_seed = next +wrap 1_u64;
+          let reinsert_value = OrderedCostElement<T>::make(seed: reinsert_seed);
+          let reinserted = ordered_map_put::<OrderedCostKey, T, 8192>(map: &map, key: key, value: move reinsert_value, env: &key_env);
+          ordered_cost_put_result::<OrderedCostElement<T>>(offered: move reinserted, digest: &digest);
+        } else if path == 3_u64 {
+          let upper = doubled +wrap 32_u64;
+          ordered_map_range::<OrderedCostKey, T, OrderedCostDigest, fn OrderedCostElement<T>::visit, 8192>(map: &map, lower: &doubled, upper: &upper, key_env: &key_env, visit_env: &digest);
+        }
+      }
+    }
+  } else {
+    let initial_length = ordered_map_len::<u64, T, 8192>(map: &map);
+    ordered_cost_ordered(env: &digest, value: initial_length);
+  }
+  let final_length = ordered_map_len::<u64, T, 8192>(map: &map);
+  ordered_cost_ordered(env: &digest, value: final_length);
+  ordered_map_each::<u64, T, OrderedCostDigest, fn OrderedCostElement<T>::visit, 8192>(map: &map, env: &digest);
+  ordered_map_free::<u64, T, OrderedCostDigest, fn OrderedCostElement<T>::consume, 8192>(map: move map, env: &digest);
+  return ordered_cost_finish(digest: digest);
+}
+
+fn ordered_cost_word_trace(count: u64, rounds: u64, seed: u64, path: u64) -> result: u64 pure contract {
+  requires count <= 8192_u64;
+} {
+  return ordered_cost_trace::<OrderedCostWord>(count: count, rounds: rounds, seed: seed, path: path);
+}
+
+fn ordered_cost_record_trace(count: u64, rounds: u64, seed: u64, path: u64) -> result: u64 pure contract {
+  requires count <= 8192_u64;
+} {
+  return ordered_cost_trace::<OrderedCostWide>(count: count, rounds: rounds, seed: seed, path: path);
+}
+
+fn main() -> status: ExitStatus pure {
+  let scalar = ordered_cost_word_trace(count: 0_u64, rounds: 0_u64, seed: 0_u64, path: 0_u64);
+  let wide = ordered_cost_record_trace(count: 0_u64, rounds: 0_u64, seed: 0_u64, path: 0_u64);
+  return exit_status(code: 0_u8);
+}

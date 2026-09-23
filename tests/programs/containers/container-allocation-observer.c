@@ -27,7 +27,7 @@
 
 extern int wf_fixture_main(int argc, char **argv);
 
-enum { MAX_ALLOCATIONS = 64 };
+enum { MAX_ALLOCATIONS = 256 };
 
 typedef struct {
     void *pointer;
