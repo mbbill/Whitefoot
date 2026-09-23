@@ -1,4 +1,4 @@
-# Kernel Specification v0.64
+# Kernel Specification v0.63
 
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives. These bytes are this version's identity; nothing else records it.
 
@@ -831,8 +831,7 @@ This stop is a target-layout failure under [DIAG-1], not a source-language rejec
 For a runtime-sized allocation, the concrete descriptor and element layout are checked statically as above.
 For every runtime-capacity shape materialized by a construction function [OP-13] or resized by `grow` [OP-10], target qualification additionally verifies the actual size, alignment, and element stride against [OP-9]'s language ceilings before lowering the operation.
 The accepted [OP-9] judgment retains a numeric upper bound for the source length at that allocation site; target qualification computes the complete allocation size, including the shape's descriptor, its padding before the elements, and that bound multiplied by the actual target stride, using checked mathematical arithmetic, and requires the result to fit both the allocator-parameter and address-index domains before lowering the operation.
-At this target stage, when the actual element stride is positive, the exact SSA result of a runtime-capacity shape's `len` measure additionally carries the selected target's runtime-allocation byte maximum minus that shape's padded descriptor size, divided by its actual element stride and rounded down, because every materialized shape already satisfies the successful-allocation representation invariant.
-When that stride is zero, the invariant contributes no additional count bound beyond the source length type; the complete padded descriptor must still satisfy target qualification, and every actually emitted address operand still obeys the exact-representation requirement below.
+At this target stage, the exact SSA result of a runtime-capacity shape's `len` measure additionally carries the selected target's runtime-allocation byte maximum minus that shape's padded descriptor size, divided by its actual element stride and rounded down, because every materialized shape already satisfies the successful-allocation representation invariant.
 Qualification may intersect this target bound with the retained source bound only for that exact SSA result; it does not publish a Whitefoot comparison fact or transfer the bound through a block parameter, storage load, conversion, user call, or another value merely because its source spelling or type is similar.
 The source allocation proof and this target qualification jointly establish that every reachable runtime byte count has one exact value-preserving target representation; neither alone authorizes emission, and the allocator receives exactly that value.
 Every emitted target address computation must likewise be proved valid for every runtime value that reaches it: the compiler establishes before emission that each runtime index and each mathematically scaled byte offset actually used by the computation has an exact value-preserving representation in the applicable target address-index domain, and that scaling and offset addition do not wrap.
@@ -916,7 +915,7 @@ A bare `place` operand that a table-operation row reads without consuming — th
 No source declaration or FN-9 result-datum candidate in this closed list may use a member of `ReservedLowerNames`: the IDENT of `fn_decl`; the IDENT of `const_decl`; every `param` and `result_binding` IDENT; every `let_stmt` IDENT, including ordinary, propagate, value-match, and value-if lets; every `contract_define` IDENT; the second IDENT of any `fieldbind`, including a `result_route` payload binder; and every `field` and `vfield` IDENT.
 Such a reserved spelling is rejected citing exactly FORM-3 before freshness ownership is considered.
 Dependent field declarations participate in this pre-resolution reservation inventory even though their owner/member duplicates remain deferred.
-No other declaration role is covered: type-generic TYPEIDs, const-generic IDENTs, LABELs, interface-member `fn_sig` IDENTs, and the IDENTs of `header_invariant` and `invariant_stmt` remain outside this prohibition.
+No other declaration role is covered: type-generic TYPEIDs, const-generic IDENTs, LABELs, and interface-member `fn_sig` IDENTs remain outside this prohibition.
 Dotted OPNAMEs cannot be declarations under the grammar.
 This reservation keeps operation-versus-function resolution context-free [META-2] and keeps a field-access place from maximal-munching as OPNAME [FORM-3].
 
@@ -1692,7 +1691,7 @@ Each declaration or result-reservation event forms an inventory candidate only f
 The stage selects the minimum canonical event key among events with at least one candidate and then the first applicable rank at that event.
 A FORM-3 reservation payload is `(spelling, carrier_role, reserved_class, inventory_ordinal)`.
 Its `spelling` is the complete declaration or result-candidate spelling.
-Its closed carrier roles are function, named-const, parameter, contract-definition, let, for-binder, match-binder, result-binding, route-result, field, and variant-field.
+Its closed carrier roles are function, named-const, parameter, contract-definition, let, for-binder, match-binder, result-binding, route-result, field, variant-field, and invariant.
 `reserved_class` is dotless-operation or mode-word.
 A dotless-operation ordinal is the zero-based first occurrence among distinct operation-family spellings, scanning OP-1 rows top to bottom and each `op` cell left to right and skipping every later occurrence of the same spelling; both `cvt` rows therefore name one family and one ordinal.
 A mode-word ordinal is the zero-based FORM-3 alternative order `wrap`, `defined`, `checked`, `sat`, `strict`.
@@ -1773,7 +1772,7 @@ The header candidate is available only to an admitted unrouted ensures clause; a
 No result datum is visible in a contract definition, requirement, function body, or different ensures clause.
 The name of every `header_invariant` and `invariant_stmt` produces one proof-only invariant declaration record that uses TYPE-6's inventory and scope machinery; [INV-1] owns collision and lookup failure in this domain.
 An IDENT premise of `use_premise` produces one lexical-use record querying only that domain; it can never resolve to a value declaration that happens to have the same spelling. A `proof_use`'s own IDENT is the named multiplicity and queries the value domain instead, so the two positions never compete for one spelling.
-These records have no runtime declaration or value identity and participate in deterministic lexical resolution exactly at their stated scopes; OP-1 owns declaration-name reservation.
+These records have no runtime declaration or value identity, but they participate in FORM-3 reservation and deterministic lexical resolution exactly at their stated scopes.
 The retired law-name and law-argument roles produce no records. A function-formal expansion retains its written declaration and application identities rather than fabricating a second lexical spelling.
 In an `arm` or `result_route`, the leading TYPEID first resolves globally to an enum variant.
 Later typed checking compares that variant's owner with the scrutinee enum for an arm; a foreign arm variant cites TYPE-6.

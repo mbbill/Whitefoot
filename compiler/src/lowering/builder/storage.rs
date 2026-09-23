@@ -34,14 +34,6 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
             CheckedStatement::Set { target, value, .. } => {
                 match target {
                     CheckedSetTarget::Place(_) => {}
-                    CheckedSetTarget::ArrayIndex(target) => {
-                        bindings.insert(target.binding);
-                        collect_expression(&target.offset, bindings);
-                    }
-                    CheckedSetTarget::BufferIndex(target) => {
-                        bindings.insert(target.root.binding);
-                        collect_expression(&target.offset, bindings);
-                    }
                     CheckedSetTarget::RangeIndex(target) => {
                         for offset in target.offsets() {
                             collect_expression(offset, bindings);

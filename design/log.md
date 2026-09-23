@@ -5,6 +5,22 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-22 Resolve source input, zero-stride addressing and proof-name boundaries
+
+Nodes: compiler/prelude-records, compiler/storage-representation, language/name-resolution
+
+Owner-approved: The owner explicitly accepted all three reviewed amendments and both DCR wording corrections after the complete PR #88 handoff at 86e048de, replying that all were agreed. This ruling does not authorize a merge.
+
+Summary: Apply the three reviewed additions unchanged: require caller source records before public prelude injection while preserving the internal transport and complete resource accounting; canonicalize only zero-stride element-address operands while retaining logical coordinates and all layout obligations; and admit invariant IDENT spellings in their separate proof domain without additional operation-name reservation. STOR-6 defines the zero-stride length-bound case, and OP-1/DIAG-1 consistently exclude invariant declarations from that reservation. The [follow-up investigation](../research/investigations/consistency-followups/DESIGN.md) records the discriminating examples, alternatives and remaining validation tasks. Narrow the conformance result-binding explanation and correct the PR's runtime-check claim as reviewed. Remove the three accepted amendments and their directory.
+
+## 2026-09-22 Retain Array extents through read-only Box helpers
+
+Nodes: compiler/parallel-lowering
+
+Owner-approved: The owner accepted the reviewed PR #80 contents at 1d8f838b, including its unchanged Array-reference work amendment.
+
+Summary: Apply the reviewed extension and its rejected alternatives unchanged. Preserve runtime Array-length observations through original read-only reference formals and exact direct captures, using checker-owned validity and ordinary typed header projection. Keep mutable, rebound, local-owner and unsupported projection cases on the static estimate. The [matched helper trial](../research/investigations/compute-model/DESIGN.md#matched-helper-result-2026-09-22-utc) retains the measured benefit, CPU costs and validation limits. Remove the resolved amendment and its directory. No specification or compiler implementation changes accompany this ruling; it does not authorize a merge.
+
 ## 2026-09-22 Preserve references through event-site separation proofs
 
 Nodes: compiler/checker-facts

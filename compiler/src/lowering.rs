@@ -991,6 +991,12 @@ pub enum IrWorkEstimate {
     Constant(u64),
     Value(IrValueId),
     Length(IrValueId),
+    /// The runtime Array length behind an original, read-only Box reference
+    /// formal, or its exact capture in a synthesized chunk. The marker on
+    /// `IrFunction` supplies the no-write fact; the observation must also
+    /// originate in an exhibited typed Array-length read. An address or a
+    /// captured Box owner alone does not authorize the observation.
+    BoxArrayLength(IrValueId),
     Sum(Vec<Self>),
     Product(Box<Self>, Box<Self>),
     Difference(Box<Self>, Box<Self>),
@@ -1345,11 +1351,6 @@ pub enum IrInstruction {
         result: IrValueId,
         ty: IrType,
         operation: IrOperation,
-    },
-    StoreBuffer {
-        buffer: IrValueId,
-        index: IrValueId,
-        value: IrValueId,
     },
     /// One element-position store through an exclusive view [SET-1,
     /// VIEW-1]. The descriptor is unchanged; the storage written is the
@@ -1732,6 +1733,15 @@ pub(crate) struct IrCountedRange {
 pub struct IrFunction {
     name: String,
     parameters: Vec<(IrValueId, IrType)>,
+    /// Original reference formals whose roots have no declared write, copied
+    /// from checked effects. Only their exact direct chunk captures inherit
+    /// the fact: changed reference values and reconstructed owned captures do
+    /// not. This marker alone is not a lifetime certificate: a BoxArrayLength
+    /// observation must originate in a checked typed read. EFF-2 retains that
+    /// read even in a zero-trip body, and EFF-5 separates it from reference
+    /// writes and by-value consumption throughout the call. Scheduling uses
+    /// those checked facts without inferring new lifetimes.
+    readonly_reference_parameters: Vec<IrValueId>,
     /// Checked source modes, or `None` for a compiler-synthesized function.
     /// Internal transfer contracts must not be invented from representation.
     source_signature: Option<IrSourceSignature>,

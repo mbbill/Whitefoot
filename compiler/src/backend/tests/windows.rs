@@ -104,6 +104,8 @@ fn slots_addresses_use_proved_offsets_and_ring_addresses_still_wrap() {
 
 /// A take changes the descriptor even when no element bytes exist. Ring's
 /// captured physical position must still use its old head through wrapping.
+/// Huge logical capacities allocate only the header here; two front placements
+/// must preserve mathematical coordinates without overflowing an intermediate.
 #[test]
 fn zero_sized_takes_update_slots_and_wrapped_ring_boundaries_once() {
     let source = br#"fn main() -> status: own ExitStatus pure {
@@ -140,6 +142,38 @@ fn zero_sized_takes_update_slots_and_wrapped_ring_boundaries_once() {
   }
   if ring.len != 0_u64 {
     return exit_status(code: 7_u8);
+  }
+  let large = box_ring_new::<Array<u64, 0>>(capacity: 9223372036854775809_u64);
+  place_front(window: &large.inner, value: value);
+  if large.inner.head != 9223372036854775808_u64 {
+    return exit_status(code: 8_u8);
+  }
+  place_front(window: &large.inner, value: value);
+  if large.inner.head != 9223372036854775807_u64 {
+    return exit_status(code: 9_u8);
+  }
+  if large.inner.len != 2_u64 {
+    return exit_status(code: 10_u8);
+  }
+  let large_first = take_front(window: &large.inner);
+  if large.inner.head != 9223372036854775808_u64 {
+    return exit_status(code: 11_u8);
+  }
+  let large_last = take_front(window: &large.inner);
+  if large.inner.head != 0_u64 {
+    return exit_status(code: 12_u8);
+  }
+  if large.inner.len != 0_u64 {
+    return exit_status(code: 13_u8);
+  }
+  let single = ring_new::<Array<u64, 0>, 1>();
+  place_front(window: &single, value: value);
+  if single.head != 0_u64 {
+    return exit_status(code: 14_u8);
+  }
+  let only = take_front(window: &single);
+  if single.head != 0_u64 {
+    return exit_status(code: 15_u8);
   }
   return exit_status(code: 0_u8);
 }

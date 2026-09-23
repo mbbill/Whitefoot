@@ -171,6 +171,195 @@ int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
 }
 
 #[test]
+fn runtime_array_helper_prices_use_only_original_readonly_reference_captures() {
+    let mut source = String::from(
+        r#"fn sum_owner(input: &Box<Array<u64>>) -> result: own u64 reads(input) {
+  let count = deref(input).inner.len;
+  let total = 0_u64;
+  for (i in 0_u64..count) {
+    set total = total +wrap deref(input).inner[i];
+  }
+  return total;
+}
+
+fn sum_range(input: &[u64]) -> result: own u64 reads(input) {
+  let count = deref(input).len;
+  let total = 0_u64;
+  for (i in 0_u64..count) {
+    set total = total +wrap deref(input)[i];
+  }
+  return total;
+}
+
+fn sum_other(input: &Box<u64>) -> result: own u64 reads(input) {
+  let count = deref(input).inner;
+  let total = 0_u64;
+  for (i in 0_u64..count) {
+    set total = total +wrap 7_u64;
+  }
+  return total;
+}
+
+fn sum_shared(first: &Box<Array<u64>>, second: &Box<Array<u64>>) -> result: own u64 reads(first), reads(second) {
+  let first_sum = sum_owner(input: first);
+  let second_sum = sum_owner(input: second);
+  return first_sum +wrap second_sum;
+}
+"#,
+    );
+    for (name, parameter, effect, prefix, call, construct, actual) in [
+        (
+            "owner",
+            "&Box<Array<u64>>",
+            "reads(input)",
+            "",
+            "sum_owner(input: input)",
+            "box_array_filled::<u64>(count: count, value: 7_u64)",
+            "&input",
+        ),
+        (
+            "range",
+            "&[u64]",
+            "reads(input)",
+            "",
+            "sum_range(input: input)",
+            "box_array_filled::<u64>(count: count, value: 7_u64)",
+            "&input.inner[0_u64..count]",
+        ),
+        (
+            "mutable",
+            "&Box<Array<u64>>",
+            "writes(input)",
+            "  if deref(input).inner.len != 0_u64 {\n    set deref(input).inner[0_u64] = 7_u64;\n  }\n",
+            "sum_owner(input: input)",
+            "box_array_filled::<u64>(count: count, value: 7_u64)",
+            "&input",
+        ),
+        (
+            "rebound",
+            "&Box<Array<u64>>",
+            "reads(input)",
+            "  let original_count = deref(input).inner.len;\n  let replacement = box_array_filled::<u64>(count: count, value: 7_u64);\n  let selected = input;\n  set selected = &replacement;\n",
+            "sum_owner(input: selected)",
+            "box_array_filled::<u64>(count: 1_u64, value: 7_u64)",
+            "&input",
+        ),
+        (
+            "local",
+            "&Box<Array<u64>>",
+            "reads(input)",
+            "  let original_count = deref(input).inner.len;\n  let replacement = box_array_filled::<u64>(count: count, value: 7_u64);\n",
+            "sum_owner(input: &replacement)",
+            "box_array_filled::<u64>(count: 1_u64, value: 7_u64)",
+            "&input",
+        ),
+        (
+            "other",
+            "&Box<u64>",
+            "reads(input)",
+            "",
+            "sum_other(input: input)",
+            "box_new::<u64>(value: count)",
+            "&input",
+        ),
+        (
+            "shared",
+            "&Box<Array<u64>>",
+            "reads(input)",
+            "",
+            "sum_shared(first: input, second: input)",
+            "box_array_filled::<u64>(count: count, value: 7_u64)",
+            "&input",
+        ),
+    ] {
+        source.push_str(&format!(
+            r#"
+fn write_{name}(input: {parameter}, count: own u64, iterations: own u64) -> result: own u64 {effect} contract {{
+  requires count <= 65536_u64;
+  requires iterations <= 2_u64;
+}} {{
+{prefix}  let output = array_filled::<u64, 2>(value: 0_u64);
+  for (i in 0_u64..iterations) {{
+    set output[i] = {call};
+  }}
+  return output[0_u64] +wrap output[1_u64];
+}}
+
+fn probe_{name}(count: own u64, iterations: own u64) -> result: own u64 pure contract {{
+  requires count <= 65536_u64;
+  requires iterations <= 2_u64;
+}} {{
+  let input = {construct};
+  return write_{name}(input: {actual}, count: count, iterations: iterations);
+}}
+"#,
+        ));
+    }
+    source.push_str(
+        "\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+    );
+    let mut llvm = emit_with_overlap(source.as_bytes())
+        .replace("@main(", "@wf_reference_price_main(")
+        .replace("@wf__main_body(", "@wf_reference_price_body(")
+        .replace(
+            "call i64 @wf__par_split_budget(",
+            "call i64 @wf_work_budget(",
+        );
+    llvm.push_str("\ndeclare i64 @wf_work_budget(i64, i64)\n");
+    let host = r#"#include <stdint.h>
+#include <stdio.h>
+extern int wf__floor_run(int, char **);
+extern uint64_t wf_probe_owner(uint64_t, uint64_t), wf_probe_range(uint64_t, uint64_t);
+extern uint64_t wf_probe_mutable(uint64_t, uint64_t), wf_probe_rebound(uint64_t, uint64_t);
+extern uint64_t wf_probe_local(uint64_t, uint64_t), wf_probe_other(uint64_t, uint64_t);
+extern uint64_t wf_probe_shared(uint64_t, uint64_t);
+typedef uint64_t (*probe)(uint64_t, uint64_t);
+static uint64_t first_price;
+static unsigned observed;
+uint64_t wf_work_budget(uint64_t span, uint64_t price) {
+    (void)span;
+    if (observed++ == 0) first_price = price;
+    return 0;
+}
+int wf__main_body(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const uint64_t extents[] = {0, 1, 17, 4096};
+    const probe probes[] = {wf_probe_owner, wf_probe_range, wf_probe_mutable,
+        wf_probe_rebound, wf_probe_local, wf_probe_other, wf_probe_shared};
+    const char *names[] = {"owner", "range", "mutable", "rebound", "local", "other", "shared"};
+    const unsigned dynamic[] = {1, 1, 0, 0, 0, 0, 1};
+    for (unsigned p = 0; p < sizeof(probes) / sizeof(*probes); ++p) {
+        uint64_t previous = 0;
+        for (unsigned e = 0; e < sizeof(extents) / sizeof(*extents); ++e) {
+            uint64_t count = extents[e];
+            observed = 0;
+            uint64_t actual = probes[p](count, 2);
+            uint64_t expected = count * (p == 6 ? 28 : 14);
+            if (!observed || actual != expected) return 1;
+            uint64_t price = first_price;
+            printf("%s extent=%llu price=%llu\n", names[p],
+                   (unsigned long long)count, (unsigned long long)price);
+            if (e && (dynamic[p] ? price <= previous : price != previous)) return 2;
+            previous = price;
+            observed = 0;
+            if (probes[p](count, 0) != 0 || !observed || first_price != price) return 3;
+        }
+    }
+    return 0;
+}
+int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+"#;
+    let directory = test_directory();
+    let executable = build_linked_executable(&llvm, Some(host), &[], &directory);
+    let output = Command::new(executable)
+        .env("WF_WORKERS", "1")
+        .output()
+        .expect("run checked-reference scheduling price probe");
+    assert!(output.status.success(), "{output:?}");
+    std::fs::remove_dir_all(directory).expect("remove checked-reference scheduling price probe");
+}
+
+#[test]
 fn runtime_work_prices_post_loop_arithmetic_once_per_enclosing_iteration() {
     let mut source = String::new();
     for (extent, bound) in [("known", "upper"), ("fallback", "i")] {

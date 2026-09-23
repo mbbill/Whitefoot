@@ -516,11 +516,6 @@ impl FunctionDependencies {
         self.types.push(target.ty());
         match target {
             CheckedSetTarget::Place(_) => {}
-            CheckedSetTarget::ArrayIndex(target) => {
-                self.types.push(target.array_type);
-                self.expression(&target.offset);
-            }
-            CheckedSetTarget::BufferIndex(target) => self.expression(&target.offset),
             CheckedSetTarget::RangeIndex(target) => {
                 self.types.push(target.root.element_type);
                 for offset in target.offsets() {

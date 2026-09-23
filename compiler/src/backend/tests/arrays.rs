@@ -835,6 +835,11 @@ fn full_array_zero_extents_and_zero_byte_elements_execute_without_payload_access
     let source = br#"struct Empty {
 }
 
+struct Mixed {
+  tag: u64;
+  empty: Empty;
+}
+
 struct Recursive {
   children: Array<Recursive, 0>;
 }
@@ -863,6 +868,18 @@ fn main() -> status: own ExitStatus pure {
   let children = slots_into_array::<Recursive, 0>(values: move recursion);
   let node = Recursive(children: children);
   let carried = relay::<Recursive>(value: node);
+  let mixed_empty_seed = Empty();
+  let mixed_seed = Mixed(tag: 7_u64, empty: mixed_empty_seed);
+  let mixed = array_filled::<Mixed, 2>(value: mixed_seed);
+  set mixed[1_u64].tag = 19_u64;
+  set mixed[1_u64].empty = Empty();
+  let mixed_empty = mixed[1_u64].empty;
+  if mixed[0_u64].tag != 7_u64 {
+    return exit_status(code: 3_u8);
+  }
+  if mixed[1_u64].tag != 19_u64 {
+    return exit_status(code: 4_u8);
+  }
   let zero_length = zero_again.len;
   let empty_length = empty_again.len;
   if zero_length != 0_u64 {
@@ -876,6 +893,43 @@ fn main() -> status: own ExitStatus pure {
 "#;
     for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = retain_calls(&super::emit_lowered(source, overlap));
+        // Empty fields touch no bytes, so the native tag observations alone
+        // cannot detect wrongly collapsing their nonzero-stride outer step.
+        let mixed_type = module
+            .lines()
+            .find_map(|line| line.split_once(" = type { i64, %wf.t"))
+            .map(|(name, _)| name)
+            .expect("Mixed has a tag and an Empty field");
+        let field_step = format!("getelementptr inbounds {mixed_type}, ptr ");
+        let mut empty_element_steps = 0;
+        for line in module.lines().filter(|line| line.ends_with("i32 1")) {
+            let Some((_, operands)) = line.split_once(&field_step) else {
+                continue;
+            };
+            let (parent, _) = operands.split_once(',').expect("field pointer operand");
+            // ProjectAddress gives the selected element an ordinary i8-GEP
+            // identity before the following field projection uses it.
+            let alias = format!("{parent} = getelementptr i8, ptr ");
+            let parent = module
+                .lines()
+                .find_map(|line| line.trim_start().strip_prefix(&alias))
+                .and_then(|operands| operands.split_once(','))
+                .map_or(parent, |(pointer, _)| pointer);
+            let element_step = format!("{parent} = getelementptr inbounds [2 x {mixed_type}],");
+            if let Some(step) = module
+                .lines()
+                .find(|line| line.trim_start().starts_with(&element_step))
+            {
+                let (_, index) = step.rsplit_once("i64 ").expect("element index");
+                let one = format!("{index} = select i1 true, i64 1, i64 1");
+                assert!(
+                    index == "1" || module.lines().any(|line| line.trim() == one),
+                    "Mixed[1].empty must retain element one: {step}"
+                );
+                empty_element_steps += 1;
+            }
+        }
+        assert!(empty_element_steps > 0, "observe an indexed Empty field");
         let output = compile_and_run(&module);
         assert_eq!(output.status.code(), Some(0), "{output:?}");
         assert!(output.stdout.is_empty(), "{output:?}");
@@ -1546,4 +1600,123 @@ __attribute__((constructor)) static void check_nested_cleanup(void) {
         "{output:?}"
     );
     assert!(output.stderr.is_empty(), "{output:?}");
+}
+
+/// Inspect ordinary, pre-optimization address operands. The enormous logical
+/// count is never executed; zero stride must be handled before LLVM can erase
+/// the fill loop, and the range retains its independent logical length.
+#[test]
+fn zero_stride_large_logical_indices_use_representable_address_operands() {
+    let source = br#"struct Empty {
+}
+
+fn inspect(values: &[Empty]) -> result: own Empty reads(values) contract {
+  requires deref(values).len == 1_u64;
+} {
+  return deref(values)[0_u64];
+}
+
+fn main() -> status: own ExitStatus pure {
+  let empty = Empty();
+  let values = box_array_filled::<Empty>(count: 9223372036854775809_u64, value: empty);
+  let last = values.inner[9223372036854775808_u64];
+  set values.inner[9223372036854775808_u64] = Empty();
+  let observed = inspect(values: &values.inner[9223372036854775808_u64..9223372036854775809_u64]);
+  let fixed = array_filled::<Empty, 9223372036854775809>(value: empty);
+  let fixed_last = fixed[9223372036854775808_u64];
+  let nested_seed = array_filled::<u64, 0>(value: 0_u64);
+  let nested = box_array_filled::<Array<u64, 0>>(count: 9223372036854775809_u64, value: nested_seed);
+  let nested_length = nested.inner[9223372036854775808_u64].len;
+  let window = slots_from_array::<Empty, 9223372036854775809>(values: fixed);
+  let returned = slots_into_array::<Empty, 9223372036854775809>(values: move window);
+  return exit_status(code: 0_u8);
+}
+"#;
+    let llvm = compile(source);
+    assert!(
+        llvm.contains("9223372036854775809"),
+        "logical count survives"
+    );
+    // Each family must actually be present, and every element operand must
+    // be literal zero. Checking only for a large literal would miss the
+    // ordinary SSA register carrying that same logical index.
+    for (family, marker) in [
+        (
+            "runtime buffer and nested zero array",
+            "getelementptr inbounds { i64, [0 x ",
+        ),
+        (
+            "fixed fill and indexed place",
+            "getelementptr inbounds [9223372036854775809 x ",
+        ),
+        (
+            "range adjustment and range element",
+            "getelementptr inbounds %wf.t",
+        ),
+        ("whole-element transfer size", "getelementptr %wf.t"),
+    ] {
+        let steps: Vec<_> = llvm
+            .lines()
+            .filter(|line| line.contains(" = ") && line.contains(marker))
+            // Header-only projections end in i32; the element step has an
+            // i64 final operand, including its generated loop register.
+            .filter(|line| {
+                line.rsplit_once(", ")
+                    .is_some_and(|(_, last)| last.starts_with("i64 "))
+            })
+            .collect();
+        assert!(!steps.is_empty(), "missing {family} address coverage");
+        for step in steps {
+            assert!(step.ends_with("i64 0"), "{family} must use zero: {step}");
+        }
+    }
+    let out_of_bounds = std::str::from_utf8(source).expect("source text").replace(
+        "let last = values.inner[9223372036854775808_u64];",
+        "let last = values.inner[9223372036854775809_u64];",
+    );
+    assert_eq!(
+        compile_rejection(out_of_bounds.as_bytes()).rule_id(),
+        Some("OP-4")
+    );
+}
+
+#[test]
+fn zero_stride_allocation_still_qualifies_headers_and_nonzero_controls() {
+    let host = TargetLayout::host().expect("supported target");
+    for (element, value, header) in [("Empty", "Empty()", 8_u64), ("u8", "0_u8", 8_u64)] {
+        let source = format!(
+            "struct Empty {{\n}}\n\nfn allocate() -> result: own unit pure {{\n  let seed = {value};\n  let values = box_array_filled::<{element}>(count: 9223372036854775809_u64, value: seed);\n  return unit;\n}}\n"
+        );
+        with_ir(source.as_bytes(), |program| {
+            if element == "Empty" {
+                assert_eq!(validate_program(host, program), Ok(()));
+                let exact = host.with_runtime_allocation_limits_for_test(header, 8);
+                assert_eq!(validate_program(exact, program), Ok(()));
+                let short = host.with_runtime_allocation_limits_for_test(header - 1, 8);
+                assert!(matches!(
+                    validate_program(short, program),
+                    Err(TargetLayoutFailure::Unrepresentable(_))
+                ));
+                // Narrow only the address domain, retaining enough space for
+                // the ordinary prelude's concrete nominal representations.
+                let narrow = host.with_address_index_max_for_test(i32::MAX as u64);
+                let llvm = crate::backend::emitter::emit_llvm_with_layout(program, narrow)
+                    .expect("logical count does not occupy the address domain")
+                    .into_string();
+                let element_steps: Vec<_> = llvm
+                    .lines()
+                    .filter(|line| line.contains("getelementptr") && line.contains("i32 1, i64"))
+                    .collect();
+                assert!(!element_steps.is_empty(), "observe narrow-target addresses");
+                assert!(element_steps.iter().all(|line| line.ends_with("i64 0")));
+            } else {
+                assert_eq!(
+                    validate_program(host, program),
+                    Err(TargetLayoutFailure::Unrepresentable(
+                        TargetObject::RuntimeSizedAllocation
+                    ))
+                );
+            }
+        });
+    }
 }

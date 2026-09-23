@@ -58,6 +58,23 @@ pub(in crate::backend) fn returned_storage_slot(
 }
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
+    /// Preserve the logical index everywhere except address formation. A
+    /// zero-stride step uses zero even in facts-off emission, so the actual
+    /// GEP operand has an exact target-domain representation [STOR-6].
+    pub(super) fn element_address_index<'index>(
+        &self,
+        element: IrType,
+        index: &'index str,
+    ) -> Result<&'index str, BackendFailure> {
+        if crate::backend::target::element_has_zero_stride(self.target, self.program, element)
+            .map_err(BackendFailure::TargetLayout)?
+        {
+            Ok("0")
+        } else {
+            Ok(index)
+        }
+    }
+
     pub(super) fn emit_place_definition(
         &mut self,
         result: IrValueId,
@@ -333,6 +350,21 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         address: IrValueId,
         projection: &crate::IrPlaceStep,
     ) -> Result<(), BackendFailure> {
+        let pointer = self.projected_address_pointer(ty, address, projection)?;
+        writeln!(
+            self.output,
+            "  {} = getelementptr i8, ptr {pointer}, i64 0",
+            value_name(result)
+        )
+        .map_err(|_| BackendFailure::TextEmission)
+    }
+
+    pub(super) fn projected_address_pointer(
+        &mut self,
+        ty: IrType,
+        address: IrValueId,
+        projection: &crate::IrPlaceStep,
+    ) -> Result<String, BackendFailure> {
         let Some(IrType::Address(base)) = self.value_type(address) else {
             return Err(BackendFailure::InvalidIr);
         };
@@ -421,7 +453,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     "  %{pointer} = getelementptr inbounds {}, ptr {}, i64 0, i64 {}",
                     llvm_type(self.program, base.ty())?,
                     self.value_name(address),
-                    self.value_name(*offset)
+                    self.element_address_index(referent.ty(), &self.value_name(*offset))?
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
                 format!("%{pointer}")
@@ -451,12 +483,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 )?
             }
         };
-        writeln!(
-            self.output,
-            "  {} = getelementptr i8, ptr {pointer}, i64 0",
-            value_name(result)
-        )
-        .map_err(|_| BackendFailure::TextEmission)
+        Ok(pointer)
     }
 
     /// Resolve the binding's ordinary backing storage.

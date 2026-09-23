@@ -147,7 +147,6 @@ fn reserved_role<'role>(
                 ReservedDeclarationRole::Let
             }
         }
-        RawRoleKind::Declaration(DeclarationRole::Invariant) => ReservedDeclarationRole::Invariant,
         RawRoleKind::Declaration(DeclarationRole::CountedBinder) => {
             ReservedDeclarationRole::ForBinder
         }

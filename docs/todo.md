@@ -7,67 +7,66 @@ criterion for deciding whether to pursue it. Entries do not select a design.
 Remove an item when its implementation and checks land, or its validation
 concludes with a recorded disposition; retain any selected follow-up work here.
 
-- **Empty public source input needs an explicit contract.** In
-  [the driver](../compiler/src/driver.rs), `check(&[])` accepts after adding the prelude,
-  while the CLI requires a source path. Whether PRE-1 representations count
-  toward PROG-2's source-record requirement needs clarification before
-  changing acceptance. `max_sources` counts injected prelude inputs as well
-  as caller inputs; that is not by itself a defect. Add API-level boundary
-  controls for the selected policy without rewriting source verdicts around
-  an invocation policy.
-
-- **Validate retirement of legacy flat assignment targets.**
-  [Storage place checking](../compiler/src/semantic/check/expressions/flat_storage.rs)
-  converts mutable Array and Buffer targets to the shared Container/Storage
-  path before its older flat-target dispatch. Confirm that no ordinary
-  source or necessary internal consumer still constructs `CheckedArraySetTarget`
-  or `CheckedBufferSetTarget`; if none does, retire those representations and
-  their duplicated capture, kill and lowering paths. This could simplify
-  assignment reasoning, but the complete consumer audit remains undone.
-  Defer until the next storage-checker simplification; preserve target-before-RHS
-  capture, diagnostic locations and native assignment behavior in that audit.
-
-- **POSIX heap-exhaustion record writers do not retry an interrupted write.**
-  The generated heap record writers abort on every nonpositive `write`
-  result, while the host floor's stack-record writer retries EINTR. This
-  can truncate the promised resource record, not continue execution after
-  allocation refusal. Validate with the existing allocation-refusal observer
-  plus one interrupted record write before selecting the repair; no native
-  interruption experiment has run. Retain platform-specific error handling
-  and best-effort behavior for irrecoverable output failure.
-
-- **Zero-size target address qualification needs a precise domain ruling.**
-  An `Array<Empty>` with count `2^63 + 1` and index `2^63` passes OP-9,
-  source checking and LLVM emission on the current 64-bit target. Its actual
-  stride is zero and allocation is header-only, so a signed GEP index still
-  produces zero displacement; this is not a demonstrated memory error.
-  STOR-6 requires representability in the actual address-index domain, but
-  the target checker does not inspect `BufferIndex.offset`. Determine whether
-  representability constrains that raw logical index or the effective byte
-  displacement, including ordinary facts-off omissions, and test the selected
-  interpretation. The enormous fill loop was not run natively. Keep this as
-  a target-rule clarification, not an asserted incorrect execution.
-
 - **Joined reference proofs lose useful target-relative information.** A
   reference selecting either of two freshly empty Slots cannot establish the
   append precondition from both constructors' facts; captured disjoint ranges
   formed in separate branches also lose their branch-local endpoint images
   at the join. These safe examples are rejected under the current fixed proof
-  routes, rather than demonstrating an implementation violation. Evaluate a
-  bounded rule for retaining the needed target-relative facts, preserving
-  same-holder identity without claiming that a write changed every possible
-  target. Require matching overlapping and stale-capture controls and a
-  checking-cost comparison before proposing a language change. This is an
-  improvement-validation task.
+  routes, rather than demonstrating an implementation violation. The
+  [bounded query experiment](../research/investigations/consistency-followups/DESIGN.md#reference-joins-and-bounded-proof-precision)
+  supports substituting both operands for the same selected alternative, but
+  does not yet establish a complete family: current target authority differs
+  from the function-wide origin inventory; Boolean and integer-domain consumers
+  need uniform normalization; failed-query term registration needs inertness
+  evidence; and polynomial work in an explicit target set is not a bound in
+  source size. Keep the current rules until those obligations are resolved and
+  matching full-origin, stale-capture, query-order and growth controls pass.
+  Branch-local range images additionally need target-presence and capture-
+  generation information; a plain union of branch images is insufficient.
 
-- **Invariant-name reservation has conflicting definitions.** OP-1 lists the
-  declaration roles subject to FORM-3 reservation and explicitly excludes
-  other roles; that list omits invariants. TYPE-6 later says header and body
-  invariant names participate in FORM-3. The resolver and existing tests
-  reject an invariant named `cvt`, matching the latter text. Decide whether
-  invariant declarations are covered, then align both normative definitions
-  and their derived tests. Neither implementation behavior nor this audit
-  selects the language rule.
+- **Establish whether the reference-summary depth fallback is source-reachable.**
+  `PlaceMap::resolve_root` returns wholly unresolved beyond 32 recursive summary
+  expansions. Any unresolved child discards the whole alternative set; inspected
+  proof and parallel consumers fail closed, so no partial-origin omission or
+  incorrect acceptance is established. Ordinary aliases are flattened when
+  recorded, and a long source alias chain is not itself a reproducer. Trace
+  checked-source summary construction and test the internal boundary with a
+  shallow sibling; if reachable, replace the depth-dependent precision boundary
+  with source-bounded traversal and explicit cycle handling. Deferred until
+  reference-summary work provides a discriminating source witness or proves the
+  cap redundant; reopen before reusing this resolver for a new proof family.
+
+- **Counted-loop binder reservation has a separate normative mismatch.**
+  OP-1's exhaustive prohibited-role list omits `for_binding`, while DIAG-1's
+  reservation payload inventory includes `for-binder` and the resolver rejects
+  `for (cvt in 0_u64..1_u64)` with FORM-3. The existing resolver case
+  `counted_range_binder_uses_the_for_binder_reservation_role` requires that result.
+  Decide whether runtime loop binders join ordinary value binders in the reserved
+  domain, then align the two rule lists, resolver and positive/negative controls.
+  Invariant names have a separate proof-only lookup domain, so their exemption
+  does not decide this question. Deferred to an explicit runtime-name ruling;
+  reopen before changing reservation or counted-loop declaration inventory.
+
+- **Validate reuse of selected-target element layouts during emission.**
+  [Zero-stride addressing](../compiler/src/backend/target.rs) currently queries
+  the ordinary layout calculator afresh for each element-address step. Repeated
+  accesses to a deeply nested nominal element may recompute the same layout.
+  Compare checking/emission cost on repeated nested-element accesses before
+  introducing shared layout storage; require identical qualification and emitted
+  addresses. The benefit and material cost are unmeasured, so keep the simple
+  query for now and reopen when measuring target-emission cost or extending its
+  layout consumers.
+
+- **Validate a shared Ring wrap calculation independent of layout bounds.**
+  The corrected front predecessor handles every admitted capacity. Remaining
+  address-only modular additions are justified by the positive-stride target
+  bound or the zero-stride address operand; head advancement separately uses
+  the safe offset one. An overflow-free common formulation could simplify
+  those grounds across indexed access, shifts, transfers and cleanup, at the
+  cost of more emitted arithmetic. Compare exact coordinates at u64 boundaries
+  and representative native cost before selecting it. No remaining observable
+  defect is established; defer beyond the predecessor repair and reopen when
+  changing Ring layout or coordinate consumers.
 
 - **Ordered Vector consumption still relocates rear elements.** The take-first
   composition exchanges an owned local with each first-half suffix slot, then
@@ -133,6 +132,19 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   evidence, not proof that no broadly useful strategy exists. Close this item
   when a policy meets explicit representative criteria or its accepted
   tradeoffs are recorded.
+
+- **Array-helper pricing beyond original read-only references remains conservative.**
+  The pending [typed Box-array extent proposal](../research/investigations/compute-model/DESIGN.md#read-only-box-array-helper-work-pricing)
+  keeps static estimates for local owners, write-capable formals and references
+  changed away from the original formal. Some unchanged forwarded references
+  also lose the exact capture identity and fall back. Retaining those runtime extents could
+  expose useful work, but their measured workload impact is unknown and a
+  captured owner may already be consumed. Reopen when an affected helper's
+  static price demonstrably withholds useful splitting and an existing checked
+  validity fact or captured scalar measure can authorize the observation at
+  every split site, including zero-trip loops. Defer broader transport until
+  that case supplies both the benefit and the availability evidence; pricing
+  must not infer a separate source lifetime.
 
 - **Stable scatter has low parallel utilization and unresolved costs.** The
   [reference-model trial](../research/investigations/compute-model/DESIGN.md#reference-model-scatter-result-2026-09-20)

@@ -2176,30 +2176,8 @@ pub(crate) struct CheckedWritablePlace {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedArraySetTarget {
-    pub(crate) binding: BindingId,
-    pub(crate) fields: Vec<u32>,
-    pub(crate) array_type: CheckedType,
-    pub(crate) element_type: CheckedType,
-    pub(crate) length: CheckedConst,
-    pub(crate) offset: CheckedExpression,
-    pub(crate) obligation: NodePath,
-    pub(crate) target_domain: CheckedTargetDomainObligation,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedBufferSetTarget {
-    pub(crate) root: CheckedBufferRoot,
-    pub(crate) offset: CheckedExpression,
-    pub(crate) obligation: NodePath,
-    pub(crate) target_domain: CheckedTargetDomainObligation,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedSetTarget {
     Place(CheckedWritablePlace),
-    ArrayIndex(Box<CheckedArraySetTarget>),
-    BufferIndex(Box<CheckedBufferSetTarget>),
     /// One element position of the run a range reference names [REF-4].
     RangeIndex(Box<CheckedRangeElementPlace>),
     /// A typed storage path including all subscripts and terminal fields.
@@ -2210,8 +2188,6 @@ impl CheckedSetTarget {
     pub(crate) fn binding(&self) -> BindingId {
         match self {
             Self::Place(target) => target.binding,
-            Self::ArrayIndex(target) => target.binding,
-            Self::BufferIndex(target) => target.root.binding,
             Self::RangeIndex(target) => target.root.binding,
             Self::Storage(target) => target
                 .binding()
@@ -2222,8 +2198,6 @@ impl CheckedSetTarget {
     pub(crate) fn ty(&self) -> CheckedType {
         match self {
             Self::Place(target) => target.ty,
-            Self::ArrayIndex(target) => target.element_type,
-            Self::BufferIndex(target) => target.root.element_type,
             Self::RangeIndex(target) => target.ty,
             Self::Storage(target) => target.ty,
         }
