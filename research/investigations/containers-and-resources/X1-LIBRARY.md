@@ -77,12 +77,13 @@ implementation replaces individual candidate conclusions.
 
 ## Findings and boundaries
 
-The six families have plausible ordinary-value representations. Two narrow
-owned-element operations now have checked/native evidence in the
-[x1 probes](../../experiments/container-representation/x1/RESULTS.md): indexed
-vacancy exchange with a must-consume element, and a generic ordered drain with
-linear element movement. This is not evidence that six complete libraries
-already exist, or that their native costs are at parity.
+The later trials establish four reusable ordinary-value libraries: Vector,
+Deque, Slab and HashMap, within the contracts in the
+[current completion matrix](#current-completion-boundary-at-v068). The initial
+[x1 probes](../../experiments/container-representation/x1/RESULTS.md) established
+only indexed vacancy exchange and linear-movement ordered drain. Neither
+those probes nor the four libraries establish complete priority/ordered
+families or native parity for every operation.
 
 Three different questions must not be collapsed:
 
@@ -849,13 +850,18 @@ whether one syntax is shorter.
 
 Pool-indexed nodes make descent a scalar-ID loop under REF-1. Store an explicit
 index path for rebalancing and reacquire references after growth or mutation;
-avoid silently re-searching from the root after every iterator step. Box-linked
-nodes may use recursion, but loop-carried path extension is refused. The
-[wildcard-path investigation](https://github.com/mbbill/Whitefoot/blob/dafff1748603530e867cd7d7c164a35b78f8f5a9/research/investigations/wildcard-path/REPORT.md)
-identifies the refinement and finite-analysis work behind that proposed
-extension. Its proposal is not assumed present in this baseline. Compare
-pool descent and recursion first; an extra mechanism needs the remaining
-performance or resource problem as its consumer.
+avoid silently re-searching from the root after every iterator step. At the
+v0.60 baseline Box-linked nodes used recursion because loop-carried path
+extension was refused. Current v0.68 REF-1 admits descendant cursors through
+finite loop summaries, and REF-2 preserves an already selected payload
+reference after its match arm ends. The maintained
+[owned-link caller](../../../tests/programs/owned_link_cursors.wf) exercises
+iterative list edits and tree descent; the
+[cursor investigation](../wildcard-path/DESIGN.md) records its limits.
+Recompare pool-indexed nodes, Box-linked cursors and recursion under those
+current rules. A complete ordered container, independent-cursor separation
+and its costs are not established by that traversal witness; an extra
+mechanism still needs a concrete remaining operation or performance problem.
 
 ## Ceiling challenges connected to real source contracts
 
@@ -905,14 +911,15 @@ contract, specification rule or compiler implementation.
 | X1-P2 | [unbounded-reserve.wf](../../experiments/container-representation/x1/unbounded-reserve.wf) records the old missing-requirement shape | Resolved in the shipped GrowVector: `const ceiling`, `requires total <= ceiling`, bounded doubling and saturation replace unrestricted growth. MSR-4 now supplies the specified affine-left/L0-right bridge needed by the ordinary caller proof. The deliberately unbounded probe should still reject under OP-9. | Keep the size requirement. A library/application Full outcome may return the offered owner when its selected limit is reached; heap allocation itself has no refusal arm. Do not carry this old finding forward as a compiler or current-library defect. |
 | X1-P3 | [linear-ring-publish.wf](../../experiments/container-representation/x1/linear-ring-publish.wf):18; OP-12 and WIN-3 versus the atomic-update paragraphs in [CANDIDATE-X1.md](../access-effects/CANDIDATE-X1.md) and [affine-replacement.md](../../../design/language/ownership/affine-replacement.md) | The active affine/copy restriction remains. A nodrop Ring cannot use this atomic-publication route; the candidate's general linear-assignment refusal also remains. The broader atomic paragraph alone does not establish a selected linear exception. | Obtain an explicit intended-domain ruling before changing OP-12 or its record. In parallel, test ordinary swap/contract and consuming-rebase alternatives without claiming all deque designs impossible. No language widening is part of this restoration. |
 
-The following are specified limits, not bugs to silently fix in #70:
+The following were specified limits at #70, not bugs to silently fix in that
+restoration. The cursor row records its subsequent change:
 
 | Exact fragment | Rule | Ordinary workaround and limit |
 | --- | --- | --- |
 | `count(part: &ring[0_u64..0_u64])` in [ring-range.wf](../../experiments/container-representation/x1/ring-range.wf) | REF-4 | Element visitation, copying into Slots, or a full copy-element Array with two physical spans. Only the last preserves zero-copy ranges, and it requires initialization/filler. |
 | `ensures deref(destination).len == deref(entry(destination)).len + deref(entry(source)).len;` in [append-contract.wf](../../experiments/container-representation/x1/append-contract.wf) | FN-9 admits only one datum plus a constant on each relation side | Reread lengths and use ordinary control flow where necessary; an affine postcondition extension is separately proposed work, not assumed here. |
 | `struct Record { header: Header; tail: Array<u8>; }` (declaration fragment) | TYPE-9 permits a runtime-capacity shape only directly as Box content | Encoded byte block, or a separate Box for the tail. Neither is an implicitly packed typed trailing member. |
-| `set cursor = &deref(cursor).next.Some.value.inner;` carried by a loop (path fragment) | REF-1 static path shape; REF-2 also matters when leaving the Some arm | Pool indexes or ordinary recursive descent. Do not assume wildcard-path or musttail work has already landed. |
+| `set cursor = &deref(cursor).next.Some.value.inner;` carried by a loop (path fragment) | The v0.60 REF-1 static-shape restriction and REF-2 arm boundary | Superseded by current REF-1 descendant summaries and REF-2 selected-place retention. Every new payload selection still needs a current variant fact, and destructive ancestor writes still invalidate references. [The current caller](../../../tests/programs/owned_link_cursors.wf) supplies iterative traversal/edit evidence, not a complete ordered map. |
 | An `ensures` exporting a returned handle's indexed generation/variant relation | FN-9's relation datums and routes exclude that shape | Return a bounded scalar index, then validate/match locally or inside the consuming callback. Measure repeated checks before widening contracts. |
 
 ## Library home and evidence after the merge
@@ -943,41 +950,164 @@ retained v0.58 experiment has a different storage and allocation-refusal
 contract and must not be used as current performance evidence. The later
 Vector trial below supplies the expanded ownership and current cost evidence.
 
-## Recommended implementation and measurement order
+## Current completion boundary at v0.68
 
-1. **Finish the existing reusable Vector first.** Implement O(n) ordered drain,
-   then the missing selected operations such as swap-remove and consuming
-   truncation. Extend the existing caller with order-sensitive observations,
-   copy/drop/nodrop instances and full construction-to-cleanup chains; avoid
-   duplicating a native harness. Compare the actual merged implementation with
-   a matched C control, separately pricing growth, initialized spare storage,
-   large-element transfers and retained-helper overhead. A proof-erased branch
-   count is not a substitute for those measurements.
-2. **Complete the first slice with Slab and Deque.** Slab trials establish
-   vacancy exchange, generation exhaustion, expiry and the selected membership
-   contract. Deque trials establish both-end operations, wrap, grow/rebase and
-   cleanup; choose explicitly between slot visitation and the copy-element
-   physical-span representation. Resolve the complete nodrop growth route
-   before declaring an unbounded growable Deque. These are independent trials;
-   the unresolved atomic-update domain need not block Slab or Vector work.
-3. **Build the keyed and composite slice.** Generic HashMap and PriorityQueue
-   must run complete chains, including owned keys/values, rehash and reverse-map
-   repair. Compare sparse inline and index/dense layouts at the same identity
-   contract. Run the record-index workload to expose the cost and correctness
-   of retaining one object through more than one index.
-4. **Run the ordered/layout challenge.** Full B-tree operations and scans,
-   a Box-linked comparison, compact page records and large-value construction
-   provide the consumers for existing contract, traversal and lowering
-   proposals. No primitive is selected merely because a prototype was awkward.
+This assessment starts from main `345e2966a`, kernel v0.68. It supersedes the
+earlier implementation-order recommendation; later sections retain their
+original experimental revisions. The common-container continuation requires
+the missing priority queue, indexed composite and full ordered operation
+chains below. Completing them does not mean closing every performance or
+language question in [the maintained TODO](../../../docs/todo.md).
 
-After each slice, report expressibility, completed operations and measured cost
-separately. A source rejection, unsupported lowering, wrong native result and
-unmeasured candidate are four different outcomes. Required library behavior
-must not be weakened to obtain a green experiment. Merging PR #70 establishes
-the baseline; it does not by itself complete these libraries or establish
-their performance ceiling. The restoration at `8c02e875` restored the library
-home and updated the evidence and recommendations. The subsequent Vector
-consumption trial below implements the first library slice.
+| Family or consumer | Established operation chain | Remaining delivery and cost boundary |
+| --- | --- | --- |
+| [Vector](../../../lib/containers/grow-vector.wf) | Reserve/growing append, insert, ordered and swap removal, truncate, ordered drain and release; copy/drop/nodrop callers | Selected library chain complete. Extra drain movement and short-cycle lowering costs remain measured questions. |
+| [Deque](../../../lib/containers/deque.wf) | Both endpoints, wrap, logical visitation, consuming grow/shrink rebase, drain and release | Selected endpoint/rebase chain complete. Automatic reference-based growth and Ring two-span access are separate interfaces; scalar costs remain unresolved. |
+| [Slab](../../../lib/containers/slab.wf) | Lazy bounded slots, handle validation, returned-owner exhaustion, removal, reuse, expiry, generation retirement and consumption | Selected stable-slot chain complete. Aggregate transfers, the extra cell word and membership beyond the one-object caller remain separate questions. |
+| [HashMap](../../../lib/containers/hash-map.wf) | Generic owning collision/replacement/removal/reuse, lookup/edit, growth/rehash, visitation and consumption | Selected map chain complete. Inactive-storage lowering is the separate PR #101 trial; wide result/migration costs and double-backing peaks remain qualified by its eventual evidence. |
+| PriorityQueue | [Generic comparator/swap witness](../../../tests/conformance/cases/run-generic-priority-behavior.wf), fixed capacity 16, scalar and copy-record instances | Reusable arbitrary-T growth, peek/pop/replace-top, heapify, drain and cleanup with owning instances and a matched cost comparison are the next slice below. |
+| Indexed composite | [Weak/retained membership caller](../../../tests/programs/containers/slab-membership-program.wf) over one object | Still required: multiple records, Slab ownership, HashMap ID lookup, indexed-heap update/removal with reverse-position repair, expiry/reuse and separate weak/retained contracts. |
+| Ordered container | [One u64 B+ leaf split](../../../tests/programs/containers/ordered.wf) and owned-link traversal | Still required: generic find/insert/replace, split/promotion, delete/borrow/merge/root contraction, ordered/range traversal and complete cleanup, with a same-contract cost comparison. |
+
+The four libraries' maintained callers run through
+[`compiler/tests/programs/containers.rs`](../../../compiler/tests/programs/containers.rs)
+with sequential/parallel lowering and exact allocation-release ledgers. Those
+checks establish their stated operation/ownership coverage, not native parity.
+No current confirmed compiler defect is needed to explain the remaining
+library rows. Ring spans, richer contract publication and whole-owner swap
+facts are specified limits; the full sparse-map conditional-preservation
+refusal above remains unclassified. Header-plus-tail storage, compact byte
+pages, generic construction placement and concurrent reclamation remain
+independent research consumers, not additional requirements on this slice.
+
+### Reusable PriorityQueue trial
+
+The question is whether an ordinary boxed binary heap supports the full
+generic owning chain at competitive executable cost, including growth and
+retained helper boundaries. The current comparator witness already mutates
+through references and exchanges arbitrary T without holes; its scalar
+instances and historical small-heap timings do not establish this larger
+contract. This trial proceeds independently of PR #101's unchanged-source
+inactive-storage comparison and selects no new storage or proof mechanism.
+
+The candidate owns `Box<Slots<T>>` in `PriorityQueue<T, const ceiling: u64>`.
+The ceiling bounds concrete allocation sites; growth doubles or saturates at
+that ceiling, with zero capacity growing to one. `PriorityOrder<T, E>` supplies
+`compare(env: &E, left: &T, right: &T) -> order: i32 reads(env), reads(left),
+reads(right)`, where the sign selects order. Comparator consistency is needed
+for meaningful heap ordering, not for bounds, ownership or termination of
+the library's loops. All progress claims are conditional on callbacks returning.
+No equal-priority stability, escaping reference or stable slot identity is
+promised. The indexed consumer adds its own identity/position relation later.
+
+Proposed signatures follow; they are interface sketches with bodies omitted,
+not checked source or a settled library API. `T` has no copy/drop bound.
+
+```wf
+fn priority_queue_new<T, const ceiling: u64>() -> made: PriorityQueue<T, ceiling> pure
+
+fn priority_queue_len<T, const ceiling: u64>(queue: &PriorityQueue<T, ceiling>) -> length: u64 reads(queue.storage) contract {
+  ensures length == deref(queue).storage.inner.len;
+}
+
+fn priority_queue_reserve<T, const ceiling: u64>(queue: &PriorityQueue<T, ceiling>, total: u64) -> capacity: u64 writes(queue.storage) contract {
+  requires total <= ceiling;
+  ensures capacity == deref(queue).storage.inner.cap;
+  ensures capacity >= total;
+  ensures deref(queue).storage.inner.cap >= deref(entry(queue)).storage.inner.cap;
+  ensures deref(queue).storage.inner.len == deref(entry(queue)).storage.inner.len;
+}
+
+fn priority_queue_push<interface PriorityOrder<T, E>, const ceiling: u64>(queue: &PriorityQueue<T, ceiling>, value: T, env: &E) -> result: Result<unit, T> reads(env), writes(queue.storage)
+
+fn priority_queue_peek<T, F, R, fn observe(env: &F, value: &T) -> result: R reads(value), writes(env), const ceiling: u64>(queue: &PriorityQueue<T, ceiling>, env: &F) -> result: R reads(queue.storage), writes(env) contract {
+  requires deref(queue).storage.inner.len > 0_u64;
+}
+
+fn priority_queue_pop<interface PriorityOrder<T, E>, const ceiling: u64>(queue: &PriorityQueue<T, ceiling>, env: &E) -> removed: T reads(env), writes(queue.storage) contract {
+  requires deref(queue).storage.inner.len > 0_u64;
+  ensures deref(queue).storage.inner.len + 1_u64 == deref(entry(queue)).storage.inner.len;
+  ensures deref(queue).storage.inner.cap == deref(entry(queue)).storage.inner.cap;
+}
+
+fn priority_queue_replace_top<interface PriorityOrder<T, E>, const ceiling: u64>(queue: &PriorityQueue<T, ceiling>, value: T, env: &E) -> removed: T reads(env), writes(queue.storage) contract {
+  requires deref(queue).storage.inner.len > 0_u64;
+  ensures deref(queue).storage.inner.len == deref(entry(queue)).storage.inner.len;
+  ensures deref(queue).storage.inner.cap == deref(entry(queue)).storage.inner.cap;
+}
+
+fn priority_queue_heapify<interface PriorityOrder<T, E>, const ceiling: u64>(storage: Box<Slots<T>>, env: &E) -> made: PriorityQueue<T, ceiling> reads(env) contract {
+  requires storage.inner.cap <= ceiling;
+}
+
+fn priority_queue_drain<interface PriorityOrder<T, E>, F, fn consume(env: &F, value: T) -> result: unit writes(env), const ceiling: u64>(queue: &PriorityQueue<T, ceiling>, order_env: &E, consume_env: &F) -> result: unit reads(order_env), writes(queue.storage), writes(consume_env) contract {
+  ensures deref(queue).storage.inner.len == 0_u64;
+  ensures deref(queue).storage.inner.cap == deref(entry(queue)).storage.inner.cap;
+}
+
+fn priority_queue_free<T, F, fn consume(env: &F, value: T) -> result: unit writes(env), const ceiling: u64>(queue: PriorityQueue<T, ceiling>, env: &F) -> result: unit writes(env)
+```
+
+`new` starts empty at zero capacity. `push` returns the offered owner unchanged
+in Err when length has reached the ceiling, and Ok after insertion otherwise;
+this is an application capacity outcome, not allocation failure. Reserve
+follows Vector's caller-proved bound. Heapify consumes an already initialized
+boxed prefix without allocation and builds bottom-up. Drain consumes in pop
+order while preserving capacity, so it costs O(n log n); final free instead
+consumes in reverse physical-slot order in O(n), then releases the backing.
+Both callbacks receive their disjoint environment and current owner only.
+
+The first public-access discriminator is a caller that tests the result of
+`priority_queue_len`, then peeks or pops using its published relation without
+reading representation fields. Proved-nonempty operations return the owner
+directly and let one loop-bound proof serve repeated pops. The alternative
+`Option<T>` pop and optional callback result handle emptiness dynamically but
+add a tagged owning-result boundary. Compare that alternative if the ordinary
+writer chain cannot use the published relation or its boundary remains costly;
+do not add parallel try/unchecked APIs or a missing-fact branch merely to make
+the implementation pass. Refusal/retry and empty/pop outcomes must match on
+both sides of any performance comparison. No richer FN-9 rule is assumed.
+
+Before selecting the candidate, require geometric growth, strictly decreasing
+parent indices or increasing bounded child indices in every sift, O(log n)
+sifts and O(n) bottom-up heapify. Prove child arithmetic before computing it,
+including zero-sized payload instances whose capacity has no positive-stride
+bound. Comparator answers must not restart a scan or authorize a partial
+operation. The O(n log n) ordered drain and O(n) final cleanup are distinct
+contracts; compare each with the same native order and ownership outcome.
+
+The formal caller belongs beside the existing library callers and bundles the
+actual library through the existing corpus runner. Use an independent sorted
+sequence oracle and exact owner identities/releases for copy, owning drop and
+nodrop elements: zero/singleton/irregular ceilings, growth and refusal/retry,
+peek, replacement, heapify, drain/reuse and partial final cleanup. Equal-priority
+tests check contents without assuming stability; a tie-breaker supplies exact
+order where required. Always-equal, always-greater and cyclic comparisons must
+still finish the bounded loops without losing or duplicating owners.
+
+The prospective cost comparison uses the same source contract, capacities,
+growth policy, inputs and checksums in WF and direct C, with scalar and wide
+inline owning payloads, ordinary optimization and retained helpers. Separate
+reserved churn/replacement, growing fill/pop, heapify/pop and setup/cleanup;
+record full backing/peak bytes, allocations and actual transfers, including
+any C hole-sift advantage over whole-element swaps. A source-shaped C control
+can isolate that algorithmic cost. Keep construction and execution time
+separate and repeat in reversed orders with unchanged C controls. Select an
+optimization only when the same-contract improvement repeats beyond control
+variation and its emitted-code or algorithmic cause is established; retain
+tradeoffs per workload instead of averaging an unmeasured application mix.
+A large unexplained cost reopens a bounded implementation/algorithm comparison
+before broadening the slice. No universal parity threshold or new mechanism
+follows from acceptance, copy counts or a single timing.
+
+**Design suitability.** A boxed prefix and borrowed comparator build on the
+current generic witness, preserve arbitrary ownership and give the indexed
+consumer a reusable heap core. The proposed nonempty interface needs the
+public-access proof discriminator above; wide-element sift movement and result
+transfers need the matched experiment. Indexed updates and the full ordered
+chain remain required following slices. The existing cost and language
+questions keep their own reopening criteria rather than becoming implied
+prerequisites for this implementation.
 
 ## Vector consumption trial
 
@@ -1431,7 +1561,7 @@ context. They state current rules, not proposed amendments.
 | --- | --- | --- |
 | In `slab_new`: `ensures result.cells.inner.len == 0_u64;` | FN-9's result-selector domain does not include an arbitrary aggregate result field. A nominal Deque wrapper's `made.storage.inner.len` has the same limit. | Slab retains its necessary free-list state; the caller establishes length through an ordinary read/branch. Deque needs no extra wrapper state and uses direct `Box<Ring<T>>`, whose `made.inner.len` is admitted. |
 | In `slab_find_index`: `ensures when Ok(value: index): deref(slab).cells.inner[index].storage.len > 0_u64;` | FN-9/CALL-4 do not admit this indexed postcondition target. | Export the outer index bound; use `slab_visit` to keep validation and callback in one helper, or re-read occupancy before direct access. |
-| The signature `fn borrow_out<T>(value: &T) -> result: &T reads(value) {` | GRAM-3 requires `own` at the result; REF-3/FN-1 prohibit reference escape. | Return owned callback data or a validated index. |
+| The signature `fn borrow_out<T>(value: &T) -> result: &T reads(value) {` | Current GRAM-3 admits a value type at the result; REF-3/FN-1 prohibit reference escape. | Return owned callback data or a validated index. |
 | After `let values = box_ring_new::<u64>(capacity: 4_u64);`: `let count = observe::<u64>(first: &values.inner[0_u64..0_u64], second: &values.inner[0_u64..0_u64]);`, with `observe` taking two `&[T]` arguments | REF-4 refuses even empty Ring ranges. | Per-slot visitation; this remains an explicit missing zero-copy two-span interface. |
 
 The vacant variant does not travel through swap's row to the extracted local.
