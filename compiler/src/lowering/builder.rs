@@ -188,6 +188,8 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
+    #[cfg(test)]
+    let loop_candidate_constructions = synthesis.borrow().candidate_constructions;
     let (synthesized, mut actualization) = synthesis.into_inner().finish()?;
     functions.extend(synthesized);
     split::assign_weights(&mut functions);
@@ -203,6 +205,8 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         actualization,
         sequential_compute_refusal,
         recursion_budget,
+        #[cfg(test)]
+        loop_candidate_constructions,
     })
 }
 

@@ -13,6 +13,14 @@ Owner-approved: The owner explicitly accepted the complete PR #94 amendment and 
 
 Summary: Apply the reviewed addition unchanged. Publish the final structural traversal's complete resolved reference-origin inventory and consume it directly in place summaries, preserving parameter entry roots and all observed alternatives without a second origin fixed point, recursive holder lookup or depth cutoff. Keep the inventory conservative rather than treating it as point-current proof authority. The [reference-summary investigation](../research/investigations/consistency-followups/DESIGN.md#reference-summary-roots-and-expansion-depth) records the source counterexamples, replacement-test evidence and validation criteria. Remove the resolved amendment and its directory, and apply the directed unused-import cleanup. The language specification is unchanged.
 
+## 2026-09-22 Rescue oversized loop frames without repeated lowering
+
+Nodes: compiler/parallel-lowering/two-worlds
+
+Owner-approved: The owner explicitly accepted the complete PR #78 amendment after the reviewed handoff at 37fb6336, replying that the amendment was agreed.
+
+Summary: Apply the two reviewed decisions and rejected alternatives unchanged. Select needed captures only to rescue a frame above the existing lane bound, preserving already-fitting interfaces and helper order. Reuse a still-oversized candidate's completed CFG to avoid exponential nested reconstruction without adding a fallback call, preserving original storage and nested parallel opportunities. Remove the accepted amendment and its directory. The compiler implementation and specification are unchanged; this ruling does not authorize a merge.
+
 ## 2026-09-22 Qualify empty window storage and retain the payload-address fact
 
 Nodes: compiler/storage-representation, compiler/backend-facts

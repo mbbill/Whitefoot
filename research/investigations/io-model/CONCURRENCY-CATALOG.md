@@ -323,23 +323,28 @@ obligations are the ordinary ones the program already needs — `first <= end`,
 `end <= len_of(…)` — carried in the `contract` block and discharged once at the
 call boundary, not per element.
 
-For the reduction, three real restrictions:
+For the reduction, the [active specification's PAR-2 rule](../../../spec/kernel-spec.md#13-execution-overlap)
+places three restrictions on that counted-loop form:
 
 - **One accumulator.** Mean-and-variance, min-and-argmin, sum-and-count in one
-  pass: denied, `LoopDenial::ManyAccumulators`. The writer runs two loops and
-  reads the input twice, or packs two values into one integer and uses `+wrap`
-  with a field layout that cannot carry between fields — a real technique, and
-  an ugly one.
+  pass through several loop accumulators: denied, `LoopDenial::ManyAccumulators`.
+  This does not force two input passes: private block summaries or ordinary
+  recursive helpers can carry several fields and combine them after their
+  independent work. Their storage, combine and scheduling costs need a consumer;
+  they are not measured here.
 - **Fixed operation set, integers and bits only.** `fadd.strict` is not
-  associative, so **no floating-point reduction is admitted at all**. A
-  float sum over 500k elements runs sequentially. For `fir` this does not bite
-  because the fold is per-output and iteration-private; for a genuine
-  `parallel_reduce` over doubles it is total.
+  associative, so PAR-2 cannot regroup a strict floating-point fold. A
+  writer-specified fixed tree can instead overlap ordinary child calls, as the
+  current [quadrature source](../../../tests/programs/compute/quadrature.wf)
+  does before its left-plus-right `fadd.strict`. That preserves the written
+  tree's result, not necessarily the result of a left fold. A useful native
+  comparison must preserve the selected numerical contract.
 - **No exits.** A body containing `break`, `return`, `give` out of the loop, or
   a `?`-style `propagate_let_rhs` denies. Any reduction that can fail early —
   a checksum that stops on a bad record, a parse that propagates an error — is
-  sequential unless rewritten to encode failure in the accumulator's value
-  domain (`imin` over positions, `ior` over flags).
+  denied in that form. Iteration-local result metadata, a candidate-index fold,
+  or sequential batches of parallel work are alternatives whose result and
+  costs must be checked; §21 discusses the last form.
 
 Granularity is *not* a writer decision here, which is the good news: the
 compiler emitted 16 chunks for 98,304 mandelbrot points and 64 for 524,288 FIR
@@ -362,17 +367,20 @@ Latency: irrelevant for a batch map. Memory: identical — one output buffer, no
 per-lane copies, no task objects. Whitefoot is strictly cheaper than Rayon here
 on allocation.
 
-**Strictly worse case:** a float reduction, where Whitefoot is sequential and
-the native form is ~Wx faster. On four cores that is a 3–4x loss on that
-phase. Second worst: a fine-grained map whose body is a handful of instructions
+No floating-point reduction speed ratio follows from the counted-loop
+restriction: a native regrouped sum and a strict left fold may have different
+results, while ordinary recursive helpers can expose a chosen fixed tree.
+The reduction alternatives above have not been compared here. A measured
+adverse case is a fine-grained map whose body is a handful of instructions
 — the `wfgrep` 1.40x regression is exactly this shape, a lane offered per byte
 comparison.
 
 ### (e) Verdict
 
-**Direct** for the map and for integer/bit reductions. **Bounded loss** for
-reductions: no float folds, one accumulator, no early exit — each a sequential
-phase where the native form is W-way.
+**Direct** for the map and admitted integer/bit reductions. Other counted-loop
+forms require restructuring; the one-accumulator, operation-set and exit
+restrictions do not establish that every equivalent formulation is sequential.
+The costs of those alternatives remain unmeasured here.
 
 ---
 
@@ -743,8 +751,11 @@ tf::Executor().run(f).wait();     // B and C overlap; D starts the instant both 
 
 ### (b) Whitefoot shape, static DAG
 
-A static DAG *is* a PAR-1 window per level. The dependency edges are the data
-dependencies the rule already reads.
+The displayed diamond has one PAR-1 pair: B and C write disjoint outputs,
+then D reads both results. A topological order alone does not establish that
+every static DAG has this call structure or its cost. The Whitefoot sketches
+in this section illustrate decompositions; they are not compiled witnesses
+on the current specification.
 
 ```whitefoot
 fn run_graph(src: &Input, l: &uniq buffer<f64>, r: &uniq buffer<f64>,
@@ -762,8 +773,11 @@ fn run_graph(src: &Input, l: &uniq buffer<f64>, r: &uniq buffer<f64>,
 
 ### (b′) Whitefoot shape, dynamic DAG
 
-Dependencies discovered at run time force the level-synchronous form: the graph
-becomes arrays, and each level is one PAR-2 loop.
+One representation of a runtime-input DAG stores the graph in arrays and
+executes each ready level through a PAR-2 loop. The shared dependency counts
+and compacted frontier are updated after that loop joins. The costs below
+belong to this decomposition; runtime-valued dependencies alone do not
+establish that every representation requires global levels.
 
 ```whitefoot
 // Restructuring note: the executor's ready queue becomes a per-level ready
@@ -793,63 +807,80 @@ fn run_dynamic(dep_count: &uniq buffer<u32>, edges: &buffer<u32>, edge_at: &buff
 }
 ```
 
-Two things are worth naming in that body. `set deref(state)[i] = …` is the
-affine element write and it is permitted; `retire_level` — which decrements an
-arbitrary successor's counter and appends to a frontier — is a *scatter* and is
-denied by PAR-2 under any arrangement, so it stays sequential.
+The direct `state[i]` writes fit PAR-2's affine element family when their
+ordinary bounds and footprints are established. Concurrent retirement of
+arbitrary successors can instead update the same dependency count or append
+cursor, so this unpartitioned `retire_level` has no independence proof and
+remains sequential. That does not establish a serial phase for every DAG
+representation. Source-private messages and destination-owned ranges can
+separate competing updates, as the
+[sparse-routing investigation](../compute-model/DESIGN.md#private-outboxes-without-frontier-compaction)
+explores. Routing, joins, initialization and owner imbalance still require
+accounting; that investigation does not establish a general DAG executor.
 
 ### (c) What changes structurally
 
-Static DAG: nothing. The writer already writes the topological order; PAR-1
-finds the concurrency in it. Effect rows must be precise — one function whose
-`writes` row names a whole struct instead of the field it touches closes every
-window it appears in. This is the main new discipline: **effect-path precision
-is now a performance property, not just a proof property.**
+For the displayed static diamond, the ordinary calls already expose B/C
+independence. Effect-path precision matters: a whole-struct write row can
+deny overlap that a field-specific row would permit. More general static
+graphs still need a decomposition whose dependencies and effects expose the
+intended overlap.
 
-Dynamic DAG, three changes:
+For the displayed runtime-input decomposition, three changes:
 
-- **Barrier per level instead of per edge.** Taskflow starts D the instant B
-  and C both finish. Here D starts at the next level barrier, so the makespan
-  is `sum over levels of max(task in level)` rather than the true critical path.
-  For a DAG with many levels of few tasks, or with one long task per level, the
-  gap is large.
-- **The frontier compaction is sequential** and is O(edges out of the level).
-  For a DAG with high fan-out, this pass can rival the tasks themselves.
-- **Task identity becomes an index into arrays**, and each task's result must
-  fit a fixed `TaskState` row. Heterogeneous tasks with different result types
-  need an enum and a `match`, which is fine but costs a branch and the union's
-  size per row.
+- **Barrier per level instead of readiness per edge.** A successor waits for
+  unrelated tasks in the same level. Ignoring retirement and scheduling, the
+  unlimited-worker span is `sum over levels of max(task cost in level)`;
+  finite-worker elapsed time also depends on each level's total work.
+- **Retirement and frontier compaction are sequential in this form.** A
+  linear pass costs O(frontier size + outgoing edges) work and can rival the
+  tasks themselves at high fan-out. Destination ownership and intrusive
+  frontiers are alternatives whose costs need separate qualification.
+- **Task identity becomes an index into arrays.** This representation puts
+  results in a fixed `TaskState` row. An enum for heterogeneous results adds
+  dispatch and reserves space for its largest payload in each row; different
+  result representations need their own memory accounting.
 
 ### (d) Performance expectation
 
-Static: parity. The window is exactly the native fork-join and the measured
-sibling-pair path reaches 2.98x on 4 cores in `par_layout.wf`'s eligible phase
-(75% of ideal, the shortfall being the tree's own critical path and the lane
-budget).
+Static-diamond parity is a prediction conditional on comparable task bodies,
+lowering and scheduling costs. The reported 2.98x on 4 cores in
+`par_layout.wf`'s eligible sibling-pair phase measures another workload; it
+does not establish parity for static DAGs.
 
-Dynamic: throughput within ~15% for wide, shallow DAGs — most of the work is in
-the level loops, which are ordinary PAR-2 maps at the measured 1.03–1.14 ratio,
-plus a sequential compaction pass. For deep, narrow, skewed DAGs the
-level-barrier makespan can be **2–5x** the critical path. Reasoning, with an
-estimate: for L levels where each level has one task of cost T and k tasks of
-cost T/10, the barrier makespan is L·T and the critical path may be as low as
-L·T/… — no, the critical path is also ≥ the longest chain, so the honest
-statement is: the loss equals `sum_level max(level) / critical_path`, which is
-1.0 for a balanced DAG and grows without bound for a DAG whose long tasks are
-spread across different levels and could have run concurrently with short
-chains. I have no measurement; I would want one before believing a number.
+For the level decomposition, throughput within ~15% of native on wide,
+shallow DAGs is an unmeasured prediction conditional on task work dominating
+retirement and barrier costs. The map measurements at 1.03–1.14 do not
+establish that condition. Likewise, **2–5x** on skewed DAGs is an unmeasured
+illustration, not a bound on the level penalty.
 
-Memory: better — no task objects, no executor queues, four index arrays.
+A discriminating analytical family has k unit-cost spine tasks in a chain,
+each enabling one independent leaf of cost T, with T >= 1. Level execution
+has span `1 + k*T`, whereas the weighted critical path is `k + T`. Their
+ratio grows without bound as k grows with T much larger than k. Nested calls
+to a leaf and the remaining spine are an alternative decomposition to test
+for this family; no source proof, permission result or native execution for
+that witness is established here, and it does not settle arbitrary fan-in.
 
-**Strictly worse case:** a DAG with a long task in level 3 and a chain of short
-tasks in levels 3–20 that Taskflow would have run underneath it. Here the chain
-waits for level 3 to end. Loss = the long task's duration, repeated.
+This is a span comparison, not an unbounded elapsed-time ratio at fixed
+worker count P. For the same task work W, ignoring scheduling and
+representation overhead, a non-idling level schedule takes at most W time
+and any P-worker execution takes at least W/P. The elapsed-time ratio is then
+at most P. Extra routing, scans, initialization or recomputation change the
+work and must be charged separately.
+
+Memory is also unmeasured. Arrays replace this native example's task objects
+and queues, but graph, count, frontier, result and any routing storage remain.
+A useful native executor can use arrays too; the representation alone does
+not establish lower peak memory.
 
 ### (e) Verdict
 
-Static: **direct.** Dynamic: **restructure, bounded loss** — the loss is
-level-barrier makespan versus true critical path, plus a sequential frontier
-compaction per level.
+Displayed static diamond: **direct form, cost unmeasured here.** Runtime-input
+DAG: **restructure; costs depend on the formulation.** The examined level
+form adds barriers and sequential retirement. Their cost is not established
+as unavoidable for every representation, and efficient general fan-in remains
+unqualified.
 
 ---
 
@@ -2552,7 +2583,7 @@ for (i in 0_u64..n) {
 }
 ```
 
-The expressible parallel form drops the early exit and uses `imin`, which *is*
+One expressible parallel form drops the early exit and uses `imin`, which *is*
 an admitted accumulator:
 
 ```whitefoot
@@ -2573,48 +2604,80 @@ fn first_bad(v: &buffer<Item>, n: own u64) -> result: own u64 reads(v) contract 
 
 ### (c) What changes structurally
 
-- **The search always scans everything.** There is no way to tell the other lanes
-  to stop, because there is nothing to tell and no shared flag to set.
-- **`bad(x)` must be total.** If the predicate can fail (a `Result`), the
-  `propagate_let_rhs` form denies the loop, so failure must be encoded into the
-  accumulator's value domain too — e.g. `ior` a flag alongside, which is a second
-  accumulator, which is denied. So a fallible predicate forces a sequential loop
-  or a two-pass structure.
-- **The answer is now the first index, deterministically**, where `find_any` and
-  `par_unseq` return an arbitrary match. That is a correctness *gain* — the
-  result no longer depends on scheduling — and it is why `imin` is the right fold
-  rather than "any".
+- **The displayed form scans everything.** The current overlap rules provide
+  no shared stop flag, but an outer sequential loop can stop between parallel
+  batches. Full-input scanning is therefore a cost of this formulation.
+- **An exit-bearing `propagate` denies PAR-2.** A `Result` can instead be
+  matched within the iteration and represented as result metadata or a
+  candidate index. A concrete formulation must preserve which failure is
+  returned; fallibility alone does not prove that the whole search is serial.
+- **`imin` returns the first index deterministically.** A native comparison
+  must return that same index; an arbitrary-match API has a different result
+  contract.
+
+For a pure predicate and a required first index, ordered parallel batches give
+an analytical alternative. With input length N, fixed batch size B, and first
+match at zero-based index h, evaluating every item of each started batch costs
+at most `min(N, B * ceil((h + 1) / B))` predicate calls. Batch sizes `1, 2, 4, …`,
+capped at the remaining input, cost fewer than `2 * (h + 1)` calls and
+`O(log(h + 1))` joins when a match exists; an absent match visits N items.
+Each batch can use the admitted `imin` fold, with stopping decided after its
+join. These are analytical bounds on predicate invocations, not compiled
+search trials or timing measurements.
+
+An ordinary helper can scan one block and return its first local match;
+its normal return continues the enclosing counted iteration. That is not an
+exit from the loop judged by PAR-2: the call contributes its declared
+footprint, not the callee's return edges. A batch can fold those helper
+results with `imin` and decide whether to stop after the join. This candidate
+can skip each helper's local suffix but supplies no cancellation of another
+helper; its source acceptance and native behavior remain unqualified here.
+
+Invocation counts do not bound variable predicate cost. With batches `[0]`
+and `[1, 2]`, a cheap match at index 1 still waits for a cost-T predicate at
+index 2 if that batch evaluates every item, while sequential search stops
+after two cheap predicates. Both Whitefoot and native comparisons must charge
+work already started in the final batch; stopping inside a running predicate
+would require a different predicate interface. Join costs and these weighted
+work costs remain unmeasured.
 
 ### (d) Performance expectation
 
-When the match is near the end or absent: parity with the native parallel scan,
-at the measured map ratio (1.03–1.14).
+For the displayed full-scan form, parity when the match is near the end or
+absent was estimated from the measured map ratio (1.03–1.14). No search
+measurement establishes that estimate.
 
-When the match is early: **arbitrarily worse.** A native parallel `find_if` on a
+When the match is early, that full-scan form can do arbitrarily more work.
+The catalog's illustrative estimate assumes that a native parallel search on a
 100M-element array with a match at element 1,000 does roughly (chunk size ×
 workers) element evaluations before all workers see the flag — call it a few
-thousand. Whitefoot does 100,000,000. That is a **10^4–10^5x work amplification**
-on the good case, and it is the case the native algorithm is chosen for.
+thousand. The displayed Whitefoot full scan does 100,000,000. Its estimated
+**10^4–10^5x work amplification** does not describe the ordered-batch alternative
+or establish an unavoidable language cost.
 
 Against a *sequential* early-exit scan, Whitefoot's parallel full scan is also
-worse whenever the match is in the first `1/W` of the array — which for a
-uniformly distributed match is 25% of the time on 4 cores.
+worse whenever the match is in the first `1/W` of the array under ideal W-way
+scaling and equal-cost predicates — which for a uniformly distributed match is
+25% of the time on 4 cores. This is also an analytical comparison of that form.
 
-Latency: proportional to `n`, always. Memory: unchanged.
+The full-scan form invokes the predicate `n` times; with constant-cost
+predicates its work is proportional to `n`. The ordered-batch form has the
+invocation bounds above, with weighted work, latency and memory still
+requiring a concrete implementation and measurement.
 
 **Strictly worse case:** validation passes that almost always find their answer
 immediately — "is any record malformed", "does this input contain a byte > 127".
-The sequential early-exit loop is the right program, and the writer should write
-that, which means noticing that the parallel form is a pessimization. There is no
-diagnostic for this; the ledger says `PAR permitted`, and permitted is not
-profitable.
+Sequential early exit and ordered batches belong in that comparison before
+selecting the full-scan form. The ledger's `PAR permitted` alone establishes
+no profitability result.
 
 ### (e) Verdict
 
-**Restructure, bounded loss — and the bound is the match position.** Early exit
-is not expressible in a parallel loop; the `imin` substitute always does all the
-work, which is parity when the answer is late and catastrophic when it is early.
-The determinism is a genuine gain.
+**Restructure; costs depend on the formulation.** An exit from the counted loop
+denies PAR-2, but an outer sequential loop can stop between parallel batches
+while preserving the first-index result. The full-scan substitute can amplify
+work substantially; the ordered-batch alternative bounds predicate invocations
+without establishing a weighted-work or runtime-performance bound.
 
 ---
 
@@ -2632,12 +2695,12 @@ only.
 
 | # | Architecture | Verdict | Without `[R]` | Structural cost | Expected perf vs native | Conf |
 |---|---|---|---|---|---|---|
-| 1 | Data-parallel map / reduce | direct (map); bounded loss (reduce) | — | one accumulator; no float folds; no early exit | 0.87–1.14 of best ref (measured); float reductions sequential → 3–4x loss on that phase | M |
+| 1 | Data-parallel map / reduce | direct (map and admitted reductions); other forms need restructuring | — | PAR-2 has one accumulator, a fixed operation set and no exits; private summaries and fixed recursive trees remain alternatives | map measurements 0.87–1.14 of best ref; other reduction formulations unmeasured here, with the numerical contract preserved | M/R |
 | 2 | Recursive fork-join | **restructure, no loss** at W≤4 | — | a `requires depth <= K` ceiling that propagates; no writer grain knob | **0.969–1.029** on hosted ubuntu (runs 34667725821 / 34668156035 / 34668796717, fastest in two blocks), **1.000–1.073** on the M1 Pro; W=1 tax 1.4%. Bounded loss only at W≥CPU count on an asymmetric host: **1.352 at W=8**, 2.2–2.8 at W=16 | M |
 | 3 | Pipeline with stages + queues, stateful stage | restructure, bounded loss | — | queues → N+1 batch buffers; stage count written in source; per-item → per-batch latency | throughput within 10–20% when stages regular (hot rounds at 11.6 ns); **1.3–2x worse** with a high-variance stage; latency = batch size | E |
 | 4 | Producer–consumer, bounded queue | restructure, bounded loss | — | backpressure → batch size constant; no continuous rate adaptation | throughput ±10% or better (mutex per item deleted); latency +1 batch; **1.5–2x worse** under bursty arrivals | E |
-| 5 | Task DAG, static | direct | — | precise effect rows become a perf property | parity; 2.98x/4 cores measured on the sibling-pair path | M |
-| 5′ | Task DAG, dynamic | restructure, bounded loss | — | level barriers; sequential frontier compaction; rows not objects | within ~15% for wide shallow DAGs; **2–5x** makespan for deep skewed ones | E |
+| 5 | Task DAG, static | direct for the displayed diamond | — | precise effects and a call decomposition exposing dependencies | parity is conditional and unmeasured here; sibling-pair measurements do not establish general DAG parity | R/E |
+| 5′ | Task DAG, dynamic | restructure; formulation-dependent costs | — | examined level form has barriers and sequential retirement; destination ownership is a separate candidate | ~15% wide/shallow and 2–5x skew estimates unmeasured; level/critical-path span ratio unbounded, distinct from fixed-P elapsed costs; general fan-in unqualified | R/E |
 | 6 | Game job system | restructure, bounded loss | — | one extra phase per spawn depth; sequential merge per phase; no grain control | ~1% of a 60 Hz frame for merges (hot rounds); **1.2–1.5x worse** on fine-grained frames (grain hazard measured at 1.40x on `wfgrep`) | M/E |
 | 7 | Concurrent hash map | **not expressible** (concurrent insert+lookup); **`[R]` restructure, no loss** (build-then-freeze) | restructure, bounded loss — W a source constant | no cross-shard probing; insert latency = batch period | build 0.6–0.9 of native; **frozen lookup 1.2–1.5x faster** | R/E |
 | 8 | Read-mostly RwLock / RCU | **restructure, no loss** (structural win) | — | publish latency bounded by read-phase length | reader path **1.5–3x faster** than RwLock, parity with RCU; memory strictly lower | R/E |
@@ -2658,7 +2721,7 @@ only.
 | 18 | Event loop / reactor | **`[R]` restructure, no loss** — the batch model *is* the reactor | same verdict, same caveat as 17 | callback graph → a dispatch `match` on a row; the state machine is still written by hand; timers need an API timer pending (**not expressible** without one) | **parity to 1.15x libuv**, 0.95–1.0 of raw batched io_uring; the dispatch loop is parallel where a reactor's is not. **Memory a row plus a pooled buffer — the earlier "30x worse per idle connection" is withdrawn with the stackful design** | E |
 | 19 | Async/await runtime | **`[R]` restructure, bounded loss**; **not expressible** (dynamic heterogeneous spawn; cancelling work not represented as a `Pending`) | same verdict, same caveat as 17 | **await depth → hand-written phases** — the largest source cost in the I/O half; per-task cancellation *is* reachable via a cancel operation on a `Pending` | estimate 0.95–1.0 of batched io_uring, **1.0–1.2x tokio**; memory a row plus a pooled buffer. The staged design's non-associative-accumulator latitude is **withdrawn** | E |
 | 20 | Responsive loop + long compute | restructure, bounded loss (largest source tax) | — | hand-written resumable work stack; chunk budget = p99 knob; needs `wait_batch` to have a deadline or poll form | compute 1.1–1.3x slower (resumable form); p99 recoverable to near-parity on a **busy** server and at **10–16% overhead** on a quiet one; **throughput cap improves from one request per chunk to one batch per chunk** | R/E |
-| 21 | Parallel search with early exit | restructure, bounded loss | — | no early exit; full scan with `imin` | parity when the answer is late; **10^4–10^5x** work amplification when early; determinism gained | R |
+| 21 | Parallel search with early exit | restructure; formulation-dependent costs | — | no exit from an admitted loop; helpers may return locally; stop between joined batches | doubling batches use fewer than 2(h+1) predicate calls for first hit h, analytically; this does not bound weighted work; helper formulation and join costs unmeasured | R |
 
 ---
 
@@ -2728,9 +2791,13 @@ stencil rows now use ordinary loops without a source-expanded worker count.
 This removes the former expression defect. It does not remove workspace,
 phase, or grain-estimation costs; those are measured by the actual consumers.
 
-**T8. Early exit → full scan with an admitted fold.** (1, 21)
-*Inherent cost:* all the work, always. Parity when the answer is late; a 10^4x
-amplification when it is early. Buys determinism.
+**T8. Early exit → a full fold or ordered parallel batches.** (1, 21)
+The full fold evaluates every item. Ordered batches can stop after a batch's
+join while preserving the first index, and block helpers may return at local
+matches. §21 bounds predicate invocations; it does not bound the weighted
+cost of work already started in the final batch. Neither full-scan
+amplification nor a measured speed ratio is inherent to all formulations.
+The helper candidate, batch joins and weighted work remain unqualified.
 
 **T9. Sparse frontier → choose source-ordered sparse work or an eligible dense pass.**
 (5′, 13)

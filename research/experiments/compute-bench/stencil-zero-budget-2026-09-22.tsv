@@ -1,0 +1,1519 @@
+# Stencil zero-budget dispatch diagnostic, 2026-09-22.
+# Fields: group, record-kind, then original line or explicit context.
+# Original null is protocol-invalid; no original main. Corrected session selected separately.
+# Raw streams and command-source bytes are retained; terminal table padding is removed.
+# Empty payloads omit the third field and reconstruct to a blank line.
+# ir-diff-space reconstructs to its stated number of spaces and a newline.
+# One-shot recipes are evidence, not maintained runners. No gate consumes this file.
+# Keep while compute-model/DESIGN.md or its dependents cite this evidence.
+context	result	Original null completed 120 checked calls, but arm-order construction violated within-width alternation. No original main was run; all old raw data is excluded from the corrected comparison.
+context	result	The original order used (pass+index)%2 while reversing widths, fixing W1 at A/B and W4 at B/A. The preserved recipe records this defect and must not be treated as a qualified alternating-order recipe.
+context	result	Original null W4 paired wall median=0.986233394; range=0.890043897..1.047734441; max absolute drift=0.109956103. W1 median=0.949013647; range=0.899249396..1.034518515. Descriptive only.
+context	result	Construction/full-oracle/optimized-code qualification passed independently of the timing-order defect. The corrected session reuses those exact images and evidence with hashes; no rebuild or repeated oracle execution.
+context	result	The zsh display wrapper reported a read-only status-variable assignment after the original null guard exited 0; the completed stage log and all raw outputs were recovered without rerunning.
+context	static	1024x4096x16: 16*(4096-2)=65504 row calls and 16*(4096-2)*(1024-2)=66945088 pixel updates; each inner query span=1022, weight=17, runtime work floor=150000, ceil(floor/weight)=8824, affordable=0.
+context	static	Timed call includes two allocations, two serial zero fills, both-grid initialization, 16 joined timesteps and inactive-owner cleanup; result verification and returned-owner release are outside timing.
+context	static	Capture candidate reduces pixel/init/row captures 6/6/9 to 4/2/3 and frame bytes 120/88/112 to 104/56/64; all old frames already fit 256 bytes; non-phi chunk operations and work calculations remain unchanged.
+context	static	Candidate A/B input IR differs only by one existing pixel-chunk direct call replacing four span/query calculations and split_34 entry. Actual B optimized code additionally inlines pixels and hoists row-chunk alias checks; combined effects cannot be separated here.
+corrected	manifest	Only protocol change: arm order AB on even passes, BA on odd passes independently of width reversal. All 20 invocations are listed and checked before timing.
+corrected	manifest	Fixed inputs: candidate A/B images, 1024x4096x16, W1/W4, five paired passes, one first plus five warm calls per process, zero gap, same frozen driver/runtime/dependencies and combined attribution scope.
+corrected	manifest	Exactly one new null and one main, each shared-guarded with a 30-second cap after criterion commit/publication. No retries. Original null is excluded from new comparisons.
+corrected	manifest	Unchanged numerical criterion: at W4 B/A wall<=0.95 in at least four of five main pairs AND 1-median(main B/A)>max(abs(new-null B/A-1)). Report W1, CPU, first calls and steals; retain all outcomes.
+corrected	manifest	No corrected-session timing had occurred at criterion selection; no production benefit is established.
+context	sha256	8c348ea12e638593a72688bb9e59d2a3f43a92b98b9cae0a86b18f88a5372396  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/manifest.txt
+context	manifest	criterion_revision: ef6cf611d293c7cfe3ad8a26bf95a0991b58e88d
+context	manifest	candidate_cli_sha256: 480b8b56c8dca5b4469307026a10643d142ee46fff5b937634e3618699e17adf
+context	manifest	candidate_ir_sha256: 7d99aa30bae032192e74f7259dd9365ee4beeebd47a48bda7f523822fa6a6e61
+context	manifest	source_sha256: 69a94c11eac439e44bd50b81dabf2c1d5da4398878836bfad478a8e46004e352
+context	manifest	runtime_objects_revision: 6fdb6768890b91283fb041dfc7981a2cc2f3e5b8
+context	manifest	harness_revision: f19d53e2e5e25a2e1b85adb437d97591525954e6
+context	manifest	driver: identical retained optimized-native stencil_bench.o; no native form timed
+context	manifest	A: unmodified candidate --par emission
+context	manifest	B: same emission with only pixel site calling existing chunk
+context	manifest	control_scope: combined inner query/span computation/recursive entry and resulting optimizer effects
+context	manifest	fixed: outer split sites/estimates, allocation, arithmetic, cleanup, W1 clone IR, runtime/driver/dependency objects
+context	manifest	fixture: width=1024 height=4096 steps=16; W1/W4; gap=0
+context	manifest	protocol: five paired passes, one first call plus five warm calls; adjacent A/B order and width order alternate
+context	manifest	criterion: W4 wall B/A<=0.95 in>=4/5 pairs AND 1-median(main B/A)>max(abs(null B/A-1)) at W4
+context	manifest	stop: failed correctness or inconclusive criterion; no selected timing action rerun
+context	manifest	interval: complete call including allocation/internal cleanup; verification/returned-owner release outside
+context	manifest	host: Apple M1 Pro, 8 CPUs (6 performance+2 efficiency), unpinned interactive Darwin workstation
+context	manifest	guard: each build/verify/inspect/null/main stage capped at30s, shared run-check.pl
+context	manifest	Apple clang version 21.0.0 (clang-2100.3.34.2)
+context	manifest	Target: arm64-apple-darwin25.6.0
+context	manifest	Thread model: posix
+context	manifest	InstalledDir: /Library/Developer/CommandLineTools/usr/bin
+context	manifest	-std=c11 -pthread -O2 -Wno-override-module
+context	sha256	07735d33233182a79d6ea3122b1ba7a4bf8ac416ce387d0d845db83307df686f  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inputs-before.txt
+context	input-sha256	de6b35043b7586b51ae4ee359e463452c1fb33fc86dda8e52511ae03b39af5eb  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/run.sh
+context	input-sha256	7d99aa30bae032192e74f7259dd9365ee4beeebd47a48bda7f523822fa6a6e61  /private/tmp/whitefoot-stencil-capture-static.3q0gq3/stencil-candidate-par.ll
+context	input-sha256	480b8b56c8dca5b4469307026a10643d142ee46fff5b937634e3618699e17adf  /private/tmp/whitefoot-capture-candidate-cli
+context	input-sha256	73e88bd33d43913d8b0d74275c2e07ea2fda9f777c9718c1d377f0a855f1332a  /private/tmp/whitefoot-native-vector-6fdb-control/build/stencil_bench.o
+context	input-sha256	69a94c11eac439e44bd50b81dabf2c1d5da4398878836bfad478a8e46004e352  /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf
+context	input-sha256	56296d659cc133ddaf80aa36f7a0d38d190726068a7100c7dae3bf27d5d4fd67  /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil_host.ll
+context	input-sha256	b5d407f9da3e25805ebfd316ae4db5588e6ac2092eb06409211e91e741cec5ff  /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil_oracle.c
+context	input-sha256	4e04bcf39eee9edfb02bbec182cf4bbf0d5f2e577003ec3a193dbce143c40813  /private/tmp/whitefoot-compute-floor/tests/programs/compute/host-adapter.awk
+context	input-sha256	5fc0c3be48fae51f9cd53558e68f219902b22bcd8f23a574af8cd98570e6a249  /private/tmp/whitefoot-compute-floor/research/experiments/compute-bench/module-symbols.awk
+context	input-sha256	672213fdaabec6104e36bd60f5b7fab3ab12ec7c4bd78a4060fd5caf47b651fb  /private/tmp/whitefoot-compute-floor/research/experiments/compute-bench/reduce.awk
+context	input-sha256	49aa6d14e18010ad2acbb082454112c575c3abc17c1cc5608e0ac67a905a9184  /private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/wf-flags.txt
+context	input-sha256	61fec48dc42829dc97943d72051ab2ca00786f97d198c412db1042b2b08e3188  /private/var/folders/71/d_n5m1v94kdg7bjl_4jxvcpr0000gp/T/whitefoot/whitefoot-compute-bench/deps/lib/libtbb.dylib
+context	input-sha256	5908bab9d6de77a0ce8608e32d312459360f1ec63baf57cb8559bbd250fdd5ac  /private/var/folders/71/d_n5m1v94kdg7bjl_4jxvcpr0000gp/T/whitefoot/whitefoot-compute-bench/deps/rayon/libwf_compute_bench_rayon.a
+context	input-sha256	9c6daed09ec5b1dd99a7df781a3035a1d0e0fd18319fe8dc90a9e29e61a31b6b  /private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/harness.o
+context	input-sha256	87feb3ae9b2154613da2c88853b1df6315a535073e885ab3ffd6a7aef2b06c01  /private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/backend_serial.o
+context	input-sha256	cfa1299d9250d75cc16d046da2a8984d6d8d2bac040e682cbae60c2e1997abbe  /private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/backend_static.o
+context	input-sha256	cec0e5af66e4025ad2492a649ef3ec91bc39369c883f5044e6443c8ca4971854  /private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/backend_tbb.o
+context	input-sha256	08761b098fd71406e17944fe3d6e00ae8a0fbcf73364c71a6acf51d26c5f1fe4  /private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/backend_parlay.o
+context	input-sha256	3ae80db61410c4001241b7c400841fbb713a76237f452578de83891c28c5bd1b  /private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/backend_rayon.o
+context	input-sha256	afa0311bf31b57157793e3ccd15b0f3ce1e2d0fbae5dd0f684faa55fc8a5893a  /private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/stencil-seq.o
+context	input-sha256	8342e7ea0b8d6a0817d543e8c05e807c96527393945e95597718ba9a27ce722d  /private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/floor.o
+context	input-sha256	0655633c69666fcce21bf67258101aedb49c914fc50a6cc8edbfe22a8315e645  /private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/sched_core.o
+context	input-sha256	c3a5140b8221a57d27a510995ae37c7b33a64ebc87ec9f9286b99ece649bce45  /private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/sched_prim_host.o
+context	input-sha256	e04734d7a1ddbe9083b47570ca2854963803b88a7197628bed2ca66cb4924d5c  /private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/sched_entry.o
+context	input-sha256	75cb971977625c9b05adcf74b14989544ccbf61b0a81fe4843ec72226eb36c61  /private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/completion_runtime.o
+context	input-sha256	d95b24c2367aa6dcf60a9d9e4e36acf79fa502d4ded856f244c6f4afcf28aa10  /private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/completion_wait_host.o
+context	input-sha256	fb4ee3f397da5bcee9188332d56fb3c854b931b4c1f07b4c8350a9c941891937  /private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/completion_file_adapter.o
+context	input-sha256	1d1fe1c3033038fc69cd031e32b5eff6e85571da89176f85e442f52f0fb1b940  /private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/completion_file_posix.o
+context	input-sha256	af91032f29dc1b1c22dcf43099d933303ff3b1e4741a93122f987bdbdb70c4ec  /private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/completion_bridge.o
+context	input-sha256	e389769ac8c9f38af9cd00e5bc5d56d3c180dff5985fb81ddfff63dfa89eb453  /private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/completion_linux_io_uring.o
+context	input-sha256	685d56fcf6c89bbddf8d1921b44952bb909dd0362715817babbacd64da8898c3  /private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/ordinary_values_c.o
+context	input-sha256	d578790251750de1a10ef95e1265d028184cc1d18f0c40d78e88c5ee8f1fcd80  /private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/ordinary_values_ll.o
+context	sha256	8d9b1007210ea2affa63db89ebcf89c34ea609a205269f831c991111c2c5a032  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/source-hashes.txt
+context	source-sha256	7d99aa30bae032192e74f7259dd9365ee4beeebd47a48bda7f523822fa6a6e61  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/source/A.raw.ll
+context	source-sha256	b819531fcd166a865c68a43acb9847cbd5d7931188d3c601d13fd67e3c53e5f8  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/source/B.raw.ll
+context	source-sha256	32a6ffe2024697e245205c86a3fcdf5219c8cb1d6664b9e8df9fd63560546737  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/source/ir-change.diff
+context	sha256	a1d0fd29f6129afe49b1a492d75d9096ee75a9f05515fa1131912f26c4341755  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/build-hashes.txt
+context	build-sha256	cb8bff8cbfe1b1a14db8b77e1e1f95f37233c40dc92c0c2fe05a9c1ea480557d  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/build/A.bound.ll
+context	build-sha256	939fea2e8f04cc9375746ec2b8b52d27906a0fe0b788e9036698725d708e21bf  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/build/A.ll
+context	build-sha256	d1096b8f7e06756d7132abdbb4ad8098cf69edbdebc185adec18b23b0ab6d040  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/build/A.o
+context	build-sha256	68d447b4b123be1f18ab026ca697b4cfe1092f66c7a08eb5018117996cd18729  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/build/B.bound.ll
+context	build-sha256	89261661dd2d02017c8356b9882548b502ed063c31ff70e390f86e380028f099  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/build/B.ll
+context	build-sha256	2084b749e998d88794a970e9a5ac3581a9a3697fa32936d55974aa75aaade57b  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/build/B.o
+context	build-sha256	0ce80a2ffa3bd4659ed0ac7cf284111799f00f4c1a490e6eddfbde2f72a6f8c8  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/build/stencil-A
+context	build-sha256	3918722084ce8b741694d48b3a5330993580a1b72505cea27bb96da1a8cba335  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/build/stencil-B
+context	build-sha256	4cf2f3f0b0e0fcd7c5c38bb4965779d4d6c289c44c9d1a57457f7cf274a2c6b9  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inspection/A.opt.ll
+context	build-sha256	17d924a1c5198172ca27c848e51208dc05a5242a3d7fe7b41f8a1a2ec4a2c252  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inspection/B.opt.ll
+context	sha256	cb7a56add7b6db28fb2c6c842abe5ede3b4f12f325e46bdae5ebedb7e64b32c0  /private/tmp/whitefoot-stencil-capture-static.3q0gq3/emission.log
+context	emission	== START stencil-capture-static (limit 30s): /private/tmp/whitefoot-capture-candidate-cli --par --par-ledger --emit-llvm /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf -o /private/tmp/whitefoot-stencil-capture-static.3q0gq3/stencil-candidate-par.ll ==
+context	emission	PAR loop        /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf:10  loop  permitted   eligible; no accumulator
+context	emission	PAR chain       /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf:11  run(a let statement, a let statement, a let statement)  3 members through line 13
+context	emission	PAR denied      /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf:29  pair(a let statement, box_array_filled)  condition 1: the write of s1 overlaps the operand read of s2 at let cells = width * height; vs cells
+context	emission	PAR permitted   /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf:30  pair(box_array_filled, box_array_filled)  eligible
+context	emission	PAR chain       /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf:30  run(box_array_filled, box_array_filled)  2 members through line 31
+context	emission	PAR denied      /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf:31  pair(box_array_filled, a for loop)  condition 1: s2 is a for loop
+context	emission	PAR loop        /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf:32  loop  permitted   eligible; no accumulator
+context	emission	PAR chain       /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf:38  run(a set statement, a set statement)  2 members through line 39
+context	emission	PAR loop        /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf:42  loop  denied      condition 2: the body writes storage that is neither introduced by the iteration nor the accumulator, at row
+context	emission	PAR loop        /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf:45  loop  permitted   eligible; no accumulator
+context	emission	PAR chain       /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf:46  run(a let statement, a proof statement)  2 members through line 47
+context	emission	PAR chain       /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf:50  run(a let statement, a let statement)  2 members through line 51
+context	emission	PAR chain       /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf:52  run(a let statement, a proof statement, a let statement, a let statement)  4 members through line 57
+context	emission	PAR chain       /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf:58  run(a let statement, a let statement, stencil_row)  3 members through line 60
+context	emission	PAR permitted   /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf:59  pair(a let statement, stencil_row)  eligible
+context	emission	PAR loop        /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf:63  loop  permitted   eligible; no accumulator
+context	emission	PAR chain       /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf:64  run(a let statement, a proof statement)  2 members through line 65
+context	emission	PAR chain       /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf:68  run(a let statement, a let statement)  2 members through line 69
+context	emission	PAR chain       /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf:70  run(a let statement, a proof statement, a let statement, a let statement)  4 members through line 75
+context	emission	PAR chain       /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf:76  run(a let statement, a let statement, stencil_row)  3 members through line 78
+context	emission	PAR permitted   /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf:77  pair(a let statement, stencil_row)  eligible
+context	emission	PAR denied      /private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf:95  pair(stencil, a let statement)  condition 1: the write of s1 overlaps the operand read of s2 at let output = stencil(width: 5_u64, height: 5_u64, steps: 2_u64); vs let count = output.inner.len;
+context	emission	PAR split       stencil_row  loop at 0.0.6.0  split independent map over 4 captured bindings
+context	emission	PAR split       stencil  loop at 1.0.8.0  split independent map over 2 captured bindings
+context	emission	PAR split       stencil  loop at 1.0.10.0.2.0.1.0  split independent map over 3 captured bindings
+context	emission	PAR split       stencil  loop at 1.0.10.0.2.0.2.0  split independent map over 3 captured bindings
+context	emission	PAR frontier    recursion budget runtime-derived  family emitted for 0 of 4 cyclic components
+context	emission	PAR frontier    component(_par_split_34)  excluded: _par_split_34 is a synthesized loop function
+context	emission	PAR frontier    component(_par_split_36)  excluded: _par_split_36 is a synthesized loop function
+context	emission	PAR frontier    component(_par_split_38)  excluded: _par_split_38 is a synthesized loop function
+context	emission	PAR frontier    component(_par_split_40)  excluded: _par_split_40 is a synthesized loop function
+context	emission	real 0.07
+context	emission	user 0.07
+context	emission	sys 0.00
+context	emission	== END stencil-capture-static: 0.10 s, exit 0 ==
+context	sha256	32a6ffe2024697e245205c86a3fcdf5219c8cb1d6664b9e8df9fd63560546737  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/source/ir-change.diff
+context	ir-diff	--- /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/source/A.raw.ll	2026-09-22 01:37:29
+context	ir-diff	+++ /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/source/B.raw.ll	2026-09-22 01:37:29
+context	ir-diff	@@ -203,11 +203,7 @@
+context	ir-diff	   %v6 = sub nuw i64 %v4, %v5
+context	ir-diff	   %v7 = select i1 true, i64 1, i64 1
+context	ir-diff	   %v8 = select i1 true, i8 0, i8 0
+context	ir-diff	-  %t0 = sub i64 %v6, %v7
+context	ir-diff	-  %t1 = icmp ugt i64 %v6, %v7
+context	ir-diff	-  %t2 = select i1 %t1, i64 %t0, i64 0
+context	ir-diff	-  %t3 = call i64 @wf__par_split_budget(i64 %t2, i64 17)
+context	ir-diff	-  %v9 = call i8 @wf__par_split_34(i8 %v8, i64 %v7, i64 %v6, { ptr, i64 } %v0, { ptr, i64 } %v1, { ptr, i64 } %v2, { ptr, i64 } %v3, i64 %t3)
+context	ir-diff	+  %v9 = call i8 @wf__par_chunk_35(i8 %v8, i64 %v7, i64 %v6, { ptr, i64 } %v0, { ptr, i64 } %v1, { ptr, i64 } %v2, { ptr, i64 } %v3)
+context	ir-diff	   ret i64 %v4
+context	ir-diff	 }
+context	ir-diff-space	1
+qualification	sha256	06f75afa59ed7d09da3b39b8a822d345f7f5968bcc9a0212638e13c276b3b305  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inspection/qualified.txt
+qualification	inspection	Qualification for the criterion published at ef6cf611d293c7cfe3ad8a26bf95a0991b58e88d.
+qualification	inspection
+qualification	inspection	Construction passed in 1.35 s (guard elapsed 1.44 s). Full existing oracle
+qualification	inspection	matrices passed for A/W1, A/W4, B/W1 and B/W4: 3,387,721 compared values each;
+qualification	inspection	verification took 1.93 s (guard elapsed 1.97 s). Disassembly/IR extraction took
+qualification	inspection	0.89 s (guard elapsed 0.93 s). Every stage used the selected 30-second cap.
+qualification	inspection
+qualification	inspection	The exact raw IR diff replaces one anchored wf_stencil_row body: remove its
+qualification	inspection	four span/query lines and call its existing pixel chunk directly instead of
+qualification	inspection	split_34. The inverse substitution reproduces A byte for byte. Outer split
+qualification	inspection	sites and estimates, allocation, arithmetic, cleanup and sequential clones
+qualification	inspection	therefore remain unchanged in input IR. Frozen object and source hashes passed
+qualification	inspection	before and after each stage.
+qualification	inspection
+qualification	inspection	The optimized W1 function is identical after expanding equivalent loop
+qualification	inspection	metadata graphs. Its actual object instructions are identical after rebasing
+qualification	inspection	instruction addresses and branch targets. A/B.W1.normalized.ll and
+qualification	inspection	A/B.W1.normalized.s retain these comparisons.
+qualification	inspection
+qualification	inspection	The optimized parallel pixel work still computes eight outputs per vector
+qualification	inspection	iteration: four vertical fadd.2d, four horizontal fadd.2d, four combining
+qualification	inspection	fadd.2d and four fmul.2d. Scalar remainders preserve that grouping. Neither
+qualification	inspection	object contains floating-point fused multiply-add or horizontal-add opcodes.
+qualification	inspection	The removal allows LLVM to inline pixel work into the row helper, row chunks
+qualification	inspection	and outer split leaves, and moves row-chunk alias checks before the row loop.
+qualification	inspection	These are expected resulting optimizer effects within the recorded combined
+qualification	inspection	control; this experiment cannot separately attribute their cost, query cost,
+qualification	inspection	or recursive-entry cost. Unused external pixel-split definitions remain in B
+qualification	inspection	but are absent from its hot outer row paths.
+qualification	inspection
+qualification	inspection	Qualification passed. Run each selected null/main timing action at most once,
+qualification	inspection	under the shared guard and its 30-second cap; retain all outcomes and stop on
+qualification	inspection	the recorded inconclusive criterion without tuning or rerunning.
+qualification	sha256	88bb76315b3da98c666344f360576b8dc7ea4d4fedc563ec3a6a2656815ef6f5  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/build-stage.log
+qualification	stage	== START stencil-zero-budget-build (limit 30s): sh /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/run.sh build ==
+qualification	stage	real 1.35
+qualification	stage	user 1.11
+qualification	stage	sys 0.32
+qualification	stage	== END stencil-zero-budget-build: 1.44 s, exit 0 ==
+qualification	sha256	baa54ef3d3cc5cf4b56b270cd3c9199b6b2e5c83d81764cbc7186726da14fdde  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/verify-stage.log
+qualification	stage	== START stencil-zero-budget-oracles (limit 30s): sh /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/run.sh verify ==
+qualification	stage	A W1: # stencil VERIFY PASS: form=wf width=1 gap_us=0 compared=3387721
+qualification	stage	A W4: # stencil VERIFY PASS: form=wf width=4 gap_us=0 compared=3387721
+qualification	stage	B W1: # stencil VERIFY PASS: form=wf width=1 gap_us=0 compared=3387721
+qualification	stage	B W4: # stencil VERIFY PASS: form=wf width=4 gap_us=0 compared=3387721
+qualification	stage	real 1.93
+qualification	stage	user 0.92
+qualification	stage	sys 0.26
+qualification	stage	== END stencil-zero-budget-oracles: 1.97 s, exit 0 ==
+qualification	sha256	58f78fc81743041b6e6235f5f0512a7a6bac513f02706434ead00a5cb211e8d4  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inspect-stage.log
+qualification	stage	== START stencil-zero-budget-inspection (limit 30s): sh /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/run.sh inspect ==
+qualification	stage	Inspect exact IR diff, optimized pixel/outer bodies, W1.diff and object arithmetic before qualification.
+qualification	stage	real 0.89
+qualification	stage	user 0.65
+qualification	stage	sys 0.22
+qualification	stage	== END stencil-zero-budget-inspection: 0.93 s, exit 0 ==
+qualification	sha256	14b2c05ccfacf47423377986f6ea052f9667f6e43b8aa0c285fe57d141237a47  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/verify/A-w1.txt
+qualification	oracle	# stencil VERIFY PASS: form=wf width=1 gap_us=0 compared=3387721
+qualification	sha256	4f80f7e54f71db16888927d443f02773f62d2b7d90608e0293c3a72715403f9d  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/verify/A-w4.txt
+qualification	oracle	# stencil VERIFY PASS: form=wf width=4 gap_us=0 compared=3387721
+qualification	sha256	14b2c05ccfacf47423377986f6ea052f9667f6e43b8aa0c285fe57d141237a47  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/verify/B-w1.txt
+qualification	oracle	# stencil VERIFY PASS: form=wf width=1 gap_us=0 compared=3387721
+qualification	sha256	4f80f7e54f71db16888927d443f02773f62d2b7d90608e0293c3a72715403f9d  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/verify/B-w4.txt
+qualification	oracle	# stencil VERIFY PASS: form=wf width=4 gap_us=0 compared=3387721
+original	sha256	de6b35043b7586b51ae4ee359e463452c1fb33fc86dda8e52511ae03b39af5eb  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/run.sh
+original	command-source	#!/bin/sh
+original	command-source	# One-shot zero-budget stencil diagnostic. Remove after recipe/evidence retention.
+original	command-source	# No production source or frozen input is changed.
+original	command-source	set -eu
+original	command-source	work=/private/tmp/whitefoot-stencil-zero-budget.qSVUNU
+original	command-source	root=/private/tmp/whitefoot-compute-floor
+original	command-source	bench=$root/research/experiments/compute-bench
+original	command-source	base=/private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build
+original	command-source	driver=/private/tmp/whitefoot-native-vector-6fdb-control/build/stencil_bench.o
+original	command-source	candidate=/private/tmp/whitefoot-stencil-capture-static.3q0gq3/stencil-candidate-par.ll
+original	command-source	cli=/private/tmp/whitefoot-capture-candidate-cli
+original	command-source	deps=/private/var/folders/71/d_n5m1v94kdg7bjl_4jxvcpr0000gp/T/whitefoot/whitefoot-compute-bench/deps
+original	command-source	criterion=ef6cf611d293c7cfe3ad8a26bf95a0991b58e88d
+original	command-source	action=${1:?prepare, build, verify, inspect, null or main required}
+original	command-source	fail() { printf '%s\n' "$*" >&2; exit 1; }
+original	command-source	guarded() {
+original	command-source	    test -n "${WHITEFOOT_CHECK_OWNER:-}" || fail 'invoke stage through run-check.pl'
+original	command-source	    test "$(cat "$WHITEFOOT_CHECK_LOCK_DIR/pid")" = "$WHITEFOOT_CHECK_OWNER" || fail 'guard owner differs'
+original	command-source	    kill -0 "$WHITEFOOT_CHECK_OWNER" || fail 'guard owner is not live'
+original	command-source	    test "${WHITEFOOT_CHECK_TIMEOUT:-}" = 30 || fail 'stage requires the selected 30-second cap'
+original	command-source	}
+original	command-source	shared_objects() {
+original	command-source	    for name in harness backend_serial backend_static backend_tbb backend_parlay backend_rayon \
+original	command-source	        stencil-seq floor sched_core sched_prim_host sched_entry completion_runtime completion_wait_host \
+original	command-source	        completion_file_adapter completion_file_posix completion_bridge completion_linux_io_uring \
+original	command-source	        ordinary_values_c ordinary_values_ll; do printf '%s/%s.o\n' "$base" "$name"; done
+original	command-source	}
+original	command-source	input_hashes() {
+original	command-source	    shasum -a 256 "$0" "$candidate" "$cli" "$driver" \
+original	command-source	        "$root/tests/programs/compute/stencil.wf" "$root/tests/programs/compute/stencil_host.ll" \
+original	command-source	        "$root/tests/programs/compute/stencil_oracle.c" "$root/tests/programs/compute/host-adapter.awk" \
+original	command-source	        "$bench/module-symbols.awk" "$bench/reduce.awk" "$base/wf-flags.txt" \
+original	command-source	        "$deps/lib/libtbb.dylib" "$deps/rayon/libwf_compute_bench_rayon.a"
+original	command-source	    shared_objects | while IFS= read -r object; do shasum -a 256 "$object"; done
+original	command-source	}
+original	command-source	check_inputs() {
+original	command-source	    input_hashes > "$work/inputs-now.txt"
+original	command-source	    cmp "$work/inputs-before.txt" "$work/inputs-now.txt" || fail 'frozen input changed'
+original	command-source	}
+original	command-source	check_build() { shasum -a 256 -c "$work/build-hashes.txt" > "$work/build-hashes-now.txt"; }
+original	command-source	fixture() {
+original	command-source	    unset WFB_STENCIL_WIDTH WFB_STENCIL_HEIGHT WFB_STENCIL_GRID WFB_BLOCKED_GRID
+original	command-source	    unset WFB_BFS_GRAPH WFB_BFS_MODE WFB_GAP_US
+original	command-source	    WFB_STENCIL_GRID=large WFB_GAP_US=0
+original	command-source	    export WFB_STENCIL_GRID WFB_GAP_US
+original	command-source	}
+original	command-source	test "$(git -C "$root" rev-parse HEAD)" = f19d53e2e5e25a2e1b85adb437d97591525954e6 || fail 'harness revision moved'
+original	command-source	test -z "$(git -C "$root" status --porcelain --untracked-files=no)" || fail 'frozen harness has tracked edits'
+original	command-source	git -C /private/tmp/whitefoot-compute-x1 show "$criterion:research/investigations/compute-model/DESIGN.md" | grep -q '^### Zero-budget stencil dispatch control$' || fail 'criterion is not durable'
+original	command-source	case "$action" in prepare) ;; *) guarded;; esac
+original	command-source	case "$action" in
+original	command-source	prepare)
+original	command-source	    test ! -e "$work/source" || fail 'source preparation already exists'
+original	command-source	    test "$(shasum -a 256 "$candidate" | cut -d ' ' -f 1)" = 7d99aa30bae032192e74f7259dd9365ee4beeebd47a48bda7f523822fa6a6e61 || fail 'candidate emission differs'
+original	command-source	    test "$(shasum -a 256 "$cli" | cut -d ' ' -f 1)" = 480b8b56c8dca5b4469307026a10643d142ee46fff5b937634e3618699e17adf || fail 'candidate CLI differs'
+original	command-source	    mkdir "$work/source"
+original	command-source	    cp "$candidate" "$work/source/A.raw.ll"
+original	command-source	    perl - "$work/source/A.raw.ll" "$work/source/B.raw.ll" <<'PERL'
+original	command-source	use strict; use warnings;
+original	command-source	open my $in, '<', $ARGV[0] or die $!; local $/; my $source = <$in>;
+original	command-source	my $old = <<'IR';
+original	command-source	define i64 @wf_stencil_row({ ptr, i64 } %v0, { ptr, i64 } %v1, { ptr, i64 } %v2, { ptr, i64 } %v3) #0 {
+original	command-source	entry:
+original	command-source	  %v4 = extractvalue { ptr, i64 } %v3, 1
+original	command-source	  %v5 = select i1 true, i64 1, i64 1
+original	command-source	  %v6 = sub nuw i64 %v4, %v5
+original	command-source	  %v7 = select i1 true, i64 1, i64 1
+original	command-source	  %v8 = select i1 true, i8 0, i8 0
+original	command-source	  %t0 = sub i64 %v6, %v7
+original	command-source	  %t1 = icmp ugt i64 %v6, %v7
+original	command-source	  %t2 = select i1 %t1, i64 %t0, i64 0
+original	command-source	  %t3 = call i64 @wf__par_split_budget(i64 %t2, i64 17)
+original	command-source	  %v9 = call i8 @wf__par_split_34(i8 %v8, i64 %v7, i64 %v6, { ptr, i64 } %v0, { ptr, i64 } %v1, { ptr, i64 } %v2, { ptr, i64 } %v3, i64 %t3)
+original	command-source	  ret i64 %v4
+original	command-source	}
+original	command-source	IR
+original	command-source	my $new = $old;
+original	command-source	my $removed = ($new =~ s/^  %t[0-3] = [^\n]+\n//mg);
+original	command-source	die "query/span anchor count\n" unless $removed == 4;
+original	command-source	my $changed = ($new =~ s/\@wf__par_split_34\(([^\n]+), i64 %t3\)/\@wf__par_chunk_35($1)/g);
+original	command-source	die "pixel call anchor count\n" unless $changed == 1;
+original	command-source	my $variant = $source;
+original	command-source	my $sites = ($variant =~ s/\Q$old\E/$new/g);
+original	command-source	die "whole helper anchor count\n" unless $sites == 1;
+original	command-source	my $restored = $variant;
+original	command-source	my $inverse = ($restored =~ s/\Q$new\E/$old/g);
+original	command-source	die "inverse/exact-diff check\n" unless $inverse == 1 && $restored eq $source;
+original	command-source	open my $out, '>', $ARGV[1] or die $!; print {$out} $variant;
+original	command-source	print "exact one-helper substitution; four query/span lines removed; existing chunk called; inverse matches\n";
+original	command-source	PERL
+original	command-source	    diff -u "$work/source/A.raw.ll" "$work/source/B.raw.ll" > "$work/source/ir-change.diff" || test "$?" = 1
+original	command-source	    input_hashes > "$work/inputs-before.txt"
+original	command-source	    shasum -a 256 "$work/source/"* > "$work/source-hashes.txt"
+original	command-source	    {
+original	command-source	        printf 'criterion_revision: %s\n' "$criterion"
+original	command-source	        printf 'candidate_cli_sha256: 480b8b56c8dca5b4469307026a10643d142ee46fff5b937634e3618699e17adf\n'
+original	command-source	        printf 'candidate_ir_sha256: 7d99aa30bae032192e74f7259dd9365ee4beeebd47a48bda7f523822fa6a6e61\n'
+original	command-source	        printf 'source_sha256: 69a94c11eac439e44bd50b81dabf2c1d5da4398878836bfad478a8e46004e352\n'
+original	command-source	        printf 'runtime_objects_revision: 6fdb6768890b91283fb041dfc7981a2cc2f3e5b8\n'
+original	command-source	        printf 'harness_revision: f19d53e2e5e25a2e1b85adb437d97591525954e6\n'
+original	command-source	        printf 'driver: identical retained optimized-native stencil_bench.o; no native form timed\n'
+original	command-source	        printf 'A: unmodified candidate --par emission\nB: same emission with only pixel site calling existing chunk\n'
+original	command-source	        printf 'control_scope: combined inner query/span computation/recursive entry and resulting optimizer effects\n'
+original	command-source	        printf 'fixed: outer split sites/estimates, allocation, arithmetic, cleanup, W1 clone IR, runtime/driver/dependency objects\n'
+original	command-source	        printf 'fixture: width=1024 height=4096 steps=16; W1/W4; gap=0\n'
+original	command-source	        printf 'protocol: five paired passes, one first call plus five warm calls; adjacent A/B order and width order alternate\n'
+original	command-source	        printf 'criterion: W4 wall B/A<=0.95 in>=4/5 pairs AND 1-median(main B/A)>max(abs(null B/A-1)) at W4\n'
+original	command-source	        printf 'stop: failed correctness or inconclusive criterion; no selected timing action rerun\n'
+original	command-source	        printf 'interval: complete call including allocation/internal cleanup; verification/returned-owner release outside\n'
+original	command-source	        printf 'host: Apple M1 Pro, 8 CPUs (6 performance+2 efficiency), unpinned interactive Darwin workstation\n'
+original	command-source	        printf 'guard: each build/verify/inspect/null/main stage capped at30s, shared run-check.pl\n'
+original	command-source	        /usr/bin/clang --version
+original	command-source	        cat "$base/wf-flags.txt"
+original	command-source	    } > "$work/manifest.txt"
+original	command-source	    ;;
+original	command-source	build)
+original	command-source	    check_inputs
+original	command-source	    shasum -a 256 -c "$work/source-hashes.txt" > "$work/source-hashes-now.txt"
+original	command-source	    test ! -e "$work/build" || fail 'build already exists'
+original	command-source	    mkdir "$work/build" "$work/inspection"
+original	command-source	    for arm in A B; do
+original	command-source	        awk -f "$root/tests/programs/compute/host-adapter.awk" "$work/source/$arm.raw.ll" "$root/tests/programs/compute/stencil_host.ll" > "$work/build/$arm.bound.ll"
+original	command-source	        awk -v prefix=wfb_stencil_par -v api=wf_bench_stencil -v mode=par -f "$bench/module-symbols.awk" "$work/build/$arm.bound.ll" > "$work/build/$arm.ll"
+original	command-source	        /usr/bin/clang -std=c11 -pthread -O2 -Wno-override-module -c "$work/build/$arm.ll" -o "$work/build/$arm.o"
+original	command-source	        /usr/bin/clang -std=c11 -pthread -O2 -Wno-override-module -S -emit-llvm "$work/build/$arm.ll" -o "$work/inspection/$arm.opt.ll"
+original	command-source	        /usr/bin/clang++ -pthread -fno-lto "$driver" "$base/harness.o" "$base/backend_serial.o" \
+original	command-source	            "$base/backend_static.o" "$base/backend_tbb.o" "$base/backend_parlay.o" "$base/backend_rayon.o" \
+original	command-source	            "$work/build/$arm.o" "$base/stencil-seq.o" "$base/floor.o" "$base/sched_core.o" \
+original	command-source	            "$base/sched_prim_host.o" "$base/sched_entry.o" "$base/completion_runtime.o" \
+original	command-source	            "$base/completion_wait_host.o" "$base/completion_file_adapter.o" "$base/completion_file_posix.o" \
+original	command-source	            "$base/completion_bridge.o" "$base/completion_linux_io_uring.o" "$base/ordinary_values_c.o" \
+original	command-source	            "$base/ordinary_values_ll.o" -L"$deps/lib" "-Wl,-rpath,$deps/lib" -ltbb \
+original	command-source	            "$deps/rayon/libwf_compute_bench_rayon.a" -ldl -lm -o "$work/build/stencil-$arm"
+original	command-source	    done
+original	command-source	    shasum -a 256 "$work/build/"* "$work/inspection/"* > "$work/build-hashes.txt"
+original	command-source	    check_inputs
+original	command-source	    ;;
+original	command-source	verify)
+original	command-source	    check_inputs; check_build; fixture
+original	command-source	    test ! -e "$work/verify" || fail 'verification already exists'
+original	command-source	    mkdir "$work/verify"
+original	command-source	    for arm in A B; do for width in 1 4; do
+original	command-source	        log=$work/verify/$arm-w$width.txt
+original	command-source	        WF_WORKERS=$width "$work/build/stencil-$arm" verify wf "$width" > "$log" 2>&1
+original	command-source	        printf '%s W%s: ' "$arm" "$width"; grep 'VERIFY PASS' "$log"
+original	command-source	    done; done
+original	command-source	    check_inputs; check_build
+original	command-source	    ;;
+original	command-source	inspect)
+original	command-source	    check_inputs; check_build
+original	command-source	    test ! -e "$work/inspection/A.s" || fail 'inspection already exists'
+original	command-source	    for arm in A B; do
+original	command-source	        otool -tvV "$work/build/$arm.o" > "$work/inspection/$arm.s"
+original	command-source	        otool -rv "$work/build/$arm.o" > "$work/inspection/$arm.relocations.txt"
+original	command-source	        awk '/^define .*@wfb_stencil_par_wf__par_seq_stencil\(/,/^}/' "$work/inspection/$arm.opt.ll" > "$work/inspection/$arm.W1.ll"
+original	command-source	    done
+original	command-source	    test -s "$work/inspection/A.W1.ll" || fail 'optimized W1 clone missing'
+original	command-source	    diff -u "$work/inspection/A.W1.ll" "$work/inspection/B.W1.ll" > "$work/inspection/W1.diff" || test "$?" = 1
+original	command-source	    printf 'Inspect exact IR diff, optimized pixel/outer bodies, W1.diff and object arithmetic before qualification.\n'
+original	command-source	    check_inputs; check_build
+original	command-source	    ;;
+original	command-source	null|main)
+original	command-source	    test "${STENCIL_DISPATCH_TIMING_APPROVED_REVISION:-}" = "$criterion" || fail 'root must confirm durable criterion and qualification before timing'
+original	command-source	    test -s "$work/inspection/qualified.txt" || fail 'inspection qualification missing'
+original	command-source	    for arm in A B; do for width in 1 4; do grep -q 'VERIFY PASS' "$work/verify/$arm-w$width.txt" || fail 'full oracle matrix missing'; done; done
+original	command-source	    check_inputs; check_build; fixture
+original	command-source	    output=$work/$action
+original	command-source	    test ! -e "$output" || fail 'timing action already exists; no rerun'
+original	command-source	    mkdir "$output" "$output/logs"
+original	command-source	    : > "$output/raw-A.tsv"; : > "$output/raw-B.tsv"
+original	command-source	    pass=0
+original	command-source	    while test "$pass" -lt 5; do
+original	command-source	        widths='1 4'; if test "$((pass % 2))" = 1; then widths='4 1'; fi
+original	command-source	        index=0
+original	command-source	        for width in $widths; do
+original	command-source	            arms='A B'; if test "$(((pass + index) % 2))" = 1; then arms='B A'; fi
+original	command-source	            for arm in $arms; do
+original	command-source	                image_arm=$arm; if test "$action" = null; then image_arm=A; fi
+original	command-source	                log=$output/logs/$arm-w$width-p$pass
+original	command-source	                printf 'action=%s pass=%s width=%s arm=%s image=%s\n' "$action" "$pass" "$width" "$arm" "$image_arm"
+original	command-source	                WF_WORKERS=$width "$work/build/stencil-$image_arm" time wf "$width" "$pass" 5 > "$log.out" 2> "$log.err"
+original	command-source	                cat "$log.out" >> "$output/raw-$arm.tsv"
+original	command-source	            done
+original	command-source	            index=$((index + 1))
+original	command-source	        done
+original	command-source	        pass=$((pass + 1))
+original	command-source	    done
+original	command-source	    for arm in A B; do
+original	command-source	        awk -f "$bench/reduce.awk" -v passes=5 -v calls=5 -v host='Darwin arm64' -v cpus=8 \
+original	command-source	            -v date="$(date -u +%Y-%m-%dT%H:%M:%SZ)" -v run="$action-stencil-$arm" \
+original	command-source	            -v compiler='candidate480b8b56' -v refflags='no native form timed; retained objects' \
+original	command-source	            -v wfflags="$(cat "$base/wf-flags.txt")" "$output/raw-$arm.tsv" > "$output/table-$arm.txt"
+original	command-source	    done
+original	command-source	    check_inputs; check_build
+original	command-source	    ;;
+original	command-source	*) fail 'unknown action';;
+original	command-source	esac
+original-null	sha256	ab44410a88f93b79cb3db70f647af4afbfe41b9c184266353c171c5fd8a28be0  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/null-stage.log
+original-null	stage	== START stencil-zero-budget-null (limit 30s): sh /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/run.sh null ==
+original-null	stage	action=null pass=0 width=1 arm=A image=A
+original-null	stage	action=null pass=0 width=1 arm=B image=A
+original-null	stage	action=null pass=0 width=4 arm=B image=A
+original-null	stage	action=null pass=0 width=4 arm=A image=A
+original-null	stage	action=null pass=1 width=4 arm=B image=A
+original-null	stage	action=null pass=1 width=4 arm=A image=A
+original-null	stage	action=null pass=1 width=1 arm=A image=A
+original-null	stage	action=null pass=1 width=1 arm=B image=A
+original-null	stage	action=null pass=2 width=1 arm=A image=A
+original-null	stage	action=null pass=2 width=1 arm=B image=A
+original-null	stage	action=null pass=2 width=4 arm=B image=A
+original-null	stage	action=null pass=2 width=4 arm=A image=A
+original-null	stage	action=null pass=3 width=4 arm=B image=A
+original-null	stage	action=null pass=3 width=4 arm=A image=A
+original-null	stage	action=null pass=3 width=1 arm=A image=A
+original-null	stage	action=null pass=3 width=1 arm=B image=A
+original-null	stage	action=null pass=4 width=1 arm=A image=A
+original-null	stage	action=null pass=4 width=1 arm=B image=A
+original-null	stage	action=null pass=4 width=4 arm=B image=A
+original-null	stage	action=null pass=4 width=4 arm=A image=A
+original-null	stage	real 5.65
+original-null	stage	user 7.45
+original-null	stage	sys 0.68
+original-null	stage	== END stencil-zero-budget-null: 5.66 s, exit 0 ==
+original-null-A	sha256	020bd113aee565b489d7376acb84cad26a913e07eddc070c14ba09420028e5ab  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/null/raw-A.tsv
+original-null-A	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+original-null-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+original-null-A	raw	stencil	wf	1	0	0	first	35547541	35356000	4194304	0
+original-null-A	raw	stencil	wf	1	0	1	warm	30070083	29873000	4194304	0
+original-null-A	raw	stencil	wf	1	0	2	warm	31411750	31398000	4194304	0
+original-null-A	raw	stencil	wf	1	0	3	warm	32671125	32313000	4194304	0
+original-null-A	raw	stencil	wf	1	0	4	warm	31327834	30902000	4194304	0
+original-null-A	raw	stencil	wf	1	0	5	warm	30582667	30564000	4194304	0
+original-null-A	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=42
+original-null-A	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+original-null-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+original-null-A	raw	stencil	wf	4	0	0	first	23539375	70372000	4194304	179
+original-null-A	raw	stencil	wf	4	0	1	warm	18623916	63092000	4194304	166
+original-null-A	raw	stencil	wf	4	0	2	warm	16394333	60747000	4194304	166
+original-null-A	raw	stencil	wf	4	0	3	warm	17575792	63107000	4194304	183
+original-null-A	raw	stencil	wf	4	0	4	warm	18092041	61838000	4194304	143
+original-null-A	raw	stencil	wf	4	0	5	warm	16675292	59746000	4194304	150
+original-null-A	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=84
+original-null-A	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+original-null-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+original-null-A	raw	stencil	wf	4	1	0	first	29562375	73668000	4194304	144
+original-null-A	raw	stencil	wf	4	1	1	warm	20904209	65173000	4194304	134
+original-null-A	raw	stencil	wf	4	1	2	warm	26769041	63693000	4194304	164
+original-null-A	raw	stencil	wf	4	1	3	warm	17382084	63484000	4194304	159
+original-null-A	raw	stencil	wf	4	1	4	warm	18791208	62373000	4194304	159
+original-null-A	raw	stencil	wf	4	1	5	warm	16820333	60358000	4194304	122
+original-null-A	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=125
+original-null-A	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+original-null-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+original-null-A	raw	stencil	wf	1	1	0	first	35158334	35143000	4194304	0
+original-null-A	raw	stencil	wf	1	1	1	warm	29700542	29499000	4194304	0
+original-null-A	raw	stencil	wf	1	1	2	warm	30695542	30197000	4194304	0
+original-null-A	raw	stencil	wf	1	1	3	warm	59527833	34984000	4194304	0
+original-null-A	raw	stencil	wf	1	1	4	warm	37394125	33267000	4194304	0
+original-null-A	raw	stencil	wf	1	1	5	warm	35561167	32449000	4194304	0
+original-null-A	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=125
+original-null-A	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+original-null-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+original-null-A	raw	stencil	wf	1	2	0	first	46292833	40870000	4194304	0
+original-null-A	raw	stencil	wf	1	2	1	warm	36947459	34705000	4194304	0
+original-null-A	raw	stencil	wf	1	2	2	warm	38073125	33574000	4194304	0
+original-null-A	raw	stencil	wf	1	2	3	warm	34557375	32961000	4194304	0
+original-null-A	raw	stencil	wf	1	2	4	warm	35117959	32923000	4194304	0
+original-null-A	raw	stencil	wf	1	2	5	warm	35281833	33388000	4194304	0
+original-null-A	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=292
+original-null-A	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+original-null-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+original-null-A	raw	stencil	wf	4	2	0	first	24938667	72086000	4194304	157
+original-null-A	raw	stencil	wf	4	2	1	warm	18131375	64007000	4194304	183
+original-null-A	raw	stencil	wf	4	2	2	warm	18906875	62429000	4194304	159
+original-null-A	raw	stencil	wf	4	2	3	warm	22089958	61447000	4194304	175
+original-null-A	raw	stencil	wf	4	2	4	warm	18286208	63713000	4194304	149
+original-null-A	raw	stencil	wf	4	2	5	warm	19763875	63899000	4194304	182
+original-null-A	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=334
+original-null-A	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+original-null-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+original-null-A	raw	stencil	wf	4	3	0	first	23264166	71422000	4194304	168
+original-null-A	raw	stencil	wf	4	3	1	warm	19316667	64854000	4194304	162
+original-null-A	raw	stencil	wf	4	3	2	warm	22478708	66117000	4194304	185
+original-null-A	raw	stencil	wf	4	3	3	warm	18805250	64355000	4194304	158
+original-null-A	raw	stencil	wf	4	3	4	warm	19773375	64396000	4194304	151
+original-null-A	raw	stencil	wf	4	3	5	warm	22581542	64989000	4194304	189
+original-null-A	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=84
+original-null-A	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+original-null-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+original-null-A	raw	stencil	wf	1	3	0	first	37415541	37113000	4194304	0
+original-null-A	raw	stencil	wf	1	3	1	warm	32353958	31837000	4194304	0
+original-null-A	raw	stencil	wf	1	3	2	warm	31783709	31216000	4194304	0
+original-null-A	raw	stencil	wf	1	3	3	warm	30753791	30548000	4194304	0
+original-null-A	raw	stencil	wf	1	3	4	warm	30191834	29932000	4194304	0
+original-null-A	raw	stencil	wf	1	3	5	warm	31452917	30718000	4194304	0
+original-null-A	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=41
+original-null-A	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+original-null-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+original-null-A	raw	stencil	wf	1	4	0	first	34786166	34670000	4194304	0
+original-null-A	raw	stencil	wf	1	4	1	warm	30817792	30707000	4194304	0
+original-null-A	raw	stencil	wf	1	4	2	warm	30292375	29992000	4194304	0
+original-null-A	raw	stencil	wf	1	4	3	warm	29462583	29252000	4194304	0
+original-null-A	raw	stencil	wf	1	4	4	warm	30258584	30223000	4194304	0
+original-null-A	raw	stencil	wf	1	4	5	warm	30845875	30709000	4194304	0
+original-null-A	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=208
+original-null-A	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+original-null-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+original-null-A	raw	stencil	wf	4	4	0	first	23221708	70156000	4194304	158
+original-null-A	raw	stencil	wf	4	4	1	warm	23498333	62548000	4194304	184
+original-null-A	raw	stencil	wf	4	4	2	warm	16847542	61838000	4194304	163
+original-null-A	raw	stencil	wf	4	4	3	warm	16695083	60247000	4194304	169
+original-null-A	raw	stencil	wf	4	4	4	warm	16840791	62221000	4194304	160
+original-null-A	raw	stencil	wf	4	4	5	warm	18271000	63248000	4194304	154
+original-null-A	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=167
+original-null-A	sha256	e5bda4aaf2d10bff0f1e6805558459fd2c6a75b50fb6dd29fe49e289a0b6c2fb  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/null/table-A.txt
+original-null-A	table	compute-bench  host=Darwin arm64  cpus=8  mask=unqualified  date=2026-09-22T08:52:51Z
+original-null-A	table	run=null-stencil-A  compiler=candidate480b8b56  clang=unknown  rustc=unknown
+original-null-A	table	reference flags=no native form timed; retained objects
+original-null-A	table	      (identical for every reference implementation of every kernel)
+original-null-A	table	WF flags=-std=c11 -pthread -O2 -Wno-override-module
+original-null-A	table	      (module and runtime, as whitefootc links them: no -march, and no
+original-null-A	table	      alignment -- the placement control is x86_64 only; see README)
+original-null-A	table	sizes: stencil      width=1024 height=4096 steps=16 initial=squared-position
+original-null-A	table	passes=5 calls=5
+original-null-A	table
+original-null-A	table	kernel       w form              median_us  mad% p10..p90_us                cpu_us ratio              cpu_r lower  steals note
+original-null-A	table	stencil      4 wf                  18791.2   5.2 16847.5..19773.4          63484.0
+original-null-A	table	stencil      4 BEST REFERENCE = none         FASTEST = wf           WF fastest: yes
+original-null-A	table	  wf: compiler-chosen
+original-null-A	table
+original-null-A	table	stencil      1 wf                  31452.9   3.7 30292.4..35561.2          30902.0
+original-null-A	table	  wf: compiler-chosen
+original-null-A	table
+original-null-B	sha256	f03ab910a0c4b9158496bbb4c171ad28768e20db9475a8062eed6adb49af42eb  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/null/raw-B.tsv
+original-null-B	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+original-null-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+original-null-B	raw	stencil	wf	1	0	0	first	33875208	33860000	4194304	0
+original-null-B	raw	stencil	wf	1	0	1	warm	30525708	30407000	4194304	0
+original-null-B	raw	stencil	wf	1	0	2	warm	29349208	29340000	4194304	0
+original-null-B	raw	stencil	wf	1	0	3	warm	30596166	30392000	4194304	0
+original-null-B	raw	stencil	wf	1	0	4	warm	29397417	29388000	4194304	0
+original-null-B	raw	stencil	wf	1	0	5	warm	29730542	29702000	4194304	0
+original-null-B	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=125
+original-null-B	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+original-null-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+original-null-B	raw	stencil	wf	4	0	0	first	30305917	70049000	4194304	165
+original-null-B	raw	stencil	wf	4	0	1	warm	17950542	62666000	4194304	195
+original-null-B	raw	stencil	wf	4	0	2	warm	17333833	64618000	4194304	160
+original-null-B	raw	stencil	wf	4	0	3	warm	17138875	62580000	4194304	185
+original-null-B	raw	stencil	wf	4	0	4	warm	20960417	63115000	4194304	167
+original-null-B	raw	stencil	wf	4	0	5	warm	17261208	63437000	4194304	135
+original-null-B	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=42
+original-null-B	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+original-null-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+original-null-B	raw	stencil	wf	4	1	0	first	22934834	70089000	4194304	176
+original-null-B	raw	stencil	wf	4	1	1	warm	16725000	61922000	4194304	173
+original-null-B	raw	stencil	wf	4	1	2	warm	16762875	62769000	4194304	166
+original-null-B	raw	stencil	wf	4	1	3	warm	19331708	62568000	4194304	188
+original-null-B	raw	stencil	wf	4	1	4	warm	16600791	61707000	4194304	166
+original-null-B	raw	stencil	wf	4	1	5	warm	16621875	61937000	4194304	159
+original-null-B	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=41
+original-null-B	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+original-null-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+original-null-B	raw	stencil	wf	1	1	0	first	38600250	37129000	4194304	0
+original-null-B	raw	stencil	wf	1	1	1	warm	35485500	33403000	4194304	0
+original-null-B	raw	stencil	wf	1	1	2	warm	32732500	31393000	4194304	0
+original-null-B	raw	stencil	wf	1	1	3	warm	30950666	30205000	4194304	0
+original-null-B	raw	stencil	wf	1	1	4	warm	31525083	31351000	4194304	0
+original-null-B	raw	stencil	wf	1	1	5	warm	32416958	31838000	4194304	0
+original-null-B	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=84
+original-null-B	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+original-null-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+original-null-B	raw	stencil	wf	1	2	0	first	38216417	37759000	4194304	0
+original-null-B	raw	stencil	wf	1	2	1	warm	34425083	32571000	4194304	0
+original-null-B	raw	stencil	wf	1	2	2	warm	33548833	32513000	4194304	0
+original-null-B	raw	stencil	wf	1	2	3	warm	30555125	30460000	4194304	0
+original-null-B	raw	stencil	wf	1	2	4	warm	31727167	31301000	4194304	0
+original-null-B	raw	stencil	wf	1	2	5	warm	31446542	31228000	4194304	0
+original-null-B	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=83
+original-null-B	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+original-null-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+original-null-B	raw	stencil	wf	4	2	0	first	25501292	70956000	4194304	144
+original-null-B	raw	stencil	wf	4	2	1	warm	18913083	65364000	4194304	170
+original-null-B	raw	stencil	wf	4	2	2	warm	19101583	65341000	4194304	152
+original-null-B	raw	stencil	wf	4	2	3	warm	18969583	64315000	4194304	193
+original-null-B	raw	stencil	wf	4	2	4	warm	17970584	63490000	4194304	125
+original-null-B	raw	stencil	wf	4	2	5	warm	18684459	62383000	4194304	183
+original-null-B	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=83
+original-null-B	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+original-null-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+original-null-B	raw	stencil	wf	4	3	0	first	24312125	73035000	4194304	155
+original-null-B	raw	stencil	wf	4	3	1	warm	18464542	66096000	4194304	177
+original-null-B	raw	stencil	wf	4	3	2	warm	19406833	66670000	4194304	157
+original-null-B	raw	stencil	wf	4	3	3	warm	18135916	64202000	4194304	160
+original-null-B	raw	stencil	wf	4	3	4	warm	17923459	63894000	4194304	145
+original-null-B	raw	stencil	wf	4	3	5	warm	20077125	64415000	4194304	176
+original-null-B	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=125
+original-null-B	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+original-null-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+original-null-B	raw	stencil	wf	1	3	0	first	37421708	37297000	4194304	0
+original-null-B	raw	stencil	wf	1	3	1	warm	31395250	31238000	4194304	0
+original-null-B	raw	stencil	wf	1	3	2	warm	33455917	32625000	4194304	0
+original-null-B	raw	stencil	wf	1	3	3	warm	32538625	31732000	4194304	0
+original-null-B	raw	stencil	wf	1	3	4	warm	31073000	30757000	4194304	0
+original-null-B	raw	stencil	wf	1	3	5	warm	32976417	32240000	4194304	0
+original-null-B	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=42
+original-null-B	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+original-null-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+original-null-B	raw	stencil	wf	1	4	0	first	38864541	38346000	4194304	0
+original-null-B	raw	stencil	wf	1	4	1	warm	33038417	32139000	4194304	0
+original-null-B	raw	stencil	wf	1	4	2	warm	29941125	29888000	4194304	0
+original-null-B	raw	stencil	wf	1	4	3	warm	30147375	29976000	4194304	0
+original-null-B	raw	stencil	wf	1	4	4	warm	30623125	30314000	4194304	0
+original-null-B	raw	stencil	wf	1	4	5	warm	29798250	29598000	4194304	0
+original-null-B	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=83
+original-null-B	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+original-null-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+original-null-B	raw	stencil	wf	4	4	0	first	22115125	69543000	4194304	144
+original-null-B	raw	stencil	wf	4	4	1	warm	16927750	61952000	4194304	163
+original-null-B	raw	stencil	wf	4	4	2	warm	17651750	62559000	4194304	144
+original-null-B	raw	stencil	wf	4	4	3	warm	17762667	62570000	4194304	171
+original-null-B	raw	stencil	wf	4	4	4	warm	18254833	61962000	4194304	148
+original-null-B	raw	stencil	wf	4	4	5	warm	17073208	60774000	4194304	163
+original-null-B	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=250
+original-null-B	sha256	5c512bd17416b62b09141ea17bfa19a2b750af5a9ddb320cf9ac9e112fdbc455  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/null/table-B.txt
+original-null-B	table	compute-bench  host=Darwin arm64  cpus=8  mask=unqualified  date=2026-09-22T08:52:51Z
+original-null-B	table	run=null-stencil-B  compiler=candidate480b8b56  clang=unknown  rustc=unknown
+original-null-B	table	reference flags=no native form timed; retained objects
+original-null-B	table	      (identical for every reference implementation of every kernel)
+original-null-B	table	WF flags=-std=c11 -pthread -O2 -Wno-override-module
+original-null-B	table	      (module and runtime, as whitefootc links them: no -march, and no
+original-null-B	table	      alignment -- the placement control is x86_64 only; see README)
+original-null-B	table	sizes: stencil      width=1024 height=4096 steps=16 initial=squared-position
+original-null-B	table	passes=5 calls=5
+original-null-B	table
+original-null-B	table	kernel       w form              median_us  mad% p10..p90_us                cpu_us ratio              cpu_r lower  steals note
+original-null-B	table	stencil      4 wf                  17651.8   4.6 16725.0..18913.1          63115.0
+original-null-B	table	stencil      4 BEST REFERENCE = none         FASTEST = wf           WF fastest: yes
+original-null-B	table	  wf: compiler-chosen
+original-null-B	table
+original-null-B	table	stencil      1 wf                  31727.2   2.6 29730.5..32538.6          31301.0
+original-null-B	table	  wf: compiler-chosen
+original-null-B	table
+original-null	sha256	de17e68668711e27741b9660147e6b85d434b635648df01d984ff51e784ed542  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/null/paired-process-medians.tsv
+original-null	paired	width	pass	A_wall_ns	B_wall_ns	wall_B_A	A_cpu_ns	B_cpu_ns	cpu_B_A	A_first_wall_ns	B_first_wall_ns	A_first_cpu_ns	B_first_cpu_ns	A_warm_steals	B_warm_steals	A_first_steals	B_first_steals
+original-null	paired	1	0	31327834	29730542	0.949013647	30902000	29702000	0.961167562	35547541	33875208	35356000	33860000	0	0	0	0
+original-null	paired	1	1	35561167	32416958	0.911583076	32449000	31393000	0.967456624	35158334	38600250	35143000	37129000	0	0	0	0
+original-null	paired	1	2	35281833	31727167	0.899249396	33388000	31301000	0.937492512	46292833	38216417	40870000	37759000	0	0	0	0
+original-null	paired	1	3	31452917	32538625	1.034518515	30718000	31732000	1.033009962	37415541	37421708	37113000	37297000	0	0	0	0
+original-null	paired	1	4	30292375	30147375	0.995213317	30223000	29976000	0.991827416	34786166	38864541	34670000	38346000	0	0	0	0
+original-null	paired	4	0	17575792	17333833	0.986233394	61838000	63115000	1.020650733	23539375	30305917	70372000	70049000	166	167	179	165
+original-null	paired	4	1	18791208	16725000	0.890043897	63484000	61937000	0.975631655	29562375	22934834	73668000	70089000	159	166	144	176
+original-null	paired	4	2	18906875	18913083	1.000328346	63713000	64315000	1.009448621	24938667	25501292	72086000	70956000	175	170	157	144
+original-null	paired	4	3	19773375	18464542	0.933808315	64854000	64415000	0.993230950	23264166	24312125	71422000	73035000	162	160	168	155
+original-null	paired	4	4	16847542	17651750	1.047734441	62221000	61962000	0.995837418	23221708	22115125	70156000	69543000	163	163	158	144
+original-null	sha256	e01e4cdde75ff315dc3ff492b81cd74c1b6a5fd8ecafb1ac3380606520c3ecdd  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/null/paired-summary.tsv
+original-null	summary	width	paired_wall_median	paired_wall_min	paired_wall_max	largest_absolute_wall_drift	paired_cpu_median	A_process_wall_median_ns	B_process_wall_median_ns	A_process_cpu_median_ns	B_process_cpu_median_ns
+original-null	summary	1	0.949013647	0.899249396	1.034518515	0.100750604	0.967456624	31452917	31727167	30902000	31301000
+original-null	summary	4	0.986233394	0.890043897	1.047734441	0.109956103	0.995837418	18791208	17651750	63484000	63115000
+original-null	stderr	All 20 timing-process stderr files are empty.
+qualification	A-object-excerpt	000000000000095c	fmov.2d	v0, #0.25000000
+qualification	A-object-excerpt	0000000000000960	mov	x15, x10
+qualification	A-object-excerpt	0000000000000964	ldp	q1, q2, [x11, #-0x20]
+qualification	A-object-excerpt	0000000000000968	ldp	q3, q4, [x11], #0x40
+qualification	A-object-excerpt	000000000000096c	ldp	q5, q6, [x12, #-0x20]
+qualification	A-object-excerpt	0000000000000970	ldp	q7, q16, [x12], #0x40
+qualification	A-object-excerpt	0000000000000974	fadd.2d	v1, v1, v5
+qualification	A-object-excerpt	0000000000000978	fadd.2d	v2, v2, v6
+qualification	A-object-excerpt	000000000000097c	fadd.2d	v3, v3, v7
+qualification	A-object-excerpt	0000000000000980	fadd.2d	v4, v4, v16
+qualification	A-object-excerpt	0000000000000984	ldp	q5, q6, [x13, #-0x20]
+qualification	A-object-excerpt	0000000000000988	ldp	q7, q16, [x13]
+qualification	A-object-excerpt	000000000000098c	ldr	q17, [x13, #0x20]
+qualification	A-object-excerpt	0000000000000990	fadd.2d	v5, v5, v6
+qualification	A-object-excerpt	0000000000000994	fadd.2d	v6, v6, v7
+qualification	A-object-excerpt	0000000000000998	fadd.2d	v7, v7, v16
+qualification	A-object-excerpt	000000000000099c	fadd.2d	v16, v16, v17
+qualification	A-object-excerpt	00000000000009a0	fadd.2d	v1, v1, v5
+qualification	A-object-excerpt	00000000000009a4	fadd.2d	v2, v2, v6
+qualification	A-object-excerpt	00000000000009a8	fadd.2d	v3, v3, v7
+qualification	A-object-excerpt	00000000000009ac	fadd.2d	v4, v4, v16
+qualification	A-object-excerpt	00000000000009b0	fmul.2d	v1, v1, v0
+qualification	A-object-excerpt	00000000000009b4	fmul.2d	v2, v2, v0
+qualification	A-object-excerpt	00000000000009b8	fmul.2d	v3, v3, v0
+qualification	A-object-excerpt	00000000000009bc	fmul.2d	v4, v4, v0
+qualification	A-object-excerpt	00000000000009c0	stp	q1, q2, [x14, #-0x20]
+qualification	A-object-excerpt	00000000000009c4	stp	q3, q4, [x14], #0x40
+qualification	A-object-excerpt	00000000000009c8	add	x13, x13, #0x40
+qualification	A-object-excerpt	00000000000009cc	subs	x15, x15, #0x8
+qualification	A-object-excerpt	00000000000009d0	b.ne	0x964
+qualification	B-object-excerpt	000000000000106c	cmp	x13, x17
+qualification	B-object-excerpt	0000000000001070	sub	x12, x3, #0x2
+qualification	B-object-excerpt	0000000000001074	ccmp	x16, x15, #0x2, lo
+qualification	B-object-excerpt	0000000000001078	ubfx	x16, x3, #60, #1
+qualification	B-object-excerpt	000000000000107c	csinc	w16, w16, wzr, hs
+qualification	B-object-excerpt	0000000000001080	add	x14, x4, x14
+qualification	B-object-excerpt	0000000000001084	cmp	x13, x14
+qualification	B-object-excerpt	0000000000001088	ccmp	x6, x15, #0x2, lo
+qualification	B-object-excerpt	000000000000108c	csinc	w14, w16, wzr, hs
+qualification	B-object-excerpt	0000000000001090	cmp	x13, x7
+qualification	B-object-excerpt	0000000000001094	ccmp	x5, x15, #0x2, lo
+qualification	B-object-excerpt	0000000000001098	csinc	w13, w14, wzr, hs
+qualification	B-object-excerpt	000000000000109c	and	x14, x12, #0xfffffffffffffff8
+qualification	B-object-excerpt	00000000000010a0	orr	x15, x14, #0x1
+qualification	B-object-excerpt	00000000000010a4	add	x16, x9, #0x28
+qualification	B-object-excerpt	00000000000010a8	lsl	x17, x3, #3
+qualification	B-object-excerpt	00000000000010ac	add	x3, x10, #0x28
+qualification	B-object-excerpt	00000000000010b0	add	x4, x11, #0x28
+qualification	B-object-excerpt	00000000000010b4	add	x5, x6, #0x20
+qualification	B-object-excerpt	00000000000010b8	add	x6, x6, #0x8
+qualification	B-object-excerpt	00000000000010bc	fmov	d0, #0.25000000
+qualification	B-object-excerpt	00000000000010c0	fmov.2d	v1, #0.25000000
+qualification	B-object-excerpt	00000000000010c4	b	0x10f4
+qualification	B-object-excerpt	00000000000010c8	add	x1, x1, #0x1
+qualification	B-object-excerpt	00000000000010cc	add	x16, x16, x17
+qualification	B-object-excerpt	00000000000010d0	add	x3, x3, x17
+qualification	B-object-excerpt	00000000000010d4	add	x4, x4, x17
+qualification	B-object-excerpt	00000000000010d8	add	x5, x5, x17
+qualification	B-object-excerpt	00000000000010dc	add	x9, x9, x17
+qualification	B-object-excerpt	00000000000010e0	add	x6, x6, x17
+qualification	B-object-excerpt	00000000000010e4	add	x10, x10, x17
+qualification	B-object-excerpt	00000000000010e8	add	x11, x11, x17
+qualification	B-object-excerpt	00000000000010ec	cmp	x1, x2
+qualification	B-object-excerpt	00000000000010f0	b.eq	0x1200
+qualification	B-object-excerpt	00000000000010f4	cmp	x8, #0x2
+qualification	B-object-excerpt	00000000000010f8	b.lo	0x10c8
+qualification	B-object-excerpt	00000000000010fc	cmp	x12, #0x8
+qualification	B-object-excerpt	0000000000001100	cset	w7, lo
+qualification	B-object-excerpt	0000000000001104	orr	w7, w7, w13
+qualification	B-object-excerpt	0000000000001108	tbz	w7, #0x0, 0x1114
+qualification	B-object-excerpt	000000000000110c	mov	w19, #0x1
+qualification	B-object-excerpt	0000000000001110	b	0x11a4
+qualification	B-object-excerpt	0000000000001114	mov	x7, x5
+qualification	B-object-excerpt	0000000000001118	mov	x19, x4
+qualification	B-object-excerpt	000000000000111c	mov	x20, x3
+qualification	B-object-excerpt	0000000000001120	mov	x21, x16
+qualification	B-object-excerpt	0000000000001124	mov	x22, x14
+qualification	B-object-excerpt	0000000000001128	ldp	q2, q3, [x19, #-0x20]
+qualification	B-object-excerpt	000000000000112c	ldp	q4, q5, [x19], #0x40
+qualification	B-object-excerpt	0000000000001130	ldp	q6, q7, [x20, #-0x20]
+qualification	B-object-excerpt	0000000000001134	ldp	q16, q17, [x20], #0x40
+qualification	B-object-excerpt	0000000000001138	fadd.2d	v2, v2, v6
+qualification	B-object-excerpt	000000000000113c	fadd.2d	v3, v3, v7
+qualification	B-object-excerpt	0000000000001140	fadd.2d	v4, v4, v16
+qualification	B-object-excerpt	0000000000001144	fadd.2d	v5, v5, v17
+qualification	B-object-excerpt	0000000000001148	ldp	q6, q7, [x7, #-0x20]
+qualification	B-object-excerpt	000000000000114c	ldp	q16, q17, [x7]
+qualification	B-object-excerpt	0000000000001150	ldr	q18, [x7, #0x20]
+qualification	B-object-excerpt	0000000000001154	fadd.2d	v6, v6, v7
+qualification	B-object-excerpt	0000000000001158	fadd.2d	v7, v7, v16
+qualification	B-object-excerpt	000000000000115c	fadd.2d	v16, v16, v17
+qualification	B-object-excerpt	0000000000001160	fadd.2d	v17, v17, v18
+qualification	B-object-excerpt	0000000000001164	fadd.2d	v2, v2, v6
+qualification	B-object-excerpt	0000000000001168	fadd.2d	v3, v3, v7
+qualification	B-object-excerpt	000000000000116c	fadd.2d	v4, v4, v16
+qualification	B-object-excerpt	0000000000001170	fadd.2d	v5, v5, v17
+qualification	B-object-excerpt	0000000000001174	fmul.2d	v2, v2, v1
+qualification	B-object-excerpt	0000000000001178	fmul.2d	v3, v3, v1
+qualification	B-object-excerpt	000000000000117c	fmul.2d	v4, v4, v1
+qualification	B-object-excerpt	0000000000001180	fmul.2d	v5, v5, v1
+qualification	B-object-excerpt	0000000000001184	stp	q2, q3, [x21, #-0x20]
+qualification	B-object-excerpt	0000000000001188	stp	q4, q5, [x21], #0x40
+qualification	B-object-excerpt	000000000000118c	add	x7, x7, #0x40
+qualification	B-object-excerpt	0000000000001190	subs	x22, x22, #0x8
+qualification	B-object-excerpt	0000000000001194	b.ne	0x1128
+corrected	sha256	05a4cd3ea80ad3fb75ad1aab3f39364c157add395b70230ba59aa29b868d2906  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/run.sh
+corrected	command-source	#!/bin/sh
+corrected	command-source	# One-shot corrected-order session; the protocol-invalid session stays intact.
+corrected	command-source	set -eu
+corrected	command-source	work=/private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk
+corrected	command-source	qualified=/private/tmp/whitefoot-stencil-zero-budget.qSVUNU
+corrected	command-source	root=/private/tmp/whitefoot-compute-floor
+corrected	command-source	bench=$root/research/experiments/compute-bench
+corrected	command-source	action=${1:?prepare, dry-run, null or main required}
+corrected	command-source	fail() { printf '%s\n' "$*" >&2; exit 1; }
+corrected	command-source	guarded() {
+corrected	command-source	    test -n "${WHITEFOOT_CHECK_OWNER:-}" || fail 'invoke timing through run-check.pl'
+corrected	command-source	    test "$(cat "$WHITEFOOT_CHECK_LOCK_DIR/pid")" = "$WHITEFOOT_CHECK_OWNER" || fail 'guard owner differs'
+corrected	command-source	    kill -0 "$WHITEFOOT_CHECK_OWNER" || fail 'guard owner is not live'
+corrected	command-source	    test "${WHITEFOOT_CHECK_TIMEOUT:-}" = 30 || fail 'selected cap is 30 seconds'
+corrected	command-source	}
+corrected	command-source	check_qualified() {
+corrected	command-source	    test ! -e "$qualified/main" || fail 'protocol-invalid session unexpectedly has main data'
+corrected	command-source	    shasum -a 256 -c "$qualified/inputs-before.txt" > "$work/qualified-input-check.txt"
+corrected	command-source	    shasum -a 256 -c "$qualified/source-hashes.txt" > "$work/qualified-source-check.txt"
+corrected	command-source	    shasum -a 256 -c "$qualified/build-hashes.txt" > "$work/qualified-build-check.txt"
+corrected	command-source	    test -s "$qualified/inspection/qualified.txt" || fail 'optimized-code qualification missing'
+corrected	command-source	    for arm in A B; do for width in 1 4; do
+corrected	command-source	        grep -q 'VERIFY PASS.*compared=3387721' "$qualified/verify/$arm-w$width.txt" || fail 'full oracle matrix missing'
+corrected	command-source	    done; done
+corrected	command-source	    cmp "$qualified/inspection/A.W1.normalized.ll" "$qualified/inspection/B.W1.normalized.ll"
+corrected	command-source	    cmp "$qualified/inspection/A.W1.normalized.s" "$qualified/inspection/B.W1.normalized.s"
+corrected	command-source	}
+corrected	command-source	assert_order() {
+corrected	command-source	    awk -F '\t' '
+corrected	command-source	    NR==1 {if($0!="ordinal\tpass\twidth\tarm")exit 1;next}
+corrected	command-source	    {if(NF!=4 || $1!=NR-1 || $2<0 || $2>4 || ($3!=1 && $3!=4) || ($4!="A" && $4!="B"))exit 1;
+corrected	command-source	     count[$2,$3,$4]++; arms[$2,$3]=arms[$2,$3] $4; widths[$2]=widths[$2] $3; total++}
+corrected	command-source	    END {if(total!=20)exit 1;
+corrected	command-source	      for(p=0;p<5;p++){
+corrected	command-source	        expected=(p%2 ? "BA" : "AB");
+corrected	command-source	        if(widths[p]!=(p%2 ? "4411" : "1144"))exit 1;
+corrected	command-source	        for(i=0;i<2;i++){w=(i ? 4 : 1);
+corrected	command-source	          if(count[p,w,"A"]!=1 || count[p,w,"B"]!=1 || arms[p,w]!=expected)exit 1;
+corrected	command-source	          if(p>0 && arms[p,w]==arms[p-1,w])exit 1;
+corrected	command-source	        }
+corrected	command-source	      }
+corrected	command-source	    }' "$work/order.tsv" || fail 'invocation-order assertions failed'
+corrected	command-source	}
+corrected	command-source	case "$action" in
+corrected	command-source	prepare)
+corrected	command-source	    test ! -e "$work/order.tsv" || fail 'corrected session already prepared'
+corrected	command-source	    check_qualified
+corrected	command-source	    printf 'ordinal\tpass\twidth\tarm\n' > "$work/order.tsv"
+corrected	command-source	    ordinal=0; pass=0
+corrected	command-source	    while test "$pass" -lt 5; do
+corrected	command-source	        widths='1 4'; arms='A B'
+corrected	command-source	        if test "$((pass % 2))" = 1; then widths='4 1'; arms='B A'; fi
+corrected	command-source	        for width in $widths; do for arm in $arms; do
+corrected	command-source	            ordinal=$((ordinal + 1))
+corrected	command-source	            printf '%s\t%s\t%s\t%s\n' "$ordinal" "$pass" "$width" "$arm" >> "$work/order.tsv"
+corrected	command-source	        done; done
+corrected	command-source	        pass=$((pass + 1))
+corrected	command-source	    done
+corrected	command-source	    assert_order
+corrected	command-source	    shasum -a 256 "$0" "$work/order.tsv" "$qualified/inspection/qualified.txt" \
+corrected	command-source	        "$qualified/inspection/"?.W1.normalized.ll "$qualified/inspection/"?.W1.normalized.s \
+corrected	command-source	        "$qualified/inputs-before.txt" "$qualified/source-hashes.txt" "$qualified/build-hashes.txt" > "$work/session-hashes.txt"
+corrected	command-source	    printf 'PASS: 20 invocations; each pass has A/B once at each width; each width alternates AB/BA; width order independently reverses.\n'
+corrected	command-source	    ;;
+corrected	command-source	dry-run)
+corrected	command-source	    assert_order
+corrected	command-source	    shasum -a 256 -c "$work/session-hashes.txt"
+corrected	command-source	    cat "$work/order.tsv"
+corrected	command-source	    ;;
+corrected	command-source	null|main)
+corrected	command-source	    guarded
+corrected	command-source	    revision=${STENCIL_CORRECTED_TIMING_APPROVED_REVISION:-}
+corrected	command-source	    test -n "$revision" || fail 'root publication/verification required before timing'
+corrected	command-source	    git -C /private/tmp/whitefoot-compute-x1 show "$revision:research/investigations/compute-model/DESIGN.md" |
+corrected	command-source	        grep -q '^#### Corrected-order session$' || fail 'new prospective criterion is not durable'
+corrected	command-source	    shasum -a 256 -c "$work/session-hashes.txt" > "$work/session-hash-check.txt"
+corrected	command-source	    assert_order; check_qualified
+corrected	command-source	    output=$work/$action
+corrected	command-source	    test ! -e "$output" || fail 'selected action already exists; no retries'
+corrected	command-source	    mkdir "$output" "$output/logs"
+corrected	command-source	    : > "$output/raw-A.tsv"; : > "$output/raw-B.tsv"
+corrected	command-source	    unset WFB_STENCIL_WIDTH WFB_STENCIL_HEIGHT WFB_STENCIL_GRID WFB_BLOCKED_GRID
+corrected	command-source	    unset WFB_BFS_GRAPH WFB_BFS_MODE WFB_GAP_US
+corrected	command-source	    WFB_STENCIL_GRID=large WFB_GAP_US=0
+corrected	command-source	    export WFB_STENCIL_GRID WFB_GAP_US
+corrected	command-source	    awk 'NR>1 {print $2,$3,$4}' "$work/order.tsv" | while read -r pass width arm; do
+corrected	command-source	        image_arm=$arm; if test "$action" = null; then image_arm=A; fi
+corrected	command-source	        log=$output/logs/$arm-w$width-p$pass
+corrected	command-source	        printf 'action=%s pass=%s width=%s arm=%s image=%s\n' "$action" "$pass" "$width" "$arm" "$image_arm"
+corrected	command-source	        WF_WORKERS=$width "$qualified/build/stencil-$image_arm" time wf "$width" "$pass" 5 > "$log.out" 2> "$log.err"
+corrected	command-source	        cat "$log.out" >> "$output/raw-$arm.tsv"
+corrected	command-source	    done
+corrected	command-source	    for arm in A B; do
+corrected	command-source	        awk -f "$bench/reduce.awk" -v passes=5 -v calls=5 -v host='Darwin arm64' -v cpus=8 \
+corrected	command-source	            -v date="$(date -u +%Y-%m-%dT%H:%M:%SZ)" -v run="corrected-$action-stencil-$arm" \
+corrected	command-source	            -v compiler='candidate480b8b56' -v refflags='no native form timed; retained objects' \
+corrected	command-source	            -v wfflags="$(cat /private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/wf-flags.txt)" \
+corrected	command-source	            "$output/raw-$arm.tsv" > "$output/table-$arm.txt"
+corrected	command-source	    done
+corrected	command-source	    check_qualified
+corrected	command-source	    shasum -a 256 -c "$work/session-hashes.txt" > "$work/session-hash-check.txt"
+corrected	command-source	    ;;
+corrected	command-source	*) fail 'unknown action';;
+corrected	command-source	esac
+corrected	sha256	6b0b84bd2b02bf848fe28003da2955772588e88b62bed585be8704be13cd1ea6  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/session-hashes.txt
+corrected	session-sha256	05a4cd3ea80ad3fb75ad1aab3f39364c157add395b70230ba59aa29b868d2906  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/run.sh
+corrected	session-sha256	41f66e5f5765ff24321a552fc7e2cde5ea58c14acf8fed73561db21917af136f  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/order.tsv
+corrected	session-sha256	06f75afa59ed7d09da3b39b8a822d345f7f5968bcc9a0212638e13c276b3b305  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inspection/qualified.txt
+corrected	session-sha256	a94229790fe296b305e9ee737948d3a438e8d8c0a5d7aaf0d80fa34ba366837d  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inspection/A.W1.normalized.ll
+corrected	session-sha256	a94229790fe296b305e9ee737948d3a438e8d8c0a5d7aaf0d80fa34ba366837d  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inspection/B.W1.normalized.ll
+corrected	session-sha256	a9465c22451a8b907f04ad2d6757a5ab7bf13d8a248f124bdbbe8947d8ae72eb  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inspection/A.W1.normalized.s
+corrected	session-sha256	a9465c22451a8b907f04ad2d6757a5ab7bf13d8a248f124bdbbe8947d8ae72eb  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inspection/B.W1.normalized.s
+corrected	session-sha256	07735d33233182a79d6ea3122b1ba7a4bf8ac416ce387d0d845db83307df686f  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inputs-before.txt
+corrected	session-sha256	8d9b1007210ea2affa63db89ebcf89c34ea609a205269f831c991111c2c5a032  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/source-hashes.txt
+corrected	session-sha256	a1d0fd29f6129afe49b1a492d75d9096ee75a9f05515fa1131912f26c4341755  /private/tmp/whitefoot-stencil-zero-budget.qSVUNU/build-hashes.txt
+corrected	sha256	5dca68b8c93814ab0010174393adb1a2eb373892aea698b507344087756910d0  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/prepare.log
+corrected	prepare	PASS: 20 invocations; each pass has A/B once at each width; each width alternates AB/BA; width order independently reverses.
+corrected	sha256	f340837f94f70c06f46dc3953fb046c4371657477aa7004fc11cf08b998168ab  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/dry-run.log
+corrected	dry-run	/private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/run.sh: OK
+corrected	dry-run	/private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/order.tsv: OK
+corrected	dry-run	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inspection/qualified.txt: OK
+corrected	dry-run	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inspection/A.W1.normalized.ll: OK
+corrected	dry-run	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inspection/B.W1.normalized.ll: OK
+corrected	dry-run	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inspection/A.W1.normalized.s: OK
+corrected	dry-run	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inspection/B.W1.normalized.s: OK
+corrected	dry-run	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inputs-before.txt: OK
+corrected	dry-run	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/source-hashes.txt: OK
+corrected	dry-run	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/build-hashes.txt: OK
+corrected	dry-run	ordinal	pass	width	arm
+corrected	dry-run	1	0	1	A
+corrected	dry-run	2	0	1	B
+corrected	dry-run	3	0	4	A
+corrected	dry-run	4	0	4	B
+corrected	dry-run	5	1	4	B
+corrected	dry-run	6	1	4	A
+corrected	dry-run	7	1	1	B
+corrected	dry-run	8	1	1	A
+corrected	dry-run	9	2	1	A
+corrected	dry-run	10	2	1	B
+corrected	dry-run	11	2	4	A
+corrected	dry-run	12	2	4	B
+corrected	dry-run	13	3	4	B
+corrected	dry-run	14	3	4	A
+corrected	dry-run	15	3	1	B
+corrected	dry-run	16	3	1	A
+corrected	dry-run	17	4	1	A
+corrected	dry-run	18	4	1	B
+corrected	dry-run	19	4	4	A
+corrected	dry-run	20	4	4	B
+corrected	sha256	8b0d03502f40e3e036c6c9fb79f3864c1effa50aea3d4948825dcb49f4a874d3  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/result.txt
+corrected	result	published_criterion: 45961216bd526dc431a4056751f05bf5094852c8
+corrected	result	process_order: both 20-invocation actions match the prechecked order; every null image=A; main images match arms; all 40 timing stderr files empty
+corrected	result	corrected_raw_calls: 240 checked calls in 40 processes; all existing reducer/input/image/order checks passed
+corrected	result	criterion_result: useful-lead; qualifying W4 pairs=5/5; median benefit=0.179722729; largest corrected-null absolute drift=0.042469810
+corrected	result	attribution: combined query/span computation/splitter entry removal plus resulting inlining and alias-check movement; no standalone query or scheduling claim
+corrected	result	W1_limit: unchanged normalized code, but main pair range 0.933252294..1.040835992 exceeds null range 0.976660425..1.020735939; small effects and exact causal percentage are not isolated
+corrected	result	next: no production change; general mechanism/validation deferred to maintained TODO; no further timings in this trial
+corrected-null	sha256	15d000e4d090085b6c568d3a694d7fe1480da4b90d2403ee94021695a195e27b  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/null-stage.log
+corrected-null	stage	== START stencil-zero-budget-corrected-null (limit 30s): sh /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/run.sh null ==
+corrected-null	stage	action=null pass=0 width=1 arm=A image=A
+corrected-null	stage	action=null pass=0 width=1 arm=B image=A
+corrected-null	stage	action=null pass=0 width=4 arm=A image=A
+corrected-null	stage	action=null pass=0 width=4 arm=B image=A
+corrected-null	stage	action=null pass=1 width=4 arm=B image=A
+corrected-null	stage	action=null pass=1 width=4 arm=A image=A
+corrected-null	stage	action=null pass=1 width=1 arm=B image=A
+corrected-null	stage	action=null pass=1 width=1 arm=A image=A
+corrected-null	stage	action=null pass=2 width=1 arm=A image=A
+corrected-null	stage	action=null pass=2 width=1 arm=B image=A
+corrected-null	stage	action=null pass=2 width=4 arm=A image=A
+corrected-null	stage	action=null pass=2 width=4 arm=B image=A
+corrected-null	stage	action=null pass=3 width=4 arm=B image=A
+corrected-null	stage	action=null pass=3 width=4 arm=A image=A
+corrected-null	stage	action=null pass=3 width=1 arm=B image=A
+corrected-null	stage	action=null pass=3 width=1 arm=A image=A
+corrected-null	stage	action=null pass=4 width=1 arm=A image=A
+corrected-null	stage	action=null pass=4 width=1 arm=B image=A
+corrected-null	stage	action=null pass=4 width=4 arm=A image=A
+corrected-null	stage	action=null pass=4 width=4 arm=B image=A
+corrected-null	stage	real 4.67
+corrected-null	stage	user 6.78
+corrected-null	stage	sys 0.45
+corrected-null	stage	== END stencil-zero-budget-corrected-null: 4.68 s, exit 0 ==
+corrected-null-A	sha256	bbfdda0d09b258e9b971955d06f7b145d23e5c485d1e5ab10b3b72bd95ac3aaf  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/null/raw-A.tsv
+corrected-null-A	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-null-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-null-A	raw	stencil	wf	1	0	0	first	33653583	33637000	4194304	0
+corrected-null-A	raw	stencil	wf	1	0	1	warm	27867709	27858000	4194304	0
+corrected-null-A	raw	stencil	wf	1	0	2	warm	27624833	27616000	4194304	0
+corrected-null-A	raw	stencil	wf	1	0	3	warm	29307666	29298000	4194304	0
+corrected-null-A	raw	stencil	wf	1	0	4	warm	29389000	29380000	4194304	0
+corrected-null-A	raw	stencil	wf	1	0	5	warm	28878208	28868000	4194304	0
+corrected-null-A	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=42
+corrected-null-A	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-null-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-null-A	raw	stencil	wf	4	0	0	first	25400917	70556000	4194304	150
+corrected-null-A	raw	stencil	wf	4	0	1	warm	16045542	60014000	4194304	190
+corrected-null-A	raw	stencil	wf	4	0	2	warm	16085542	58109000	4194304	171
+corrected-null-A	raw	stencil	wf	4	0	3	warm	16983584	61822000	4194304	170
+corrected-null-A	raw	stencil	wf	4	0	4	warm	17277334	61035000	4194304	164
+corrected-null-A	raw	stencil	wf	4	0	5	warm	16729625	60587000	4194304	167
+corrected-null-A	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=83
+corrected-null-A	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-null-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-null-A	raw	stencil	wf	4	1	0	first	21905917	68447000	4194304	163
+corrected-null-A	raw	stencil	wf	4	1	1	warm	16193625	56134000	4194304	181
+corrected-null-A	raw	stencil	wf	4	1	2	warm	16250791	58222000	4194304	163
+corrected-null-A	raw	stencil	wf	4	1	3	warm	16885583	60744000	4194304	174
+corrected-null-A	raw	stencil	wf	4	1	4	warm	16340000	60096000	4194304	167
+corrected-null-A	raw	stencil	wf	4	1	5	warm	16016917	60158000	4194304	188
+corrected-null-A	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=41
+corrected-null-A	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-null-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-null-A	raw	stencil	wf	1	1	0	first	34081750	34066000	4194304	0
+corrected-null-A	raw	stencil	wf	1	1	1	warm	29059166	29041000	4194304	0
+corrected-null-A	raw	stencil	wf	1	1	2	warm	28858167	28831000	4194304	0
+corrected-null-A	raw	stencil	wf	1	1	3	warm	29485791	29476000	4194304	0
+corrected-null-A	raw	stencil	wf	1	1	4	warm	31274500	31213000	4194304	0
+corrected-null-A	raw	stencil	wf	1	1	5	warm	29527375	29491000	4194304	0
+corrected-null-A	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=84
+corrected-null-A	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-null-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-null-A	raw	stencil	wf	1	2	0	first	33976708	33969000	4194304	0
+corrected-null-A	raw	stencil	wf	1	2	1	warm	30031958	30023000	4194304	0
+corrected-null-A	raw	stencil	wf	1	2	2	warm	30516833	30460000	4194304	0
+corrected-null-A	raw	stencil	wf	1	2	3	warm	28246958	28240000	4194304	0
+corrected-null-A	raw	stencil	wf	1	2	4	warm	29110541	29075000	4194304	0
+corrected-null-A	raw	stencil	wf	1	2	5	warm	29179709	29134000	4194304	0
+corrected-null-A	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=209
+corrected-null-A	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-null-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-null-A	raw	stencil	wf	4	2	0	first	21654709	67714000	4194304	178
+corrected-null-A	raw	stencil	wf	4	2	1	warm	16817459	61846000	4194304	183
+corrected-null-A	raw	stencil	wf	4	2	2	warm	16904250	61330000	4194304	163
+corrected-null-A	raw	stencil	wf	4	2	3	warm	16564333	58494000	4194304	157
+corrected-null-A	raw	stencil	wf	4	2	4	warm	16175959	59153000	4194304	173
+corrected-null-A	raw	stencil	wf	4	2	5	warm	16504500	59325000	4194304	148
+corrected-null-A	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=166
+corrected-null-A	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-null-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-null-A	raw	stencil	wf	4	3	0	first	21133208	67740000	4194304	178
+corrected-null-A	raw	stencil	wf	4	3	1	warm	16726250	61457000	4194304	162
+corrected-null-A	raw	stencil	wf	4	3	2	warm	18378958	65574000	4194304	179
+corrected-null-A	raw	stencil	wf	4	3	3	warm	16435041	60273000	4194304	147
+corrected-null-A	raw	stencil	wf	4	3	4	warm	17279041	61074000	4194304	151
+corrected-null-A	raw	stencil	wf	4	3	5	warm	16479709	61392000	4194304	165
+corrected-null-A	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=41
+corrected-null-A	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-null-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-null-A	raw	stencil	wf	1	3	0	first	34025375	34016000	4194304	0
+corrected-null-A	raw	stencil	wf	1	3	1	warm	28252750	28236000	4194304	0
+corrected-null-A	raw	stencil	wf	1	3	2	warm	27631542	27621000	4194304	0
+corrected-null-A	raw	stencil	wf	1	3	3	warm	28077291	28057000	4194304	0
+corrected-null-A	raw	stencil	wf	1	3	4	warm	27981292	27971000	4194304	0
+corrected-null-A	raw	stencil	wf	1	3	5	warm	28655208	28647000	4194304	0
+corrected-null-A	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=250
+corrected-null-A	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-null-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-null-A	raw	stencil	wf	1	4	0	first	34723917	34695000	4194304	0
+corrected-null-A	raw	stencil	wf	1	4	1	warm	29581917	29570000	4194304	0
+corrected-null-A	raw	stencil	wf	1	4	2	warm	27551583	27542000	4194304	0
+corrected-null-A	raw	stencil	wf	1	4	3	warm	29161000	29151000	4194304	0
+corrected-null-A	raw	stencil	wf	1	4	4	warm	28690042	28672000	4194304	0
+corrected-null-A	raw	stencil	wf	1	4	5	warm	29574083	29560000	4194304	0
+corrected-null-A	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=83
+corrected-null-A	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-null-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-null-A	raw	stencil	wf	4	4	0	first	21846208	67511000	4194304	154
+corrected-null-A	raw	stencil	wf	4	4	1	warm	16880750	60536000	4194304	213
+corrected-null-A	raw	stencil	wf	4	4	2	warm	17559625	60871000	4194304	162
+corrected-null-A	raw	stencil	wf	4	4	3	warm	16552792	61115000	4194304	132
+corrected-null-A	raw	stencil	wf	4	4	4	warm	17545166	63125000	4194304	177
+corrected-null-A	raw	stencil	wf	4	4	5	warm	16935208	60064000	4194304	149
+corrected-null-A	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=41
+corrected-null-A	sha256	054aa60a517209475578e9577e25f6af8eafa6405501cbb69550337d682bf35d  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/null/table-A.txt
+corrected-null-A	table	compute-bench  host=Darwin arm64  cpus=8  mask=unqualified  date=2026-09-22T09:04:22Z
+corrected-null-A	table	run=corrected-null-stencil-A  compiler=candidate480b8b56  clang=unknown  rustc=unknown
+corrected-null-A	table	reference flags=no native form timed; retained objects
+corrected-null-A	table	      (identical for every reference implementation of every kernel)
+corrected-null-A	table	WF flags=-std=c11 -pthread -O2 -Wno-override-module
+corrected-null-A	table	      (module and runtime, as whitefootc links them: no -march, and no
+corrected-null-A	table	      alignment -- the placement control is x86_64 only; see README)
+corrected-null-A	table	sizes: stencil      width=1024 height=4096 steps=16 initial=squared-position
+corrected-null-A	table	passes=5 calls=5
+corrected-null-A	table
+corrected-null-A	table	kernel       w form              median_us  mad% p10..p90_us                cpu_us ratio              cpu_r lower  steals note
+corrected-null-A	table	stencil      4 wf                  16726.2   1.0 16250.8..16935.2          60587.0
+corrected-null-A	table	stencil      4 BEST REFERENCE = none         FASTEST = wf           WF fastest: yes
+corrected-null-A	table	  wf: compiler-chosen
+corrected-null-A	table
+corrected-null-A	table	stencil      1 wf                  29161.0   1.0 28077.3..29485.8          29134.0
+corrected-null-A	table	  wf: compiler-chosen
+corrected-null-A	table
+corrected-null-B	sha256	ed6c3fcebf4d768648f71e305610026b120f219428de0fc7a17270e51cdcdc08  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/null/raw-B.tsv
+corrected-null-B	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-null-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-null-B	raw	stencil	wf	1	0	0	first	37450625	37406000	4194304	0
+corrected-null-B	raw	stencil	wf	1	0	1	warm	29420125	29411000	4194304	0
+corrected-null-B	raw	stencil	wf	1	0	2	warm	29036416	29029000	4194304	0
+corrected-null-B	raw	stencil	wf	1	0	3	warm	29241833	29235000	4194304	0
+corrected-null-B	raw	stencil	wf	1	0	4	warm	30211167	30204000	4194304	0
+corrected-null-B	raw	stencil	wf	1	0	5	warm	30195875	30190000	4194304	0
+corrected-null-B	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=83
+corrected-null-B	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-null-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-null-B	raw	stencil	wf	4	0	0	first	21638916	68564000	4194304	169
+corrected-null-B	raw	stencil	wf	4	0	1	warm	16581417	60866000	4194304	201
+corrected-null-B	raw	stencil	wf	4	0	2	warm	16117125	58088000	4194304	200
+corrected-null-B	raw	stencil	wf	4	0	3	warm	16442250	60383000	4194304	173
+corrected-null-B	raw	stencil	wf	4	0	4	warm	16561458	60279000	4194304	161
+corrected-null-B	raw	stencil	wf	4	0	5	warm	15905333	59326000	4194304	166
+corrected-null-B	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=209
+corrected-null-B	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-null-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-null-B	raw	stencil	wf	4	1	0	first	21388667	67876000	4194304	148
+corrected-null-B	raw	stencil	wf	4	1	1	warm	16266333	60356000	4194304	166
+corrected-null-B	raw	stencil	wf	4	1	2	warm	16940959	58653000	4194304	165
+corrected-null-B	raw	stencil	wf	4	1	3	warm	17156500	60093000	4194304	163
+corrected-null-B	raw	stencil	wf	4	1	4	warm	17038375	61541000	4194304	190
+corrected-null-B	raw	stencil	wf	4	1	5	warm	16382791	60365000	4194304	169
+corrected-null-B	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=41
+corrected-null-B	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-null-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-null-B	raw	stencil	wf	1	1	0	first	33874458	33864000	4194304	0
+corrected-null-B	raw	stencil	wf	1	1	1	warm	29041375	29018000	4194304	0
+corrected-null-B	raw	stencil	wf	1	1	2	warm	29326584	29315000	4194304	0
+corrected-null-B	raw	stencil	wf	1	1	3	warm	28867750	28847000	4194304	0
+corrected-null-B	raw	stencil	wf	1	1	4	warm	27967625	27957000	4194304	0
+corrected-null-B	raw	stencil	wf	1	1	5	warm	29163208	29155000	4194304	0
+corrected-null-B	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=250
+corrected-null-B	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-null-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-null-B	raw	stencil	wf	1	2	0	first	34146417	34134000	4194304	0
+corrected-null-B	raw	stencil	wf	1	2	1	warm	28101125	28091000	4194304	0
+corrected-null-B	raw	stencil	wf	1	2	2	warm	28947333	28938000	4194304	0
+corrected-null-B	raw	stencil	wf	1	2	3	warm	28194042	28185000	4194304	0
+corrected-null-B	raw	stencil	wf	1	2	4	warm	28854417	28844000	4194304	0
+corrected-null-B	raw	stencil	wf	1	2	5	warm	28498667	28490000	4194304	0
+corrected-null-B	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=166
+corrected-null-B	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-null-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-null-B	raw	stencil	wf	4	2	0	first	21566167	68658000	4194304	148
+corrected-null-B	raw	stencil	wf	4	2	1	warm	16737417	61649000	4194304	187
+corrected-null-B	raw	stencil	wf	4	2	2	warm	17348500	63513000	4194304	161
+corrected-null-B	raw	stencil	wf	4	2	3	warm	17681750	63725000	4194304	186
+corrected-null-B	raw	stencil	wf	4	2	4	warm	16706125	61203000	4194304	173
+corrected-null-B	raw	stencil	wf	4	2	5	warm	17133583	60641000	4194304	195
+corrected-null-B	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=41
+corrected-null-B	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-null-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-null-B	raw	stencil	wf	4	3	0	first	22821875	68024000	4194304	174
+corrected-null-B	raw	stencil	wf	4	3	1	warm	17440459	61227000	4194304	142
+corrected-null-B	raw	stencil	wf	4	3	2	warm	16127459	59724000	4194304	164
+corrected-null-B	raw	stencil	wf	4	3	3	warm	17594000	62430000	4194304	176
+corrected-null-B	raw	stencil	wf	4	3	4	warm	16217291	59609000	4194304	162
+corrected-null-B	raw	stencil	wf	4	3	5	warm	16124125	59971000	4194304	164
+corrected-null-B	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=125
+corrected-null-B	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-null-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-null-B	raw	stencil	wf	1	3	0	first	33814875	33801000	4194304	0
+corrected-null-B	raw	stencil	wf	1	3	1	warm	28730667	28721000	4194304	0
+corrected-null-B	raw	stencil	wf	1	3	2	warm	28659500	28650000	4194304	0
+corrected-null-B	raw	stencil	wf	1	3	3	warm	27687875	27678000	4194304	0
+corrected-null-B	raw	stencil	wf	1	3	4	warm	29131458	29122000	4194304	0
+corrected-null-B	raw	stencil	wf	1	3	5	warm	28218041	28209000	4194304	0
+corrected-null-B	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=83
+corrected-null-B	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-null-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-null-B	raw	stencil	wf	1	4	0	first	34410083	34371000	4194304	0
+corrected-null-B	raw	stencil	wf	1	4	1	warm	28966208	28956000	4194304	0
+corrected-null-B	raw	stencil	wf	1	4	2	warm	28939959	28932000	4194304	0
+corrected-null-B	raw	stencil	wf	1	4	3	warm	27513292	27505000	4194304	0
+corrected-null-B	raw	stencil	wf	1	4	4	warm	27651584	27643000	4194304	0
+corrected-null-B	raw	stencil	wf	1	4	5	warm	29187834	29179000	4194304	0
+corrected-null-B	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=42
+corrected-null-B	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-null-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-null-B	raw	stencil	wf	4	4	0	first	20467000	66039000	4194304	163
+corrected-null-B	raw	stencil	wf	4	4	1	warm	17411833	61525000	4194304	166
+corrected-null-B	raw	stencil	wf	4	4	2	warm	16550959	59397000	4194304	148
+corrected-null-B	raw	stencil	wf	4	4	3	warm	16801375	60067000	4194304	168
+corrected-null-B	raw	stencil	wf	4	4	4	warm	17855583	58765000	4194304	183
+corrected-null-B	raw	stencil	wf	4	4	5	warm	16487750	60499000	4194304	182
+corrected-null-B	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=83
+corrected-null-B	sha256	b408af66e4ba998ac969bf91d5a8d851dbdff8231a82741e607ea9e67ecbb175  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/null/table-B.txt
+corrected-null-B	table	compute-bench  host=Darwin arm64  cpus=8  mask=unqualified  date=2026-09-22T09:04:22Z
+corrected-null-B	table	run=corrected-null-stencil-B  compiler=candidate480b8b56  clang=unknown  rustc=unknown
+corrected-null-B	table	reference flags=no native form timed; retained objects
+corrected-null-B	table	      (identical for every reference implementation of every kernel)
+corrected-null-B	table	WF flags=-std=c11 -pthread -O2 -Wno-override-module
+corrected-null-B	table	      (module and runtime, as whitefootc links them: no -march, and no
+corrected-null-B	table	      alignment -- the placement control is x86_64 only; see README)
+corrected-null-B	table	sizes: stencil      width=1024 height=4096 steps=16 initial=squared-position
+corrected-null-B	table	passes=5 calls=5
+corrected-null-B	table
+corrected-null-B	table	kernel       w form              median_us  mad% p10..p90_us                cpu_us ratio              cpu_r lower  steals note
+corrected-null-B	table	stencil      4 wf                  16801.4   2.0 16217.3..17133.6          60279.0
+corrected-null-B	table	stencil      4 BEST REFERENCE = none         FASTEST = wf           WF fastest: yes
+corrected-null-B	table	  wf: compiler-chosen
+corrected-null-B	table
+corrected-null-B	table	stencil      1 wf                  28940.0   1.0 28498.7..29420.1          28932.0
+corrected-null-B	table	  wf: compiler-chosen
+corrected-null-B	table
+corrected-null	sha256	8bc775bac6de7803169295bf0975e423dfb238e1b532da307c88d3f8e538a12a  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/null/paired-process-medians.tsv
+corrected-null	paired	width	pass	A_wall_ns	B_wall_ns	wall_B_A	A_cpu_ns	B_cpu_ns	cpu_B_A	A_first_wall_ns	B_first_wall_ns	A_first_cpu_ns	B_first_cpu_ns	A_warm_steals	B_warm_steals	A_first_steals	B_first_steals
+corrected-null	paired	1	0	28878208	29420125	1.018765603	28868000	29411000	1.018809755	33653583	37450625	33637000	37406000	0	0	0	0
+corrected-null	paired	1	1	29485791	29041375	0.984927791	29476000	29018000	0.984461935	34081750	33874458	34066000	33864000	0	0	0	0
+corrected-null	paired	1	2	29179709	28498667	0.976660425	29134000	28490000	0.977895243	33976708	34146417	33969000	34134000	0	0	0	0
+corrected-null	paired	1	3	28077291	28659500	1.020735939	28057000	28650000	1.021135545	34025375	33814875	34016000	33801000	0	0	0	0
+corrected-null	paired	1	4	29161000	28939959	0.992419979	29151000	28932000	0.992487393	34723917	34410083	34695000	34371000	0	0	0	0
+corrected-null	paired	4	0	16729625	16442250	0.982822388	60587000	60279000	0.994916401	25400917	21638916	70556000	68564000	170	173	150	169
+corrected-null	paired	4	1	16250791	16940959	1.042469810	60096000	60356000	1.004326411	21905917	21388667	68447000	67876000	174	166	163	148
+corrected-null	paired	4	2	16564333	17133583	1.034366008	59325000	61649000	1.039174041	21654709	21566167	67714000	68658000	163	186	178	148
+corrected-null	paired	4	3	16726250	16217291	0.969571243	61392000	59971000	0.976853662	21133208	22821875	67740000	68024000	162	164	178	174
+corrected-null	paired	4	4	16935208	16801375	0.992097351	60871000	60067000	0.986791740	21846208	20467000	67511000	66039000	162	168	154	163
+corrected-null	sha256	44ea032806e5040134c46b99d93d017cd1adbfaf63411b4cdc6b8bb7442537e9  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/null/paired-summary.tsv
+corrected-null	summary	width	paired_wall_median	paired_wall_min	paired_wall_max	largest_absolute_wall_drift	paired_cpu_median	pairs_wall_le_0.95	A_process_wall_median_ns	B_process_wall_median_ns	A_process_cpu_median_ns	B_process_cpu_median_ns	A_first_wall_median_ns	B_first_wall_median_ns	A_first_cpu_median_ns	B_first_cpu_median_ns	A_warm_steals_median	B_warm_steals_median
+corrected-null	summary	1	0.992419979	0.976660425	1.020735939	0.023339575	0.992487393	0	29161000	28939959	29134000	28932000	34025375	34146417	34016000	34134000	0	0
+corrected-null	summary	4	0.992097351	0.969571243	1.042469810	0.042469810	0.994916401	0	16726250	16801375	60587000	60279000	21846208	21566167	67740000	68024000	163	168
+corrected-main	sha256	86d31316f210516514ce8fc2089558b2acf527029b7769bad29e6c98fbed3a8d  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/main-stage.log
+corrected-main	stage	== START stencil-zero-budget-corrected-main (limit 30s): sh /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/run.sh main ==
+corrected-main	stage	action=main pass=0 width=1 arm=A image=A
+corrected-main	stage	action=main pass=0 width=1 arm=B image=B
+corrected-main	stage	action=main pass=0 width=4 arm=A image=A
+corrected-main	stage	action=main pass=0 width=4 arm=B image=B
+corrected-main	stage	action=main pass=1 width=4 arm=B image=B
+corrected-main	stage	action=main pass=1 width=4 arm=A image=A
+corrected-main	stage	action=main pass=1 width=1 arm=B image=B
+corrected-main	stage	action=main pass=1 width=1 arm=A image=A
+corrected-main	stage	action=main pass=2 width=1 arm=A image=A
+corrected-main	stage	action=main pass=2 width=1 arm=B image=B
+corrected-main	stage	action=main pass=2 width=4 arm=A image=A
+corrected-main	stage	action=main pass=2 width=4 arm=B image=B
+corrected-main	stage	action=main pass=3 width=4 arm=B image=B
+corrected-main	stage	action=main pass=3 width=4 arm=A image=A
+corrected-main	stage	action=main pass=3 width=1 arm=B image=B
+corrected-main	stage	action=main pass=3 width=1 arm=A image=A
+corrected-main	stage	action=main pass=4 width=1 arm=A image=A
+corrected-main	stage	action=main pass=4 width=1 arm=B image=B
+corrected-main	stage	action=main pass=4 width=4 arm=A image=A
+corrected-main	stage	action=main pass=4 width=4 arm=B image=B
+corrected-main	stage	real 4.55
+corrected-main	stage	user 6.44
+corrected-main	stage	sys 0.45
+corrected-main	stage	== END stencil-zero-budget-corrected-main: 4.58 s, exit 0 ==
+corrected-main-A	sha256	2bbfd3857fc18f2977cd637a14eafdfa5e60970b8d07faaa7bac5c00e36adca9  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/main/raw-A.tsv
+corrected-main-A	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-main-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-main-A	raw	stencil	wf	1	0	0	first	33547125	33536000	4194304	0
+corrected-main-A	raw	stencil	wf	1	0	1	warm	27598166	27588000	4194304	0
+corrected-main-A	raw	stencil	wf	1	0	2	warm	28489333	28479000	4194304	0
+corrected-main-A	raw	stencil	wf	1	0	3	warm	27541375	27533000	4194304	0
+corrected-main-A	raw	stencil	wf	1	0	4	warm	29274667	29266000	4194304	0
+corrected-main-A	raw	stencil	wf	1	0	5	warm	31943708	31935000	4194304	0
+corrected-main-A	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=125
+corrected-main-A	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-main-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-main-A	raw	stencil	wf	4	0	0	first	21089750	67207000	4194304	158
+corrected-main-A	raw	stencil	wf	4	0	1	warm	16690708	59776000	4194304	179
+corrected-main-A	raw	stencil	wf	4	0	2	warm	18720834	67159000	4194304	163
+corrected-main-A	raw	stencil	wf	4	0	3	warm	17314292	59074000	4194304	165
+corrected-main-A	raw	stencil	wf	4	0	4	warm	17159167	60797000	4194304	164
+corrected-main-A	raw	stencil	wf	4	0	5	warm	16151250	59823000	4194304	140
+corrected-main-A	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=42
+corrected-main-A	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-main-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-main-A	raw	stencil	wf	4	1	0	first	21312708	67104000	4194304	161
+corrected-main-A	raw	stencil	wf	4	1	1	warm	16163916	59433000	4194304	155
+corrected-main-A	raw	stencil	wf	4	1	2	warm	15938292	59680000	4194304	164
+corrected-main-A	raw	stencil	wf	4	1	3	warm	16046500	59848000	4194304	152
+corrected-main-A	raw	stencil	wf	4	1	4	warm	16323500	59312000	4194304	182
+corrected-main-A	raw	stencil	wf	4	1	5	warm	16309125	59544000	4194304	173
+corrected-main-A	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=292
+corrected-main-A	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-main-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-main-A	raw	stencil	wf	1	1	0	first	33655500	33644000	4194304	0
+corrected-main-A	raw	stencil	wf	1	1	1	warm	29601584	29592000	4194304	0
+corrected-main-A	raw	stencil	wf	1	1	2	warm	30643375	30633000	4194304	0
+corrected-main-A	raw	stencil	wf	1	1	3	warm	31127000	31119000	4194304	0
+corrected-main-A	raw	stencil	wf	1	1	4	warm	32124959	32117000	4194304	0
+corrected-main-A	raw	stencil	wf	1	1	5	warm	30244917	30236000	4194304	0
+corrected-main-A	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=125
+corrected-main-A	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-main-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-main-A	raw	stencil	wf	1	2	0	first	34091500	34068000	4194304	0
+corrected-main-A	raw	stencil	wf	1	2	1	warm	28125333	28113000	4194304	0
+corrected-main-A	raw	stencil	wf	1	2	2	warm	28312666	28303000	4194304	0
+corrected-main-A	raw	stencil	wf	1	2	3	warm	30133375	30124000	4194304	0
+corrected-main-A	raw	stencil	wf	1	2	4	warm	32446000	30771000	4194304	0
+corrected-main-A	raw	stencil	wf	1	2	5	warm	30772583	30653000	4194304	0
+corrected-main-A	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=42
+corrected-main-A	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-main-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-main-A	raw	stencil	wf	4	2	0	first	21794292	67949000	4194304	160
+corrected-main-A	raw	stencil	wf	4	2	1	warm	16431166	61031000	4194304	169
+corrected-main-A	raw	stencil	wf	4	2	2	warm	16528042	60296000	4194304	167
+corrected-main-A	raw	stencil	wf	4	2	3	warm	16214584	60244000	4194304	169
+corrected-main-A	raw	stencil	wf	4	2	4	warm	16688250	60335000	4194304	154
+corrected-main-A	raw	stencil	wf	4	2	5	warm	16519333	60499000	4194304	157
+corrected-main-A	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=375
+corrected-main-A	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-main-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-main-A	raw	stencil	wf	4	3	0	first	21209209	67865000	4194304	163
+corrected-main-A	raw	stencil	wf	4	3	1	warm	16702042	60720000	4194304	184
+corrected-main-A	raw	stencil	wf	4	3	2	warm	16529167	60514000	4194304	164
+corrected-main-A	raw	stencil	wf	4	3	3	warm	16139792	59756000	4194304	184
+corrected-main-A	raw	stencil	wf	4	3	4	warm	16170708	59529000	4194304	183
+corrected-main-A	raw	stencil	wf	4	3	5	warm	16777709	60420000	4194304	148
+corrected-main-A	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=42
+corrected-main-A	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-main-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-main-A	raw	stencil	wf	1	3	0	first	34078666	34068000	4194304	0
+corrected-main-A	raw	stencil	wf	1	3	1	warm	32278375	32247000	4194304	0
+corrected-main-A	raw	stencil	wf	1	3	2	warm	28886500	28876000	4194304	0
+corrected-main-A	raw	stencil	wf	1	3	3	warm	29444375	29434000	4194304	0
+corrected-main-A	raw	stencil	wf	1	3	4	warm	28728542	28720000	4194304	0
+corrected-main-A	raw	stencil	wf	1	3	5	warm	28758458	28750000	4194304	0
+corrected-main-A	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=84
+corrected-main-A	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-main-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-main-A	raw	stencil	wf	1	4	0	first	33852875	33820000	4194304	0
+corrected-main-A	raw	stencil	wf	1	4	1	warm	27990709	27979000	4194304	0
+corrected-main-A	raw	stencil	wf	1	4	2	warm	28184916	28175000	4194304	0
+corrected-main-A	raw	stencil	wf	1	4	3	warm	28142000	28133000	4194304	0
+corrected-main-A	raw	stencil	wf	1	4	4	warm	28624417	28615000	4194304	0
+corrected-main-A	raw	stencil	wf	1	4	5	warm	30277459	30269000	4194304	0
+corrected-main-A	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=125
+corrected-main-A	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-main-A	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-main-A	raw	stencil	wf	4	4	0	first	21744750	68483000	4194304	175
+corrected-main-A	raw	stencil	wf	4	4	1	warm	17262000	61057000	4194304	166
+corrected-main-A	raw	stencil	wf	4	4	2	warm	16175042	59060000	4194304	177
+corrected-main-A	raw	stencil	wf	4	4	3	warm	16041084	59289000	4194304	156
+corrected-main-A	raw	stencil	wf	4	4	4	warm	16139250	59781000	4194304	175
+corrected-main-A	raw	stencil	wf	4	4	5	warm	15745334	58957000	4194304	159
+corrected-main-A	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=84
+corrected-main-A	sha256	e55eb1541b9a8049fe3681b4f66f14c80cd838bcac5f9a2203ad39ef5c8ed70b  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/main/table-A.txt
+corrected-main-A	table	compute-bench  host=Darwin arm64  cpus=8  mask=unqualified  date=2026-09-22T09:04:41Z
+corrected-main-A	table	run=corrected-main-stencil-A  compiler=candidate480b8b56  clang=unknown  rustc=unknown
+corrected-main-A	table	reference flags=no native form timed; retained objects
+corrected-main-A	table	      (identical for every reference implementation of every kernel)
+corrected-main-A	table	WF flags=-std=c11 -pthread -O2 -Wno-override-module
+corrected-main-A	table	      (module and runtime, as whitefootc links them: no -march, and no
+corrected-main-A	table	      alignment -- the placement control is x86_64 only; see README)
+corrected-main-A	table	sizes: stencil      width=1024 height=4096 steps=16 initial=squared-position
+corrected-main-A	table	passes=5 calls=5
+corrected-main-A	table
+corrected-main-A	table	kernel       w form              median_us  mad% p10..p90_us                cpu_us ratio              cpu_r lower  steals note
+corrected-main-A	table	stencil      4 wf                  16519.3   2.2 16139.2..17159.2          59823.0
+corrected-main-A	table	stencil      4 BEST REFERENCE = none         FASTEST = wf           WF fastest: yes
+corrected-main-A	table	  wf: compiler-chosen
+corrected-main-A	table
+corrected-main-A	table	stencil      1 wf                  28886.5   2.4 28184.9..30643.4          28876.0
+corrected-main-A	table	  wf: compiler-chosen
+corrected-main-A	table
+corrected-main-B	sha256	58721f15a56c1c67ec37660e113881c64f729fa0b62f6acdf2aa0b19cbd12ed9  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/main/raw-B.tsv
+corrected-main-B	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-main-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-main-B	raw	stencil	wf	1	0	0	first	33556792	33526000	4194304	0
+corrected-main-B	raw	stencil	wf	1	0	1	warm	28780375	28771000	4194304	0
+corrected-main-B	raw	stencil	wf	1	0	2	warm	29344125	29336000	4194304	0
+corrected-main-B	raw	stencil	wf	1	0	3	warm	28733542	28720000	4194304	0
+corrected-main-B	raw	stencil	wf	1	0	4	warm	28649333	28641000	4194304	0
+corrected-main-B	raw	stencil	wf	1	0	5	warm	28841417	28833000	4194304	0
+corrected-main-B	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=42
+corrected-main-B	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=0 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-main-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-main-B	raw	stencil	wf	4	0	0	first	18998917	58840000	4194304	165
+corrected-main-B	raw	stencil	wf	4	0	1	warm	13838042	49214000	4194304	152
+corrected-main-B	raw	stencil	wf	4	0	2	warm	14358167	47549000	4194304	163
+corrected-main-B	raw	stencil	wf	4	0	3	warm	13242250	49278000	4194304	167
+corrected-main-B	raw	stencil	wf	4	0	4	warm	13275917	48326000	4194304	158
+corrected-main-B	raw	stencil	wf	4	0	5	warm	12832083	47143000	4194304	162
+corrected-main-B	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=84
+corrected-main-B	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-main-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-main-B	raw	stencil	wf	4	1	0	first	18795292	58700000	4194304	164
+corrected-main-B	raw	stencil	wf	4	1	1	warm	14148917	51389000	4194304	180
+corrected-main-B	raw	stencil	wf	4	1	2	warm	13840625	50303000	4194304	183
+corrected-main-B	raw	stencil	wf	4	1	3	warm	13671833	50307000	4194304	175
+corrected-main-B	raw	stencil	wf	4	1	4	warm	13294417	47748000	4194304	173
+corrected-main-B	raw	stencil	wf	4	1	5	warm	13847584	50810000	4194304	178
+corrected-main-B	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=83
+corrected-main-B	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=1 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-main-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-main-B	raw	stencil	wf	1	1	0	first	33996250	33985000	4194304	0
+corrected-main-B	raw	stencil	wf	1	1	1	warm	29085042	29074000	4194304	0
+corrected-main-B	raw	stencil	wf	1	1	2	warm	28163542	28154000	4194304	0
+corrected-main-B	raw	stencil	wf	1	1	3	warm	27944958	27932000	4194304	0
+corrected-main-B	raw	stencil	wf	1	1	4	warm	28598000	28588000	4194304	0
+corrected-main-B	raw	stencil	wf	1	1	5	warm	29042334	29031000	4194304	0
+corrected-main-B	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=84
+corrected-main-B	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-main-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-main-B	raw	stencil	wf	1	2	0	first	37164459	37153000	4194304	0
+corrected-main-B	raw	stencil	wf	1	2	1	warm	29503500	29494000	4194304	0
+corrected-main-B	raw	stencil	wf	1	2	2	warm	29527125	29519000	4194304	0
+corrected-main-B	raw	stencil	wf	1	2	3	warm	28518167	28509000	4194304	0
+corrected-main-B	raw	stencil	wf	1	2	4	warm	27905042	27884000	4194304	0
+corrected-main-B	raw	stencil	wf	1	2	5	warm	28880209	28870000	4194304	0
+corrected-main-B	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=83
+corrected-main-B	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=2 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-main-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-main-B	raw	stencil	wf	4	2	0	first	18570750	57199000	4194304	162
+corrected-main-B	raw	stencil	wf	4	2	1	warm	13635542	48883000	4194304	181
+corrected-main-B	raw	stencil	wf	4	2	2	warm	14195250	50692000	4194304	158
+corrected-main-B	raw	stencil	wf	4	2	3	warm	14492208	51450000	4194304	176
+corrected-main-B	raw	stencil	wf	4	2	4	warm	14363583	51670000	4194304	151
+corrected-main-B	raw	stencil	wf	4	2	5	warm	13760208	48021000	4194304	166
+corrected-main-B	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=83
+corrected-main-B	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-main-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-main-B	raw	stencil	wf	4	3	0	first	19020041	58255000	4194304	183
+corrected-main-B	raw	stencil	wf	4	3	1	warm	14420125	52906000	4194304	141
+corrected-main-B	raw	stencil	wf	4	3	2	warm	12538458	46340000	4194304	148
+corrected-main-B	raw	stencil	wf	4	3	3	warm	14483166	50654000	4194304	189
+corrected-main-B	raw	stencil	wf	4	3	4	warm	13362000	48183000	4194304	161
+corrected-main-B	raw	stencil	wf	4	3	5	warm	13558500	49964000	4194304	196
+corrected-main-B	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=250
+corrected-main-B	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=3 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-main-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-main-B	raw	stencil	wf	1	3	0	first	33567167	33558000	4194304	0
+corrected-main-B	raw	stencil	wf	1	3	1	warm	29504000	29496000	4194304	0
+corrected-main-B	raw	stencil	wf	1	3	2	warm	29588250	29581000	4194304	0
+corrected-main-B	raw	stencil	wf	1	3	3	warm	29233333	29224000	4194304	0
+corrected-main-B	raw	stencil	wf	1	3	4	warm	29056083	29046000	4194304	0
+corrected-main-B	raw	stencil	wf	1	3	5	warm	29571500	29547000	4194304	0
+corrected-main-B	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=42
+corrected-main-B	raw	# driver=stencil form=wf grain=compiler-chosen width=1 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-main-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-main-B	raw	stencil	wf	1	4	0	first	35330791	35320000	4194304	0
+corrected-main-B	raw	stencil	wf	1	4	1	warm	29335875	29325000	4194304	0
+corrected-main-B	raw	stencil	wf	1	4	2	warm	28468084	28460000	4194304	0
+corrected-main-B	raw	stencil	wf	1	4	3	warm	29383666	29375000	4194304	0
+corrected-main-B	raw	stencil	wf	1	4	4	warm	30671250	30663000	4194304	0
+corrected-main-B	raw	stencil	wf	1	4	5	warm	29202833	29192000	4194304	0
+corrected-main-B	raw	# batch form=wf width=1 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=42
+corrected-main-B	raw	# driver=stencil form=wf grain=compiler-chosen width=4 cpus=8 oversubscribed=0 gap_us=0 calls=5 pass=4 workload=width=1024 height=4096 steps=16 initial=squared-position clock=CLOCK_MONOTONIC_RAW clock_floor_ns=0 cpu_clock=task_info note= chunks=na
+corrected-main-B	raw	# columns=kernel form width pass call phase wall_ns cpu_ns outputs steals
+corrected-main-B	raw	stencil	wf	4	4	0	first	18042166	56630000	4194304	167
+corrected-main-B	raw	stencil	wf	4	4	1	warm	13198084	49504000	4194304	161
+corrected-main-B	raw	stencil	wf	4	4	2	warm	12862000	48087000	4194304	166
+corrected-main-B	raw	stencil	wf	4	4	3	warm	12970959	47505000	4194304	161
+corrected-main-B	raw	stencil	wf	4	4	4	warm	13197917	49005000	4194304	175
+corrected-main-B	raw	stencil	wf	4	4	5	warm	13727000	50247000	4194304	164
+corrected-main-B	raw	# batch form=wf width=4 calls=5 gap_us=0 outputs=25165824 compared=25165824 explicit_shutdown=0 shutdown_ns=292
+corrected-main-B	sha256	735a65f9b61595b87cb5cae860265174563278aa9e619e823d8e1599cede795f  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/main/table-B.txt
+corrected-main-B	table	compute-bench  host=Darwin arm64  cpus=8  mask=unqualified  date=2026-09-22T09:04:41Z
+corrected-main-B	table	run=corrected-main-stencil-B  compiler=candidate480b8b56  clang=unknown  rustc=unknown
+corrected-main-B	table	reference flags=no native form timed; retained objects
+corrected-main-B	table	      (identical for every reference implementation of every kernel)
+corrected-main-B	table	WF flags=-std=c11 -pthread -O2 -Wno-override-module
+corrected-main-B	table	      (module and runtime, as whitefootc links them: no -march, and no
+corrected-main-B	table	      alignment -- the placement control is x86_64 only; see README)
+corrected-main-B	table	sizes: stencil      width=1024 height=4096 steps=16 initial=squared-position
+corrected-main-B	table	passes=5 calls=5
+corrected-main-B	table
+corrected-main-B	table	kernel       w form              median_us  mad% p10..p90_us                cpu_us ratio              cpu_r lower  steals note
+corrected-main-B	table	stencil      4 wf                  13558.5   2.1 13197.9..14195.2          49964.0
+corrected-main-B	table	stencil      4 BEST REFERENCE = none         FASTEST = wf           WF fastest: yes
+corrected-main-B	table	  wf: compiler-chosen
+corrected-main-B	table
+corrected-main-B	table	stencil      1 wf                  28880.2   1.0 28598.0..29504.0          28870.0
+corrected-main-B	table	  wf: compiler-chosen
+corrected-main-B	table
+corrected-main	sha256	e8276103d6fddbb8817a4ca46df0b42c05b4f461fe66fb35d9f74defe4ed06db  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/main/paired-process-medians.tsv
+corrected-main	paired	width	pass	A_wall_ns	B_wall_ns	wall_B_A	A_cpu_ns	B_cpu_ns	cpu_B_A	A_first_wall_ns	B_first_wall_ns	A_first_cpu_ns	B_first_cpu_ns	A_warm_steals	B_warm_steals	A_first_steals	B_first_steals
+corrected-main	paired	1	0	28489333	28780375	1.010215824	28479000	28771000	1.010253169	33547125	33556792	33536000	33526000	0	0	0	0
+corrected-main	paired	1	1	30643375	28598000	0.933252294	30633000	28588000	0.933241929	33655500	33996250	33644000	33985000	0	0	0	0
+corrected-main	paired	1	2	30133375	28880209	0.958412690	30124000	28870000	0.958372062	34091500	37164459	34068000	37153000	0	0	0	0
+corrected-main	paired	1	3	28886500	29504000	1.021376768	28876000	29496000	1.021471118	34078666	33567167	34068000	33558000	0	0	0	0
+corrected-main	paired	1	4	28184916	29335875	1.040835992	28175000	29325000	1.040816327	33852875	35330791	33820000	35320000	0	0	0	0
+corrected-main	paired	4	0	17159167	13275917	0.773692394	59823000	48326000	0.807816392	21089750	18998917	67207000	58840000	164	162	158	165
+corrected-main	paired	4	1	16163916	13840625	0.856266823	59544000	50307000	0.844871020	21312708	18795292	67104000	58700000	164	178	161	164
+corrected-main	paired	4	2	16519333	14195250	0.859311329	60335000	50692000	0.840175686	21794292	18570750	67949000	57199000	167	166	160	162
+corrected-main	paired	4	3	16529167	13558500	0.820277271	60420000	49964000	0.826944720	21209209	19020041	67865000	58255000	183	161	163	183
+corrected-main	paired	4	4	16139250	13197917	0.817752808	59289000	49005000	0.826544553	21744750	18042166	68483000	56630000	166	164	175	167
+corrected-main	sha256	d924c4cf11b256c86929dd67aaab777517b71b4be8d70dd6cc09200b04d64b8a  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/main/paired-summary.tsv
+corrected-main	summary	width	paired_wall_median	paired_wall_min	paired_wall_max	largest_absolute_wall_drift	paired_cpu_median	pairs_wall_le_0.95	A_process_wall_median_ns	B_process_wall_median_ns	A_process_cpu_median_ns	B_process_cpu_median_ns	A_first_wall_median_ns	B_first_wall_median_ns	A_first_cpu_median_ns	B_first_cpu_median_ns	A_warm_steals_median	B_warm_steals_median
+corrected-main	summary	1	1.010215824	0.933252294	1.040835992	0.066747706	1.010253169	1	28886500	28880209	28876000	28870000	33852875	33996250	33820000	33985000	0	0
+corrected-main	summary	4	0.820277271	0.773692394	0.859311329	0.226307606	0.826944720	5	16519333	13558500	59823000	49964000	21312708	18795292	67865000	58255000	166	164
+corrected	sha256	9d63dea271065a0c6af59bd6cc36ce3fc41f00dc3b731beed97f21fef6e659b0  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/qualified-input-check.txt
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/run.sh: OK
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-capture-static.3q0gq3/stencil-candidate-par.ll: OK
+corrected	final-hash-check	/private/tmp/whitefoot-capture-candidate-cli: OK
+corrected	final-hash-check	/private/tmp/whitefoot-native-vector-6fdb-control/build/stencil_bench.o: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil.wf: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil_host.ll: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-floor/tests/programs/compute/stencil_oracle.c: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-floor/tests/programs/compute/host-adapter.awk: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-floor/research/experiments/compute-bench/module-symbols.awk: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-floor/research/experiments/compute-bench/reduce.awk: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/wf-flags.txt: OK
+corrected	final-hash-check	/private/var/folders/71/d_n5m1v94kdg7bjl_4jxvcpr0000gp/T/whitefoot/whitefoot-compute-bench/deps/lib/libtbb.dylib: OK
+corrected	final-hash-check	/private/var/folders/71/d_n5m1v94kdg7bjl_4jxvcpr0000gp/T/whitefoot/whitefoot-compute-bench/deps/rayon/libwf_compute_bench_rayon.a: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/harness.o: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/backend_serial.o: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/backend_static.o: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/backend_tbb.o: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/backend_parlay.o: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/backend_rayon.o: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/stencil-seq.o: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/floor.o: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/sched_core.o: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/sched_prim_host.o: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/sched_entry.o: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/completion_runtime.o: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/completion_wait_host.o: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/completion_file_adapter.o: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/completion_file_posix.o: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/completion_bridge.o: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/completion_linux_io_uring.o: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/ordinary_values_c.o: OK
+corrected	final-hash-check	/private/tmp/whitefoot-compute-baseline-6fdb6768-bench/build/ordinary_values_ll.o: OK
+corrected	sha256	446a02e1b71e4c4fc72df20bb34d7faee3071d4b0c71d02d77c8ac5b12b415a3  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/qualified-source-check.txt
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/source/A.raw.ll: OK
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/source/B.raw.ll: OK
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/source/ir-change.diff: OK
+corrected	sha256	7e9a9f88c4d85e1b9308255f2c76a8c7e4747999a95d143f661058d139c37d0b  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/qualified-build-check.txt
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/build/A.bound.ll: OK
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/build/A.ll: OK
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/build/A.o: OK
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/build/B.bound.ll: OK
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/build/B.ll: OK
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/build/B.o: OK
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/build/stencil-A: OK
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/build/stencil-B: OK
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inspection/A.opt.ll: OK
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inspection/B.opt.ll: OK
+corrected	sha256	3f9f97a2f73065ec1a6e1689286fff19ea7013b701d9dcf152f07e2af6ad5e7f  /private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/session-hash-check.txt
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/run.sh: OK
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget-corrected.u2C1lk/order.tsv: OK
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inspection/qualified.txt: OK
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inspection/A.W1.normalized.ll: OK
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inspection/B.W1.normalized.ll: OK
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inspection/A.W1.normalized.s: OK
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inspection/B.W1.normalized.s: OK
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/inputs-before.txt: OK
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/source-hashes.txt: OK
+corrected	final-hash-check	/private/tmp/whitefoot-stencil-zero-budget.qSVUNU/build-hashes.txt: OK
