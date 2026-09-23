@@ -142,9 +142,11 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   The [Slab comparison](../research/experiments/container-representation/slab-library/RESULTS.md)
   separates the one-slot cell's extra word from its helper boundary: retained
   wide removal and consumption has three 256-byte transfers in WF versus one
-  in C, and WF's product-layout result differs from the C union ABI. Keep
-  this distinction when interpreting timing; a cell-layout change alone
-  cannot remove these costs. Validate forwarding or result placement with
+  in C even though both `Option<Record>` results occupy 264 bytes. The separate
+  insertion `Result<SlabHandle, Record>` occupies 280 bytes in WF's product
+  layout versus 264 in C's union ABI. Keep these distinctions when interpreting
+  timing; a cell-layout change alone cannot remove these costs. Validate
+  forwarding or result placement with
   the same owning return paths, failed insertion returning the offered owner,
   partial cleanup and alias controls, checking optimized transfers and
   same-source timings on supported toolchains. Defer general enum layout and
@@ -341,6 +343,12 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   records the accepted 1343-byte / 2047-instance witness, same-instance controls,
   stage measurements and unresolved correspondence finding. No budget, timeout, new
   source refusal, or measured asymptotic guarantee has been selected.
+  Reopen when generic container/behavior composition makes instance count or
+  checking cost material. Recheck the distinct-instance and repeated-instance
+  controls on that composition, separating semantic checking, lowering and
+  emitted-code size; faster duplicate lookup alone cannot close the bound.
+  The broader admission or sharing question remains deferred to an explicit
+  choice supported by those controls and a complexity argument.
 - **At most eight peers may wait at once on a host without a native ring.**
   On Darwin, and under `WF_IO_NO_NATIVE_RING`, a peer wait beyond the eighth
   concurrent one has no helper and queues with no timeout. The readiness-
@@ -368,7 +376,15 @@ each is resolved by a discussion and a tree change.
   library example needs one of these boundaries. Validate matched direct/local/
   projected programs, alias and descriptor writes, joins, loop iterations and
   stronger-contract negatives before choosing an extension; do not infer a
-  general refinement system from the local-result implementation. Also assess
+  general refinement system from the local-result implementation. A separate
+  FN-9 result-selector limit remains: a nominal Slab result cannot publish
+  `ensures result.cells.inner.len == 0_u64;`, whereas the direct boxed Ring
+  carrier can publish its measure. The
+  [exact rejected forms](../research/investigations/containers-and-resources/X1-LIBRARY.md#exact-unavailable-source-forms)
+  distinguish this wrapper boundary from indexed postcondition targets and
+  from storing an already-related Result. Reopen it when a library wrapper
+  needs the relation, with direct-carrier, nested-field and stale-write controls.
+  Also assess
   sharing or projecting per-local conditional fact matrices when many outcomes
   remain live: 32 outcome additions measured 585 ms versus 23 ms at the
   baseline, and 32 chained joins measured 721 ms and 214 MiB peak RSS. These
@@ -429,6 +445,9 @@ each is resolved by a discussion and a tree change.
   An unconstrained `K` also admits those linear values under OWN-1 and
   PROV-6. A numeric phase alone cannot prove that a returned enum slot is
   vacant; an occupied variant still contains a key that must be consumed.
+  In particular, matching a vacancy before `swap` does not publish that
+  variant at the exchanged local afterward: the ordinary write row kills
+  the old facts and supplies no exchanged-variant relation.
   The [Slab trial](../research/investigations/containers-and-resources/X1-LIBRARY.md#exact-unavailable-source-forms)
   uses an inline `Slots<T,1>` per cell and executes insertion, removal, reuse
   and cleanup for nodrop T; it supplies an ordinary state encoding, at a
@@ -439,6 +458,22 @@ each is resolved by a discussion and a tree change.
   including bytes and helper transfers. Retain occupancy as program data and
   do not add an implicit discard or impossible cleanup branch to satisfy the
   checker. A new variant-state relation needs a remaining measured consumer.
+- **Retained membership beyond the single-object composite is unestablished.**
+  The [Slab membership caller](../tests/programs/containers/slab-membership-program.wf)
+  verifies two indexes over one object: deleting one membership preserves the
+  other reader, and the composite refuses object deletion until both retire. Weak
+  indexes instead expire after deletion. The
+  [analysis](../research/investigations/containers-and-resources/X1-LIBRARY.md#slab-reuse-addresses-and-retained-membership)
+  does not establish a multi-object protocol or protection from independently
+  authored bookkeeping mutations; ordinary handles and nodrop tickets do not
+  authenticate a slab or make membership unforgeable. Defer stronger guarantees
+  while callers need only the demonstrated composite or weak-index contract.
+  Reopen for a real multi-index consumer that must retain objects across
+  independent removals. First validate an ordinary composite with multiple
+  objects, wrong-store/stale handles, removal ordering, final cleanup and a
+  matched native retention contract, including its validation/storage cost.
+  Do not infer that failure of an unrestricted static theorem rules out a
+  correct protocol with ordinary checked data.
 - **Deque still lacks zero-copy two-span access over Ring.** REF-4 rejects
   every Ring range, even empty and proved non-wrapping ones. The current
   library's slot visitor is not a substitute for a native consumer accepting
@@ -494,7 +529,7 @@ condition under which it is taken up.
   cases. Progress proofs and full resource closure follow separately. The
   checkpoint also retains the consumer conditions for mutual tail transfers,
   general cleanup lowering and total-work estimation; none is scheduled now.
-- **Facts a contract can carry (after PR 70 merges; owner, 2026-09-20).**
+- **Facts a contract can carry (owner, 2026-09-20).**
   Three additive widenings, taken up together, each measured:
   (1) Affine `ensures`. A `requires` may already be an affine relation and
   enters the body as affine premises, but an `ensures` must fit the
@@ -511,18 +546,35 @@ condition under which it is taken up.
   (3) An `ensures` naming a single indexed path
   (`deref(p.slots)[h.idx].gen == h.gen`), which decides whether a guarded
   pool access pays one load, compare and branch per call.
-- **Open-addressing tables with non-Copy payloads.** One null check per hit
-  versus hashbrown, because occupancy that is decided by data is stored as
-  data. Measure on a real table before deciding whether any mechanism is
-  worth it.
+  Reopen with a library operation that needs one of these facts; retain the
+  exact refused clause and its best ordinary implementation. Validate support
+  invalidation, aliasing, entry/exit and index changes, ownership outcomes and
+  checking cost as well as the runtime check or source work saved. The Slab
+  and Deque [source limits](../research/investigations/containers-and-resources/X1-LIBRARY.md#exact-unavailable-source-forms)
+  remain examples, not an amendment or a claim that runtime state is lost.
+- **Open-addressing tables with non-Copy payloads.** The recorded extra null
+  check per hit versus hashbrown is a hypothesis to test on a real table,
+  not an established universal cost. The native
+  [hash-slot study](https://github.com/mbbill/Whitefoot/blob/38c28403a2defd0b65b8a2ab2b5e4794315e9940/research/experiments/hash-slot-occupancy/RESULTS.md)
+  did not establish a recurring tag-check tax and did not compare SIMD-group
+  probing. Reopen in the owning-map trial: match ownership, hash policy,
+  occupancy and probe traces, separating occupancy checks from boxing, complete
+  backing bytes, dense reverse-index repair and helper/result transfers.
+  Defer a projected layout until a remaining measured cost justifies it;
+  neither the C study nor the one-slot Slab establishes WF map parity.
 - **Channel primitive.** An ownership-transfer queue in the trusted base for
   producer/consumer pipelines and work stealing; lock-free rings are not
   expressible without it and batched fork-join is the available form. Research
   when the future concurrency primitives are designed.
 - **Header-plus-tail heap block.** One allocation holding a fixed header and a
   runtime-length tail (LLVM `User` with its operand list, `sk_buff`). Today a
-  struct with a `Box<Slots<T>>` field costs a second allocation and one extra
-  dependent memory access per hop. Additive, after PR 70 merges. Two shapes
+  boxed struct with a `Box<Slots<T>>` field costs two allocations and an extra
+  dependent access; an inline struct plus a boxed tail uses one allocation
+  but a wider handle and separated header. An encoded byte block is another
+  available representation with codec costs. TYPE-9 still excludes a typed
+  runtime-capacity tail inside a source struct; the
+  [layout comparison](../research/investigations/containers-and-resources/X1-LIBRARY.md#ceiling-challenges-connected-to-real-source-contracts)
+  separates these contracts. Two shapes
   under discussion: (a) a struct whose last field is a runtime-capacity shape
   becomes itself Box-only content, laid out `[header fields | len | cap |
   elements]`, which needs a construction route that knows the capacity, a
@@ -539,12 +591,18 @@ condition under which it is taken up.
   the expression with the hole is admitted only as that argument because
   such a struct is never a local value, and `_` would be a new token
   (`..` exists already as the destructuring rest marker).
+  Reopen when a concrete typed-header/tail consumer needs the compact owning
+  handle or adjacent layout. Compare full allocation bytes, dependent accesses,
+  initialization, movement/growth and cleanup against both ordinary alternatives;
+  no new layout or construction spelling is selected without that evidence.
 - **Bitmask fact.** `x & (c - 1) < c` for a power-of-two `c`, which would
   remove the per-probe bounds compare in hash tables.
 - **Handing checker facts to the backend.** Emitted since the v0.60 port:
   `noalias` (not on `swap`), `nonnull`, `dereferenceable`,
   `captures(none)` or `nocapture` by a build-time probe, `inbounds`, and
-  `nuw`/`nsw` on the exact family. Not emitted: `memory(argmem: ...)` (the
+  `nuw`/`nsw` on the exact family. The later qualified Ring payload-address
+  `llvm.assume` is measured in the [Deque comparison](../research/experiments/container-representation/deque-library/RESULTS.md);
+  its remaining costs are tracked above. Not emitted: `memory(argmem: ...)` (the
   IR carries neither the declared row nor the allocation fact), scoped
   alias metadata and `llvm.loop.parallel_accesses` (the emitter has no
   metadata table). Build the metadata subsystem as its own step with a
@@ -570,8 +628,14 @@ condition under which it is taken up.
   prose terms defined once in OWN-1 (copy: copyable; affine: droppable but
   not copyable; linear: neither). Rewrite the several hundred prose uses in
   capability words when a specification pass can afford the review.
-- **Performance floor after the port.** Re-measure the existing kernels and
-  the eight engineering tasks of the matrix rounds once the compiler
-  implements v0.60, so that the recorded costs (data-determined index
-  compare, refused scatter, re-descent on find-then-mutate, one element move
-  into the append slot) have numbers.
+- **Unmeasured performance claims from the ownership-redesign matrix.**
+  The v0.60 port has landed; the current Vector, Slab and Deque comparisons
+  establish only their stated operation contracts and toolchains. The earlier
+  matrix's costs for data-determined index checks, refused scatter,
+  find-then-mutate re-descent and construction into an append slot still need
+  current source and native controls where those comparisons do not cover them.
+  Reopen the affected claim when a container or systems workload exercises it,
+  preserving its ownership, order, overlap and allocation contract and separating
+  required source work from removable lowering cost. Defer a broad repeat of all
+  eight engineering tasks until it answers a concrete selection question;
+  a passing new library does not dispose of the remaining matrix claims.
