@@ -817,6 +817,48 @@ separate competing updates, as the
 [sparse-routing investigation](../compute-model/DESIGN.md#private-outboxes-without-frontier-compaction)
 explores. Routing, joins, initialization and owner imbalance still require
 accounting; that investigation does not establish a general DAG executor.
+The later [DAG source trial](../compute-model/DESIGN.md#runtime-dag-fan-in-source-trial-2026-09-23)
+admits two sources writing four private notices and two destination owners
+reading their own notices. All 16 edge masks pass the native oracle; the
+full-cost mask observes overlapping source recurrence work and overlapping
+owner recurrence work. Notice folding precedes the observed task intervals,
+so overlap of notice folding or complete owner retirement was not measured. Four
+notices are initialized and inspected even when edges are absent; a dense
+generalization must charge its whole matrix.
+
+The [runtime-adjacency probe](../compute-model/DESIGN.md#runtime-adjacency-all-predecessor-probe)
+goes beyond that fixed notification shape. Task counts, costs and edges are
+inputs, with topologically numbered vertices, unique forward edges and at most
+two predecessors and successors per vertex. Each destination owner retains
+all predecessor values, folds them in ascending source-ID order and executes
+the task exactly once after the last arrival. Isolated tasks also execute.
+The supplied output must hold `N` cells; graph/configuration validation precedes
+task execution and output changes. All twelve ordinary/traced W1/W4
+configurations pass across the owner loop, balanced recursive owner map and
+native reference, including every valid forward graph through five vertices,
+reverse arrival and unchanged-input checks.
+
+The loop has zero split allowance at the selected owner counts. The recursive
+form observes task overlap, including tasks 2 and 3 in the six-node costly
+witness. Its `C=4` owners are `{0}`, `{1}`, `{2}`, `{3,4,5}`. Task 1's notice
+enables task 3 only after the first round joins, including costly task 0;
+the native readiness reference overlaps tasks 0 and 3, while neither WF form
+does in that witness. This diagnoses the selected owner-round formulation,
+not a barrier required by every ordinary source formulation.
+
+Topological numbering and contiguous ownership make owner indices increase
+on every cross-owner edge. Complete local draining therefore gives `R <= C`
+processing rounds. With `N` tasks, `E` edges and total task work `W`, the
+source charges `O(N + E + W + C*C*R)` work and
+`12*N + 2*C*C + 2*C` auxiliary u64 words. Input adds `3*N` words, output `2*N`
+and the run result three; headers, mapper activations, observer and runtime
+storage remain separate. Matrix initialization, resets, head visits, notice
+handling and joins are included. The admitted domain is
+`N <= 2^30-1`, with `1 <= C <= N` for nonempty input and zero owners for empty
+input. Arbitrary numbering would require charged sorting, remapping and
+output restoration; higher degree needs a different representation. This
+qualifies bounded all-predecessor execution, not elapsed competitiveness,
+physical peak memory or an efficient general readiness executor.
 
 ### (c) What changes structurally
 
@@ -834,8 +876,9 @@ For the displayed runtime-input decomposition, three changes:
   finite-worker elapsed time also depends on each level's total work.
 - **Retirement and frontier compaction are sequential in this form.** A
   linear pass costs O(frontier size + outgoing edges) work and can rival the
-  tasks themselves at high fan-out. Destination ownership and intrusive
-  frontiers are alternatives whose costs need separate qualification.
+  tasks themselves at high fan-out. The qualified destination-owner forms
+  avoid this shared update and global compaction, while retaining joined
+  phases, metadata work and owner imbalance.
 - **Task identity becomes an index into arrays.** This representation puts
   results in a fixed `TaskState` row. An enum for heterogeneous results adds
   dispatch and reserves space for its largest payload in each row; different
@@ -857,20 +900,47 @@ illustration, not a bound on the level penalty.
 A discriminating analytical family has k unit-cost spine tasks in a chain,
 each enabling one independent leaf of cost T, with T >= 1. Level execution
 has span `1 + k*T`, whereas the weighted critical path is `k + T`. Their
-ratio grows without bound as k grows with T much larger than k. Nested calls
-to a leaf and the remaining spine are an alternative decomposition to test
-for this family; no source proof, permission result or native execution for
-that witness is established here, and it does not settle arbitrary fan-in.
+ratio grows without bound as k grows with T much larger than k. The
+[bounded native qualification](../compute-model/DESIGN.md#native-qualification-and-cutoff-attribution)
+now admits nested leaf/suffix calls and observes leaf/later-spine overlap in
+the ordinary default image. At W4 the recursive budget suppresses offers
+beyond depth eight; a separately labelled frontier-off control restores deep
+overlap at lengths 16 and 32, without qualifying longer spines or the retained
+64-slot-per-lane limit. A source-only spine-then-leaf-map comparator preserves
+the original outputs without another array, but its array-loaded task costs
+retain static price 199, leaving all selected lengths through 32 unsplit
+despite PAR-2 permission. A
+[captured-scalar control](../compute-model/DESIGN.md#captured-scalar-availability-control)
+uses the actual common leaf bound on the uniform subfamily and exposes costly
+length-32 overlap on four threads while retaining sequential cheap/boundary
+controls. This changes the input representation; heterogeneous loaded-cost
+pricing remains open. These are source, lowering and overlap results, with
+no timing comparison or heterogeneous loaded-cost policy selected.
 
-This is a span comparison, not an unbounded elapsed-time ratio at fixed
+For edges A-to-C, B-to-C and B-to-D, the same trial qualifies three source
+decompositions with respective extra edges A-to-D, B-to-A and D-to-C. A
+fourth diagnostic order permits B/A, A/D and D/C separately, yet the current
+greedy grouping emits B/A joined before D/C and loses the middle pair. The
+useful oneTBB reference observes all three incomparable pairs on the
+all-costly input. This identifies a concrete lowering opportunity, not a
+universal impossibility result for other source forms or scheduling schemes.
+The later bounded bridge trial recovers the selected A/D overlap while
+reducing observed C/D overlap across its fixed masks. Its
+[amended cost control](../compute-model/DESIGN.md#amended-cost-result-identical-image-control-failure)
+fails before any candidate comparison. Both the bridge and its DONE-first
+runtime change are withdrawn for lack of cost qualification; this supplies
+neither a measured implementation regression nor a scheduling replacement.
+
+The analytical level/critical-path ratio is a span comparison, not an
+unbounded elapsed-time ratio at fixed
 worker count P. For the same task work W, ignoring scheduling and
 representation overhead, a non-idling level schedule takes at most W time
 and any P-worker execution takes at least W/P. The elapsed-time ratio is then
 at most P. Extra routing, scans, initialization or recomputation change the
 work and must be charged separately.
 
-Memory is also unmeasured. Arrays replace this native example's task objects
-and queues, but graph, count, frontier, result and any routing storage remain.
+Physical peak memory is unmeasured. The bounded source accounting above
+charges its arrays, but graph, count, frontier, result and runtime storage remain.
 A useful native executor can use arrays too; the representation alone does
 not establish lower peak memory.
 
@@ -878,9 +948,12 @@ not establish lower peak memory.
 
 Displayed static diamond: **direct form, cost unmeasured here.** Runtime-input
 DAG: **restructure; costs depend on the formulation.** The examined level
-form adds barriers and sequential retirement. Their cost is not established
-as unavoidable for every representation, and efficient general fan-in remains
-unqualified.
+form adds barriers and sequential retirement. The admitted spine, private
+notifications and bounded runtime-adjacency evaluator establish useful overlap
+beyond that level form. Recursive cutoff, work-price, call-group and owner-round
+limitations remain distinct. Arbitrary labeling or degree, elapsed
+competitiveness, physical peak space and efficient general readiness remain
+unqualified; the cost-unqualified bridge trial does not change that boundary.
 
 ---
 
@@ -1652,9 +1725,10 @@ also not help. Genuinely no loss here.
 ## 13. Level-synchronous graph algorithms and irregular reductions
 
 The executable [compute-model investigation](../compute-model/DESIGN.md)
-supersedes the earlier estimates in this section. It distinguishes a useful
-sparse traversal, an eligible dense traversal, and a privatized histogram;
-eligibility alone supplies no performance result.
+supersedes the earlier estimates in this section. It distinguishes source-ordered
+sparse traversal, qualified parallel sparse routing and discovery, an eligible
+dense traversal, and a privatized histogram. Qualification of results and helper
+work alone supplies no performance comparison.
 
 ### BFS
 
@@ -1677,16 +1751,53 @@ The independent FIFO oracle checks unsigned distances and unreachable vertices
 on chains, trees, disconnected graphs, cycles, grids, and duplicate edges in
 both compiler modes with real worker pools. Fixtures are undirected with at
 most four adjacency slots per vertex. This removes the need for a transpose
-in the pull control but limits the result: arbitrary CSR, high-degree hubs,
-parent-selection semantics, and parallel sparse discovery are untested.
+in that pull control; its result does not cover arbitrary CSR, high-degree hubs
+or parent-selection semantics.
+
+The later [private-outbox source](../compute-model/DESIGN.md#private-outboxes-without-frontier-compaction)
+qualifies parallel sparse discovery with the same four outgoing-slot bound,
+including directed collision graphs, permutations, self edges and duplicate
+discoveries. Source owners walk only their intrusive active lists and route
+original adjacency-slot links into private buckets. After routing joins,
+destination owners handle competing discoveries in source order and build
+their next intrusive lists. No global frontier compaction or per-level
+vertex-wide clear is required. The public domain remains at most 16,777,216
+adjacency slots. The oracle establishes every distance and unchanged input;
+it does not qualify a stable parent-selection or arbitrary actor-mailbox
+contract.
+
+Its [native phase qualification](../compute-model/DESIGN.md#native-phase-qualification-and-prospective-fifo-comparison-2026-09-22)
+checks all 96 configurations through the ordinary unobserved image at W1/W4.
+The observed W4 image executes nonempty routing and destination discovery on
+helpers for the permuted tree and collision graph. The original tree has
+helper discovery but no helper source-row work, despite a positive routing
+budget; smaller fixtures have no routing allowance. Observed W1 has no grants.
+These are separate results from source permission and emitted split sites.
+
+Charging each level's C-by-D bucket matrix to its adjacent active frontiers
+gives O(V+E) total work for this bounded-degree traversal, including metadata.
+Persistent storage is 8V u64 cells (64V bytes), plus array headers and the
+current matrix; the four input slots per vertex are separate. Every matrix
+cell is initialized and inspected, persistent arrays are initialized once,
+and all list/message walks remain charged. Allocation fills are serial in
+the qualified lowering. Concentrated labels or destinations can leave an
+owner's work linear in the frontier, and separate tail calls add span.
+These source counts are not measured physical peak memory.
+
+The bounded FIFO comparison stopped when the collision/W4 identical-image
+control failed its fixed interval. No algorithm comparison ran: the evidence
+establishes neither an elapsed advantage nor a loss against useful FIFO.
+The narrow-chain elapsed penalty, initialization attribution and general
+high-degree or parent-order extensions remain unqualified.
 
 Pull visits every vertex at each level. It therefore incurs O(V·D) vertex
 visits on a chain where sparse discovery needs O(V+E). Parallel eligibility
 does not make that an acceptable replacement. The prior estimate of roughly
 0.9 times an OpenMP direction-optimizing BFS is withdrawn: no such comparison
-was run, and unconditional pull is not direction optimization. The experiment
-compares FIFO and pull on the same graph and reports work as well as elapsed
-time and process CPU before selecting further work.
+was run, and unconditional pull is not direction optimization. The historical
+FIFO/pull measurements compare those particular algorithms; the qualified
+private-outbox form establishes that sparse parallel discovery need not incur
+the pull control's dense work.
 
 ### Histogram
 
@@ -2700,7 +2811,7 @@ only.
 | 3 | Pipeline with stages + queues, stateful stage | restructure, bounded loss | — | queues → N+1 batch buffers; stage count written in source; per-item → per-batch latency | throughput within 10–20% when stages regular (hot rounds at 11.6 ns); **1.3–2x worse** with a high-variance stage; latency = batch size | E |
 | 4 | Producer–consumer, bounded queue | restructure, bounded loss | — | backpressure → batch size constant; no continuous rate adaptation | throughput ±10% or better (mutex per item deleted); latency +1 batch; **1.5–2x worse** under bursty arrivals | E |
 | 5 | Task DAG, static | direct for the displayed diamond | — | precise effects and a call decomposition exposing dependencies | parity is conditional and unmeasured here; sibling-pair measurements do not establish general DAG parity | R/E |
-| 5′ | Task DAG, dynamic | restructure; formulation-dependent costs | — | examined level form has barriers and sequential retirement; destination ownership is a separate candidate | ~15% wide/shallow and 2–5x skew estimates unmeasured; level/critical-path span ratio unbounded, distinct from fixed-P elapsed costs; general fan-in unqualified | R/E |
+| 5′ | Task DAG, dynamic | bounded runtime adjacency and all-predecessor execution qualified | — | topological IDs, in/outdegree at most two, R≤C owner rounds; O(C²R) routing and two C² head matrices; recursive overlap, selected owner loops unsplit | no candidate timing comparison or native speed/peak-memory claim; arbitrary labeling/degree and efficient general readiness unqualified; bridge trial withdrawn after failed cost control | M/R |
 | 6 | Game job system | restructure, bounded loss | — | one extra phase per spawn depth; sequential merge per phase; no grain control | ~1% of a 60 Hz frame for merges (hot rounds); **1.2–1.5x worse** on fine-grained frames (grain hazard measured at 1.40x on `wfgrep`) | M/E |
 | 7 | Concurrent hash map | **not expressible** (concurrent insert+lookup); **`[R]` restructure, no loss** (build-then-freeze) | restructure, bounded loss — W a source constant | no cross-shard probing; insert latency = batch period | build 0.6–0.9 of native; **frozen lookup 1.2–1.5x faster** | R/E |
 | 8 | Read-mostly RwLock / RCU | **restructure, no loss** (structural win) | — | publish latency bounded by read-phase length | reader path **1.5–3x faster** than RwLock, parity with RCU; memory strictly lower | R/E |
@@ -2708,8 +2819,8 @@ only.
 | 10 | Actor model | restructure, bounded loss (large) | — | sequential delivery scatter per round; compile-time fan-out cap; chain latency in rounds | ~1.4x worse at W=4, ~2.6x at W=16 (Amdahl on the scatter); chain latency **100–1,000x**; sparse actor sets **1,000x+** work amplification | E |
 | 11 | Per-core shared-nothing | restructure, bounded loss | — | round barrier where native has none; cross-core msgs → per-round scatter | **<1% barrier while saturated** (hot rounds); **300–500% per round at burst=32 once lanes park**; latency ~10–25x DPDK at burst=256 | R/E |
 | 12 | Structured concurrency / scoped threads | **direct** | — | none | parity; 2.98x on 4 cores measured (75% of ideal); faster than `thread::scope` for short tasks | M |
-| 13 | BFS, low-diameter | sparse or pull, both executable | — | sparse discovery remains sequential; pull scans every vertex | see compute-model experiment; former OpenMP estimate withdrawn | R |
-| 13′ | BFS, high-diameter | sparse O(V+E) available; pull has asymptotic loss | — | parallel sparse discovery unresolved | pull O(V·D) vertex visits; compare actual chain fixture | R |
+| 13 | BFS, low-diameter | sparse routing and discovery execute on helpers; pull also executable | — | four outgoing slots per vertex; 64V-byte persistent storage plus C-by-D matrix, joined phases and owner imbalance | FIFO comparison stopped at identical-image control; neither advantage nor loss established; former OpenMP estimate withdrawn | M/R |
+| 13′ | BFS, high-diameter | qualified sparse form has O(V+E) work; pull has asymptotic loss | — | sparse matrix metadata charged to adjacent frontiers; serial fills and narrow-frontier span remain | pull O(V·D) vertex visits; private-outbox chain penalty unmeasured | M/R |
 | 13″ | Histogram | runtime block privatization, executable | fixed-worker form obsolete | block-count × bucket-count workspace and a merge | see compute-model experiment; no OpenMP parity claim | R |
 | 13‴ | Counting / radix sort | stable binary distribution with exclusive output ranges, executable | — | padded buffers, copies and linear continuation; wider digits unresolved | see the compute-model scatter trial; no general radix-sort claim | R |
 | 14 | Stencil, 1-D | **direct** | — | none; halo exchange deleted | 0.91–1.14 of best ref (`fir` measured fastest) | M |
@@ -2771,10 +2882,12 @@ is bounded by the longest phase; and it cannot observe the main work stalling,
 which is why a watchdog is not expressible.
 
 **T5. Actor/connection/core state → a row in an array.** (6, 10, 11, 17, 19)
-*Inherent cost:* work becomes proportional to the *number of rows* rather than
-the number of *active* rows. A sparse active set costs a full pass to find, and
-compacting it is a scatter, which is sequential. Row types must be sized for the
-worst case across kinds.
+A dense row sweep pays for the *number of rows* rather than the number of
+*active* rows. This is a representation cost, not a necessary active-set scan:
+the bounded BFS owner lists in §13 retain sparse work without global
+compaction. That result does not qualify arbitrary actor mailboxes, fan-out or
+independently resumable handlers. Routing, ownership and message storage still
+need their own accounting; a uniform row reserves space for its largest kind.
 
 **T6. Unpartitioned data-dependent write → supply a destination proof or serialize.**
 (5′, 10, 11, 13, 15′)
@@ -2799,11 +2912,14 @@ cost of work already started in the final batch. Neither full-scan
 amplification nor a measured speed ratio is inherent to all formulations.
 The helper candidate, batch joins and weighted work remain unqualified.
 
-**T9. Sparse frontier → choose source-ordered sparse work or an eligible dense pass.**
+**T9. Sparse frontier → source-ordered work or destination-owned parallel discovery.**
 (5′, 13)
-Sparse traversal is expressible with O(V+E) work. Unconditional pull can expose
-parallel writes but adds O(V) vertex visits per level; on a chain it is the
-wrong algorithm. Parallel sparse discovery remains unresolved by this consumer.
+The bounded private-outbox form preserves O(V+E) work and executes both useful
+maps on helpers without global compaction. Four outgoing slots, joined phases,
+owner imbalance, 64V-byte persistent storage and matrix work remain limits;
+elapsed competitiveness is unqualified after the failed comparison control.
+Unconditional pull still adds O(V) vertex visits per level and is the wrong
+algorithm for a chain. Neither form qualifies arbitrary high-degree graphs.
 
 **T10. Callback state machine → a straight-line function on a parked stack.**
 (17, 18, 19)
@@ -3038,11 +3154,14 @@ publish that fact in its return type all the way up. That is a real constraint o
 how I/O libraries can be factored in this language, and it deserves an answer in
 the I/O API rather than a note in a catalog.
 
-**Compute follow-up.** Architecture 13′ now has an executable O(V+E) sparse
-source, while its parallel pull control still incurs O(V·D) vertex visits.
-The measured distinction is the loss incurred by that parallel restructuring;
-it is not a claim that every expressible BFS must perform dense work. Parallel
-sparse discovery remains a compute-model question before I/O work begins.
+**Compute follow-up.** Architecture 13′ now has a qualified O(V+E)
+private-outbox source with useful parallel routing and discovery; its pull
+control still incurs O(V·D) vertex visits. Architecture 5′ also qualifies
+runtime all-predecessor execution under its explicit topological-numbering,
+degree and owner-round contract. These bounded expression questions have
+native witnesses. Elapsed competitiveness, physical peak memory, broader
+graph contracts and scheduling policy retain the limitations in §5 and §13;
+neither result selects a general executor or an I/O mechanism.
 
 ---
 

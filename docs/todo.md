@@ -240,20 +240,24 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   results. PAR-2 allows iteration-owned writes, but the current PAR-1/PAR-2
   walkers model one result definition per statement and refuse this form.
   A two-field record admits the same receiver map without added allocation or
-  traversal. Defer a general multi-definition footprint implementation while
-  measuring the algorithm; reopen when that workaround materially complicates
-  a real consumer. Validate complete effects, consumption, exits and lowering
-  for all result ordinals rather than granting a tuple-specific exception.
+  traversal; the retained form now qualifies useful helper discovery.
+  Defer a general multi-definition footprint implementation; reopen when that
+  workaround materially complicates a real consumer. Validate complete effects,
+  consumption, exits and lowering for all result ordinals rather than granting
+  a tuple-specific exception.
 
 - **Initialized allocation can impose serial span on parallel work.** The
   [private-outbox representation](../research/investigations/compute-model/DESIGN.md#private-outboxes-without-frontier-compaction)
   requires a fresh C-by-D head matrix each level; its element fill is a
   sequential emitted loop before otherwise independent routing. Initialization
-  remains linear work but can dominate the full critical path. The end-to-end
-  cost is not yet attributed. Measure fill/allocation separately from useful
-  routing before choosing a general lowering change; preserve initial values,
+  remains linear work but can dominate the full critical path. The sparse
+  oracle and useful helper work are now qualified, but the
+  [FIFO comparison](../research/investigations/compute-model/DESIGN.md#native-phase-qualification-and-prospective-fifo-comparison-2026-09-22)
+  stopped at its identical-image control. The end-to-end cost is not attributed.
+  Measure fill/allocation separately from useful routing before choosing a
+  general lowering change; preserve initial values,
   cleanup and the unchanged sequential image in any later experiment. Defer
-  repair until the sparse oracle and bounded comparison establish materiality.
+  repair until a qualified cost comparison establishes materiality.
 
 - **Loop capture selection remains conservative beyond forwarding.** The
   [needed-capture change](../research/investigations/compute-model/DESIGN.md#needed-loop-captures)
@@ -265,6 +269,22 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   when an otherwise useful map still exceeds the fixed frame bound, and
   validate smaller emitted frames on the same source without changing calls,
   cleanup or results before selecting that wider scope.
+
+- **Aggregate-size estimates can refuse fitting loop captures.** The
+  [runtime-adjacency output initialization](../research/investigations/compute-model/DESIGN.md#source-construction-and-admission)
+  has PAR-2 permission and only two used captures after pruning, but split
+  admission charges its 16-byte `TaskCell` nominal 256 bytes. The resulting
+  312-byte estimate refuses a frame whose target field layout would be 72
+  bytes; that smaller frame was not emitted or qualified. This is distinct
+  from unused-capture analysis and from allocation primitives' serial fills.
+  Exact aggregate sizing could admit useful maps, but this tiny qualification
+  matrix is below the ordinary grain threshold and establishes no speed gain.
+  Defer repair until an ordinary map's useful offers are blocked by this
+  estimate. Reopen with selected-target size/alignment and address-domain
+  checks, small and genuinely oversized aggregate controls, native payload
+  snapshot/copy checks and unchanged results/fitting-frame behavior. Preserve
+  complete aggregate transport and the fixed 256-byte slot bound; no wider
+  dead-computation analysis is implied.
 
 - **Pruning already-fitting loop frames needs a qualified benefit.** The
   [capture investigation](../research/investigations/compute-model/DESIGN.md#needed-loop-captures)
@@ -294,21 +314,49 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   or serial execution. Defer until those active qualifications finish; no
   executor or new concurrency rule is selected by this follow-up.
 
-- **Runtime DAG fan-in costs remain unqualified.** The
-  [catalog's level decomposition](../research/investigations/io-model/CONCURRENCY-CATALOG.md#5-task-dag-with-dependencies-static-and-dynamic)
-  can add large span, but a denied shared-counter scatter does not establish
-  mandatory global barriers or retirement passes for every representation.
-  Test a runtime-length spine with independent long leaves, two sources
-  notifying two destination owners, and fan-in edges A-to-C, B-to-C, B-to-D.
-  Preserve every task's output and exactly one evaluation per task against
-  an independent topological oracle; compare with a useful edge-triggered
-  native executor and charge routing, initialization, work, span and peak
-  workspace. Overlap along the spine or destination-owned retirement would
-  falsify the corresponding universal level/serial-pass claim, not establish
-  an efficient general DAG solution. Defer while capture, BFS and stencil
-  evidence is qualified. Reopen after that work when a concrete runtime-DAG
-  consumer requires the fan-in contract; begin with bounded source witnesses,
-  not a new executor project.
+- **General DAG scheduling and competitiveness remain unqualified.** The
+  [runtime-adjacency probe](../research/investigations/compute-model/DESIGN.md#runtime-adjacency-all-predecessor-probe)
+  executes runtime-provided forward graphs with at most two predecessors and
+  successors per vertex through ordinary WF source. Both owner mappings pass
+  the original-edge oracle, including all such graphs through five vertices.
+  Recursive owners overlap, but their joined rounds delay a ready task that
+  the native readiness executor overlaps with another long task. The loop
+  mapping retains zero split budget at the selected owner counts. Under
+  topological numbering and contiguous ownership, rounds are bounded by C;
+  routing adds O(C*C*R) work and two C*C head matrices. These results qualify
+  the bounded expression, not arbitrary labeling/degree, general efficiency,
+  elapsed competitiveness or physical peak workspace. Defer a general executor
+  until a concrete consumer makes those remaining costs material. Reopen with
+  its unchanged original graph, every result and exactly-once counts, charging
+  sorting/remapping if needed, construction, initialization, routing, added
+  precedences, wall/CPU and peak space against a useful native readiness
+  executor. An owner-round limitation does not establish that every ordinary
+  source formulation needs the same barrier.
+  Separately, the bounded checked-call bridge recovered the selected A/D
+  overlap while reducing observed C/D overlap across its fixed masks. The
+  [amended identical-image control](../research/investigations/compute-model/DESIGN.md#amended-cost-result-identical-image-control-failure)
+  failed before any candidate comparison, so both the bridge and DONE-first
+  runtime change are withdrawn for lack of cost qualification, not a measured
+  implementation regression. Reopen only for a concrete call-group consumer
+  and a bounded comparison with qualified measurement controls, unchanged
+  results/edges and prospective wall/CPU protection for the other masks and W1.
+  Recovered overlap alone selects neither implementation nor a broader executor.
+
+- **Recursive frontier policy suppresses deep work on a spine with side leaves.**
+  The [cutoff-attribution control](../research/investigations/compute-model/DESIGN.md#native-qualification-and-cutoff-attribution)
+  shows default W4 budget eight serializing task IDs 16 onward; the existing
+  frontier-off mode restores deep overlap at lengths 16 and 32 on costly and
+  last-heavy leaves. Preserving those offers may expose useful work, but its
+  elapsed benefit, cheap/skew overhead and longer-spine space costs are unknown.
+  Disabling the budget retains the runtime's 64 capture slots per lane, held
+  until their enclosing joins. The stable-scatter result below also retains
+  a 30–37 percent regression when that budget is disabled, so this observation
+  does not select a global off policy. Defer policy changes until a concrete
+  recursive consumer or a selected scheduling study makes the cutoff material.
+  Reopen with unchanged task values, counts and edges; separate offered work
+  from successful steals, account for live frames/slots, and qualify cheap,
+  costly and skewed inputs across widths with prospective wall/CPU and W1
+  criteria before adopting a replacement.
 
 - **Parallel grain policy needs a dedicated study.** Captured extents are a
   provisional scheduling input, not an established broadly suitable policy.
@@ -340,6 +388,30 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   every split site, including zero-trip loops. Defer broader transport until
   that case supplies both the benefit and the availability evidence; pricing
   must not infer a separate source lifetime.
+
+- **Per-task loaded costs remain unavailable to loop work pricing.** The
+  [phased spine](../research/investigations/compute-model/DESIGN.md#phased-spine-permission-and-work-price)
+  has PAR-2 permission but emits the same static price 199 for cheap and costly
+  leaves. At the current work unit, 754 iterations afford one chunk and 1,508
+  first afford a positive split budget; all selected lengths through 32 remain
+  unsplit, matching zero observed W4 overlap. Useful independent work may be
+  withheld because a recurrence bound loaded inside a chunk is unavailable
+  at its split site, even when the source input is read-only. Extent transport
+  alone does not provide a representative task price for mixed loads. The
+  [captured-scalar control](../research/investigations/compute-model/DESIGN.md#captured-scalar-availability-control)
+  transports the actual uniform leaf bound through the same helper chain:
+  prices 48 and 655,398 retain sequential cheap/boundary controls and expose
+  costly length-32 overlap on four W4 threads. All six cases pass at W1/W4
+  in ordinary/traced images. This establishes scalar availability at the
+  existing summary depth, but changes the input representation and derives no
+  price for heterogeneous loads. Defer a general pricing change until a
+  concrete variable-cost consumer supplies representative benefit criteria.
+  Reopen with its unchanged IDs, values, exactly-once counts and original
+  edges, preserving cheap/zero-trip controls and qualifying wall/CPU and W1
+  overhead prospectively. Charge any added observation or aggregation reads,
+  work and storage and establish validity at every split site; do not bypass
+  the missing input with padding or manual grain. This is separate from
+  read-only header extent transport and selects no pricing policy.
 
 - **Zero-budget dispatch needs caller and placement attribution before adoption.** The
   [query-retained one-site control](../research/investigations/compute-model/DESIGN.md#query-retained-control-result)
@@ -397,6 +469,33 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   are accepted.
 
 - **The formal compute comparison has unresolved attribution and measurement costs.**
+  The separate [amended DAG cost control](../research/investigations/compute-model/DESIGN.md#amended-cost-result-identical-image-control-failure)
+  completed all forty identical-image cells with correct results and adequate
+  interval resolution, but two cells exceeded their fixed symmetric wall/CPU
+  criteria. No candidate comparison ran. The variation is unattributed and
+  supplies neither a compiler-regression verdict nor evidence of host noise;
+  any later attribution needs its own bounded discriminator, not a favorable
+  rerun or relaxed threshold. The
+  [retained-data diagnosis](../research/investigations/compute-model/DESIGN.md#follow-up-diagnosis-of-retained-identical-image-variation)
+  reproduces all reductions but finds a CPU delta exceeding the eight-CPU
+  wall-interval capacity, substantial within-process CPU variation, and fixed
+  per-family label order in the earlier BFS control. Establish short-interval
+  CPU accounting separately from cumulative process totals before using those
+  deltas to diagnose worker idleness. Per-thread activity, placement and
+  competing-load observations are absent, so neither runtime work nor the
+  wall-time variation is attributed. Preserve both stopped controls and defer
+  scheduling or threshold changes. The completed
+  [two-process baseline diagnostic](../research/investigations/compute-model/DESIGN.md#baseline-cpu-accounting-result-short-interval-attribution-failure)
+  found no work-batch violation, but 25 of 65 W4 gap counter deltas exceeded
+  physical capacity despite compatible enclosing and terminal CPU totals.
+  Short-boundary attribution is therefore contradicted; it is no longer an
+  unanswered validity question. The remaining measurement work is to establish
+  accuracy at useful longer intervals and the selected comparison scale with
+  independent accounting evidence before interpreting CPU cost. A compatible
+  lifetime total does not supply that accuracy. No replacement clock is
+  selected, no outcome clears the old null, and the separate wall-time
+  variation remains unattributed. Reopen on a bounded discriminator for those
+  remaining questions, preserving this result if it is uninformative.
   [Hosted observations](../research/investigations/test-economy/redesign.md#identical-image-host-control-failure)
   include an identical-image stencil control failing the unchanged three-percent
   band, and a separate actual records comparison failing at two widths while
