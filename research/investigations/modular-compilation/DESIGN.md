@@ -121,21 +121,20 @@ text does not meet the requirement by itself. Ordinary private implementation
 edits must not change the public interface file. Module size still does not
 select incremental checking or LLVM partition size.
 
-The intended authoring split gives this boundary a concrete purpose: a
-coordinating agent maintains the public `.wfm`, while delegated agents implement
-and prove bodies in `.wf` against that contract. Putting public function bodies
-in `.wfm` would remove header duplication, but ordinary implementation edits
-would then cross the coordinator's interface-file boundary. Retain the
-declaration-only interface for this workflow. These are task responsibilities,
-not compiler-visible agent identities or language-enforced editing permissions;
-their effect on coordination cost remains unmeasured.
+Retain a declaration-only `.wfm` so that public-contract reading and review
+remain separate from ordinary implementation edits. Putting public function
+bodies there would remove header duplication but mix those changes in the same
+file. For the current discussion, assume one agent implements each module;
+coordination among that module's `.wf` authors is outside scope and supplies no
+ground for field-access rules. Agent assignments are workflow assumptions,
+not compiler-visible identities or language-enforced editing permissions.
 
 | Candidate | Benefit | Cost and disposition |
 |---|---|---|
 | Per-source module/import headers and `pub` declarations | Definition and visibility appear together | Refused: the public contract is spread across implementation files |
 | Thin export list plus generated complete interface | Each signature and contract is written once | Superseded: the handwritten file alone does not satisfy public-interface self-containment |
 | Complete public declarations in one `.wfm`, with checked ordinary implementations | A caller or agent can read and hold the written contract fixed independently of implementation | Selected; the compiler must enforce declaration correspondence and the implementation must prove the declared obligations |
-| Complete public function definitions in `.wfm`, private definitions in `.wf` | One written signature and contract per function, with centralized publication | Not selected for the intended authoring split: implementation edits would enter the coordinator's public-contract file; fine-grained incrementality does not itself require either placement |
+| Complete public function definitions in `.wfm`, private definitions in `.wf` | One written signature and contract per function, with centralized publication | Not selected: implementation edits would enter the public-contract file; fine-grained incrementality does not itself require either placement |
 | Complete interface with body-only implementation bindings | Avoids repeated function headers | Not selected: ordinary complete definitions remain locally readable and avoid a second body-binding form; repeated declarations are mechanically checked |
 | Canonical module directory with direct implementation-file membership | Filesystem and module ownership have one spelling | Selected under the path-based namespace requirement; snapshot and track the directory inventory, while complete .wfm declarations still exclusively control publication |
 | Recursive directory collection or automatic export | Few written entries | Refused: recursively collecting a child implementation confuses ownership, and adding a private definition must not publish it |
@@ -855,7 +854,7 @@ The following questions organize that discussion without selecting new syntax:
 | Public contract vocabulary | How can a caller or wrapper state a requirement about hidden state? Compare direct public data with a declared getter's checked logical meaning; no private path or unproved observation may enter the public contract. |
 | State, results and invariants | What do entry observations and observations of an owned result denote, and how do writes and moves affect them? If an object invariant is proposed, identify who establishes it, when it may be assumed and when it must be restored, including external field access and callbacks. Privacy alone establishes none of these facts. |
 | Read/write effects | Can the interface describe independently usable parts without naming private fields? Check that the implementation's concrete accesses justify the public effects and that the abstraction preserves the required independence. |
-| Contract authority | What happens when a delegated implementation needs a stronger requirement or proves a stronger result? The current candidate requires normalized equality of repeated public headers; local proof facts do not silently change the published contract. Any alternative inheritance or refinement mechanism needs its own grounds. |
+| Contract authority | What happens when an implementation needs a stronger requirement or proves a stronger result? The current candidate requires normalized equality of repeated public headers; local proof facts do not silently change the published contract. Any alternative inheritance or refinement mechanism needs its own grounds. |
 | Other declaration forms | Apply the same boundary questions to enum variants and payloads, constants used in types/contracts, generic bounds and aliases used by public declarations. File-local aliases remain abbreviations rather than new exports. A hidden value needed to determine public source meaning would break interface self-containment. |
 
 Begin with the field-operation case: external inspection of a length is a
@@ -868,13 +867,69 @@ matched implementation comparison before selecting on performance grounds.
 Getter realization and precise-effect qualification remain the obligations
 below, regardless of the eventual field-visibility choice.
 
-The public contract is sufficient for a caller, but implementers of operations
-over one hidden representation also need a shared private definition and any
-proved internal relations they consume. Assigning each body to a different
-agent does not make those facts independent. One ordinary `.wf` can own the
-complete private representation, with other `.wf` files using it through the
-existing shared module inventory. Coordinate edits to that shared definition;
-no additional interface file or agent-role mechanism is implied.
+### Field visibility and structural operations: discussion candidate
+
+The following is an unselected extension to the current whole-record choice,
+for comparing the first two questions above. It does not change the demo or
+introduce field modifiers, a new `readonly` meaning or an object-invariant rule.
+
+One candidate gives the public interface a field projection and gives exactly
+one `.wf` the complete representation. Every projected field must match the
+same nominal field by name, resolved type and applicable modifiers; the full
+definition also owns all hidden fields and their physical declaration order.
+An alternative `.wf` definition containing only private additions saves
+repetition of public fields but needs an explicit merge and layout-order rule.
+Favor the complete definition for discussion because it retains ordinary
+struct formation and places all representation fields and their order in one
+definition; check repeated public fields mechanically. Fully public records
+can retain their complete definition in `.wfm` without a redundant
+implementation definition.
+
+The public declaration must distinguish a complete schema from a projection
+that hides representation. Merely finding extra fields later in `.wf` cannot
+select the caller's construction or decomposition rights: that would make
+those rights unknowable from `.wfm`. No spelling for this distinction is
+selected. Public capability and generic correspondence remain separate
+qualification obligations rather than being inferred away by a field list.
+
+For this candidate, direct public fields have the existing field semantics for
+copy reads, references, writes and in-place operations, with ordinary
+ownership, effects and `readonly` restrictions. Expose independent user data,
+such as a buffer's caller-controlled tag, this way. A changing length related
+to hidden storage can remain private and be observed through an ordinary
+public getter; admitting that getter in contracts is still separate work.
+Existing TYPE-2 `readonly` forbids ordinary source writes inside the module
+as well as outside it, so it cannot quietly become an external-only access
+restriction. A public writable field does not establish a private invariant.
+
+For a complete public schema, ordinary construction and destructuring retain
+their existing rules. For a projected or fully hidden representation, the
+candidate permits external construction through declared ordinary functions,
+not aggregate construction with guessed or defaulted hidden fields. Inside
+the defining module, the complete representation remains available for normal
+construction. This does not repurpose TYPE-2 `opaque`, whose constructor
+restriction also applies in the defining scope.
+
+Destructive field extraction needs an explicit choice. Under OWN-1/WIN-3, a
+field move consumes its whole owner, releases the other affine parts and
+rejects if a remaining linear part cannot be consumed. The whole type's
+copy/drop pair alone does not describe the remainder: a non-droppable type
+could owe that property to the extracted public field, a hidden field, or an
+explicit modifier. Consulting hidden fields to silently vary external
+extraction permission would violate the self-contained public boundary.
+
+The recommended candidate for discussion is to keep direct external field
+moves and consuming destructuring unavailable for a representation-hiding
+type, while ordinary whole-value moves and permitted release remain governed
+by its public capabilities. Public consuming functions can expose selected
+parts and check all hidden obligations in their implementations. In-place
+updates and swaps do not consume the enclosing owner and keep their ordinary
+rules. An alternative is an explicit interface description sufficient to
+authorize field extraction and residual release; it needs its own admission
+and correspondence rules. Compare that extra expressiveness and cost before
+selecting either policy. Composition of a fully public record with an abstract
+member remains another alternative, but publishes that member as a separately
+replaceable/transferable value and does not meet every encapsulation need.
 
 ### Public interface and generated compiler projections
 

@@ -83,9 +83,10 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   getters under REF-3. Compare private-layout and public-schema invalidation
   and prove useful by-value no-heap use without forced handles. Exact abstract
   capability syntax and logical getter admission remain unqualified.
-  The desired split between an interface-owning coordinator and delegated
-  implementation authors reopens the question of a type with both public
-  fields and private representation; the current candidate still selects only
+  A type with both public fields and private representation reopens the
+  whole-record visibility question; assume one agent per module and leave
+  coordination inside the module outside this discussion. The current
+  candidate still selects only
   full public schemas or fully hidden fields. Evaluate the
   [mixed-representation questions](../research/investigations/modular-compilation/DESIGN.md#questions-for-a-mixed-public-and-private-representation)
   before selecting field visibility: compare a checked partial interface with
@@ -94,8 +95,16 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   and initialization, explicit capability correspondence and justified
   invariant/effect handling. Use both independent public data and a visible
   length tied to hidden storage; distinguish inspection from mutation. The
-  expected benefit is clearer task ownership without exposing representation,
-  but declaration complexity and performance remain unverified. This design
+  expected benefit is direct public data access without exposing the complete
+  representation, but declaration complexity and performance remain unverified.
+  The [field-operation candidate](../research/investigations/modular-compilation/DESIGN.md#field-visibility-and-structural-operations-discussion-candidate)
+  proposes an explicit complete/hidden schema distinction, one complete private
+  definition, ordinary visible-field access and function-mediated construction
+  and destructive extraction for hidden representations. These are unselected
+  options, not admitted syntax. Compare against explicit residual-ownership
+  permissions and composition with an abstract member; an unchanged interface
+  must not acquire different extraction rights solely from hidden linear fields.
+  Preserve current readonly and opaque meanings. This design
   and validation work precedes adopting a mixed form; remove it when the
   comparison selects or declines that extension with its required evidence.
   Public declaration duplication and useful module sizes remain unmeasured.
