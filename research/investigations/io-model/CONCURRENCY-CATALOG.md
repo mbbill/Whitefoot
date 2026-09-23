@@ -2742,7 +2742,11 @@ exit from the loop judged by PAR-2: the call contributes its declared
 footprint, not the callee's return edges. A batch can fold those helper
 results with `imin` and decide whether to stop after the join. This candidate
 can skip each helper's local suffix but supplies no cancellation of another
-helper; its source acceptance and native behavior remain unqualified here.
+helper. The [bounded first-index probe](../compute-model/DESIGN.md#native-expression-result)
+qualifies source acceptance, lowest-index native results, actual local suffix
+skipping and every completed helper's source-level visits and byte tests.
+Its small waves remain sequential under ordinary pricing, so it establishes
+no executed overlap or search performance result.
 
 Invocation counts do not bound variable predicate cost. With batches `[0]`
 and `[1, 2]`, a cheap match at index 1 still waits for a cost-T predicate at
@@ -2750,7 +2754,9 @@ index 2 if that batch evaluates every item, while sequential search stops
 after two cheap predicates. Both Whitefoot and native comparisons must charge
 work already started in the final batch; stopping inside a running predicate
 would require a different predicate interface. Join costs and these weighted
-work costs remain unmeasured.
+runtime costs remain unmeasured. The probe realizes this example with 65,538
+source-level byte tests versus two for sequential search. Returned counters
+are not measurements of physical memory traffic or optimized instructions.
 
 ### (d) Performance expectation
 
@@ -2773,8 +2779,9 @@ scaling and equal-cost predicates — which for a uniformly distributed match is
 
 The full-scan form invokes the predicate `n` times; with constant-cost
 predicates its work is proportional to `n`. The ordered-batch form has the
-invocation bounds above, with weighted work, latency and memory still
-requiring a concrete implementation and measurement.
+invocation bounds above. The bounded implementation qualifies the stated
+source-level work controls; latency, production workspace cost and parallel
+competitiveness still require measurement.
 
 **Strictly worse case:** validation passes that almost always find their answer
 immediately — "is any record malformed", "does this input contain a byte > 127".
@@ -2788,7 +2795,9 @@ no profitability result.
 denies PAR-2, but an outer sequential loop can stop between parallel batches
 while preserving the first-index result. The full-scan substitute can amplify
 work substantially; the ordered-batch alternative bounds predicate invocations
-without establishing a weighted-work or runtime-performance bound.
+without establishing a weighted-work or runtime-performance bound. Qualified
+local-return helpers skip local tails, while all helpers in a started wave
+complete; the current bounded witness's permitted waves execute sequentially.
 
 ---
 

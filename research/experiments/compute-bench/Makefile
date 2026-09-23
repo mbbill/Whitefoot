@@ -432,6 +432,7 @@ LINK_LIBS := -L$(DEPS)/lib -Wl,-rpath,$(DEPS)/lib -ltbb \
 .PHONY: all compiler deps build images verify compare programs-check verdict array-reference-build \
         dag-fanin-emit dag-fanin-build dag-fanin-build-inputs dag-fanin-run \
         dag-fanin-cost-check dag-fanin-cost-run \
+        first-index-emit first-index-build first-index-verify \
         verdict-test module-symbols-test baseline-entry-test baseline-check clean clean-deps FORCE
 all: build
 
@@ -543,6 +544,31 @@ dag-fanin-cost-check:
 dag-fanin-cost-run:
 	perl dag_fanin_cost.pl $(DAG_COST_STAGE) "$(DAG_COST_BASE)" \
 	    "$(DAG_COST_CANDIDATE)" "$(DAG_COST_RESULTS)"
+
+# Explicit untimed first-index expression probe; no correctness-CI caller.
+# Retain its source, oracle and adapter while they support this investigation.
+FIRST_INDEX_SOURCE := $(ROOT)/research/investigations/compute-model/first-index.wf
+.SECONDARY: $(BUILD)/first-index-par.linked.ll $(BUILD)/first-index-seq.linked.ll
+first-index-emit: compiler
+	@mkdir -p $(BUILD)
+	$(WFC) --par --par-ledger --emit-llvm $(FIRST_INDEX_SOURCE) -o $(BUILD)/first-index-par.ll
+	$(WFC) --no-overlap --par-ledger --emit-llvm $(FIRST_INDEX_SOURCE) -o $(BUILD)/first-index-seq.ll
+
+$(BUILD)/first-index-%.linked.ll: $(BUILD)/first-index-%.ll first_index_host.ll $(HOST_ADAPTER)
+	awk -f $(HOST_ADAPTER) $< first_index_host.ll | \
+	    sed -e 's/@main(/@wf_probe_original_main(/g' \
+	        -e 's/@wf__main_body(/@wf_probe_original_body(/g' > $@
+
+$(BUILD)/first-index-%: $(BUILD)/first-index-%.linked.ll first_index_probe.c $(RUNTIME_OBJS)
+	$(CC) $(WF_FLAGS) -Wall -Wextra -Werror $< first_index_probe.c \
+	    $(RUNTIME_OBJS) -lm -o $@
+
+first-index-build: $(BUILD)/first-index-par $(BUILD)/first-index-seq
+
+first-index-verify:
+	WF_WORKERS=1 $(BUILD)/first-index-seq seq
+	WF_WORKERS=1 $(BUILD)/first-index-par par
+	WF_WORKERS=4 $(BUILD)/first-index-par par
 
 # -------------------------------------------------------------------- deps --
 # `fetch` is the only network step; everything after it is offline. A

@@ -270,23 +270,6 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   same-image null control, establishes its benefit and clears the protected
   records case before selecting the wider policy.
 
-- **First-index search needs a variable-cost expression probe.** The
-  [ordered-batch analysis](../research/investigations/io-model/CONCURRENCY-CATALOG.md#21-parallel-search-with-early-exit-added)
-  avoids mandatory full-input scanning, but its invocation bound does not
-  bound predicate cost. Block helpers that return at local matches remain
-  unqualified. The active
-  [expression criterion](../research/investigations/compute-model/DESIGN.md#first-index-search-expression-probe-2026-09-22)
-  compares sequential search, batch folds and local-return helpers with an
-  independent native sequential first-index reference. Qualify lowest-index
-  results, actual visited prefixes, records and bytes for every small-input
-  hit position and absence; charge every completed helper in the final wave.
-  Distinguish useful local skipping from serial execution and from costly
-  work in another helper. Trace overhead and logical counts do not establish
-  speed, and already-started expensive predicates also affect native parallel
-  search. Defer a broader mechanism until a concrete consumer and qualified
-  evidence establish the missing requirement; no executor, cancellation or
-  new concurrency rule is selected by this probe.
-
 - **General DAG scheduling and competitiveness remain unqualified.** The
   [runtime-adjacency probe](../research/investigations/compute-model/DESIGN.md#runtime-adjacency-all-predecessor-probe)
   executes runtime-provided forward graphs with at most two predecessors and
@@ -348,6 +331,18 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   evidence, not proof that no broadly useful strategy exists. Close this item
   when a policy meets explicit representative criteria or its accepted
   tradeoffs are recorded.
+  The [first-index probe](../research/investigations/compute-model/DESIGN.md#native-expression-result)
+  exposes a concrete input missing from current wave prices: data-dependent
+  record lengths and early exit leave the same static estimate for one-byte
+  and 65,536-byte records, and the small permitted waves receive no split
+  budget. Useful overlap remains unverified. Validate an absent/late-hit or
+  otherwise balanced costly search against a fair native reference, charging
+  completed final-wave work, trace perturbation and scheduling cost; the cheap
+  early-hit adverse example alone establishes no potential parallel benefit.
+  Defer further search pricing work until a concrete consumer requires it;
+  reopen with that workload and a criterion that distinguishes useful overlap
+  from merely higher worker participation. No lower threshold or new
+  cancellation mechanism is selected by the expression result.
 
 - **Array-helper pricing beyond original read-only references remains conservative.**
   The accepted [typed Box-array extent extension](../research/investigations/compute-model/DESIGN.md#read-only-box-array-helper-work-pricing)

@@ -6,7 +6,7 @@ One question, one table per host:
 > tree's `whitefootc` with plain `--par` the fastest thing in the row?**
 
 The framework scoreboard exists to make that comparison honest. The separate
-helper-pricing experiment below uses the same native build support.
+helper-pricing and first-index experiments below use the same native build support.
 **No number in a framework scoreboard table
 fails a build or a check**: there is no band, no threshold, no timeout, no
 budget and no heuristic anywhere that selects a row, a ranking or a ratio, and
@@ -270,6 +270,45 @@ native stacks and canaries; no physical peak-memory measurement is claimed.
 `grants`; it does not count offer attempts or successful lane acquisition.
 `DAG_VARIANT` and `DAG_EMIT_FLAGS` allow a separately labelled, explicitly
 selected compiler control without overwriting the ordinary default evidence.
+
+## First-index expression probe
+
+The [first-index investigation](../../investigations/compute-model/DESIGN.md#first-index-search-expression-probe-2026-09-22)
+uses `first_index_probe.c` and `first_index_host.ll` here with its WF source
+beside the investigation. The caller checks plain and diagnostic sequential,
+fixed-batch, doubling-batch and local-return-helper forms against an
+independent `memchr` first-index oracle. It checks complete diagnostic traces
+and unchanged inputs; counters describe source-level work, not physical byte
+traffic. The [retained results](first-index-2026-09-22.tsv) include the failed
+construction attempts and the intentional bad-trace comparison control.
+These files have no daily test, scoreboard or timing caller. Retain them as
+reproducible evidence until superseded or no longer supporting this question.
+
+From the repository root, use a prebuilt compiler and a fresh scratch path.
+Run each stage separately; no target below builds a third-party dependency:
+
+```sh
+search_wfc=/absolute/path/to/whitefootc
+search_build=/absolute/scratch/first-index
+WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl first-index-emit \
+  make -C research/experiments/compute-bench -j2 first-index-emit \
+  WFC="$search_wfc" BUILD="$search_build" WF_ALIGN=
+WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl first-index-build \
+  make -C research/experiments/compute-bench -j2 first-index-build \
+  WFC="$search_wfc" BUILD="$search_build" WF_ALIGN=
+WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl first-index-verify \
+  make -C research/experiments/compute-bench first-index-verify BUILD="$search_build"
+```
+
+The verification stage runs `--no-overlap` at W1 and ordinary `--par` at
+W1/W4. To check the comparison path separately, run the following command;
+it deliberately corrupts one returned trace field and must report expected
+1 versus actual 0 at position 4, with exit status 2:
+
+```sh
+WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl first-index-self-control \
+  env WF_WORKERS=4 "$search_build/first-index-par" par self-control
+```
 
 ## What "WF" means here, and what it does not
 

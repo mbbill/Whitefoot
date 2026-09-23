@@ -1,0 +1,312 @@
+struct Probe {
+  hit: Bool;
+  bytes: u64;
+}
+
+struct SearchTrace {
+  first: u64;
+  end: u64;
+  index: u64;
+  records: u64;
+  bytes: u64;
+}
+
+fn has_zero(record: &[u8]) -> result: own Bool reads(record) {
+  let count = deref(record).len;
+  for (i in 0_u64..count) {
+    if deref(record)[i] == 0_u8 {
+      return True();
+    }
+  }
+  return False();
+}
+
+fn probe_zero(record: &[u8]) -> result: own Probe reads(record) {
+  let count = deref(record).len;
+  let hit = True();
+  let miss = False();
+  for (i in 0_u64..count) {
+    if deref(record)[i] == 0_u8 {
+      let inspected = i + 1_u64;
+      return Probe(hit: hit, bytes: inspected);
+    }
+  }
+  return Probe(hit: miss, bytes: count);
+}
+
+fn record_hit(input: &[u8], offsets: &[u64], index: own u64) -> result: own Bool reads(input), reads(offsets) contract {
+  define offsets_count = deref(offsets).len;
+  requires index + 1_u64 < offsets_count;
+} {
+  let next = index + 1_u64;
+  let first = deref(offsets)[index];
+  let end = deref(offsets)[next];
+  if first > end {
+    return True();
+  }
+  if end > deref(input).len {
+    return True();
+  }
+  return has_zero(record: &deref(input)[first..end]);
+}
+
+fn record_probe(input: &[u8], offsets: &[u64], index: own u64) -> result: own Probe reads(input), reads(offsets) contract {
+  define offsets_count = deref(offsets).len;
+  requires index + 1_u64 < offsets_count;
+} {
+  let malformed = True();
+  let next = index + 1_u64;
+  let first = deref(offsets)[index];
+  let end = deref(offsets)[next];
+  if first > end {
+    return Probe(hit: malformed, bytes: 0_u64);
+  }
+  if end > deref(input).len {
+    return Probe(hit: malformed, bytes: 0_u64);
+  }
+  return probe_zero(record: &deref(input)[first..end]);
+}
+
+fn limited_end(first: own u64, total: own u64, width: own u64) -> result: own u64 pure contract {
+  requires first <= total;
+  ensures first <= result;
+  ensures result <= total;
+} {
+  let remaining = total - first;
+  if remaining < width {
+    return total;
+  }
+  let end = first + width;
+  return end;
+}
+
+fn scan_plain(input: &[u8], offsets: &[u64], first: own u64, end: own u64, total: own u64) -> result: own u64 reads(input), reads(offsets) contract {
+  define offsets_count = deref(offsets).len;
+  requires first <= end;
+  requires end <= total;
+  requires total < offsets_count;
+} {
+  for (i in first..end) {
+    if record_hit(input: input, offsets: offsets, index: i) {
+      return i;
+    }
+  }
+  return total;
+}
+
+fn scan_trace(input: &[u8], offsets: &[u64], first: own u64, end: own u64, total: own u64) -> result: own SearchTrace reads(input), reads(offsets) contract {
+  define offsets_count = deref(offsets).len;
+  define input_count = deref(input).len;
+  requires first <= end;
+  requires end <= total;
+  requires total < offsets_count;
+  requires total <= 16_u64;
+  requires input_count <= 16777216_u64;
+} {
+  doc "The explicit modular diagnostic sums cannot wrap in this domain: at most 16 records each inspect at most 2^24 bytes. Malformed framing matches without inspecting payload; qualification uses valid framing.";
+  let records = 0_u64;
+  let bytes = 0_u64;
+  for (i in first..end) {
+    let report = record_probe(input: input, offsets: offsets, index: i);
+    set records = records +wrap 1_u64;
+    set bytes = bytes +wrap report.bytes;
+    if report.hit {
+      return SearchTrace(first: first, end: end, index: i, records: records, bytes: bytes);
+    }
+  }
+  return SearchTrace(first: first, end: end, index: total, records: records, bytes: bytes);
+}
+
+fn flat_wave_plain(input: &[u8], offsets: &[u64], first: own u64, end: own u64, total: own u64) -> result: own u64 reads(input), reads(offsets) contract {
+  define offsets_count = deref(offsets).len;
+  requires first <= end;
+  requires end <= total;
+  requires total < offsets_count;
+} {
+  let best = total;
+  for (i in first..end) {
+    let candidate = if record_hit(input: input, offsets: offsets, index: i) {
+      give i;
+    } else {
+      give total;
+    }
+    set best = imin(best, candidate);
+  }
+  return best;
+}
+
+fn flat_wave_trace(input: &[u8], offsets: &[u64], first: own u64, end: own u64, total: own u64, trace: &[SearchTrace]) -> result: own u64 reads(input), reads(offsets), writes(trace) contract {
+  define offsets_count = deref(offsets).len;
+  define trace_count = deref(trace).len;
+  define input_count = deref(input).len;
+  requires first <= end;
+  requires end <= total;
+  requires total < offsets_count;
+  requires total <= 16_u64;
+  requires input_count <= 16777216_u64;
+  requires end - first <= trace_count;
+} {
+  let count = end - first;
+  let best = total;
+  for (slot in 0_u64..count) {
+    let i = first + slot;
+    let next = i + 1_u64;
+    let report = scan_trace(input: input, offsets: offsets, first: i, end: next, total: total);
+    set deref(trace)[slot] = report;
+    set best = imin(best, report.index);
+  }
+  return best;
+}
+
+fn block_wave_plain(input: &[u8], offsets: &[u64], first: own u64, total: own u64) -> result: own u64 reads(input), reads(offsets) contract {
+  define offsets_count = deref(offsets).len;
+  requires first <= total;
+  requires total < offsets_count;
+} {
+  let best = total;
+  for (block in 0_u64..2_u64) {
+    let distance = block * 2_u64;
+    let lower = limited_end(first: first, total: total, width: distance);
+    let upper = limited_end(first: lower, total: total, width: 2_u64);
+    let candidate = scan_plain(input: input, offsets: offsets, first: lower, end: upper, total: total);
+    set best = imin(best, candidate);
+  }
+  return best;
+}
+
+fn block_wave_trace(input: &[u8], offsets: &[u64], first: own u64, total: own u64, trace: &[SearchTrace]) -> result: own u64 reads(input), reads(offsets), writes(trace) contract {
+  define offsets_count = deref(offsets).len;
+  define trace_count = deref(trace).len;
+  define input_count = deref(input).len;
+  requires first <= total;
+  requires total < offsets_count;
+  requires total <= 16_u64;
+  requires input_count <= 16777216_u64;
+  requires 2_u64 <= trace_count;
+} {
+  let best = total;
+  for (block in 0_u64..2_u64) {
+    let distance = block * 2_u64;
+    let lower = limited_end(first: first, total: total, width: distance);
+    let upper = limited_end(first: lower, total: total, width: 2_u64);
+    let report = scan_trace(input: input, offsets: offsets, first: lower, end: upper, total: total);
+    set deref(trace)[block] = report;
+    set best = imin(best, report.index);
+  }
+  return best;
+}
+
+fn search_plain(input: &[u8], offsets: &[u64], total: own u64, mode: own u64) -> result: own u64 reads(input), reads(offsets) contract {
+  define offsets_count = deref(offsets).len;
+  requires total < offsets_count;
+  requires total <= 16_u64;
+} {
+  doc "Modes are sequential, fixed four-record folds, doubling folds, and two two-record helpers per ordered wave.";
+  if mode == 0_u64 {
+    return scan_plain(input: input, offsets: offsets, first: 0_u64, end: total, total: total);
+  }
+  let first = 0_u64;
+  let width = if mode == 2_u64 {
+    give 1_u64;
+  } else {
+    give 4_u64;
+  }
+  loop (
+    invariant cursor_bound: first <= total
+  ) {
+    if first == total {
+      return total;
+    }
+    let end = limited_end(first: first, total: total, width: width);
+    let best = if mode == 3_u64 {
+      let local = block_wave_plain(input: input, offsets: offsets, first: first, total: total);
+      give local;
+    } else {
+      let local = flat_wave_plain(input: input, offsets: offsets, first: first, end: end, total: total);
+      give local;
+    }
+    if best < total {
+      return best;
+    }
+    set first = end;
+    if mode == 2_u64 {
+      if width < 8_u64 {
+        set width = width * 2_u64;
+      } else {
+        set width = 16_u64;
+      }
+    }
+  }
+  return total;
+}
+
+fn search_trace(input: &[u8], offsets: &[u64], total: own u64, mode: own u64, trace: &[SearchTrace]) -> result: own u64 reads(input), reads(offsets), writes(trace) contract {
+  define offsets_count = deref(offsets).len;
+  define trace_count = deref(trace).len;
+  define input_count = deref(input).len;
+  requires total < offsets_count;
+  requires total <= 16_u64;
+  requires 32_u64 <= trace_count;
+  requires input_count <= 16777216_u64;
+} {
+  if mode == 0_u64 {
+    let report = scan_trace(input: input, offsets: offsets, first: 0_u64, end: total, total: total);
+    set deref(trace)[0_u64] = report;
+    return report.index;
+  }
+  let first = 0_u64;
+  let width = if mode == 2_u64 {
+    give 1_u64;
+  } else {
+    give 4_u64;
+  }
+  loop (
+    invariant cursor_bound: first <= total
+  ) {
+    if first == total {
+      return total;
+    }
+    let end = limited_end(first: first, total: total, width: width);
+    let best = if mode == 3_u64 {
+      let trace_end = first + 2_u64;
+      let local = block_wave_trace(input: input, offsets: offsets, first: first, total: total, trace: &deref(trace)[first..trace_end]);
+      give local;
+    } else {
+      let local = flat_wave_trace(input: input, offsets: offsets, first: first, end: end, total: total, trace: &deref(trace)[first..end]);
+      give local;
+    }
+    if best < total {
+      return best;
+    }
+    set first = end;
+    if mode == 2_u64 {
+      if width < 8_u64 {
+        set width = width * 2_u64;
+      } else {
+        set width = 16_u64;
+      }
+    }
+  }
+  return total;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let input = array_filled::<u8, 4>(value: 1_u8);
+  set input[0_u64] = 0_u8;
+  let offsets = array_filled::<u64, 5>(value: 4_u64);
+  set offsets[0_u64] = 0_u64;
+  set offsets[1_u64] = 1_u64;
+  set offsets[2_u64] = 2_u64;
+  set offsets[3_u64] = 3_u64;
+  let empty = SearchTrace(first: 0_u64, end: 0_u64, index: 0_u64, records: 0_u64, bytes: 0_u64);
+  let trace = array_filled::<SearchTrace, 32>(value: empty);
+  let plain = search_plain(input: &input[0_u64..4_u64], offsets: &offsets[0_u64..5_u64], total: 4_u64, mode: 3_u64);
+  let diagnostic = search_trace(input: &input[0_u64..4_u64], offsets: &offsets[0_u64..5_u64], total: 4_u64, mode: 3_u64, trace: &trace[0_u64..32_u64]);
+  if plain != 0_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if diagnostic != 0_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

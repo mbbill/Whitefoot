@@ -1899,6 +1899,97 @@ first-index or cancellation mechanism until a real consumer and evidence
 separate its requirements from the unavoidable cost of already-started
 predicates; no live-tree revision is proposed by this probe.
 
+### Native expression result
+
+The [source](first-index.wf) and
+[native oracle](../../experiments/compute-bench/first_index_probe.c) qualify
+local suffix skipping and the complete source-level work of each started
+wave. The [retained record](../../experiments/compute-bench/first-index-2026-09-22.tsv)
+contains the input and image identities, source-construction diagnostics,
+emission ledger, construction commands, intentional bad-trace rejection and
+all native result rows. The compiler binary is
+`5baa66723a48fef6899713f0c84266b6f2d968af77d8112fa7f75f2311794ae6`,
+reused from a gate build whose 380 tracked compiler/specification inputs
+match `3d7fa496` byte for byte. No compiler or specification changed.
+
+Each of `--no-overlap` at W1 and ordinary `--par` at W1 and W4 passed 1,129
+fixtures: 612 single-hit/absence fixtures, 511 exhaustive hit masks, and six
+weighted-work controls. Each configuration checks 9,032 first-index results,
+722,560 trace fields and 2,503,616 unchanged input bytes. Every trace field,
+including unused slots and completed empty tail helpers, matches the
+independent per-record `memchr` outcomes. An intentional change from one
+inspected byte to zero follows that same comparison path and exits 2 with
+the expected mismatch; it is recorded separately from qualification.
+
+The diagnostic source's explicit wrapping sums are exact in its bounded
+domain: at most 16 records each inspect at most 2^24 bytes, so the total is
+at most 2^28. The native fixture supplies valid framing; the source also
+defines malformed framing as a match without inspecting payload, a path
+outside this qualification. Counts describe source-level visits and byte
+tests, not optimized instructions or physical memory traffic.
+
+All three configurations produce the following counts at T = 65,536.
+Entries are inspected records / logical byte tests; T = 1 controls are also
+retained. The geometric form starts with a one-record batch, which explains
+its immediate stop in the first two rows.
+
+| Input | Sequential | Fixed four-record fold | Doubling folds | Two local-return helpers |
+| --- | ---: | ---: | ---: | ---: |
+| Cheap hit at 0; expensive record in the other helper | 1 / 1 | 4 / 131,074 | 1 / 1 | 3 / 65,538 |
+| Hits at both helper starts; expensive local tails | 1 / 1 | 4 / 131,074 | 1 / 1 | 2 / 2 |
+| Cheap hit at 1; expensive nonmatch at 2 | 2 / 2 | 3 / 65,538 | 3 / 65,538 | 3 / 65,538 |
+
+In the first row the first helper visits only record 0; the second completes
+records 2 and 3, inspecting 65,537 bytes. In the second row both helpers skip
+their expensive suffixes. This establishes local early return and completed
+wave work without attributing either to cancellation. The third row realizes
+the catalog's distinction between invocation and byte-work bounds. The C
+reference is sequential; no native parallel cancellation comparison was run.
+
+All four wave loops are permitted under PAR-2 and emit an `imin` splitter.
+Plain and diagnostic forms retain the same permission but different pricing
+and captures. Static inspection of the actual query operands and ordinary
+runtime gives:
+
+| Wave | Captures | Lane frame | Iteration price | Minimum span for a positive split budget |
+| --- | ---: | ---: | ---: | ---: |
+| Flat, plain | 5 | 96 bytes | 146 | 2,056 |
+| Flat, diagnostic | 7 | 120 bytes | 3,036 | 100 |
+| Block, plain | 4 | 88 bytes | 2,336 | 130 |
+| Block, diagnostic | 5 | 104 bytes | 3,044 | 100 |
+
+These frames fit the existing lane bound. The ordinary 150,000 work unit
+requires at least two affordable chunks for a positive budget; the source's
+flat spans are at most 16 and block spans are two. Every query therefore
+returns zero, making all four publish paths unreachable. Native plain and
+diagnostic steal deltas are zero throughout, including W4. This probe
+establishes no executed search overlap or speedup. Trace outputs change the
+static estimates substantially, so they cannot stand in for a production
+performance image.
+
+Record extents come from indexed offsets and actual early exit depends on
+contents; neither is an available captured scalar or extent-summary input at
+these wave sites. Increasing T from 1 to 65,536 leaves the static price
+unchanged. This is a concrete validation opportunity for the existing
+[grain-policy TODO](../../../docs/todo.md), not grounds to force a lower
+threshold: an absent/late-hit or otherwise balanced costly case and a fair
+native comparison must establish that useful search work should overlap.
+The cheap-hit adverse control alone cannot establish that benefit.
+
+Construction first required binding nested Bool constructors, binding the
+checked sum before its FN-9 return, and dropping an unnecessary width-bound
+invariant whose conditional initializer supplied no base proof. The width
+bound is not needed by any partial operation: `limited_end` proves its
+addition from the remaining length, and doubling is guarded by `width < 8`.
+All failed invocations and their repairs are retained; no source diagnostic
+is presented as a language limitation. Successful parallel and sequential
+emissions each took 0.1 seconds, native construction 0.64 seconds, and the
+three-configuration oracle stage 0.42 seconds under separate 30-second caps.
+These are qualification costs on Darwin 25.6.0 arm64 with Apple clang 21.0.0,
+not timed search comparisons. All 50 recorded runtime/probe input and artifact
+hashes checked unchanged after execution. The bounded probe ends here, with
+no executor, cancellation, grain-policy or live-tree revision selected.
+
 ## Sparse destination routing trial (2026-09-21)
 
 This bounded continuation starts at merged `3402048f` and asks whether useful
