@@ -7,6 +7,17 @@ criterion for deciding whether to pursue it. Entries do not select a design.
 Remove an item when its implementation and checks land, or its validation
 concludes with a recorded disposition; retain any selected follow-up work here.
 
+- **Generic struct constants are not implemented.** CONST-2's `cvalue`
+  grammar admits written type arguments, but
+  `compiler/src/semantic/check/types.rs::parse_const_construction` returns
+  `UnsupportedSemanticFeature::CompositeValues` whenever they are present.
+  This is an implementation gap, not a source-language rejection. Reopen when
+  extending static aggregate initialization: instantiate the exact named
+  const-eligible struct, preserve declared field order and field types, and
+  validate a generic struct constant's field reads against wrong-type,
+  wrong-order and non-const-eligible controls. Remove this item when those
+  cases pass through the ordinary compiler and conformance paths.
+
 - **Audit numeric conversion coverage and unnecessary fallible interfaces.**
   The known starting case is integer low-bit narrowing: `cvt::<u32, u8>(x)`
   preserves the numeric value and returns `Result`, while `reinterpret` only
