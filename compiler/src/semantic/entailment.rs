@@ -185,6 +185,10 @@ pub(crate) struct EntailmentContext<'check> {
     /// equality keeps the former while L0 projection reads the latter's
     /// mathematical value.
     pub(crate) constant_ids: &'check HashMap<DeclarationId, CheckedConstantId>,
+    /// Written integer types of symbolic const parameters [MSR-6]. Extents
+    /// and forwarded arguments carry the original declaration identity, even
+    /// when their use has a different integer type.
+    pub(crate) const_parameter_types: &'check HashMap<DeclarationId, super::model::IntegerType>,
     pub(crate) nominals: &'check [CheckedNominal],
     pub(crate) elements: &'check [CheckedType],
     /// Accepted instantiated FN-4 implications. Bound-call evidence refers

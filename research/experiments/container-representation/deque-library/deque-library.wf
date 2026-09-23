@@ -1,0 +1,168 @@
+struct DequeDigest {
+  value: u64;
+}
+
+nocopy struct DequeRecord {
+  words: Array<u64, 32>;
+}
+
+interface DequeElement<T: drop> {
+  fn make(seed: own u64) -> value: own T pure;
+  fn accept(env: &DequeDigest, value: own T) -> result: own unit writes(env);
+}
+
+fn deque_word_make(seed: own u64) -> value: own u64 pure {
+  return seed;
+}
+
+fn deque_word_accept(env: &DequeDigest, value: own u64) -> result: own unit writes(env) {
+  let prefix = deref(env).value *wrap 131_u64;
+  set deref(env).value = prefix +wrap value;
+  return unit;
+}
+
+fn deque_record_make(seed: own u64) -> value: own DequeRecord pure {
+  let words = array_filled::<u64, 32>(value: 0_u64);
+  for (index in 0_u64..32_u64) {
+    set words[index] = seed +wrap index;
+  }
+  return DequeRecord(words: words);
+}
+
+fn deque_record_accept(env: &DequeDigest, value: own DequeRecord) -> result: own unit writes(env) {
+  for (index in 0_u64..32_u64) {
+    let word = value.words[index];
+    let prefix = deref(env).value *wrap 131_u64;
+    set deref(env).value = prefix +wrap word;
+  }
+  return unit;
+}
+
+binding DequeWordElement : DequeElement<u64> {
+  make = deque_word_make;
+  accept = deque_word_accept;
+}
+
+binding DequeRecordElement : DequeElement<DequeRecord> {
+  make = deque_record_make;
+  accept = deque_record_accept;
+}
+
+fn deque_library_fill<interface DequeElement<T>>(values: &Box<Ring<T>>, count: own u64, seed: own u64) -> result: own unit writes(values) contract {
+  requires deref(values).inner.len == 0_u64;
+  requires deref(values).inner.cap >= count;
+  ensures deref(values).inner.len == count;
+  ensures deref(values).inner.cap == deref(entry(values)).inner.cap;
+} {
+  let capacity = deref(values).inner.cap;
+  for @fill (
+    index in 0_u64..count,
+    invariant filled: deref(values).inner.len == index,
+    invariant kept_capacity: deref(values).inner.cap == capacity
+  ) {
+    let next = seed +wrap index;
+    let value = DequeElement::make(seed: next);
+    let length = deque_push_back::<T>(values: values, value: move value);
+  }
+  return unit;
+}
+
+fn deque_library_trace<interface DequeElement<T>>(count: own u64, rounds: own u64, seed: own u64, path: own u64) -> result: own u64 pure contract {
+  requires count <= 4096_u64;
+} {
+  let checksum = seed;
+  if path == 2_u64 {
+    for (round in 0_u64..rounds) {
+      let base = seed +wrap round;
+      let digest = DequeDigest(value: base);
+      let values = deque_new::<T, 4096>(capacity: count);
+      deque_library_fill::<DequeElement<T>>(values: &values, count: count, seed: base);
+      let half = count / 2_u64;
+      for @rotate (
+        index in 0_u64..half,
+        invariant length: values.inner.len == count,
+        invariant capacity: values.inner.cap == count
+      ) {
+        let value = deque_pop_front::<T>(values: &values);
+        let length = deque_push_back::<T>(values: &values, value: move value);
+      }
+      let doubled = count * 2_u64;
+      let capacity = doubled + 1_u64;
+      let rebased = deque_rebase::<T, 8193>(values: move values, capacity: capacity);
+      deque_drain::<T, DequeDigest, fn DequeElement::accept>(values: &rebased, env: &digest);
+      deque_free_empty::<T>(values: move rebased);
+      let prefix = checksum *wrap 257_u64;
+      set checksum = prefix +wrap digest.value;
+    }
+    return checksum;
+  }
+  let digest = DequeDigest(value: seed);
+  let values = deque_new::<T, 4096>(capacity: count);
+  deque_library_fill::<DequeElement<T>>(values: &values, count: count, seed: seed);
+  if path != 0_u64 {
+    for @reverse_cycles (
+      round in 0_u64..rounds,
+      invariant cycle_length: values.inner.len == count,
+      invariant cycle_capacity: values.inner.cap == count
+    ) {
+      let next_round = round +wrap 1_u64;
+      let offset = next_round *wrap count;
+      let base = seed +wrap offset;
+      for @reverse_churn (
+        index in 0_u64..count,
+        invariant length: values.inner.len == count,
+        invariant capacity: values.inner.cap == count
+      ) {
+        let removed = deque_pop_back::<T>(values: &values);
+        DequeElement::accept(env: &digest, value: move removed);
+        let next = base +wrap index;
+        let value = DequeElement::make(seed: next);
+        let length = deque_push_front::<T>(values: &values, value: move value);
+      }
+    }
+  } else {
+    for @forward_cycles (
+      round in 0_u64..rounds,
+      invariant cycle_length: values.inner.len == count,
+      invariant cycle_capacity: values.inner.cap == count
+    ) {
+      let next_round = round +wrap 1_u64;
+      let offset = next_round *wrap count;
+      let base = seed +wrap offset;
+      for @forward_churn (
+        index in 0_u64..count,
+        invariant length: values.inner.len == count,
+        invariant capacity: values.inner.cap == count
+      ) {
+        let removed = deque_pop_front::<T>(values: &values);
+        DequeElement::accept(env: &digest, value: move removed);
+        let next = base +wrap index;
+        let value = DequeElement::make(seed: next);
+        let length = deque_push_back::<T>(values: &values, value: move value);
+      }
+    }
+  }
+  deque_drain::<T, DequeDigest, fn DequeElement::accept>(values: &values, env: &digest);
+  deque_free_empty::<T>(values: move values);
+  return digest.value;
+}
+
+fn deque_library_word_trace(count: own u64, rounds: own u64, seed: own u64, path: own u64) -> result: own u64 pure contract {
+  requires count <= 4096_u64;
+} {
+  let result = deque_library_trace::<DequeWordElement>(count: count, rounds: rounds, seed: seed, path: path);
+  return result;
+}
+
+fn deque_library_record_trace(count: own u64, rounds: own u64, seed: own u64, path: own u64) -> result: own u64 pure contract {
+  requires count <= 4096_u64;
+} {
+  let result = deque_library_trace::<DequeRecordElement>(count: count, rounds: rounds, seed: seed, path: path);
+  return result;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let word = deque_library_word_trace(count: 3_u64, rounds: 2_u64, seed: 17_u64, path: 0_u64);
+  let record = deque_library_record_trace(count: 3_u64, rounds: 2_u64, seed: 17_u64, path: 2_u64);
+  return exit_status(code: 0_u8);
+}
