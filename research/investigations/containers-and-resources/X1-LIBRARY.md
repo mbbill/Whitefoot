@@ -1042,3 +1042,52 @@ the constant must remain one identity with its source bounds. It adds no
 automatic proof family. The corresponding compiler choice is recorded in
 checker-facts; domain, insufficient-guard and forwarding regressions
 exercise the existing proof checker.
+
+## Ring payload address qualification
+
+The next lowering experiment starts from merged main `1b916975`. The
+[Deque comparison](../../experiments/container-representation/deque-library/RESULTS.md)
+records a 2.256–2.405x normal-mode scalar forward-churn cost against its C
+control. Its separate, untimed four-GEP probe identifies an unsigned offset
+fact that removes repeated descriptor traffic in one concrete instance.
+That is a reason to investigate the general lowering contract, not evidence
+that adding the flag to every element address is valid or faster.
+
+The question is whether existing source bounds and selected-target layout
+qualification establish the complete LLVM promise for ordinary Slots/Ring
+payload projections. The argument must cover the actual padded header,
+element allocation stride, enclosing object extent, intermediate offsets,
+pointer-index width, zero capacity, zero stride, and any one-past use of the
+shared projection. Logical Ring wrap arithmetic is a separate operation;
+the candidate must not attach an unsigned no-wrap assertion to it merely
+because a final physical element is in bounds. The
+[LLVM instruction contract](https://llvm.org/docs/LangRef.html#getelementptr-instruction)
+is the target obligation; STOR-6 and DIAG-2 remain the language authorities.
+
+Selection criteria, recorded before this experiment's timings:
+
+- Every emitted optional fact has a complete argument from existing checked
+  and selected-target facts. Source acceptance and target-layout qualification
+  agree with this optional fact enabled or withheld. Unsupported assembler spelling
+  retains a correct portable lowering rather than rejecting a WF program.
+- Existing maintained regressions cover relevant ownership, wrap, zero-size,
+  nested-layout and target-domain boundaries. Add only observations absent
+  from those cases. Successful timing runs do not establish allocation-refusal
+  behavior; the maintained caller and allocator observer own that check.
+- Reuse the existing Deque workload, independent checksums, allocation ledger,
+  scalar and wide-record payloads, normal and retained helpers, C controls and
+  counterbalanced matrix. Compare fresh baseline and candidate emissions and
+  timings on the same toolchain. Withholding this fact is a correctness
+  control, not a substitute for isolating its performance contribution; this
+  experiment does not require a new public facts-mode switch.
+- Select production emission only if the complete target contract holds and
+  the paired results show a repeatable benefit beyond cohort and control
+  variation, without an unexplained material loss elsewhere in the matrix.
+  Attribute any remaining gap rather than claiming universal native parity.
+
+Keep the implementation within ordinary address emission and the existing
+toolchain-capability path where possible. Do not change source syntax,
+container representation, Ring range admission, or host/runtime protocols to
+obtain this result. A material compiler choice is proposed beside the design
+tree before its completion review; implementation can proceed while that
+proposal awaits the owner's ruling.
