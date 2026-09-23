@@ -393,6 +393,30 @@ planning allocations and payload relocation are part of the sparse candidate's
 cost, just as reverse-index maintenance and the dependent lookup are part of
 the dense candidate's cost.
 
+A third ordinary formulation remains viable but has not been implemented:
+each sparse cell can contain `Slots<Pair<K,V>, 1>` and a deleted flag. After
+allocating an empty destination with at least the old materialized capacity,
+swap the backing, drain each old cell, and append its single live pair into
+an empty destination window. The ordinary append postcondition establishes
+that the local source is empty, so cleanup needs no assumed enum refinement.
+Hash each owner once; equality is unnecessary. At owner j, at most j-1 of the
+M destinations are filled, so a complete cyclic scan finds a vacancy when
+j <= old capacity <= M. This is an algorithm argument, not an admitted
+third source witness or a published numeric contract.
+
+That route avoids permutation plans and the bulk old-backing grow copy, but
+costs an extra word per cell: 32 rather than 24 bytes for the scalar pair,
+280 rather than 272 for the wide pair. It also retains both payload backings
+during migration. Ignoring fixed headers, growing C to M has peak bytes
+`(C+M)*(B+8)`, versus the enum route's `(C+M)*B+8*M`: about 8*C more bytes.
+Same-capacity rebuilding needs a second full payload backing rather than
+only the enum route's metadata. Empty-cell construction and local cell/append
+transfers remain costs to inspect. Defer this additional candidate until
+measured copying/permutation is material, or sparse lookup/edit and dense
+growth split the result; then compare both growth and same-capacity rebuild,
+scalar and wide values, with retained helpers. Do not reject it as
+inexpressible or infer a smaller peak from fewer allocations.
+
 Result layout is a separate source choice. The initial common result has three
 variants, `Inserted`, `Replaced(previous: Pair<K,V>)`, and
 `Full(offered: Pair<K,V>)`. Current product layout reserves both Pair regions.

@@ -591,6 +591,15 @@ condition under which it is taken up.
   backing bytes, dense reverse-index repair and helper/result transfers.
   Defer a projected layout until a remaining measured cost justifies it;
   neither the C study nor the one-slot Slab establishes WF map parity.
+  A one-slot-per-bucket map could migrate owners directly with ordinary
+  append, avoiding the enum candidate's planning/permutation, but adds a word
+  per bucket and retains a second payload backing. Its complete source and
+  transfer costs are unverified. The [map trial](../research/investigations/containers-and-resources/X1-LIBRARY.md#generic-owning-map-trial-after-the-ring-comparison)
+  records the algorithm and peak-memory tradeoff. Defer a third implementation
+  while the first two candidates are measured; reopen if copying/permutation
+  materially determines growth costs or their lookup/growth results split.
+  Validate actual admission, zero capacity, hostile hash/equality, exact owner
+  cleanup and scalar/wide growth and same-capacity costs before selecting it.
 - **Channel primitive.** An ownership-transfer queue in the trusted base for
   producer/consumer pipelines and work stealing; lock-free rings are not
   expressible without it and batched fork-join is the available form. Research

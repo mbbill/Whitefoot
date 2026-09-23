@@ -9,6 +9,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(WITH_WF)
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#else
+#include <time.h>
+#endif
+#endif
 
 #ifdef NDEBUG
 #error "The map comparison requires its correctness checks"
@@ -17,8 +25,10 @@
 #define NOINLINE __attribute__((noinline))
 #ifdef RETAIN_HELPERS
 #define HELPER NOINLINE
+#define CONTRACT "retained"
 #else
 #define HELPER
+#define CONTRACT "normal"
 #endif
 
 enum { EMPTY, DELETED, LIVE };
@@ -39,6 +49,13 @@ typedef union {
 } AllocationHeader;
 typedef struct { size_t requests, releases, bytes, live, peak; } Ledger;
 static Ledger ledger;
+#if defined(WITH_WF)
+static volatile uint64_t observed;
+extern uint64_t wf_map_cost_sparse_word_trace(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t wf_map_cost_sparse_record_trace(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t wf_map_cost_dense_word_trace(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t wf_map_cost_dense_record_trace(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+#endif
 
 static void require(bool condition, const char *message) {
     if (!condition) {
@@ -540,6 +557,9 @@ static void P##_canonicalize(P##_Map *map, uint64_t index) {               \
     ++map->slots->length;                                                 \
     P##_swap(&map->slots->cells[index], &map->slots->cells[last]);          \
 }                                                                         \
+static void P##_clear_deleted(P##_Map *map, uint64_t index) {              \
+    if (P##_is_deleted(&map->slots->cells[index])) P##_canonicalize(map, index); \
+}                                                                         \
 static void P##_apply(P##_Map *map, WordArray *plan) {                     \
     uint64_t count = map->slots->length, cursor = 0;                      \
     for (uint64_t pass = 0; pass < 2; ++pass)                             \
@@ -559,8 +579,7 @@ static bool P##_rebuild(P##_Map *map, const HashEnv *env, uint64_t target) { \
     PlacementPlan plan = P##_plan(map, env, target);                       \
     if (!plan.complete) { wf_cost_release(plan.destinations); return false; } \
     P##_extend(map, target);                                               \
-    for (uint64_t i = 0; i < count; ++i)                                  \
-        if (P##_is_deleted(&map->slots->cells[i])) P##_canonicalize(map, i); \
+    for (uint64_t i = 0; i < count; ++i) P##_clear_deleted(map, i);        \
     P##_apply(map, plan.destinations);                                     \
     wf_cost_release(plan.destinations); return true;                      \
 }                                                                         \
@@ -919,7 +938,13 @@ static const Variant variants[] = {
     {"word-sparse-planned", false, false, true, sizeof(word_planned_Cell), 0, word_planned_trace, word_planned_small_policy_check},
     {"record-sparse-planned", true, false, true, sizeof(record_planned_Cell), 0, record_planned_trace, record_planned_small_policy_check},
     {"word-dense-repaired", false, true, true, sizeof(word_repaired_Entry), sizeof(TaggedIndex), word_repaired_trace, word_repaired_small_policy_check},
-    {"record-dense-repaired", true, true, true, sizeof(record_repaired_Entry), sizeof(TaggedIndex), record_repaired_trace, record_repaired_small_policy_check}
+    {"record-dense-repaired", true, true, true, sizeof(record_repaired_Entry), sizeof(TaggedIndex), record_repaired_trace, record_repaired_small_policy_check},
+#if defined(WITH_WF)
+    {"word-wf-sparse", false, false, true, sizeof(word_planned_Cell), 0, wf_map_cost_sparse_word_trace, NULL},
+    {"record-wf-sparse", true, false, true, sizeof(record_planned_Cell), 0, wf_map_cost_sparse_record_trace, NULL},
+    {"word-wf-dense", false, true, true, sizeof(word_repaired_Entry), sizeof(TaggedIndex), wf_map_cost_dense_word_trace, NULL},
+    {"record-wf-dense", true, true, true, sizeof(record_repaired_Entry), sizeof(TaggedIndex), wf_map_cost_dense_record_trace, NULL},
+#endif
 };
 
 static Ledger expected_ledger(const Variant *variant, uint64_t capacity,
@@ -969,11 +994,14 @@ static void check(void) {
         {0, 0}, {1, 0}, {1, 1}, {3, 2}, {3, 3}, {63, 55}, {64, 32}, {64, 56}, {64, 64}
     };
     const uint64_t rounds[] = {0, 1, 3}, seeds[] = {0, 17, UINT64_MAX};
-    size_t executions = 0;
+    size_t executions = 0, policies = 0;
     for (size_t v = 0; v < sizeof variants / sizeof variants[0]; ++v) {
         const Variant *variant = &variants[v];
-        reset_ledger(); variant->policy_check();
-        require(ledger.live == 0 && ledger.requests == ledger.releases, "policy cleanup");
+        if (variant->policy_check) {
+            reset_ledger(); variant->policy_check();
+            require(ledger.live == 0 && ledger.requests == ledger.releases, "policy cleanup");
+            ++policies;
+        }
         for (size_t n = 0; n < sizeof shapes / sizeof shapes[0]; ++n)
             for (unsigned path = 0; path < PATH_COUNT; ++path)
                 for (size_t r = 0; r < sizeof rounds / sizeof rounds[0]; ++r)
@@ -987,12 +1015,88 @@ static void check(void) {
                             ++executions;
                         }
     }
-    printf("map native controls: %zu executions and %zu policy chains passed\n",
-           executions, sizeof variants / sizeof variants[0]);
+    printf("map costs: %zu executions and %zu C policy chains passed\n", executions, policies);
 }
 
+#if defined(WITH_WF)
+static uint64_t nanoseconds(void) {
+#if defined(_WIN32)
+    LARGE_INTEGER count, frequency;
+    QueryPerformanceCounter(&count); QueryPerformanceFrequency(&frequency);
+    return (uint64_t)((long double)count.QuadPart * 1000000000.0L / frequency.QuadPart);
+#else
+    struct timespec value;
+    require(clock_gettime(CLOCK_MONOTONIC, &value) == 0, "monotonic clock");
+    return (uint64_t)value.tv_sec * UINT64_C(1000000000) + (uint64_t)value.tv_nsec;
+#endif
+}
+
+/* Timings are complete, independently checked traces. Growth is one real
+ * reserve; rehash includes deletion, verification and reinsertion. No setup
+ * baseline is subtracted to invent an isolated operation latency. */
+static void measure(unsigned cohort) {
+    const uint64_t capacities[] = {64, 4096};
+    const char *paths[] = {"hit", "miss", "replace", "churn", "grow", "rehash", "setup-cleanup"};
+    const size_t variant_count = sizeof variants / sizeof variants[0];
+    puts("contract,cohort,element_bytes,path,capacity,count,hash,variant,sample,rounds,traces,elapsed_ns,checksum,requests,requested_bytes,peak_bytes");
+    for (unsigned wide = 0; wide < 2; ++wide)
+            for (size_t n = 0; n < sizeof capacities / sizeof capacities[0]; ++n)
+                for (unsigned occupancy = 0; occupancy < 2; ++occupancy)
+                    for (unsigned collide = 0; collide < 2; ++collide) {
+                        if (collide && (wide || n != 0)) continue;
+                        uint64_t capacity = capacities[n];
+                        uint64_t count = occupancy ? capacity * 7 / 8 : capacity / 2;
+                        for (unsigned path = 0; path < PATH_COUNT; ++path) {
+                            if (collide && path == SETUP) continue;
+                            uint64_t rounds = path == SETUP ? 0
+                                : (path == GROW ? 1 : UINT64_C(8192) / count);
+                            uint64_t traces = path == SETUP || path == GROW
+                                ? UINT64_C(8192) / count : 1;
+                            for (unsigned sample = 0; sample < 11; ++sample) {
+                                uint64_t seed = 101 + sample, expected = 0;
+                                for (uint64_t trace = 0; trace < traces; ++trace)
+                                    expected = expected * UINT64_C(257)
+                                        + oracle(wide != 0, count, rounds, seed + trace, path);
+                                for (size_t offset = 0; offset < variant_count; ++offset) {
+                                    size_t position = (sample + offset) % variant_count;
+                                    size_t v = cohort ? variant_count - 1 - position : position;
+                                    const Variant *variant = &variants[v];
+                                    if (variant->wide != (wide != 0)) continue;
+                                    reset_ledger();
+                                    uint64_t checksum = 0, start = nanoseconds();
+                                    for (uint64_t trace = 0; trace < traces; ++trace)
+                                        checksum = checksum * UINT64_C(257)
+                                            + variant->trace(capacity, count, rounds, seed + trace, path, collide);
+                                    uint64_t elapsed = nanoseconds() - start;
+                                    require(checksum == expected, "timed independent content/outcome oracle");
+                                    Ledger accounting = expected_ledger(variant, capacity, rounds, path);
+                                    accounting.requests *= traces; accounting.releases *= traces;
+                                    accounting.bytes *= traces;
+                                    check_ledger(accounting);
+                                    observed ^= checksum;
+                                    printf("%s,%u,%zu,%s,%" PRIu64 ",%" PRIu64 ",%s,%s,%u,%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%zu,%zu,%zu\n",
+                                           CONTRACT, cohort, wide ? sizeof(Record) : sizeof(uint64_t), paths[path],
+                                           capacity, count, collide ? "colliding" : "mixed", variant->name, sample,
+                                           rounds, traces, elapsed, checksum, ledger.requests, ledger.bytes, ledger.peak);
+                                }
+                            }
+                        }
+                    }
+}
+#endif
+
 int main(int argc, char **argv) {
-    require(argc == 2 && strcmp(argv[1], "check") == 0, "usage: map-native check");
-    check();
+    require(argc >= 2, "usage: map-costs check | measure 0|1");
+    if (strcmp(argv[1], "check") == 0) {
+        require(argc == 2, "check takes no arguments"); check();
+    }
+#if defined(WITH_WF)
+    else if (strcmp(argv[1], "measure") == 0) {
+        require(argc == 3 && (strcmp(argv[2], "0") == 0 || strcmp(argv[2], "1") == 0),
+                "measure requires cohort 0 or 1");
+        measure((unsigned)(argv[2][0] - '0'));
+    }
+#endif
+    else require(false, "unknown mode");
     return 0;
 }

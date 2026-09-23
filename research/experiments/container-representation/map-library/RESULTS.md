@@ -4,9 +4,12 @@ This explicit experiment belongs to the generic owning-map trial in
 [X1-LIBRARY.md](../../../investigations/containers-and-resources/X1-LIBRARY.md#generic-owning-map-trial-after-the-ring-comparison).
 It stays outside daily correctness CI. The first maintained caller is
 `make -C research/experiments/container-representation map-native-check`,
-which checks the native controls only. WF adapters and matched measurements
-follow the source candidates' admitted interfaces; no timing or WF/native
-correspondence has been established here yet. Keep this experiment while it
+which checks the native controls only. `map-check` also executes both source
+candidates and owning-child callers in three CLI configurations, checks their
+exact allocation identities with the existing formal observer, and compares
+WF/C trace contents and allocation totals. `map-measure` is the explicit
+timing caller; it is not a daily gate. The combined source and cost checks
+pass; no operation timings are reported yet. Keep this experiment while it
 owns this library comparison; remove it when a maintained successor preserves
 the same contracts and evidence.
 
@@ -62,7 +65,7 @@ Count map owner width, backing headers, cell/entry/index strides, every
 reserved capacity, result layouts, allocation requests, requested bytes and
 peak simultaneously live bytes. Inspect retained optimized functions for
 actual transfers and stores; a missing memcpy intrinsic is not zero transfer.
-Native union results and WF product results are not the same ABI. Normal
+Native shared-payload results and the original WF product results are not the same ABI. Normal
 versus retained also changes visibility and native calling conventions, so
 that ratio is not a copy-only attribution.
 
@@ -131,8 +134,20 @@ zero and repeated rehash are explicit controls.
 seven paths, three round counts, three seeds and two hash distributions:
 11,340 trace executions plus ten policy chains per mode. Both normal and
 retained controls passed: 22,680 traces and twenty policy chains in total.
-The guarded construction and execution took 2.81 seconds with Apple Clang;
-this is validation time, not an operation-timing comparison.
+The initial native-only construction and execution took 2.81 seconds with
+Apple Clang; this is validation time, not an operation-timing comparison.
+
+The integrated check also passes all fourteen WF/C variants over the same
+matrix: 15,876 traces and ten C policy chains per boundary mode, or 31,752
+traces and twenty policy chains in total. Four source callers execute both
+with ordinary deallocation and with the quarantining observer, in each of
+the three CLI configurations. Their allocation counts are respectively
+24, 14, 29 and 14, each identity released exactly once. The observer's
+concurrent and three negative controls pass. Optimized IR retains each
+listed public operation and callback in retained mode on both sides.
+Using the existing v0.67 gate-profile compiler and Apple Clang 21, guarded
+construction took 31.18 seconds and the complete execution/check command
+took 9.33 seconds. These commands did not rebuild the Rust compiler.
 
 Every accepted timed trace must match its independent content/outcome oracle
 and the per-representation request/release counts, requested bytes, peak bytes
@@ -153,3 +168,45 @@ seed, occupancy and boundary treatment; keep raw samples. Do not average
 different workloads into a fabricated application distribution or select a
 layout from bytes alone. Record unexplained costs, including wide owning
 results, before claiming a performance floor or choosing further machinery.
+
+The maintained matrix has 68 workload cohorts: 56 mixed-hash combinations
+(two payload sizes, two capacities, two occupancies, seven paths), plus twelve
+colliding-hash combinations (scalar capacity 64, two occupancies, six paths;
+setup is not repeated). Each compares seven implementations at its payload
+size. Eleven seeds are sampled in each of two reversed cohorts and both
+boundary modes: 20,944 rows when all samples pass. Mode order is normal then
+retained for cohort zero and reversed for cohort one; implementation order
+rotates with the sample and reverses between cohorts. The regular paths use
+`floor(8192/count)` rounds. Setup uses zero rounds and growth one round; each
+repeats `floor(8192/count)` complete traces with successive seeds. Their time
+includes fill and cleanup on every repetition. The expected checksum folds
+each independent trace with multiplier 257; allocation counts and total
+requested bytes scale by repetitions, while peak bytes do not. In-place edit
+and compact-result source controls remain separate bounded comparisons; this
+matrix does not yet include them.
+
+## Maintained commands and source candidates
+
+Run heavy commands through the repository's shared guard. Construction and
+execution can be reported separately without weakening the combined check:
+
+```sh
+make -C research/experiments/container-representation/map-library build-candidates build-costs CLANG=/usr/bin/clang
+make -C research/experiments/container-representation/map-library check CLANG=/usr/bin/clang
+make -C research/experiments/container-representation/map-library measure CLANG=/usr/bin/clang
+```
+
+`BUILD` and `WHITEFOOTC` are overridable. The source candidates are
+`dense-map.wf` and `sparse-map.wf`; their corresponding `*-check.wf` and
+`*-owned-check.wf` callers cover source outcomes, hostile equality, wrapping,
+contracts and owning-child cleanup. Current exact allocation expectations are
+24/14 for the dense callers and 29/14 for the sparse callers. The three CLI
+configurations are default, `--no-overlap` and `--par`; default and
+`--no-overlap` currently select the same lowering, so these are two distinct
+lowerings. The ordinary allocator runs as well as the quarantining observer;
+the latter's concurrent and three negative controls are reused without
+creating another observer implementation. Once a library representation is
+selected, move its implementation and maintained correctness callers to their
+existing library/formal-test homes and update these callers; do not maintain
+a frozen duplicate library here. The other candidate stays only while it
+provides this explicitly selected representation comparison.
