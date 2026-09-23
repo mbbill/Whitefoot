@@ -747,21 +747,23 @@ condition under which it is taken up.
   did not establish a recurring tag-check tax. A working library does not
   close either question or imply a universal native-performance ceiling.
 
-- **Ordered insertion needs a replacement-preserving result path.** The
-  [single-descent comparison](../research/experiments/container-representation/ordered-library/RESULTS.md#single-descent-insertion-candidate)
-  rejects the borrowed-carrier implementation because below-ceiling wide
-  replacements regress despite insertion gains. Its optional promotion result
-  travels through replacement recursion; optimized code clears that aggregate
-  on a match and on each empty-result return. This is a concrete source/ABI
-  concern, not a complete timing attribution. A different return protocol could
-  remove the baseline's duplicate miss search and recursive Pair transport
-  while preserving replacement cost. Defer another source variant until an
-  ordinary protocol avoids the promotion result on replacements, or an ABI
-  improvement supplies that distinction. Reopen with that concrete candidate;
-  first establish admission without assumed recursive postconditions, then
-  repeat owner-identity/release checks and the registered normal/retained
-  comparison including replacement cells. Keep general aggregate-result ABI
-  work under the existing compiler item.
+- **Ordered insertion replacement costs need attribution.** Both the
+  [aggregate-result candidate](../research/experiments/container-representation/ordered-library/RESULTS.md#single-descent-insertion-candidate)
+  and [borrowed-promotion follow-up](../research/experiments/container-representation/ordered-library/RESULTS.md#borrowed-promotion-follow-up)
+  regress on replacement despite insertion gains. The second removes recursive
+  aggregate clearing without curing the loss. One promotion-slot initialization
+  per put, Pair placement/swap/result transfers, occupancy checks and substantial
+  stack frames remain; their elapsed shares are not isolated. Avoiding the
+  baseline's duplicate miss search and recursive Pair transport remains useful
+  only if replacement cost is preserved. Defer another source variant: no third
+  candidate belongs to this completed comparison. Reopen when a concrete
+  consumer or controlled source/lowering discriminator isolates a material
+  cause and supplies grounds for a new experiment. Validate unchanged owner
+  identities, refusal behavior and exact release/allocation counts, then the
+  complete normal/retained matrix including replacement cells and independent
+  control observations. Keep general aggregate-result ABI and placement work
+  under the existing compiler items; a different return form alone no longer
+  supplies the reopening ground.
 
 - **Ordered-map occupancy and tree choice remain workload-dependent.** The
   [reserved-storage comparison](../research/experiments/container-representation/ordered-library/RESULTS.md#allocations-and-reserved-storage)
@@ -774,8 +776,8 @@ condition under which it is taken up.
   then compare one justified alternative under the complete arbitrary-owner
   map contract, including replacement/refusal, range visits, exact cleanup,
   requested/peak bytes and normal/retained timings. Scalar and range tradeoffs
-  must remain visible. Defer a second
-  maintained representation until a concrete index supplies its governing
+  must remain visible. Defer a second maintained representation until a
+  concrete index supplies its governing
   workload; reopen before choosing a default ordered representation or when
   an index is dominated by wide reserved storage or churn.
 

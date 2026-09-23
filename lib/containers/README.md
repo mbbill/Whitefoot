@@ -57,8 +57,10 @@ and ownership do not depend on it. The implementation uses fanout 16 and
 bundles each separator with its right child link. The
 [matched comparison](../../research/experiments/container-representation/ordered-library/RESULTS.md)
 includes C matching the original source, a direct C B-tree and native AVL;
-wide-pair transfers and reserved storage costs remain. This is a reusable
-measured baseline, with no default representation or native parity claim. The
+wide-pair transfers and reserved storage costs remain. Both single-descent
+insertion trials failed their replacement-cost criteria. This implementation
+therefore remains the reusable measured baseline, with no default representation
+or native parity claim. The
 [ordered-map trial](../../research/investigations/containers-and-resources/X1-LIBRARY.md#ordered-map-trial-at-v068)
 records the source and representation choices.
 

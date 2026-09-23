@@ -77,12 +77,13 @@ implementation replaces individual candidate conclusions.
 
 ## Findings and boundaries
 
-The six families have plausible ordinary-value representations. Two narrow
-owned-element operations now have checked/native evidence in the
+The initial study identified ordinary-value representations for six families.
+Its two narrow owned-element operations have checked/native evidence in the
 [x1 probes](../../experiments/container-representation/x1/RESULTS.md): indexed
 vacancy exchange with a must-consume element, and a generic ordered drain with
-linear element movement. This is not evidence that six complete libraries
-already exist, or that their native costs are at parity.
+linear element movement. The later [completion matrix](#current-completion-boundary-at-v068)
+separates complete library and consumer evidence by branch; native parity
+remains a measured question for each operation.
 
 Three different questions must not be collapsed:
 
@@ -93,8 +94,8 @@ Three different questions must not be collapsed:
 | Resolved snapshot defect | The earlier reserve helper supplied unrestricted u64 capacity to `grow` | OP-9 requires a size bound. The merged library supplies one through `ceiling`; the unbounded research negative remains correctly rejected. |
 
 The family sketches below started as recommendations for implementation trials,
-not adopted library interfaces. The later Vector and v0.63 sections identify
-the executable libraries, their evidence and the selected boundaries. Existing temporary-reference,
+not adopted library interfaces. The current completion matrix and later trials
+identify the executable libraries, their evidence and the selected boundaries. Existing temporary-reference,
 global-heap, no-hole and no-stored-reference choices remain premises. Their grounds are in
 the [data-model](../../../design/language/data-model.md),
 [ownership](../../../design/language/ownership.md) and
@@ -1194,8 +1195,9 @@ after source-C normalization in the two cohorts, outside the three-percent
 cell band. Other wide replacement sizes and retained replacement also regress.
 Build improvements therefore cannot select this source. No optional repeat was
 needed to establish the loss. Optimized code removes recursive Pair arguments
-but clears a 288-byte optional promotion on each replacement unwind; this
-supports the predicted mechanism without isolating its share of elapsed time.
+but clears a 288-byte optional promotion on each replacement unwind. This is
+an observed transfer cost, not an isolated or dominant share of elapsed time;
+the follow-up below tests its removal.
 The source-C controls retain different tag/result ABI and alias facts; the
 unchanged-control WF-versus-WF comparison, not a claim of ABI equality, decides
 this experiment. The published library stays at the measured baseline.
@@ -1239,6 +1241,29 @@ that recursive helpers have no aggregate promotion result and count remaining
 slot initialization and owner transfers in optimized IR. This experiment tests
 the changed ordinary interface contract, not an inactive-storage compiler
 optimization or a promise that zeroing alone caused the previous regression.
+
+The follow-up also fails its criterion. The complete
+[11,520-row comparison](../../experiments/container-representation/ordered-library/RESULTS.md#borrowed-promotion-follow-up)
+records normal wide replacement ratios of 1.6885/1.6003 at 256 entries, outside
+the 3.13% band, and 1.5313/1.5620 at eight entries, outside 3%. Retained wide
+replacement at both sizes also loses. Build and larger-count churn gains do
+not cancel those losses. No repeat was needed; both exact source candidates
+remain rejected, the published baseline stays unchanged, and there is no third
+candidate in this comparison.
+
+Optimized recursive insertion has no aggregate result or optional-result
+clearing in either mode. The public operation still initializes one 40/288-byte
+promotion slot, and wide Pair placement, swap and returned-owner extraction
+remain. A promoted Entry is staged only when a parent accepts it. Recursive
+wide frames remain 352/368 bytes in normal/retained modes, unchanged from the
+first candidate. These observations do not isolate execution counts or elapsed
+shares. Removing recursive aggregate results did not cure the replacement
+regression and does not establish their earlier clearing as its dominant cause.
+The two candidate percentages come from separate baseline comparisons, not a
+direct paired comparison between candidates. Further source or lowering work
+needs a new discriminator for the remaining per-put storage, owner movement,
+occupancy and frame costs; [the maintained TODO](../../../docs/todo.md) retains
+that attribution task alongside node construction/cleanup and occupancy work.
 
 ## Ceiling challenges connected to real source contracts
 
@@ -1311,11 +1336,12 @@ filesystem parent components are not source-envelope names. No separate
 Makefile, test group, import mechanism or library ABI is restored.
 
 This ownership split makes the implementation available to user programs
-without making test support or research models library dependencies. Keep
-the other container fixtures as fixtures until they meet a reusable contract:
+without making test support or research models library dependencies. The
+narrower container fixtures remain component evidence:
 `priority.wf` is a u64 heap of capacity 16, `ordered.wf` exercises leaf splits,
 and the behavior map requires droppable keys and fixes the payload to a Box.
-Their useful coverage does not establish the complete generic families.
+The complete generic families have separate sources and callers in the
+completion matrix below.
 
 At that restoration baseline the GrowVector caller covered scalar and owned droppable Box elements,
 zero capacity, doubling, ceiling saturation, insertion, removal and drain.
@@ -1326,41 +1352,35 @@ retained v0.58 experiment has a different storage and allocation-refusal
 contract and must not be used as current performance evidence. The later
 Vector trial below supplies the expanded ownership and current cost evidence.
 
-## Recommended implementation and measurement order
+## Current completion boundary at v0.68
 
-1. **Finish the existing reusable Vector first.** Implement O(n) ordered drain,
-   then the missing selected operations such as swap-remove and consuming
-   truncation. Extend the existing caller with order-sensitive observations,
-   copy/drop/nodrop instances and full construction-to-cleanup chains; avoid
-   duplicating a native harness. Compare the actual merged implementation with
-   a matched C control, separately pricing growth, initialized spare storage,
-   large-element transfers and retained-helper overhead. A proof-erased branch
-   count is not a substitute for those measurements.
-2. **Complete the first slice with Slab and Deque.** Slab trials establish
-   vacancy exchange, generation exhaustion, expiry and the selected membership
-   contract. Deque trials establish both-end operations, wrap, grow/rebase and
-   cleanup; choose explicitly between slot visitation and the copy-element
-   physical-span representation. Resolve the complete nodrop growth route
-   before declaring an unbounded growable Deque. These are independent trials;
-   the unresolved atomic-update domain need not block Slab or Vector work.
-3. **Build the keyed and composite slice.** Generic HashMap and PriorityQueue
-   must run complete chains, including owned keys/values, rehash and reverse-map
-   repair. Compare sparse inline and index/dense layouts at the same identity
-   contract. Run the record-index workload to expose the cost and correctness
-   of retaining one object through more than one index.
-4. **Run the ordered/layout challenge.** Full B-tree operations and scans,
-   a Box-linked comparison, compact page records and large-value construction
-   provide the consumers for existing contract, traversal and lowering
-   proposals. No primitive is selected merely because a prototype was awkward.
+This PR #103 revision contains the complete ordered-map library in addition
+to the inherited Vector, Deque, Slab and HashMap. PriorityQueue and the indexed
+consumer have separate, pinned work-branch evidence below; their absence from
+this branch's source bundle is not an unimplemented operation claim. This
+matrix supersedes the initial implementation-order recommendation. Later
+sections retain their original experimental conditions. Completing an
+operation chain does not close its performance or language questions in
+[the maintained TODO](../../../docs/todo.md).
 
-After each slice, report expressibility, completed operations and measured cost
-separately. A source rejection, unsupported lowering, wrong native result and
-unmeasured candidate are four different outcomes. Required library behavior
-must not be weakened to obtain a green experiment. Merging PR #70 establishes
-the baseline; it does not by itself complete these libraries or establish
-their performance ceiling. The restoration at `8c02e875` restored the library
-home and updated the evidence and recommendations. The subsequent Vector
-consumption trial below implements the first library slice.
+| Family or consumer | Established operation chain and source scope | Remaining cost boundary |
+| --- | --- | --- |
+| [Vector](../../../lib/containers/grow-vector.wf) | In this branch: reserve/growing append, insert, ordered and swap removal, truncate, ordered drain and release; copy/drop/nodrop callers. | Extra drain movement and short-cycle lowering costs remain measured questions. |
+| [Deque](../../../lib/containers/deque.wf) | In this branch: both endpoints, wrap, logical visitation, consuming grow/shrink rebase, drain and release. | Automatic reference-based growth and Ring two-span access are separate interfaces; scalar costs remain unresolved. |
+| [Slab](../../../lib/containers/slab.wf) | In this branch: lazy bounded slots, handle validation, returned-owner exhaustion, removal, reuse, expiry, generation retirement and consumption. | Aggregate transfers and the extra cell word remain costs; broader membership evidence is in the indexed row. |
+| [HashMap](../../../lib/containers/hash-map.wf) | In this branch: generic owning collision/replacement/removal/reuse, lookup/edit, growth/rehash, visitation and consumption. | Inactive-storage lowering is the separate PR #101 trial; wide result/migration costs and double-backing peaks retain their own evidence. |
+| PriorityQueue | External [PR #102 library at fcdacff](https://github.com/mbbill/Whitefoot/blob/fcdacffb05d448c9fc04878bf1da4c0bf60bbb93/lib/containers/priority-queue.wf): arbitrary-T growth, borrowed peek, owning pop/replace-top, bottom-up heapify, drain and cleanup; a separate [owning/nodrop caller](https://github.com/mbbill/Whitefoot/blob/fcdacffb05d448c9fc04878bf1da4c0bf60bbb93/tests/programs/containers/priority-queue-program.wf). | The [complete matched comparison](https://github.com/mbbill/Whitefoot/blob/fcdacffb05d448c9fc04878bf1da4c0bf60bbb93/research/experiments/container-representation/priority-library/RESULTS.md) separates full-slot swaps, native hole movement and helper costs. |
+| Indexed composite | External [PR #104 caller at 011f21174](https://github.com/mbbill/Whitefoot/blob/011f211741333df96690be0380f97784444f5384/tests/programs/containers/indexed-membership-program.wf): multiple records across Slab, HashMap and indexed heap; reverse-position repair, rescheduling/removal, expiry/reuse, weak/retained membership and exact owner cleanup. | Complete sequential/parallel ordinary/observer correctness has a 129-allocation ledger. The indexed cost comparison is a separate experiment, not an ordered-map result. |
+| [OrderedMap](../../../lib/containers/ordered-map.wf) | Implemented on this branch: arbitrary owning keys/values, find/edit/insert/replace, split/promotion, delete/borrow/merge/root contraction, ordered/range visitation and complete cleanup; the [maintained caller](../../../tests/programs/containers/ordered-map-program.wf) checks 103 allocations and every owner. | The [complete baseline comparison and two rejected insertion trials](../../experiments/container-representation/ordered-library/RESULTS.md) preserve replacement, node-transfer and occupancy costs; no default tree or native-parity claim. |
+
+This branch's five library callers run through
+[`compiler/tests/programs/containers.rs`](../../../compiler/tests/programs/containers.rs)
+in sequential/parallel ordinary and observed native modes. The pinned external
+links are evidence only: this branch imports none of their source or gate
+wiring, and no research experiment is a correctness-gate dependency. Ring
+spans, richer contract publication and whole-owner swap facts remain separate
+limits. Header-plus-tail storage, compact byte pages, generic construction
+placement and concurrent reclamation remain independent research consumers.
 
 ## Vector consumption trial
 
