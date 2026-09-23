@@ -1,5 +1,5 @@
 // Runtime-DAG investigation only: complete-output Kahn oracle, passive task
-// events and the pinned oneTBB flow-graph reference. No performance intervals.
+// events, the pinned oneTBB flow-graph reference and a selected WF cost mode.
 // The explicit Makefile targets are its only caller; retire with the trial.
 #include <oneapi/tbb/flow_graph.h>
 #include <oneapi/tbb/global_control.h>
@@ -16,8 +16,12 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <time.h>
 #include <utility>
 #include <vector>
+#ifdef __APPLE__
+#include <mach/mach.h>
+#endif
 
 static_assert(TBB_VERSION_MAJOR == 2023 && TBB_VERSION_MINOR == 1 &&
               TBB_VERSION_PATCH == 0, "use the existing pinned oneTBB cache");
@@ -39,6 +43,7 @@ void dag_probe_spine_phased_scalar(std::uint64_t, std::uint64_t, std::uint64_t,
 void dag_probe_notify(std::uint64_t, const std::uint64_t *, TaskCell *,
                       std::uint64_t *, std::uint64_t);
 void dag_probe_n(std::uint64_t, const std::uint64_t *, TaskCell *, std::uint64_t);
+void dag_probe_wide_four(const std::uint64_t *, TaskCell *, std::uint64_t);
 void dag_probe_runtime(std::uint64_t, std::uint64_t, std::uint64_t,
                        const std::uint64_t *, std::uint64_t, const std::uint64_t *,
                        std::uint64_t, TaskCell *, std::uint64_t, RuntimeResult *);
@@ -57,7 +62,7 @@ struct GuardedRuntimeResult {
     std::uint64_t after = guard_value;
     bool intact() const { return before == guard_value && after == guard_value; }
 };
-enum class Family { spine, notify, n, runtime };
+enum class Family { spine, notify, n, runtime, wide };
 enum class Engine { whitefoot, tbb, phased, scalar, runtime_loop, runtime_tree, runtime_tbb };
 struct Graph {
     Family family;
@@ -293,6 +298,11 @@ std::vector<Graph> fixtures(Engine engine) {
     for (unsigned costs = 0; costs != 16; ++costs)
         for (unsigned mode = 0; mode != (engine == Engine::tbb ? 1U : 4U); ++mode)
             result.push_back(n_graph(costs, mode));
+    for (bool costly : {false, true}) {
+        Graph graph{Family::wide, costly ? "wide-costly" : "wide-cheap"};
+        graph.costs.assign(4, costly ? expensive : 1);
+        result.push_back(std::move(graph));
+    }
     return result;
 }
 RuntimeResult routing_oracle(const Graph &graph) {
@@ -442,6 +452,8 @@ void whitefoot_graph(Engine engine, const Graph &graph, const std::uint64_t *cos
     }
     else if (graph.family == Family::notify)
         dag_probe_notify(graph.argument, costs, output, receipts, graph.seed);
+    else if (graph.family == Family::wide)
+        dag_probe_wide_four(costs, output, graph.seed);
     else dag_probe_n(graph.mode, costs, output, graph.seed);
 }
 bool equal(TaskCell a, TaskCell b) {
@@ -697,6 +709,112 @@ unsigned selected_workers() {
     if (value && std::string(value) == "4") return 4;
     fail("initial qualification requires WF_WORKERS=1 or 4");
 }
+std::uint64_t wall_ns() {
+    timespec value{};
+    if (clock_gettime(CLOCK_MONOTONIC, &value) || value.tv_sec < 0)
+        fail("monotonic clock failed");
+    return static_cast<std::uint64_t>(value.tv_sec) * UINT64_C(1000000000) +
+           static_cast<std::uint64_t>(value.tv_nsec);
+}
+#ifdef __APPLE__
+constexpr const char *cpu_clock_name = "task_info_live_plus_exited";
+std::uint64_t time_ns(time_value_t value) {
+    if (value.seconds < 0 || value.microseconds < 0) fail("negative task CPU time");
+    return static_cast<std::uint64_t>(value.seconds) * UINT64_C(1000000000) +
+           static_cast<std::uint64_t>(value.microseconds) * 1000;
+}
+std::uint64_t cpu_ns() {
+    task_thread_times_info_data_t live{};
+    task_basic_info_data_t exited{};
+    mach_msg_type_number_t live_count = TASK_THREAD_TIMES_INFO_COUNT;
+    mach_msg_type_number_t exited_count = TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), TASK_THREAD_TIMES_INFO,
+                  reinterpret_cast<task_info_t>(&live), &live_count) != KERN_SUCCESS ||
+        task_info(mach_task_self(), TASK_BASIC_INFO,
+                  reinterpret_cast<task_info_t>(&exited), &exited_count) != KERN_SUCCESS)
+        fail("all-thread task CPU clock failed");
+    return time_ns(live.user_time) + time_ns(live.system_time) +
+           time_ns(exited.user_time) + time_ns(exited.system_time);
+}
+#else
+constexpr const char *cpu_clock_name = "CLOCK_PROCESS_CPUTIME_ID";
+std::uint64_t cpu_ns() {
+    timespec value{};
+    if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &value) || value.tv_sec < 0)
+        fail("process CPU clock failed");
+    return static_cast<std::uint64_t>(value.tv_sec) * UINT64_C(1000000000) +
+           static_cast<std::uint64_t>(value.tv_nsec);
+}
+#endif
+int run_measurement(int argc, char **argv) {
+    if ((argc != 6 && argc != 7) ||
+        (std::string(argv[2]) != "baseline" && std::string(argv[2]) != "candidate") ||
+        (argc == 7 && std::string(argv[6]) != "slow") ||
+        std::string(argv[5]).size() != 1 || argv[5][0] < '0' || argv[5][0] > '4')
+        fail("usage: image measure baseline|candidate FIXTURE WIDTH PASS [slow]");
+    const unsigned workers = selected_workers();
+    if (std::string(argv[4]) != std::to_string(workers)) fail("timing width mismatch");
+    if (dag_probe_trace_image() != 0) fail("timing requires the plain image");
+    if (workers == 4 && !wf__par_pool_active()) fail("timing WF pool is absent");
+    const auto all = fixtures(Engine::whitefoot);
+    const auto selected = std::find_if(all.begin(), all.end(), [&](const Graph &graph) {
+        const bool admitted = (graph.family == Family::n && graph.mode == 3) ||
+            graph.family == Family::wide || graph.name == "spine-8-0" ||
+            graph.name == "spine-8-1";
+        return admitted && graph.name == argv[3];
+    });
+    if (selected == all.end()) fail("fixture outside the selected cost matrix");
+    const Graph &graph = *selected;
+    const Expected expected = oracle(graph);
+    const bool cheap = std::all_of(graph.costs.begin(), graph.costs.end(),
+                                   [](std::uint64_t cost) { return cost == 1; });
+    const unsigned repeats = cheap ? (workers == 1 ? 65536U : 4096U) : 32U;
+    const unsigned actual_repeats = repeats * (argc == 7 ? 2U : 1U);
+    const std::size_t count = graph.costs.size();
+    const TaskCell guard{guard_value, ~guard_value};
+    Rows storage(count + 2, guard);
+    std::vector<std::uint64_t> costs(count + 2, guard_value);
+    std::copy(graph.costs.begin(), graph.costs.end(), costs.begin() + 1);
+    const auto original_costs = costs;
+    const auto *input = costs.data() + 1;
+    auto *output = storage.data() + 1;
+    std::printf("# measure\twall_clock=CLOCK_MONOTONIC\tcpu_clock=%s\tplain=1\n",
+                cpu_clock_name);
+    for (unsigned sample = 0; sample != 6; ++sample) {
+        std::fill(storage.begin() + 1, storage.end() - 1, TaskCell{0, 0});
+        const std::uint64_t wall_start = wall_ns();
+        const std::uint64_t cpu_start = cpu_ns();
+        if (graph.family == Family::n) {
+            for (unsigned call = 0; call != actual_repeats; ++call)
+                dag_probe_n(3, input, output, graph.seed);
+        } else if (graph.family == Family::wide) {
+            for (unsigned call = 0; call != actual_repeats; ++call)
+                dag_probe_wide_four(input, output, graph.seed);
+        } else {
+            for (unsigned call = 0; call != actual_repeats; ++call)
+                dag_probe_spine(graph.argument, input, count, output, graph.seed);
+        }
+        const std::uint64_t cpu_end = cpu_ns();
+        const std::uint64_t wall_end = wall_ns();
+        if (wall_end <= wall_start || cpu_end <= cpu_start) fail("nonpositive clock interval");
+        const std::uint64_t wall = wall_end - wall_start, cpu = cpu_end - cpu_start;
+        for (std::size_t task = 0; task != count; ++task) {
+            if (output[task].value != expected.rows[task].value ||
+                output[task].evaluations != actual_repeats)
+                fail(graph.name + ": measured batch value/count mismatch");
+        }
+        if (!equal(storage.front(), guard) || !equal(storage.back(), guard) ||
+            costs != original_costs) fail(graph.name + ": measured batch boundary/input changed");
+        std::printf("measure\t%s\t%s\t%u\t%s\t%u\t%llu\t%llu\t%u\t%u\t%zu\n",
+                    graph.name.c_str(), argv[2], workers, argv[5], sample,
+                    static_cast<unsigned long long>(wall),
+                    static_cast<unsigned long long>(cpu), repeats, actual_repeats, count);
+        std::fflush(stdout);
+        if (sample != 0 && (wall < 1000000 || cpu < 1000000))
+            fail(graph.name + ": measured interval below the selected 1 ms floor");
+    }
+    return 0;
+}
 Engine selected_engine(const std::string &name) {
     for (Engine engine : {Engine::whitefoot, Engine::tbb, Engine::phased, Engine::scalar,
                           Engine::runtime_loop, Engine::runtime_tree, Engine::runtime_tbb})
@@ -761,8 +879,9 @@ void native_graph(const Graph &graph, const std::uint64_t *costs,
     });
 }
 } // namespace
-extern "C" int wf__main_body(int, char **argv) {
+extern "C" int wf__main_body(int argc, char **argv) {
     try {
+        if (std::string(argv[1]) == "measure") return run_measurement(argc, argv);
         return run_matrix(selected_engine(argv[1]), selected_workers());
     }
     catch (const std::exception &error) {
@@ -772,6 +891,8 @@ extern "C" int wf__main_body(int, char **argv) {
 }
 int main(int argc, char **argv) {
     try {
+        if (argc >= 2 && std::string(argv[1]) == "measure")
+            return wf__floor_run(argc, argv);
         if (argc != 2)
             fail("usage: dag_fanin_{plain,trace} wf|tbb|wf-phased|wf-scalar|wf-runtime-loop|wf-runtime-tree|tbb-runtime");
         const Engine engine = selected_engine(argv[1]);

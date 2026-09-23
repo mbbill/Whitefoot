@@ -996,6 +996,150 @@ profiles cover distinct runtime exposure without timing every fixture.
 The conditional C-only arm separates a runtime invariant's cost from the
 compiler bridge's benefit; neither is adopted on the other's evidence.
 
+### Cost qualification result: interval-floor stop
+
+The protocol was published at `b68f6777a0ef8c31a41da8a6a785ac6f67e644bb`
+before timing implementation. The selected null campaign stopped at its first
+measured batch because the fixed cheap W1 batch did not reach the published
+1-millisecond wall and CPU floor. This is inconclusive cost evidence, not a
+compiler/runtime regression or a passing null comparison. The initial stop
+branch called for withdrawing both the compiler bridge and DONE-first
+candidate. The separate prospective amendment below changes that disposition
+for this pre-comparison resolution defect; this stopped session remains a
+failed instrument qualification and is never relabelled as a passing run.
+
+The shared width-four source has SHA-256
+`d379b927cab342daf68645b4bb15ee0de88623e70c8589fdde33c72b0f3f6c71` and the
+host adapter `5f7946a58323f2073e30ee93b741d4f01968cb6bb325147c7147fa3cfdab6420`.
+Both compiler ledgers and emitted bodies contain the required four-member
+group, three acquire/publish/join/release sequences and one inline call.
+Every prior non-main function matches its own frozen scheduling arm after
+explicit generated-symbol renaming: 51 definitions for the original main
+module and 52 for the final scheduling module. Against the full adjacency
+source checkpoint, all 85 non-main definitions also correspond. Between
+the new B/C modules, 91 corresponding functions match after naming adjustment;
+only `wf_dag_n` changes and C adds its one bridge thunk. The wide bodies
+match after thunk renaming. Main/its sequential clone add only the control's
+reachability call. The added entry grows the original main raw module from
+332,996 to 347,259 bytes; C is 349,541 bytes. This common module/layout change
+is retained as a comparison limitation rather than hidden as old input
+identity. Raw B/C LLVM hashes are
+`413d5e72f8f02237745a725a89d575f04bc0b048ecf092e0a1b5e9ea7f2c9505` and
+`52072dca4ef8c9913d776b6929a7011caea3d014c919ee26ee4d158f0244b149`.
+
+Native construction reused the twelve frozen ordinary runtime objects in
+each arm; eleven are byte-identical and only the previously qualified
+scheduler-core object differs. One shared timing-probe object, SHA-256
+`8be905d703287e3733b2af23a61d271ea9992e0293371f18ee28e7a00c63d248`, enters
+both plain images. The probe source has SHA-256
+`f943e3175342ef17305f40db11584a35970c3c957ada2258112b7effbe3ef84f`, the fixed
+driver `fb11d480c018fba6a79b39b740645fdd682e3a3dcbce13c6607b6373ae7bb570`.
+The baseline image is
+`3bfdab9aa4a1b9fb4f1cf043c4c71faaa5940f3a35d5eb007651716e7f7b2f64` and the
+combined candidate image
+`11df4a3dfa199929712a02685cc3173f25d9388031a269e90f374fa6d285e839`.
+All executable-input hashes remained unchanged through the stop. Synthetic
+instrument checks passed for complete identical data, missing/duplicate
+samples, unknown fixtures, wrong batch counts, short intervals, independent
+CPU direction counting and exact benefit/protection boundaries.
+
+Source emission command/guard costs were 0.54/0.63 seconds for B and
+0.53/0.54 seconds for C. Native construction costs were 2.26/2.29 and
+0.91/0.98 seconds, respectively. The first launcher setup could not read
+`hw.logicalcpu` in the sandbox and stopped before starting any WF process,
+guarded correctness phase or sample. Its refusal log is retained. A permitted
+read-only inventory reported eight logical CPUs; the coordinator treated
+the still-unstarted preflight as setup continuation, without waiving the
+CPU requirement or repeating a workload. The four initial plain B/C W1/W4
+correctness matrices then passed once each, with 117 cases, 964 task rows and
+the existing output-corruption controls. Their one execution phase cost
+0.86 seconds command time, 0.88 seconds including its guard.
+
+The null used the exact baseline path/image for both labels. Its first
+process was baseline-labelled N0/W1, pass 0, with 65,536 calls per batch.
+The checked warmup returned 338,000 ns wall and 334,000 ns CPU. Sample 1
+returned 333,000 ns wall and 331,000 ns CPU, with correct final values,
+65,536 evaluations per task, intact canaries and unchanged inputs. The probe
+printed that raw row and immediately exited 2 for the interval-floor breach;
+the guard returned 2 after 0.02 seconds command time and 0.11 seconds total.
+There was one null process, one warmup and one measured row, not a complete
+paired cell. No other null process, doubled-work control, B/C comparison,
+runtime-only construction or B/R comparison ran. Therefore no paired ratio,
+adverse-cell count or speedup is derived from the partial samples.
+
+The separately hosted [formal comparison of the published production
+revision](https://github.com/mbbill/Whitefoot/actions/runs/35855818399) passed
+its identical-image and compiler comparisons, reporting zero formal suspects
+and zero CPU reports. That rule is weaker than this selected research rule:
+its stencil W4 null ratio was 1.091467, permitted by the formal asymmetric
+criterion, and its stencil W1 comparison ratio was 0.955140 with only three
+of five adverse wall pairs. Those observations and the passing hosted
+correctness groups do not waive this trial's symmetric null, individual-cell
+protection, CPU or interval requirements.
+
+The [retained evidence stream](../../experiments/compute-bench/dag-fanin-2026-09-23.tsv)
+preserves its prior 1,080-line prefix, SHA-256
+`a9575af3af5ac56c004d8f6c0f29a0b56870afe208d4e6a50862e253a5a5a194`, before
+the cost append. Full commands, construction manifests, correctness stdout,
+the setup refusal and partial null logs form the `cost-qualification/`
+artifact session; the PR records its machine-local locator.
+The partial null raw file has SHA-256
+`da2fec0ab7ae79233806eb59e82f206c30959054f9c874392f152d234aa8ced9`.
+
+### Prospective amendment: one interval-resolution correction
+
+The stopped campaign contains only one unpaired baseline measurement:
+333,000 ns for 65,536 cheap N0/W1 calls, approximately 5.081 ns per call.
+No null pair, doubled-work control or candidate cost was observed. The
+1-millisecond floor correctly refused that batch, but the guessed batch size
+does not establish whether either implementation is beneficial or adverse.
+The unpaired sample supplies a quantitative basis for correcting that
+instrument setting while leaving the candidate comparison unobserved. The
+revised disposition selects one additional bounded campaign to obtain the
+planned cost evidence, replacing the initial withdrawal disposition only for
+this stopped pre-comparison session. The original raw rows, refusal, hashes
+and stop remain separate; the original protocol did not qualify adoption.
+
+Change exactly the cheap batching: wholly cheap W1 cells use 1,048,576 calls
+per batch and wholly cheap W4 cells use 16,384. Costly cells remain at 32.
+The W1 multiplier is sixteen; scaling the sole observed interval by that
+factor gives 5.328 milliseconds, providing resolution headroom above the
+unchanged floor without claiming that later intervals must match it. The W4
+multiplier is four, selected before any W4 timing, to add headroom while
+limiting the extra publication/join/thread workload. Both arms of each cell
+use identical new counts. The per-call source program, graph, task costs,
+seed, runtime protocol and reused output-buffer contract are unchanged.
+Only the number of complete calls in a batch and the matching host counter
+expectation change. This increases total measured work and may lengthen
+phases; it adds no fixture, scheduling rule or work-hiding subtraction.
+
+Keep the 1-millisecond wall and CPU floor, all forty cells, five passes,
+one warmup plus five samples, pairing/alternation, per-metric directions,
+identical-image null, both doubled-work controls, exact benefit/protection
+ratios, conditional runtime-only arm, shared guard, jobs-two construction
+limit and every 30-second phase cap. Reuse the frozen WF/LLVM/runtime inputs;
+reconstruct the common timing probe and native images with recorded new
+identities. Keep all revised-campaign data under a distinct session identity;
+never combine it with the stopped session or report old-protocol success.
+No measurement starts before this amendment is published.
+
+There is exactly one resolution correction. Any interval, correctness,
+timeout, null or doubled-work-control issue in the revised campaign ends all
+cost work with the original withdrawal consequence for both candidates; no
+further instrument change, larger batch, omitted cell or favourable rerun is
+allowed. A complete valid combined-arm comparison still follows the original
+numeric disposition: it must meet the A/D benefit and every protection
+criterion, or the compiler bridge is withdrawn and only the preselected
+once-only runtime comparison may qualify DONE-first independently. This is
+an explicitly amended experiment, not a successful continuation of the old
+control.
+
+**Design suitability.** The correction addresses measurement resolution
+without changing compiler or scheduler design. Its extra work is explicit,
+the resource caps remain binding, and all cost-selection thresholds are
+unchanged. Further resolution or scheduling exploration is deferred beyond
+this one amended campaign.
+
 ## Runtime-adjacency all-predecessor probe
 
 This prospective source probe asks whether destination ownership can execute

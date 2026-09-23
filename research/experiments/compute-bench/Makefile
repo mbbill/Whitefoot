@@ -431,6 +431,7 @@ LINK_LIBS := -L$(DEPS)/lib -Wl,-rpath,$(DEPS)/lib -ltbb \
 
 .PHONY: all compiler deps build images verify compare programs-check verdict array-reference-build \
         dag-fanin-emit dag-fanin-build dag-fanin-build-inputs dag-fanin-run \
+        dag-fanin-cost-check dag-fanin-cost-run \
         verdict-test module-symbols-test baseline-entry-test baseline-check clean clean-deps FORCE
 all: build
 
@@ -468,6 +469,7 @@ DAG_SOURCE := $(ROOT)/research/investigations/compute-model/dag-fanin.wf
 DAG_VARIANT ?= default
 DAG_EMIT_FLAGS ?= --par
 DAG_PREFIX := $(BUILD)/dag_fanin_$(DAG_VARIANT)
+DAG_PROBE_OBJECT ?= $(DAG_PREFIX)_probe.o
 DAG_TBB_PREFIX ?= $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-compute-bench/deps
 DAG_TBB_LIBRARY := $(DAG_TBB_PREFIX)/lib/$(if $(filter Darwin,$(shell uname -s)),libtbb.dylib,libtbb.so)
 DAG_NATIVE_FLAGS := -std=c11 -pthread -O2 -Wno-override-module
@@ -498,15 +500,19 @@ dag-fanin-build-inputs:
 
 # Reuse the ordinary library recipes with ordinary CLI flags. In particular,
 # none of compute-bench's historical alignment/vectorization controls reaches
-# this untimed qualification. Use a dedicated WORK directory.
+# this qualification. Use a dedicated WORK directory. Cost arms name the same
+# DAG_PROBE_OBJECT so only one timing-probe object enters their images.
+$(DAG_PROBE_OBJECT): dag_fanin_probe.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(DAG_CXX_FLAGS) -isystem $(DAG_TBB_PREFIX)/include -c $< -o $@
+
 dag-fanin-build: WF_FLAGS := $(DAG_NATIVE_FLAGS)
-dag-fanin-build: dag-fanin-build-inputs $(RUNTIME_OBJS)
-	$(CXX) $(DAG_CXX_FLAGS) -isystem $(DAG_TBB_PREFIX)/include -c dag_fanin_probe.cpp -o $(DAG_PREFIX)_probe.o
+dag-fanin-build: dag-fanin-build-inputs $(RUNTIME_OBJS) $(DAG_PROBE_OBJECT)
 	$(CC) $(DAG_NATIVE_FLAGS) -c $(DAG_PREFIX)_plain.ll -o $(DAG_PREFIX)_plain.o
 	$(CC) $(DAG_NATIVE_FLAGS) -c $(DAG_PREFIX)_trace.ll -o $(DAG_PREFIX)_trace.o
-	$(CXX) -pthread -O2 $(DAG_PREFIX)_plain.o $(DAG_PREFIX)_probe.o $(RUNTIME_OBJS) \
+	$(CXX) -pthread -O2 $(DAG_PREFIX)_plain.o $(DAG_PROBE_OBJECT) $(RUNTIME_OBJS) \
 	    -L$(DAG_TBB_PREFIX)/lib -Wl,-rpath,$(DAG_TBB_PREFIX)/lib -ltbb -lm -o $(DAG_PREFIX)_plain
-	$(CXX) -pthread -O2 $(DAG_PREFIX)_trace.o $(DAG_PREFIX)_probe.o $(RUNTIME_OBJS) \
+	$(CXX) -pthread -O2 $(DAG_PREFIX)_trace.o $(DAG_PROBE_OBJECT) $(RUNTIME_OBJS) \
 	    -L$(DAG_TBB_PREFIX)/lib -Wl,-rpath,$(DAG_TBB_PREFIX)/lib -ltbb -lm -o $(DAG_PREFIX)_trace
 	@$(call assert-real-runtime,$(DAG_PREFIX)_plain)
 	@$(call require-strong,$(DAG_PREFIX)_plain,wf__floor_run)
@@ -515,7 +521,7 @@ dag-fanin-build: dag-fanin-build-inputs $(RUNTIME_OBJS)
 	@$(call require-strong,$(DAG_PREFIX)_trace,wf__floor_run)
 	@$(call require-strong,$(DAG_PREFIX)_trace,wf__par_acquire_lane)
 	$(SHA256) dag_fanin_probe.cpp $(DAG_TBB_LIBRARY) $(DAG_TBB_PREFIX)/metadata.txt \
-	    $(DAG_PREFIX)_probe.o $(DAG_PREFIX)_plain.o $(DAG_PREFIX)_trace.o $(RUNTIME_OBJS) \
+	    $(DAG_PROBE_OBJECT) $(DAG_PREFIX)_plain.o $(DAG_PREFIX)_trace.o $(RUNTIME_OBJS) \
 	    $(DAG_PREFIX)_plain $(DAG_PREFIX)_trace > $(DAG_PREFIX).native.sha256
 	@printf '%s\n' 'native_flags=$(DAG_NATIVE_FLAGS)' 'probe_flags=$(DAG_CXX_FLAGS)' \
 	    'tbb_prefix=$(DAG_TBB_PREFIX)' > $(DAG_PREFIX).native-flags.txt
@@ -528,6 +534,15 @@ dag-fanin-run:
 	    *) echo 'dag-fanin: unknown engine' >&2; exit 1 ;; esac
 	@test "$(DAG_WORKERS)" = 1 -o "$(DAG_WORKERS)" = 4
 	WF_WORKERS=$(DAG_WORKERS) $(DAG_PREFIX)_$(DAG_IMAGE) $(DAG_ENGINE)
+
+# Explicit selected research protocol; never reached by any daily gate. The
+# driver guards each construction-free execution phase separately for 30 s.
+dag-fanin-cost-check:
+	perl dag_fanin_cost.pl self-test
+
+dag-fanin-cost-run:
+	perl dag_fanin_cost.pl $(DAG_COST_STAGE) "$(DAG_COST_BASE)" \
+	    "$(DAG_COST_CANDIDATE)" "$(DAG_COST_RESULTS)"
 
 # -------------------------------------------------------------------- deps --
 # `fetch` is the only network step; everything after it is offline. A

@@ -806,6 +806,25 @@ fn dag_runtime(form: u64, owners: u64, costs: &[u64], successors: &[u64], output
   return DagRunResult(status: 0_u64, rounds: owners, notices: notices);
 }
 
+fn dag_wide_four(costs: &[u64], output: &[TaskCell], seed: u64) -> result: unit reads(costs), writes(output) contract {
+  requires 4_u64 <= deref(costs).len;
+  requires 4_u64 <= deref(output).len;
+} {
+  let a_output = &deref(output)[0_u64..1_u64];
+  let b_output = &deref(output)[1_u64..2_u64];
+  let c_output = &deref(output)[2_u64..3_u64];
+  let d_output = &deref(output)[3_u64..4_u64];
+  let a_cost = deref(costs)[0_u64];
+  let b_cost = deref(costs)[1_u64];
+  let c_cost = deref(costs)[2_u64];
+  let d_cost = deref(costs)[3_u64];
+  let a = evaluate(output: a_output, id: 0_u64, steps: a_cost, seed: seed, predecessor_mix: 0_u64);
+  let b = evaluate(output: b_output, id: 1_u64, steps: b_cost, seed: seed, predecessor_mix: 0_u64);
+  let c = evaluate(output: c_output, id: 2_u64, steps: c_cost, seed: seed, predecessor_mix: 0_u64);
+  let d = evaluate(output: d_output, id: 3_u64, steps: d_cost, seed: seed, predecessor_mix: 0_u64);
+  return unit;
+}
+
 fn main() -> status: ExitStatus pure {
   let empty = TaskCell(value: 0_u64, evaluations: 0_u64);
   let costs = array_filled::<u64, 4>(value: 1_u64);
@@ -820,5 +839,6 @@ fn main() -> status: ExitStatus pure {
   let scalar = dag_spine_phased_scalar(count: 2_u64, leaf_steps: 1_u64, output: &spine_output[0_u64..4_u64], seed: 17_u64);
   let successors = array_filled::<u64, 8>(value: 4_u64);
   let runtime = dag_runtime(form: 0_u64, owners: 2_u64, costs: &costs[0_u64..4_u64], successors: &successors[0_u64..8_u64], output: &spine_output[0_u64..4_u64], seed: 17_u64);
+  let wide = dag_wide_four(costs: &costs[0_u64..4_u64], output: &n_output[0_u64..4_u64], seed: 17_u64);
   return exit_status(code: 0_u8);
 }

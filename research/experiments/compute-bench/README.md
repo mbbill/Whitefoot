@@ -67,6 +67,12 @@ They do not enter the framework scoreboard or daily correctness checks.
 The [retained qualification stream](dag-fanin-2026-09-23.tsv) records artifact
 identities, complete-matrix checks, selected passive observations and separate
 construction/execution phase costs. Those costs are not benchmark intervals.
+The separately selected cost mode and `dag_fanin_cost.pl` follow the
+[prospective bridge cost protocol](../../investigations/compute-model/DESIGN.md#prospective-cost-qualification-of-the-final-bridge).
+They use the same probe/ABI, with one added four-independent-call control;
+the frozen earlier correctness and overlap records retain their original
+matrix and input identities. The ordinary `dag-fanin-run` target remains an
+untimed correctness run.
 The probe compares every task output and exactly-once count with a serial
 Kahn oracle over the original graph edges, and checks input preservation,
 boundary canaries and each notification owner's received source mask/count.
@@ -74,6 +80,50 @@ Its oneTBB reference builds `continue_node` edges directly from the same
 original graph, independently of the WF decompositions and oracle schedule.
 Registering edges supplies the notification thresholds; no constructor
 predecessor count is added a second time.
+
+Cost construction uses the separately frozen main/final compiler emissions
+and ordinary runtime objects. Set `DAG_PROBE_OBJECT` to the same absolute
+scratch object path for both native builds. The probe's plain-only `measure`
+mode enters the ordinary WF floor without a oneTBB arena. Its fixed batch
+checks final values, cumulative task counts, input preservation and canaries
+outside timing; all measured intervals must reach the published 1 ms floor.
+`make dag-fanin-cost-check` runs only synthetic instrument checks, with no
+compiler build or WF timing. The explicit campaign entry is:
+
+```sh
+make -C research/experiments/compute-bench dag-fanin-cost-run \
+  DAG_COST_STAGE=verify DAG_COST_BASE=/absolute/main_plain \
+  DAG_COST_CANDIDATE=/absolute/final_plain DAG_COST_RESULTS=/absolute/fresh/verify
+```
+
+The driver guards each execution phase separately with a 30-second cap; do
+not wrap the entire multi-phase campaign in a second phase deadline. After
+`verify`, invoke `null` with the baseline image for both paths, then `slow`
+with that same image, then `bridge` with baseline/final paths, always using
+fresh result directories. The driver prints each phase status and retains
+process stdout/stderr, raw samples including labelled warmups, complete
+paired rows and the verdict. Stages are explicit so a failed control cannot
+silently become a candidate comparison. Follow the published stop rules:
+technical/control failure ends all cost work; no retry or batch adjustment
+is allowed. A complete but unqualified bridge comparison permits exactly
+one separately constructed main-LLVM/DONE-first image, `verify-runtime`
+(two candidate correctness processes), and `runtime` comparison. Its cost
+protection has no A/D speed requirement. This driver belongs only to this
+selected investigation and is not a general benchmark framework or a daily
+performance selection entry.
+
+The published bridge cost run stopped at the first null measured batch:
+65,536 cheap N0/W1 calls took 333,000 ns wall and 331,000 ns CPU, below the
+selected 1 ms interval floor. The four preceding correctness matrices passed
+117 cases and 964 task rows each. No null ratio, slowdown control, compiler
+comparison or conditional runtime-only comparison followed, and batching
+was not adjusted. Both candidates lack cost qualification from that session.
+A [separate prospective amendment](../../investigations/compute-model/DESIGN.md#prospective-amendment-one-interval-resolution-correction)
+permits exactly one corrected-resolution campaign before any paired or
+candidate result, with separate data and unchanged thresholds/stop controls.
+It does not relabel the stopped run as a pass. See the
+[cost result](../../investigations/compute-model/DESIGN.md#cost-qualification-result-interval-floor-stop)
+for exact identities, setup-access refusal, separate phase costs and limits.
 
 Use an existing compiler, a dedicated scratch work directory, and the existing
 oneTBB cache pinned by `deps.sh` (`3046c8b0c29df995980003ea24f4d78c80ec0c8d`).
