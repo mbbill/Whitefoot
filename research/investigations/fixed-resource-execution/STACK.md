@@ -6,6 +6,9 @@ It uses the compiler at main `7127bcb6`; the earlier probes in [README.md](READM
 retain their original compiler identity. Total-work estimates are deferred:
 progress evidence is needed for completion, and depth/path evidence where
 stack composition needs it, but no aggregate execution-cost report is required.
+The whole topic is now deferred; the [resumption checkpoint](README.md#deferred-work-and-resumption)
+preserves how to continue from these findings. The implementation boundary below
+is a retained proposal, not currently scheduled work.
 
 ## Criteria before the probes
 

@@ -193,29 +193,6 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   attributed. Keep this item until those observations and the resulting
   measurement/detection tradeoff are explained.
 
-- **Recursive cleanup has no general bounded-stack lowering.** The current
-  emitter recursively calls release actions, so machine-stack use can grow
-  with owned value depth; its stack ledger reports the release cycle. The
-  [continuation models](../research/investigations/access-effects/cleanup-continuations/README.md)
-  demonstrate fixed-stack, nonallocating walks only for their selected layouts.
-  They establish neither an encoding for all WF types without extra object
-  fields nor its impossibility. The remaining layout question is how every
-  suspended aggregate, enum, array and window traversal records its
-  continuation. Preserve reverse binding order, declaration order within
-  aggregates, logical window order, and content-before-Box-free order.
-  The [post-tail-call study](../research/investigations/access-effects/cleanup-continuations/README.md#current-compiler-investigation-2026-09-22)
-  reproduces a 32-byte-per-level optimized release cycle on its arm64 host
-  after PR #75. A continuation-controller model separates quadratic root
-  rescanning from direct resumption with reserved state; it does not establish
-  a general object layout. This is a heap-using optimization opportunity, not
-  a prerequisite for the no-heap fixed-resource goal below: a proved bound on
-  depth and complete stack use is also an admissible resource strategy. Defer
-  general continuation lowering until a concrete permitted ownership depth
-  fails its stack budget or cleanup cost is the measured obstacle. Then derive
-  continuation storage per release state, comparing consumed-field reuse with
-  reservation without presuming spare bits or capacity. Close this item when
-  a general implementation and native regressions establish the required bound,
-  or an explicitly selected resource-proof strategy meets the consumer's budget.
 - **Box/window representation costs remain unqualified.** The current runtime-
   capacity Box is one pointer to one header-first allocation; `grow` uses
   allocation, memmove and free. A one-word owner, one allocation and header
@@ -345,57 +322,20 @@ Items the owner asked to be kept on this list during the redesign recorded in
 `design/language` on 2026-09-19. None of them is a decision; each names the
 condition under which it is taken up.
 
-- **Mutual tail transfers.** [FN-10](../spec/kernel-spec.md) admits direct
-  self calls through `return musttail f(...);`. Extending the guarantee to
-  a different function needs a matching tail-call ABI and target evidence;
-  the current parameter reassignment and entry jump cannot cross a function
-  boundary. Reopen when a real mutually recursive program needs that bound.
-- **Fixed-resource execution with proved completion.** The
-  [resource investigation](../research/investigations/fixed-resource-execution/README.md)
-  studies the no-heap goal: checked loop/recursion progress and peak
-  storage within an explicit entry, target and runtime contract. The stack
-  capacity is supplied in bytes before qualification; depth is only an input
-  to the byte calculation, never an independent acceptance limit. `program
-  no_heap;` supplies source allocation restrictions, but ordinary linked bodies,
-  startup and exit are not resource-closed by that declaration. `musttail`
-  supplies neither termination nor a complete stack bound. A bounded non-tail
-  recursive probe works today, while its nondecreasing control is also accepted.
-  The [implementation contract](../research/investigations/fixed-resource-execution/DESIGN.md)
-  proposes erased entry/header rank snapshots, ordinary ProofContext queries,
-  complete call/loop coverage and storage composition. The
-  [stack study](../research/investigations/fixed-resource-execution/STACK.md)
-  is the first selected item; its complete acyclic target inventory need not
-  wait for rank syntax. The later progress consumer must detect unchanged actuals,
-  reset-before-decrement, missing backedges and nonterminating callees inside
-  counted loops, including concrete function-kind actuals. The existing INV-1
-  probes establish reusable arithmetic checks, not implemented termination.
-  A fixed 4 KiB stack adapter runs the recursive fixture and its particular
-  linked path was inspected, but general source/machine correspondence and
-  complete native closure remain unqualified. The diagnostic stack parser
-  drops unmeasured targets and malformed rows and uses saturating sums. Its
-  raw frame numbers can omit red-zone storage or entry-alignment-dependent
-  realignment even with a `static` qualifier; ordinary generated WF code can
-  also call unaccounted `bzero` and stack-probe helpers. Thus
-  qualification needs typed missing-evidence outcomes, all frame/call/region
-  coverage and the analyzed objects actually linked. Validate with unknown
-  callees, dynamic frames, new unmapped cycles, insufficient budgets and changed
-  images before claiming a deployment guarantee. Include an oversized single
-  frame, many small frames that fit, the exact budget boundary, and changed
-  frames under an unchanged source depth proof. Validate report numbers against
-  below-SP accesses and every ABI-admitted entry alignment; preserve unresolved
-  direct/indirect calls and unknown stack geometry. Updating the diagnostic
-  ledger and implementing complete stack qualification remain open compiler
-  tasks, with these probes as the admission evidence. Numeric composition must report an upper
-  bound that cannot certify the request, not an actual resource lower bound.
-  Whole-program work estimates and cost-budget reports are deferred until a
-  concrete execution-cost budget needs them; retain the earlier model as
-  research evidence, not an implementation requirement. Tighter storage-path
-  estimates reopen when conservative composition prevents a real kernel from
-  fitting a supplied memory budget.
-  Wider/lexicographic ranks, symbolic/amortized costs, hardware deadlines,
-  asynchronous or parallel contexts and service-response contracts remain
-  unqualified; reopen each when a concrete consumer needs that extension.
-  The atomic in-place update callable's no-failure-exit contract is unchanged.
+- **Fixed-resource execution with proved completion — deferred.** Resume from
+  the [research checkpoint](../research/investigations/fixed-resource-execution/README.md#deferred-work-and-resumption),
+  which preserves the stack, recursion, loop, allocation/runtime and cleanup
+  findings, proposals, probes and remaining validation. The goal is no heap,
+  proved completion and peak storage within supplied byte capacities; a depth
+  cap or `program no_heap;` alone does not establish it. Automatic qualification
+  is unimplemented, the diagnostic stack ledger has coverage/geometry gaps,
+  and general recursive release can still grow with value depth. Work is
+  deferred until this topic is explicitly resumed. Start by rechecking the
+  recorded compiler/target assumptions, then the complete acyclic stack-byte
+  inventory; preserve unknown-call/alignment controls and exact budget-boundary
+  cases. Progress proofs and full resource closure follow separately. The
+  checkpoint also retains the consumer conditions for mutual tail transfers,
+  general cleanup lowering and total-work estimation; none is scheduled now.
 - **Facts a contract can carry (after PR 70 merges; owner, 2026-09-20).**
   Three additive widenings, taken up together, each measured:
   (1) Affine `ensures`. A `requires` may already be an affine relation and

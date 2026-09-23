@@ -1,8 +1,9 @@
 # Implementation contract for bounded execution
 
-This proposal makes the [resource objective](README.md) concrete enough to
-implement. It is not the active specification or an implemented compiler
-capability. Its first consumer is a sequential no-heap calculation with
+This deferred proposal makes the [resource objective](README.md) concrete enough
+to implement when the topic is resumed; the [checkpoint](README.md#deferred-work-and-resumption)
+owns that starting point. It is not the active specification or an implemented
+compiler capability. Its first consumer is a sequential no-heap calculation with
 counted loops or ranked direct recursion, including `bounded-recursion.wf`.
 An ordinary ranked loop uses the same progress rule. Mutual recursive
 components, parallel execution, asynchronous entry and blocking operations
@@ -13,9 +14,9 @@ source checkers: source progress, peak-storage composition, and target
 resource qualification. A passed source check, a resource qualification and a
 successful native run remain distinct results.
 
-The first selected research item is [actual stack bytes](STACK.md). Whole-program
+The first resumption item is [actual stack bytes](STACK.md). Whole-program
 work estimation is deferred until a concrete execution-cost budget needs it.
-Termination and the path/depth bounds needed for storage remain in scope;
+Termination and the path/depth bounds needed for storage remain in the proposal;
 they do not require an aggregate step-count report.
 
 ## Supplied stack budget
@@ -277,8 +278,8 @@ resource qualification, not a guessed limit. A preserved recursive boundary
 can use `noinline` as an implementation control, but that attribute alone
 does not prove resource correspondence or bound optimizer-created work.
 
-Start source implementation without promising a certified arbitrary `-O2`
-image. The next target implementation must first make that correspondence
+When source implementation resumes, it must not promise a certified arbitrary
+`-O2` image. The target implementation must make any required correspondence
 observable and testable; ordinary optimized execution remains the comparison.
 The source work report is never relabeled as a machine-instruction budget.
 This separates an implementable source consumer from an unsupported whole
@@ -286,8 +287,8 @@ toolchain certification claim.
 
 ## Implementation admission and evidence
 
-The [stack investigation](STACK.md) comes first: it can validate a complete
-acyclic machine call closure without waiting for recursive progress syntax.
+On resumption, the [stack investigation](STACK.md) comes first: it can validate
+a complete acyclic machine call closure without waiting for recursive progress syntax.
 An unresolved recursive component has no complete stack bound yet; it is not
 given a depth chosen from the available space. Stack fit and completion remain
 separate results until both have evidence.
@@ -362,8 +363,8 @@ solver policy. [LLVM's function attributes](https://llvm.org/docs/LangRef.html#f
 define `noinline` as an inliner restriction, not a cost theorem; that is why
 target correspondence remains an explicit compiler responsibility.
 
-This document owns the proposed implementation contract until the selected
-rules and compiler decisions supersede it. Replace its proposals with links
+This document retains the proposed implementation contract during deferral,
+until the selected rules and compiler decisions supersede it. Replace its proposals with links
 to their owners as they land; retain only useful design evidence and rejected
 alternatives. Deferred precision and target capabilities are tracked in the
 maintained TODO, not inferred as current language rejections.

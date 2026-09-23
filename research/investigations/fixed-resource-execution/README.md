@@ -7,10 +7,75 @@ in advance; a recursion-depth bound is only intermediate evidence. The initial
 probes use main `f3cf41d4`, specification v0.62, and the compiler built for the
 [cleanup investigation](../access-effects/cleanup-continuations/README.md).
 The [implementation contract](DESIGN.md) proposes source rank clauses and
-an internal proof consumer. The selected next study is [stack bytes](STACK.md);
-whole-program work estimation is deferred until a concrete budget needs it.
+an internal proof consumer; the latest completed study covers [stack bytes](STACK.md).
+The whole topic is deferred. The checkpoint below preserves where to resume;
+whole-program work estimation additionally needs a concrete cost-budget consumer.
 The active specification and compiler are unchanged by this investigation;
 three pending design amendments keep those choices outside the live tree.
+
+## Deferred work and resumption
+
+The single fixed-resource topic in [TODO](../../../docs/todo.md) is the entry
+point for future work. This investigation retains the unfinished design and
+its reproducible evidence; no implementation work is currently selected.
+The goal remains normal completion without heap acquisition within supplied
+storage capacities. Stack capacity is in bytes, not a chosen activation cap.
+
+| Area | Evidence retained | Still missing |
+|---|---|---|
+| Stack frames and peak paths | [STACK.md](STACK.md): static-report undercounts, entry alignment, generated helpers, and manually inspected 4 KiB invocations | Automatic complete machine inventory, instruction accounting and actual linked-image qualification |
+| Recursive completion and depth | [Bounded recursion](bounded-recursion.wf), rank controls and [DESIGN.md](DESIGN.md) | Checked entry ranks, complete recursive-edge coverage and a valid mapping to optimized machine paths |
+| Loop completion | [Rank-obligation probes](rank-obligations.wf) and the proposed header snapshots | Every continuing backedge and nested/concrete callee covered; a counted outer loop alone is insufficient |
+| Other storage and heap exclusion | Source `program no_heap;` trials and the region/closure analysis below | Complete buffers, statics and runtime-state accounting, plus allocation evidence for every linked helper |
+| Entry and environment | A synchronous fixed-stack adapter and two inspected native entry paths | General native progress/closure evidence; blocking operations, concurrency, callbacks and interrupts need additional contracts |
+
+The stack probes use compiler main `7127bcb6`; the earlier source and cleanup
+probes use `f3cf41d4`. Their recorded outputs are dated evidence, not fresh
+measurements of a later main or another toolchain. Neither the local INV-1
+controls nor the successful fixed-stack runs implement a termination or
+resource checker. The active specification and the atomic update contract
+have not been amended by these proposals.
+
+When this topic is explicitly resumed:
+
+1. Read this checkpoint, [STACK.md](STACK.md) and [DESIGN.md](DESIGN.md), then
+   the affected current specification and design owners. Recheck the relevant
+   probes against the then-current compiler, target and native dependencies
+   before importing their observations into an implementation.
+2. Start with the proposed arm64 Darwin inventory for one synchronous entry
+   and a complete acyclic machine call graph. Account for below-SP accesses,
+   every admitted entry alignment, calls/tail edges and linked helpers;
+   unknown evidence stays a gap. Use the [target admission cases](DESIGN.md#implementation-admission-and-evidence),
+   including oversized frames, small fitting frames, exact byte thresholds,
+   missing callees, changed images and changed frames under the same depth proof.
+3. Add the source rank/coverage consumer and recursive byte composition, then
+   complete the no-heap/native/region boundary. Preserve reset-before-decrement,
+   missing-backedge and nonterminating-callee controls. Stack fit, termination
+   and full deployment qualification remain separate claims.
+
+Three unchanged proposals remain unresolved in the sole amendment directory:
+the [proof-boundary replacement](../../../design/amendments/resource-proof-boundary.md)
+for `language/checks-and-proofs`, the [progress proposal](../../../design/amendments/resource-progress.md)
+for `language/checks-and-proofs/resource-bounds`, and the
+[compiler consumer proposal](../../../design/amendments/resource-consumer.md)
+for `compiler/resource-bounds`. Deferral neither approves nor rejects them;
+reassess their grounds when resuming before requesting a tree ruling.
+
+Related work stays with this topic. [Recursive cleanup](../access-effects/cleanup-continuations/README.md)
+still has no general constant-stack lowering; its continuation-layout study
+reopens for a concrete heap-using ownership depth that misses its stack budget
+or a measured cleanup-cost obstacle. Validate release order, all continuation
+states, representation cost and native regressions, or establish a sufficient
+depth-dependent bound for that consumer. Mutual tail transfers reopen only
+for a real mutually recursive program: FN-10 currently covers direct self
+transfers, and a different callee needs a matching ABI and target evidence.
+Neither extension is a prerequisite for the first no-heap calculation.
+
+Whole-program work estimation remains deferred until a concrete execution-cost
+budget needs it. Tighter storage-path estimates reopen when a conservative
+bound prevents a real kernel from fitting. Wider ranks, symbolic/amortized
+costs, hardware deadlines and asynchronous/parallel/service contracts each
+need a concrete consumer and their own validation before extending the domain.
 
 ## Question and initial scope
 
@@ -227,8 +292,8 @@ no current rejection rule or compiler flag.
 
 ## Native probes, 2026-09-22
 
-The next implementation-readiness probes distinguish three unresolved choices.
-Their criteria are recorded before those probes run:
+The implementation-readiness probes in this dated study distinguished three
+unresolved choices. Their criteria were recorded before those probes ran:
 
 1. Submit the proposed local descent inequalities through ordinary INV-1,
    using explicit immutable copies only as an experiment stand-in for erased
@@ -422,7 +487,7 @@ activity are outside this component experiment. A complete deployment must
 account for its actual supplied regions and environment, not add section
 payloads and call that whole-process memory.
 
-The experiment narrows the next implementation: the existing checked body and
+The experiment narrowed the implementation proposal: the existing checked body and
 ABI can run inside a small explicit resource boundary, and current ProofContext
 can discharge the required local comparisons. The missing pieces are the
 erased snapshot/coverage consumer and general target qualification. The
@@ -522,7 +587,7 @@ later precision comparison rather than adding an inference engine now.
 control flow, loop bounds and cache/pipeline models. This study accordingly
 keeps a finite work bound distinct from a hardware deadline.
 
-## Design suitability and next discriminating experiment
+## Design suitability on resumption
 
 The closed compilation unit, concrete instantiation, checked contracts,
 fixed-capacity storage and erased finite proofs provide suitable foundations.
@@ -532,12 +597,12 @@ proof path would duplicate semantic responsibility. The main uncertainty is
 preserving and checking source progress/storage evidence through optimization and
 linking.
 
-The next target task is the complete stack inventory described in the
-[stack study](STACK.md). The later source rank/coverage consumer and storage
+On resumption, the first target task is the complete stack inventory described
+in the [stack study](STACK.md). The later source rank/coverage consumer and storage
 composition are specified in [DESIGN.md](DESIGN.md).
 An acyclic stack calculation can be implemented independently of rank syntax;
 recursive path bounds and progress coverage follow as separate proof inputs.
-The live tree still awaits the owner's ruling on the three amendments.
+The three amendments remain unresolved; deferral schedules no tree ruling.
 The first complete target milestone takes
 the supplied byte budget as an input and must distinguish one oversized frame
 from many small frames that fit, as well as the exact budget boundary. It also
@@ -550,9 +615,9 @@ General constant-stack cleanup is deferred as an optimization for heap-using
 programs; reopen it when a concrete ownership depth fails its stack budget or
 cleanup cost is the measured obstacle. Hardware timing, interrupts, parallelism
 and long-lived services each need a stated contract and consumer before
-extending the initial certificate. The maintained TODO owns these gaps and
-reopening conditions. No live design decision, source rule, ordinary runtime
-or acceptance result changes in this research.
+extending the initial certificate. The single maintained TODO topic points to
+the checkpoint and these reopening conditions. No live design decision, source
+rule, ordinary runtime or acceptance result changes in this research.
 
 The retained source probe serves the bounded-recursion comparison and belongs
 beside these results. Replace or remove it when maintained resource-proof

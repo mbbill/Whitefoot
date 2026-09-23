@@ -168,9 +168,10 @@ suffice for all its concrete continuation states.
 
 If this heap-using cleanup optimization is reopened, its next discriminating
 experiment is a **type-directed continuation layout calculation**, not another
-handwritten linked-list specialization. The current research priority is the
-fixed-resource proof path linked above; this layout calculation is not its
-prerequisite. Derive a
+handwritten linked-list specialization. The broader fixed-resource work is
+also deferred, with its [resumption checkpoint](../../fixed-resource-execution/README.md#deferred-work-and-resumption)
+retaining this related question. This layout calculation is not a prerequisite
+for its no-heap proof path. Derive a
 continuation state at each recursive release edge, list its still-live fields,
 parent link, resume identity and dynamic cursor, then show exactly where these
 fit. Begin with the existing tagged and tagless models, and challenge the
@@ -209,8 +210,8 @@ cleanup independent of value depth for heap-using programs without changing
 writer programs. It is deferred until a concrete stack budget or cleanup cost
 needs it. Proving a sufficient depth-dependent bound is also an admissible
 resource strategy; constant stack is not the larger goal. The remaining layout
-and cost questions stay in `docs/todo.md`; the research models do not change
-the current lowering decision.
+and cost questions are reached through the single fixed-resource TODO topic;
+the research models do not change the current lowering decision.
 
 `scope-drop.wf` serves the native stack reproduction; `continuation-cost.rs`
 serves the storage-versus-repeated-work comparison. They belong with these
