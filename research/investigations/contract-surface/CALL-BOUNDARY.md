@@ -455,3 +455,79 @@ This study proposes a source-language change, not its implementation. No
 active specification, released archive, compiler, test or conformance verdict
 is edited. Implementation-dependent guidance remains current until those
 rules change together in a subsequent implementation step on this PR.
+
+## Validation of this study
+
+The following checks ran on 2026-09-23 against the proposal at `3c5ea6a0`,
+using active-specification and compiler inputs from `9bed1c33`. They test
+the stated grammar and present-language boundaries, not a candidate compiler.
+
+### Grammar formation
+
+A temporary native Rust harness called
+`compiler/src/syntax/grammar/generator.rs::generate` on three specification
+copies. The baseline was unchanged. The mode-only copy replaced `param` with
+the proposed production, changed `rtype` to `type`, and removed `mode` while
+retaining mandatory named result bindings. The full candidate replaced the
+productions with those listed above and removed `result_binding`, `rtype`
+and `mode`. The other six grammar fences and all unaffected productions were
+identical to the baseline.
+
+To admit the candidate vocabulary and inventory into a temporary copy of the
+generator, the probe added `("results", "Results")` to `model::fixed_terminal`
+and changed `ebnf::productions`' fixed production-count assertion from 86 to
+the compared range 84 through 86. No FIRST, FOLLOW, predicate-overlap or
+SELECT algorithm changed. The count adaptation was necessary: an initial
+mode-only invocation stopped at that baseline inventory assertion before
+running the candidate's SELECT checks.
+
+| Input | Productions | Observed result |
+|---|---:|---|
+| Active v0.67 | 86 | Strong-LL(2) tables generated. |
+| Remove written value/result `own`; keep header names | 85 | Strong-LL(2) tables generated. |
+| Contract-local result aliases | 84 | Strong-LL(2) tables generated. |
+| Full candidate with a deliberately duplicated `type` arm in `param` | 84 | Rejected by GRAM-1: the two arms share the lookahead word `F32 Comma`. |
+
+Reproduce this check with a scratch copy of `generator.rs` and its
+`generator/{ebnf,model}.rs` modules, the two inventory adaptations above, and
+the exact grammar substitutions. A Rust driver can read each specification
+copy and call `generator::generate("candidate", &specification)`; compile
+with `rustc --edition=2024` and run both commands through the repository's
+`.github/run-check.pl` guard. The duplicate-arm control must panic at GRAM-1,
+not merely fail the production count. The temporary driver and generated
+tables are not a second maintained parser or a repository test dependency.
+
+This establishes the generated strong-LL(2) selection property under the
+proposed terminal inventory. It does not test candidate token classification,
+canonical rendering, diagnostic attribution, name resolution, semantic
+acceptance or runtime execution.
+
+### Current-language source controls
+
+The existing `whitefootc` built at `3738222a` was reused after verifying that
+`git diff 3738222a 9bed1c33 -- compiler spec` was empty. Each positive source
+was checked and lowered with `whitefootc --emit-llvm -o <scratch-output>`;
+negative controls required ordinary source rejection with the expected rule,
+not a compiler failure. The source batch also ran through the check guard.
+
+All six maintained source units linked by the complete-function comparisons
+passed: SHA-256, signed result bounds, routed two-result contracts, the formal
+result case, owning behavior, and the deque program with `lib/containers/deque.wf`.
+These are their current source spellings, not translated candidate programs.
+
+Eleven additional small current-language controls used the `difference`
+function from the named-operands comparison and a `Pair` struct with `left`
+and `right` u32 fields. Correctly labeled calls/constructions and same-typed
+value swaps under the same labels were all accepted (four cases). Calls with
+reordered, duplicate, missing, wrong, positional or extra arguments were
+rejected by GRAM-11 (six cases); reversed constructor labels were rejected by
+GRAM-8 (one case). These controls are reproduced by wrapping each operand
+list in a `main` that binds the result and returns `exit_status(code: 0_u8)`;
+all function headers use the active named-`own` result syntax. The 17 total
+probes confirm the present examples and label boundary, not candidate
+implementation correctness or runtime results.
+
+`git diff --check` and `make design-lint DESIGN_REVIEW_BASE=9bed1c33` also
+passed, including the 21 lint tests and the three pending amendments. No
+full `make check`, candidate semantic test or performance comparison was
+run for this research-only change.
