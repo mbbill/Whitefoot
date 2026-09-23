@@ -542,8 +542,13 @@ each is resolved by a discussion and a tree change.
   multi-result and resource APIs. A candidate must preserve explicit boundary
   types, unambiguous result references, useful mismatch diagnostics and one
   grammar-defined spelling, without site-dependent inference relief. The
-  benefit and final spelling are unverified; defer selection until the next
-  syntax-design discussion.
+  [Complete boundary comparisons](../research/investigations/contract-surface/CALL-BOUNDARY.md)
+  propose value types without `own`, contract-local result aliases and retained
+  operand labels. Settle that proposal, then implement and validate its grammar,
+  alias scopes, generic refinement, prelude declarations and unchanged ownership
+  behavior together. The proposed spelling remains unapproved and productivity
+  benefits are unmeasured; this group stays open until the selected rules and
+  their positive/negative conformance cases are implemented.
 - **Ownership transfer and reference-access forms.** Audit unnecessary
   owner-in/owner-out APIs now expressible with reference parameters and exact
   effect rows, the differing consumption spellings of calls, returns, matches
