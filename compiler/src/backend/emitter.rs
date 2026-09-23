@@ -2253,10 +2253,18 @@ pub(crate) fn llvm_type(
             element,
             capacity: Some(length),
         } => {
-            let element = llvm_type(
-                program,
-                program.element(element).ok_or(BackendFailure::InvalidIr)?,
-            )?;
+            // A zero-capacity window has no element representation. Keep
+            // the same byte tail as Array<T, 0>, so LLVM does not retain T's
+            // alignment beyond the header-only layout qualified by OP-9
+            // and STOR-6. A positive capacity of zero-sized T is distinct.
+            let element = if length == 0 {
+                "i8".to_owned()
+            } else {
+                llvm_type(
+                    program,
+                    program.element(element).ok_or(BackendFailure::InvalidIr)?,
+                )?
+            };
             Ok(match shape {
                 IrWindowShape::Slots => format!("{{ i64, [{length} x {element}] }}"),
                 IrWindowShape::Ring => format!("{{ i64, i64, [{length} x {element}] }}"),

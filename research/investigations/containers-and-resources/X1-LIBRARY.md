@@ -1092,3 +1092,67 @@ container representation, Ring range admission, or host/runtime protocols to
 obtain this result. A material compiler choice is proposed beside the design
 tree before its completion review; implementation can proceed while that
 proposal awaits the owner's ruling.
+
+### Representation premise and target contract
+
+Inspection found a representation mismatch before extending optional facts.
+The target calculator gives `Slots<T, 0>` its eight-byte descriptor with
+eight-byte alignment. Emission instead retained `{ i64, [0 x T] }`.
+LLVM arrays keep their element's ABI alignment even at length zero
+([DataLayout implementation](https://llvm.org/doxygen/DataLayout_8cpp_source.html)).
+For the ordinary opaque `OutputStream` type, whose emitted representation is
+16-byte aligned, that LLVM aggregate has size and alignment 16. An outer
+runtime Ring of such values is therefore checked with header/stride 24/8
+while its emitted allocation arithmetic uses 32/16. This is a mismatch in
+qualification; the allocator uses the emitted size, so these calculations
+alone do not demonstrate an observed undersized allocation.
+
+OP-9's zero repetitions contain no element layout. Raising the checked size
+and alignment would force the nested allocation to fail the unchanged
+language ceiling. The selected repair instead extends the existing
+`Array<T, 0>` emission convention to the empty payload of constant-capacity
+Slots and Ring: `[0 x i8]`, retaining their length/head words. Nonzero-capacity
+zero-size elements and runtime-capacity typed tails keep their distinct
+representations. A maintained regression must compare the complete nested
+object and actual emitted allocation against the checked byte boundary,
+including Array conversion and cleanup, rather than only repeat the
+checker's preexisting size result.
+
+Once representation and qualification agree, let `H` be the actual padded
+tail-field offset, `S` the actual allocation stride of that GEP's element,
+`C` the capacity, and `E` the complete window extent. On the currently
+supported targets the pointer index is i64 and qualification establishes
+`E <= M = 2^63 - 1`. For a positive-stride payload and an admissible physical
+offset `p`, including a one-past pointer when permitted:
+
+```text
+0 <= p <= C <= floor((M - H) / S)
+0 <= H <= H + p*S <= E <= M
+```
+
+The GEP's successive offsets are zero, the nonnegative header offset, and
+the nonnegative scaled physical index. Each fits both signed and unsigned
+index arithmetic. For a nested window at parent offset `q`, complete-parent
+qualification also establishes `q + E <= A`, the parent allocation extent.
+Every intermediate pointer remains in that same allocation. LLVM allocations
+cannot cross the unsigned address-space boundary, including their one-past
+pointer ([allocated-object contract](https://llvm.org/docs/LangRef.html#allocated-objects)).
+These facts establish all four `nuw` requirements, not only index scaling.
+For zero stride, ordinary emission already uses physical address operand
+zero; no bound on the potentially huge logical capacity is needed. For an
+erased constant-capacity-zero payload, the actual tail type is i8 and its
+only admissible boundary offset is zero. Ring wrap operations retain their
+own wrapping semantics and receive no new arithmetic assertion from this
+argument.
+
+Two target expressions deserve comparison before selection: direct GEP `nuw`
+with a supported-spelling probe and plain-`inbounds` fallback, or an
+`llvm.assume` that the actual normalized address index is signed nonnegative
+beside the existing `inbounds` projection. The latter states a subset of the
+same proved domain with portable syntax; whether optimization recovers the
+same benefit is an empirical question. GEP `nuw` first appears in
+[LLVM 19](https://releases.llvm.org/19.1.0/docs/ReleaseNotes.html#changes-to-the-llvm-ir);
+[LLVM 18](https://releases.llvm.org/18.1.8/docs/LangRef.html#getelementptr-instruction)
+already defines the nonnegative inbounds implication and the assumption
+intrinsic. Use the existing four-position probe only to discriminate these
+expressions, then validate the selected compiler path and full matrix.

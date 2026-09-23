@@ -31,7 +31,10 @@
 //! The remaining cases keep their subject and were retargeted onto the [OP-13]
 //! construction functions over the one heap [STOR-8].
 
-use crate::backend::target::{TargetLayout, TargetLayoutFailure, TargetObject, validate_program};
+use crate::backend::target::{
+    TargetLayout, TargetLayoutFailure, TargetObject, TargetStorageType, validate_program,
+    validate_static_storage,
+};
 
 use super::system::with_ir;
 use super::*;
@@ -186,6 +189,110 @@ fn zero_sized_takes_update_slots_and_wrapped_ring_boundaries_once() {
         assert!(output.stdout.is_empty(), "{output:?}");
         assert!(output.stderr.is_empty(), "{output:?}");
     }
+}
+
+/// Zero capacity removes the element's representation, including alignment.
+/// Otherwise an empty high-alignment window silently enlarges its parent and
+/// the emitted runtime allocation beyond the qualified byte ceiling. The
+/// native observer checks the emitted size independently of the Rust layout.
+#[test]
+fn zero_capacity_windows_keep_header_layout_inside_nonempty_storage() {
+    let source = br#"struct EmptyWindows {
+  before: u8;
+  slots: Slots<OutputStream, 0>;
+  ring: Ring<OutputStream, 0>;
+  after: u64;
+}
+
+fn empty_length(values: &[OutputStream]) -> result: own u64 reads(values) {
+  return deref(values).len;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let initial_slots = slots_new::<OutputStream, 0>();
+  let initial_ring = ring_new::<OutputStream, 0>();
+  let value = EmptyWindows(before: 17_u8, slots: move initial_slots, ring: move initial_ring, after: 29_u64);
+  let storage = box_ring_new::<EmptyWindows>(capacity: 1_u64);
+  place_back(window: &storage.inner, value: move value);
+  let recovered = take_front(window: &storage.inner);
+  let EmptyWindows(before: before, slots: slots, ring: ring, after: after) = move recovered;
+  if before != 17_u8 {
+    return exit_status(code: 1_u8);
+  }
+  if after != 29_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if ring.head != 0_u64 {
+    return exit_status(code: 3_u8);
+  }
+  let length = empty_length(values: &slots[0_u64..0_u64]);
+  if length != 0_u64 {
+    return exit_status(code: 4_u8);
+  }
+  let array = slots_into_array::<OutputStream, 0>(values: move slots);
+  let restored = slots_from_array::<OutputStream, 0>(values: move array);
+  if restored.len != 0_u64 {
+    return exit_status(code: 5_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let module = with_ir(source, |program| {
+        let host = TargetLayout::host().expect("supported target");
+        let owner = program
+            .nominals()
+            .iter()
+            .find(|nominal| nominal.name() == "EmptyWindows")
+            .expect("the nested source owner");
+        let owner_layout = validate_static_storage(
+            host,
+            program,
+            &TargetStorageType::source(crate::IrType::Nominal(owner.id())),
+        )
+        .expect("the complete parent fits");
+        assert_eq!((owner_layout.size(), owner_layout.align()), (40, 8));
+        let crate::IrNominalKind::Struct { fields } = owner.kind() else {
+            panic!("the owner is a source struct");
+        };
+        for (field, size) in [(1, 8), (2, 16)] {
+            let layout = validate_static_storage(
+                host,
+                program,
+                &TargetStorageType::source(fields[field].ty()),
+            )
+            .expect("the zero-capacity child fits");
+            assert_eq!((layout.size(), layout.align()), (size, 8));
+        }
+        // One Ring slot is the complete 40-byte parent after a 24-byte
+        // header, with no alignment inherited from the absent handles.
+        let exact = host.with_runtime_allocation_limits_for_test(64, 8);
+        assert_eq!(validate_program(exact, program), Ok(()));
+        let short = host.with_runtime_allocation_limits_for_test(63, 8);
+        assert_eq!(
+            validate_program(short, program),
+            Err(TargetLayoutFailure::Unrepresentable(
+                TargetObject::RuntimeSizedAllocation
+            ))
+        );
+        crate::backend::emitter::emit_llvm_with_layout(program, exact)
+            .expect("the exact allocation boundary emits")
+            .into_string()
+    });
+    let observed = super::owned_places::retain_calls(&module)
+        .replace("@malloc(", "@wf_observe_window_allocate(");
+    let observer = r#"
+#include <stdint.h>
+#include <stdlib.h>
+
+void *wf_observe_window_allocate(uint64_t size) {
+    if (size != 64) exit(6);
+    return malloc((size_t)size);
+}
+"#;
+    let output = super::compile_link_and_run(&observed, Some(observer), &[]);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
 }
 
 /// OP-9 admits zero even when the mathematical language ceiling exceeds
