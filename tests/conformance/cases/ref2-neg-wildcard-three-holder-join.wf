@@ -3,7 +3,7 @@ struct Node {
   next: Option<Box<Node>>;
 }
 
-fn inspect(first: &Node, second: &Node) -> result: own u64 reads(first), writes(second) {
+fn inspect(first: &Node, second: &Node) -> result: u64 reads(first), writes(second) {
   let a = first;
   let b = first;
   let c = second;
@@ -22,6 +22,6 @@ fn inspect(first: &Node, second: &Node) -> result: own u64 reads(first), writes(
   return deref(a).value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

@@ -2,13 +2,13 @@ struct Slot {
   value: i32;
 }
 
-fn bump(target: &Slot) -> result: own unit writes(target.value) {
+fn bump(target: &Slot) -> result: unit writes(target.value) {
   doc "The declared write on the referenced field reaches the caller's own storage.";
   set deref(target).value = 42_i32;
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A write declared on a reference parameter updates the caller's actual storage and the value remains after the call returns.";
   let a = Slot(value: 0_i32);
   bump(target: &a);

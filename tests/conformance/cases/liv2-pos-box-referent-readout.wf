@@ -7,36 +7,36 @@ struct Pair {
   right: Payload;
 }
 
-fn refresh(old: own Payload) -> result: own Payload pure {
+fn refresh(old: Payload) -> result: Payload pure {
   doc "Takes the old value by value and hands one of the same type back, with no failure exit.";
   return Payload(value: 7_u64);
 }
 
-fn direct(owner: own Box<Payload>) -> result: own Box<Payload> pure {
+fn direct(owner: Box<Payload>) -> result: Box<Payload> pure {
   doc "The atomic update at Box content reached from a local binding.";
   set owner.inner = refresh(old: owner.inner);
   return move owner;
 }
 
-fn borrowed(owner: &Box<Payload>) -> result: own unit writes(owner) {
+fn borrowed(owner: &Box<Payload>) -> result: unit writes(owner) {
   doc "The atomic update at Box content reached through a reference parameter whose row writes that path.";
   set deref(owner).inner = refresh(old: deref(owner).inner);
   return unit;
 }
 
-fn nested(owner: own Box<Box<Payload>>) -> result: own Box<Box<Payload>> pure {
+fn nested(owner: Box<Box<Payload>>) -> result: Box<Box<Payload>> pure {
   doc "The atomic update two cells down.";
   set owner.inner.inner = refresh(old: owner.inner.inner);
   return move owner;
 }
 
-fn field(owner: own Box<Pair>) -> result: own Box<Pair> pure {
+fn field(owner: Box<Pair>) -> result: Box<Pair> pure {
   doc "The atomic update at one field of the cell's content, which leaves the other field and the root alone.";
   set owner.inner.left = refresh(old: owner.inner.left);
   return move owner;
 }
 
-fn append_one(storage: own Box<Slots<u64, 16>>, value: own u64) -> result: own Box<Slots<u64, 16>> pure contract {
+fn append_one(storage: Box<Slots<u64, 16>>, value: u64) -> result: Box<Slots<u64, 16>> pure contract {
   requires storage.inner.len < storage.inner.cap;
 } {
   doc "An ordinary window operation through the cell's content, which is not an atomic update and needs none.";
@@ -44,7 +44,7 @@ fn append_one(storage: own Box<Slots<u64, 16>>, value: own u64) -> result: own B
   return move storage;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "OP-12: the atomic in-place update at each Box place shape. The old value enters the callee by value, the callee's result is committed, and no program point lies between, so the referent owns exactly one valid value everywhere and the cell is never left with a hole. The retired replace statement covered these four shapes; OP-12 and swap are what survive it.";
   return exit_status(code: 0_u8);
 }

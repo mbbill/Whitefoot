@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Allocation out of a pool is total in the source, so a request larger than cap - len is refused by the writer's own branch and never by a failure value. The case observes both: the arm the program takes, and the pool's cursor after it, which is exactly the cursor it held at the branch.";
   let pool = slots_new::<u64, 4>();
   let spare = pool.cap - pool.len;

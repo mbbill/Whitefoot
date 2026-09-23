@@ -3,7 +3,7 @@ nodrop struct Chunk {
   spare: u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "PROV-6: `let N(f1: b1, ..., fk: bk) = move v;` consumes a value of nominal struct type whole and binds every declared field in declaration order to a fresh IDENT at that field's declared type and own mode. No residual of the consumed value survives it, so it is the second route out of a scope for a linear value, and its binders are ordinary own bindings of the enclosing block.";
   let page = box_slots_new::<u8>(capacity: 4_u64);
   let chunk = Chunk(page: move page, spare: 7_u8);

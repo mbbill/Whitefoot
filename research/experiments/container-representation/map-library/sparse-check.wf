@@ -1,0 +1,629 @@
+struct SparseHashEnv {
+  hostile: Bool;
+}
+
+struct SparseTestSeen {
+  failures: u64;
+  consumed: u64;
+  key_sum: u64;
+  value_sum: u64;
+  visits: u64;
+  observed: u64;
+}
+
+nodrop struct SparseTicket {
+  id: u64;
+}
+
+fn sparse_test_fail(seen: &SparseTestSeen) -> result: own unit writes(seen) {
+  set deref(seen).failures = deref(seen).failures +wrap 1_u64;
+  return unit;
+}
+
+fn sparse_scalar_hash(env: &SparseHashEnv, key: &u64) -> result: own u64 reads(key) {
+  return deref(key) % 1_u64;
+}
+
+fn sparse_scalar_equal(env: &SparseHashEnv, left: &u64, right: &u64) -> result: own Bool reads(env), reads(left), reads(right) {
+  if deref(env).hostile {
+    return False();
+  }
+  return deref(left) == deref(right);
+}
+
+binding SparseScalarKey : SparseKey<u64, SparseHashEnv> {
+  hash = sparse_scalar_hash;
+  equal = sparse_scalar_equal;
+}
+
+fn sparse_ticket_hash(env: &SparseHashEnv, key: &SparseTicket) -> result: own u64 reads(key) {
+  return deref(key).id % 1_u64;
+}
+
+fn sparse_ticket_equal(env: &SparseHashEnv, left: &SparseTicket, right: &SparseTicket) -> result: own Bool reads(env), reads(left), reads(right) {
+  if deref(env).hostile {
+    return False();
+  }
+  return deref(left).id == deref(right).id;
+}
+
+binding SparseTicketKey : SparseKey<SparseTicket, SparseHashEnv> {
+  hash = sparse_ticket_hash;
+  equal = sparse_ticket_equal;
+}
+
+fn sparse_scalar_read(env: &SparseTestSeen, key: &u64, value: &u64) -> result: own u64 reads(value), writes(env) {
+  set deref(env).visits = deref(env).visits +wrap 1_u64;
+  set deref(env).observed = deref(env).observed +wrap deref(value);
+  return deref(value);
+}
+
+fn sparse_scalar_visit(env: &SparseTestSeen, key: &u64, value: &u64) -> result: own unit reads(value), writes(env) {
+  let observed = sparse_scalar_read(env: env, key: key, value: value);
+  return unit;
+}
+
+fn sparse_ticket_read(env: &SparseTestSeen, key: &SparseTicket, value: &SparseTicket) -> result: own u64 reads(value), writes(env) {
+  set deref(env).visits = deref(env).visits +wrap 1_u64;
+  set deref(env).observed = deref(env).observed +wrap deref(value).id;
+  return deref(value).id;
+}
+
+fn sparse_ticket_visit(env: &SparseTestSeen, key: &SparseTicket, value: &SparseTicket) -> result: own unit reads(value), writes(env) {
+  let observed = sparse_ticket_read(env: env, key: key, value: value);
+  return unit;
+}
+
+binding SparseScalarVisit : SparseVisit<u64, u64, SparseTestSeen, u64> {
+  visit = sparse_scalar_read;
+}
+
+binding SparseTicketVisit : SparseVisit<SparseTicket, SparseTicket, SparseTestSeen, u64> {
+  visit = sparse_ticket_read;
+}
+
+fn sparse_scalar_consume(env: &SparseTestSeen, key: own u64, value: own u64) -> result: own unit writes(env) {
+  set deref(env).consumed = deref(env).consumed +wrap 1_u64;
+  set deref(env).key_sum = deref(env).key_sum +wrap key;
+  set deref(env).value_sum = deref(env).value_sum +wrap value;
+  return unit;
+}
+
+fn sparse_ticket_consume(env: &SparseTestSeen, key: own SparseTicket, value: own SparseTicket) -> result: own unit writes(env) {
+  let SparseTicket(id: key_id) = move key;
+  let SparseTicket(id: value_id) = move value;
+  sparse_scalar_consume(env: env, key: key_id, value: value_id);
+  return unit;
+}
+
+binding SparseScalarConsume : SparseConsume<u64, u64, SparseTestSeen> {
+  consume = sparse_scalar_consume;
+}
+
+binding SparseTicketConsume : SparseConsume<SparseTicket, SparseTicket, SparseTestSeen> {
+  consume = sparse_ticket_consume;
+}
+
+fn sparse_scalar_outcome(outcome: own SparsePut<u64, u64>, expected: own u64, key: own u64, value: own u64, seen: &SparseTestSeen) -> result: own unit writes(seen) {
+  match outcome {
+    SparseInserted() => {
+      if expected != 0_u64 {
+        sparse_test_fail(seen: seen);
+      }
+    }
+    SparseReplaced(previous: pair) => {
+      if expected != 1_u64 {
+        sparse_test_fail(seen: seen);
+      }
+      if pair.key != key {
+        sparse_test_fail(seen: seen);
+      }
+      if pair.value != value {
+        sparse_test_fail(seen: seen);
+      }
+      sparse_pair_consume::<SparseScalarConsume>(pair: pair, env: seen);
+    }
+    SparseFull(offered: pair) => {
+      if expected != 2_u64 {
+        sparse_test_fail(seen: seen);
+      }
+      if pair.key != key {
+        sparse_test_fail(seen: seen);
+      }
+      if pair.value != value {
+        sparse_test_fail(seen: seen);
+      }
+      sparse_pair_consume::<SparseScalarConsume>(pair: pair, env: seen);
+    }
+  }
+  return unit;
+}
+
+fn sparse_ticket_outcome(outcome: own SparsePut<SparseTicket, SparseTicket>, expected: own u64, key: own u64, value: own u64, seen: &SparseTestSeen) -> result: own unit writes(seen) {
+  match outcome {
+    SparseInserted() => {
+      if expected != 0_u64 {
+        sparse_test_fail(seen: seen);
+      }
+    }
+    SparseReplaced(previous: pair) => {
+      if expected != 1_u64 {
+        sparse_test_fail(seen: seen);
+      }
+      if pair.key.id != key {
+        sparse_test_fail(seen: seen);
+      }
+      if pair.value.id != value {
+        sparse_test_fail(seen: seen);
+      }
+      sparse_pair_consume::<SparseTicketConsume>(pair: move pair, env: seen);
+    }
+    SparseFull(offered: pair) => {
+      if expected != 2_u64 {
+        sparse_test_fail(seen: seen);
+      }
+      if pair.key.id != key {
+        sparse_test_fail(seen: seen);
+      }
+      if pair.value.id != value {
+        sparse_test_fail(seen: seen);
+      }
+      sparse_pair_consume::<SparseTicketConsume>(pair: move pair, env: seen);
+    }
+  }
+  return unit;
+}
+
+fn sparse_check_reserve(outcome: own Result<unit, unit>, expected: own Bool, seen: &SparseTestSeen) -> result: own unit writes(seen) {
+  match outcome {
+    Ok(value: success) => {
+      if expected {
+      } else {
+        sparse_test_fail(seen: seen);
+      }
+    }
+    Err(error: refused) => {
+      if expected {
+        sparse_test_fail(seen: seen);
+      }
+    }
+  }
+  return unit;
+}
+
+fn sparse_ticket_deleted(map: &SparseMap<SparseTicket, SparseTicket, 4>) -> result: own u64 reads(map) {
+  let deleted = 0_u64;
+  let count = deref(map).cells.inner.len;
+  for (index in 0_u64..count) {
+    let slot = &deref(map).cells.inner[index];
+    match deref(slot) {
+      SparseDeleted() => {
+        set deleted = deleted +wrap 1_u64;
+      }
+      SparseVacant() => {
+      }
+      SparseFilled(key: saved_key, value: saved_value) => {
+      }
+    }
+  }
+  return deleted;
+}
+
+fn sparse_test_tickets() -> result: own u64 pure {
+  let seen = SparseTestSeen(failures: 0_u64, consumed: 0_u64, key_sum: 0_u64, value_sum: 0_u64, visits: 0_u64, observed: 0_u64);
+  let false_value = False();
+  let true_value = True();
+  let env = SparseHashEnv(hostile: false_value);
+  let map = sparse_map_new::<SparseTicket, SparseTicket, 4>(capacity: 0_u64);
+  for (key in 1_u64..5_u64) {
+    let value = key * 11_u64;
+    let key_ticket = SparseTicket(id: key);
+    let value_ticket = SparseTicket(id: value);
+    let offered = sparse_map_put::<SparseTicketKey, SparseTicket, 4>(map: &map, key: move key_ticket, value: move value_ticket, env: &env);
+    sparse_ticket_outcome(outcome: move offered, expected: 0_u64, key: key, value: value, seen: &seen);
+  }
+  if map.length != 4_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if map.cells.inner.len != 4_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  let refused_key = SparseTicket(id: 5_u64);
+  let refused_value = SparseTicket(id: 55_u64);
+  let refused = sparse_map_put::<SparseTicketKey, SparseTicket, 4>(map: &map, key: move refused_key, value: move refused_value, env: &env);
+  sparse_ticket_outcome(outcome: move refused, expected: 2_u64, key: 5_u64, value: 55_u64, seen: &seen);
+  let replacement_key = SparseTicket(id: 2_u64);
+  let replacement_value = SparseTicket(id: 222_u64);
+  let replaced = sparse_map_put::<SparseTicketKey, SparseTicket, 4>(map: &map, key: move replacement_key, value: move replacement_value, env: &env);
+  sparse_ticket_outcome(outcome: move replaced, expected: 1_u64, key: 2_u64, value: 22_u64, seen: &seen);
+  let first_query = SparseTicket(id: 1_u64);
+  let removed = sparse_map_remove::<SparseTicketKey, SparseTicket, 4>(map: &map, key: &first_query, env: &env);
+  let SparseTicket(id: first_query_id) = move first_query;
+  match removed {
+    Some(value: pair) => {
+      if pair.key.id != 1_u64 {
+        sparse_test_fail(seen: &seen);
+      }
+      if pair.value.id != 11_u64 {
+        sparse_test_fail(seen: &seen);
+      }
+      sparse_pair_consume::<SparseTicketConsume>(pair: move pair, env: &seen);
+    }
+    None() => {
+      sparse_test_fail(seen: &seen);
+    }
+  }
+  let moved_query = SparseTicket(id: 4_u64);
+  let moved = sparse_map_lookup::<SparseTicketKey, SparseTicket, SparseTestSeen, u64, fn sparse_ticket_read, 4>(map: &map, key: &moved_query, key_env: &env, visit_env: &seen);
+  let SparseTicket(id: moved_query_id) = move moved_query;
+  match moved {
+    Ok(value: found_value) => {
+      if found_value != 44_u64 {
+        sparse_test_fail(seen: &seen);
+      }
+    }
+    Err(error: absent) => {
+      sparse_test_fail(seen: &seen);
+    }
+  }
+  let reused_key = SparseTicket(id: 6_u64);
+  let reused_value = SparseTicket(id: 66_u64);
+  let reused = sparse_map_put::<SparseTicketKey, SparseTicket, 4>(map: &map, key: move reused_key, value: move reused_value, env: &env);
+  sparse_ticket_outcome(outcome: move reused, expected: 0_u64, key: 6_u64, value: 66_u64, seen: &seen);
+  let too_large = sparse_map_reserve::<SparseTicketKey, SparseTicket, 4>(map: &map, capacity: 8_u64, env: &env);
+  sparse_check_reserve(outcome: too_large, expected: false_value, seen: &seen);
+  let too_small_plan = sparse_map_rebuild::<SparseTicketKey, SparseTicket, 4>(map: &map, capacity: 1_u64, env: &env);
+  sparse_check_reserve(outcome: too_small_plan, expected: false_value, seen: &seen);
+  if map.length != 4_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if map.cells.inner.len != 4_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  let third_query = SparseTicket(id: 3_u64);
+  let third_removed = sparse_map_remove::<SparseTicketKey, SparseTicket, 4>(map: &map, key: &third_query, env: &env);
+  let SparseTicket(id: third_query_id) = move third_query;
+  match third_removed {
+    Some(value: old_pair) => {
+      if old_pair.key.id != 3_u64 {
+        sparse_test_fail(seen: &seen);
+      }
+      if old_pair.value.id != 33_u64 {
+        sparse_test_fail(seen: &seen);
+      }
+      sparse_pair_consume::<SparseTicketConsume>(pair: move old_pair, env: &seen);
+    }
+    None() => {
+      sparse_test_fail(seen: &seen);
+    }
+  }
+  let before_deleted = sparse_ticket_deleted(map: &map);
+  if before_deleted != 1_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  let compacted = sparse_map_rehash::<SparseTicketKey, SparseTicket, 4>(map: &map, env: &env);
+  sparse_check_reserve(outcome: compacted, expected: true_value, seen: &seen);
+  let after_deleted = sparse_ticket_deleted(map: &map);
+  if after_deleted != 0_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  sparse_map_each::<SparseTicket, SparseTicket, SparseTestSeen, fn sparse_ticket_visit, 4>(map: &map, env: &seen);
+  if seen.visits != 4_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if seen.observed != 376_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  sparse_map_free::<SparseTicketConsume, 4>(map: move map, env: &seen);
+  if seen.consumed != 7_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if seen.key_sum != 23_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if seen.value_sum != 453_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  return seen.failures;
+}
+
+fn sparse_test_scalars() -> result: own u64 pure {
+  let seen = SparseTestSeen(failures: 0_u64, consumed: 0_u64, key_sum: 0_u64, value_sum: 0_u64, visits: 0_u64, observed: 0_u64);
+  let true_value = True();
+  let env = SparseHashEnv(hostile: true_value);
+  let map = sparse_map_new::<u64, u64, 8>(capacity: 2_u64);
+  let first = sparse_map_put::<SparseScalarKey, u64, 8>(map: &map, key: 7_u64, value: 70_u64, env: &env);
+  sparse_scalar_outcome(outcome: first, expected: 0_u64, key: 7_u64, value: 70_u64, seen: &seen);
+  let second = sparse_map_put::<SparseScalarKey, u64, 8>(map: &map, key: 7_u64, value: 71_u64, env: &env);
+  sparse_scalar_outcome(outcome: second, expected: 0_u64, key: 7_u64, value: 71_u64, seen: &seen);
+  if map.length != 2_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if map.cells.inner.len != 2_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  let hostile_key = 7_u64;
+  let missing = sparse_map_lookup::<SparseScalarKey, u64, SparseTestSeen, u64, fn sparse_scalar_read, 8>(map: &map, key: &hostile_key, key_env: &env, visit_env: &seen);
+  match missing {
+    Ok(value: unexpected_value) => {
+      sparse_test_fail(seen: &seen);
+    }
+    Err(error: absent) => {
+    }
+  }
+  let removed = sparse_map_remove::<SparseScalarKey, u64, 8>(map: &map, key: &hostile_key, env: &env);
+  match removed {
+    Some(value: unexpected_pair) => {
+      sparse_test_fail(seen: &seen);
+      sparse_pair_consume::<SparseScalarConsume>(pair: unexpected_pair, env: &seen);
+    }
+    None() => {
+    }
+  }
+  if seen.visits != 0_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if seen.observed != 0_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if seen.consumed != 0_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if map.length != 2_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  let larger = sparse_map_reserve::<SparseScalarKey, u64, 8>(map: &map, capacity: 4_u64, env: &env);
+  sparse_check_reserve(outcome: larger, expected: true_value, seen: &seen);
+  let compacted = sparse_map_rehash::<SparseScalarKey, u64, 8>(map: &map, env: &env);
+  sparse_check_reserve(outcome: compacted, expected: true_value, seen: &seen);
+  if map.length != 2_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if map.cells.inner.cap != 4_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if map.cells.inner.len != 4_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  sparse_map_each::<u64, u64, SparseTestSeen, fn sparse_scalar_visit, 8>(map: &map, env: &seen);
+  if seen.observed != 141_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  let observed = sparse_map_read_at::<SparseScalarVisit, 8>(map: &map, index: 0_u64, env: &seen);
+  match observed {
+    Ok(value: found_value) => {
+      if found_value != 70_u64 {
+        sparse_test_fail(seen: &seen);
+      }
+    }
+    Err(error: absent) => {
+      sparse_test_fail(seen: &seen);
+    }
+  }
+  sparse_map_free::<SparseScalarConsume, 8>(map: move map, env: &seen);
+  if seen.consumed != 2_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if seen.key_sum != 14_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if seen.value_sum != 141_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  let zero = sparse_map_new::<u64, u64, 0>(capacity: 0_u64);
+  let refused = sparse_map_put::<SparseScalarKey, u64, 0>(map: &zero, key: 9_u64, value: 90_u64, env: &env);
+  sparse_scalar_outcome(outcome: refused, expected: 2_u64, key: 9_u64, value: 90_u64, seen: &seen);
+  sparse_map_free::<SparseScalarConsume, 0>(map: move zero, env: &seen);
+  return seen.failures;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let scalar_failures = sparse_test_scalars();
+  let ticket_failures = sparse_test_tickets();
+  let wrapping_failures = sparse_test_wrapping();
+  let cycle_failures = sparse_test_cycle();
+  let edit_failures = sparse_test_edit();
+  if scalar_failures != 0_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if ticket_failures != 0_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if wrapping_failures != 0_u64 {
+    return exit_status(code: 3_u8);
+  }
+  if cycle_failures != 0_u64 {
+    return exit_status(code: 4_u8);
+  }
+  if edit_failures != 0_u64 {
+    return exit_status(code: 5_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+
+fn sparse_identity_hash(env: &SparseHashEnv, key: &u64) -> result: own u64 reads(key) {
+  return deref(key);
+}
+
+binding SparseIdentityKey : SparseKey<u64, SparseHashEnv> {
+  hash = sparse_identity_hash;
+  equal = sparse_scalar_equal;
+}
+
+fn sparse_scalar_expect(map: &SparseMap<u64, u64, 8>, key: own u64, expected: own u64, env: &SparseHashEnv, seen: &SparseTestSeen) -> result: own unit reads(map), reads(env), writes(seen) {
+  let observed = sparse_map_lookup::<SparseIdentityKey, u64, SparseTestSeen, u64, fn sparse_scalar_read, 8>(map: map, key: &key, key_env: env, visit_env: seen);
+  match observed {
+    Ok(value: found_value) => {
+      if found_value != expected {
+        sparse_test_fail(seen: seen);
+      }
+    }
+    Err(error: absent) => {
+      sparse_test_fail(seen: seen);
+    }
+  }
+  return unit;
+}
+
+fn sparse_test_wrapping() -> result: own u64 pure {
+  let seen = SparseTestSeen(failures: 0_u64, consumed: 0_u64, key_sum: 0_u64, value_sum: 0_u64, visits: 0_u64, observed: 0_u64);
+  let false_value = False();
+  let true_value = True();
+  let env = SparseHashEnv(hostile: false_value);
+  let map = sparse_map_new::<u64, u64, 8>(capacity: 4_u64);
+  let first = sparse_map_put::<SparseIdentityKey, u64, 8>(map: &map, key: 3_u64, value: 30_u64, env: &env);
+  sparse_scalar_outcome(outcome: first, expected: 0_u64, key: 3_u64, value: 30_u64, seen: &seen);
+  let second = sparse_map_put::<SparseIdentityKey, u64, 8>(map: &map, key: 7_u64, value: 70_u64, env: &env);
+  sparse_scalar_outcome(outcome: second, expected: 0_u64, key: 7_u64, value: 70_u64, seen: &seen);
+  let third = sparse_map_put::<SparseIdentityKey, u64, 8>(map: &map, key: 11_u64, value: 110_u64, env: &env);
+  sparse_scalar_outcome(outcome: third, expected: 0_u64, key: 11_u64, value: 110_u64, seen: &seen);
+  let removed_key = 3_u64;
+  let removed = sparse_map_remove::<SparseIdentityKey, u64, 8>(map: &map, key: &removed_key, env: &env);
+  match removed {
+    Some(value: old_pair) => {
+      if old_pair.key != 3_u64 {
+        sparse_test_fail(seen: &seen);
+      }
+      if old_pair.value != 30_u64 {
+        sparse_test_fail(seen: &seen);
+      }
+      sparse_pair_consume::<SparseScalarConsume>(pair: old_pair, env: &seen);
+    }
+    None() => {
+      sparse_test_fail(seen: &seen);
+    }
+  }
+  let replaced = sparse_map_put::<SparseIdentityKey, u64, 8>(map: &map, key: 7_u64, value: 700_u64, env: &env);
+  sparse_scalar_outcome(outcome: replaced, expected: 1_u64, key: 7_u64, value: 70_u64, seen: &seen);
+  sparse_scalar_expect(map: &map, key: 7_u64, expected: 700_u64, env: &env, seen: &seen);
+  sparse_scalar_expect(map: &map, key: 11_u64, expected: 110_u64, env: &env, seen: &seen);
+  let rebuilt = sparse_map_rehash::<SparseIdentityKey, u64, 8>(map: &map, env: &env);
+  sparse_check_reserve(outcome: rebuilt, expected: true_value, seen: &seen);
+  sparse_scalar_expect(map: &map, key: 7_u64, expected: 700_u64, env: &env, seen: &seen);
+  sparse_scalar_expect(map: &map, key: 11_u64, expected: 110_u64, env: &env, seen: &seen);
+  let grown = sparse_map_reserve::<SparseIdentityKey, u64, 8>(map: &map, capacity: 8_u64, env: &env);
+  sparse_check_reserve(outcome: grown, expected: true_value, seen: &seen);
+  sparse_scalar_expect(map: &map, key: 7_u64, expected: 700_u64, env: &env, seen: &seen);
+  sparse_scalar_expect(map: &map, key: 11_u64, expected: 110_u64, env: &env, seen: &seen);
+  sparse_map_free::<SparseScalarConsume, 8>(map: move map, env: &seen);
+  if seen.consumed != 4_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if seen.key_sum != 28_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if seen.value_sum != 910_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if seen.visits != 6_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  return seen.failures;
+}
+
+fn sparse_cycle_hash(env: &SparseHashEnv, key: &u64) -> result: own u64 pure {
+  return 2_u64;
+}
+
+binding SparseCycleKey : SparseKey<u64, SparseHashEnv> {
+  hash = sparse_cycle_hash;
+  equal = sparse_scalar_equal;
+}
+
+fn sparse_test_cycle() -> result: own u64 pure {
+  doc "A full three-slot table with home two has physical source order keys2,3,1. Rehash plans the three-cycle destinations2,0,1; every post-rebuild lookup is checked independently of physical order.";
+  let seen = SparseTestSeen(failures: 0_u64, consumed: 0_u64, key_sum: 0_u64, value_sum: 0_u64, visits: 0_u64, observed: 0_u64);
+  let false_value = False();
+  let true_value = True();
+  let env = SparseHashEnv(hostile: false_value);
+  let map = sparse_map_new::<u64, u64, 3>(capacity: 3_u64);
+  for (key in 1_u64..4_u64) {
+    let value = key * 10_u64;
+    let inserted = sparse_map_put::<SparseCycleKey, u64, 3>(map: &map, key: key, value: value, env: &env);
+    sparse_scalar_outcome(outcome: inserted, expected: 0_u64, key: key, value: value, seen: &seen);
+  }
+  let rebuilt = sparse_map_rehash::<SparseCycleKey, u64, 3>(map: &map, env: &env);
+  sparse_check_reserve(outcome: rebuilt, expected: true_value, seen: &seen);
+  for (key in 1_u64..4_u64) {
+    let expected = key * 10_u64;
+    let observed = sparse_map_lookup::<SparseCycleKey, u64, SparseTestSeen, u64, fn sparse_scalar_read, 3>(map: &map, key: &key, key_env: &env, visit_env: &seen);
+    match observed {
+      Ok(value: actual) => {
+        if actual != expected {
+          sparse_test_fail(seen: &seen);
+        }
+      }
+      Err(error: missing) => {
+        sparse_test_fail(seen: &seen);
+      }
+    }
+  }
+  sparse_map_free::<SparseScalarConsume, 3>(map: move map, env: &seen);
+  if seen.consumed != 3_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if seen.key_sum != 6_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if seen.value_sum != 60_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if seen.visits != 3_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  return seen.failures;
+}
+
+fn sparse_scalar_increment(env: &SparseTestSeen, key: &u64, value: &u64) -> result: own u64 writes(env), writes(value) {
+  set deref(env).visits = deref(env).visits +wrap 1_u64;
+  set deref(value) = deref(value) +wrap 1_u64;
+  return deref(value);
+}
+
+fn sparse_test_edit() -> result: own u64 pure {
+  let seen = SparseTestSeen(failures: 0_u64, consumed: 0_u64, key_sum: 0_u64, value_sum: 0_u64, visits: 0_u64, observed: 0_u64);
+  let false_value = False();
+  let env = SparseHashEnv(hostile: false_value);
+  let map = sparse_map_new::<u64, u64, 4>(capacity: 4_u64);
+  let reserved = map.cells.inner.cap;
+  let table_count = map.cells.inner.len;
+  for (
+    index in 0_u64..4_u64,
+    invariant reserved_unchanged: map.cells.inner.cap == reserved,
+    invariant table_unchanged: map.cells.inner.len == table_count
+  ) {
+    let inserted = sparse_map_try_put::<SparseScalarKey, u64, 4>(map: &map, key: index, value: index, env: &env);
+    sparse_scalar_outcome(outcome: inserted, expected: 0_u64, key: index, value: index, seen: &seen);
+  }
+  let edit_key = 0_u64;
+  let edited = sparse_map_edit::<SparseScalarKey, u64, SparseTestSeen, u64, fn sparse_scalar_increment, 4>(map: &map, key: &edit_key, key_env: &env, edit_env: &seen);
+  invariant edited_capacity: map.cells.inner.cap == reserved;
+  invariant edited_table: map.cells.inner.len == table_count;
+  match edited {
+    Ok(value: reached) => {
+      if reached != 1_u64 {
+        sparse_test_fail(seen: &seen);
+      }
+    }
+    Err(error: missing) => {
+      sparse_test_fail(seen: &seen);
+    }
+  }
+  if map.length != 4_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  sparse_map_free::<SparseScalarConsume, 4>(map: move map, env: &seen);
+  if seen.consumed != 4_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if seen.key_sum != 6_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if seen.value_sum != 7_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if seen.visits != 1_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  return seen.failures;
+}

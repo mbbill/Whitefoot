@@ -3,12 +3,12 @@ struct Pair {
   high: u8;
 }
 
-fn two_bytes(bound: own u64) -> (small: own u8, large: own u8) pure {
+fn two_bytes(bound: u64) -> (small: u8, large: u8) pure {
   doc "Two results from one call.";
   return 4_u8, 9_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "SET-1, OWN-7: two distinct fields of one root are non-overlapping places, so each takes its own commit and neither disturbs the other or kills the root. A set target that names a binding in scope is a commit and never a declaration, which is now the only thing a set target can be. The exit code reports the second field.";
   let pair = Pair(low: 0_u8, high: 0_u8);
   let (small, large) = two_bytes(bound: 4_u64);

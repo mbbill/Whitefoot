@@ -6,7 +6,7 @@ struct Summary {
   last_space: u64;
 }
 
-fn summarize<const n: u64>(out: &Summary, input: own Slots<u8, n>) -> function_result: own unit writes(out.lines), writes(out.words), writes(out.bytes), writes(out.first_space), writes(out.last_space) {
+fn summarize<const n: u64>(out: &Summary, input: Slots<u8, n>) -> function_result: unit writes(out.lines), writes(out.words), writes(out.bytes), writes(out.first_space), writes(out.last_space) {
   doc "Scans the owned chunk and publishes its counts through the field paths its row declares; the by-value input carries no effect entry [EFF-1].";
   let length = input.len;
   let index_value = 0_u64;
@@ -64,7 +64,7 @@ fn summarize<const n: u64>(out: &Summary, input: own Slots<u8, n>) -> function_r
   return unit;
 }
 
-fn combine(out: &Summary, left: &Summary, right: &Summary) -> function_result: own unit reads(left.lines), reads(left.words), reads(left.bytes), reads(left.first_space), reads(left.last_space), reads(right.lines), reads(right.words), reads(right.bytes), reads(right.first_space), reads(right.last_space), writes(out.lines), writes(out.words), writes(out.bytes), writes(out.first_space), writes(out.last_space) {
+fn combine(out: &Summary, left: &Summary, right: &Summary) -> function_result: unit reads(left.lines), reads(left.words), reads(left.bytes), reads(left.first_space), reads(left.last_space), reads(right.lines), reads(right.words), reads(right.bytes), reads(right.first_space), reads(right.last_space), writes(out.lines), writes(out.words), writes(out.bytes), writes(out.first_space), writes(out.last_space) {
   doc "Combines two summaries associatively; the three reference parameters supply three distinct roots, so the call site proves every substituted pair disjoint [EFF-5, OWN-7].";
   if deref(left).bytes == 0_u64 {
     set deref(out).lines = deref(right).lines;
@@ -100,7 +100,7 @@ fn combine(out: &Summary, left: &Summary, right: &Summary) -> function_result: o
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Two owned byte chunks are summarized and associatively combined through one output struct and two input structs; whitespace state, early identity return, call-site disjointness, caller-visible writes, discharged bounds obligations, and inline-run storage execute through the normal compiler path.";
   let left_input = slots_new::<u8, 4>();
   place_back(window: &left_input, value: 97_u8);

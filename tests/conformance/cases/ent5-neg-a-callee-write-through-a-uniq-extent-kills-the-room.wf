@@ -1,4 +1,4 @@
-fn reserve(store: &Slots<u8, 64>) -> result: own unit writes(store.next), writes(store.len) contract {
+fn reserve(store: &Slots<u8, 64>) -> result: unit writes(store.next), writes(store.len) contract {
   requires deref(store).len < deref(store).cap;
 } {
   doc "Fills one slot of the window it was handed, which moves that window's own boundary.";
@@ -6,7 +6,7 @@ fn reserve(store: &Slots<u8, 64>) -> result: own unit writes(store.next), writes
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The callee writes the window behind its reference parameter. [EFF-2] projects writes(store.len) onto the actual place workspace, which is the support member of every measure over it, and [ENT-5] clause (b) kills those measure facts. The opening free slots therefore does not survive the call, and the later window operation's own requirement is rejected at [FN-8] with the residual workspace.len < workspace.cap submitted to [MSR-4].";
   let workspace = slots_new::<u8, 64>();
   reserve(store: &workspace);

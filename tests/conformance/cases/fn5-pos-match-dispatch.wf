@@ -3,7 +3,7 @@ enum Op {
   Dec();
 }
 
-fn apply(op: own Op, x: own i32) -> result: own i32 pure {
+fn apply(op: Op, x: i32) -> result: i32 pure {
   doc "Closed-set dispatch is match, not a function value [FN-5]. Explicit wrapping arithmetic keeps both arms total so this case isolates dispatch.";
   match op {
     Inc() => {
@@ -15,7 +15,7 @@ fn apply(op: own Op, x: own i32) -> result: own i32 pure {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let inc_atom_0001 = Inc();
   let r = apply(op: inc_atom_0001, x: 41_i32);
   if r == 42_i32 {

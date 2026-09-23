@@ -1,0 +1,222 @@
+struct DenseOwnedRecord {
+  id: u64;
+  serial: u64;
+}
+
+nodrop struct DenseOwnedNode {
+  child: Box<DenseOwnedRecord>;
+}
+
+struct DenseOwnerEnv {
+}
+
+struct DenseOwnerLedger {
+  releases: Array<u64, 32>;
+  failures: u64;
+  visits: u64;
+}
+
+fn dense_owned_make(id: own u64, serial: own u64) -> result: own DenseOwnedNode pure {
+  let record = DenseOwnedRecord(id: id, serial: serial);
+  let child = box_new::<DenseOwnedRecord>(value: record);
+  return DenseOwnedNode(child: move child);
+}
+
+fn dense_owned_fail(ledger: &DenseOwnerLedger) -> result: own unit writes(ledger) {
+  set deref(ledger).failures = deref(ledger).failures +wrap 1_u64;
+  return unit;
+}
+
+fn dense_owned_release(value: own DenseOwnedNode, ledger: &DenseOwnerLedger) -> result: own unit writes(ledger) {
+  let DenseOwnedNode(child: owned_child) = move value;
+  let serial = owned_child.inner.serial;
+  if serial < deref(ledger).releases.len {
+    set deref(ledger).releases[serial] = deref(ledger).releases[serial] +wrap 1_u64;
+  } else {
+    dense_owned_fail(ledger: ledger);
+  }
+  return unit;
+}
+
+fn dense_owned_consume(env: &DenseOwnerLedger, key: own DenseOwnedNode, value: own DenseOwnedNode) -> result: own unit writes(env) {
+  dense_owned_release(value: move key, ledger: env);
+  dense_owned_release(value: move value, ledger: env);
+  return unit;
+}
+
+fn dense_owned_hash(env: &DenseOwnerEnv, key: &DenseOwnedNode) -> result: own u64 reads(key) {
+  return deref(key).child.inner.id % 1_u64;
+}
+
+fn dense_owned_equal(env: &DenseOwnerEnv, left: &DenseOwnedNode, right: &DenseOwnedNode) -> result: own Bool reads(left), reads(right) {
+  return deref(left).child.inner.id == deref(right).child.inner.id;
+}
+
+fn dense_owned_read(env: &DenseOwnerLedger, key: &DenseOwnedNode, value: &DenseOwnedNode) -> result: own u64 reads(key), reads(value), writes(env) {
+  if deref(key).child.inner.serial != 4_u64 {
+    dense_owned_fail(ledger: env);
+  }
+  if deref(value).child.inner.serial != 14_u64 {
+    dense_owned_fail(ledger: env);
+  }
+  set deref(env).visits = deref(env).visits +wrap 1_u64;
+  return deref(value).child.inner.id;
+}
+
+fn dense_owned_increment(env: &DenseOwnerLedger, key: &DenseOwnedNode, value: &DenseOwnedNode) -> result: own u64 reads(key), writes(env), writes(value) {
+  if deref(key).child.inner.serial != 4_u64 {
+    dense_owned_fail(ledger: env);
+  }
+  if deref(value).child.inner.serial != 14_u64 {
+    dense_owned_fail(ledger: env);
+  }
+  set deref(env).visits = deref(env).visits +wrap 1_u64;
+  set deref(value).child.inner.id = deref(value).child.inner.id +wrap 1_u64;
+  return deref(value).child.inner.id;
+}
+
+binding DenseOwnedKey : DenseKey<DenseOwnedNode, DenseOwnerEnv> {
+  hash = dense_owned_hash;
+  equal = dense_owned_equal;
+}
+
+binding DenseOwnedConsume : DenseConsume<DenseOwnedNode, DenseOwnedNode, DenseOwnerLedger> {
+  consume = dense_owned_consume;
+}
+
+fn dense_owned_check_pair(pair: &DensePair<DenseOwnedNode, DenseOwnedNode>, key: own u64, value: own u64, ledger: &DenseOwnerLedger) -> result: own unit reads(pair), writes(ledger) {
+  if deref(pair).key.child.inner.id != key {
+    dense_owned_fail(ledger: ledger);
+  }
+  if deref(pair).value.child.inner.id != value {
+    dense_owned_fail(ledger: ledger);
+  }
+  return unit;
+}
+
+fn dense_owned_outcome(outcome: own DensePut<DenseOwnedNode, DenseOwnedNode>, expected: own u64, key: own u64, value: own u64, ledger: &DenseOwnerLedger) -> result: own unit writes(ledger) {
+  match outcome {
+    DenseInserted() => {
+      if expected != 0_u64 {
+        dense_owned_fail(ledger: ledger);
+      }
+    }
+    DenseReplaced(previous: old_pair) => {
+      if expected != 1_u64 {
+        dense_owned_fail(ledger: ledger);
+      }
+      if old_pair.key.child.inner.serial != 2_u64 {
+        dense_owned_fail(ledger: ledger);
+      }
+      if old_pair.value.child.inner.serial != 12_u64 {
+        dense_owned_fail(ledger: ledger);
+      }
+      dense_owned_check_pair(pair: &old_pair, key: key, value: value, ledger: ledger);
+      dense_pair_consume::<DenseOwnedConsume>(pair: move old_pair, env: ledger);
+    }
+    DenseFull(offered: new_pair) => {
+      if expected != 2_u64 {
+        dense_owned_fail(ledger: ledger);
+      }
+      dense_owned_check_pair(pair: &new_pair, key: key, value: value, ledger: ledger);
+      dense_pair_consume::<DenseOwnedConsume>(pair: move new_pair, env: ledger);
+    }
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "Own-child ledger: ten distinct Record allocations, serials 1..4, 11..14, 21 and 22. Each must be consumed once. Two initial map backings plus one sparse plan and one dense grow allocation give four backing allocations, fourteen allocations/frees in total before an observer's own storage. Query nodes 21 and 22 are included. This is an instantiation over optional owned children, not a requirement of DenseMap.";
+  let releases = array_filled::<u64, 32>(value: 0_u64);
+  let ledger = DenseOwnerLedger(releases: releases, failures: 0_u64, visits: 0_u64);
+  let env = DenseOwnerEnv();
+  let map = dense_map_new::<DenseOwnedNode, DenseOwnedNode, 2>(capacity: 1_u64);
+  let first_key = dense_owned_make(id: 1_u64, serial: 1_u64);
+  let first_value = dense_owned_make(id: 11_u64, serial: 11_u64);
+  let first = dense_map_put::<DenseOwnedKey, DenseOwnedNode, 2>(map: &map, key: move first_key, value: move first_value, env: &env);
+  dense_owned_outcome(outcome: move first, expected: 0_u64, key: 1_u64, value: 11_u64, ledger: &ledger);
+  let second_key = dense_owned_make(id: 2_u64, serial: 2_u64);
+  let second_value = dense_owned_make(id: 22_u64, serial: 12_u64);
+  let second = dense_map_put::<DenseOwnedKey, DenseOwnedNode, 2>(map: &map, key: move second_key, value: move second_value, env: &env);
+  dense_owned_outcome(outcome: move second, expected: 0_u64, key: 2_u64, value: 22_u64, ledger: &ledger);
+  if map.entries.inner.len != 2_u64 {
+    dense_owned_fail(ledger: &ledger);
+  }
+  if map.indexes.inner.len != 2_u64 {
+    dense_owned_fail(ledger: &ledger);
+  }
+  let refused_key = dense_owned_make(id: 3_u64, serial: 3_u64);
+  let refused_value = dense_owned_make(id: 33_u64, serial: 13_u64);
+  let refused = dense_map_put::<DenseOwnedKey, DenseOwnedNode, 2>(map: &map, key: move refused_key, value: move refused_value, env: &env);
+  dense_owned_outcome(outcome: move refused, expected: 2_u64, key: 3_u64, value: 33_u64, ledger: &ledger);
+  let replacement_key = dense_owned_make(id: 2_u64, serial: 4_u64);
+  let replacement_value = dense_owned_make(id: 222_u64, serial: 14_u64);
+  let replaced = dense_map_put::<DenseOwnedKey, DenseOwnedNode, 2>(map: &map, key: move replacement_key, value: move replacement_value, env: &env);
+  dense_owned_outcome(outcome: move replaced, expected: 1_u64, key: 2_u64, value: 22_u64, ledger: &ledger);
+  let removal_query = dense_owned_make(id: 1_u64, serial: 21_u64);
+  let removed = dense_map_remove::<DenseOwnedKey, DenseOwnedNode, 2>(map: &map, key: &removal_query, env: &env);
+  dense_owned_release(value: move removal_query, ledger: &ledger);
+  match removed {
+    Some(value: removed_pair) => {
+      dense_owned_check_pair(pair: &removed_pair, key: 1_u64, value: 11_u64, ledger: &ledger);
+      dense_pair_consume::<DenseOwnedConsume>(pair: move removed_pair, env: &ledger);
+    }
+    None() => {
+      dense_owned_fail(ledger: &ledger);
+    }
+  }
+  let lookup_query = dense_owned_make(id: 2_u64, serial: 22_u64);
+  let edited = dense_map_edit::<DenseOwnedKey, DenseOwnedNode, DenseOwnerLedger, u64, fn dense_owned_increment, 2>(map: &map, key: &lookup_query, key_env: &env, edit_env: &ledger);
+  match edited {
+    Ok(value: updated_value) => {
+      if updated_value != 223_u64 {
+        dense_owned_fail(ledger: &ledger);
+      }
+    }
+    Err(error: absent) => {
+      dense_owned_fail(ledger: &ledger);
+    }
+  }
+  let found = dense_map_lookup::<DenseOwnedKey, DenseOwnedNode, DenseOwnerLedger, u64, fn dense_owned_read, 2>(map: &map, key: &lookup_query, key_env: &env, visit_env: &ledger);
+  dense_owned_release(value: move lookup_query, ledger: &ledger);
+  match found {
+    Ok(value: found_value) => {
+      if found_value != 223_u64 {
+        dense_owned_fail(ledger: &ledger);
+      }
+    }
+    Err(error: missing) => {
+      dense_owned_fail(ledger: &ledger);
+    }
+  }
+  dense_map_free::<DenseOwnedConsume, 2>(map: move map, env: &ledger);
+  if ledger.visits != 2_u64 {
+    dense_owned_fail(ledger: &ledger);
+  }
+  for (serial in 0_u64..32_u64) {
+    let expected = 0_u64;
+    if serial >= 1_u64 {
+      if serial <= 4_u64 {
+        set expected = 1_u64;
+      }
+    }
+    if serial >= 11_u64 {
+      if serial <= 14_u64 {
+        set expected = 1_u64;
+      }
+    }
+    if serial == 21_u64 {
+      set expected = 1_u64;
+    }
+    if serial == 22_u64 {
+      set expected = 1_u64;
+    }
+    if ledger.releases[serial] != expected {
+      dense_owned_fail(ledger: &ledger);
+    }
+  }
+  if ledger.failures == 0_u64 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}

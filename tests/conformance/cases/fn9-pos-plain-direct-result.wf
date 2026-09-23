@@ -1,17 +1,17 @@
-fn identity(value: own i32) -> result: own i32 pure contract {
+fn identity(value: i32) -> result: i32 pure contract {
   ensures result == value;
 } {
   return value;
 }
 
-fn relay(value: own i32) -> result: own i32 pure contract {
+fn relay(value: i32) -> result: i32 pure contract {
   ensures result == value;
 } {
   let called = identity(value: value);
   return called;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let observed = relay(value: 7_i32);
   if observed == 7_i32 {
   } else {

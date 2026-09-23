@@ -1,4 +1,4 @@
-fn release_empty_fixed<T, const n: u64>(run: own Slots<T, n>) -> result: own unit pure contract {
+fn release_empty_fixed<T, const n: u64>(run: Slots<T, n>) -> result: unit pure contract {
   requires run.len == 0_u64;
 } {
   doc "OP-14: a window whose element type is linear is itself linear, and the one route that consumes its storage is free_empty. This function's own requirement discharges free_empty's; the type stays linear and the proof is about the runtime length.";
@@ -6,7 +6,7 @@ fn release_empty_fixed<T, const n: u64>(run: own Slots<T, n>) -> result: own uni
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A constant-capacity window starts empty, so its zero length is exact at the call and there is nothing for an element walk to visit.";
   let empty = slots_new::<u64, 4>();
   release_empty_fixed::<u64, 4>(run: move empty);

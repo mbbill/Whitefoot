@@ -1,4 +1,4 @@
-fn overfill() -> result: own Slots<u8, 2> pure {
+fn overfill() -> result: Slots<u8, 2> pure {
   doc "A third placement into a two-slot run has cap - len == 0, and the record's own free-slot requirement is what refuses it.";
   let run = slots_new::<u8, 2>();
   place_back(window: &run, value: 7_u8);
@@ -7,7 +7,7 @@ fn overfill() -> result: own Slots<u8, 2> pure {
   return move run;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The per-record requirement discharge under MSR-4 is part of FN-8's own judgment, and the diagnostic names the operation rather than citing a source clause, because a PRE-1 declaration has no source body.";
   return exit_status(code: 0_u8);
 }

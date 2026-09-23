@@ -2,11 +2,11 @@ struct Holder<T> {
   cell: Box<T>;
 }
 
-fn reverse<L, R>(left: own Holder<L>, right: own Holder<R>) -> (first: own Holder<R>, second: own Holder<L>) pure {
+fn reverse<L, R>(left: Holder<L>, right: Holder<R>) -> (first: Holder<R>, second: Holder<L>) pure {
   doc "Type substitution visits every declared result ordinal; the two arguments land in the opposite order, so each ordinal carries the other's written argument [FN-1, FN-2].";
   return move right, move left;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

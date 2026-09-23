@@ -1,4 +1,4 @@
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "The same ordinary call-produced index becomes safe only on the selected true edge of a real source bounds branch.";
   let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
   let closed = close_directory(factory: &entry_factory, directory: move unused_cwd);

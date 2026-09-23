@@ -262,7 +262,7 @@ fn scripted_facility_defines() -> Vec<String> {
 ///
 /// The program is ordinary source: it names no target record and reads only
 /// the portable form under the ordinary directory library contract fixes.
-const PUBLISH_ONE_BATCH: &[u8] = br#"fn exercise(cwd: &DirectoryRead, out: &OutputStream, files: &HandleFactory) -> status: own ExitStatus reads(cwd), writes(out), writes(files) {
+const PUBLISH_ONE_BATCH: &[u8] = br#"fn exercise(cwd: &DirectoryRead, out: &OutputStream, files: &HandleFactory) -> status: ExitStatus reads(cwd), writes(out), writes(files) {
   let entries = array_filled::<u8, 4096>(value: 0_u8);
   let available = 0_u64;
   match open_directory_source(factory: files, directory: cwd) {
@@ -303,7 +303,7 @@ const PUBLISH_ONE_BATCH: &[u8] = br#"fn exercise(cwd: &DirectoryRead, out: &Outp
   return exit_status(code: 0_u8);
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   let Inputs(args: unused_args, cwd: cwd, stdout: out, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
   let outcome = exercise(cwd: &cwd, out: &out, files: &files);
   close_directory(factory: &files, directory: move cwd);

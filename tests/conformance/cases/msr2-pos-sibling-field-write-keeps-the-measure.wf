@@ -1,4 +1,4 @@
-fn filled<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
+fn filled<T: copy, const n: u64>(value: T) -> result: Slots<T, n> pure contract {
   ensures result.len >= n;
   ensures result.cap <= result.len;
 } {
@@ -19,7 +19,7 @@ struct Frame {
   tail: Slots<u8, 8>;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "MSR-2: the support of a measure term over P is P's descriptor storage, not P's root binding. frame.flags and frame.tail are two disjoint parts of one struct, so a SET-1 commit to the sibling field overlaps neither the descriptor storage of frame.tail nor any holder reached to it, and frame.tail.len survives the write. The subscript after the write therefore still discharges against that fact.";
   let body = filled::<u8, 8>(value: 0_u8);
   let frame = Frame(flags: 0_u64, tail: move body);

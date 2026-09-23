@@ -183,15 +183,23 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   The [Slab comparison](../research/experiments/container-representation/slab-library/RESULTS.md)
   separates the one-slot cell's extra word from its helper boundary: retained
   wide removal and consumption has three 256-byte transfers in WF versus one
-  in C, and WF's product-layout result differs from the C union ABI. Keep
-  this distinction when interpreting timing; a cell-layout change alone
-  cannot remove these costs. Validate forwarding or result placement with
+  in C even though both `Option<Record>` results occupy 264 bytes. The separate
+  insertion `Result<SlabHandle, Record>` occupies 280 bytes in WF's product
+  layout versus 264 in C's union ABI. Keep these distinctions when interpreting
+  timing; a cell-layout change alone cannot remove these costs. Validate
+  forwarding or result placement with
   the same owning return paths, failed insertion returning the offered owner,
   partial cleanup and alias controls, checking optimized transfers and
   same-source timings on supported toolchains. Defer general enum layout and
   call ABI changes until that experiment establishes which transfer can be
   removed without changing ownership; reopen with the owning-map library or
   a workload dominated by wide Slab removal.
+  The [map's exhaustive returned-owner protocol](../research/investigations/containers-and-resources/X1-LIBRARY.md#generic-owning-map-trial-after-the-ring-comparison)
+  also supplies an ordinary enum alternative to reassess for Slab's extra
+  cell word. Its fit and cost for stable slots, generation retirement,
+  exhaustion and removal are unverified; compare that full Slab contract
+  before replacing the maintained one-slot form. Defer that distinct
+  consumer experiment rather than infer a Slab improvement from map timings.
 
 - **Short Vector cycles retain unresolved lowering costs.** The paired
   consumption experiment improves the large-record paths but slows the
@@ -207,6 +215,20 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   that cause is established; reopen for a workload dominated by these cycles.
   The [paired samples and limits](../research/experiments/container-representation/vector-library/RESULTS.md)
   are the starting evidence, not a claim of uniform improvement.
+
+- **Empty owning slots initialize inactive payload bytes.** In the owning-map
+  trial's optimized wide code, constructing each vacant enum slot zeros the
+  inactive 264-byte Pair region. A one-slot window similarly zeros that region
+  together with its length, although the native controls initialize only
+  occupancy. This is shared lowering work, not a necessary cost of one
+  sparse representation. The [map comparison](../research/experiments/container-representation/map-library/RESULTS.md)
+  separates these stores from later per-live-owner transfers. Investigate
+  leaving inactive storage uninitialized without allowing an active value,
+  discriminant or length to become undefined; check consuming projections,
+  all variants, empty windows, must-consume owners and ordinary call boundaries.
+  Measure an unchanged-source compiler comparison before claiming a runtime
+  gain. Defer the compiler change during representation selection; reopen
+  when the library's construction/rebuild trace supplies the measured consumer.
 
 - **Consumed aggregate locals can retain an argument snapshot.** An exposed
   mutable local is loaded into an immutable argument snapshot before a consuming
@@ -330,23 +352,28 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   that case supplies both the benefit and the availability evidence; pricing
   must not infer a separate source lifetime.
 
-- **Known-zero loop dispatch has a qualified combined cost, but no production mechanism.**
-  The [bounded stencil control](../research/investigations/compute-model/DESIGN.md#zero-budget-stencil-dispatch-control)
-  removes 65,504 queries returning zero and inner splitter entries together in
-  the parallel world, enabling pixel inlining and alias-check movement. Its
-  corrected W4 trial improves all five pairs, with a 17.97 percent median benefit
-  against 4.25 percent maximum null drift. It does not isolate query cost or
-  justify a grain-policy change.
-  Defer implementation until a general lowering/runtime path is selected;
-  reopen with a design that handles zero and nonzero budgets, configured work
-  floors, nested loops and the sequential world without copying a fixture's
-  threshold into lowering. Preserve ordinary operations and exact-once cleanup,
-  inspect optimized paths, and validate full oracles plus a prospective bounded
-  paired/null whole-call criterion. A query-retained direct-chunk control is
-  the smallest additional observation if choosing that mechanism requires
-  distinguishing query effects from splitter removal and resulting optimization;
-  select its cost cap and stop rule before running it, rather than extending
-  the completed trial.
+- **Zero-budget dispatch needs caller and placement attribution before adoption.** The
+  [query-retained one-site control](../research/investigations/compute-model/DESIGN.md#query-retained-control-result)
+  meets its W4 criterion, but grows module text by 2,400 bytes and measures a
+  2.97 percent W1 paired-median regression despite identical normalized W1
+  instructions. It couples dispatch, pixel inlining and alias-check motion;
+  it establishes neither standalone entry cost nor the benefit of applying
+  the branch at every site. The general cdac candidate grows text by 3,920
+  bytes (44.50 percent), including additional top-level inlining, with no new
+  local timing. The subsequent
+  [null-qualified Intel comparison](../research/investigations/compute-model/DESIGN.md#general-dispatch-reassessment)
+  regresses records by 30.72 percent at W1 and 4.01 percent at W2. W1 never
+  executes the added dispatch: its unchanged sequential chunk has different
+  placement and a differently optimized caller. Neither cause is isolated.
+  Withdraw the all-site optimization while retaining the existing query and
+  splitter entry; a wrapper, noinline boundary or alignment policy needs its
+  own grounds. Defer that broader optimizer/layout investigation behind the
+  remaining compute-expression questions. Reopen with a comparable Intel host
+  and a bounded control separating caller/stack changes from placement, with
+  an identical-image control and full outputs, before selecting a general
+  replacement. Require a demonstrated candidate benefit and qualification of
+  the affected W1/parallel paths; a passing ARM or different-host run alone
+  cannot clear the retained counterexample.
 
 - **Stable scatter retains construction and packing costs.** The dated merged-model
   [joined-phase result](../research/investigations/compute-model/DESIGN.md#joined-phase-result-2026-09-21)
@@ -497,6 +524,12 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   records the accepted 1343-byte / 2047-instance witness, same-instance controls,
   stage measurements and unresolved correspondence finding. No budget, timeout, new
   source refusal, or measured asymptotic guarantee has been selected.
+  Reopen when generic container/behavior composition makes instance count or
+  checking cost material. Recheck the distinct-instance and repeated-instance
+  controls on that composition, separating semantic checking, lowering and
+  emitted-code size; faster duplicate lookup alone cannot close the bound.
+  The broader admission or sharing question remains deferred to an explicit
+  choice supported by those controls and a complexity argument.
 - **At most eight peers may wait at once on a host without a native ring.**
   On Darwin, and under `WF_IO_NO_NATIVE_RING`, a peer wait beyond the eighth
   concurrent one has no helper and queues with no timeout. The readiness-
@@ -524,34 +557,28 @@ each is resolved by a discussion and a tree change.
   library example needs one of these boundaries. Validate matched direct/local/
   projected programs, alias and descriptor writes, joins, loop iterations and
   stronger-contract negatives before choosing an extension; do not infer a
-  general refinement system from the local-result implementation. Conditional
-  fact representation cost is the separate compiler defect above. These
-  language extensions are deferred because the selected ordinary
+  general refinement system from the local-result implementation. A separate
+  FN-9 result-selector limit remains: a nominal Slab result cannot publish
+  `ensures result.cells.inner.len == 0_u64;`, whereas the direct boxed Ring
+  carrier can publish its measure. The
+  [exact rejected forms](../research/investigations/containers-and-resources/X1-LIBRARY.md#exact-unavailable-source-forms)
+  distinguish this wrapper boundary from indexed postcondition targets and
+  from storing an already-related Result. Reopen it when a library wrapper
+  needs the relation, with direct-carrier, nested-field and stale-write controls.
+  Conditional fact representation cost is the separate compiler defect above.
+  These language extensions are deferred because the selected ordinary
   local composition rule can be validated without widening the storage or
   predicate vocabulary.
-- **Declaration and call-boundary syntax after the ownership redesign.**
-  Reassess mandatory `own` on value parameters and results, mandatory names
-  for every result including `unit`, and the named-argument/construction-field
-  discipline together. References now have only the `&` form and cannot be
-  returned; result names serve contracts rather than runtime storage. These
-  changes may leave declarations repeating information without improving the
-  callable boundary. Named arguments and fields have a separate transposition
-  rationale and must not be removed merely because they are verbose. Compare
-  complete alternative signature and contract forms on scalar, generic,
-  multi-result and resource APIs. A candidate must preserve explicit boundary
-  types, unambiguous result references, useful mismatch diagnostics and one
-  grammar-defined spelling, without site-dependent inference relief. The
-  benefit and final spelling are unverified; defer selection until the next
-  syntax-design discussion.
 - **Ownership transfer and reference-access forms.** Audit unnecessary
   owner-in/owner-out APIs now expressible with reference parameters and exact
   effect rows, the differing consumption spellings of calls, returns, matches
   and `propagate`, and repeated `deref`/`&deref` paths. `move` still marks a
   consumption boundary; `deref` distinguishes a reference holder from its
   referent and from owned `Box.inner`, so neither is redundant solely because
-  `own` may be. Compare the same container and owned-link operations under
-  proposed forms, preserving copy/drop capabilities, whole-owner consumption,
-  atomic replacement, reference rebinding, invalidation and effect separation.
+  the signature `own` qualifier was. Compare the same container and owned-link
+  operations under proposed forms, preserving copy/drop capabilities,
+  whole-owner consumption, atomic replacement, reference rebinding,
+  invalidation and effect separation.
   Require the ordinary positive and invalid-use examples to remain explainable
   by one rule per operation, with no additional runtime checks or transfers.
   Reduced ceremony is an opportunity, not an established gain. Defer these
@@ -571,24 +598,22 @@ each is resolved by a discussion and a tree change.
   until the syntax review reaches this group; close it only with an explicit
   disposition supported by these comparisons.
 
-- **Sparse containers over must-consume linear elements need ownership-visible
-  slot state.** The maintained
-  [owning-map witness](../tests/programs/containers/owning-behavior.wf)
-  uses `interface Key<K: drop, E>`, so it covers copyable and droppable keys,
-  including Box owners, but excludes keys with a must-consume obligation.
-  An unconstrained `K` also admits those linear values under OWN-1 and
-  PROV-6. A numeric phase alone cannot prove that a returned enum slot is
-  vacant; an occupied variant still contains a key that must be consumed.
-  The [Slab trial](../research/investigations/containers-and-resources/X1-LIBRARY.md#exact-unavailable-source-forms)
-  uses an inline `Slots<T,1>` per cell and executes insertion, removal, reuse
-  and cleanup for nodrop T; it supplies an ordinary state encoding, at a
-  metadata cost measured against tagged C cells. This does not establish a
-  complete map rehash or select the same layout for it. Reopen for the next
-  owning-map library trial: compare the one-slot encoding and ordinary enum
-  alternatives through collision, replacement, tombstone reuse and rehash,
-  including bytes and helper transfers. Retain occupancy as program data and
-  do not add an implicit discard or impossible cleanup branch to satisfy the
-  checker. A new variant-state relation needs a remaining measured consumer.
+- **Retained membership beyond the single-object composite is unestablished.**
+  The [Slab membership caller](../tests/programs/containers/slab-membership-program.wf)
+  verifies two indexes over one object: deleting one membership preserves the
+  other reader, and the composite refuses object deletion until both retire. Weak
+  indexes instead expire after deletion. The
+  [analysis](../research/investigations/containers-and-resources/X1-LIBRARY.md#slab-reuse-addresses-and-retained-membership)
+  does not establish a multi-object protocol or protection from independently
+  authored bookkeeping mutations; ordinary handles and nodrop tickets do not
+  authenticate a slab or make membership unforgeable. Defer stronger guarantees
+  while callers need only the demonstrated composite or weak-index contract.
+  Reopen for a real multi-index consumer that must retain objects across
+  independent removals. First validate an ordinary composite with multiple
+  objects, wrong-store/stale handles, removal ordering, final cleanup and a
+  matched native retention contract, including its validation/storage cost.
+  Do not infer that failure of an unrestricted static theorem rules out a
+  correct protocol with ordinary checked data.
 - **Deque still lacks zero-copy two-span access over Ring.** REF-4 rejects
   every Ring range, even empty and proved non-wrapping ones. The current
   library's slot visitor is not a substitute for a native consumer accepting
@@ -644,7 +669,7 @@ condition under which it is taken up.
   cases. Progress proofs and full resource closure follow separately. The
   checkpoint also retains the consumer conditions for mutual tail transfers,
   general cleanup lowering and total-work estimation; none is scheduled now.
-- **Facts a contract can carry (after PR 70 merges; owner, 2026-09-20).**
+- **Facts a contract can carry (owner, 2026-09-20).**
   Three additive widenings, taken up together, each measured:
   (1) Affine `ensures`. A `requires` may already be an affine relation and
   enters the body as affine premises, but an `ensures` must fit the
@@ -661,18 +686,102 @@ condition under which it is taken up.
   (3) An `ensures` naming a single indexed path
   (`deref(p.slots)[h.idx].gen == h.gen`), which decides whether a guarded
   pool access pays one load, compare and branch per call.
-- **Open-addressing tables with non-Copy payloads.** One null check per hit
-  versus hashbrown, because occupancy that is decided by data is stored as
-  data. Measure on a real table before deciding whether any mechanism is
-  worth it.
+  Reopen with a library operation that needs one of these facts; retain the
+  exact refused clause and its best ordinary implementation. Validate support
+  invalidation, aliasing, entry/exit and index changes, ownership outcomes and
+  checking cost as well as the runtime check or source work saved. The Slab
+  and Deque [source limits](../research/investigations/containers-and-resources/X1-LIBRARY.md#exact-unavailable-source-forms)
+  remain examples, not an amendment or a claim that runtime state is lost.
+- **Reference exit fields and custom outcome contracts remain restricted.**
+  FN-9 gives exit-state denotation to a written reference parameter's storage
+  measures, not its ordinary mutable integer fields. An owning sparse map
+  cannot publish `deref(map).length == deref(entry(map)).length` for its own
+  scalar occupancy counter; the caller can still read that counter normally.
+  FN-9 routes only the integer success payload of the prelude Result, so a
+  custom `Inserted / Replaced / Full` outcome cannot directly publish a
+  different length relation for each variant. An unconditional insertion
+  interval alone does not prove that a failed first attempt leaves length
+  unchanged before a retry. Keep exact source refusals and the best ordinary
+  interfaces in the [map trial](../research/investigations/containers-and-resources/X1-LIBRARY.md#generic-owning-map-trial-after-the-ring-comparison).
+  Reopen when a caller needs those facts: compare ordinary re-reads or a
+  separate numeric result with richer publication, measuring remaining checks,
+  result transfers and checking cost. Validate entry/exit substitution, writes
+  through aliases and incorrect variant claims before selecting any extension.
+  Defer language changes while the complete map can use ordinary checked
+  accesses; no runtime data or ownership state is missing.
+- **Affine equality in call requirements has a narrower route than invariants.**
+  The [map proof reduction](../research/investigations/containers-and-resources/X1-LIBRARY.md#generic-owning-map-trial-after-the-ring-comparison)
+  verifies a local equality after a counted loop but rejects the identical
+  equality as a callee requirement. INV-1 splits equality into two affine
+  inequalities; ENT-6's signed FN-8 normalization lists ordering leaves only.
+  Splitting that one requirement into `<=` and `>=` admits the unchanged
+  algorithm without runtime checks. This is a specified proof-shape limit,
+  not an observed compiler violation. Reopen with contract-proof work to
+  assess consistent equality decomposition, including false equalities,
+  negative goals, alias invalidation and deterministic checking cost. Defer
+  a rule change while the exact paired-bound interface supplies the needed
+  proof without runtime or ownership cost.
+- **Whole-owner swap does not publish exchanged descriptor facts.** PRE-1's
+  `swap` declares writes to both referents and no postcondition; MSR-3's
+  placement rules do not include swap. Exchanging two boxed windows therefore
+  kills their supported length/capacity facts without connecting the incoming
+  descriptor to the new place. Actual values and unique ownership still move
+  correctly. The direct map-migration trial can re-read bounds, but cannot
+  derive its promised nondecreasing extent merely from the pre-swap facts.
+  Reopen with the contract-publication work: retain scalar-only and nested
+  owner controls, alias invalidation and input/output swaps, and compare the
+  source/proof benefit with checking cost before selecting a general relation.
+  Defer a language extension while ordinary reads suffice for the map;
+  do not manufacture an impossible branch to satisfy a postcondition.
+- **Conditional measure preservation needs a precise remaining diagnosis.**
+  A counted-loop control calling a length/capacity-preserving helper in only
+  one arm rejects its backedge facts. Capturing both measures before the
+  branch and restating their equality afterward admits the small control;
+  this is not a blanket inability to preserve conditional measures. The
+  full sparse-map loop still rejects its extent invariant when its
+  length-preserving wrapper is inlined with an explicit extent bridge. Its
+  normative classification is unresolved. The [exact controls](../research/investigations/containers-and-resources/X1-LIBRARY.md#generic-owning-map-trial-after-the-ring-comparison)
+  retain both outcomes. Reopen with contract-proof work: reduce the remaining
+  refusal, compare it with ENT-5/ENT-6, and distinguish a compiler defect from
+  a proposed rule change before implementation. Keep the admitted wrapper
+  while it supplies the needed proof; validate aliases and false preservation
+  claims as well as checking cost for any improvement.
+- **Owning HashMap has a remaining large-value performance gap.** The
+  [matched comparison](../research/experiments/container-representation/map-library/RESULTS.md)
+  exercises the actual generic library, including must-consume pairs, without
+  requiring one Box per payload. Its compact result and direct enum migration
+  improve the original planned sparse source, but the measured 256-byte-value
+  growth trace still costs about 1.64–1.69 times direct C with the same
+  migration direction, and replacement about 2.09–2.35 times. These are
+  complete checked traces, not isolated copy costs.
+  Optimized migration still initializes inactive payload bytes, stages live
+  pairs and reads the displaced payload before its tag is used. Public owning
+  results retain transfers. Compare unchanged-source initialization/forwarding
+  improvements against the same contract and verify all owner-return paths;
+  copying counts alone do not establish their runtime contribution.
+  Dense storage remains faster for wide growth but adds reserved metadata and
+  dependent lookup, while a fresh sparse rehash retains two complete backings.
+  Reopen for a workload dominated by these costs, preserving full backing and
+  peak bytes, hash/load policy, retained helpers and exact cleanup. Defer a
+  second maintained representation and compiler changes until that consumer or
+  a discriminating unchanged-source improvement supplies their grounds.
+  SIMD-group probing and a general projected-storage benefit remain untested;
+  the earlier [native hash-slot study](https://github.com/mbbill/Whitefoot/blob/38c28403a2defd0b65b8a2ab2b5e4794315e9940/research/experiments/hash-slot-occupancy/RESULTS.md)
+  did not establish a recurring tag-check tax. A working library does not
+  close either question or imply a universal native-performance ceiling.
 - **Channel primitive.** An ownership-transfer queue in the trusted base for
   producer/consumer pipelines and work stealing; lock-free rings are not
   expressible without it and batched fork-join is the available form. Research
   when the future concurrency primitives are designed.
 - **Header-plus-tail heap block.** One allocation holding a fixed header and a
   runtime-length tail (LLVM `User` with its operand list, `sk_buff`). Today a
-  struct with a `Box<Slots<T>>` field costs a second allocation and one extra
-  dependent memory access per hop. Additive, after PR 70 merges. Two shapes
+  boxed struct with a `Box<Slots<T>>` field costs two allocations and an extra
+  dependent access; an inline struct plus a boxed tail uses one allocation
+  but a wider handle and separated header. An encoded byte block is another
+  available representation with codec costs. TYPE-9 still excludes a typed
+  runtime-capacity tail inside a source struct; the
+  [layout comparison](../research/investigations/containers-and-resources/X1-LIBRARY.md#ceiling-challenges-connected-to-real-source-contracts)
+  separates these contracts. Two shapes
   under discussion: (a) a struct whose last field is a runtime-capacity shape
   becomes itself Box-only content, laid out `[header fields | len | cap |
   elements]`, which needs a construction route that knows the capacity, a
@@ -689,12 +798,18 @@ condition under which it is taken up.
   the expression with the hole is admitted only as that argument because
   such a struct is never a local value, and `_` would be a new token
   (`..` exists already as the destructuring rest marker).
+  Reopen when a concrete typed-header/tail consumer needs the compact owning
+  handle or adjacent layout. Compare full allocation bytes, dependent accesses,
+  initialization, movement/growth and cleanup against both ordinary alternatives;
+  no new layout or construction spelling is selected without that evidence.
 - **Bitmask fact.** `x & (c - 1) < c` for a power-of-two `c`, which would
   remove the per-probe bounds compare in hash tables.
 - **Handing checker facts to the backend.** Emitted since the v0.60 port:
   `noalias` (not on `swap`), `nonnull`, `dereferenceable`,
   `captures(none)` or `nocapture` by a build-time probe, `inbounds`, and
-  `nuw`/`nsw` on the exact family. Not emitted: `memory(argmem: ...)` (the
+  `nuw`/`nsw` on the exact family. The later qualified Ring payload-address
+  `llvm.assume` is measured in the [Deque comparison](../research/experiments/container-representation/deque-library/RESULTS.md);
+  its remaining costs are tracked above. Not emitted: `memory(argmem: ...)` (the
   IR carries neither the declared row nor the allocation fact), scoped
   alias metadata and `llvm.loop.parallel_accesses` (the emitter has no
   metadata table). Build the metadata subsystem as its own step with a
@@ -720,8 +835,14 @@ condition under which it is taken up.
   prose terms defined once in OWN-1 (copy: copyable; affine: droppable but
   not copyable; linear: neither). Rewrite the several hundred prose uses in
   capability words when a specification pass can afford the review.
-- **Performance floor after the port.** Re-measure the existing kernels and
-  the eight engineering tasks of the matrix rounds once the compiler
-  implements v0.60, so that the recorded costs (data-determined index
-  compare, refused scatter, re-descent on find-then-mutate, one element move
-  into the append slot) have numbers.
+- **Unmeasured performance claims from the ownership-redesign matrix.**
+  The v0.60 port has landed; the current Vector, Slab and Deque comparisons
+  establish only their stated operation contracts and toolchains. The earlier
+  matrix's costs for data-determined index checks, refused scatter,
+  find-then-mutate re-descent and construction into an append slot still need
+  current source and native controls where those comparisons do not cover them.
+  Reopen the affected claim when a container or systems workload exercises it,
+  preserving its ownership, order, overlap and allocation contract and separating
+  required source work from removable lowering cost. Defer a broad repeat of all
+  eight engineering tasks until it answers a concrete selection question;
+  a passing new library does not dispose of the remaining matrix claims.

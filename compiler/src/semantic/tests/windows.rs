@@ -181,12 +181,12 @@ fn readonly_provenance_survives_reference_aliases_and_reborrows() {
   readonly value: u8;
 }
 
-fn put(cell: &u8) -> result: own unit writes(cell) {
+fn put(cell: &u8) -> result: unit writes(cell) {
   set deref(cell) = 9_u8;
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let record = Record(value: 1_u8);
   let p = &record.value;
   put(cell: p);
@@ -198,12 +198,12 @@ fn main() -> status: own ExitStatus pure {
   readonly value: u8;
 }
 
-fn put(cell: &u8) -> result: own unit writes(cell) {
+fn put(cell: &u8) -> result: unit writes(cell) {
   set deref(cell) = 9_u8;
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let record = Record(value: 1_u8);
   let p = &record;
   put(cell: &deref(p).value);
@@ -215,12 +215,12 @@ fn main() -> status: own ExitStatus pure {
   readonly value: u8;
 }
 
-fn put(cell: &u8) -> result: own unit writes(cell) {
+fn put(cell: &u8) -> result: unit writes(cell) {
   set deref(cell) = 9_u8;
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let record = Record(value: 1_u8);
   let p = &record.value;
   put(cell: &deref(p));
@@ -372,24 +372,24 @@ fn known_stored_layouts_keep_op9_in_symbolic_schemas() {
         "known AboveU64 layout in an unused generic schema",
     );
     for (case, source) in [
-        br#"fn unchecked<const unused: u64>(count: own u64) -> result: own unit pure {
+        br#"fn unchecked<const unused: u64>(count: u64) -> result: unit pure {
   let cells = box_slots_new::<u16>(capacity: count);
   free_empty(window: move cells);
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#
         .as_slice(),
-        br#"fn unchecked<T>(count: own u64) -> result: own unit pure {
+        br#"fn unchecked<T>(count: u64) -> result: unit pure {
   let cells = box_slots_new::<Box<T>>(capacity: count);
   free_empty(window: move cells);
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#
@@ -399,24 +399,24 @@ fn main() -> status: own ExitStatus pure {
   tag: u8;
 }
 
-fn unchecked<T>(count: own u64) -> result: own unit pure {
+fn unchecked<T>(count: u64) -> result: unit pure {
   let cells = box_slots_new::<Envelope<T>>(capacity: count);
   free_empty(window: move cells);
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#
         .as_slice(),
-        br#"fn unchecked<T>(count: own u64) -> result: own unit pure {
+        br#"fn unchecked<T>(count: u64) -> result: unit pure {
   let cells = box_slots_new::<Slots<Box<T>, 2>>(capacity: count);
   free_empty(window: move cells);
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#
@@ -439,13 +439,13 @@ fn unresolved_stored_layouts_defer_to_every_concrete_replay() {
     assert_accepts(include_bytes!(
         "../../../../tests/conformance/cases/op9-pos-unresolved-aggregate-layout.wf"
     ));
-    let unresolved_schema = br#"fn allocate<T>(count: own u64) -> result: own unit pure {
+    let unresolved_schema = br#"fn allocate<T>(count: u64) -> result: unit pure {
   let cells = box_slots_new::<T>(capacity: count);
   free_empty(window: move cells);
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -456,7 +456,7 @@ fn main() -> status: own ExitStatus pure {
   tag: u16;
 }
 
-fn allocate<T>(count: own u64) -> result: own unit pure contract {
+fn allocate<T>(count: u64) -> result: unit pure contract {
   requires count <= 1_u64;
 } {
   let cells = box_slots_new::<T>(capacity: count);
@@ -464,14 +464,14 @@ fn allocate<T>(count: own u64) -> result: own unit pure contract {
   return unit;
 }
 
-fn forward<T>(count: own u64) -> result: own unit pure contract {
+fn forward<T>(count: u64) -> result: unit pure contract {
   requires count <= 1_u64;
 } {
   allocate::<T>(count: count);
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   forward::<u16>(count: 1_u64);
   forward::<Packet>(count: 1_u64);
   forward::<Box<u64>>(count: 1_u64);
@@ -512,7 +512,7 @@ fn transitive_known_layouts_do_not_take_the_direct_opaque_deferral() {
         };
         let source = |upper| {
             format!(
-                r#"{declaration_prefix}fn allocate<T>(count: own u64) -> result: own u64 pure contract {{
+                r#"{declaration_prefix}fn allocate<T>(count: u64) -> result: u64 pure contract {{
   requires count <= {upper}_u64;
   ensures result == count;
 }} {{
@@ -522,7 +522,7 @@ fn transitive_known_layouts_do_not_take_the_direct_opaque_deferral() {
   return capacity;
 }}
 
-fn relay<{parameter}>(count: own u64) -> result: own u64 pure contract {{
+fn relay<{parameter}>(count: u64) -> result: u64 pure contract {{
   requires count <= {upper}_u64;
   ensures result == count;
 }} {{
@@ -530,7 +530,7 @@ fn relay<{parameter}>(count: own u64) -> result: own u64 pure contract {{
   return produced;
 }}
 
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   return exit_status(code: 0_u8);
 }}
 "#
@@ -560,13 +560,13 @@ fn bounded_numeric_layouts_keep_their_exact_symbolic_op9_limit() {
     const LIMIT: u64 = u64::MAX / 8;
     for bound in ["Int", "Float"] {
         let source = format!(
-            "fn allocate<T: {bound}>(count: own u64) -> result: own unit pure contract {{\n  requires count <= {LIMIT}_u64;\n}} {{\n  let cells = box_slots_new::<T>(capacity: count);\n  free_empty(window: move cells);\n  return unit;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+            "fn allocate<T: {bound}>(count: u64) -> result: unit pure contract {{\n  requires count <= {LIMIT}_u64;\n}} {{\n  let cells = box_slots_new::<T>(capacity: count);\n  free_empty(window: move cells);\n  return unit;\n}}\n\nfn main() -> status: ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
         );
         assert_accepts(source.as_bytes());
 
         let too_large = LIMIT + 1;
         let source = format!(
-            "fn allocate<T: {bound}>(count: own u64) -> result: own unit pure contract {{\n  requires count <= {too_large}_u64;\n}} {{\n  let cells = box_slots_new::<T>(capacity: count);\n  free_empty(window: move cells);\n  return unit;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+            "fn allocate<T: {bound}>(count: u64) -> result: unit pure contract {{\n  requires count <= {too_large}_u64;\n}} {{\n  let cells = box_slots_new::<T>(capacity: count);\n  free_empty(window: move cells);\n  return unit;\n}}\n\nfn main() -> status: ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
         );
         assert_op9_allocation_fit(
             source.as_bytes(),
@@ -580,7 +580,7 @@ fn bounded_numeric_layouts_keep_their_exact_symbolic_op9_limit() {
 /// an array whose concrete stride is AboveU64 rejects that same count.
 #[test]
 fn symbolic_const_array_layout_defers_only_until_concrete_replay() {
-    let schema = br#"fn allocate<const n: u64>(count: own u64) -> result: own unit pure contract {
+    let schema = br#"fn allocate<const n: u64>(count: u64) -> result: unit pure contract {
   requires count <= 1_u64;
 } {
   let cells = box_slots_new::<Array<u64, n>>(capacity: count);
@@ -588,13 +588,13 @@ fn symbolic_const_array_layout_defers_only_until_concrete_replay() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
     assert_accepts(schema);
 
-    let small = br#"fn allocate<const n: u64>(count: own u64) -> result: own unit pure contract {
+    let small = br#"fn allocate<const n: u64>(count: u64) -> result: unit pure contract {
   requires count <= 1_u64;
 } {
   let cells = box_slots_new::<Array<u64, n>>(capacity: count);
@@ -602,15 +602,14 @@ fn main() -> status: own ExitStatus pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   allocate::<4>(count: 1_u64);
   return exit_status(code: 0_u8);
 }
 "#;
     assert_accepts(small);
 
-    let above_u64 =
-        br#"fn allocate<const n: u64>(count: own u64) -> result: own unit pure contract {
+    let above_u64 = br#"fn allocate<const n: u64>(count: u64) -> result: unit pure contract {
   requires count <= 1_u64;
 } {
   let cells = box_slots_new::<Array<u64, n>>(capacity: count);
@@ -618,7 +617,7 @@ fn main() -> status: own ExitStatus pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   allocate::<2305843009213693952>(count: 1_u64);
   return exit_status(code: 0_u8);
 }
@@ -635,7 +634,7 @@ fn a_concrete_above_u64_stride_does_not_defer_op9() {
   words: Array<u64, 2305843009213693952>;
 }
 
-fn allocate<T>(count: own u64) -> result: own unit pure contract {
+fn allocate<T>(count: u64) -> result: unit pure contract {
   requires count <= 1_u64;
 } {
   let cells = box_slots_new::<T>(capacity: count);
@@ -643,7 +642,7 @@ fn allocate<T>(count: own u64) -> result: own unit pure contract {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   allocate::<Giant>(count: 1_u64);
   return exit_status(code: 0_u8);
 }
@@ -681,28 +680,28 @@ fn free_empty_of_a_nonempty_window_is_refused() {
 #[test]
 fn free_empty_uses_the_current_length_for_every_window_shape() {
     for source in [
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   let window = box_slots_new::<u8>(capacity: 2_u64);
   free_empty(window: move window);
   return exit_status(code: 0_u8);
 }
 "#
         .as_slice(),
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   let window = box_ring_new::<u8>(capacity: 2_u64);
   free_empty(window: move window);
   return exit_status(code: 0_u8);
 }
 "#
         .as_slice(),
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   let slots = slots_new::<u8, 4>();
   free_empty(window: move slots);
   return exit_status(code: 0_u8);
 }
 "#
         .as_slice(),
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   let ring = ring_new::<u8, 4>();
   free_empty(window: move ring);
   return exit_status(code: 0_u8);
@@ -713,7 +712,7 @@ fn free_empty_uses_the_current_length_for_every_window_shape() {
   Mark();
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let window = box_slots_new::<Ticket>(capacity: 2_u64);
   let ticket = Mark();
   place_back(window: &window.inner, value: move ticket);
@@ -732,7 +731,7 @@ fn main() -> status: own ExitStatus pure {
     }
 
     for source in [
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   let window = box_slots_new::<u8>(capacity: 4_u64);
   place_back(window: &window.inner, value: 7_u8);
   free_empty(window: move window);
@@ -744,7 +743,7 @@ fn main() -> status: own ExitStatus pure {
   value: u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let window = box_slots_new::<Token>(capacity: 1_u64);
   let token = Token(value: 7_u8);
   place_back(window: &window.inner, value: move token);
@@ -753,7 +752,7 @@ fn main() -> status: own ExitStatus pure {
 }
 "#
         .as_slice(),
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   let window = box_ring_new::<Box<u8>>(capacity: 4_u64);
   let value = box_new::<u8>(value: 7_u8);
   place_back(window: &window.inner, value: move value);
@@ -762,12 +761,12 @@ fn main() -> status: own ExitStatus pure {
 }
 "#
         .as_slice(),
-        br#"fn release(window: own Box<Slots<u8>>) -> result: own unit pure {
+        br#"fn release(window: Box<Slots<u8>>) -> result: unit pure {
   free_empty(window: move window);
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#
@@ -779,7 +778,7 @@ fn main() -> status: own ExitStatus pure {
     }
 
     for source in [
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   let slots = slots_new::<u8, 4>();
   let window = box_new::<Slots<u8, 4>>(value: move slots);
   free_empty(window: move window);
@@ -787,7 +786,7 @@ fn main() -> status: own ExitStatus pure {
 }
 "#
         .as_slice(),
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   let ring = ring_new::<u8, 4>();
   let window = box_new::<Ring<u8, 4>>(value: move ring);
   free_empty(window: move window);

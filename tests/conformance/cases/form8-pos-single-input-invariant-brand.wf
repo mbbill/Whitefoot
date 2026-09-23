@@ -2,12 +2,12 @@ struct Marker<T> {
   value: u64;
 }
 
-fn read_marker(marker: &Marker<Slots<u8, 4>>) -> value: own u64 reads(marker.value) {
+fn read_marker(marker: &Marker<Slots<u8, 4>>) -> value: u64 reads(marker.value) {
   doc "One reader names one written instantiation in its parameter type and needs no provider argument beside it.";
   return deref(marker).value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "FN-2: the same reader serves two separately constructed values of that one written instantiation. The argument is written at each construction and at the parameter type, and the reader's own temporary reference is formed at each call and carries no name of its own [REF-1].";
   let first = Marker<Slots<u8, 4>>(value: 7_u64);
   let second = Marker<Slots<u8, 4>>(value: 9_u64);

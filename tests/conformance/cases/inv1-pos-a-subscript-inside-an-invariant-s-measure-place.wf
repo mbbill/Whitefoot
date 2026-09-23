@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "INV-1, MSR-1: an affine factor's measure place is formed with subscripts as well as field selections, under the enclosing concrete instance and at the enclosing loop depth. The header invariant below measures one element of a window of windows, and MSR-2's standing ordering over that element's own measures is what discharges it.";
   let inner = slots_new::<u8, 4>();
   let table = slots_new::<Slots<u8, 4>, 2>();

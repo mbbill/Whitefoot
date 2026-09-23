@@ -8,8 +8,7 @@ use super::{emit, emit_arithmetic_obligations};
 /// The normalizer publishes its verified result bound. The caller consumes
 /// that exact summary directly to discharge the addition; the final value
 /// check is an ordinary test oracle.
-const PROVED_EXACT: &[u8] =
-    br#"fn clamp_below_thousand(value: own u64) -> result: own u64 pure contract {
+const PROVED_EXACT: &[u8] = br#"fn clamp_below_thousand(value: u64) -> result: u64 pure contract {
   ensures result < 1000_u64;
 } {
   if value < 1000_u64 {
@@ -19,18 +18,18 @@ const PROVED_EXACT: &[u8] =
   }
 }
 
-fn increment(x: own u64) -> result: own u64 pure {
+fn increment(x: u64) -> result: u64 pure {
   let bounded = clamp_below_thousand(value: x);
   let stepped = bounded + 1_u64;
   return stepped;
 }
 
-fn wrapping_increment(x: own u64) -> result: own u64 pure {
+fn wrapping_increment(x: u64) -> result: u64 pure {
   let stepped = x +wrap 1_u64;
   return stepped;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let total = increment(x: 6_u64);
   if total != 7_u64 {
     return exit_status(code: 1_u8);

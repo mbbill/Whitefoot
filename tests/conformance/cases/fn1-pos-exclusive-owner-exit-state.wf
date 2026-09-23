@@ -3,13 +3,13 @@ struct Observed {
   current: u64;
 }
 
-fn exchange(slot: &Box<u64>, spare: &Box<u64>) -> result: own unit writes(slot), writes(spare) {
+fn exchange(slot: &Box<u64>, spare: &Box<u64>) -> result: unit writes(slot), writes(spare) {
   doc "The exchange is `swap`: it moves the two stored owners past each other, consumes neither root, and leaves no program point at which a place holds no owner [OP-11].";
   swap(first: slot, second: spare);
   return unit;
 }
 
-fn observe(owner: &Box<u64>, spare: &Box<u64>) -> result: own Observed writes(owner), writes(spare) {
+fn observe(owner: &Box<u64>, spare: &Box<u64>) -> result: Observed writes(owner), writes(spare) {
   doc "Reads the owner's content through the Box field `inner` across the reference, deref(owner).inner, before and after the exchange [TYPE-7, TYPE-9].";
   let started = deref(owner).inner;
   exchange(slot: owner, spare: spare);
@@ -17,7 +17,7 @@ fn observe(owner: &Box<u64>, spare: &Box<u64>) -> result: own Observed writes(ow
   return Observed(previous: started, current: current);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "FN-1, EFF-2, OP-11: a helper exchanges the contents of two cells through references and the caller observes both values. Each cell is released by the compiler-derived scope exit [STOR-3]; there is one heap and no store value to name [STOR-8].";
   let owner = box_new::<u64>(value: 11_u64);
   let incoming = box_new::<u64>(value: 22_u64);

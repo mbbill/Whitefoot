@@ -1,4 +1,4 @@
-fn combined_ports(p: own u32, p_cap: own u32, q: own u32, q_cap: own u32, r: own u32, r_cap: own u32) -> result: own unit pure contract {
+fn combined_ports(p: u32, p_cap: u32, q: u32, q_cap: u32, r: u32, r_cap: u32) -> result: unit pure contract {
   requires p <= p_cap;
   requires q <= q_cap;
   requires r <= r_cap;
@@ -14,6 +14,6 @@ fn combined_ports(p: own u32, p_cap: own u32, q: own u32, q_cap: own u32, r: own
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

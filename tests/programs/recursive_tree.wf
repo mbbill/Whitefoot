@@ -3,21 +3,21 @@ enum Tree {
   Branch(left: Box<Tree>, right: Box<Tree>);
 }
 
-fn boxed_leaf() -> made: own Box<Tree> pure {
+fn boxed_leaf() -> made: Box<Tree> pure {
   doc "One leaf in its own heap cell. There is one heap, allocation is total, and the cell carries no brand, so the construction has no failure arm [STOR-8, TYPE-9].";
   let leaf = Leaf();
   let cell = box_new::<Tree>(value: move leaf);
   return move cell;
 }
 
-fn boxed_branch(left: own Box<Tree>, right: own Box<Tree>) -> made: own Box<Tree> pure {
+fn boxed_branch(left: Box<Tree>, right: Box<Tree>) -> made: Box<Tree> pure {
   doc "A branch owning two children. Dropping it releases both: the release walk visits a cell's content before the cell itself [PROV-6, STOR-3].";
   let branch = Branch(left: move left, right: move right);
   let cell = box_new::<Tree>(value: move branch);
   return move cell;
 }
 
-fn count(tree: &Box<Tree>) -> result: own Result<u64, Overflow> reads(tree) {
+fn count(tree: &Box<Tree>) -> result: Result<u64, Overflow> reads(tree) {
   doc "The recursive walk over a cell-linked tree. A Box's content is its field inner, and matching through a reference binds each payload as a reference naming the scrutinee path [TYPE-9, OWN-13]. PROV-6 admits a release graph with a cycle, and this is the type whose release is one action per node entering itself.";
   match deref(tree).inner {
     Leaf() => {
@@ -32,7 +32,7 @@ fn count(tree: &Box<Tree>) -> result: own Result<u64, Overflow> reads(tree) {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Two leaves under one branch, counted by the recursive walk; the root's release reclaims the whole tree.";
   let leaf0 = boxed_leaf();
   let leaf1 = boxed_leaf();

@@ -1,9 +1,9 @@
-fn release_now(cell: own Box<Slots<u8>>) -> result: own unit pure {
+fn release_now(cell: Box<Slots<u8>>) -> result: unit pure {
   doc "An affine value is released early by moving it into a function that consumes it and ends; this return edge runs exactly the walk the caller's scope exit would have run.";
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "PROV-6: the early release runs the same walk the scope exit would run, at the point it is written. The exit code is a byte read out before the value is handed over, so a walk that ran early or twice reports rather than passing quietly.";
   let fresh = box_slots_new::<u8>(capacity: 4_u64);
   place_back(window: &fresh.inner, value: 5_u8);

@@ -1,0 +1,481 @@
+--- a/dense-map.wf
++++ b/dense-map.wf
+@@ -15,10 +15,14 @@
+   DenseOccupied(index: u64);
+ }
+
++enum DenseReturnKind {
++  DenseWasReplaced();
++  DenseWasFull();
++}
++
+ enum DensePut<K, V> {
+   DenseInserted();
+-  DenseReplaced(previous: DensePair<K, V>);
+-  DenseFull(offered: DensePair<K, V>);
++  DenseReturned(kind: DenseReturnKind, pair: DensePair<K, V>);
+ }
+
+ struct DenseMap<K, V, const ceiling: u64> {
+@@ -162,7 +166,8 @@
+             swap(first: &deref(map).entries.inner[index], second: &replacement);
+             let DenseEntry(bucket: previous_bucket, key: previous_key, value: previous_value) = move replacement;
+             let previous = DensePair<K, V>(key: move previous_key, value: move previous_value);
+-            return DenseReplaced<K, V>(previous: move previous);
++            let outcome_kind = DenseWasReplaced();
++            return DenseReturned<K, V>(kind: outcome_kind, pair: move previous);
+           }
+         }
+       }
+@@ -178,7 +183,8 @@
+     }
+   }
+   let offered = DensePair<K, V>(key: move key, value: move value);
+-  return DenseFull<K, V>(offered: move offered);
++  let outcome_kind = DenseWasFull();
++  return DenseReturned<K, V>(kind: outcome_kind, pair: move offered);
+ }
+
+ fn dense_map_plan_index(indexes: &Box<Array<DenseIndex>>, hash: own u64, index: own u64) -> result: own Bool writes(indexes) contract {
+@@ -282,33 +288,40 @@
+     DenseInserted() => {
+       return DenseInserted<K, V>();
+     }
+-    DenseReplaced(previous: old_pair) => {
+-      return DenseReplaced<K, V>(previous: move old_pair);
+-    }
+-    DenseFull(offered: new_pair) => {
+-      let count = deref(map).indexes.inner.len;
+-      if count >= ceiling {
+-        return DenseFull<K, V>(offered: move new_pair);
+-      }
+-      let capacity = ceiling;
+-      if count == 0_u64 {
+-        set capacity = 1_u64;
+-      } else if count <= 9223372036854775807_u64 {
+-        let doubled = count + count;
+-        if doubled <= ceiling {
+-          set capacity = doubled;
++    DenseReturned(kind: return_kind, pair: returned_pair) => {
++      match return_kind {
++        DenseWasReplaced() => {
++          let outcome_kind = DenseWasReplaced();
++          return DenseReturned<K, V>(kind: outcome_kind, pair: move returned_pair);
+         }
+-      }
+-      let grown = dense_map_reserve::<DenseKey<K, E>, V, ceiling>(map: map, capacity: capacity, env: env);
+-      match grown {
+-        Ok(value: success) => {
+-          let DensePair(key: retry_key, value: retry_value) = move new_pair;
+-          let retried = dense_map_try_put::<DenseKey<K, E>, V, ceiling>(map: map, key: move retry_key, value: move retry_value, env: env);
+-          return move retried;
++        DenseWasFull() => {
++          let count = deref(map).indexes.inner.len;
++          if count >= ceiling {
++            let outcome_kind = DenseWasFull();
++            return DenseReturned<K, V>(kind: outcome_kind, pair: move returned_pair);
++          }
++          let capacity = ceiling;
++          if count == 0_u64 {
++            set capacity = 1_u64;
++          } else if count <= 9223372036854775807_u64 {
++            let doubled = count + count;
++            if doubled <= ceiling {
++              set capacity = doubled;
++            }
++          }
++          let grown = dense_map_reserve::<DenseKey<K, E>, V, ceiling>(map: map, capacity: capacity, env: env);
++          match grown {
++            Ok(value: success) => {
++              let DensePair(key: retry_key, value: retry_value) = move returned_pair;
++              let retried = dense_map_try_put::<DenseKey<K, E>, V, ceiling>(map: map, key: move retry_key, value: move retry_value, env: env);
++              return move retried;
++            }
++            Err(error: refused) => {
++              let outcome_kind = DenseWasFull();
++              return DenseReturned<K, V>(kind: outcome_kind, pair: move returned_pair);
++            }
++          }
+         }
+-        Err(error: refused) => {
+-          return DenseFull<K, V>(offered: move new_pair);
+-        }
+       }
+     }
+   }
+--- a/sparse-map.wf
++++ b/sparse-map.wf
+@@ -9,10 +9,14 @@
+   SparseFilled(key: K, value: V);
+ }
+
++enum SparseReturnKind {
++  SparseWasReplaced();
++  SparseWasFull();
++}
++
+ enum SparsePut<K, V> {
+   SparseInserted();
+-  SparseReplaced(previous: SparsePair<K, V>);
+-  SparseFull(offered: SparsePair<K, V>);
++  SparseReturned(kind: SparseReturnKind, pair: SparsePair<K, V>);
+ }
+
+ enum SparseAction {
+@@ -216,7 +220,8 @@
+     }
+     SparseFilled(key: old_key, value: old_value) => {
+       let previous = SparsePair<K, V>(key: move old_key, value: move old_value);
+-      return SparseReplaced<K, V>(previous: move previous);
++      let outcome_kind = SparseWasReplaced();
++      return SparseReturned<K, V>(kind: outcome_kind, pair: move previous);
+     }
+   }
+ }
+@@ -261,7 +266,8 @@
+     }
+   }
+   let offered = SparsePair<K, V>(key: move key, value: move value);
+-  return SparseFull<K, V>(offered: move offered);
++  let outcome_kind = SparseWasFull();
++  return SparseReturned<K, V>(kind: outcome_kind, pair: move offered);
+ }
+
+ fn sparse_map_claim(used: &Box<Array<Bool>>, hash: own u64) -> result: own Result<u64, unit> writes(used) contract {
+@@ -458,33 +464,40 @@
+     SparseInserted() => {
+       return SparseInserted<K, V>();
+     }
+-    SparseReplaced(previous: old_pair) => {
+-      return SparseReplaced<K, V>(previous: move old_pair);
+-    }
+-    SparseFull(offered: new_pair) => {
+-      let count = deref(map).cells.inner.len;
+-      if count >= ceiling {
+-        return SparseFull<K, V>(offered: move new_pair);
+-      }
+-      let capacity = ceiling;
+-      if count == 0_u64 {
+-        set capacity = 1_u64;
+-      } else if count <= 9223372036854775807_u64 {
+-        let doubled = count + count;
+-        if doubled <= ceiling {
+-          set capacity = doubled;
++    SparseReturned(kind: return_kind, pair: returned_pair) => {
++      match return_kind {
++        SparseWasReplaced() => {
++          let outcome_kind = SparseWasReplaced();
++          return SparseReturned<K, V>(kind: outcome_kind, pair: move returned_pair);
+         }
+-      }
+-      let grown = sparse_map_reserve::<SparseKey<K, E>, V, ceiling>(map: map, capacity: capacity, env: env);
+-      match grown {
+-        Ok(value: success) => {
+-          let SparsePair(key: retry_key, value: retry_value) = move new_pair;
+-          let retried = sparse_map_try_put::<SparseKey<K, E>, V, ceiling>(map: map, key: move retry_key, value: move retry_value, env: env);
+-          return move retried;
++        SparseWasFull() => {
++          let count = deref(map).cells.inner.len;
++          if count >= ceiling {
++            let outcome_kind = SparseWasFull();
++            return SparseReturned<K, V>(kind: outcome_kind, pair: move returned_pair);
++          }
++          let capacity = ceiling;
++          if count == 0_u64 {
++            set capacity = 1_u64;
++          } else if count <= 9223372036854775807_u64 {
++            let doubled = count + count;
++            if doubled <= ceiling {
++              set capacity = doubled;
++            }
++          }
++          let grown = sparse_map_reserve::<SparseKey<K, E>, V, ceiling>(map: map, capacity: capacity, env: env);
++          match grown {
++            Ok(value: success) => {
++              let SparsePair(key: retry_key, value: retry_value) = move returned_pair;
++              let retried = sparse_map_try_put::<SparseKey<K, E>, V, ceiling>(map: map, key: move retry_key, value: move retry_value, env: env);
++              return move retried;
++            }
++            Err(error: refused) => {
++              let outcome_kind = SparseWasFull();
++              return SparseReturned<K, V>(kind: outcome_kind, pair: move returned_pair);
++            }
++          }
+         }
+-        Err(error: refused) => {
+-          return SparseFull<K, V>(offered: move new_pair);
+-        }
+       }
+     }
+   }
+--- a/map-library.wf
++++ b/map-library.wf
+@@ -198,17 +198,21 @@
+       DenseInserted() => {
+         map_cost_ordered(env: &digest, value: 0_u64);
+       }
+-      DenseReplaced(previous: pair) => {
+-        map_cost_ordered(env: &digest, value: 1_u64);
+-        let DensePair(key: old_key, value: old_value) = move pair;
+-        let content = MapCostElement::content(key: old_key, value: move old_value);
+-        map_cost_ordered(env: &digest, value: content);
+-      }
+-      DenseFull(offered: pair) => {
+-        map_cost_ordered(env: &digest, value: 2_u64);
+-        let DensePair(key: old_key, value: old_value) = move pair;
+-        let content = MapCostElement::content(key: old_key, value: move old_value);
+-        map_cost_ordered(env: &digest, value: content);
++      DenseReturned(kind: return_kind, pair: returned_pair) => {
++        match return_kind {
++          DenseWasReplaced() => {
++            map_cost_ordered(env: &digest, value: 1_u64);
++            let DensePair(key: old_key, value: old_value) = move returned_pair;
++            let content = MapCostElement::content(key: old_key, value: move old_value);
++            map_cost_ordered(env: &digest, value: content);
++          }
++          DenseWasFull() => {
++            map_cost_ordered(env: &digest, value: 2_u64);
++            let DensePair(key: old_key, value: old_value) = move returned_pair;
++            let content = MapCostElement::content(key: old_key, value: move old_value);
++            map_cost_ordered(env: &digest, value: content);
++          }
++        }
+       }
+     }
+   }
+@@ -254,17 +258,21 @@
+           DenseInserted() => {
+             map_cost_ordered(env: &digest, value: 0_u64);
+           }
+-          DenseReplaced(previous: pair) => {
+-            map_cost_ordered(env: &digest, value: 1_u64);
+-            let DensePair(key: old_key, value: old_value) = move pair;
+-            let content = MapCostElement::content(key: old_key, value: move old_value);
+-            map_cost_ordered(env: &digest, value: content);
+-          }
+-          DenseFull(offered: pair) => {
+-            map_cost_ordered(env: &digest, value: 2_u64);
+-            let DensePair(key: old_key, value: old_value) = move pair;
+-            let content = MapCostElement::content(key: old_key, value: move old_value);
+-            map_cost_ordered(env: &digest, value: content);
++          DenseReturned(kind: return_kind, pair: returned_pair) => {
++            match return_kind {
++              DenseWasReplaced() => {
++                map_cost_ordered(env: &digest, value: 1_u64);
++                let DensePair(key: old_key, value: old_value) = move returned_pair;
++                let content = MapCostElement::content(key: old_key, value: move old_value);
++                map_cost_ordered(env: &digest, value: content);
++              }
++              DenseWasFull() => {
++                map_cost_ordered(env: &digest, value: 2_u64);
++                let DensePair(key: old_key, value: old_value) = move returned_pair;
++                let content = MapCostElement::content(key: old_key, value: move old_value);
++                map_cost_ordered(env: &digest, value: content);
++              }
++            }
+           }
+         }
+       }
+@@ -302,18 +310,22 @@
+             DenseInserted() => {
+               map_cost_ordered(env: &digest, value: 0_u64);
+             }
+-            DenseReplaced(previous: pair) => {
+-              map_cost_ordered(env: &digest, value: 1_u64);
+-              let DensePair(key: old_key, value: old_value) = move pair;
+-              let content = MapCostElement::content(key: old_key, value: move old_value);
+-              map_cost_ordered(env: &digest, value: content);
++            DenseReturned(kind: return_kind, pair: returned_pair) => {
++              match return_kind {
++                DenseWasReplaced() => {
++                  map_cost_ordered(env: &digest, value: 1_u64);
++                  let DensePair(key: old_key, value: old_value) = move returned_pair;
++                  let content = MapCostElement::content(key: old_key, value: move old_value);
++                  map_cost_ordered(env: &digest, value: content);
++                }
++                DenseWasFull() => {
++                  map_cost_ordered(env: &digest, value: 2_u64);
++                  let DensePair(key: old_key, value: old_value) = move returned_pair;
++                  let content = MapCostElement::content(key: old_key, value: move old_value);
++                  map_cost_ordered(env: &digest, value: content);
++                }
++              }
+             }
+-            DenseFull(offered: pair) => {
+-              map_cost_ordered(env: &digest, value: 2_u64);
+-              let DensePair(key: old_key, value: old_value) = move pair;
+-              let content = MapCostElement::content(key: old_key, value: move old_value);
+-              map_cost_ordered(env: &digest, value: content);
+-            }
+           }
+         } else if path == 3_u64 {
+           let removed = dense_map_remove::<MapCostDenseKey, T, 16384>(map: &map, key: &key, env: &env);
+@@ -340,17 +352,21 @@
+             DenseInserted() => {
+               map_cost_ordered(env: &digest, value: 0_u64);
+             }
+-            DenseReplaced(previous: pair) => {
+-              map_cost_ordered(env: &digest, value: 1_u64);
+-              let DensePair(key: old_key, value: old_value) = move pair;
+-              let content = MapCostElement::content(key: old_key, value: move old_value);
+-              map_cost_ordered(env: &digest, value: content);
+-            }
+-            DenseFull(offered: pair) => {
+-              map_cost_ordered(env: &digest, value: 2_u64);
+-              let DensePair(key: old_key, value: old_value) = move pair;
+-              let content = MapCostElement::content(key: old_key, value: move old_value);
+-              map_cost_ordered(env: &digest, value: content);
++            DenseReturned(kind: return_kind, pair: returned_pair) => {
++              match return_kind {
++                DenseWasReplaced() => {
++                  map_cost_ordered(env: &digest, value: 1_u64);
++                  let DensePair(key: old_key, value: old_value) = move returned_pair;
++                  let content = MapCostElement::content(key: old_key, value: move old_value);
++                  map_cost_ordered(env: &digest, value: content);
++                }
++                DenseWasFull() => {
++                  map_cost_ordered(env: &digest, value: 2_u64);
++                  let DensePair(key: old_key, value: old_value) = move returned_pair;
++                  let content = MapCostElement::content(key: old_key, value: move old_value);
++                  map_cost_ordered(env: &digest, value: content);
++                }
++              }
+             }
+           }
+         } else if path == 7_u64 {
+@@ -396,18 +412,22 @@
+       SparseInserted() => {
+         map_cost_ordered(env: &digest, value: 0_u64);
+       }
+-      SparseReplaced(previous: pair) => {
+-        map_cost_ordered(env: &digest, value: 1_u64);
+-        let SparsePair(key: old_key, value: old_value) = move pair;
+-        let content = MapCostElement::content(key: old_key, value: move old_value);
+-        map_cost_ordered(env: &digest, value: content);
++      SparseReturned(kind: return_kind, pair: returned_pair) => {
++        match return_kind {
++          SparseWasReplaced() => {
++            map_cost_ordered(env: &digest, value: 1_u64);
++            let SparsePair(key: old_key, value: old_value) = move returned_pair;
++            let content = MapCostElement::content(key: old_key, value: move old_value);
++            map_cost_ordered(env: &digest, value: content);
++          }
++          SparseWasFull() => {
++            map_cost_ordered(env: &digest, value: 2_u64);
++            let SparsePair(key: old_key, value: old_value) = move returned_pair;
++            let content = MapCostElement::content(key: old_key, value: move old_value);
++            map_cost_ordered(env: &digest, value: content);
++          }
++        }
+       }
+-      SparseFull(offered: pair) => {
+-        map_cost_ordered(env: &digest, value: 2_u64);
+-        let SparsePair(key: old_key, value: old_value) = move pair;
+-        let content = MapCostElement::content(key: old_key, value: move old_value);
+-        map_cost_ordered(env: &digest, value: content);
+-      }
+     }
+   }
+   for (round in 0_u64..rounds) {
+@@ -452,18 +472,22 @@
+           SparseInserted() => {
+             map_cost_ordered(env: &digest, value: 0_u64);
+           }
+-          SparseReplaced(previous: pair) => {
+-            map_cost_ordered(env: &digest, value: 1_u64);
+-            let SparsePair(key: old_key, value: old_value) = move pair;
+-            let content = MapCostElement::content(key: old_key, value: move old_value);
+-            map_cost_ordered(env: &digest, value: content);
++          SparseReturned(kind: return_kind, pair: returned_pair) => {
++            match return_kind {
++              SparseWasReplaced() => {
++                map_cost_ordered(env: &digest, value: 1_u64);
++                let SparsePair(key: old_key, value: old_value) = move returned_pair;
++                let content = MapCostElement::content(key: old_key, value: move old_value);
++                map_cost_ordered(env: &digest, value: content);
++              }
++              SparseWasFull() => {
++                map_cost_ordered(env: &digest, value: 2_u64);
++                let SparsePair(key: old_key, value: old_value) = move returned_pair;
++                let content = MapCostElement::content(key: old_key, value: move old_value);
++                map_cost_ordered(env: &digest, value: content);
++              }
++            }
+           }
+-          SparseFull(offered: pair) => {
+-            map_cost_ordered(env: &digest, value: 2_u64);
+-            let SparsePair(key: old_key, value: old_value) = move pair;
+-            let content = MapCostElement::content(key: old_key, value: move old_value);
+-            map_cost_ordered(env: &digest, value: content);
+-          }
+         }
+       }
+     } else {
+@@ -500,18 +524,22 @@
+             SparseInserted() => {
+               map_cost_ordered(env: &digest, value: 0_u64);
+             }
+-            SparseReplaced(previous: pair) => {
+-              map_cost_ordered(env: &digest, value: 1_u64);
+-              let SparsePair(key: old_key, value: old_value) = move pair;
+-              let content = MapCostElement::content(key: old_key, value: move old_value);
+-              map_cost_ordered(env: &digest, value: content);
++            SparseReturned(kind: return_kind, pair: returned_pair) => {
++              match return_kind {
++                SparseWasReplaced() => {
++                  map_cost_ordered(env: &digest, value: 1_u64);
++                  let SparsePair(key: old_key, value: old_value) = move returned_pair;
++                  let content = MapCostElement::content(key: old_key, value: move old_value);
++                  map_cost_ordered(env: &digest, value: content);
++                }
++                SparseWasFull() => {
++                  map_cost_ordered(env: &digest, value: 2_u64);
++                  let SparsePair(key: old_key, value: old_value) = move returned_pair;
++                  let content = MapCostElement::content(key: old_key, value: move old_value);
++                  map_cost_ordered(env: &digest, value: content);
++                }
++              }
+             }
+-            SparseFull(offered: pair) => {
+-              map_cost_ordered(env: &digest, value: 2_u64);
+-              let SparsePair(key: old_key, value: old_value) = move pair;
+-              let content = MapCostElement::content(key: old_key, value: move old_value);
+-              map_cost_ordered(env: &digest, value: content);
+-            }
+           }
+         } else if path == 3_u64 {
+           let removed = sparse_map_remove::<MapCostSparseKey, T, 16384>(map: &map, key: &key, env: &env);
+@@ -538,18 +566,22 @@
+             SparseInserted() => {
+               map_cost_ordered(env: &digest, value: 0_u64);
+             }
+-            SparseReplaced(previous: pair) => {
+-              map_cost_ordered(env: &digest, value: 1_u64);
+-              let SparsePair(key: old_key, value: old_value) = move pair;
+-              let content = MapCostElement::content(key: old_key, value: move old_value);
+-              map_cost_ordered(env: &digest, value: content);
++            SparseReturned(kind: return_kind, pair: returned_pair) => {
++              match return_kind {
++                SparseWasReplaced() => {
++                  map_cost_ordered(env: &digest, value: 1_u64);
++                  let SparsePair(key: old_key, value: old_value) = move returned_pair;
++                  let content = MapCostElement::content(key: old_key, value: move old_value);
++                  map_cost_ordered(env: &digest, value: content);
++                }
++                SparseWasFull() => {
++                  map_cost_ordered(env: &digest, value: 2_u64);
++                  let SparsePair(key: old_key, value: old_value) = move returned_pair;
++                  let content = MapCostElement::content(key: old_key, value: move old_value);
++                  map_cost_ordered(env: &digest, value: content);
++                }
++              }
+             }
+-            SparseFull(offered: pair) => {
+-              map_cost_ordered(env: &digest, value: 2_u64);
+-              let SparsePair(key: old_key, value: old_value) = move pair;
+-              let content = MapCostElement::content(key: old_key, value: move old_value);
+-              map_cost_ordered(env: &digest, value: content);
+-            }
+           }
+         } else if path == 7_u64 {
+           let edited = sparse_map_edit::<MapCostSparseKey, T, MapCostDigest, u64, fn MapCostElement::edit, 16384>(map: &map, key: &key, key_env: &env, edit_env: &digest);

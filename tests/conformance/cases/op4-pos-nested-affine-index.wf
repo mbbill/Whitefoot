@@ -1,4 +1,4 @@
-fn fill(grid: &[u64]) -> result: own unit writes(grid) contract {
+fn fill(grid: &[u64]) -> result: unit writes(grid) contract {
   requires deref(grid).len >= 12_u64;
 } {
   for (row in 0_u64..3_u64) {
@@ -11,6 +11,6 @@ fn fill(grid: &[u64]) -> result: own unit writes(grid) contract {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

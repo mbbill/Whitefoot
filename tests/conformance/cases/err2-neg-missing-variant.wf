@@ -4,7 +4,7 @@ enum Color {
   Blue();
 }
 
-fn pick(c: own Color) -> result: own i32 pure {
+fn pick(c: Color) -> result: i32 pure {
   match c {
     Red() => {
       return 1_i32;
@@ -15,7 +15,7 @@ fn pick(c: own Color) -> result: own i32 pure {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A match missing the Blue() arm is non-exhaustive [ERR-2]; rejected.";
   let red_atom_0001 = Red();
   let n = pick(c: red_atom_0001);

@@ -1,4 +1,4 @@
-service fn main() -> function_result: own ExitStatus pure {
+service fn main() -> function_result: ExitStatus pure {
   doc "The leading spelling is not an ordinary declaration construct. FORM-1 rejects it; no program-kind marker is admitted.";
   return exit_status(code: 0_u8);
 }

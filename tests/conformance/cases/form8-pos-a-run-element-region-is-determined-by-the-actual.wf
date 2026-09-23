@@ -1,4 +1,4 @@
-fn width_of<T>(blocks: &Slots<T, 4>) -> taken: own Option<T> writes(blocks.last), writes(blocks.len) contract {
+fn width_of<T>(blocks: &Slots<T, 4>) -> taken: Option<T> writes(blocks.last), writes(blocks.len) contract {
   requires deref(blocks).len > 0_u64;
 } {
   doc "Takes one block off the back of a run of runs, generic over the element type [OP-10].";
@@ -6,7 +6,7 @@ fn width_of<T>(blocks: &Slots<T, 4>) -> taken: own Option<T> writes(blocks.last)
   return Some<T>(value: move one);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "FN-2: a type parameter occupying a position at any depth of a written argument is supplied explicitly at the call exactly as a top-level one is. The element type here is itself a boxed runtime-capacity run [TYPE-9], which is what lets one helper serve a run of runs.";
   let blocks = slots_new::<Box<Slots<u8>>, 4>();
   let block = box_slots_new::<u8>(capacity: 16_u64);

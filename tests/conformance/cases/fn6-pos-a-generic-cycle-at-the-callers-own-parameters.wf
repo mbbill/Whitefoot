@@ -1,4 +1,4 @@
-fn walk<const n: u64>(run: &Slots<u8, n>, at: own u64) -> total: own u64 reads(run) contract {
+fn walk<const n: u64>(run: &Slots<u8, n>, at: u64) -> total: u64 reads(run) contract {
   requires at <= deref(run).len;
 } {
   doc "[FN-6] permits recursion and refuses only polymorphic recursion. A call that writes exactly the caller's own parameters, as this one writes `n`, is the caller's own instance and mints no second one, so the cycle's instance set is finite and it monomorphizes.";
@@ -15,7 +15,7 @@ fn walk<const n: u64>(run: &Slots<u8, n>, at: own u64) -> total: own u64 reads(r
   return widened +wrap rest;
 }
 
-fn countdown<T: Int>(at: own u64) -> total: own u64 pure {
+fn countdown<T: Int>(at: u64) -> total: u64 pure {
   doc "The same cycle over a type parameter.";
   let done = at == 0_u64;
   if done {
@@ -26,7 +26,7 @@ fn countdown<T: Int>(at: own u64) -> total: own u64 pure {
   return rest +wrap 1_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "3 + 4 from the run, then 3 from the countdown.";
   let run = slots_new::<u8, 2>();
   place_back(window: &run, value: 3_u8);

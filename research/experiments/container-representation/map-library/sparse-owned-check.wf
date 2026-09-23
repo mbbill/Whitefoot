@@ -1,0 +1,222 @@
+struct SparseOwnedRecord {
+  id: u64;
+  serial: u64;
+}
+
+nodrop struct SparseOwnedNode {
+  child: Box<SparseOwnedRecord>;
+}
+
+struct SparseOwnerEnv {
+}
+
+struct SparseOwnerLedger {
+  releases: Array<u64, 32>;
+  failures: u64;
+  visits: u64;
+}
+
+fn sparse_owned_make(id: own u64, serial: own u64) -> result: own SparseOwnedNode pure {
+  let record = SparseOwnedRecord(id: id, serial: serial);
+  let child = box_new::<SparseOwnedRecord>(value: record);
+  return SparseOwnedNode(child: move child);
+}
+
+fn sparse_owned_fail(ledger: &SparseOwnerLedger) -> result: own unit writes(ledger) {
+  set deref(ledger).failures = deref(ledger).failures +wrap 1_u64;
+  return unit;
+}
+
+fn sparse_owned_release(value: own SparseOwnedNode, ledger: &SparseOwnerLedger) -> result: own unit writes(ledger) {
+  let SparseOwnedNode(child: owned_child) = move value;
+  let serial = owned_child.inner.serial;
+  if serial < deref(ledger).releases.len {
+    set deref(ledger).releases[serial] = deref(ledger).releases[serial] +wrap 1_u64;
+  } else {
+    sparse_owned_fail(ledger: ledger);
+  }
+  return unit;
+}
+
+fn sparse_owned_consume(env: &SparseOwnerLedger, key: own SparseOwnedNode, value: own SparseOwnedNode) -> result: own unit writes(env) {
+  sparse_owned_release(value: move key, ledger: env);
+  sparse_owned_release(value: move value, ledger: env);
+  return unit;
+}
+
+fn sparse_owned_hash(env: &SparseOwnerEnv, key: &SparseOwnedNode) -> result: own u64 reads(key) {
+  return deref(key).child.inner.id % 1_u64;
+}
+
+fn sparse_owned_equal(env: &SparseOwnerEnv, left: &SparseOwnedNode, right: &SparseOwnedNode) -> result: own Bool reads(left), reads(right) {
+  return deref(left).child.inner.id == deref(right).child.inner.id;
+}
+
+fn sparse_owned_read(env: &SparseOwnerLedger, key: &SparseOwnedNode, value: &SparseOwnedNode) -> result: own u64 reads(key), reads(value), writes(env) {
+  if deref(key).child.inner.serial != 4_u64 {
+    sparse_owned_fail(ledger: env);
+  }
+  if deref(value).child.inner.serial != 14_u64 {
+    sparse_owned_fail(ledger: env);
+  }
+  set deref(env).visits = deref(env).visits +wrap 1_u64;
+  return deref(value).child.inner.id;
+}
+
+fn sparse_owned_increment(env: &SparseOwnerLedger, key: &SparseOwnedNode, value: &SparseOwnedNode) -> result: own u64 reads(key), writes(env), writes(value) {
+  if deref(key).child.inner.serial != 4_u64 {
+    sparse_owned_fail(ledger: env);
+  }
+  if deref(value).child.inner.serial != 14_u64 {
+    sparse_owned_fail(ledger: env);
+  }
+  set deref(env).visits = deref(env).visits +wrap 1_u64;
+  set deref(value).child.inner.id = deref(value).child.inner.id +wrap 1_u64;
+  return deref(value).child.inner.id;
+}
+
+binding SparseOwnedKey : SparseKey<SparseOwnedNode, SparseOwnerEnv> {
+  hash = sparse_owned_hash;
+  equal = sparse_owned_equal;
+}
+
+binding SparseOwnedConsume : SparseConsume<SparseOwnedNode, SparseOwnedNode, SparseOwnerLedger> {
+  consume = sparse_owned_consume;
+}
+
+fn sparse_owned_check_pair(pair: &SparsePair<SparseOwnedNode, SparseOwnedNode>, key: own u64, value: own u64, ledger: &SparseOwnerLedger) -> result: own unit reads(pair), writes(ledger) {
+  if deref(pair).key.child.inner.id != key {
+    sparse_owned_fail(ledger: ledger);
+  }
+  if deref(pair).value.child.inner.id != value {
+    sparse_owned_fail(ledger: ledger);
+  }
+  return unit;
+}
+
+fn sparse_owned_outcome(outcome: own SparsePut<SparseOwnedNode, SparseOwnedNode>, expected: own u64, key: own u64, value: own u64, ledger: &SparseOwnerLedger) -> result: own unit writes(ledger) {
+  match outcome {
+    SparseInserted() => {
+      if expected != 0_u64 {
+        sparse_owned_fail(ledger: ledger);
+      }
+    }
+    SparseReplaced(previous: old_pair) => {
+      if expected != 1_u64 {
+        sparse_owned_fail(ledger: ledger);
+      }
+      if old_pair.key.child.inner.serial != 2_u64 {
+        sparse_owned_fail(ledger: ledger);
+      }
+      if old_pair.value.child.inner.serial != 12_u64 {
+        sparse_owned_fail(ledger: ledger);
+      }
+      sparse_owned_check_pair(pair: &old_pair, key: key, value: value, ledger: ledger);
+      sparse_pair_consume::<SparseOwnedConsume>(pair: move old_pair, env: ledger);
+    }
+    SparseFull(offered: new_pair) => {
+      if expected != 2_u64 {
+        sparse_owned_fail(ledger: ledger);
+      }
+      sparse_owned_check_pair(pair: &new_pair, key: key, value: value, ledger: ledger);
+      sparse_pair_consume::<SparseOwnedConsume>(pair: move new_pair, env: ledger);
+    }
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "Own-child ledger: ten distinct Record allocations, serials 1..4, 11..14, 21 and 22. Each must be consumed once. One initial map backing plus two copy-plan allocations and one grown map backing give four storage allocations, fourteen allocations/frees in total before an observer's own storage. Query nodes 21 and 22 are included. This is an instantiation over optional owned children, not a requirement of SparseMap.";
+  let releases = array_filled::<u64, 32>(value: 0_u64);
+  let ledger = SparseOwnerLedger(releases: releases, failures: 0_u64, visits: 0_u64);
+  let env = SparseOwnerEnv();
+  let map = sparse_map_new::<SparseOwnedNode, SparseOwnedNode, 2>(capacity: 1_u64);
+  let first_key = sparse_owned_make(id: 1_u64, serial: 1_u64);
+  let first_value = sparse_owned_make(id: 11_u64, serial: 11_u64);
+  let first = sparse_map_put::<SparseOwnedKey, SparseOwnedNode, 2>(map: &map, key: move first_key, value: move first_value, env: &env);
+  sparse_owned_outcome(outcome: move first, expected: 0_u64, key: 1_u64, value: 11_u64, ledger: &ledger);
+  let second_key = sparse_owned_make(id: 2_u64, serial: 2_u64);
+  let second_value = sparse_owned_make(id: 22_u64, serial: 12_u64);
+  let second = sparse_map_put::<SparseOwnedKey, SparseOwnedNode, 2>(map: &map, key: move second_key, value: move second_value, env: &env);
+  sparse_owned_outcome(outcome: move second, expected: 0_u64, key: 2_u64, value: 22_u64, ledger: &ledger);
+  if map.length != 2_u64 {
+    sparse_owned_fail(ledger: &ledger);
+  }
+  if map.cells.inner.len != 2_u64 {
+    sparse_owned_fail(ledger: &ledger);
+  }
+  let refused_key = sparse_owned_make(id: 3_u64, serial: 3_u64);
+  let refused_value = sparse_owned_make(id: 33_u64, serial: 13_u64);
+  let refused = sparse_map_put::<SparseOwnedKey, SparseOwnedNode, 2>(map: &map, key: move refused_key, value: move refused_value, env: &env);
+  sparse_owned_outcome(outcome: move refused, expected: 2_u64, key: 3_u64, value: 33_u64, ledger: &ledger);
+  let replacement_key = sparse_owned_make(id: 2_u64, serial: 4_u64);
+  let replacement_value = sparse_owned_make(id: 222_u64, serial: 14_u64);
+  let replaced = sparse_map_put::<SparseOwnedKey, SparseOwnedNode, 2>(map: &map, key: move replacement_key, value: move replacement_value, env: &env);
+  sparse_owned_outcome(outcome: move replaced, expected: 1_u64, key: 2_u64, value: 22_u64, ledger: &ledger);
+  let removal_query = sparse_owned_make(id: 1_u64, serial: 21_u64);
+  let removed = sparse_map_remove::<SparseOwnedKey, SparseOwnedNode, 2>(map: &map, key: &removal_query, env: &env);
+  sparse_owned_release(value: move removal_query, ledger: &ledger);
+  match removed {
+    Some(value: removed_pair) => {
+      sparse_owned_check_pair(pair: &removed_pair, key: 1_u64, value: 11_u64, ledger: &ledger);
+      sparse_pair_consume::<SparseOwnedConsume>(pair: move removed_pair, env: &ledger);
+    }
+    None() => {
+      sparse_owned_fail(ledger: &ledger);
+    }
+  }
+  let lookup_query = sparse_owned_make(id: 2_u64, serial: 22_u64);
+  let edited = sparse_map_edit::<SparseOwnedKey, SparseOwnedNode, SparseOwnerLedger, u64, fn sparse_owned_increment, 2>(map: &map, key: &lookup_query, key_env: &env, edit_env: &ledger);
+  match edited {
+    Ok(value: updated_value) => {
+      if updated_value != 223_u64 {
+        sparse_owned_fail(ledger: &ledger);
+      }
+    }
+    Err(error: absent) => {
+      sparse_owned_fail(ledger: &ledger);
+    }
+  }
+  let found = sparse_map_lookup::<SparseOwnedKey, SparseOwnedNode, SparseOwnerLedger, u64, fn sparse_owned_read, 2>(map: &map, key: &lookup_query, key_env: &env, visit_env: &ledger);
+  sparse_owned_release(value: move lookup_query, ledger: &ledger);
+  match found {
+    Ok(value: found_value) => {
+      if found_value != 223_u64 {
+        sparse_owned_fail(ledger: &ledger);
+      }
+    }
+    Err(error: missing) => {
+      sparse_owned_fail(ledger: &ledger);
+    }
+  }
+  sparse_map_free::<SparseOwnedConsume, 2>(map: move map, env: &ledger);
+  if ledger.visits != 2_u64 {
+    sparse_owned_fail(ledger: &ledger);
+  }
+  for (serial in 0_u64..32_u64) {
+    let expected = 0_u64;
+    if serial >= 1_u64 {
+      if serial <= 4_u64 {
+        set expected = 1_u64;
+      }
+    }
+    if serial >= 11_u64 {
+      if serial <= 14_u64 {
+        set expected = 1_u64;
+      }
+    }
+    if serial == 21_u64 {
+      set expected = 1_u64;
+    }
+    if serial == 22_u64 {
+      set expected = 1_u64;
+    }
+    if ledger.releases[serial] != expected {
+      sparse_owned_fail(ledger: &ledger);
+    }
+  }
+  if ledger.failures == 0_u64 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}

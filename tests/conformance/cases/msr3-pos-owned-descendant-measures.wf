@@ -3,7 +3,7 @@ struct Packet {
   second: Box<Slots<u8>>;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "MSR-3, ENT-2: named placements carry the current measures of exact owned descendants through fields, payloads and Box.inner even when their enclosing value is unmeasured. The two descendant paths have different lengths and remain distinct through the same owner rebind and payload placement. Destructuring the boxed content preserves both facts without a measure guard, and the executable observes the corresponding elements.";
   let initial_first = box_slots_new::<u8>(capacity: 1_u64);
   let initial_second = box_slots_new::<u8>(capacity: 1_u64);

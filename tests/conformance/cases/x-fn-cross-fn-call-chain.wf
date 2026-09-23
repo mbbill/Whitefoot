@@ -1,15 +1,15 @@
-fn dbl(x: own i32) -> function_result: own i32 pure {
+fn dbl(x: i32) -> function_result: i32 pure {
   doc "Leaf of the chain: doubles its argument with the total wrapping family [FN-1, OP-1].";
   return x +wrap x;
 }
 
-fn quad(x: own i32) -> function_result: own i32 pure {
+fn quad(x: i32) -> function_result: i32 pure {
   doc "Middle of the chain: calls dbl twice through a temporary [FN-1].";
   let d = dbl(x: x);
   return dbl(x: d);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Three-deep call chain; each caller relies only on the callee signature [FN-1].";
   let q = quad(x: 5_i32);
   if q == 20_i32 {

@@ -1,8 +1,8 @@
 interface Inspect<T> {
-  fn length(values: &T) -> result: own u64 reads(values);
+  fn length(values: &T) -> result: u64 reads(values);
 }
 
-fn shorter(values: &Array<u64, 4>) -> result: own u64 reads(values) {
+fn shorter(values: &Array<u64, 4>) -> result: u64 reads(values) {
   doc "The instantiated member takes a reference to an eight-slot array; this actual takes a four-slot one.";
   return deref(values)[0_u64];
 }
@@ -11,6 +11,6 @@ binding Narrow : Inspect<Array<u64, 8>> {
   length = shorter;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

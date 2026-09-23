@@ -1,4 +1,4 @@
-fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+fn factory_refusal(error: &IoError) -> result: Bool reads(error) {
   match deref(error) {
     NotFound(code: native_code, origin: native_origin) => {
       return False();
@@ -87,7 +87,7 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
   }
 }
 
-fn discard_open_result(factory: &HandleFactory, outcome: own Result<ReadFile, IoError>) -> result: own unit writes(factory) {
+fn discard_open_result(factory: &HandleFactory, outcome: Result<ReadFile, IoError>) -> result: unit writes(factory) {
   doc "Consumes an open result the program will not use, closing the handle it may carry.";
   match move outcome {
     Ok(value: file) => {
@@ -99,7 +99,7 @@ fn discard_open_result(factory: &HandleFactory, outcome: own Result<ReadFile, Io
   return unit;
 }
 
-fn exercise(args: &Args, cwd: &DirectoryRead, out: &OutputStream, files: &HandleFactory) -> status: own ExitStatus reads(args), reads(cwd), writes(out), writes(files) {
+fn exercise(args: &Args, cwd: &DirectoryRead, out: &OutputStream, files: &HandleFactory) -> status: ExitStatus reads(args), reads(cwd), writes(out), writes(files) {
   doc "Copies two target-native argument names into frame-resident byte runs, opens them without following terminal links, and publishes their first bytes.";
   let name_a = array_filled::<u8, 8>(value: 125_u8);
   let name_b = array_filled::<u8, 8>(value: 125_u8);
@@ -286,7 +286,7 @@ fn exercise(args: &Args, cwd: &DirectoryRead, out: &OutputStream, files: &Handle
   }
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "PRE-1 ordinary Inputs are destructured once; the referenced operation chain returns before the initial directory is explicitly closed on every exit.";
   let Inputs(args: args, cwd: cwd, stdout: out, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
   let outcome = exercise(args: &args, cwd: &cwd, out: &out, files: &files);

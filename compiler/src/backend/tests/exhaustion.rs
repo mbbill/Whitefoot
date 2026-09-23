@@ -51,7 +51,7 @@ const MIXED_DEFINITIONS: &[u8] = br#"enum Chain {
   More(tail: Box<Chain>);
 }
 
-fn depth(chain: &Box<Chain>) -> result: own u64 reads(chain) {
+fn depth(chain: &Box<Chain>) -> result: u64 reads(chain) {
   match deref(chain).inner {
     End() => {
       return 0_u64;
@@ -63,7 +63,7 @@ fn depth(chain: &Box<Chain>) -> result: own u64 reads(chain) {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let end = End();
   let bottom = box_new::<Chain>(value: move end);
   let one = More(tail: move bottom);
@@ -240,23 +240,23 @@ const fn libc_sigabrt() -> i32 {
 /// really carries the construction whose heap exhaustion the trusted base
 /// reports. Nothing in the source names that outcome: [STOR-8] hands back no
 /// payload and the program holds no failure arm.
-const HEAP_RECORD_LANE: &[u8] = br#"fn leafwork(v: own u64) -> result: own u64 pure {
+const HEAP_RECORD_LANE: &[u8] = br#"fn leafwork(v: u64) -> result: u64 pure {
   return v *wrap 3_u64;
 }
 
-fn build(n: own u64) -> result: own u64 pure {
+fn build(n: u64) -> result: u64 pure {
   let b = box_array_filled::<u8>(count: 4000000000000000000_u64, value: 7_u8);
   let e = b.inner.len;
   return 0_u64 +wrap n;
 }
 
-fn both(n: own u64) -> result: own u64 pure {
+fn both(n: u64) -> result: u64 pure {
   let a = build(n: n);
   let c = leafwork(v: n);
   return a +wrap c;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let r = both(n: 5_u64);
   let ok = r > 0_u64;
   if ok {
@@ -303,7 +303,7 @@ fn a_module_that_writes_a_resource_record_and_hands_a_call_out_is_latched() {
 /// `box_ring_new`, the fourth [OP-13] cell construction. Each form contributes
 /// one observed measure [OP-15] so the successful run still proves it ran:
 /// 7 + 4 + 4 + 3 = 18, the same exit code v0.59's image produced.
-const ALL_HEAP_FORMS: &[u8] = br#"fn shapes(n: own u64) -> result: own u64 pure {
+const ALL_HEAP_FORMS: &[u8] = br#"fn shapes(n: u64) -> result: u64 pure {
   let packed = box_array_filled::<u64>(count: 4_u64, value: 5_u64);
   let vacant = box_slots_new::<u32>(capacity: 4_u64);
   let cycle = box_ring_new::<u32>(capacity: 3_u64);
@@ -318,7 +318,7 @@ const ALL_HEAP_FORMS: &[u8] = br#"fn shapes(n: own u64) -> result: own u64 pure 
   return total;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let total = shapes(n: 4_u64);
   match cvt::<u64, u8>(total) {
     Ok(value: byte) => {
@@ -626,13 +626,13 @@ fn every_allocation_refusal_edge_reaches_the_resource_abort() {
 /// recursive edge keeps the generated function representative of an ordinary
 /// source recursion without making the fault depend on a sequence of frames.
 const LARGE_FRAME_SPINE: &[u8] =
-    br#"fn read_pad(values: &Array<u64, 7168>, index: own u64) -> result: own u64 reads(values) contract {
+    br#"fn read_pad(values: &Array<u64, 7168>, index: u64) -> result: u64 reads(values) contract {
   requires index < 7168_u64;
 } {
   return deref(values)[index];
 }
 
-fn spine(depth: own u64, v: own u64, i: own u8) -> result: own u64 pure {
+fn spine(depth: u64, v: u64, i: u8) -> result: u64 pure {
   let pad = array_filled::<u64, 7168>(value: v);
   let wide = cvt::<u8, u64>(i);
   set pad[wide] = depth;
@@ -646,7 +646,7 @@ fn spine(depth: own u64, v: own u64, i: own u8) -> result: own u64 pure {
   return a +wrap b;
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
   close_directory(factory: &entry_factory, directory: move unused_cwd);
   let count = 0_u64;
@@ -983,17 +983,17 @@ struct Holder {{
   node: Box<Tree>;
 }}
 
-fn boxed_leaf() -> result: own Box<Tree> pure {{
+fn boxed_leaf() -> result: Box<Tree> pure {{
   let leaf = Leaf();
   return box_new::<Tree>(value: move leaf);
 }}
 
-fn boxed_branch(left: own Box<Tree>, right: own Box<Tree>) -> result: own Box<Tree> pure {{
+fn boxed_branch(left: Box<Tree>, right: Box<Tree>) -> result: Box<Tree> pure {{
   let branch = Branch(left: move left, right: move right);
   return box_new::<Tree>(value: move branch);
 }}
 
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   let seed = boxed_leaf();
   let held = Holder(node: move seed);
   for @grow (i in 0_u64..{depth}_u64) {{
@@ -1038,13 +1038,13 @@ fn buffer_chain_source(depth: u64) -> Vec<u8> {
   Cons(kids: Box<Slots<Chain>>);
 }}
 
-fn nest(inner: own Chain) -> result: own Chain pure {{
+fn nest(inner: Chain) -> result: Chain pure {{
   let held = box_slots_new::<Chain>(capacity: 1_u64);
   place_back(window: &held.inner, value: move inner);
   return Cons(kids: move held);
 }}
 
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   let holder = box_slots_new::<Chain>(capacity: 1_u64);
   let seed = Nil();
   place_back(window: &holder.inner, value: move seed);
@@ -1069,7 +1069,7 @@ fn main() -> status: own ExitStatus pure {{
 ///
 /// The chain is `Box<Slots<Box<u64>>>` -> `Slots<Box<u64>>` -> `Box<u64>` ->
 /// `u64`, and no node type names another one above it.
-const SHALLOW_OWNERSHIP: &[u8] = br#"fn main() -> status: own ExitStatus pure {
+const SHALLOW_OWNERSHIP: &[u8] = br#"fn main() -> status: ExitStatus pure {
   let slots = box_slots_new::<Box<u64>>(capacity: 2_u64);
   let boxed = box_new::<u64>(value: 7_u64);
   place_back(window: &slots.inner, value: move boxed);
@@ -1230,12 +1230,12 @@ const WIDE_BUFFER_CYCLE: &[u8] = br#"enum Chain {
   Cons(kids: Box<Slots<Chain>>);
 }
 
-fn leafy() -> result: own Chain pure {
+fn leafy() -> result: Chain pure {
   let held = box_slots_new::<Chain>(capacity: 1_u64);
   return Cons(kids: move held);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let slots = box_slots_new::<Chain>(capacity: 4_u64);
   let child0 = leafy();
   place_back(window: &slots.inner, value: move child0);

@@ -1,10 +1,10 @@
-fn first_of(part: &[u8]) -> value: own u8 reads(part) contract {
+fn first_of(part: &[u8]) -> value: u8 reads(part) contract {
   requires 0_u64 < deref(part).len;
 } {
   return deref(part)[0_u64];
 }
 
-fn choose_first(take_left: own Bool, left: &[u8], right: &[u8]) -> value: own u8 reads(left), reads(right) contract {
+fn choose_first(take_left: Bool, left: &[u8], right: &[u8]) -> value: u8 reads(left), reads(right) contract {
   requires 0_u64 < deref(left).len;
   requires 0_u64 < deref(right).len;
 } {
@@ -16,7 +16,7 @@ fn choose_first(take_left: own Bool, left: &[u8], right: &[u8]) -> value: own u8
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A range reference passes through one call and a two-supplier call reads either input; the caller keeps both references alive across the calls because neither call writes their storage [EFF-5].";
   let left = slots_new::<u8, 2>();
   place_back(window: &left, value: 11_u8);

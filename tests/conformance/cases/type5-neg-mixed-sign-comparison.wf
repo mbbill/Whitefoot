@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let signed_value = -1_i32;
   let unsigned_value = 1_u32;
   let below = signed_value < unsigned_value;

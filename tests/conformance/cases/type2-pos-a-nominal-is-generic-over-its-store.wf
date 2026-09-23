@@ -2,13 +2,13 @@ struct Chunk<T> {
   page: Box<Slots<T>>;
 }
 
-fn chunk_room<T>(held: own Chunk<T>) -> (rest: own Chunk<T>, width: own u64) pure {
+fn chunk_room<T>(held: Chunk<T>) -> (rest: Chunk<T>, width: u64) pure {
   doc "Reads one chunk's own capacity and hands the chunk back.";
   let spare = held.page.inner.cap - held.page.inner.len;
   return move held, spare;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A nominal's type argument is a component of its type name, so an instance is fixed by that argument and a value of it is built by the ordinary construction. The helper is generic over the element type on the terms every other type is: its parameter type names the argument, and the written instantiation determines it at the call.";
   let page = box_slots_new::<u8>(capacity: 256_u64);
   let held = Chunk<u8>(page: move page);

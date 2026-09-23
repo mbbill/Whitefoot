@@ -412,7 +412,7 @@ fn the_fanout_loop_keeps_denied_calls_on_the_current_stack() {
 // its own `writes` entry [EFF-1]. The exchange, the four close orders and
 // every status code the test reads are unchanged.
 #[cfg(unix)]
-const CROSSED_CONNECTIONS: &str = r#"fn cross(first: own TcpConnection, second: own TcpConnection) -> (a: own TcpConnection, b: own TcpConnection) pure {
+const CROSSED_CONNECTIONS: &str = r#"fn cross(first: TcpConnection, second: TcpConnection) -> (a: TcpConnection, b: TcpConnection) pure {
   let TcpConnection(receive: first_receive, send: first_send) = move first;
   let TcpConnection(receive: second_receive, send: second_send) = move second;
   let a = TcpConnection(receive: move first_receive, send: move second_send);
@@ -420,7 +420,7 @@ const CROSSED_CONNECTIONS: &str = r#"fn cross(first: own TcpConnection, second: 
   return move a, move b;
 }
 
-fn close_pair(factory: &HandleFactory, connection: own TcpConnection, receive_first: own Bool) -> result: own u8 writes(factory) {
+fn close_pair(factory: &HandleFactory, connection: TcpConnection, receive_first: Bool) -> result: u8 writes(factory) {
   let TcpConnection(receive: receive, send: send) = move connection;
   let failed = 0_u8;
   if receive_first {
@@ -457,7 +457,7 @@ fn close_pair(factory: &HandleFactory, connection: own TcpConnection, receive_fi
   return failed;
 }
 
-fn remaining(connection: &TcpConnection) -> result: own u8 writes(connection.receive), writes(connection.send) {
+fn remaining(connection: &TcpConnection) -> result: u8 writes(connection.receive), writes(connection.send) {
   let bytes = slots_new::<u8, 1>();
   place_back(window: &bytes, value: 0_u8);
   let destination = &bytes[0_u64..1_u64];
@@ -489,7 +489,7 @@ fn remaining(connection: &TcpConnection) -> result: own u8 writes(connection.rec
   return 0_u8;
 }
 
-fn exercise(factory: &HandleFactory, address: &SocketAddress) -> result: own u8 reads(address), writes(factory) {
+fn exercise(factory: &HandleFactory, address: &SocketAddress) -> result: u8 reads(address), writes(factory) {
   let receive_first = True();
   let send_first = False();
   match tcp_connect(factory: factory, address: address) {
@@ -535,7 +535,7 @@ fn exercise(factory: &HandleFactory, address: &SocketAddress) -> result: own u8 
   }
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   let Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: handles, stdin: input) = move inputs;
   let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 49151_u16);
   close_directory(factory: &handles, directory: move cwd);

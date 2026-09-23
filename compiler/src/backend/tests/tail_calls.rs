@@ -186,7 +186,7 @@ fn tail_selection_uses_the_settled_loop_reference_summary() {
 #[test]
 fn one_function_can_mix_tail_transfers_with_calls_retaining_local_storage() {
     let module = compile(
-        br#"fn walk(n: own u64, value: &u64) -> result: own u64 reads(value) {
+        br#"fn walk(n: u64, value: &u64) -> result: u64 reads(value) {
   if n == 0_u64 {
     return deref(value);
   }
@@ -198,7 +198,7 @@ fn one_function_can_mix_tail_transfers_with_calls_retaining_local_storage() {
   return walk(n: next, value: value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let value = 10_u64;
   let seen = walk(n: 100002_u64, value: &value);
   if seen != 11_u64 {

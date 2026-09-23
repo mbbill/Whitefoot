@@ -1,7 +1,7 @@
-fn add(left: own u8, right: own u8) -> sum: own u8 pure {
+fn add(left: u8, right: u8) -> sum: u8 pure {
   return left + right;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

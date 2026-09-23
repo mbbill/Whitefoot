@@ -21,7 +21,7 @@ struct Counter {
   value: u64;
 }
 
-fn store(counter: &Counter, next: own u64) -> result: own unit writes(counter.value) {
+fn store(counter: &Counter, next: u64) -> result: unit writes(counter.value) {
   set deref(counter).value = next;
   return unit;
 }
@@ -118,6 +118,26 @@ teardown. Handles are ordinary index/generation data relative to a slab. The
 distinguishes an index that may expire from a composite protocol that refuses
 deletion while another index retains the object; ordinary public bookkeeping
 does not prove that arbitrary client functions preserve that protocol.
+
+The [owning hash map](../lib/containers/hash-map.wf) stores keys and values
+inline in ordinary enum buckets, including `nodrop` values. Supply hashing
+and equality through `HashMapKey`. `hash_map_try_put` uses existing capacity;
+`hash_map_put` may grow up to the written ceiling. Replacement installs the
+complete offered pair and returns the complete old pair. A full table returns
+the offered pair unchanged, distinguished by the reason in
+`HashMapReturned`; consume that pair explicitly when either member is
+`nodrop`. Allocation itself remains total under STOR-8.
+
+Use `hash_map_lookup` for borrowed observation and `hash_map_edit` to update
+the stored value through a callback, without removing and reinserting it.
+Both callbacks can return owned results. `hash_map_each` visits live pairs,
+and `hash_map_free` supplies every remaining pair to `HashMapConsume` before
+freeing the backing. Read the current count and capacity through
+`hash_map_len` and `hash_map_capacity`; reserve and rehash may relocate all
+payloads. Consistent key laws determine ordinary map behavior, but they do
+not grant ownership or bounds authority. The
+[caller](../tests/programs/containers/hash-map-program.wf) also exercises
+non-reflexive equality, zero-sized pairs and owned callback results.
 
 ## P3. Reach heap content through `Box.inner`
 
@@ -226,15 +246,15 @@ the body:
   more than once.
 
 ```whitefoot
-fn forward<T>(value: own T) -> result: own T pure {
+fn forward<T>(value: T) -> result: T pure {
   return move value;
 }
 
-fn discard<T: drop>(value: own T) -> result: own unit pure {
+fn discard<T: drop>(value: T) -> result: unit pure {
   return unit;
 }
 
-fn duplicate<T: copy>(value: own T) -> (left: own T, right: own T) pure {
+fn duplicate<T: copy>(value: T) -> (left: T, right: T) pure {
   return value, value;
 }
 ```
@@ -252,7 +272,7 @@ nodrop enum Ticket {
   Closed();
 }
 
-fn spend(ticket: own Ticket) -> result: own unit pure {
+fn spend(ticket: Ticket) -> result: unit pure {
   match move ticket {
     Open() => {
       return unit;
@@ -275,10 +295,10 @@ declarations; no dictionary, closure, or dynamic dispatch value is formed.
 
 ```whitefoot
 interface Identity<T> {
-  fn same(value: own T) -> result: own T pure;
+  fn same(value: T) -> result: T pure;
 }
 
-fn same_u8(value: own u8) -> result: own u8 pure {
+fn same_u8(value: u8) -> result: u8 pure {
   return value;
 }
 
@@ -286,7 +306,7 @@ binding ByteIdentity : Identity<u8> {
   same = same_u8;
 }
 
-fn apply<interface Identity<T>>(value: own T) -> result: own T pure {
+fn apply<interface Identity<T>>(value: T) -> result: T pure {
   return Identity<T>::same(value: move value);
 }
 ```
@@ -296,14 +316,14 @@ Every group introduction writes the marker, including a zero-argument group:
 qualified member call do not repeat it:
 
 ```whitefoot
-fn forward<interface Identity<T>>(value: own T) -> result: own T pure {
+fn forward<interface Identity<T>>(value: T) -> result: T pure {
   return apply::<Identity<T>>(value: move value);
 }
 
 let result = forward::<ByteIdentity>(value: 9_u8);
 ```
 
-The member's full modes, types, effects, requirements, and postconditions are
+The member's parameter kinds, result types, effects, requirements, and postconditions are
 the generic caller's boundary. A binding may refine that boundary only as
 [FN-4] permits. Calls retain their ordinary syntax; `interface` and `binding`
 replace the retired group-declaration keywords, not the call form. See
@@ -354,7 +374,7 @@ Use `requires` when every valid caller must establish the condition, and
 [FN-8, FN-9]. State window transitions with entry and exit measures:
 
 ```whitefoot
-fn pop<T, const n: u64>(window: &Slots<T, n>) -> value: own T writes(window.last), writes(window.len) contract {
+fn pop<T, const n: u64>(window: &Slots<T, n>) -> value: T writes(window.last), writes(window.len) contract {
   requires deref(window).len > 0_u64;
   ensures deref(window).len + 1_u64 == deref(entry(window)).len;
 } {
@@ -416,7 +436,7 @@ close_directory(factory: &factory, directory: move cwd);
 Host failures are ordinary `Result` values. Match them or use `propagate` in a
 function returning the same error type [ERR-1, ERR-3]. A helper that acquires a
 linear handle closes it or returns it on every path. Passing a handle by
-reference does not consume it; passing it as `own` does.
+reference does not consume it; passing it to a value parameter does.
 
 The maintained [stdin_echo.wf](../tests/programs/stdin_echo.wf) shows an inline
 window passed to `read_next` and `write_once`, with the invocation's owners

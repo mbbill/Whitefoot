@@ -1,8 +1,8 @@
-fn leafval(v: own f64) -> result: own f64 pure {
+fn leafval(v: f64) -> result: f64 pure {
   return fmul.strict(v, 0.5_f64);
 }
 
-fn spine(depth: own u64, v: own f64) -> result: own f64 pure {
+fn spine(depth: u64, v: f64) -> result: f64 pure {
   let done = depth == 0_u64;
   if done {
     return v;
@@ -14,7 +14,7 @@ fn spine(depth: own u64, v: own f64) -> result: own f64 pure {
   return fadd.strict(a, b);
 }
 
-fn low_byte(v: own u64) -> result: own u8 pure {
+fn low_byte(v: u64) -> result: u8 pure {
   let nibble = iand(v, 255_u64);
   match cvt::<u64, u8>(nibble) {
     Ok(value: byte) => {
@@ -26,7 +26,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell(destination: &[u8], value: own u64) -> result: own u64 writes(destination) {
+fn spell(destination: &[u8], value: u64) -> result: u64 writes(destination) {
   doc "Writes the eight little-endian bytes of value through the range reference, skipping any slot the range does not have.";
   let cursor = 0_u64;
   let rest = value;
@@ -47,7 +47,7 @@ fn spell(destination: &[u8], value: own u64) -> result: own u64 writes(destinati
   return cursor;
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
   close_directory(factory: &entry_factory, directory: move unused_cwd);
   let total = spine(depth: 4000_u64, v: 1.0009765625_f64);

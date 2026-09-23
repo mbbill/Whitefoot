@@ -4,7 +4,7 @@ enum Sign {
   Pos();
 }
 
-fn classify(x: own i32) -> function_result: own Sign pure {
+fn classify(x: i32) -> function_result: Sign pure {
   doc "Classify an integer's sign; the closed-set result is consumed by match at each call site [FN-5].";
   if x < 0_i32 {
     return Neg();
@@ -15,7 +15,7 @@ fn classify(x: own i32) -> function_result: own Sign pure {
   }
 }
 
-fn weight(x: own i32) -> function_result: own i32 pure {
+fn weight(x: i32) -> function_result: i32 pure {
   doc "Map a sign to a weight; matching the own Sign moves it exactly once [OWN-13].";
   match classify(x: x) {
     Neg() => {
@@ -30,7 +30,7 @@ fn weight(x: own i32) -> function_result: own i32 pure {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Accumulate sign-weights of three inputs via cross-fn enum dispatch, then verify the sum [OP-1, OWN-13].";
   let neg = 0_i32 -wrap 5_i32;
   let wa = weight(x: neg);

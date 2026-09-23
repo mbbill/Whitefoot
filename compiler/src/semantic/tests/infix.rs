@@ -67,7 +67,7 @@ fn every_operator_token_selects_its_row() {
         // Proof-required exact rows are statically discharged for these
         // constant operands and therefore contribute no runtime effect.
         let source = format!(
-            "fn main() -> status: own ExitStatus pure {{\n  let c = 6_i32 {operator} 7_i32;\n  return exit_status(code: 0_u8);\n}}\n"
+            "fn main() -> status: ExitStatus pure {{\n  let c = 6_i32 {operator} 7_i32;\n  return exit_status(code: 0_u8);\n}}\n"
         );
         let (operation, operand_type) = sole_operation(source.as_bytes());
         assert_eq!(operation, expected, "operator {operator:?} selects its row");
@@ -84,7 +84,7 @@ fn every_operator_token_selects_its_row() {
 /// disagreement is reported.
 #[test]
 fn a_disagreeing_second_operand_is_a_type5_rejection_at_that_operand() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let a = 1_i32;
   let b = 2_u64;
   let c = a + b;
@@ -98,7 +98,7 @@ fn a_disagreeing_second_operand_is_a_type5_rejection_at_that_operand() {
 /// reports it at the whole expression rather than at one operand.
 #[test]
 fn an_operand_type_outside_every_row_is_an_op1_rejection() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let f = True();
   let g = False();
   let h = f + g;
@@ -113,11 +113,11 @@ fn an_operand_type_outside_every_row_is_an_op1_rejection() {
 /// obligation instead of adding a fallback path.
 #[test]
 fn bare_arithmetic_is_a_static_obligation_without_a_runtime_effect() {
-    let source = br#"fn add(a: own i32, b: own i32) -> result: own i32 pure {
+    let source = br#"fn add(a: i32, b: i32) -> result: i32 pure {
   return a + b;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -148,7 +148,7 @@ fn main() -> status: own ExitStatus pure {
 const EXPRESSION_POSITIONS: [(&str, &str); 9] = [
     (
         "ordinary_let_rhs",
-        "fn main() -> status: own ExitStatus pure {
+        "fn main() -> status: ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   let c = a +wrap b;
@@ -158,20 +158,20 @@ const EXPRESSION_POSITIONS: [(&str, &str); 9] = [
     ),
     (
         "propagate_let_rhs",
-        "fn step(a: own u64) -> result: own Result<u64, Overflow> pure {
+        "fn step(a: u64) -> result: Result<u64, Overflow> pure {
   let b = 7_u64;
   let c = propagate a +checked b;
   return Ok<u64, Overflow>(value: c);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 ",
     ),
     (
         "set_stmt",
-        "fn main() -> status: own ExitStatus pure {
+        "fn main() -> status: ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   set a = a +wrap b;
@@ -181,19 +181,19 @@ fn main() -> status: own ExitStatus pure {
     ),
     (
         "return_stmt",
-        "fn add(a: own u64) -> result: own u64 pure {
+        "fn add(a: u64) -> result: u64 pure {
   let b = 7_u64;
   return a +wrap b;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 ",
     ),
     (
         "give_stmt",
-        "fn main() -> status: own ExitStatus pure {
+        "fn main() -> status: ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   let f = True();
@@ -208,7 +208,7 @@ fn main() -> status: own ExitStatus pure {
     ),
     (
         "match_stmt scrutinee",
-        "fn main() -> status: own ExitStatus pure {
+        "fn main() -> status: ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   match a +checked b {
@@ -224,7 +224,7 @@ fn main() -> status: own ExitStatus pure {
     ),
     (
         "value_match scrutinee",
-        "fn main() -> status: own ExitStatus pure {
+        "fn main() -> status: ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   let c = match a +checked b {
@@ -241,7 +241,7 @@ fn main() -> status: own ExitStatus pure {
     ),
     (
         "if_stmt condition",
-        "fn main() -> status: own ExitStatus pure {
+        "fn main() -> status: ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   if a +defined b {
@@ -253,7 +253,7 @@ fn main() -> status: own ExitStatus pure {
     ),
     (
         "value_if condition",
-        "fn main() -> status: own ExitStatus pure {
+        "fn main() -> status: ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   let c = if a +defined b {
@@ -299,21 +299,21 @@ fn a_disagreeing_operand_is_reported_at_that_operand_from_every_position() {
 /// the infix expression as an internal structural failure.
 #[test]
 fn an_infix_returned_at_a_disagreeing_result_type_is_an_fn1_rejection() {
-    let infix = br#"fn pick(a: own u64) -> result: own i32 pure {
+    let infix = br#"fn pick(a: u64) -> result: i32 pure {
   let b = 7_u64;
   return a +wrap b;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
     assert_rule(infix, SemanticRule::Fn1, SemanticIssueKind::ReturnMismatch);
-    let plain = br#"fn pick(a: own u64) -> result: own i32 pure {
+    let plain = br#"fn pick(a: u64) -> result: i32 pure {
   return a;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;

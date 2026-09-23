@@ -1,4 +1,4 @@
-fn walk(n: own u64) -> result: own u64 pure {
+fn walk(n: u64) -> result: u64 pure {
   let owner = box_new::<u64>(value: n);
   let held = &owner.inner;
   return musttail walk(n: n);

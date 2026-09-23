@@ -1,4 +1,4 @@
-fn sum_paced(limit: own u64) -> total: own u64 pure {
+fn sum_paced(limit: u64) -> total: u64 pure {
   let fast = 0_u64;
   let n = 0_u64;
   let total = 0_u64;
@@ -25,6 +25,6 @@ fn sum_paced(limit: own u64) -> total: own u64 pure {
   return total;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

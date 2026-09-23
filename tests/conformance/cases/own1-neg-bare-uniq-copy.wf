@@ -1,14 +1,14 @@
-fn consume(x: &i32) -> return_value: own unit reads(x) {
+fn consume(x: &i32) -> return_value: unit reads(x) {
   let seen = deref(x);
   return unit;
 }
 
-fn forward(x: &i32) -> return_value: own unit reads(x) {
+fn forward(x: &i32) -> return_value: unit reads(x) {
   doc "A reference carries no permission marker and is no value of its own, so naming the path it names at a reference parameter is the ordinary forwarding spelling; whether a callee writes through the path is its effect row's statement.";
   consume(x: x);
   return unit;
 }
 
-fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

@@ -1,11 +1,11 @@
-fn close_twice(factory: &HandleFactory, file: own ReadFile) -> result: own unit writes(factory) {
+fn close_twice(factory: &HandleFactory, file: ReadFile) -> result: unit writes(factory) {
   doc "OWN-1: an acquired linear owner is consumed exactly once, and after a consuming use the whole binding is dead. The second consumption is the rejection; the factory state is referenced, not consumed or duplicated.";
   close_read(factory: factory, file: move file);
   close_read(factory: factory, file: move file);
   return unit;
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "The caller closes the initial directory exactly once.";
   let Inputs(cwd: root, handles: factory, ..) = move inputs;
   close_directory(factory: &factory, directory: move root);

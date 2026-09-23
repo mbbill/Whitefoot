@@ -2,7 +2,7 @@ use super::{compile, compile_and_run};
 
 #[test]
 fn executes_every_negation_mode_for_every_signed_width() {
-    let template = r#"fn main() -> status: own ExitStatus pure {
+    let template = r#"fn main() -> status: ExitStatus pure {
   let wrapped = ineg.wrap($MIN_$TYPE);
   if wrapped == $MIN_$TYPE {
   } else {
@@ -103,7 +103,7 @@ fn executes_every_negation_mode_for_every_signed_width() {
 
 #[test]
 fn defined_minimum_reports_false_without_executing_negation() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let is_defined = ineg.defined(-128_i8);
   if bnot(is_defined) {
   } else {

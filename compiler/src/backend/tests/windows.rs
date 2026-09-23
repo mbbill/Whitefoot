@@ -43,7 +43,7 @@ use super::system::with_ir;
 use super::*;
 
 const AFFINE_INVARIANT_BOUNDED_ALLOCATION: &[u8] =
-    br#"fn allocate(n: own u64, half: own u64) -> result: own unit pure contract {
+    br#"fn allocate(n: u64, half: u64) -> result: unit pure contract {
   requires half <= 500_u64;
 } {
   let doubled = half * 2_u64;
@@ -55,19 +55,19 @@ const AFFINE_INVARIANT_BOUNDED_ALLOCATION: &[u8] =
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
 
-const U64_RUNTIME_WINDOW: &[u8] = br#"fn main() -> status: own ExitStatus pure {
+const U64_RUNTIME_WINDOW: &[u8] = br#"fn main() -> status: ExitStatus pure {
   doc "One eight-byte slot in a runtime-capacity window, whose actual alignment the selected allocator has to promise.";
   let values = box_slots_new::<u64>(capacity: 1_u64);
   return exit_status(code: 0_u8);
 }
 "#;
 
-const U64_CELL: &[u8] = br#"fn main() -> status: own ExitStatus pure {
+const U64_CELL: &[u8] = br#"fn main() -> status: ExitStatus pure {
   doc "One eight-byte cell on the same heap, the other half of the same obligation.";
   let cell = box_new::<u64>(value: 7_u64);
   return exit_status(code: 0_u8);
@@ -86,7 +86,7 @@ fn slots_addresses_use_proved_offsets_and_ring_addresses_still_wrap() {
                 (format!("{shape}<u64{capacity}>"), "deref(values)")
             };
             let source = format!(
-                "fn read(values: &{ty}, index: own u64) -> result: own u64 reads(values) contract {{\n  requires index < {window}.len;\n}} {{\n  return {window}[index];\n}}\n\nfn roundtrip(values: &{ty}, value: own u64) -> result: own u64 writes(values) contract {{\n  requires {window}.len < {window}.cap;\n}} {{\n  place_back(window: &{window}, value: value);\n  let result = take_back(window: &{window});\n  return result;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+                "fn read(values: &{ty}, index: u64) -> result: u64 reads(values) contract {{\n  requires index < {window}.len;\n}} {{\n  return {window}[index];\n}}\n\nfn roundtrip(values: &{ty}, value: u64) -> result: u64 writes(values) contract {{\n  requires {window}.len < {window}.cap;\n}} {{\n  place_back(window: &{window}, value: value);\n  let result = take_back(window: &{window});\n  return result;\n}}\n\nfn main() -> status: ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
             );
             let (llvm, withheld) = with_ir(source.as_bytes(), |program| {
                 let target = TargetLayout::host().expect("supported target");
@@ -159,7 +159,7 @@ fn slots_addresses_use_proved_offsets_and_ring_addresses_still_wrap() {
 /// must preserve mathematical coordinates without overflowing an intermediate.
 #[test]
 fn zero_sized_takes_update_slots_and_wrapped_ring_boundaries_once() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let value = array_filled::<u64, 0>(value: 0_u64);
   let slots = slots_new::<Array<u64, 0>, 2>();
   place_back(window: &slots, value: value);
@@ -276,11 +276,11 @@ fn zero_capacity_windows_keep_header_layout_inside_nonempty_storage() {
   after: u64;
 }
 
-fn empty_length(values: &[OutputStream]) -> result: own u64 reads(values) {
+fn empty_length(values: &[OutputStream]) -> result: u64 reads(values) {
   return deref(values).len;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let initial_slots = slots_new::<OutputStream, 0>();
   let initial_ring = ring_new::<OutputStream, 0>();
   let value = EmptyWindows(before: 17_u8, slots: move initial_slots, ring: move initial_ring, after: 29_u64);
@@ -386,7 +386,7 @@ void *wf_observe_window_allocate(uint64_t size) {
 fn an_above_u64_zero_count_reaches_target_qualification() {
     for generic in ["", "<T>"] {
         let source = format!(
-            "struct Giant {{\n  words: Array<u64, 2305843009213693952>;\n}}\n\nfn allocate{generic}(count: own u64) -> result: own unit pure contract {{\n  requires count <= 0_u64;\n}} {{\n  let cells = box_slots_new::<Giant>(capacity: count);\n  free_empty(window: move cells);\n  return unit;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+            "struct Giant {{\n  words: Array<u64, 2305843009213693952>;\n}}\n\nfn allocate{generic}(count: u64) -> result: unit pure contract {{\n  requires count <= 0_u64;\n}} {{\n  let cells = box_slots_new::<Giant>(capacity: count);\n  free_empty(window: move cells);\n  return unit;\n}}\n\nfn main() -> status: ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
         );
         with_ir(source.as_bytes(), |program| {
             let host = TargetLayout::host().expect("the test host is supported");
@@ -468,8 +468,7 @@ fn a_runtime_window_and_a_cell_must_fit_the_selected_allocator_alignment() {
 
 #[test]
 fn weigh_invariant_proves_domains_then_erases_before_llvm() {
-    let source =
-        br#"fn weigh(weights: &[u8], count: own u64) -> total: own u32 reads(weights) contract {
+    let source = br#"fn weigh(weights: &[u8], count: u64) -> total: u32 reads(weights) contract {
   define capacity = deref(weights).len;
   requires count <= capacity;
   requires count <= 1000_u64;
@@ -487,11 +486,11 @@ fn weigh_invariant_proves_domains_then_erases_before_llvm() {
   return sum;
 }
 
-fn tally(left: own u32, right: own u32) -> total: own u32 pure {
+fn tally(left: u32, right: u32) -> total: u32 pure {
   return left +wrap right;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let weights = slots_new::<u8, 4>();
   for @fill (
     at in 0_u64..4_u64,
@@ -562,7 +561,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_runtime_capacity_window_crosses_functions_updates_and_frees_once() {
     // STOR-1 stores the length and elements in one allocation. The largest
     // u16 count is (i64::MAX - 8) / 2, including the Array header.
-    let source = br#"fn bounded_count(n: own u64) -> result: own u64 pure contract {
+    let source = br#"fn bounded_count(n: u64) -> result: u64 pure contract {
   ensures result <= 4611686018427387899_u64;
 } {
   if n <= 4611686018427387899_u64 {
@@ -572,16 +571,16 @@ fn a_runtime_capacity_window_crosses_functions_updates_and_frees_once() {
   }
 }
 
-fn make(n: own u64) -> result: own Box<Array<u16>> pure {
+fn make(n: u64) -> result: Box<Array<u16>> pure {
   let bounded = bounded_count(n: n);
   return box_array_filled::<u16>(count: bounded, value: 3_u16);
 }
 
-fn replacement() -> result: own u16 pure {
+fn replacement() -> result: u16 pure {
   return 9_u16;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let values = make(n: 4_u64);
   let length = values.inner.len;
   let stored = 0_u16;
@@ -653,12 +652,12 @@ fn main() -> status: own ExitStatus pure {
 /// next allocation of the same element type, so no target guard is emitted.
 #[test]
 fn a_window_length_qualifies_same_element_reallocation_without_a_target_guard() {
-    let source = br#"fn refill(source: own Box<Array<u8>>) -> result: own Box<Array<u8>> pure {
+    let source = br#"fn refill(source: Box<Array<u8>>) -> result: Box<Array<u8>> pure {
   let length = source.inner.len;
   return box_array_filled::<u8>(count: length, value: 0_u8);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let initial = box_array_filled::<u8>(count: 4_u64, value: 7_u8);
   let copied = refill(source: move initial);
   let length = copied.inner.len;
@@ -695,7 +694,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn op9_overflow_is_rejected_before_lowering() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let values = box_array_filled::<u64>(count: 18446744073709551615_u64, value: 0_u64);
   return exit_status(code: 0_u8);
 }
@@ -714,11 +713,11 @@ fn an_out_of_bounds_run_set_is_an_op4_compile_rejection() {
     // `box_array_filled`'s published count fixes the run's length [OP-13], so
     // 2 < 2 is underivable and the program rejects at compile time with the
     // residual over the [OP-15] measure read [OP-4, ENT-6].
-    let source = br#"fn replacement() -> result: own u8 pure {
+    let source = br#"fn replacement() -> result: u8 pure {
   return 9_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let values = box_array_filled::<u8>(count: 2_u64, value: 0_u8);
   set values.inner[2_u64] = replacement();
   return exit_status(code: 0_u8);
@@ -731,7 +730,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn run_cleanup_is_explicit_on_return_and_break_edges() {
-    let source = br#"fn cleanup(flag: own Bool) -> result: own unit pure {
+    let source = br#"fn cleanup(flag: Bool) -> result: unit pure {
   doc "Every edge that leaves this scope holding a window carries that window's release: the early return, the loop break, and the final return.";
   let values = box_slots_new::<u8>(capacity: 2_u64);
   if flag {
@@ -744,7 +743,7 @@ fn run_cleanup_is_explicit_on_return_and_break_edges() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let true_value = True();
   let false_value = False();
   cleanup(flag: true_value);
@@ -820,7 +819,7 @@ fn a_reference_parameter_updates_caller_storage_through_one_address_path() {
   count: u64;
 }
 
-fn update(pool: &Pool) -> result: own unit writes(pool.left), writes(pool.count) {
+fn update(pool: &Pool) -> result: unit writes(pool.left), writes(pool.count) {
   let spare = deref(pool).left.inner.len;
   let ok = 1_u64 < spare;
   if ok {
@@ -830,7 +829,7 @@ fn update(pool: &Pool) -> result: own unit writes(pool.left), writes(pool.count)
   return unit;
 }
 
-fn observe(pool: &Pool) -> result: own u64 reads(pool.left), reads(pool.count) {
+fn observe(pool: &Pool) -> result: u64 reads(pool.left), reads(pool.count) {
   let spare = deref(pool).left.inner.len;
   let ok = 1_u64 < spare;
   let count = deref(pool).count;
@@ -842,7 +841,7 @@ fn observe(pool: &Pool) -> result: own u64 reads(pool.left), reads(pool.count) {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let left = box_array_filled::<u64>(count: 2_u64, value: 0_u64);
   let right = box_array_filled::<u64>(count: 2_u64, value: 0_u64);
   let pool = Pool(left: move left, right: move right, count: 0_u64);
@@ -1043,11 +1042,11 @@ fn a_projected_window_target_is_formed_once_before_rhs() {
   right: Box<Array<u16>>;
 }
 
-fn replacement() -> result: own u16 pure {
+fn replacement() -> result: u16 pure {
   return 9_u16;
 }
 
-fn update(columns: own Columns) -> result: own Columns pure {
+fn update(columns: Columns) -> result: Columns pure {
   let spare = columns.left.inner.len;
   let ok = 1_u64 < spare;
   if ok {
@@ -1056,7 +1055,7 @@ fn update(columns: own Columns) -> result: own Columns pure {
   return move columns;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let left = box_array_filled::<u16>(count: 2_u64, value: 0_u16);
   let right = box_array_filled::<u16>(count: 2_u64, value: 0_u16);
   let columns = Columns(left: move left, right: move right);
@@ -1158,12 +1157,12 @@ struct Owner {
   suffix: Box<Slots<u64>>;
 }
 
-fn release(owner: own Owner) -> result: own unit pure {
+fn release(owner: Owner) -> result: unit pure {
   doc "Holds the whole nested owner and nothing else, so its one return edge carries exactly four cell releases.";
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let first = box_slots_new::<u8>(capacity: 1_u64);
   let second = box_slots_new::<u16>(capacity: 1_u64);
   let pair = Pair(first: move first, second: move second);
@@ -1204,12 +1203,12 @@ struct Owner {
   suffix: Box<Slots<u8>>;
 }
 
-fn take(owner: own Owner) -> result: own Box<Slots<u8>> pure {
+fn take(owner: Owner) -> result: Box<Slots<u8>> pure {
   doc "Takes one field out; [WIN-3] consumes the whole owner, so the three residual siblings take their compiler-derived release here.";
   return move owner.pair.first;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let first = box_slots_new::<u8>(capacity: 1_u64);
   let second = box_slots_new::<u8>(capacity: 1_u64);
   let pair = Pair(first: move first, second: move second);
@@ -1246,7 +1245,7 @@ fn trivially_droppable_affine_elements_keep_the_single_free() {
   Present(value: u32);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let slots = box_slots_new::<Maybe>(capacity: 4_u64);
   for @fill (
     at in 0_u64..4_u64,
@@ -1277,7 +1276,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_runtime_capacity_window_op9_overflow_is_rejected_before_lowering() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let slots = box_slots_new::<Option<u32>>(capacity: 18446744073709551615_u64);
   return exit_status(code: 0_u8);
 }
@@ -1296,7 +1295,7 @@ fn a_runtime_capacity_window_op9_overflow_is_rejected_before_lowering() {
 /// retrieves the element, and releases the now-empty allocation.
 #[test]
 fn a_transitive_generic_allocation_executes_and_releases_its_concrete_value() {
-    let source = br#"fn store<T>(value: own T) -> result: own T pure {
+    let source = br#"fn store<T>(value: T) -> result: T pure {
   let cells = box_slots_new::<T>(capacity: 1_u64);
   place_back(window: &cells.inner, value: move value);
   let output = take_back(window: &cells.inner);
@@ -1304,11 +1303,11 @@ fn a_transitive_generic_allocation_executes_and_releases_its_concrete_value() {
   return move output;
 }
 
-fn forward<T>(value: own T) -> result: own T pure {
+fn forward<T>(value: T) -> result: T pure {
   return store::<T>(value: move value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let output = forward::<u64>(value: 37_u64);
   if output != 37_u64 {
     return exit_status(code: 1_u8);

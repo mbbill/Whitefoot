@@ -115,7 +115,7 @@ fn with_one_resolution<ResultValue>(
 
 #[test]
 fn minimal_function_publishes_the_closed_prelude_and_source_declaration() {
-    with_one_resolution(b"fn probe() -> result: own unit pure {\n}\n", |outcome| {
+    with_one_resolution(b"fn probe() -> result: unit pure {\n}\n", |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("minimal canonical function must resolve: {outcome:?}");
         };
@@ -129,11 +129,11 @@ fn minimal_function_publishes_the_closed_prelude_and_source_declaration() {
 
 #[test]
 fn top_level_functions_are_visible_throughout_the_closed_unit() {
-    let source = br#"fn probe() -> result: own unit pure {
+    let source = br#"fn probe() -> result: unit pure {
   helper();
 }
 
-fn helper() -> result: own unit pure {
+fn helper() -> result: unit pure {
 }
 "#;
     with_one_resolution(source, |outcome| {
@@ -180,7 +180,7 @@ fn named_constants_remain_lexically_declaration_before_use() {
 fn decimal_array_sizes_need_no_lexical_target() {
     let source = br#"const values: Array<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
 
-fn probe() -> result: own unit pure {
+fn probe() -> result: unit pure {
   return unit;
 }
 "#;
@@ -207,7 +207,7 @@ fn probe() -> result: own unit pure {
 
 #[test]
 fn source_nominals_are_not_visible_before_their_declaration() {
-    let source = br#"fn consume(value: own Later) -> result: own unit pure {
+    let source = br#"fn consume(value: Later) -> result: unit pure {
 }
 
 struct Later {
@@ -227,7 +227,7 @@ struct Later {
 
 #[test]
 fn requires_shape_is_checked_before_names_inside_the_invalid_block() {
-    let source = br#"fn guarded() -> result: own unit pure contract {
+    let source = br#"fn guarded() -> result: unit pure contract {
   define value = missing;
 } {
   return unit;
@@ -247,12 +247,12 @@ fn requires_shape_is_checked_before_names_inside_the_invalid_block() {
 
 #[test]
 fn contract_structural_admission_selects_the_earliest_source() {
-    let first_empty = br#"fn first() -> result: own i32 pure contract {
+    let first_empty = br#"fn first() -> result: i32 pure contract {
 } {
   return 0_i32;
 }
 "#;
-    let second_define_only = br#"fn second() -> result: own unit pure contract {
+    let second_define_only = br#"fn second() -> result: unit pure contract {
   define unresolved = missing;
 } {
   return unit;
@@ -281,7 +281,7 @@ fn contract_structural_admission_selects_the_earliest_source() {
 
 #[test]
 fn plain_postcondition_selector_is_private_and_definitions_share_one_contract_scope() {
-    let source = br#"fn relation(value: own i32) -> result: own i32 pure contract {
+    let source = br#"fn relation(value: i32) -> result: i32 pure contract {
   define reflexive = value == value;
   requires reflexive;
   ensures result == value;
@@ -338,7 +338,7 @@ fn plain_postcondition_selector_is_private_and_definitions_share_one_contract_sc
 fn variant_postcondition_selector_preserves_prelude_identity_without_match_roles() {
     for field in ["value", "alternate"] {
         let source = format!(
-            "fn selected(value: own i32) -> result: own Result<i32, i32> pure contract {{\n  ensures when Ok({field}: result): result == value;\n}} {{\n  return Ok<i32, i32>(value: value);\n}}\n"
+            "fn selected(value: i32) -> result: Result<i32, i32> pure contract {{\n  ensures when Ok({field}: result): result == value;\n}} {{\n  return Ok<i32, i32>(value: value);\n}}\n"
         );
         with_one_resolution(source.as_bytes(), |outcome| {
             let ResolutionOutcome::Complete(resolved) = outcome else {
@@ -386,13 +386,13 @@ fn variant_postcondition_selector_preserves_prelude_identity_without_match_roles
 
 #[test]
 fn selector_candidates_use_their_exact_form3_reservation_roles() {
-    let plain = br#"fn plain(value: own i32) -> cvt: own i32 pure contract {
+    let plain = br#"fn plain(value: i32) -> cvt: i32 pure contract {
   ensures cvt == value;
 } {
   return value;
 }
 "#;
-    let variant = br#"fn variant(value: own i32) -> result: own Result<i32, i32> pure contract {
+    let variant = br#"fn variant(value: i32) -> result: Result<i32, i32> pure contract {
   ensures when Ok(value: cvt): cvt == value;
 } {
   return Ok<i32, i32>(value: value);
@@ -431,7 +431,7 @@ fn selector_candidates_use_their_exact_form3_reservation_roles() {
 
 #[test]
 fn postcondition_lookup_waits_for_selector_admission_and_live_conflicts_are_retained() {
-    let unresolved = br#"fn unresolved() -> result: own unit pure contract {
+    let unresolved = br#"fn unresolved() -> result: unit pure contract {
   ensures result == missing;
 } {
   return unit;
@@ -458,7 +458,7 @@ fn postcondition_lookup_waits_for_selector_admission_and_live_conflicts_are_reta
         ));
     });
 
-    let inventory_conflict = br#"fn conflict(result: own i32) -> result: own i32 pure contract {
+    let inventory_conflict = br#"fn conflict(result: i32) -> result: i32 pure contract {
   ensures result == result;
 } {
   return result;
@@ -487,7 +487,7 @@ fn postcondition_lookup_waits_for_selector_admission_and_live_conflicts_are_reta
 
 #[test]
 fn invalid_ensures_local_cannot_poison_an_ordinary_body_lookup() {
-    let source = br#"fn poisoned(value: own i32) -> result: own i32 pure contract {
+    let source = br#"fn poisoned(value: i32) -> result: i32 pure contract {
   define cvt = value == value;
   ensures result == value;
 } {
@@ -512,8 +512,7 @@ fn invalid_ensures_local_cannot_poison_an_ordinary_body_lookup() {
 
 #[test]
 fn unresolved_variant_selector_keeps_its_lookup_verdict_before_entry_inventory() {
-    let source =
-        br#"fn unresolved(value: own i32) -> result: own Result<i32, Overflow> pure contract {
+    let source = br#"fn unresolved(value: i32) -> result: Result<i32, Overflow> pure contract {
   ensures when Missing(value: result): result == value;
 } {
   return Ok<i32, Overflow>(value: value);
@@ -539,7 +538,7 @@ fn unresolved_variant_selector_keeps_its_lookup_verdict_before_entry_inventory()
 
 #[test]
 fn contract_definitions_are_shared_across_clauses_but_do_not_reach_the_body() {
-    let requires_into_ensures = br#"fn isolated(value: own i32) -> result: own i32 pure contract {
+    let requires_into_ensures = br#"fn isolated(value: i32) -> result: i32 pure contract {
   define pre = value;
   requires pre == value;
   ensures result == pre;
@@ -553,7 +552,7 @@ fn contract_definitions_are_shared_across_clauses_but_do_not_reach_the_body() {
         };
     });
 
-    let ensures_into_body = br#"fn isolated(value: own i32) -> result: own i32 pure contract {
+    let ensures_into_body = br#"fn isolated(value: i32) -> result: i32 pure contract {
   define post = value;
   ensures result == post;
 } {
@@ -581,21 +580,21 @@ fn contract_definitions_are_shared_across_clauses_but_do_not_reach_the_body() {
 /// being deleted.
 #[test]
 fn a_const_generic_resolves_as_an_ordinary_place_base() {
-    let ordinary = br#"fn value<const n: u64>() -> result: own u64 pure {
+    let ordinary = br#"fn value<const n: u64>() -> result: u64 pure {
   return n;
 }
 
-fn probe() -> result: own unit pure {
+fn probe() -> result: unit pure {
   return unit;
 }
 "#;
-    let postcondition = br#"fn value<const n: u64>() -> result: own u64 pure contract {
+    let postcondition = br#"fn value<const n: u64>() -> result: u64 pure contract {
   ensures result == result;
 } {
   return n;
 }
 
-fn probe() -> result: own unit pure {
+fn probe() -> result: unit pure {
   return unit;
 }
 "#;
@@ -627,13 +626,13 @@ fn fn8_admission_precedes_declaration_inventory() {
     // DIAG-1 fixes the stage order: complete unit-wide FN-8 admission precedes
     // declaration inventory. The FN-8 rejection therefore wins before the
     // complete ordinary declaration collection is installed for lookup.
-    let source = br#"fn guarded(value: own i32) -> result: own i32 pure contract {
+    let source = br#"fn guarded(value: i32) -> result: i32 pure contract {
   define unresolved = missing;
 } {
   return value;
 }
 
-fn main() -> result: own unit pure {
+fn main() -> result: unit pure {
   return unit;
 }
 "#;
@@ -650,13 +649,13 @@ fn main() -> result: own unit pure {
 
     // The same unit with an admitted internal requirement reaches declaration
     // inventory and resolves normally.
-    let admitted = br#"fn guarded(value: own i32) -> result: own i32 pure contract {
+    let admitted = br#"fn guarded(value: i32) -> result: i32 pure contract {
   requires value == value;
 } {
   return value;
 }
 
-fn main() -> result: own unit pure {
+fn main() -> result: unit pure {
   return unit;
 }
 "#;
@@ -676,8 +675,7 @@ fn main() -> result: own unit pure {
 #[test]
 fn a_builtin_prelude_collision_reports_the_prelude_origin() {
     // [DIAG-1, PRE-1] a built-in nominal collision reports its prelude origin.
-    let source =
-        "fn main() -> result: own unit pure {\n  return unit;\n}\n\nstruct Overflow {\n}\n";
+    let source = "fn main() -> result: unit pure {\n  return unit;\n}\n\nstruct Overflow {\n}\n";
     with_one_resolution(source.as_bytes(), |outcome| {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("the prelude collision must reject: {outcome:?}");
@@ -702,7 +700,7 @@ fn a_builtin_prelude_collision_reports_the_prelude_origin() {
 
 #[test]
 fn requires_locals_do_not_escape_into_the_function_body() {
-    let source = br#"fn guarded() -> result: own unit pure contract {
+    let source = br#"fn guarded() -> result: unit pure contract {
   define condition = 1_i32;
   requires condition == condition;
 } {
@@ -723,7 +721,7 @@ fn requires_locals_do_not_escape_into_the_function_body() {
 
 #[test]
 fn root_identifier_collisions_are_rejected_in_inventory_order() {
-    let source = br#"fn value() -> result: own unit pure {
+    let source = br#"fn value() -> result: unit pure {
 }
 
 const value: i32 = 1_i32;
@@ -742,7 +740,7 @@ const value: i32 = 1_i32;
 
 #[test]
 fn dotless_operation_names_are_reserved_from_source_declarations() {
-    with_one_resolution(b"fn cvt() -> result: own unit pure {\n}\n", |outcome| {
+    with_one_resolution(b"fn cvt() -> result: unit pure {\n}\n", |outcome| {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("operation name declaration must reject: {outcome:?}");
         };
@@ -766,7 +764,7 @@ fn dotless_operation_names_are_reserved_from_source_declarations() {
 #[test]
 fn every_retired_comparison_name_is_a_free_identifier() {
     for spelling in ["ieq", "ine", "ilt", "ile", "igt", "ige"] {
-        let source = format!("fn {spelling}() -> result: own unit pure {{\n}}\n");
+        let source = format!("fn {spelling}() -> result: unit pure {{\n}}\n");
         with_one_resolution(source.as_bytes(), |outcome| {
             assert!(
                 matches!(outcome, ResolutionOutcome::Complete(_)),
@@ -792,7 +790,7 @@ fn operation_and_mode_names_resolve_as_header_and_body_invariants() {
             let indent = if header { "    " } else { "  " };
             let close = if header { "    break;\n  }\n" } else { "" };
             let source = format!(
-                "fn probe(limit: own u64) -> result: own unit pure {{\n{declaration}{indent}invariant scaled: 3_u64 * limit <= 3_u64 * limit {{\n{indent}  use 3 times {spelling};\n{indent}}}\n{close}  return unit;\n}}\n"
+                "fn probe(limit: u64) -> result: unit pure {{\n{declaration}{indent}invariant scaled: 3_u64 * limit <= 3_u64 * limit {{\n{indent}  use 3 times {spelling};\n{indent}}}\n{close}  return unit;\n}}\n"
             );
             with_one_resolution(source.as_bytes(), |outcome| {
                 let ResolutionOutcome::Complete(resolved) = outcome else {
@@ -849,9 +847,9 @@ fn operation_and_mode_names_resolve_as_header_and_body_invariants() {
 #[test]
 fn measure_and_window_part_names_are_ordinary_source_declarations() {
     for source in [
-        &b"fn probe(len: own u64) -> result: own unit pure {\n  return unit;\n}\n"[..],
+        &b"fn probe(len: u64) -> result: unit pure {\n  return unit;\n}\n"[..],
         &b"struct Holder {\n  cap: u64;\n  next: u64;\n}\n"[..],
-        &b"fn probe() -> result: own unit pure {\n  let filled = 0_u64;\n  return unit;\n}\n"[..],
+        &b"fn probe() -> result: unit pure {\n  let filled = 0_u64;\n  return unit;\n}\n"[..],
     ] {
         with_one_resolution(source, |outcome| {
             assert!(
@@ -868,7 +866,7 @@ fn measure_and_window_part_names_are_ordinary_source_declarations() {
 #[test]
 fn a_heap_declaration_is_admitted_only_as_the_leading_item() {
     with_one_resolution(
-        b"program no_heap;\n\nfn probe() -> result: own unit pure {\n  return unit;\n}\n",
+        b"program no_heap;\n\nfn probe() -> result: unit pure {\n  return unit;\n}\n",
         |outcome| {
             assert!(
                 matches!(outcome, ResolutionOutcome::Complete(_)),
@@ -877,7 +875,7 @@ fn a_heap_declaration_is_admitted_only_as_the_leading_item() {
         },
     );
     with_one_resolution(
-        b"fn probe() -> result: own unit pure {\n  return unit;\n}\n\nprogram no_heap;\n",
+        b"fn probe() -> result: unit pure {\n  return unit;\n}\n\nprogram no_heap;\n",
         |outcome| {
             let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
                 panic!("a later heap declaration must reject: {outcome:?}");
@@ -906,7 +904,7 @@ fn a_heap_declaration_is_admitted_only_as_the_leading_item() {
 /// exactly this target into a `let` declaration instead.
 #[test]
 fn an_unresolved_bare_set_target_declares_nothing_and_cites_set1() {
-    let source = br#"fn probe() -> result: own unit pure {
+    let source = br#"fn probe() -> result: unit pure {
   set missing = 0_u64;
   return unit;
 }
@@ -929,7 +927,7 @@ fn an_unresolved_bare_set_target_declares_nothing_and_cites_set1() {
 
 #[test]
 fn a_break_label_must_lexically_enclose_the_break() {
-    let source = br#"fn probe() -> result: own unit pure {
+    let source = br#"fn probe() -> result: unit pure {
   loop @done {
     break @done;
   }
@@ -950,7 +948,7 @@ fn a_break_label_must_lexically_enclose_the_break() {
 
 #[test]
 fn counted_range_binder_and_label_are_visible_only_in_the_body() {
-    let source = br#"fn probe(limit: own u64) -> result: own unit pure {
+    let source = br#"fn probe(limit: u64) -> result: unit pure {
   for @range (index in 0_u64..limit) {
     let copied = index;
     break @range;
@@ -1007,7 +1005,7 @@ fn counted_range_binder_and_label_are_visible_only_in_the_body() {
 
 #[test]
 fn unlabeled_loops_keep_the_counted_binder_without_creating_label_records() {
-    let source = br#"fn probe(limit: own u64) -> result: own unit pure {
+    let source = br#"fn probe(limit: u64) -> result: unit pure {
   loop {
     break;
   }
@@ -1057,7 +1055,7 @@ fn unlabeled_loops_keep_the_counted_binder_without_creating_label_records() {
 
 #[test]
 fn invariant_names_declare_facts_and_affine_locals_resolve_as_invariant_values() {
-    let source = br#"fn probe(limit: own u64) -> result: own unit pure {
+    let source = br#"fn probe(limit: u64) -> result: unit pure {
   for @range (
     index in 0_u64..limit,
     invariant ceiling: index <= limit
@@ -1121,7 +1119,7 @@ fn invariant_names_declare_facts_and_affine_locals_resolve_as_invariant_values()
 
 #[test]
 fn an_unresolved_affine_local_is_reported_as_an_invariant_value() {
-    let source = br#"fn probe(limit: own u64) -> result: own unit pure {
+    let source = br#"fn probe(limit: u64) -> result: unit pure {
   for @range (
     index in 0_u64..limit,
     invariant ceiling: index <= missing
@@ -1150,7 +1148,7 @@ fn an_unresolved_affine_local_is_reported_as_an_invariant_value() {
 #[test]
 fn counted_range_binder_is_invisible_in_both_endpoints_and_after_the_loop() {
     for source in [
-        br#"fn probe(limit: own u64) -> result: own unit pure {
+        br#"fn probe(limit: u64) -> result: unit pure {
   for @range (index in index..limit) {
     break @range;
   }
@@ -1158,7 +1156,7 @@ fn counted_range_binder_is_invisible_in_both_endpoints_and_after_the_loop() {
 }
 "#
         .as_slice(),
-        br#"fn probe(limit: own u64) -> result: own unit pure {
+        br#"fn probe(limit: u64) -> result: unit pure {
   for @range (index in 0_u64..index) {
     break @range;
   }
@@ -1166,7 +1164,7 @@ fn counted_range_binder_is_invisible_in_both_endpoints_and_after_the_loop() {
 }
 "#
         .as_slice(),
-        br#"fn probe(limit: own u64) -> result: own unit pure {
+        br#"fn probe(limit: u64) -> result: unit pure {
   for @range (index in 0_u64..limit) {
     break @range;
   }
@@ -1192,7 +1190,7 @@ fn counted_range_binder_is_invisible_in_both_endpoints_and_after_the_loop() {
 #[test]
 fn counted_range_endpoints_with_an_outer_same_name_still_enforce_no_shadowing() {
     for source in [
-        br#"fn probe(limit: own u64) -> result: own unit pure {
+        br#"fn probe(limit: u64) -> result: unit pure {
   let index = 0_u64;
   for @range (index in index..limit) {
     break @range;
@@ -1201,7 +1199,7 @@ fn counted_range_endpoints_with_an_outer_same_name_still_enforce_no_shadowing() 
 }
 "#
         .as_slice(),
-        br#"fn probe(limit: own u64) -> result: own unit pure {
+        br#"fn probe(limit: u64) -> result: unit pure {
   let index = 0_u64;
   for @range (index in 0_u64..index) {
     break @range;
@@ -1227,7 +1225,7 @@ fn counted_range_endpoints_with_an_outer_same_name_still_enforce_no_shadowing() 
 
 #[test]
 fn invariant_fact_names_resolve_only_after_their_complete_declaration() {
-    let source = br#"fn probe(limit: own u64) -> result: own unit pure {
+    let source = br#"fn probe(limit: u64) -> result: unit pure {
   for (
     index in 0_u64..limit,
     invariant ceiling: index <= limit
@@ -1298,7 +1296,7 @@ fn invariant_fact_names_resolve_only_after_their_complete_declaration() {
         );
     });
 
-    let self_reference = br#"fn probe(value: own i32) -> result: own unit pure {
+    let self_reference = br#"fn probe(value: i32) -> result: unit pure {
   invariant same: value <= value {
     use same;
   }
@@ -1323,7 +1321,7 @@ fn invariant_fact_names_resolve_only_after_their_complete_declaration() {
 
 #[test]
 fn an_unresolved_relation_use_value_is_reported_by_prf1() {
-    let source = br#"fn probe(value: own u64, limit: own u64) -> result: own unit pure {
+    let source = br#"fn probe(value: u64, limit: u64) -> result: unit pure {
   invariant scaled: 3_u64 * value <= 3_u64 * limit {
     use (value <= missing);
   }
@@ -1349,14 +1347,14 @@ fn an_unresolved_relation_use_value_is_reported_by_prf1() {
 #[test]
 fn repeated_header_and_local_invariant_names_are_reported_by_inv1() {
     for source in [
-        br#"fn probe(value: own u64) -> result: own unit pure {
+        br#"fn probe(value: u64) -> result: unit pure {
   invariant same: value <= value;
   invariant same: value <= value;
   return unit;
 }
 "#
         .as_slice(),
-        br#"fn probe(value: own u64) -> result: own unit pure {
+        br#"fn probe(value: u64) -> result: unit pure {
   loop (
     invariant same: value <= value,
     invariant same: value <= value
@@ -1385,7 +1383,7 @@ fn repeated_header_and_local_invariant_names_are_reported_by_inv1() {
 #[test]
 fn header_invariant_names_are_invisible_after_their_loop() {
     for source in [
-        br#"fn probe(limit: own u64) -> result: own unit pure {
+        br#"fn probe(limit: u64) -> result: unit pure {
   for (
     index in 0_u64..limit,
     invariant ceiling: index <= limit
@@ -1398,7 +1396,7 @@ fn header_invariant_names_are_invisible_after_their_loop() {
 }
 "#
         .as_slice(),
-        br#"fn probe(value: own u64) -> result: own unit pure {
+        br#"fn probe(value: u64) -> result: unit pure {
   loop (
     invariant stable: value <= value
   ) {
@@ -1430,7 +1428,7 @@ fn header_invariant_names_are_invisible_after_their_loop() {
 
 #[test]
 fn counted_range_label_is_non_enclosing_after_the_loop() {
-    let source = br#"fn probe(limit: own u64) -> result: own unit pure {
+    let source = br#"fn probe(limit: u64) -> result: unit pure {
   for @range (index in 0_u64..limit) {
     break @range;
   }
@@ -1454,7 +1452,7 @@ fn counted_range_binder_uses_the_for_binder_reservation_role() {
     for name in ["cvt", "wrap", "defined", "checked", "sat", "strict"] {
         for label in ["", " @range"] {
             let source = format!(
-                "fn probe(limit: own u64) -> result: own unit pure {{\n  for{label} ({name} in 0_u64..limit) {{\n    break{label};\n  }}\n  return unit;\n}}\n"
+                "fn probe(limit: u64) -> result: unit pure {{\n  for{label} ({name} in 0_u64..limit) {{\n    break{label};\n  }}\n  return unit;\n}}\n"
             );
             with_one_resolution(source.as_bytes(), |outcome| {
                 let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
@@ -1476,7 +1474,7 @@ fn counted_range_binder_uses_the_for_binder_reservation_role() {
 
 #[test]
 fn counted_range_scope_rejects_live_shadowing_and_allows_expired_reuse() {
-    let live_outer = br#"fn probe(limit: own u64) -> result: own unit pure {
+    let live_outer = br#"fn probe(limit: u64) -> result: unit pure {
   let index = 0_u64;
   for @range (index in 0_u64..limit) {
     break @range;
@@ -1495,7 +1493,7 @@ fn counted_range_scope_rejects_live_shadowing_and_allows_expired_reuse() {
         ));
     });
 
-    let nested = br#"fn probe(limit: own u64) -> result: own unit pure {
+    let nested = br#"fn probe(limit: u64) -> result: unit pure {
   for @outer (index in 0_u64..limit) {
     for @inner (index in 0_u64..limit) {
       break @inner;
@@ -1516,7 +1514,7 @@ fn counted_range_scope_rejects_live_shadowing_and_allows_expired_reuse() {
         ));
     });
 
-    let nested_distinct = br#"fn probe(limit: own u64) -> result: own unit pure {
+    let nested_distinct = br#"fn probe(limit: u64) -> result: unit pure {
   for @outer (outer_index in 0_u64..limit) {
     for @inner (inner_index in outer_index..limit) {
       let copied = inner_index;
@@ -1534,7 +1532,7 @@ fn counted_range_scope_rejects_live_shadowing_and_allows_expired_reuse() {
         );
     });
 
-    let reused = br#"fn probe(limit: own u64) -> result: own unit pure {
+    let reused = br#"fn probe(limit: u64) -> result: unit pure {
   for @range (index in 0_u64..limit) {
     break @range;
   }
@@ -1565,7 +1563,7 @@ fn is_operator_family(spelling: &str) -> bool {
 
 #[test]
 fn dotless_and_dotted_operations_resolve_by_exact_op1_spelling() {
-    let source = br#"fn probe() -> result: own unit pure {
+    let source = br#"fn probe() -> result: unit pure {
   let negated = ineg(1_i32);
   let smaller = imin(negated, 2_i32);
   return unit;
@@ -1595,7 +1593,7 @@ fn dotless_and_dotted_operations_resolve_by_exact_op1_spelling() {
 /// `==` is a second respelled subject, and `imin` is the one named control.
 #[test]
 fn a_respelled_family_produces_no_lexical_use_at_all() {
-    let source = br#"fn probe() -> result: own unit pure {
+    let source = br#"fn probe() -> result: unit pure {
   let sum = 1_i32 +wrap 2_i32;
   let equal = sum == 3_i32;
   let named = imin(sum, 3_i32);
@@ -1636,7 +1634,7 @@ fn a_respelled_family_produces_no_lexical_use_at_all() {
 
 #[test]
 fn match_binder_cannot_equal_its_paired_field_name() {
-    let source = br#"fn probe() -> result: own unit pure {
+    let source = br#"fn probe() -> result: unit pure {
   match unit {
     Some(value: value) => {
       return unit;
@@ -1661,7 +1659,7 @@ fn arm_lookup_does_not_accept_a_struct_constructor() {
     let source = br#"struct Boxed {
 }
 
-fn probe() -> result: own unit pure {
+fn probe() -> result: unit pure {
   match unit {
     Boxed() => {
       return unit;
@@ -1702,11 +1700,11 @@ fn probe() -> result: own unit pure {
 #[test]
 fn complete_role_fixture_materializes_every_declaration_use_and_deferred_family() {
     let source = br#"interface Bound {
-  fn member(value: &i32) -> result: own i32 reads(value);
+  fn member(value: &i32) -> result: i32 reads(value);
 }
 
 interface Numeric<T: Int> {
-  fn zero() -> result: own T pure;
+  fn zero() -> result: T pure;
 }
 
 struct Package<T: drop, const n: i32> {
@@ -1727,7 +1725,7 @@ const one: i32 = 1_i32;
 
 const two: i32 = one;
 
-fn implementation(value: own i32) -> result: own i32 pure {
+fn implementation(value: i32) -> result: i32 pure {
   return value;
 }
 
@@ -1735,24 +1733,24 @@ binding Implementation : Bound {
   member = implementation;
 }
 
-fn user<T: drop, const n: i32>(arg: &T) -> result: own T reads(arg) {
+fn user<T: drop, const n: i32>(arg: &T) -> result: T reads(arg) {
   return arg;
 }
 
-fn grouped<interface Bound>() -> result: own i32 pure {
+fn grouped<interface Bound>() -> result: i32 pure {
   let called = Bound::member(value: 1_i32);
   return called;
 }
 
-fn adjust(holder: &Holder, lower: own u64, upper: own u64) -> result: own unit reads(holder.table[lower..upper]), writes(holder.output) {
+fn adjust(holder: &Holder, lower: u64, upper: u64) -> result: unit reads(holder.table[lower..upper]), writes(holder.output) {
   return unit;
 }
 
-fn numeric<T: Int>() -> result: own T pure {
+fn numeric<T: Int>() -> result: T pure {
   return 0_T;
 }
 
-fn probe() -> result: own unit pure {
+fn probe() -> result: unit pure {
   let ordinary = 1_i32 +wrap two;
   let smaller = iabs.checked(ordinary);
   let made = Package<i32, one>(items: ordinary);
@@ -1907,7 +1905,7 @@ fn probe() -> result: own unit pure {
 fn effect_paths_resolve_the_exact_formal_parameter_and_retain_fields() {
     // [EFF-1] every `effect_path` is rooted at a reference parameter, so the
     // fixture's root is `&Holder` and not the v0.59 `own Holder`.
-    let source = b"struct Holder {\n  output: i32;\n}\n\nfn publish(holder: &Holder) -> result: own unit writes(holder.output) {\n  return unit;\n}\n";
+    let source = b"struct Holder {\n  output: i32;\n}\n\nfn publish(holder: &Holder) -> result: unit writes(holder.output) {\n  return unit;\n}\n";
     with_one_resolution(source, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("a reference-parameter-rooted state path must resolve: {outcome:?}");
@@ -1942,8 +1940,8 @@ fn effect_paths_resolve_the_exact_formal_parameter_and_retain_fields() {
 #[test]
 fn unresolved_and_body_local_effect_targets_reject_under_eff1() {
     for source in [
-        &b"fn probe() -> result: own unit reads(missing) {\n  return unit;\n}\n"[..],
-        &b"fn probe() -> result: own unit reads(local) {\n  let local = 0_u64;\n  return unit;\n}\n"[..],
+        &b"fn probe() -> result: unit reads(missing) {\n  return unit;\n}\n"[..],
+        &b"fn probe() -> result: unit reads(local) {\n  let local = 0_u64;\n  return unit;\n}\n"[..],
     ] {
         with_one_resolution(source, |outcome| {
             let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
@@ -1955,11 +1953,10 @@ fn unresolved_and_body_local_effect_targets_reject_under_eff1() {
                 ResolutionIssueKind::UnresolvedUse {
                     role: LexicalUseRole::EffectRoot,
                     ..
+                } | ResolutionIssueKind::InvisibleUse {
+                    role: LexicalUseRole::EffectRoot,
+                    ..
                 }
-                    | ResolutionIssueKind::InvisibleUse {
-                        role: LexicalUseRole::EffectRoot,
-                        ..
-                    }
             ));
         });
     }
@@ -2040,12 +2037,12 @@ fn duplicate_main_conformance_case_is_type6() {
 
 #[test]
 fn nested_declarations_cannot_shadow_source_later_global_functions() {
-    let source = br#"fn probe() -> result: own unit pure {
+    let source = br#"fn probe() -> result: unit pure {
   let future = 1_i32;
   return unit;
 }
 
-fn future() -> result: own unit pure {
+fn future() -> result: unit pure {
 }
 "#;
     with_one_resolution(source, |outcome| {
@@ -2068,8 +2065,8 @@ fn future() -> result: own unit pure {
 #[test]
 fn sibling_member_signatures_do_not_share_parameter_names() {
     let source = br#"interface Separate {
-  fn first(value: &i32) -> result: own unit reads(value);
-  fn second() -> result: own unit reads(value);
+  fn first(value: &i32) -> result: unit reads(value);
+  fn second() -> result: unit reads(value);
 }
 "#;
     with_one_resolution(source, |outcome| {
@@ -2089,7 +2086,7 @@ fn interface_import_and_unbounded_type_parameter_have_distinct_roles() {
     let source = br#"interface Source {
 }
 
-fn grouped<interface Source, T>(value: own T) -> result: own T pure {
+fn grouped<interface Source, T>(value: T) -> result: T pure {
   return move value;
 }
 "#;
@@ -2122,7 +2119,7 @@ fn bare_type_parameter_never_becomes_an_interface_import_by_lookup() {
     let source = br#"interface Source {
 }
 
-fn grouped<Source>() -> result: own unit pure {
+fn grouped<Source>() -> result: unit pure {
 }
 "#;
     with_one_resolution(source, |outcome| {
@@ -2139,7 +2136,7 @@ fn grouped<Source>() -> result: own unit pure {
 
 #[test]
 fn explicit_interface_import_requires_a_declared_interface() {
-    let source = br#"fn grouped<interface Missing>() -> result: own unit pure {
+    let source = br#"fn grouped<interface Missing>() -> result: unit pure {
 }
 "#;
     with_one_resolution(source, |outcome| {
@@ -2164,7 +2161,7 @@ fn explicit_interface_import_requires_a_declared_interface() {
 /// otherwise hide it.
 #[test]
 fn conditional_branches_are_separate_lexical_scopes() {
-    let sibling_branches = br#"fn get(pick: own Bool) -> result: own unit pure {
+    let sibling_branches = br#"fn get(pick: Bool) -> result: unit pure {
   if pick {
     let inside = 1_u64;
     let observed = inside;
@@ -2187,7 +2184,7 @@ fn conditional_branches_are_separate_lexical_scopes() {
   Right();
 }
 
-fn get(pick: own Pick) -> result: own unit pure {
+fn get(pick: Pick) -> result: unit pure {
   match pick {
     Left() => {
       let inside = 1_u64;
@@ -2208,7 +2205,7 @@ fn get(pick: own Pick) -> result: own unit pure {
         );
     });
 
-    let expired_then_enclosing = br#"fn get(pick: own Bool) -> result: own unit pure {
+    let expired_then_enclosing = br#"fn get(pick: Bool) -> result: unit pure {
   if pick {
     let offset = 0_u64;
     let inner = offset;
@@ -2225,7 +2222,7 @@ fn get(pick: own Pick) -> result: own unit pure {
         );
     });
 
-    let live_shadow = br#"fn get(pick: own Bool) -> result: own unit pure {
+    let live_shadow = br#"fn get(pick: Bool) -> result: unit pure {
   let offset = 0_u64;
   if pick {
     let offset = 1_u64;
@@ -2249,11 +2246,11 @@ fn get(pick: own Pick) -> result: own unit pure {
 
 #[test]
 fn semantic_stage_order_precedes_source_position_and_inventory_rank_is_event_local() {
-    let later_inventory_error = br#"fn probe() -> result: own unit pure {
+    let later_inventory_error = br#"fn probe() -> result: unit pure {
   missing();
 }
 
-fn cvt() -> result: own unit pure {
+fn cvt() -> result: unit pure {
 }
 "#;
     with_one_resolution(later_inventory_error, |outcome| {
@@ -2263,10 +2260,10 @@ fn cvt() -> result: own unit pure {
         assert_eq!(issue.rule(), ResolutionRule::Form3);
     });
 
-    let later_fn8_error = br#"fn cvt() -> result: own unit pure {
+    let later_fn8_error = br#"fn cvt() -> result: unit pure {
 }
 
-fn guarded() -> result: own unit pure contract {
+fn guarded() -> result: unit pure contract {
   define value = 1_i32;
 } {
   return unit;
@@ -2279,12 +2276,12 @@ fn guarded() -> result: own unit pure contract {
         assert_eq!(issue.rule(), ResolutionRule::Fn8);
     });
 
-    let earlier_lower_rank = br#"fn value() -> result: own unit pure {
+    let earlier_lower_rank = br#"fn value() -> result: unit pure {
 }
 
 const value: i32 = 1_i32;
 
-fn cvt() -> result: own unit pure {
+fn cvt() -> result: unit pure {
 }
 "#;
     with_one_resolution(earlier_lower_rank, |outcome| {
@@ -2307,7 +2304,7 @@ fn identifier_renaming_preserves_general_resolution_structure() {
         ("function_27", "binding_42"),
     ] {
         let source = format!(
-            "fn {helper}() -> result: own unit pure {{\n}}\n\nfn probe() -> result: own unit pure {{\n  let {local} = 1_i32;\n  {helper}();\n  return {local};\n}}\n"
+            "fn {helper}() -> result: unit pure {{\n}}\n\nfn probe() -> result: unit pure {{\n  let {local} = 1_i32;\n  {helper}();\n  return {local};\n}}\n"
         );
         with_one_resolution(source.as_bytes(), |outcome| {
             let ResolutionOutcome::Complete(resolved) = outcome else {
@@ -2340,10 +2337,10 @@ fn identifier_renaming_preserves_general_resolution_structure() {
 
 #[test]
 fn one_name_mutation_changes_a_complete_call_into_an_op1_rejection() {
-    let accepted = br#"fn helper() -> result: own unit pure {
+    let accepted = br#"fn helper() -> result: unit pure {
 }
 
-fn probe() -> result: own unit pure {
+fn probe() -> result: unit pure {
   helper();
 }
 "#;
@@ -2351,10 +2348,10 @@ fn probe() -> result: own unit pure {
         assert!(matches!(outcome, ResolutionOutcome::Complete(_)));
     });
 
-    let mutated = br#"fn helper() -> result: own unit pure {
+    let mutated = br#"fn helper() -> result: unit pure {
 }
 
-fn probe() -> result: own unit pure {
+fn probe() -> result: unit pure {
   missing();
 }
 "#;
@@ -2372,7 +2369,7 @@ fn probe() -> result: own unit pure {
 
 #[test]
 fn diagnostics_ignore_logical_paths_and_repeat_byte_for_byte() {
-    let source = b"fn probe() -> result: own unit pure {\n  missing();\n}\n";
+    let source = b"fn probe() -> result: unit pure {\n  missing();\n}\n";
     let issue = |path: &str| -> ResolutionIssue {
         with_resolution(&[SourceInput::new(path, source)], |outcome| {
             let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
@@ -2407,11 +2404,8 @@ fn source_record_order_controls_const_visibility_but_paths_create_no_namespace()
         );
     });
 
-    let first = SourceInput::new("left/name.wf", b"fn same() -> result: own unit pure {\n}\n");
-    let second = SourceInput::new(
-        "right/name.wf",
-        b"fn same() -> result: own unit pure {\n}\n",
-    );
+    let first = SourceInput::new("left/name.wf", b"fn same() -> result: unit pure {\n}\n");
+    let second = SourceInput::new("right/name.wf", b"fn same() -> result: unit pure {\n}\n");
     with_resolution(&[first, second], |outcome| {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("logical paths must not create function namespaces: {outcome:?}");
@@ -2436,7 +2430,7 @@ fn every_distinct_op1_family_resolves_through_the_normal_callee_path() {
         .collect();
     assert_eq!(named.len(), OPERATION_FAMILIES.len() - 27);
 
-    let mut source = String::from("fn probe() -> result: own unit pure {\n");
+    let mut source = String::from("fn probe() -> result: unit pure {\n");
     for (_, operation) in &named {
         source.push_str("  ");
         source.push_str(operation);
@@ -2472,7 +2466,7 @@ fn every_distinct_op1_family_resolves_through_the_normal_callee_path() {
 // visibility, collision and callable-binding coverage without an external domain.
 #[test]
 fn parsed_prelude_declarations_are_ordinary_visible_targets() {
-    let source = b"fn inspect(args: &Args) -> result: own u64 reads(args) {\n  return args_count(args: args);\n}\n";
+    let source = b"fn inspect(args: &Args) -> result: u64 reads(args) {\n  return args_count(args: args);\n}\n";
     with_resolution_sources(
         &[SourceInput::new("ordinary.wf", source)],
         true,
@@ -2504,7 +2498,7 @@ fn ordinary_prelude_names_cannot_be_shadowed_and_an_opaque_constructor_entry_res
     for source in [
         "struct HostString {\n}\n",
         "enum Collision {\n  NotFound();\n}\n",
-        "fn helper() -> result: own unit pure {\n  let args_count = 0_u64;\n  return unit;\n}\n",
+        "fn helper() -> result: unit pure {\n  let args_count = 0_u64;\n  return unit;\n}\n",
     ] {
         with_resolution_sources(
             &[SourceInput::new("collision.wf", source.as_bytes())],
@@ -2528,7 +2522,7 @@ fn ordinary_prelude_names_cannot_be_shadowed_and_an_opaque_constructor_entry_res
     // the rejection that used to happen at this stage, as an unresolved name,
     // would have made [TYPE-2]'s judgment over a resolved declaration
     // unreachable.
-    let source = b"fn fabricate() -> result: own HostString pure {\n  return HostString();\n}\n";
+    let source = b"fn fabricate() -> result: HostString pure {\n  return HostString();\n}\n";
     with_resolution_sources(&[SourceInput::new("opaque.wf", source)], true, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("an opaque nominal's constructor entry resolves: {outcome:?}");
@@ -2547,8 +2541,7 @@ fn ordinary_prelude_names_cannot_be_shadowed_and_an_opaque_constructor_entry_res
     // The cell keeps the one compiler-owned identity every later stage reads
     // a written `Box` through [TYPE-2, TYPE-9, PRE-1], in the constructor
     // domain as in the nominal one.
-    let source =
-        b"fn hold(cell: own Box<u64>) -> result: own Box<u64> pure {\n  return move cell;\n}\n";
+    let source = b"fn hold(cell: Box<u64>) -> result: Box<u64> pure {\n  return move cell;\n}\n";
     with_resolution_sources(&[SourceInput::new("cell.wf", source)], true, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("the cell resolves as a nominal type: {outcome:?}");
@@ -2563,7 +2556,7 @@ fn ordinary_prelude_names_cannot_be_shadowed_and_an_opaque_constructor_entry_res
 
 #[test]
 fn an_ordinary_prelude_signature_is_eligible_for_an_actual_member() {
-    let source = b"interface Counter {\n  fn count(args: &Args) -> result: own u64 reads(args);\n}\n\nbinding Selected : Counter {\n  count = args_count;\n}\n";
+    let source = b"interface Counter {\n  fn count(args: &Args) -> result: u64 reads(args);\n}\n\nbinding Selected : Counter {\n  count = args_count;\n}\n";
     with_resolution_sources(&[SourceInput::new("actual.wf", source)], true, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("FN-4 admits ordinary declarations: {outcome:?}");
@@ -2586,8 +2579,7 @@ fn an_ordinary_prelude_signature_is_eligible_for_an_actual_member() {
 fn supplied_signature_locals_do_not_capture_writer_global_names() {
     // PRE-1 is an outer ordinary declaration environment. Its local `f` and
     // `input` parameter names cannot reserve those names in the writer unit.
-    let source =
-        b"const input: u64 = 7_u64;\n\nfn f() -> result: own u64 pure {\n  return input;\n}\n";
+    let source = b"const input: u64 = 7_u64;\n\nfn f() -> result: u64 pure {\n  return input;\n}\n";
     with_resolution_sources(
         &[SourceInput::new("ordinary.wf", source)],
         true,
@@ -2667,8 +2659,8 @@ fn ordinary_prelude_inventory_is_independent_of_writer_names_and_declaration_cou
             },
         )
     };
-    let first = read_inventory(b"fn helper() -> result: own unit pure {\n  return unit;\n}\n");
-    let second = read_inventory(b"struct Extra {\n  field: u64;\n}\n\nfn helper() -> result: own unit pure {\n  let local = 0_u64;\n  return unit;\n}\n");
+    let first = read_inventory(b"fn helper() -> result: unit pure {\n  return unit;\n}\n");
+    let second = read_inventory(b"struct Extra {\n  field: u64;\n}\n\nfn helper() -> result: unit pure {\n  let local = 0_u64;\n  return unit;\n}\n");
     assert_eq!(first, second);
     // [PRE-1]'s preorder: "each opaque struct above in written order with its
     // refused constructor and its fields in declaration order". x1 puts the
@@ -2739,7 +2731,7 @@ fn ordinary_prelude_inventory_is_independent_of_writer_names_and_declaration_cou
 
 #[test]
 fn a_late_prelude_function_collision_preserves_an_ordinal_above_u8() {
-    let source = b"fn close_send() -> result: own unit pure {\n  return unit;\n}\n";
+    let source = b"fn close_send() -> result: unit pure {\n  return unit;\n}\n";
     with_resolution_sources(
         &[SourceInput::new("collision.wf", source)],
         true,

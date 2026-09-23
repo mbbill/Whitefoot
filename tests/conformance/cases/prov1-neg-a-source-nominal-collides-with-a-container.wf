@@ -2,7 +2,7 @@ struct Slots {
   x: u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Declares a nominal whose spelling is a compiler-owned storage nominal's.";
   return exit_status(code: 0_u8);
 }

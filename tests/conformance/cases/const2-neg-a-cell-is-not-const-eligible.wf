@@ -1,6 +1,6 @@
 const bad: Box<i32> = 3_i32;
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "CONST-2 rejects an owning heap cell as a named constant: a const is pure static rodata with no allocation and no drop, and Box is not const-eligible.";
   return exit_status(code: 0_u8);
 }

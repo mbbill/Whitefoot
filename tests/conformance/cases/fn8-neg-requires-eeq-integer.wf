@@ -1,10 +1,10 @@
-fn guarded(left: own u32, right: own u32) -> result: own unit pure contract {
+fn guarded(left: u32, right: u32) -> result: unit pure contract {
   define same = eeq(left, right);
   requires same;
 } {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

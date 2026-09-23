@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "FN-7: main is an ordinary source-callable function. This recursive call is accepted under FN-6; the acceptance case is deliberately not executed.";
   return main();
 }

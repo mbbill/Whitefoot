@@ -1,4 +1,4 @@
-fn pop(values: &Slots<u64, 4>) -> (value: own u64, count: own u64) writes(values) contract {
+fn pop(values: &Slots<u64, 4>) -> (value: u64, count: u64) writes(values) contract {
   requires deref(values).len > 0_u64;
   ensures deref(values).len == deref(entry(values)).len - 1_u64;
   ensures count == deref(values).len;
@@ -9,7 +9,7 @@ fn pop(values: &Slots<u64, 4>) -> (value: own u64, count: own u64) writes(values
   return value, count;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A take returns only its element; a source caller returns that element and a scalar measure beside the window postcondition. Both scalar and state facts reach the caller.";
   let values = slots_new::<u64, 4>();
   place_back(window: &values, value: 7_u64);

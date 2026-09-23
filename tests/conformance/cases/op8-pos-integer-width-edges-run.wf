@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "All four unsigned widths check masked wrapping shifts, rotation, zero leading and trailing counts, full-width population, saturating multiplication and the admitted byte-swap widths.";
   let shifted8 = ishl.wrap(1_u8, 9_u32);
   if shifted8 == 2_u8 {

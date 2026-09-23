@@ -396,19 +396,19 @@ const RECURSIVE_VALUE: &[u8] = br#"enum Tree {
   Branch(left: Box<Tree>, right: Box<Tree>);
 }
 
-fn boxed_leaf() -> made: own Box<Tree> pure {
+fn boxed_leaf() -> made: Box<Tree> pure {
   let leaf = Leaf();
   let cell = box_new::<Tree>(value: move leaf);
   return move cell;
 }
 
-fn boxed_branch(left: own Box<Tree>, right: own Box<Tree>) -> made: own Box<Tree> pure {
+fn boxed_branch(left: Box<Tree>, right: Box<Tree>) -> made: Box<Tree> pure {
   let branch = Branch(left: move left, right: move right);
   let cell = box_new::<Tree>(value: move branch);
   return move cell;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let boxed_left = boxed_leaf();
   let boxed_right = boxed_leaf();
   let root = boxed_branch(left: move boxed_left, right: move boxed_right);

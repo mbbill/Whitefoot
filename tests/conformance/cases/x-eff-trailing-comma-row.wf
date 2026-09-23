@@ -1,9 +1,9 @@
-fn f(cell: &Box<i32>, x: own i32) -> function_result: own i32 reads(cell), {
+fn f(cell: &Box<i32>, x: i32) -> function_result: i32 reads(cell), {
   doc "A trailing comma after an effect entry is rejected because EFF-1 permits commas only between effects.";
   return x;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Driver.";
   let cell = box_new::<i32>(value: 0_i32);
   let a = f(cell: &cell, x: 7_i32);

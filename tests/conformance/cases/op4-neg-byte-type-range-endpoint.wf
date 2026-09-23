@@ -1,4 +1,4 @@
-fn selected(data: &[u8], table: own Array<u8, 255>) -> result: own u8 reads(data) {
+fn selected(data: &[u8], table: Array<u8, 255>) -> result: u8 reads(data) {
   doc "The byte type interval includes 255, which is not an index into a 255-element array; widening must not lose that endpoint.";
   let peak = 0_u8;
   let length = deref(data).len;
@@ -10,6 +10,6 @@ fn selected(data: &[u8], table: own Array<u8, 255>) -> result: own u8 reads(data
   return table[index];
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

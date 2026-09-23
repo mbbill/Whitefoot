@@ -1,4 +1,4 @@
-fn walk(value: &u64, choose: own Bool) -> result: own u64 reads(value) {
+fn walk(value: &u64, choose: Bool) -> result: u64 reads(value) {
   let local = deref(value);
   let selected = if choose {
     give value;

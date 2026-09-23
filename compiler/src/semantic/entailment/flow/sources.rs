@@ -484,9 +484,9 @@ impl Analyzer<'_, '_> {
         ResolvedPlace::binding(binding)
     }
 
-    /// [ENT-3] S5: `let x: own T = lit;` establishes x = value(lit);
-    /// `let x: own T = p;` with p a term establishes x = p; and
-    /// `let y: own Dst = cvt::<Src, Dst>(p);` over a total [OP-6] pair
+    /// [ENT-3] S5: `let x: T = lit;` establishes x = value(lit);
+    /// `let x: T = p;` with p a term establishes x = p; and
+    /// `let y: Dst = cvt::<Src, Dst>(p);` over a total [OP-6] pair
     /// establishes y = p, the conversion being exactly value-preserving.
     /// [MSR-3] the rebind placement, first half: at the pre-transfer point of
     /// one `let` or one [LIV-2] `set` whose right-hand side is a measured
@@ -1362,7 +1362,7 @@ impl Analyzer<'_, '_> {
         );
     }
 
-    /// [ENT-3] S9: `let x: own T = c[i];` where c is the bare IDENT of a
+    /// [ENT-3] S9: `let x: T = c[i];` where c is the bare IDENT of a
     /// named const of type `array<T, N>` and T a fragment type establishes
     /// vlo <= x and x <= vhi over its N declared element values. The index's
     /// own bounds obligation is judged separately and is unaffected. Deeper

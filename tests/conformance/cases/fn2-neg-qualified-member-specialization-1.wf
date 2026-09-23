@@ -1,11 +1,11 @@
 interface Work {
-  fn run() -> result: own unit pure;
+  fn run() -> result: unit pure;
 }
 
-fn recurse<interface Work>() -> result: own unit pure {
+fn recurse<interface Work>() -> result: unit pure {
   return recurse::<fn Work::run::<u64>>();
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

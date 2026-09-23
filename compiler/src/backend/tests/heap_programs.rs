@@ -79,7 +79,7 @@ fn recursively_boxed_tree_executes_with_derived_cleanup() {
 /// an inline accessor states it without depending on another package's file.
 #[test]
 fn the_byte_accessor_without_its_length_branch_is_an_op4_rejection() {
-    let source = br#"fn byte_at(s: &[u8], index: own u64) -> result: own u8 reads(s) {
+    let source = br#"fn byte_at(s: &[u8], index: u64) -> result: u8 reads(s) {
   let stored = deref(s).len;
   let within = index < stored;
   if within {
@@ -90,7 +90,7 @@ fn the_byte_accessor_without_its_length_branch_is_an_op4_rejection() {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let bytes = array_filled::<u8, 4>(value: 7_u8);
   let whole = &bytes[0_u64..4_u64];
   let first = byte_at(s: whole, index: 0_u64);

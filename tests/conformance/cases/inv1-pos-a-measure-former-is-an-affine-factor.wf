@@ -1,4 +1,4 @@
-fn filled<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
+fn filled<T: copy, const n: u64>(value: T) -> result: Slots<T, n> pure contract {
   ensures result.len >= n;
   ensures result.cap <= result.len;
 } {
@@ -14,7 +14,7 @@ fn filled<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure c
   return move built;
 }
 
-fn headroom(run: own Slots<u8, 8>) -> total: own u64 pure contract {
+fn headroom(run: Slots<u8, 8>) -> total: u64 pure contract {
   requires 8_u64 <= run.len;
 } {
   doc "A header invariant states a relation over a measure of the window it scans.";
@@ -28,7 +28,7 @@ fn headroom(run: own Slots<u8, 8>) -> total: own u64 pure contract {
   return seen;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "INV-1, MSR-1, MSR-5: a measure place is an affine factor of a header invariant. The relation the writer states is the one a contract clause already states, in the same spelling, and the checker proves it at the loop base and at every backedge over the same ENT-2 measure term the automatic derivation of a numeric goal already carries an atom for.";
   let run = filled::<u8, 8>(value: 0_u8);
   let total = headroom(run: move run);

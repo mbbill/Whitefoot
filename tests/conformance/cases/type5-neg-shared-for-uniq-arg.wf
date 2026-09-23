@@ -1,8 +1,8 @@
-fn mutate(x: &u64) -> function_result: own unit pure {
+fn mutate(x: &u64) -> function_result: unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Modes are exact and there is no implicit borrow: an own binding does not satisfy a reference parameter, whose argument is written with the borrow form.";
   let value = 0_u64;
   mutate(x: value);

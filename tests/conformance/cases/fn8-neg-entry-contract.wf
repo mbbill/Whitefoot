@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure contract {
+fn main() -> status: ExitStatus pure contract {
   define permitted = 0_i32 > 0_i32;
   requires permitted;
 } {

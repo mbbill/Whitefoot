@@ -4,7 +4,7 @@ enum Sign {
   Pos();
 }
 
-fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: ExitStatus pure {
   doc "GRAM-4: let, loop, break, set, statement match, if, the let-initializer match with give, and return. The `region` statement is gone, so the block structure is the ordinary lexical one.";
   let i = 0_i32;
   loop @l {

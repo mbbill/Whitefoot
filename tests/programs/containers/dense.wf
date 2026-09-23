@@ -5,7 +5,7 @@ struct Wide {
   d: u64;
 }
 
-fn build_scalar16(seed: own u64) -> result: own Slots<u64, 16> pure contract {
+fn build_scalar16(seed: u64) -> result: Slots<u64, 16> pure contract {
   ensures result.len >= 16_u64;
   ensures result.len <= 16_u64;
 } {
@@ -25,7 +25,7 @@ fn build_scalar16(seed: own u64) -> result: own Slots<u64, 16> pure contract {
   return move values;
 }
 
-fn dense_scalar16(seed: own u64, rounds: own u64) -> result: own u64 pure {
+fn dense_scalar16(seed: u64, rounds: u64) -> result: u64 pure {
   let values = build_scalar16(seed: seed);
   let state = seed;
   for (pass in 0_u64..rounds) {
@@ -46,7 +46,7 @@ fn dense_scalar16(seed: own u64, rounds: own u64) -> result: own u64 pure {
   return checksum;
 }
 
-fn build_scalar256(seed: own u64) -> result: own Slots<u64, 256> pure contract {
+fn build_scalar256(seed: u64) -> result: Slots<u64, 256> pure contract {
   ensures result.len >= 256_u64;
   ensures result.len <= 256_u64;
 } {
@@ -66,7 +66,7 @@ fn build_scalar256(seed: own u64) -> result: own Slots<u64, 256> pure contract {
   return move values;
 }
 
-fn dense_scalar256(seed: own u64, rounds: own u64) -> result: own u64 pure {
+fn dense_scalar256(seed: u64, rounds: u64) -> result: u64 pure {
   let values = build_scalar256(seed: seed);
   let state = seed;
   for (pass in 0_u64..rounds) {
@@ -87,7 +87,7 @@ fn dense_scalar256(seed: own u64, rounds: own u64) -> result: own u64 pure {
   return checksum;
 }
 
-fn build_wide16(seed: own u64) -> result: own Slots<Wide, 16> pure contract {
+fn build_wide16(seed: u64) -> result: Slots<Wide, 16> pure contract {
   ensures result.len >= 16_u64;
   ensures result.len <= 16_u64;
 } {
@@ -117,7 +117,7 @@ fn build_wide16(seed: own u64) -> result: own Slots<Wide, 16> pure contract {
   return move values;
 }
 
-fn dense_wide16(seed: own u64, rounds: own u64) -> result: own u64 pure {
+fn dense_wide16(seed: u64, rounds: u64) -> result: u64 pure {
   let values = build_wide16(seed: seed);
   let state = seed;
   for (pass in 0_u64..rounds) {
@@ -154,7 +154,7 @@ fn dense_wide16(seed: own u64, rounds: own u64) -> result: own u64 pure {
   return checksum;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let scalar16 = dense_scalar16(seed: 19_u64, rounds: 3_u64);
   if scalar16 != 4763845653406266228_u64 {
     return exit_status(code: 1_u8);

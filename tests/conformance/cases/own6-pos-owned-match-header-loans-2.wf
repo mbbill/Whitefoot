@@ -1,16 +1,16 @@
-fn inspect(value: &u64) -> result: own u64 reads(value) {
+fn inspect(value: &u64) -> result: u64 reads(value) {
   doc "A reference parameter denotes the reference; the storage it names is read through deref.";
   return deref(value);
 }
 
-fn decide(value: &u64) -> result: own Option<u64> reads(value) {
+fn decide(value: &u64) -> result: Option<u64> reads(value) {
   doc "The reference argument is read once and lasts only through this call.";
   let seen = deref(value);
   let raised = seen +wrap 4_u64;
   return Some<u64>(value: raised);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The same reference, formed for a call whose result is bound first, still ends with that call.";
   let value = 3_u64;
   let decided = decide(value: &value);

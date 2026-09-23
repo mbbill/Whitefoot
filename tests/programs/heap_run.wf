@@ -1,4 +1,4 @@
-fn total(run: own Box<Slots<u8>>) -> sum: own u8 pure contract {
+fn total(run: Box<Slots<u8>>) -> sum: u8 pure contract {
   requires run.inner.len >= 4_u64;
 } {
   doc "Adds the run's first four bytes and takes the cell's compiler-derived release here: the boxed runtime-capacity window reaches this scope's exit, so the one heap object is freed on the return edge [STOR-1, STOR-3, TYPE-9].";
@@ -12,7 +12,7 @@ fn total(run: own Box<Slots<u8>>) -> sum: own u8 pure contract {
   return all;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The ambient heap hands out one cell holding a runtime-capacity window of four slots, a counted loop fills it through place_back, and a helper adds the bytes and takes the derived release. Allocation is total, so the construction has no failure arm [STOR-8, OP-13].";
   let built = box_slots_new::<u8>(capacity: 4_u64);
   for @fill (

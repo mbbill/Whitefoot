@@ -40,15 +40,14 @@ fn classifies_every_distinct_pair_with_a_float_endpoint() {
             };
             writeln!(
                 source,
-                "fn convert_{source_name}_{destination_name}(value: own {source_name}) -> result: own {result} pure {{\n  return cvt::<{source_name}, {destination_name}>(value);\n}}\n"
+                "fn convert_{source_name}_{destination_name}(value: {source_name}) -> result: {result} pure {{\n  return cvt::<{source_name}, {destination_name}>(value);\n}}\n"
             )
             .expect("write conversion function");
             expected.push((source_type, destination_type, total, destination_name));
         }
     }
-    source.push_str(
-        "fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
-    );
+    source
+        .push_str("fn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n");
 
     with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
@@ -104,12 +103,12 @@ fn classifies_every_distinct_pair_with_a_float_endpoint() {
 #[test]
 fn float_conversion_operand_failures_keep_their_rule_owners() {
     assert_rule(
-        b"fn main() -> status: own ExitStatus pure {\n  let value = cvt::<f32, f32>(1.0_f32);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: ExitStatus pure {\n  let value = cvt::<f32, f32>(1.0_f32);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Op6,
         SemanticIssueKind::InvalidOperation,
     );
     assert_rule_kind(
-        b"fn main() -> status: own ExitStatus pure {\n  let value = cvt::<u32, f64>(1_u16);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: ExitStatus pure {\n  let value = cvt::<u32, f64>(1_u16);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );

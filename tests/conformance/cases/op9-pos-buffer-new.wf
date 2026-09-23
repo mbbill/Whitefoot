@@ -1,4 +1,4 @@
-fn make(n: own u64) -> made: own Box<Slots<i32>> pure contract {
+fn make(n: u64) -> made: Box<Slots<i32>> pure contract {
   requires n <= 1024_u64;
 } {
   doc "A runtime-capacity construction takes its count only after the source allocation bound is proved; target qualification then proves the reachable byte range fits the selected allocation and address domains [OP-9, STOR-6].";
@@ -6,6 +6,6 @@ fn make(n: own u64) -> made: own Box<Slots<i32>> pure contract {
   return move taken;
 }
 
-fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

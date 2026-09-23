@@ -21,10 +21,10 @@ fn assert_complete(source: &[u8]) {
 #[test]
 fn memory_reclamation_contributes_no_release_row() {
     assert_complete(
-        b"fn consume(data: own Box<u64>) -> result: own unit pure {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn consume(data: Box<u64>) -> result: unit pure {\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
     assert_complete(
-        b"fn main() -> status: own ExitStatus pure {\n  let boxed = box_new::<u64>(value: 0_u64);\n  let stored = box_array_filled::<u8>(count: 4_u64, value: 0_u8);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: ExitStatus pure {\n  let boxed = box_new::<u64>(value: 0_u64);\n  let stored = box_array_filled::<u8>(count: 4_u64, value: 0_u8);\n  return exit_status(code: 0_u8);\n}\n",
     );
 }
 
@@ -39,11 +39,11 @@ struct Outer {
   next: Inner;
 }
 
-fn read_nested(cell: &Box<Outer>) -> result: own u64 pure {
+fn read_nested(cell: &Box<Outer>) -> result: u64 pure {
   return deref(cell).inner.next.len;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -75,13 +75,13 @@ fn a_linear_window_reaches_no_scope_exit_however_short_it_is_proved() {
   value: u64;
 }
 
-fn release(run: own Slots<Token, 4>) -> result: own unit pure contract {
+fn release(run: Slots<Token, 4>) -> result: unit pure contract {
   requires run.len == 0_u64;
 } {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -91,11 +91,11 @@ fn main() -> status: own ExitStatus pure {
     // An affine element type keeps its ordinary derived release on the same
     // edge, symbolic capacity included [STOR-3].
     assert_complete(
-        br#"fn release<const n: u64>(run: own Slots<u64, n>) -> result: own unit pure {
+        br#"fn release<const n: u64>(run: Slots<u64, n>) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -105,11 +105,11 @@ fn main() -> status: own ExitStatus pure {
   value: u64;
 }
 
-fn release(run: own Slots<Token, 4>) -> result: own unit pure {
+fn release(run: Slots<Token, 4>) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -134,11 +134,11 @@ enum Slot {
   Occupied(value: Token, owner: Box<u64>);
 }
 
-fn discard(slot: own Slot) -> result: own unit pure {
+fn discard(slot: Slot) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -155,11 +155,11 @@ fn a_partial_consume_cannot_abandon_a_symbolically_linear_member() {
   returned: Box<u64>;
 }
 
-fn take_returned<T>(carrier: own Carrier<T>) -> result: own Box<u64> pure {
+fn take_returned<T>(carrier: Carrier<T>) -> result: Box<u64> pure {
   return move carrier.returned;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -178,16 +178,16 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn live_effect_categories_keep_eff1_canonical_order_and_multiplicity() {
     super::assert_parse_rule(
-        b"fn probe(file: &ReadFile) -> result: own unit pure, writes(file) {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(file: &ReadFile) -> result: unit pure, writes(file) {\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         crate::SyntaxRule::Gram2,
     );
     assert_rule_kind(
-        b"fn probe(file: &ReadFile) -> result: own unit writes(file), writes(file) {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(file: &ReadFile) -> result: unit writes(file), writes(file) {\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff1,
         |kind| matches!(kind, SemanticIssueKind::InvalidEffectRow { .. }),
     );
     assert_rule_kind(
-        b"fn probe(file: &ReadFile) -> result: own unit writes(file), reads(file) {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(file: &ReadFile) -> result: unit writes(file), reads(file) {\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff1,
         |kind| matches!(kind, SemanticIssueKind::InvalidEffectRow { .. }),
     );
@@ -199,12 +199,12 @@ fn a_by_value_parameter_is_no_effect_root_and_a_reference_one_must_be_exhibited(
     // [EFF-1] now roots every path at a reference parameter of the same
     // callable, so a by-value root is refused at the row itself.
     assert_rule_kind(
-        b"fn probe(value: own u64) -> result: own unit reads(value) {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(value: u64) -> result: unit reads(value) {\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff1,
         |kind| matches!(kind, SemanticIssueKind::InvalidEffectRow { .. }),
     );
     assert_rule_kind(
-        b"fn probe(value: &u64) -> result: own unit reads(value) {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(value: &u64) -> result: unit reads(value) {\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
@@ -213,7 +213,7 @@ fn a_by_value_parameter_is_no_effect_root_and_a_reference_one_must_be_exhibited(
 #[test]
 fn external_and_blocks_are_ordinary_function_and_parameter_names() {
     assert_complete(
-        b"fn external(blocks: &Args) -> result: own u64 reads(blocks) {\n  let total = args_count(args: blocks);\n  return total;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn external(blocks: &Args) -> result: u64 reads(blocks) {\n  let total = args_count(args: blocks);\n  return total;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
 }
 
@@ -225,16 +225,16 @@ fn referencing_one_struct_field_projects_only_that_field_effect() {
   second: Slots<u8, 4>;
 }
 
-fn length(value: &Slots<u8, 4>) -> result: own u64 reads(value) {
+fn length(value: &Slots<u8, 4>) -> result: u64 reads(value) {
   return deref(value).len;
 }
 
-fn read_second(pair: &Pair) -> result: own unit reads(pair.second) {
+fn read_second(pair: &Pair) -> result: unit reads(pair.second) {
   let count = length(value: &deref(pair).second);
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -247,13 +247,14 @@ fn an_affine_bounded_own_exchange_supports_a_copy_instantiation() {
     // `own` parameter with a `reads(target), writes(target)` row. An `own`
     // parameter has no effect entry [EFF-1] and there is no `replace`
     // statement, so the exchange is two ordinary moves and the row is `pure`.
-    let source = br#"fn exchange_owned<T: drop>(target: own T, incoming: own T) -> (current: own T, previous: own T) pure {
+    let source =
+        br#"fn exchange_owned<T: drop>(target: T, incoming: T) -> (current: T, previous: T) pure {
   let previous = move target;
   let current = move incoming;
   return move current, move previous;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let (current, previous) = exchange_owned::<u64>(target: 1_u64, incoming: 2_u64);
   return exit_status(code: 0_u8);
 }
@@ -263,12 +264,12 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_uncalled_recursive_owner_transfer_needs_no_routing_summary() {
-    let source = br#"fn unclosed(value: own Box<u64>) -> result: own Box<u64> pure {
+    let source = br#"fn unclosed(value: Box<u64>) -> result: Box<u64> pure {
   let next = unclosed(value: move value);
   return move next;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -277,13 +278,13 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_nonreturning_helper_keeps_its_structural_read_effect() {
-    let source = r#"fn unclosed(value: &u64) -> result: own u64 reads(value) {
+    let source = r#"fn unclosed(value: &u64) -> result: u64 reads(value) {
   let observed = deref(value);
   let next = unclosed(value: value);
   return next;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -297,17 +298,17 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_assignment_through_a_cell_uses_only_target_storage_effects() {
-    let source = r#"fn exchange(target: &Box<u64>, incoming: own Box<u64>) -> result: own unit writes(target) {
+    let source = r#"fn exchange(target: &Box<u64>, incoming: Box<u64>) -> result: unit writes(target) {
   set deref(target) = move incoming;
   return unit;
 }
 
-fn observe(owner: &Box<u64>, spare: &Box<u64>, incoming: own Box<u64>) -> result: own unit writes(owner) {
+fn observe(owner: &Box<u64>, spare: &Box<u64>, incoming: Box<u64>) -> result: unit writes(owner) {
   exchange(target: owner, incoming: move incoming);
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -326,21 +327,21 @@ fn a_full_window_conversion_keeps_its_inherent_capacity() {
     // requirement. [OP-13]'s `slots_into_array` is an ordinary [PRE-1] record
     // carrying `requires values.len == n`, discharged under [FN-8].
     assert_complete(
-        br#"fn convert(values: own Slots<u64, 0>) -> result: own Array<u64, 0> pure {
+        br#"fn convert(values: Slots<u64, 0>) -> result: Array<u64, 0> pure {
   return slots_into_array::<u64, 0>(values: move values);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
     );
     assert_rule_kind(
-        br#"fn convert(values: own Slots<u64, 1>) -> result: own Array<u64, 1> pure {
+        br#"fn convert(values: Slots<u64, 1>) -> result: Array<u64, 1> pure {
   return slots_into_array::<u64, 1>(values: move values);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -348,13 +349,13 @@ fn main() -> status: own ExitStatus pure {
         |kind| matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_)),
     );
     assert_complete(
-        br#"fn convert(values: own Slots<u64, 1>) -> result: own Array<u64, 1> pure contract {
+        br#"fn convert(values: Slots<u64, 1>) -> result: Array<u64, 1> pure contract {
   requires values.len == 1_u64;
 } {
   return slots_into_array::<u64, 1>(values: move values);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -381,7 +382,7 @@ struct Progress {
   phase: u8;
 }
 
-fn occupied(slot: &Slot) -> full: own Bool reads(slot) {
+fn occupied(slot: &Slot) -> full: Bool reads(slot) {
   match deref(slot) {
     Occupied(fingerprint: tag, key: present, payload: owner) => {
       return True();
@@ -395,7 +396,7 @@ fn occupied(slot: &Slot) -> full: own Bool reads(slot) {
   }
 }
 
-fn probe_index(home: own u64, step: own u64, count: own u64) -> index: own u64 pure contract {
+fn probe_index(home: u64, step: u64, count: u64) -> index: u64 pure contract {
   requires home < count;
   requires step < count;
   ensures index < count;
@@ -409,7 +410,7 @@ fn probe_index(home: own u64, step: own u64, count: own u64) -> index: own u64 p
   return straight;
 }
 
-fn advance(source: &Array<Slot, 4>, progress: &Progress, budget: own u64) -> examined: own u64 reads(source), writes(progress) {
+fn advance(source: &Array<Slot, 4>, progress: &Progress, budget: u64) -> examined: u64 reads(source), writes(progress) {
   let inspected = 0_u64;
   if deref(progress).phase < 2_u8 {
     for (
@@ -442,7 +443,7 @@ fn advance(source: &Array<Slot, 4>, progress: &Progress, budget: own u64) -> exa
   return inspected;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -451,7 +452,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn window_length_joins_and_counted_rotation_need_no_owner_summary() {
-    let source = br#"fn choose(first: own Box<u64>, second: own Box<u64>, extra: own Bool) -> result: own Slots<Box<u64>, 4> pure {
+    let source = br#"fn choose(first: Box<u64>, second: Box<u64>, extra: Bool) -> result: Slots<Box<u64>, 4> pure {
   let values = slots_new::<Box<u64>, 4>();
   place_back(window: &values, value: move first);
   if extra {
@@ -461,7 +462,7 @@ fn window_length_joins_and_counted_rotation_need_no_owner_summary() {
   return move values;
 }
 
-fn rotate(value: own Box<u64>) -> result: own Slots<Box<u64>, 4> pure {
+fn rotate(value: Box<u64>) -> result: Slots<Box<u64>, 4> pure {
   let values = slots_new::<Box<u64>, 4>();
   place_back(window: &values, value: move value);
   for (
@@ -475,7 +476,7 @@ fn rotate(value: own Box<u64>) -> result: own Slots<Box<u64>, 4> pure {
   return move values;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -489,7 +490,7 @@ fn a_recursive_exchange_of_two_linear_owners_uses_swap() {
     // linear owned place because a linear value has no release, and [OP-11]
     // `swap` is the exchange that exists precisely because no source body can
     // write it without a hole.
-    let source = br#"fn recursive_exchange(target: &ReadFile, incoming: &ReadFile, stop: own Bool) -> result: own unit writes(target), writes(incoming) {
+    let source = br#"fn recursive_exchange(target: &ReadFile, incoming: &ReadFile, stop: Bool) -> result: unit writes(target), writes(incoming) {
   if stop {
     swap(first: target, second: incoming);
     return unit;
@@ -498,7 +499,7 @@ fn a_recursive_exchange_of_two_linear_owners_uses_swap() {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -548,24 +549,21 @@ fn a_pure_formal_does_not_cover_an_actuals_explicit_close_effects() {
 
 #[test]
 fn a_local_owner_has_no_history_effect_on_its_former_parameter() {
-    let source = r#"fn relay(value: own Box<u64>) -> result: own Box<u64> pure {
+    let source = r#"fn relay(value: Box<u64>) -> result: Box<u64> pure {
   return move value;
 }
 
-fn observe(value: own Box<u64>, witness: &Box<u64>) -> result: own u64 pure {
+fn observe(value: Box<u64>, witness: &Box<u64>) -> result: u64 pure {
   let local = relay(value: move value);
   return local.inner;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
     assert_complete(source.as_bytes());
-    let extra = source.replace(
-        "-> result: own u64 pure",
-        "-> result: own u64 reads(witness)",
-    );
+    let extra = source.replace("-> result: u64 pure", "-> result: u64 reads(witness)");
     assert_rule_kind(extra.as_bytes(), SemanticRule::Eff2, |kind| {
         matches!(kind, SemanticIssueKind::EffectMismatch { extra, .. }
             if extra == &["reads(witness)"])
@@ -579,15 +577,15 @@ fn dynamic_slot_reads_do_not_import_the_placement_inputs_history() {
   payload: Box<u64>;
 }
 
-fn read_key(slot: &Slot) -> result: own u64 reads(slot.key) {
+fn read_key(slot: &Slot) -> result: u64 reads(slot.key) {
   return deref(slot).key;
 }
 
-fn read_payload(slot: &Slot) -> result: own u64 reads(slot.payload) {
+fn read_payload(slot: &Slot) -> result: u64 reads(slot.payload) {
   return deref(slot).payload.inner;
 }
 
-fn observe(values: &Slots<Slot, 2>, spare: &Box<u64>, first: own Box<u64>, second: own Box<u64>, index: own u64) -> result: own u64 writes(values) contract {
+fn observe(values: &Slots<Slot, 2>, spare: &Box<u64>, first: Box<u64>, second: Box<u64>, index: u64) -> result: u64 writes(values) contract {
   requires deref(values).len == 0_u64;
   requires index < 2_u64;
 } {
@@ -598,7 +596,7 @@ fn observe(values: &Slots<Slot, 2>, spare: &Box<u64>, first: own Box<u64>, secon
   return OBSERVE;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -629,17 +627,17 @@ struct Nested {
   after: u64;
 }
 
-fn exchange(target: &Box<u64>, incoming: own Box<u64>) -> result: own unit writes(target) {
+fn exchange(target: &Box<u64>, incoming: Box<u64>) -> result: unit writes(target) {
   set deref(target) = move incoming;
   return unit;
 }
 
-fn inspect(holder: &Holder, incoming: own Box<u64>) -> result: own unit writes(holder.value) {
+fn inspect(holder: &Holder, incoming: Box<u64>) -> result: unit writes(holder.value) {
   exchange(target: &deref(holder).value, incoming: move incoming);
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -697,17 +695,17 @@ fn a_linear_field_refuses_the_assignment_and_takes_the_exchange_instead() {
   after: u64;
 }
 
-fn exchange(target: &ReadFile, incoming: &ReadFile) -> result: own unit writes(target), writes(incoming) {
+fn exchange(target: &ReadFile, incoming: &ReadFile) -> result: unit writes(target), writes(incoming) {
   swap(first: target, second: incoming);
   return unit;
 }
 
-fn inspect(holder: &Holder, spare: &ReadFile) -> result: own unit writes(holder.value), writes(spare) {
+fn inspect(holder: &Holder, spare: &ReadFile) -> result: unit writes(holder.value), writes(spare) {
   exchange(target: &deref(holder).value, incoming: spare);
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -716,16 +714,16 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_generic_swap_needs_no_result_routing_summary() {
-    let source = r#"fn exchange<T>(target: &T, incoming: &T) -> result: own unit writes(target), writes(incoming) {
+    let source = r#"fn exchange<T>(target: &T, incoming: &T) -> result: unit writes(target), writes(incoming) {
   swap(first: target, second: incoming);
   return unit;
 }
 
-fn transfer(target: &ReadFile, incoming: &ReadFile) -> result: own unit writes(target), writes(incoming) {
+fn transfer(target: &ReadFile, incoming: &ReadFile) -> result: unit writes(target), writes(incoming) {
   return exchange::<ReadFile>(target: target, incoming: incoming);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -739,13 +737,13 @@ fn ordinary_numeric_result_facts_survive_a_later_outcome_match() {
   Failed();
 }
 
-fn provide(end: own u64) -> (result: own Result<unit, TestError>, next: own u64, count: own u64) pure contract {
+fn provide(end: u64) -> (result: Result<unit, TestError>, next: u64, count: u64) pure contract {
   ensures next <= end;
 } {
   return Ok<unit, TestError>(value: unit), end, 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let (outcome, next, count) = provide(end: 4096_u64);
   match outcome {
     Ok(value: done) => {

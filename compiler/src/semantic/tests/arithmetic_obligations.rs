@@ -31,14 +31,14 @@ fn named<'functions>(
 /// fact and discharges both conjuncts of the exact addition.
 #[test]
 fn a_verified_requirement_discharges_the_literal_site() {
-    let source = br#"fn bump(x: own u64) -> result: own u64 pure contract {
+    let source = br#"fn bump(x: u64) -> result: u64 pure contract {
   requires x < 1000_u64;
 } {
   let y = x + 1_u64;
   return y;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -85,7 +85,7 @@ fn main() -> status: own ExitStatus pure {
 /// the affine domain goal for two nonconstant subtraction operands.
 #[test]
 fn a_guarded_two_value_subtraction_uses_the_l0_affine_bridge() {
-    let source = br#"fn distance(left: own u64, right: own u64) -> result: own u64 pure {
+    let source = br#"fn distance(left: u64, right: u64) -> result: u64 pure {
   let ordered = right <= left;
   if ordered {
     let difference = left - right;
@@ -95,7 +95,7 @@ fn a_guarded_two_value_subtraction_uses_the_l0_affine_bridge() {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -117,12 +117,12 @@ fn main() -> status: own ExitStatus pure {
         super::entailment::validate_derivations(&distance.entailment);
     });
 
-    let unguarded = br#"fn distance(left: own u64, right: own u64) -> result: own u64 pure {
+    let unguarded = br#"fn distance(left: u64, right: u64) -> result: u64 pure {
   let difference = left - right;
   return difference;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -147,7 +147,7 @@ fn main() -> status: own ExitStatus pure {
 /// index obligation uses.
 #[test]
 fn the_counted_binder_increment_discharges_by_transitive_closure() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let n = 10_u64;
   for @steps (i in 0_u64..n) {
     let next = i + 1_u64;
@@ -177,12 +177,12 @@ fn the_counted_binder_increment_discharges_by_transitive_closure() {
 /// correct row for this body.
 #[test]
 fn an_unbounded_literal_site_rejects_citing_op2_with_the_folded_residual() {
-    let source = br#"fn bump(x: own u64) -> result: own u64 pure {
+    let source = br#"fn bump(x: u64) -> result: u64 pure {
   let y = x + 1_u64;
   return y;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -214,7 +214,7 @@ fn main() -> status: own ExitStatus pure {
 /// exact operation is accepted only in the branch where its domain holds.
 #[test]
 fn a_dominating_branch_discharges_the_site() {
-    let source = br#"fn bump(x: own u64) -> result: own u64 pure {
+    let source = br#"fn bump(x: u64) -> result: u64 pure {
   if x <= 100_u64 {
     let y = x + 1_u64;
     return y;
@@ -223,7 +223,7 @@ fn a_dominating_branch_discharges_the_site() {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -247,7 +247,7 @@ fn main() -> status: own ExitStatus pure {
 /// pure, and the checked program keeps its wrap identity.
 #[test]
 fn a_wrap_site_attaches_no_obligation() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let x = 6_u64;
   let y = x +wrap 1_u64;
   return exit_status(code: 0_u8);
@@ -273,7 +273,7 @@ fn a_wrap_site_attaches_no_obligation() {
 /// upper interval and still require proof at the exact site.
 #[test]
 fn exact_local_values_discharge_a_two_variable_sum_but_parameters_remain_bounded() {
-    let exact_locals = br#"fn main() -> status: own ExitStatus pure {
+    let exact_locals = br#"fn main() -> status: ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   let c = a + b;
@@ -294,12 +294,12 @@ fn exact_local_values_discharge_a_two_variable_sum_but_parameters_remain_bounded
         assert!(addition.discharged);
     });
 
-    let unbounded_parameters = br#"fn add(a: own u64, b: own u64) -> result: own u64 pure {
+    let unbounded_parameters = br#"fn add(a: u64, b: u64) -> result: u64 pure {
   let result = a + b;
   return result;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -315,7 +315,7 @@ fn main() -> status: own ExitStatus pure {
 /// discharges, while an inevitable overflow is a compile-time rejection.
 #[test]
 fn a_ground_obligation_discharges_in_range_and_rejects_on_inevitable_overflow() {
-    let in_range = br#"fn main() -> status: own ExitStatus pure {
+    let in_range = br#"fn main() -> status: ExitStatus pure {
   let x = 254_u8 + 1_u8;
   return exit_status(code: 0_u8);
 }
@@ -334,7 +334,7 @@ fn a_ground_obligation_discharges_in_range_and_rejects_on_inevitable_overflow() 
         assert_eq!(overflow.len(), 1, "one exact site, one obligation");
         assert!(overflow[0].discharged, "the ground obligation is true");
     });
-    let overflowing = br#"fn main() -> status: own ExitStatus pure {
+    let overflowing = br#"fn main() -> status: ExitStatus pure {
   let x = 255_u8 + 1_u8;
   return exit_status(code: 0_u8);
 }
@@ -363,7 +363,7 @@ fn a_ground_obligation_discharges_in_range_and_rejects_on_inevitable_overflow() 
 fn a_subscripted_class_operand_is_underivable_and_rejects() {
     let source = br#"const a: Array<u8, 2> =[7_u8, 7_u8];
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let y = a[0_u64] + 1_u8;
   return exit_status(code: 0_u8);
 }
@@ -388,7 +388,7 @@ fn main() -> status: own ExitStatus pure {
 /// that ordinary field step. The indexed operand remains no term.
 #[test]
 fn an_owning_box_index_renders_its_content_step_as_a_dereference() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let values = array_filled::<u8, 2>(value: 7_u8);
   let boxed = box_new::<Array<u8, 2>>(value: values);
   let result = boxed.inner[0_u64] + 1_u8;
@@ -423,11 +423,11 @@ fn an_owning_box_index_renders_its_content_step_as_a_dereference() {
 /// no term, which is what the rejection states.
 #[test]
 fn a_reference_parameter_index_renders_under_its_deref_step() {
-    let source = br#"fn increment(values: &Array<u8, 2>) -> result: own u8 reads(values) {
+    let source = br#"fn increment(values: &Array<u8, 2>) -> result: u8 reads(values) {
   return deref(values)[0_u64] + 1_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -457,12 +457,12 @@ fn main() -> status: own ExitStatus pure {
 /// `writes(cell)` of a reference parameter the body never writes.
 #[test]
 fn effect_mismatch_precedes_static_integer_domain_rejection() {
-    let extra_effect_row = br#"fn bump(cell: &u64, x: own u64) -> result: own u64 writes(cell) {
+    let extra_effect_row = br#"fn bump(cell: &u64, x: u64) -> result: u64 writes(cell) {
   let y = x + 1_u64;
   return y;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -477,12 +477,12 @@ fn main() -> status: own ExitStatus pure {
             issue.kind()
         );
     });
-    let pure_row = br#"fn bump(x: own u64) -> result: own u64 pure {
+    let pure_row = br#"fn bump(x: u64) -> result: u64 pure {
   let y = x + 1_u64;
   return y;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -500,7 +500,7 @@ fn main() -> status: own ExitStatus pure {
             },
         );
     });
-    let ground = br#"fn main() -> status: own ExitStatus pure {
+    let ground = br#"fn main() -> status: ExitStatus pure {
   let x = 255_u8 + 1_u8;
   return exit_status(code: 0_u8);
 }
@@ -519,7 +519,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_defined_guard_reuses_the_complete_identity_of_an_exact_let_operand() {
-    let source = br#"fn combine(start: own u64, parent: own u64) -> result: own u64 pure contract {
+    let source = br#"fn combine(start: u64, parent: u64) -> result: u64 pure contract {
   requires parent <= 9223372036854775807_u64;
 } {
   let doubled = parent * 2_u64;
@@ -532,7 +532,7 @@ fn a_defined_guard_reuses_the_complete_identity_of_an_exact_let_operand() {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -696,7 +696,7 @@ fn the_conjunct_fold_matches_the_ent6_table() {
 /// entire loop body has been walked.
 #[test]
 fn a_body_domain_failure_precedes_the_backedge_it_breaks() {
-    let source = br#"fn accumulate(step: own u32) -> total: own u32 pure {
+    let source = br#"fn accumulate(step: u32) -> total: u32 pure {
   let sum = 0_u32;
   for (
     i in 0_u64..4_u64,
@@ -708,7 +708,7 @@ fn a_body_domain_failure_precedes_the_backedge_it_breaks() {
   return sum;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let total = accumulate(step: 1_u32);
   return exit_status(code: 0_u8);
 }

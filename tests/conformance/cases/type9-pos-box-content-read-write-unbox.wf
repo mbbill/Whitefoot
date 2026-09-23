@@ -2,7 +2,7 @@ nocopy struct Payload {
   value: u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "TYPE-9: Box<T> is the prelude's opaque struct opaque struct Box<T> { inner: T; }, whose one field inner is its content, reached by the ordinary field step and never by deref [TYPE-7]. The cell is read as b.inner, written as set b.inner = v, and consumed by let n = move b.inner, which yields the content and frees the cell [WIN-3]; the observed content reaches the exit status.";
   let first = Payload(value: 40_u64);
   let b = box_new::<Payload>(value: move first);

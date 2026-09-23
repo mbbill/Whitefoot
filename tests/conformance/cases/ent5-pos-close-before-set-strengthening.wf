@@ -1,4 +1,4 @@
-fn increment(value: own u8, byte_limit: own u8, replacement: own u8) -> result: own u8 pure contract {
+fn increment(value: u8, byte_limit: u8, replacement: u8) -> result: u8 pure contract {
   requires value <= byte_limit;
   requires value != byte_limit;
 } {
@@ -7,7 +7,7 @@ fn increment(value: own u8, byte_limit: own u8, replacement: own u8) -> result: 
   return result;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let result = increment(value: 2_u8, byte_limit: 10_u8, replacement: 0_u8);
   if result == 3_u8 {
   } else {

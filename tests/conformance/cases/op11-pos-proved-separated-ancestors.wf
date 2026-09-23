@@ -3,7 +3,7 @@ struct Node {
   next: Option<Box<Node>>;
 }
 
-fn exchange(rows: &Array<Node, 2>, i: own u64, j: own u64) -> result: own unit writes(rows) {
+fn exchange(rows: &Array<Node, 2>, i: u64, j: u64) -> result: unit writes(rows) {
   if i < j {
     if j < 2_u64 {
       let parent = &deref(rows)[j];
@@ -19,6 +19,6 @@ fn exchange(rows: &Array<Node, 2>, i: own u64, j: own u64) -> result: own unit w
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

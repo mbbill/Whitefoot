@@ -1,8 +1,8 @@
 interface Inspect<T> {
-  fn length(values: &T) -> result: own u64 reads(values);
+  fn length(values: &T) -> result: u64 reads(values);
 }
 
-fn shorter(values: own Array<u64, 4>) -> result: own u64 pure {
+fn shorter(values: Array<u64, 4>) -> result: u64 pure {
   doc "The instantiated member takes its input by reference; this actual takes it by value, and a by-value parameter carries no effect entry at all [EFF-1].";
   return values[0_u64];
 }
@@ -11,6 +11,6 @@ binding Narrow : Inspect<Array<u64, 4>> {
   length = shorter;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

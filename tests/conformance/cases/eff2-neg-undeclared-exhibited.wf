@@ -1,4 +1,4 @@
-fn fill(target: &Slots<u8, 4>) -> result: own unit pure contract {
+fn fill(target: &Slots<u8, 4>) -> result: unit pure contract {
   requires deref(target).len < deref(target).cap;
 } {
   doc "The body places one value into the window behind its reference parameter, which exhibits writes(target.next) and writes(target.len), and declares the empty row instead [EFF-2, OP-10].";
@@ -6,7 +6,7 @@ fn fill(target: &Slots<u8, 4>) -> result: own unit pure contract {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Builds an empty window whose free slots equal its whole capacity and hands it to the helper.";
   let block = slots_new::<u8, 4>();
   fill(target: &block);

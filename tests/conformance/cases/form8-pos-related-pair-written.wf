@@ -2,12 +2,12 @@ struct Cell {
   value: i32;
 }
 
-fn pass(source: &Cell, other: &Cell) -> result: own i32 reads(source.value) {
+fn pass(source: &Cell, other: &Cell) -> result: i32 reads(source.value) {
   doc "The relation this case once wrote as a shared region name - the result borrows one parameter - has no form here: a function returns owned values only [FN-1, REF-3], so the referent is read out by value and only the read is stated, by the row [EFF-1].";
   return deref(source).value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The caller forms both references, passes them, and reads the owned result; no region argument and no type application is written at the call because there is none to write.";
   let a = Cell(value: 40_i32);
   let b = Cell(value: 2_i32);

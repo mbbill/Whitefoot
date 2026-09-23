@@ -1,4 +1,4 @@
-fn walk(owned: own u64, value: &u64) -> result: own u64 reads(value) {
+fn walk(owned: u64, value: &u64) -> result: u64 reads(value) {
   let seen = deref(value);
   return musttail walk(owned: seen, value: &owned);
 }

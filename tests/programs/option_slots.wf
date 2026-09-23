@@ -8,7 +8,7 @@ struct OptVec {
   fill: u64;
 }
 
-fn vacant<T: drop, const n: u64>() -> result: own Slots<Cell<T>, n> pure contract {
+fn vacant<T: drop, const n: u64>() -> result: Slots<Cell<T>, n> pure contract {
   ensures result.len >= n;
   ensures result.cap <= result.len;
 } {
@@ -24,12 +24,12 @@ fn vacant<T: drop, const n: u64>() -> result: own Slots<Cell<T>, n> pure contrac
   return move built;
 }
 
-fn optvec_new() -> result: own OptVec pure {
+fn optvec_new() -> result: OptVec pure {
   let empty = vacant::<u32, 4>();
   return OptVec(buf: move empty, fill: 0_u64);
 }
 
-fn optvec_push(v: own OptVec, x: own u32) -> result: own OptVec pure {
+fn optvec_push(v: OptVec, x: u32) -> result: OptVec pure {
   doc "A by-value parameter carries no effect entry [EFF-1], so the container is taken by value and handed back. The element exchange is the built-in swap, which needs no hole [OP-11, WIN-3].";
   let count = v.fill;
   let limit = v.buf.len;
@@ -52,7 +52,7 @@ fn optvec_push(v: own OptVec, x: own u32) -> result: own OptVec pure {
   return move v;
 }
 
-fn optvec_pop(v: own OptVec) -> (rest: own OptVec, taken: own u32) pure {
+fn optvec_pop(v: OptVec) -> (rest: OptVec, taken: u32) pure {
   doc "The same hand-back, with the removed element beside the container.";
   let count = v.fill;
   let nonempty = count > 0_u64;
@@ -85,7 +85,7 @@ struct Entry {
   payload: Box<u64>;
 }
 
-fn allocate_four() -> (first: own Box<u64>, second: own Box<u64>, replacement: own Box<u64>, inserted: own Box<u64>) pure {
+fn allocate_four() -> (first: Box<u64>, second: Box<u64>, replacement: Box<u64>, inserted: Box<u64>) pure {
   doc "Four heap cells. There is one heap and allocation is total, so none of the four has a refusal arm [STOR-8].";
   let one = box_new::<u64>(value: 10_u64);
   let two = box_new::<u64>(value: 20_u64);
@@ -99,7 +99,7 @@ enum BoxSlotView {
   Empty();
 }
 
-fn view_box_entry(stored_entry: &Option<Entry>, same: &Option<Entry>) -> result: own BoxSlotView reads(stored_entry) {
+fn view_box_entry(stored_entry: &Option<Entry>, same: &Option<Entry>) -> result: BoxSlotView reads(stored_entry) {
   doc "Two reference arguments may name one place when both only read it: the call site admits read/read overlap [EFF-5].";
   match deref(stored_entry) {
     Some(value: present) => {
@@ -111,7 +111,7 @@ fn view_box_entry(stored_entry: &Option<Entry>, same: &Option<Entry>) -> result:
   }
 }
 
-fn run_boxes(first: own Box<u64>, second: own Box<u64>, replacement: own Box<u64>, inserted: own Box<u64>) -> code: own u8 pure {
+fn run_boxes(first: Box<u64>, second: Box<u64>, replacement: Box<u64>, inserted: Box<u64>) -> code: u8 pure {
   doc "A pool is a Slots window plus indices used as handles [OP-13]. Every exchange is the built-in swap, and every cell content is reached by the field step inner [OP-11, TYPE-9].";
   let empty0 = None<Entry>();
   let first_entry = Entry(key: 1_u64, payload: move first);
@@ -407,13 +407,13 @@ fn run_boxes(first: own Box<u64>, second: own Box<u64>, replacement: own Box<u64
   }
 }
 
-fn boxed_migration() -> code: own u8 pure {
+fn boxed_migration() -> code: u8 pure {
   let (box_first, box_second, box_replacement, box_inserted) = allocate_four();
   let code = run_boxes(first: move box_first, second: move box_second, replacement: move box_replacement, inserted: move box_inserted);
   return code;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let v = optvec_new();
   set v = optvec_push(v: move v, x: 10_u32);
   set v = optvec_push(v: move v, x: 20_u32);

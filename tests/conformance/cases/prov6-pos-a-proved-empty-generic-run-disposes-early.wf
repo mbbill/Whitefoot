@@ -1,4 +1,4 @@
-fn free_empty_boxed<T>(run: own Box<Slots<T>>) -> result: own unit pure contract {
+fn free_empty_boxed<T>(run: Box<Slots<T>>) -> result: unit pure contract {
   requires run.inner.len == 0_u64;
 } {
   doc "OP-14: free_empty's shape parameter also admits a boxed runtime-capacity window, so the one route consumes the window and frees its cell with it; at a boxed argument the row's measure place instantiates as window.inner.";
@@ -6,7 +6,7 @@ fn free_empty_boxed<T>(run: own Box<Slots<T>>) -> result: own unit pure contract
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The boxed window is released at the point the call is written rather than at a scope exit, and its zero length is exact at that point.";
   let empty = box_slots_new::<u64>(capacity: 1_u64);
   free_empty_boxed::<u64>(run: move empty);

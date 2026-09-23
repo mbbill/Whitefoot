@@ -3,7 +3,7 @@ CARGO ?= cargo
 EXE := $(if $(filter Windows_NT,$(OS)),.exe,)
 WHITEFOOTC ?= $(ROOT)/compiler/target/gate/whitefootc$(EXE)
 
-.PHONY: check measure compiler x1-observe slab-deque-check slab-deque-measure
+.PHONY: check measure compiler x1-observe slab-deque-check slab-deque-measure map-native-check map-check map-measure
 
 x1-observe:
 	$(MAKE) -C x1 observe WHITEFOOTC="$(WHITEFOOTC)"
@@ -15,6 +15,15 @@ slab-deque-check: compiler
 slab-deque-measure: slab-deque-check
 	$(MAKE) -C slab-library measure WHITEFOOTC="$(WHITEFOOTC)"
 	$(MAKE) -C deque-library measure WHITEFOOTC="$(WHITEFOOTC)"
+
+map-native-check:
+	$(MAKE) -C map-library native-check
+
+map-check:
+	$(MAKE) -C map-library check
+
+map-measure:
+	$(MAKE) -C map-library measure
 
 compiler:
 	$(CARGO) build --manifest-path $(ROOT)/compiler/Cargo.toml --profile gate --bin whitefootc --locked --offline

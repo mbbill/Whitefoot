@@ -32,7 +32,7 @@ fn assert_complete(source: &str) {
 
 #[test]
 fn generic_unit_helper_publishes_only_proved_written_state_relations() {
-    let source = r#"fn touch<T>(values: &Slots<T, 4>) -> result: own unit writes(values) contract {
+    let source = r#"fn touch<T>(values: &Slots<T, 4>) -> result: unit writes(values) contract {
   requires deref(values).len >= 1_u64;
   ensures deref(values).len == deref(entry(values)).len;
 } {
@@ -41,7 +41,7 @@ fn generic_unit_helper_publishes_only_proved_written_state_relations() {
   return unit;
 }
 
-fn exercise<T>(values: &Slots<T, 4>) -> result: own unit writes(values) contract {
+fn exercise<T>(values: &Slots<T, 4>) -> result: unit writes(values) contract {
   requires deref(values).len >= 1_u64;
 } {
   touch::<T>(values: values);
@@ -50,7 +50,7 @@ fn exercise<T>(values: &Slots<T, 4>) -> result: own unit writes(values) contract
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let values = slots_new::<u64, 4>();
   place_back(window: &values, value: 7_u64);
   exercise::<u64>(values: &values);
@@ -98,7 +98,7 @@ fn main() -> status: own ExitStatus pure {
     );
 }
 
-const PUSH: &str = r#"fn push(values: &Slots<u64, 4>, value: own u64) -> result: own unit writes(values) contract {
+const PUSH: &str = r#"fn push(values: &Slots<u64, 4>, value: u64) -> result: unit writes(values) contract {
   requires deref(values).len < deref(values).cap;
   ensures deref(values).len == deref(entry(values)).len + 1_u64;
   ensures deref(values).cap == deref(entry(values)).cap;
@@ -107,7 +107,7 @@ const PUSH: &str = r#"fn push(values: &Slots<u64, 4>, value: own u64) -> result:
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let values = slots_new::<u64, 4>();
   push(values: &values, value: 7_u64);
   invariant upper: values.len <= 1_u64;
@@ -170,13 +170,13 @@ fn entry_former_rejects_body_and_read_only_parameter() {
     assert_rule(body.as_bytes(), SemanticRule::Msr3);
     // A reference parameter whose row declares no write of the path has no
     // exit state, so `entry` names nothing it could be distinguished from.
-    let read_only = r#"fn observe(values: &Slots<u64, 4>) -> result: own u64 reads(values) contract {
+    let read_only = r#"fn observe(values: &Slots<u64, 4>) -> result: u64 reads(values) contract {
   ensures result == deref(entry(values)).len;
 } {
   return deref(values).len;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -207,13 +207,13 @@ fn whole_referent_assignment_kills_the_old_window_facts() {
     // v0.59 wrote this as `let old = replace deref(values) = move empty;`.
     // [SET-1] with [WIN-3]'s disposition is the successor: the assignment
     // releases the displaced affine window instead of reading it out.
-    let source = r#"fn clear(values: &Slots<u64, 4>) -> result: own unit writes(values) {
+    let source = r#"fn clear(values: &Slots<u64, 4>) -> result: unit writes(values) {
   let empty = slots_new::<u64, 4>();
   set deref(values) = move empty;
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let values = slots_new::<u64, 4>();
   place_back(window: &values, value: 7_u64);
   clear(values: &values);
@@ -226,7 +226,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn exit_facts_publish_beside_multiple_results() {
-    let source = r#"fn pop(values: &Slots<u64, 4>) -> (value: own u64, count: own u64) writes(values) contract {
+    let source = r#"fn pop(values: &Slots<u64, 4>) -> (value: u64, count: u64) writes(values) contract {
   requires deref(values).len > 0_u64;
   ensures deref(values).len + 1_u64 == deref(entry(values)).len;
   ensures count == deref(values).len;
@@ -236,7 +236,7 @@ fn exit_facts_publish_beside_multiple_results() {
   return value, count;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let values = slots_new::<u64, 4>();
   place_back(window: &values, value: 7_u64);
   let (value, count) = pop(values: &values);
@@ -258,7 +258,7 @@ fn nested_field_effects_preserve_disjoint_support() {
   untouched: Slots<u64, 4>;
 }
 
-fn push(pair: &Pair, value: own u64) -> result: own unit writes(pair.changed) contract {
+fn push(pair: &Pair, value: u64) -> result: unit writes(pair.changed) contract {
   requires deref(pair).changed.len < deref(pair).changed.cap;
   ensures deref(pair).changed.len == deref(entry(pair)).changed.len + 1_u64;
 } {
@@ -266,7 +266,7 @@ fn push(pair: &Pair, value: own u64) -> result: own unit writes(pair.changed) co
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let changed = slots_new::<u64, 4>();
   let untouched = slots_new::<u64, 4>();
   let pair = Pair(changed: move changed, untouched: move untouched);
@@ -288,7 +288,7 @@ fn a_writing_call_invalidates_a_surviving_reference() {
     let helper = PUSH.split("fn main()").next().unwrap();
     let source = format!(
         "{helper}{}",
-        r#"fn main() -> status: own ExitStatus pure {
+        r#"fn main() -> status: ExitStatus pure {
   let values = slots_new::<u64, 4>();
   place_back(window: &values, value: 1_u64);
   place_back(window: &values, value: 2_u64);
@@ -316,11 +316,11 @@ fn assigning_the_actual_after_a_call_kills_its_exit_only_relation() {
         .split("fn main()")
         .next()
         .unwrap()
-        .replace("-> result: own unit", "-> result: own Slots<u64, 4>")
+        .replace("-> result: unit", "-> result: Slots<u64, 4>")
         .replace("  return unit;", "  return slots_new::<u64, 4>();");
     let source = format!(
         "{helper}{}",
-        r#"fn overwrite(values: &Slots<u64, 4>) -> result: own unit writes(values) contract {
+        r#"fn overwrite(values: &Slots<u64, 4>) -> result: unit writes(values) contract {
   requires deref(values).len < deref(values).cap;
 } {
   let replacement = push(values: values, value: 7_u64);
@@ -329,7 +329,7 @@ fn assigning_the_actual_after_a_call_kills_its_exit_only_relation() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#
@@ -339,7 +339,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn written_state_equality_requires_both_affine_bounds() {
-    let source = r#"fn fill(slots: &Slots<u8, 8>, count: own u64) -> result: own unit writes(slots) contract {
+    let source = r#"fn fill(slots: &Slots<u8, 8>, count: u64) -> result: unit writes(slots) contract {
   requires deref(slots).len == 0_u64;
   requires count <= deref(slots).cap - deref(slots).len;
   ensures deref(slots).len == count;
@@ -357,7 +357,7 @@ fn written_state_equality_requires_both_affine_bounds() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -382,7 +382,7 @@ fn a_boxed_window_publishes_to_the_typed_referent() {
     let helper = PUSH.split("fn main()").next().unwrap();
     let source = format!(
         "{helper}{}",
-        r#"fn main() -> status: own ExitStatus pure {
+        r#"fn main() -> status: ExitStatus pure {
   let empty = slots_new::<u64, 4>();
   let owner = box_new::<Slots<u64, 4>>(value: move empty);
   let filled = owner.inner.len;
@@ -414,7 +414,7 @@ fn two_overlapping_written_arguments_are_refused_pairwise() {
     // two overlapping paths at least one of which writes are a hard error at
     // the complete `call`. v0.59 spelled the same refusal as a loan conflict
     // between two `&uniq` actuals.
-    let source = r#"fn copy_first(source: &Slots<u64, 4>, destination: &Slots<u64, 4>) -> result: own unit reads(source), writes(destination) contract {
+    let source = r#"fn copy_first(source: &Slots<u64, 4>, destination: &Slots<u64, 4>) -> result: unit reads(source), writes(destination) contract {
   requires deref(source).len > 0_u64;
   requires deref(destination).len < deref(destination).cap;
 } {
@@ -423,7 +423,7 @@ fn two_overlapping_written_arguments_are_refused_pairwise() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let first = slots_new::<u64, 4>();
   let second = slots_new::<u64, 4>();
   place_back(window: &first, value: 7_u64);

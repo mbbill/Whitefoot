@@ -6,12 +6,12 @@ enum Wrapped {
   Packed(record: Record);
 }
 
-fn pass<T>(value: own T) -> back: own T pure {
+fn pass<T>(value: T) -> back: T pure {
   doc "The template uses the spelling required by its unbounded parameter. At a copy instance this denotes a copy and leaves the caller's operand live.";
   return move value;
 }
 
-fn first(value: own Wrapped) -> result: own u8 pure {
+fn first(value: Wrapped) -> result: u8 pure {
   match value {
     Packed(record: payload) => {
       return payload.values[0_u64];
@@ -19,7 +19,7 @@ fn first(value: own Wrapped) -> result: own u8 pure {
   }
 }
 
-fn second(value: own Wrapped) -> result: own u8 pure {
+fn second(value: Wrapped) -> result: u8 pure {
   match value {
     Packed(record: payload) => {
       return payload.values[1_u64];
@@ -27,7 +27,7 @@ fn second(value: own Wrapped) -> result: own u8 pure {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A struct containing an Array and an enum containing that struct copy their inline storage by value. Mutating two copies independently leaves the third copy, the source struct, and the source Array unchanged; an unbounded generic move instantiated with the copy struct also leaves its caller operand live.";
   let seed = array_filled::<u8, 2>(value: 0_u8);
   set seed[0_u64] = 1_u8;

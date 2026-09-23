@@ -976,17 +976,17 @@ mod tests {
   right: u64;
 }
 
-fn split(value: own Row) -> (observed: own u64, updated: own Row) pure {
+fn split(value: Row) -> (observed: u64, updated: Row) pure {
   let observed = value.left;
   return observed, move value;
 }
 
-fn relay(value: own Row) -> result: own Row pure {
+fn relay(value: Row) -> result: Row pure {
   let (observed, updated) = split(value: move value);
   return move updated;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let value = Row(left: 3_u64, right: 5_u64);
   let result = relay(value: move value);
   if result.right != 5_u64 {
@@ -1412,19 +1412,19 @@ fn main() -> status: own ExitStatus pure {
   right: u64;
 }
 
-fn build(seed: own u64) -> result: own Row pure {
+fn build(seed: u64) -> result: Row pure {
   let after = seed +wrap 1_u64;
   return Row(left: seed, right: after);
 }
 
-fn exchange(old: &Row) -> result: own Row writes(old) {
+fn exchange(old: &Row) -> result: Row writes(old) {
   let previous = build(seed: 11_u64);
   swap(first: old, second: &previous);
   set deref(old).left = 99_u64;
   return move previous;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let first = build(seed: 11_u64);
   let previous = exchange(old: &first);
   if first.left != 99_u64 {
@@ -1514,15 +1514,15 @@ fn main() -> status: own ExitStatus pure {
   right: u64;
 }
 
-fn pass(value: own Row) -> result: own Row pure {
+fn pass(value: Row) -> result: Row pure {
   return move value;
 }
 
-fn relay(value: own Row) -> result: own Row pure {
+fn relay(value: Row) -> result: Row pure {
   return pass(value: move value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let row = Row(left: 3_u64, right: 5_u64);
   let kept = relay(value: move row);
   if kept.left != 3_u64 {
@@ -1564,15 +1564,15 @@ fn main() -> status: own ExitStatus pure {
   right: u64;
 }
 
-fn choose(left: own Row, right: own Row) -> result: own Row pure {
+fn choose(left: Row, right: Row) -> result: Row pure {
   return move right;
 }
 
-fn relay(left: own Row, right: own Row) -> result: own Row pure {
+fn relay(left: Row, right: Row) -> result: Row pure {
   return choose(left: move left, right: move right);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let left = Row(left: 1_u64, right: 2_u64);
   let right = Row(left: 3_u64, right: 4_u64);
   let kept = relay(left: move left, right: move right);
@@ -1619,17 +1619,17 @@ fn main() -> status: own ExitStatus pure {
   right: u64;
 }
 
-fn split(value: own Row) -> (updated: own Row, observed: own u64) pure {
+fn split(value: Row) -> (updated: Row, observed: u64) pure {
   let observed = value.left;
   return move value, observed;
 }
 
-fn relay(value: own Row) -> result: own Row pure {
+fn relay(value: Row) -> result: Row pure {
   let (updated, observed) = split(value: move value);
   return move updated;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let row = Row(left: 3_u64, right: 5_u64);
   let kept = relay(value: move row);
   if kept.left != 3_u64 {
@@ -1674,7 +1674,7 @@ fn main() -> status: own ExitStatus pure {
     #[test]
     fn checked_dense_ir_coalesces_without_changing_ownership() {
         with_program(
-            br#"fn main() -> status: own ExitStatus pure {
+            br#"fn main() -> status: ExitStatus pure {
   let built = slots_new::<u64, 8>();
   for @fill (
     at in 0_u64..8_u64,

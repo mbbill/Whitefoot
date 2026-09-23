@@ -1,4 +1,4 @@
-fn headroom(run: &Slots<u8, 8>) -> total: own u64 reads(run) contract {
+fn headroom(run: &Slots<u8, 8>) -> total: u64 reads(run) contract {
   requires 4_u64 <= deref(run).len;
 } {
   doc "The stated relation over the measure is wider than the requirement establishes.";
@@ -12,7 +12,7 @@ fn headroom(run: &Slots<u8, 8>) -> total: own u64 reads(run) contract {
   return seen;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "[INV-1] a measure factor is a proof obligation like any other affine factor rather than an assumption the spelling grants. The caller's requirement gives four slots and the header states eight, so the base obligation fails at the loop header and the residual names the writer's own measure place [MSR-1, OP-15].";
   let run = slots_new::<u8, 8>();
   for (

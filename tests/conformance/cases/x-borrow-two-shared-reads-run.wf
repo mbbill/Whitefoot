@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Two references naming one place coexist and are both read through deref [REF-1, TYPE-7]; read/read overlap is admitted without limit [EFF-5], so the comparison of the two reads accepts and runs to exit 0.";
   let a = 7_i32;
   let s1 = &a;

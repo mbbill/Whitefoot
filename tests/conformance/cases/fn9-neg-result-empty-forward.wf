@@ -1,4 +1,4 @@
-fn empty(choose: own Bool) -> result: own Result<i32, u8> pure contract {
+fn empty(choose: Bool) -> result: Result<i32, u8> pure contract {
   ensures when Ok(value: payload): payload == 0_i32;
 } {
   let outcome = if choose {
@@ -11,6 +11,6 @@ fn empty(choose: own Bool) -> result: own Result<i32, u8> pure contract {
   return saved;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

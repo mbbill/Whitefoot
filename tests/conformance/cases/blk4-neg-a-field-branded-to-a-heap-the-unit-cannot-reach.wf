@@ -2,7 +2,7 @@ struct Bytes {
   v: Box<Slots<u8>>;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A runtime-capacity run reaches a field only as the content of its Box, and that field needs no store brand, region parameter or selected provider input: there is one heap and a Box carries no brand. Declaring this type requires no entry heap the unit must reach.";
   return exit_status(code: 0_u8);
 }

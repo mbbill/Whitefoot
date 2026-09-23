@@ -1,16 +1,16 @@
 interface Zeroed {
   doc "A formal declares function-kind signatures [FN-3].";
-  fn zero() -> result: own i32 pure;
+  fn zero() -> result: i32 pure;
 }
 
 binding First : Zeroed {
   zero = i32_zero;
 }
 
-fn i32_zero() -> result: own i32 pure {
+fn i32_zero() -> result: i32 pure {
   return 0_i32;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

@@ -21,7 +21,7 @@ use super::{assert_rule, assert_rule_kind, with_semantics};
 
 #[test]
 fn cell_creation_content_read_and_cleanup_are_explicit() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let value = 41_u64;
   let owner = box_new::<u64>(value: value);
   let loaded = owner.inner;
@@ -77,7 +77,7 @@ fn whole_cell_assignment_preserves_the_owner_shape() {
   value: u64;
 }
 
-fn assign_owner() -> result: own u64 pure {
+fn assign_owner() -> result: u64 pure {
   let first_value = Pair(value: 0_u64);
   let second_value = Pair(value: 1_u64);
   let first = box_new::<Pair>(value: first_value);
@@ -87,7 +87,7 @@ fn assign_owner() -> result: own u64 pure {
   return seen;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -132,14 +132,14 @@ fn unboxing_consumes_the_cell_and_yields_its_content() {
   value: u64;
 }
 
-fn unbox() -> result: own u64 pure {
+fn unbox() -> result: u64 pure {
   let content = Pair(value: 7_u64);
   let cell = box_new::<Pair>(value: move content);
   let taken = move cell.inner;
   return taken.value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -188,7 +188,7 @@ struct Outer {
   other: Box<u8>;
 }
 
-fn take() -> result: own u8 pure {
+fn take() -> result: u8 pure {
   let payload = Payload(value: 1_u8);
   let selected = box_new::<Payload>(value: move payload);
   let tail = box_new::<u8>(value: 2_u8);
@@ -201,7 +201,7 @@ fn take() -> result: own u8 pure {
   return taken.value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -279,7 +279,7 @@ nocopy struct Inner {
   tail: Token;
 }
 
-fn take(token: own Token) -> result: own u8 pure {
+fn take(token: Token) -> result: u8 pure {
   let payload = Payload(value: 1_u8);
   let selected = box_new::<Payload>(value: move payload);
   let inner = Inner(selected: move selected, tail: move token);
@@ -288,7 +288,7 @@ fn take(token: own Token) -> result: own u8 pure {
   return taken.value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -306,7 +306,7 @@ fn indexed_box_content_move_remains_a_win3_source_rejection() {
   value: u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let slots = slots_new::<Box<Payload>, 1>();
   let payload = Payload(value: 1_u8);
   let cell = box_new::<Payload>(value: move payload);
@@ -335,14 +335,14 @@ fn cell_content_set_targets_keep_their_source_rejections() {
   value: u64;
 }
 
-fn hold(first: own Token, second: own Token) -> result: own unit pure {
+fn hold(first: Token, second: Token) -> result: unit pure {
   let cell = box_new::<Token>(value: move first);
   set cell.inner = move second;
   let Token(value: seen) = move cell.inner;
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -353,11 +353,11 @@ fn main() -> status: own ExitStatus pure {
         },
     );
     assert_rule(
-        br#"fn eat(b: own Box<i32>) -> result: own unit pure {
+        br#"fn eat(b: Box<i32>) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let b = box_new::<i32>(value: 4_i32);
   eat(b: move b);
   set b.inner = 7_i32;
@@ -395,17 +395,17 @@ fn main() -> status: own ExitStatus pure {
 /// `Box<u64>` and the two spellings name the same type.
 #[test]
 fn a_derived_cell_nominal_is_interned_whether_or_not_the_type_is_spelled_elsewhere() {
-    let named_nowhere = br#"fn main() -> status: own ExitStatus pure {
+    let named_nowhere = br#"fn main() -> status: ExitStatus pure {
   let owner = box_new::<u64>(value: 41_u64);
   let loaded = owner.inner;
   return exit_status(code: 0_u8);
 }
 "#;
-    let named_in_a_signature = br#"fn take(b: own Box<u64>) -> result: own unit pure {
+    let named_in_a_signature = br#"fn take(b: Box<u64>) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let owner = box_new::<u64>(value: 41_u64);
   take(b: move owner);
   return exit_status(code: 0_u8);
@@ -450,7 +450,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn deref_of_a_cell_is_a_type7_rejection_naming_the_field_inner() {
     assert_rule_kind(
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   let owner = box_new::<u64>(value: 41_u64);
   let loaded = deref(owner);
   return exit_status(code: 0_u8);

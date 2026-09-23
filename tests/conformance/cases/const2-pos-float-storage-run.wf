@@ -4,7 +4,7 @@ struct Sample {
 
 const values: Array<f32, 2> =[1.5_f32, 2.5_f32];
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "An f32 constant element survives a struct field and a mutable run store and read with its exact representable value.";
   let sample = Sample(value: values[0_u64]);
   let storage = slots_new::<f32, 2>();

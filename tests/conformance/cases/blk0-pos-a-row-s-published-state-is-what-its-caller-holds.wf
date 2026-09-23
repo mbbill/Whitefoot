@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The other half of the same sentence. A window operation's own relations are what the caller holds afterwards, so the second placement's requirement is discharged from what the first published rather than from a stale extent, and the cap - len value the writer computes is the free capacity the two placements left.";
   let run = slots_new::<u8, 8>();
   place_back(window: &run, value: 1_u8);

@@ -3,10 +3,10 @@ struct Counter {
 }
 
 interface PureMember {
-  fn apply(store: &Counter, x: own i32) -> result: own i32 reads(store.count);
+  fn apply(store: &Counter, x: i32) -> result: i32 reads(store.count);
 }
 
-fn writing_apply(store: &Counter, x: own i32) -> result: own i32 writes(store.count) {
+fn writing_apply(store: &Counter, x: i32) -> result: i32 writes(store.count) {
   doc "FN-4 requires every actual effect path to be covered in the same category by the formal row. A writing actual exceeds a reads-only formal, and `writes` subsumes `reads` rather than the other way round [EFF-1].";
   let seen = deref(store).count;
   set deref(store).count = seen;
@@ -17,6 +17,6 @@ binding First : PureMember {
   apply = writing_apply;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

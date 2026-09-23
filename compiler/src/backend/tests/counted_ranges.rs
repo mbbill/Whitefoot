@@ -2,7 +2,7 @@ use super::{compile, compile_and_run, emitted_function};
 
 #[test]
 fn return_only_loops_do_not_emit_unreachable_continuation_parameters() {
-    let source = br#"fn descend(value: own u64) -> result: own u64 pure {
+    let source = br#"fn descend(value: u64) -> result: u64 pure {
   let remaining = value;
   loop {
     if remaining == 0_u64 {
@@ -13,7 +13,7 @@ fn return_only_loops_do_not_emit_unreachable_continuation_parameters() {
   return remaining;
 }
 
-fn leave(value: own u64) -> result: own u64 pure {
+fn leave(value: u64) -> result: u64 pure {
   let remaining = value;
   loop {
     if remaining == 0_u64 {
@@ -24,7 +24,7 @@ fn leave(value: own u64) -> result: own u64 pure {
   return remaining;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let returned = descend(value: 9_u64);
   let continued = leave(value: 7_u64);
   if returned != 0_u64 {
@@ -51,7 +51,7 @@ fn main() -> status: own ExitStatus pure {
 /// fallback.
 #[test]
 fn counted_ranges_execute_exact_half_open_edges_without_a_hidden_trap() {
-    let source = br#"fn exercise() -> result: own u64 pure {
+    let source = br#"fn exercise() -> result: u64 pure {
   let total = 0_u64;
   for @empty (i in 4_u64..4_u64) {
     set total = total +wrap 100_u64;
@@ -97,7 +97,7 @@ fn counted_ranges_execute_exact_half_open_edges_without_a_hidden_trap() {
   return total;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let result = exercise();
   if result != 8_u64 {
     return exit_status(code: 1_u8);

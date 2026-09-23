@@ -1,7 +1,7 @@
-fn risky_shl(x: own i32, k: own u32) -> result: own i32 pure {
+fn risky_shl(x: i32, k: u32) -> result: i32 pure {
   return ishl(x, k);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

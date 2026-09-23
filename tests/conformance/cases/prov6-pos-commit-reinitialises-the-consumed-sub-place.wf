@@ -3,12 +3,12 @@ nodrop struct Chunk {
   spare: u8;
 }
 
-fn exchange(taken: own Box<Slots<u8>>) -> given: own Box<Slots<u8>> pure {
+fn exchange(taken: Box<Slots<u8>>) -> given: Box<Slots<u8>> pure {
   doc "Hands the cell back, which is what makes the read-out a commit rather than an abandonment.";
   return move taken;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "OP-12: `set p = f(p, args...);` is the atomic in-place update. The old value enters f by value, f's result is committed, and no program point lies between, so the linear owner has no residual at any point and the partial-consume refusal does not reach it. Without this form the rule refused the central statement of every library that transforms a component of a linear value in place.";
   let page = box_slots_new::<u8>(capacity: 4_u64);
   let chunk = Chunk(page: move page, spare: 5_u8);

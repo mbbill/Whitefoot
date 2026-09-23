@@ -1,4 +1,4 @@
-fn reverse(bytes: &[u8]) -> result: own unit writes(bytes) contract {
+fn reverse(bytes: &[u8]) -> result: unit writes(bytes) contract {
   requires deref(bytes).len >= 1_u64;
 } {
   let count = deref(bytes).len;
@@ -15,6 +15,6 @@ fn reverse(bytes: &[u8]) -> result: own unit writes(bytes) contract {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

@@ -734,7 +734,7 @@ enum Payload {
   Value(number: i32);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let flag = On();
   match flag {
     Off() => {
@@ -817,12 +817,12 @@ enum Holder {
   Empty();
 }
 
-fn make() -> result: own Cell pure {
+fn make() -> result: Cell pure {
   let cell = Cell(value: 1_i32);
   return move cell;
 }
 
-fn cleanup() -> result: own unit pure {
+fn cleanup() -> result: unit pure {
   make();
   let first = Cell(value: 2_i32);
   let second = Cell(value: 3_i32);
@@ -835,7 +835,7 @@ fn cleanup() -> result: own unit pure {
   return unit;
 }
 
-fn cleanup_match(value: own Holder, flag: own Bool) -> result: own i32 pure {
+fn cleanup_match(value: Holder, flag: Bool) -> result: i32 pure {
   match move value {
     Held(cell: item) => {
     }
@@ -851,7 +851,7 @@ fn cleanup_match(value: own Holder, flag: own Bool) -> result: own i32 pure {
   return selected;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   cleanup();
   let cell = Cell(value: 8_i32);
   let holder = Held(cell: move cell);
@@ -890,7 +890,7 @@ struct Outer {
   other: i32;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let number = 1_i32;
   let inner = Inner(value: 2_i32);
   let outer = Outer(inner: inner, other: 7_i32);
@@ -970,7 +970,7 @@ fn main() -> status: own ExitStatus pure {
 /// is no implicit runtime fallback.
 #[test]
 fn bare_infix_overflow_is_a_static_op2_rejection() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let hi = 2147483647_i32;
   let one = 1_i32;
   let overflowed = hi + one;
@@ -1011,7 +1011,7 @@ struct Envelope {
   residue: Pair;
 }
 
-fn step(value: own i32) -> result: own Result<i32, StepError> pure {
+fn step(value: i32) -> result: Result<i32, StepError> pure {
   if value < 0_i32 {
     let error = Failed();
     return Err<i32, StepError>(error: error);
@@ -1020,13 +1020,13 @@ fn step(value: own i32) -> result: own Result<i32, StepError> pure {
   }
 }
 
-fn forward(value: own i32) -> result: own Result<i64, StepError> pure {
+fn forward(value: i32) -> result: Result<i64, StepError> pure {
   let result = step(value: value);
   let accepted = propagate result;
   return Ok<i64, StepError>(value: 42_i64);
 }
 
-fn forward_field(value: own i32) -> result: own Result<i64, StepError> pure {
+fn forward_field(value: i32) -> result: Result<i64, StepError> pure {
   let result = step(value: value);
   let residue = Pair(left: 1_i32, right: 2_i32);
   let envelope = Envelope(result: result, residue: residue);
@@ -1034,12 +1034,12 @@ fn forward_field(value: own i32) -> result: own Result<i64, StepError> pure {
   return Ok<i64, StepError>(value: 42_i64);
 }
 
-fn make_pair() -> result: own Result<Pair, StepError> pure {
+fn make_pair() -> result: Result<Pair, StepError> pure {
   let pair = Pair(left: 20_i32, right: 22_i32);
   return Ok<Pair, StepError>(value: pair);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let arithmetic_result = 2147483647_i32 +checked 1_i32;
   match arithmetic_result {
     Ok(value: sum) => {
@@ -1132,7 +1132,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn integer_overflow_has_no_op2_runtime_record_path() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let hi = 127_i8;
   let one = 1_i8;
   let overflow = hi + one;

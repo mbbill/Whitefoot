@@ -86,7 +86,7 @@ fn fold_module(parallel: bool) -> String {
 /// The exit status carries the comparison, so a splitter that computed a width
 /// before testing the endpoints — which wraps an inverted range to something
 /// near 2^64 — fails here rather than hanging somewhere later.
-const EDGE_RANGES: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure {
+const EDGE_RANGES: &[u8] = br#"fn mix(seed: u64) -> result: u64 pure {
   let state = seed;
   let round = 0_u64;
   loop @rounds {
@@ -103,7 +103,7 @@ const EDGE_RANGES: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure {
   return state;
 }
 
-fn folded(lo: own u64, hi: own u64) -> result: own u64 pure {
+fn folded(lo: u64, hi: u64) -> result: u64 pure {
   let total = 7_u64;
   for @points (i in lo..hi) {
     let mixed = mix(seed: i);
@@ -112,7 +112,7 @@ fn folded(lo: own u64, hi: own u64) -> result: own u64 pure {
   return total;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Every degenerate range folds to the accumulator it arrived with, and one wide range folds to the same value split or not.";
   let empty = folded(lo: 5_u64, hi: 5_u64);
   if empty == 7_u64 {
@@ -142,7 +142,7 @@ fn main() -> status: own ExitStatus pure {
 /// would have every lane acquisition refused forever: the program would pay for the
 /// splitter and never overlap. So the bound is applied at compile time and the
 /// loop declines with a line naming the width.
-const WIDE_FRAME: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure {
+const WIDE_FRAME: &[u8] = br#"fn mix(seed: u64) -> result: u64 pure {
   let state = seed;
   let round = 0_u64;
   loop @rounds {
@@ -159,7 +159,7 @@ const WIDE_FRAME: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure {
   return state;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Thirty-two live scalars stand between the loop and a frame that fits.";
   let a0 = 0_u64;
   let a1 = 1_u64;
@@ -249,7 +249,7 @@ fn main() -> status: own ExitStatus pure {
 /// published bytes. **A second combine**: both `ixor` and `+wrap` have identity zero, but the incoming nonzero seed
 /// must reach the left half rather than seeding that half
 /// where the right should be, changes the answer here and not there.
-const CAPTURED_XOR_FOLD: &[u8] = br#"fn mix(seed: own u64, salt: own u64, rounds: own u64) -> result: own u64 pure {
+const CAPTURED_XOR_FOLD: &[u8] = br#"fn mix(seed: u64, salt: u64, rounds: u64) -> result: u64 pure {
   let state = ixor(seed, salt);
   let round = 0_u64;
   loop @rounds {
@@ -266,7 +266,7 @@ const CAPTURED_XOR_FOLD: &[u8] = br#"fn mix(seed: own u64, salt: own u64, rounds
   return state;
 }
 
-fn low_byte(v: own u64) -> result: own u8 pure {
+fn low_byte(v: u64) -> result: u8 pure {
   let low = iand(v, 255_u64);
   match cvt::<u64, u8>(low) {
     Ok(value: byte) => {
@@ -278,7 +278,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell(destination: &[u8], at: own u64, value: own u64) -> result: own u64 writes(destination) {
+fn spell(destination: &[u8], at: u64, value: u64) -> result: u64 writes(destination) {
   let cursor = at;
   let rest = value;
   loop @octets {
@@ -299,7 +299,7 @@ fn spell(destination: &[u8], at: own u64, value: own u64) -> result: own u64 wri
   return at +wrap 8_u64;
 }
 
-fn folded(salt: own u64, rounds: own u64, stride: own u64) -> result: own u64 pure {
+fn folded(salt: u64, rounds: u64, stride: u64) -> result: u64 pure {
   doc "Three captured values, each used differently, folded under ixor.";
   let total = 12345678901234567890_u64;
   for @points (i in 0_u64..400000_u64) {
@@ -310,7 +310,7 @@ fn folded(salt: own u64, rounds: own u64, stride: own u64) -> result: own u64 pu
   return total;
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
   close_directory(factory: &entry_factory, directory: move unused_cwd);
   let value = folded(salt: 9876543210_u64, rounds: 24_u64, stride: 7_u64);
@@ -332,7 +332,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
 /// copied and affinely transformed counted binder. The mapped buffer is returned, borrowed by
 /// `write_once`, and then dropped by its one outer owner, so the observable
 /// bytes cover capture, store, join, post-loop use, and cleanup together.
-const INDEPENDENT_MAP: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure {
+const INDEPENDENT_MAP: &[u8] = br#"fn mix(seed: u64) -> result: u64 pure {
   let state = seed;
   let round = 0_u64;
   loop @rounds {
@@ -349,7 +349,7 @@ const INDEPENDENT_MAP: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure
   return state;
 }
 
-fn low_byte(v: own u64) -> result: own u8 pure {
+fn low_byte(v: u64) -> result: u8 pure {
   let low = iand(v, 255_u64);
   match cvt::<u64, u8>(low) {
     Ok(value: byte) => {
@@ -361,7 +361,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn mapped() -> result: own Box<Array<u8>> pure {
+fn mapped() -> result: Box<Array<u8>> pure {
   let out = box_array_filled::<u8>(count: 400000_u64, value: 0_u8);
   for @fill (i in 0_u64..400000_u64) {
     let copied = i;
@@ -373,7 +373,7 @@ fn mapped() -> result: own Box<Array<u8>> pure {
   return move out;
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
   close_directory(factory: &entry_factory, directory: move unused_cwd);
   let report = mapped();
@@ -406,11 +406,11 @@ const ALIGNED_PAYLOAD_MAP: &[u8] = br#"struct Aligned {
   word: u64;
 }
 
-fn discard(value: own Box<Array<Aligned>>) -> result: own unit pure {
+fn discard(value: Box<Array<Aligned>>) -> result: unit pure {
   return unit;
 }
 
-fn mix(seed: own u64) -> result: own u64 pure {
+fn mix(seed: u64) -> result: u64 pure {
   let state = seed;
   let round = 0_u64;
   loop @rounds {
@@ -427,13 +427,13 @@ fn mix(seed: own u64) -> result: own u64 pure {
   return state;
 }
 
-fn marked(seed: own u64) -> result: own Aligned pure {
+fn marked(seed: u64) -> result: Aligned pure {
   let mixed = mix(seed: seed);
   let result = Aligned(tag: 7_u8, word: mixed);
   return result;
 }
 
-fn aligned_array(count: own u64, tag: own u8, word: own u64) -> result: own Box<Array<Aligned>> pure contract {
+fn aligned_array(count: u64, tag: u8, word: u64) -> result: Box<Array<Aligned>> pure contract {
   requires count <= 400000_u64;
   ensures result.inner.len == count;
 } {
@@ -442,7 +442,7 @@ fn aligned_array(count: own u64, tag: own u8, word: own u64) -> result: own Box<
   return move result;
 }
 
-fn mapped(count: own u64) -> result: own Box<Array<Aligned>> pure contract {
+fn mapped(count: u64) -> result: Box<Array<Aligned>> pure contract {
   requires count <= 400000_u64;
   ensures result.inner.len == count;
 } {
@@ -463,7 +463,7 @@ fn mapped(count: own u64) -> result: own Box<Array<Aligned>> pure contract {
   return move output;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let empty = mapped(count: 0_u64);
   if empty.inner.len != 0_u64 {
     return exit_status(code: 1_u8);
@@ -495,7 +495,7 @@ fn main() -> status: own ExitStatus pure {
 /// Two lexically nested split reductions share one locally owned boxed Array.
 /// The owner is projected into the outer split, reconstructed in its chunk,
 /// and projected again into the inner split reached from that chunk.
-const NESTED_PAYLOAD_REDUCTIONS: &[u8] = br#"fn nested() -> result: own u64 pure {
+const NESTED_PAYLOAD_REDUCTIONS: &[u8] = br#"fn nested() -> result: u64 pure {
   let source = box_array_filled::<u64>(count: 65536_u64, value: 3_u64);
   let total = 0_u64;
   for @batches (i in 0_u64..8_u64) {
@@ -511,7 +511,7 @@ const NESTED_PAYLOAD_REDUCTIONS: &[u8] = br#"fn nested() -> result: own u64 pure
   return total;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let observed = nested();
   if observed != 3407872_u64 {
     return exit_status(code: 1_u8);
@@ -547,8 +547,8 @@ fn borrowed_read_modify_map_source() -> Vec<u8> {
     let source = std::str::from_utf8(INDEPENDENT_MAP).expect("the fixture is UTF-8");
     source
         .replacen(
-            "fn mapped() -> result: own Box<Array<u8>> pure {\n  let out = box_array_filled::<u8>(count: 400000_u64, value: 0_u8);\n",
-            "fn mapped(out: &Box<Array<u8>>) -> result: own unit writes(out.inner) contract {\n  define spare = deref(out).inner.len;\n  requires 400000_u64 <= spare;\n} {\n",
+            "fn mapped() -> result: Box<Array<u8>> pure {\n  let out = box_array_filled::<u8>(count: 400000_u64, value: 0_u8);\n",
+            "fn mapped(out: &Box<Array<u8>>) -> result: unit writes(out.inner) contract {\n  define spare = deref(out).inner.len;\n  requires 400000_u64 <= spare;\n} {\n",
             1,
         )
         .replacen(
@@ -739,6 +739,73 @@ fn synthesized_symbols(module: &str, prefix: &str) -> Vec<String> {
     found.dedup();
     found
 }
+
+/// Observe the selected outer call without changing any inner query or worker
+/// protocol. The same image exercises a zero answer and the real runtime's
+/// answer. A zero allowance enters the splitter once and reaches one chunk;
+/// that chunk retains its nested queries and publication opportunities.
+fn observe_outer_loop_budget(module: &str, caller: &str, splitter: &str, chunk: &str) -> String {
+    let body = function_body(module, caller);
+    assert_eq!(body.matches("call i64 @wf__par_split_budget(").count(), 1);
+    let changed = body.replace(
+        "call i64 @wf__par_split_budget(",
+        "call i64 @wf_test_outer_budget(",
+    );
+    let mut observed = module.replacen(body, &changed, 1);
+    for (symbol, observer) in [
+        (splitter, "wf_test_outer_splitter"),
+        (chunk, "wf_test_outer_chunk"),
+    ] {
+        let body = function_body(&observed, symbol).to_owned();
+        let entry = body.lines().find(|line| line.ends_with(':')).unwrap();
+        let changed = body.replacen(entry, &format!("{entry}\n  call void @{observer}()"), 1);
+        observed = observed.replacen(&body, &changed, 1);
+    }
+    observed.push_str(
+        "\ndeclare i64 @wf_test_outer_budget(i64, i64)\ndeclare void @wf_test_outer_splitter()\ndeclare void @wf_test_outer_chunk()\n",
+    );
+    super::parallel::observe_worker_schedule(&observed)
+}
+
+// Appended to the existing worker observer, so both ordinary and zero-budget
+// runs share one construction and retain the real publication/join protocol.
+// WF_TEST_NESTED distinguishes a map with no inner offers from the nested
+// reduction, whose zero-budget outer chunk must still publish inner work.
+const OUTER_LOOP_BUDGET_OBSERVER: &str = r#"
+extern uint64_t wf__par_split_budget(uint64_t, uint64_t);
+extern unsigned long wf__par_grants(void);
+static _Atomic unsigned outer_queries, outer_splitters, outer_chunks;
+static _Atomic uint64_t outer_allowance;
+uint64_t wf_test_outer_budget(uint64_t span, uint64_t weight) {
+    atomic_fetch_add(&outer_queries, 1);
+    uint64_t allowance = getenv("WF_TEST_ZERO_BUDGET") ? 0 : wf__par_split_budget(span, weight);
+    atomic_store(&outer_allowance, allowance);
+    return allowance;
+}
+void wf_test_outer_splitter(void) { atomic_fetch_add(&outer_splitters, 1); }
+void wf_test_outer_chunk(void) { atomic_fetch_add(&outer_chunks, 1); }
+static void report_outer_budget(void) {
+    unsigned queries = atomic_load(&outer_queries);
+    unsigned splitters = atomic_load(&outer_splitters);
+    unsigned chunks = atomic_load(&outer_chunks);
+    uint64_t allowance = atomic_load(&outer_allowance);
+    unsigned long grants = wf__par_grants();
+    int zero = getenv("WF_TEST_ZERO_BUDGET") != NULL;
+    if (queries != 1 || !chunks ||
+        (!allowance && (splitters != 1 || chunks != 1)) ||
+        (allowance && !splitters) ||
+        (!WF_TEST_NESTED && !zero && !allowance) ||
+        ((WF_TEST_NESTED || !zero) &&
+            (!grants || !atomic_load(&schedule_entered)))) {
+        fprintf(stderr, "outer loop budget: zero=%d queries=%u splitters=%u chunks=%u grants=%lu\n",
+                zero, queries, splitters, chunks, grants);
+        _Exit(116);
+    }
+}
+__attribute__((constructor)) static void register_outer_budget(void) {
+    atexit(report_outer_budget);
+}
+"#;
 
 /// A split that carries captures and folds under a second admitted operation
 /// publishes what the unsplit lowering publishes, at every worker count.
@@ -1087,13 +1154,36 @@ fn nested_boxed_array_payload_reductions_preserve_the_unsplit_result() {
         );
         assert_eq!(output.stdout, reference.stdout, "WF_WORKERS={workers}");
     }
-    let (granted, output) = CountedProgram::link(&split, &directory).run(Some("4"));
-    assert!(
-        granted > 0,
-        "the controlled nested program must grant worker work"
+    let outer_splitter = splitters
+        .iter()
+        .find(|symbol| nested.contains(&format!("call i64 {symbol}(")))
+        .expect("the enclosing function enters the outer splitter");
+    let outer_chunk_symbol = chunks
+        .iter()
+        .find(|symbol| {
+            function_body(&split, outer_splitter).contains(&format!("call i64 {symbol}("))
+        })
+        .expect("the outer splitter has one chunk");
+    let observed =
+        observe_outer_loop_budget(&split, "@wf_nested", outer_splitter, outer_chunk_symbol);
+    let observer = format!(
+        "#define WF_TEST_NESTED 1\n{}\n{OUTER_LOOP_BUDGET_OBSERVER}",
+        super::parallel::WORKER_SCHEDULE,
     );
-    assert_eq!(output.status.code(), Some(0));
-    assert_eq!(output.stdout, reference.stdout);
+    let executable = super::build_linked_executable(&observed, Some(&observer), &[], &directory);
+    for zero in [false, true] {
+        let mut command = Command::new(&executable);
+        command
+            .env("WF_WORKERS", "4")
+            .env_remove("WF_SPLIT_WORK")
+            .env_remove("WF_TEST_ZERO_BUDGET");
+        if zero {
+            command.env("WF_TEST_ZERO_BUDGET", "1");
+        }
+        let output = command.output().expect("run observed nested loop budget");
+        assert_eq!(output.status.code(), Some(0), "zero={zero}: {output:?}");
+        assert_eq!(output.stdout, reference.stdout);
+    }
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
@@ -1192,16 +1282,24 @@ fn an_independent_map_joins_and_preserves_its_outer_buffer() {
     }
     identical(&runs).expect("splitting an independent map must not move one output byte");
 
-    let counted = CountedProgram::link(&split, &directory);
-    {
-        let workers = "4";
-        let (granted, output) = counted.run(Some(workers));
-        assert_eq!(output.status.code(), Some(0));
+    let observed = observe_outer_loop_budget(&split, "@wf_mapped", &splitter_symbol, &chunk_symbol);
+    let observer = format!(
+        "#define WF_TEST_NESTED 0\n{}\n{OUTER_LOOP_BUDGET_OBSERVER}",
+        super::parallel::WORKER_SCHEDULE,
+    );
+    let executable = super::build_linked_executable(&observed, Some(&observer), &[], &directory);
+    for zero in [false, true] {
+        let mut command = Command::new(&executable);
+        command
+            .env("WF_WORKERS", "4")
+            .env_remove("WF_SPLIT_WORK")
+            .env_remove("WF_TEST_ZERO_BUDGET");
+        if zero {
+            command.env("WF_TEST_ZERO_BUDGET", "1");
+        }
+        let output = command.output().expect("run observed Unit-map loop budget");
+        assert_eq!(output.status.code(), Some(0), "zero={zero}: {output:?}");
         assert_eq!(output.stdout, runs[0].1);
-        assert!(
-            granted > 0,
-            "WF_WORKERS={workers} granted no map lane in the controlled worker execution"
-        );
     }
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
@@ -1524,7 +1622,7 @@ const COMBINE_SPAN: u64 = 257;
 /// The helpers every row's fold shares: the per-iteration mix that gives the
 /// body enough weight to be worth splitting, the narrowing to a byte, and the
 /// eight-byte spelling each row publishes through.
-const COMBINE_PRELUDE: &str = r#"fn mix(seed: own u64) -> result: own u64 pure {
+const COMBINE_PRELUDE: &str = r#"fn mix(seed: u64) -> result: u64 pure {
   doc "A pure mix with enough arithmetic that splitting the range around it pays.";
   let state = seed;
   let round = 0_u64;
@@ -1542,7 +1640,7 @@ const COMBINE_PRELUDE: &str = r#"fn mix(seed: own u64) -> result: own u64 pure {
   return state;
 }
 
-fn low_byte(v: own u64) -> result: own u8 pure {
+fn low_byte(v: u64) -> result: u8 pure {
   let low = iand(v, 255_u64);
   match cvt::<u64, u8>(low) {
     Ok(value: byte) => {
@@ -1554,7 +1652,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell(destination: &[u8], at: own u64, value: own u64) -> result: own u64 writes(destination) {
+fn spell(destination: &[u8], at: u64, value: u64) -> result: u64 writes(destination) {
   let cursor = at;
   let rest = value;
   loop @octets {
@@ -1591,7 +1689,7 @@ fn admitted_combine_source() -> Vec<u8> {
             ..
         } = combine;
         source.push_str(&format!(
-            "\nfn fold_{name}(lo: own u64, hi: own u64) -> result: own {ty} pure {{\n  \
+            "\nfn fold_{name}(lo: u64, hi: u64) -> result: {ty} pure {{\n  \
              let total = {seed};\n  for @points (i in lo..hi) {{\n    \
              let mixed = mix(seed: i);\n"
         ));
@@ -1606,14 +1704,14 @@ fn admitted_combine_source() -> Vec<u8> {
         // assertion below has to be about.
         source.push_str(&format!(
             "    set total = {fold};\n  }}\n  return total;\n}}\n\n\
-             fn value_{name}(after: own u64) -> result: own u64 pure {{\n  \
+             fn value_{name}(after: u64) -> result: u64 pure {{\n  \
              let lo = imin(after, 0_u64);\n  \
              let total = fold_{name}(lo: lo, hi: {COMBINE_SPAN}_u64);\n{publish}}}\n"
         ));
     }
     let width = 8 * ADMITTED_COMBINES.len();
     source.push_str(&format!(
-        "\nfn main(inputs: own Inputs) -> status: own ExitStatus pure {{\n  \
+        "\nfn main(inputs: Inputs) -> status: ExitStatus pure {{\n  \
          let Inputs(args: unused_args, cwd: cwd, stdout: out, stderr: unused_stderr, handles: factory, stdin: unused_stdin) = move inputs;\n  \
          close_directory(factory: &factory, directory: move cwd);\n  \
          let report = box_array_filled::<u8>(count: {width}_u64, value: 0_u8);\n  \
@@ -1781,6 +1879,126 @@ fn assert_combine_rows(reference: &[u8], published: &[u8], setting: &str) {
             combine.spelling
         );
     }
+}
+
+/// Two split loops surround an ordinary call join and precede a loop-header
+/// phi. One image checks both allowance answers and the sequential world;
+/// native construction also verifies every emitted phi predecessor.
+#[test]
+fn multiple_split_loops_and_an_ordinary_join_keep_phi_predecessors() {
+    let source = br#"fn choose(value: u64) -> result: u64 pure {
+  return imax(value, value);
+}
+
+fn composed(limit: u64) -> result: u64 pure {
+  let total = 5_u64;
+  for (i in 0_u64..limit) {
+    set total = total +wrap i;
+  }
+  let a = choose(value: total);
+  let b = choose(value: 17_u64);
+  let c = choose(value: 19_u64);
+  let ab = a +wrap b;
+  let combined = ab +wrap c;
+  let marks = array_filled::<u64, 2>(value: 0_u64);
+  for (j in 0_u64..2_u64) {
+    set marks[j] = j +wrap combined;
+  }
+  let acc = marks[0_u64] +wrap marks[1_u64];
+  let round = 0_u64;
+  loop @carry {
+    if round == 2_u64 {
+      break @carry;
+    }
+    set acc = acc +wrap 1_u64;
+    set round = round +wrap 1_u64;
+  }
+  return acc;
+}
+
+fn main() -> status: ExitStatus pure {
+  let result = composed(limit: 4_u64);
+  if result != 97_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let module = emit_with_overlap(source);
+    let body = function_body(&module, "@wf_composed");
+    assert_eq!(body.matches("call i64 @wf__par_split_budget(").count(), 2);
+    assert!(body.contains("call void @wf__par_publish("));
+    assert!(body.contains(" = phi i64 "));
+    let sequential = function_body(&module, "@wf__par_seq_composed");
+    assert!(!sequential.contains("@wf__par_split_budget("));
+    assert!(!sequential.contains("@wf__par_publish("));
+
+    let splitters = synthesized_symbols(&module, "@wf__par_split_");
+    assert_eq!(splitters.len(), 2);
+    let mut observed = module.replace(
+        "call i64 @wf__par_split_budget(",
+        "call i64 @wf_test_cfg_budget(",
+    );
+    for symbol in splitters {
+        let body = function_body(&observed, &symbol).to_owned();
+        let entry = body.lines().find(|line| line.ends_with(':')).unwrap();
+        let changed = body.replacen(
+            entry,
+            &format!("{entry}\n  call void @wf_test_cfg_splitter()"),
+            1,
+        );
+        observed = observed.replacen(&body, &changed, 1);
+    }
+    observed.push_str(
+        "\ndeclare i64 @wf_test_cfg_budget(i64, i64)\ndeclare void @wf_test_cfg_splitter()\n",
+    );
+    let observer = r#"#include <stdatomic.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+static _Atomic unsigned queries, splitters;
+uint64_t wf_test_cfg_budget(uint64_t span, uint64_t weight) {
+    (void)weight;
+    if (span != 4 && span != 2) { fputs("wrong composed span\n", stderr); exit(117); }
+    atomic_fetch_add(&queries, 1);
+    return getenv("WF_TEST_POSITIVE_BUDGET") ? 4 : 0;
+}
+void wf_test_cfg_splitter(void) { atomic_fetch_add(&splitters, 1); }
+static void report(void) {
+    unsigned queried = atomic_load(&queries), entered = atomic_load(&splitters);
+    int sequential = strcmp(getenv("WF_WORKERS"), "1") == 0;
+    int positive = getenv("WF_TEST_POSITIVE_BUDGET") != NULL;
+    if (queried != (sequential ? 0 : 2) ||
+        (sequential ? entered != 0 : (positive ? entered <= 2 : entered != 2))) {
+        fprintf(stderr, "composed loops: queries=%u splitters=%u\n", queried, entered);
+        _Exit(118);
+    }
+}
+__attribute__((constructor)) static void register_report(void) { atexit(report); }
+"#;
+    let directory = test_directory();
+    let executable = super::build_linked_executable(&observed, Some(observer), &[], &directory);
+    for (workers, positive) in [("1", false), ("4", false), ("4", true)] {
+        let mut command = Command::new(&executable);
+        command
+            .env("WF_WORKERS", workers)
+            .env_remove("WF_TEST_POSITIVE_BUDGET");
+        if positive {
+            command.env("WF_TEST_POSITIVE_BUDGET", "1");
+        }
+        let output = command.output().expect("run composed split loops");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "WF_WORKERS={workers}, positive={positive}: {output:?}"
+        );
+        assert!(
+            output.stdout.is_empty() && output.stderr.is_empty(),
+            "{output:?}"
+        );
+    }
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
 /// An empty range folds nothing, an inverted one folds nothing, and a one-wide

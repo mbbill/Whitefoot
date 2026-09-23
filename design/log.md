@@ -5,6 +5,44 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-23 State the precise checking ground for named operands
+
+Nodes: language/surface-form, language/surface-form/construction-form
+
+Owner-approved: After the DCR handoff clarified that proposal 3 was only a wording correction, the owner explicitly instructed applying it alongside the already approved removal of signature `own` in proposal 1.
+
+Summary: Apply the reviewed construction-form replacement unchanged: labels and declared order detect label/order mismatches, while same-typed values exchanged under otherwise correct labels remain undetected. Retain every operand rule and the approved surface-form replacement below. This ruling resolves the DCR question about the third amendment's disposition and removes its now-resolved TODO; the [boundary comparison](../research/investigations/contract-surface/CALL-BOUNDARY.md#named-operands-remain-independent) supplies the counterexample and evidence. This ruling does not authorize a merge.
+
+## 2026-09-23 Remove written ownership qualifiers from callable signatures
+
+Nodes: language/surface-form
+
+Owner-approved: After reviewing PR #98 and the three proposed node replacements, the owner selected only the first proposal and instructed implementation: remove signature `own`, retaining result names and named operands.
+
+Summary: Apply the reviewed surface-form replacement unchanged. Value parameters write their type, reference parameters retain `&T` or `&[T]`, and result types remain explicitly owned without a written qualifier. Keep result names beside their types and keep ownership transfer, capabilities, effects and proofs unchanged. The [boundary study](../research/investigations/contract-surface/CALL-BOUNDARY.md) records the comparisons and the rejected result-alias alternative. This ruling does not authorize a merge.
+
+## 2026-09-23 Retain result names in signatures
+
+Nodes: language/checks-and-proofs/requires-entry-contract
+
+Summary: Do not adopt the contract-local `results(...)` replacement: it separates result types and names into two ordered lists that must be maintained together, while the existing named result binding keeps name, type and ordinal in one declaration. Remove the refused amendment. The DCR formatting finding concerned only the discarded result-name declaration, so that new production and its proposed formatting are not introduced.
+
+## 2026-09-23 Adopt the owning HashMap storage and result protocol
+
+Nodes: language/data-model/hash-map-storage
+
+Owner-approved: The owner explicitly adopted both complete PR #95 decisions after the Chinese handoff and clean DCR for revision 623eeebd, replying that they were adopted.
+
+Summary: Apply the reviewed decisions and rejected alternatives unchanged. Select enum buckets with occupancy-only migration through one local pending-owner window and the shared exchange helper, and a shared returned-pair payload with a replacement/refusal reason. Preserve the double-backing peak, dense wide-growth advantage, zero-sized-result cost and remaining transfer qualifications. The [matched map comparison](../research/experiments/container-representation/map-library/RESULTS.md#constant-interface-comparison-and-selected-helper-body) and [compact result control](../research/experiments/container-representation/map-library/RESULTS.md#compact-result-boundary-control) supply the selection grounds. Remove the accepted amendment and its directory. The specification and implementation are unchanged by this ruling; it does not authorize a merge.
+
+## 2026-09-23 Retain splitter entry after the zero-budget dispatch comparison
+
+Nodes: compiler/parallel-lowering
+
+Owner-approved: The owner explicitly accepted the complete PR #89 amendment after the reviewed handoff at 2e9db016a4b69346a287cd800e23e09d4a011ee9, replying that it was accepted. This ruling does not authorize a merge.
+
+Summary: Apply the reviewed decision unchanged: retain the existing runtime query and splitter entry because the general caller branch lacks demonstrated general benefit and retains a qualified regression. A replacement must demonstrate benefit and qualify both worlds while caller and placement effects remain unresolved. Remove the accepted amendment and its directory. The implementation, tests and specification are unchanged by this ruling.
+
 ## 2026-09-22 Keep design decisions concise and link their supporting detail
 
 Nodes: compiler/checker-facts, compiler/closure-row-dominance, compiler/completion-runtime, compiler/incremental-closure, compiler/parallel-lowering/parallel-runtime, compiler/parallel-lowering/two-worlds, compiler/parallel-lowering, compiler/proof-query-context, compiler/tag-only-lowering, language/checks-and-proofs/obligation-discharge/loop-fact-retention, language/checks-and-proofs, language/contracts, language/data-model/kernel-minimality, language/data-model/storage-shapes, language/data-model, language/effects/call-site-check, language/effects, language/generics, language/ownership/no-stored-references, language/ownership/reference-rebinding, language/ownership, language/parallelism/loop-permission, language/parallelism/permission-judgment, language/parallelism, language/system-interface/declaration-home, language/system-interface/directory-enumeration, language/system-interface/handle-factory, language/system-interface

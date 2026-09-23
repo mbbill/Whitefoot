@@ -1,4 +1,4 @@
-fn scaled(out: &[u8], src: &[u8]) -> written: own u64 pure contract {
+fn scaled(out: &[u8], src: &[u8]) -> written: u64 pure contract {
   define room = deref(out).len;
   define count = deref(src).len;
   define needed = count * 2_u64;
@@ -8,7 +8,7 @@ fn scaled(out: &[u8], src: &[u8]) -> written: own u64 pure contract {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A range reference carries its own exact `len`, equal to its written endpoints [REF-4, MSR-1], so the two lengths reach the clause without a descriptor read or a caller branch; the affine requirement is discharged from them directly.";
   let src_run = array_filled::<u8, 4>(value: 0_u8);
   let out_run = array_filled::<u8, 8>(value: 0_u8);

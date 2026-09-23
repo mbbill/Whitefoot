@@ -1,4 +1,4 @@
-fn forward(source: &DirectorySource, destination: &[u8], start: own u64, end: own u64) -> (result: own Result<unit, ListStop>, next: own u64, entries: own u64) writes(source), writes(destination) contract {
+fn forward(source: &DirectorySource, destination: &[u8], start: u64, end: u64) -> (result: Result<unit, ListStop>, next: u64, entries: u64) writes(source), writes(destination) contract {
   requires start <= end;
   requires end <= deref(destination).len;
   ensures start <= next;
@@ -16,7 +16,7 @@ fn forward(source: &DirectorySource, destination: &[u8], start: own u64, end: ow
   }
 }
 
-fn observe(source: &DirectorySource, destination: &[u8], start: own u64, end: own u64) -> result: own unit writes(source), writes(destination) contract {
+fn observe(source: &DirectorySource, destination: &[u8], start: u64, end: u64) -> result: unit writes(source), writes(destination) contract {
   requires start <= end;
   requires end <= deref(destination).len;
 } {

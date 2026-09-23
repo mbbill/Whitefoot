@@ -1,4 +1,4 @@
-fn loopy2(limit: own u8, bump: own u8) -> result: own u8 pure contract {
+fn loopy2(limit: u8, bump: u8) -> result: u8 pure contract {
   requires limit <= 5_u8;
 } {
   let cursor = 0_u8;
@@ -18,6 +18,6 @@ fn loopy2(limit: own u8, bump: own u8) -> result: own u8 pure contract {
   return cursor;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

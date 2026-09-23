@@ -3,13 +3,13 @@ struct Vec2 {
   y: i32;
 }
 
-fn sum_xy(v: own Vec2) -> function_result: own i32 pure {
+fn sum_xy(v: Vec2) -> function_result: i32 pure {
   doc "TYPE-5: read the fields of an own struct parameter and return their sum; a by-value parameter carries no effect entry, so the declared row is the empty one [EFF-1].";
   let s = v.x +wrap v.y;
   return s;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "TYPE-5: pass an own struct to a fn by value and use its fields cross-fn.";
   let vec2_atom_0001 = Vec2(x: 20_i32, y: 22_i32);
   let total = sum_xy(v: vec2_atom_0001);

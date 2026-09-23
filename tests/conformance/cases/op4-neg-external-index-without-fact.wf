@@ -1,4 +1,4 @@
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "An ordinary function result is an ordinary symbolic runtime value, not a fact source. Using it directly as a window index leaves the bounds Goal unproved, so OP-4 rejects before lowering.";
   let Inputs(args: arg_list, cwd: root, handles: entry_factory, ..) = move inputs;
   close_directory(factory: &entry_factory, directory: move root);

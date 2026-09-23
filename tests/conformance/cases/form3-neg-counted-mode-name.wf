@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   for @range (checked in 0_u64..1_u64) {
     break @range;
   }
