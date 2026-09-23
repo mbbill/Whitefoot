@@ -11,6 +11,78 @@ protocol merges. The containers handover added at that revision describes a
 separate, unmerged implementation; it is not this experiment's language or
 compiler. The active specification and executable cases remain authoritative.
 
+## Runtime DAG fan-in source trial (2026-09-23)
+
+This prospective trial starts at merged `f2140599` and qualifies candidates
+left open by [catalog section 5](../io-model/CONCURRENCY-CATALOG.md#5-task-dag-with-dependencies-static-and-dynamic).
+No source, permission, emitted structure, native result or overlap result is
+established yet. Publish this protocol on the Draft PR before source work.
+
+The initial scope is three runtime-selected fixed graph families, not
+arbitrary runtime adjacency:
+
+- A runtime-length spine with one independent leaf per spine task: lengths
+  `0, 1, 2, 4, 7, 8, 9, 16, 32`, uniform leaf costs `1` and `65536`, and
+  nonempty first-heavy/last-heavy controls with one cost-`65536` leaf and all
+  others cost `1`. Spine tasks cost `1`; nested calls use disjoint ranges.
+- Two sources notify two destination owners through private notices: all 16
+  edge masks with cost `1` for every task, plus the full mask with every cost
+  `65536`. Owners inspect notices and update only their own state.
+- Edges A-to-C, B-to-C and B-to-D through all three decompositions
+  `(A || B); (C || D)`, `B; ((A; C) || D)` and `(A || (B; D)); C`, each with
+  all 16 assignments of task cost `1` or `65536`. Charge their respective
+  added edges A-to-D, B-to-A and D-to-C; these are not exact readiness graphs.
+
+Before results select a conclusion, require the following evidence:
+
+- An independent topological oracle checks every task value, ID and
+  exactly-once count, plus each destination's received source mask/count.
+  Task work is a serial dependent recurrence; its inner loop must not supply
+  parallel work mistaken for DAG overlap. A passive observer records all DAG
+  task entries/exits independently of retained counts, catching discarded
+  duplicate evaluations and checking prerequisite completion and overlap.
+  Grants alone are insufficient; no forced wait, sleep or rendezvous may
+  manufacture overlap. Plain and diagnostic images run every costly case;
+  one intentional comparator corruption must be rejected.
+- Report acceptance, static permission, emitted calls/joins and ordinary
+  default execution separately. Retain any recursive-budget cutoff. A
+  separately labelled existing `--par-recursive-frontier off` control may
+  attribute it, without selecting a policy or claiming default behaviour.
+  Missing observed overlap is not a language impossibility proof.
+- Count all initialization, routing, notice inspections, task work, joins and
+  extra precedences. Account for output, auxiliary, activation and lane
+  workspace; analytical bounds and logical allocations do not establish
+  physical peak memory. Four notice slots remain four initialized/inspected
+  slots when edges are absent; a dense generalization pays its whole matrix.
+- Use a small, useful oneTBB flow-graph reference from the existing pinned
+  cache, with the same task contract and edge-triggered readiness. Its
+  scheduling is independent of both WF decompositions and the oracle; no new
+  executor, framework or download is selected.
+- Start with correctness, structure, work and overlap, with no performance
+  timing comparison. Record any bounded timing criterion before running it
+  if a concrete compiler or scheduling improvement warrants testing. Spine
+  overlap or independent owner retirement can refute the corresponding
+  universal level/serial-retirement claim, not establish efficient general
+  fan-in. The N witnesses qualify their added edges, not a universal limit.
+
+Use the saved current-main-equivalent compiler first. Analysis/emission,
+native construction and execution are separate stages guarded through
+`.github/run-check.pl`, each capped at 30 seconds, with at most two build jobs
+and one host-wide owner; inspect an existing owner instead of competing.
+Compiler rebuilds need root-agent approval for this trial. Record compiler and
+source identities, flags, workers and observer changes. No source edit or
+build starts before the root agent reports the Draft PR published.
+
+**Design suitability.** Existing references, effects, ranges and call lowering
+fit these questions; no executor, grain, cancellation or specification change
+is selected. Assess revealed compiler structural choices against their owner
+subtree and record benefit, cost, scope, uncertainty and amendments as needed;
+ordinary branch implementation needs no owner approval. Keep the few source,
+probe and adapter files here and in `research/experiments/compute-bench/`,
+wired only to explicit experiment targets; remove them when superseded or no
+longer supporting this question. Update the catalog and TODO as conclusions
+settle; research stays outside daily CI. This protocol needs no tree amendment.
+
 ## Sparse destination routing trial (2026-09-21)
 
 This bounded continuation starts at merged `3402048f` and asks whether useful
