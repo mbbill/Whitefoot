@@ -148,12 +148,14 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   must not infer a separate source lifetime.
 
 - **Zero-budget dispatch retains code-growth and W1 uncertainty.** The
-  [query-retained one-site control](../research/investigations/compute-model/DESIGN.md#query-retained-control-result-2026-09-22)
+  [query-retained one-site control](../research/investigations/compute-model/DESIGN.md#query-retained-control-result)
   meets its W4 criterion, but grows module text by 2,400 bytes and measures a
   2.97 percent W1 paired-median regression despite identical normalized W1
   instructions. It couples dispatch, pixel inlining and alias-check motion;
   it establishes neither standalone entry cost nor the benefit of applying
-  the branch at every site. Keep the general candidate's optimized text and
+  the branch at every site. The general cdac candidate grows text by 3,920
+  bytes (44.50 percent), including additional top-level inlining, with no new
+  local timing. Keep that candidate's optimized text and
   unchanged-query/W1 evidence distinct from that timing result. Defer another
   local attribution trial while canonical correctness and the maintained
   hosted comparison qualify the candidate. Reopen if those controls retain a

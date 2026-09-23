@@ -1520,7 +1520,7 @@ design amendment and deferred opportunities recorded in the existing TODO.
 At publication this was preparation for that decision, not a production
 implementation or a change to the frozen PR78 review scope.
 
-### Query-retained control result, 2026-09-22
+### Query-retained control result
 
 The frozen main-7127 control meets its prospective useful-lead criterion.
 The [dated evidence](../../experiments/compute-bench/query-retained-dispatch-2026-09-22.tsv)
@@ -1634,3 +1634,70 @@ correctness, candidate optimized-code inspection, canonical checks and the
 maintained hosted comparison remain required. Its unresolved W1 outcome and
 code-growth tradeoff are retained in [TODO](../../../docs/todo.md), rather
 than resolved by another exploratory timing trial.
+
+### General candidate qualification at cdac793c
+
+Candidate `cdac793c09f00f0943060671e1b01326107ee6ed` built in 44.88 s
+(real/user/system 44.85/77.50/1.09 s), within its 120-second, two-job cap.
+Its saved compiler SHA-256 is
+`f4161711dfe56d116b72b535bd37324ca5fca180f3fd49bcb1387d253d3e7623`.
+The 295 seconds waiting for an external guard owner is separate from that
+cost. Parallel ledger and sequential LLVM are byte-identical to the fresh
+main-95 baseline. All four raw query operand-expression graphs retain the
+same source value IDs and arithmetic; all seven raw W1 functions, normalized
+optimized LLVM bodies and assembly instruction bodies agree. The dated
+evidence records candidate module, object, compiler and comparison hashes.
+
+The general candidate grows text to 12,728 bytes: 3,920 bytes (44.50 percent)
+above the 8,808-byte baseline, and 1,520 above the one-site control. Six
+optimized definitions change: the previous five and top-level `stencil`.
+Its zero paths also inline initialization and both row-loop directions into
+that top-level function, which grows from 102 to 541 body lines. Strict
+eight-pixel arithmetic, the allocation/memset/free structure and positive
+splitter calls remain. LLVM places query instructions in mutually exclusive
+loop versions, including a constant-zero initialization-span version; the
+four raw sites and their arguments are unchanged. All other normalized
+optimized bodies agree. This broader optimizer effect has no new local
+timing result; the frozen 21.66 percent W4 result still belongs only to the
+one-site control.
+
+The 30-second static action completed both new source preflights, emission,
+optimization, comparisons and artifact hashing, then exited 1 after 1.57 s:
+its final repository-relative source manifest was checked from the scratch
+directory. The same read-only check from the repository passed in 0.01 s.
+The original script and failed log remain retained; no generated module or
+object was rebuilt. This was a bookkeeping correction, not an uninterrupted
+passing action. Both preflights use `--par-scalar-leaf-limit off`, matching
+the Rust tests' existing helper configuration.
+
+The library test executable built in 80.10 s (80.01/139.54/1.84 s), below its
+180-second cap. The initial focused action ran 19 tests in 9.42 s
+(9.36/4.94/1.69 s): 18 passed, including all 13 loop-split tests, the three
+pricing cases, ordinary overlap continuation and the maintained stencil
+oracle matrix. The new private-IR addressed-result case passed its shared
+destination, one-snapshot and W1 assertions, then failed LLVM verification:
+the raw `lower_checked` fixture left the floor fallback's `wf__main_body`
+reference undefined. The test now appends the existing ordinary launcher,
+as the backend helpers do; this correction awaits revalidation, with the
+LLVM check and all result assertions unchanged. The complete original failure
+and module are preserved, and this suite is not reported as passing.
+
+The [hosted compute comparison for this candidate](https://github.com/mbbill/Whitefoot/actions/runs/35800610607)
+passed with no suspect among its 15 candidate cells. Its ratios are
+**baseline/candidate**, unlike the local control's B/A: stencil W1 is 1.025454
+and W4 is 1.005683. The identical-image control retains a stencil W1 suspect
+at 0.968419; it is not cleared as noise. This maintained comparison supports
+the candidate's behavior on its own cells, not transfer of the local one-site
+speedup. The [other checks at cdac](https://github.com/mbbill/Whitefoot/commit/cdac793c09f00f0943060671e1b01326107ee6ed/checks)
+passed I/O-host, corpus and runtime checks on the supported hosts; both unit
+jobs failed the same addressed-fixture launcher gap. Static checking failed
+because the newly upstreamed v0.63 archive was absent from cdac, and design
+readiness also exposed a dated citation anchor in the amendment. That anchor
+is now stable and undated; lightweight design lint passes. The pending
+amendment still requires an owner ruling, and no full-gate pass is claimed.
+
+Main subsequently advanced to `e8e1c411ca64b6aefb2a04e99e6c208cfabfe410`
+through PR88, which changes storage/lowering and the active specification.
+All candidate binaries and evidence above retain their cdac/main-95 identity.
+Further builds and reruns were held for composition assessment; no evidence
+here qualifies or measures the newer compiler.

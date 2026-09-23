@@ -887,9 +887,12 @@ fn main() -> status: own ExitStatus pure {
             work: None,
         };
         dispatch.source_calls.retain(|call| call.result() != result);
-        let module = crate::emit_llvm(&program)
+        let mut module = crate::emit_llvm(&program)
             .expect("the addressed split must emit")
             .into_string();
+        module.push_str(
+            &crate::driver::launcher::render(&program, "main").expect("ordinary test launcher"),
+        );
         let definition = |symbol: &str| {
             module
                 .split_once(&format!("define void @{symbol}("))
