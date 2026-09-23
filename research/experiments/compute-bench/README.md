@@ -248,6 +248,12 @@ The direct native graph overlapped tasks 0 and 3 in its single retained run.
 These observations establish functionality and expose the source ordering
 cost; they do not measure a performance benefit.
 
+Those original aggregate-result calls used the old binder: W1 had an inactive
+pool but still entered the parallel body. The later
+[adapter qualification](../../investigations/compute-model/DESIGN.md#indirect-aggregate-result-adapter-repair-2026-09-23)
+separately checked actual sequential/parallel entry at W1/W4 with unchanged
+task and routing oracles; it adds no timing result.
+
 The traced image records one begin/end pair per serial task recurrence and
 checks exact event counts, IDs, inputs, results, native thread identity and
 completion of every original prerequisite before its consumer begins.
@@ -446,7 +452,12 @@ x86_64 `WF_ALIGN` placement control documented below, and called through a
 descriptor-only LLVM IR host adapter. `host-adapter.awk` binds its calls to the
 same execution world as entry: the emitted sequential clone when the worker
 pool is off, and the ordinary parallel symbol otherwise. Selection occurs at
-each host entry, outside the kernel algorithm. LLVM IR also supports versions
+each host entry, outside the kernel algorithm, for assigned results and
+unassigned void calls carrying an explicit result pointer. Calls without a
+matching clone remain unchanged. The binder accepts straight-line wrappers;
+it does not rewrite existing control-flow edges. The
+[aggregate-result repair and qualification](../../investigations/compute-model/DESIGN.md#indirect-aggregate-result-adapter-repair-2026-09-23)
+preserve older results under their recorded binder. LLVM IR also supports versions
 whose source functions have internal linkage. The two emissions are isolated by renaming
 their defined functions and all corresponding references; this preserves
 linkage and optimization attributes and leaves library imports and weak

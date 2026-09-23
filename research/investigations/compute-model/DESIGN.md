@@ -1756,6 +1756,12 @@ baseline bytewise. Native construction took 2.44 seconds, or 2.50 including its
 guard; each matrix's guard took 0.10–0.53 seconds. These are qualification-stage
 costs, not benchmark intervals.
 
+These original runs used the binder that missed unassigned aggregate-result
+calls. Their W1 traces establish sequential execution with an inactive pool,
+not entry into the emitted sequential clone. The later
+[adapter repair](#indirect-aggregate-result-adapter-repair-2026-09-23) retains
+this evidence and separately qualifies the corrected entry selection.
+
 Values, exactly-once counts, original-edge order, input preservation, canaries,
 rounds and cross-owner notice totals matched the independent oracle. Successful
 calls replaced exactly the first `N` initially nonzero output cells and retained
@@ -3251,6 +3257,71 @@ adapter retains the same pool-dependent world choice and is composed with
 definitions' linkage and attributes. The compute sources and test fixtures use
 ordinary `fn main` declarations. This integration changes neither the retained
 historical rows nor their attribution to the original compiler revisions.
+
+### Indirect aggregate-result adapter repair (2026-09-23)
+
+The shared binder recognized only assigned LLVM calls. `dag_runtime` returns
+its 24-byte aggregate through an explicit pointer and an unassigned
+`call void`, so its W1 host call bypassed the emitted sequential clone even
+with the pool inactive. Correct values and zero W1 steals did not distinguish
+those two bodies. The repair extends the existing pool-selected dispatch to
+ordinary unassigned void calls with a matching clone, preserving all arguments
+and the result pointer and joining without a result phi. Separate void labels
+preserve assigned-call output; unmatched calls remain unchanged. These are
+straight-line wrappers, with no support for rewriting arbitrary LLVM control
+flow. This restores the existing
+[two-world selection](../../../design/compiler/parallel-lowering/two-worlds.md),
+without a new ABI, specification rule or scheduling decision.
+
+The criterion published in [PR100](https://github.com/mbbill/Whitefoot/pull/100)
+before implementation and qualification required one maintained backend case
+covering both result ABIs, multiple calls/functions, nonzero results, canaries
+and uncloned controls, plus byte-identical existing assigned-call output. The
+real consumer check selected the frozen checkpoint-19 module and unchanged
+probe/runtime objects, plain `wf-runtime-tree` once at W1 then W4, with actual
+root-entry counters: 1,484 sequential/zero parallel calls at W1 and the reverse
+at W4. Every oracle must pass, W1 must have no steals and W4 must observe work
+participation. Native construction and execution had separate 30-second caps; absent
+participation or another failure would remain unmet evidence without a rerun.
+
+The maintained
+[`compute_host_adapter_selects_world_for_both_result_abis` case](../../../compiler/src/backend/tests/ranges.rs)
+passed both widths in one LLVM/C image using the real runtime selector. It checks two
+cloned scalar calls, four cloned indirect-result calls and two unmatched
+controls across two wrappers, including 15 output words and ten outer canaries.
+Actual-entry counters distinguish the worlds even when their results agree.
+Binding the exact same fixture with the old binder passed its value/canary
+checks but exited 7 at the world-counter check at W1. All ten existing formal
+adapter files, containing 19 assigned calls, produced byte-identical old/new
+binding output; the mixed fixture also preserved its assigned dispatch blocks
+and unmatched calls. Rust construction took 79.52 seconds (79.58 with guard);
+the focused test took 1.04 seconds, including 0.769433 seconds of native
+construction. This tiny case makes no offers and establishes no helper participation.
+
+The real DAG check reused the original source/LLVM, probe object and all twelve
+baseline runtime objects. Its scratch instrumentation added only counters at
+the two actual `dag_runtime` entries. Both selected matrices passed once:
+
+| Workers | Sequential entries | Parallel entries | Helpers | Actual steals | Cases with steals |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 1,484 | 0 | 0 | 0 | 0 |
+| 4 | 0 | 1,484 | 3 | 4,070 | 961 |
+
+Each width checked 1,471 valid cases, 7,167 task rows, 1,471 routing reports,
+thirteen malformed controls and one rejected output corruption. Values,
+exactly-once counts, inputs, output/extra-cell boundaries and report canaries
+passed. The costly C4 witness returned `{status, rounds, notices}={0,3,4}` at
+both widths, with zero/two steals respectively. Native construction took
+0.36 seconds (0.44 with guard), and the two executions together took
+0.43 seconds (0.54 with guard). These are qualification costs, not speed data.
+
+The existing [DAG evidence stream](../../experiments/compute-bench/dag-fanin-2026-09-23.tsv)
+retains concise commands, identities, summaries and raw entry/witness rows;
+the maintained backend case owns regression coverage without a research
+dependency. Earlier runtime-adjacency rows and the separate PR105 aggregate-
+capture results retain their original-binder scope. This check does not
+requalify those runs, the failed timing controls or the withdrawn candidates,
+and adds no timing, trace-overlap or compiler-policy conclusion.
 
 ## Binary-split merge pressure
 
