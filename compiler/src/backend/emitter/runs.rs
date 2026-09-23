@@ -590,6 +590,22 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let llvm = llvm_type(self.program, run_type)?;
         let slot = self.run_storage(run)?.ok_or(BackendFailure::InvalidIr)?;
         let pointer = self.next_temporary()?;
+        if self.window_address_facts == WindowAddressFacts::Emit {
+            // For positive stride S, the qualified complete object or
+            // allocation has H + cap*S within the signed address domain.
+            // OP-4/OP-10 and WIN-1 bound this physical index by cap, including
+            // an empty range's one-past pointer. Its i64 value is therefore
+            // nonnegative; for zero stride the actual operand above is zero.
+            // Together with inbounds and the containing parent's qualified
+            // extent, this states that the payload offset cannot reach back
+            // into the header. It does not constrain logical Ring wrap sums.
+            self.intrinsics.insert(IntrinsicDeclaration::Assume);
+            writeln!(
+                self.output,
+                "  %{pointer}.nonnegative = icmp sge i64 {physical}, 0\n  call void @llvm.assume(i1 %{pointer}.nonnegative)"
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+        }
         writeln!(
             self.output,
             "  %{pointer} = getelementptr inbounds {llvm}, ptr {slot}, i64 0, i32 {}, i64 {physical}",
