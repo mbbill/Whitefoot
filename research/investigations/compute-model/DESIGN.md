@@ -1731,6 +1731,13 @@ for serial initialization. Reusing exact target layout for nominal captures
 would need to preserve aggregate payload transport, alignment and the fixed
 256-byte bound; it is not part of this source experiment.
 
+Those observations belong to frozen main `345e2966a`. The later
+[selected-target fitting control](#selected-target-loop-frame-fitting)
+qualifies the 72-byte initialization frame and useful worker execution on a
+larger control using the same source. The original small matrix and its
+recorded source/runtime/adapter identities remain unchanged; neither result
+establishes a speed gain.
+
 The balanced sibling pair has PAR-1 permission and emitted acquisition,
 publication, refusal fallback, join and release. Each offer occupies 224 bytes:
 ten range descriptors, six u64 arguments, unit result/padding and the recursive
@@ -4627,11 +4634,12 @@ captures have already been selected. Its unchanged
 has SHA-256
 `1d536089caa1204af95569817760471fd0006613b6c7c6c08ea95a29d1304ffe`.
 The two retained inputs are the output range descriptor and a used `TaskCell`
-value. The current splitter charges 40 fixed bytes, 16 descriptor bytes and
+value. That frozen splitter charges 40 fixed bytes, 16 descriptor bytes and
 256 bytes for any nominal, giving 312 against the unchanged 256-byte slot.
 The target representation of `TaskCell` is two u64 fields; the same ordered
-frame would occupy 72 bytes. That is a layout deduction, not an emitted or
-qualified candidate. The prior trial's twelve native configurations qualify
+frame would occupy 72 bytes. At protocol publication this was a layout
+deduction, not an emitted or qualified candidate; the result below supplies
+the later qualification. The prior trial's twelve native configurations qualify
 its original behavior only, and its small inputs do not supply positive grain
 for this initialization. This obstruction is neither unused capture retention
 nor the separate serial fill inside an allocation primitive.
@@ -4672,10 +4680,9 @@ context and splitter, and driver/error plumbing. Ordinary call layout remains
 a consumer of the same query. The two-world clone rule, source permissions,
 capture reconstruction, CFG reuse, storage representation, runtime policy and
 language rules retain their current grounds. The
-[pending addition](../../../design/amendments/loop-target-fitting.md) to
+[approved addition](../../../design/compiler/parallel-lowering/two-worlds.md) to
 `compiler/parallel-lowering/two-worlds` extends its rescue decision; no current
-decision is replaced or retired. No specification or conformance change is
-proposed.
+decision is replaced or retired. No specification or conformance rule changed.
 
 Enlarging lane slots would charge all tasks without resolving the estimator's
 missing type information. A second size calculator could disagree with
@@ -4872,8 +4879,11 @@ The pinned host adapter recognizes assigned result calls; its indirect-result
 `call void @wf_dag_runtime` remains direct at both worker counts. W1 has no
 pool and receives zero split budgets. That route is preserved in this
 capability control and is not presented as a cost comparison of ordinary W1
-world selection. The [deferred adapter extension](../../../docs/todo.md)
-must be qualified before an indirect-result benchmark selects a speed change.
+world selection. The later
+[adapter repair](#indirect-aggregate-result-adapter-repair-2026-09-23) qualifies
+ordinary W1 sequential-world and W4 parallel-world entry for both result ABIs.
+This pinned control continues to reproduce the earlier binder and its recorded
+route; its rows do not measure the corrected W1 entry cost.
 
 The native allocation inventory is bounded by phase. Graph costs and successor
 slots require `24*N` bytes. Generic oracle construction peaks at `128*N + 4096`
@@ -4968,10 +4978,10 @@ initializer and nonzero aggregate transports without another representation
 walker or refused-loop rewrite. The initial estimate still owns pruning and
 helper order, and fitting scalar emission is unchanged. Wider capture pruning
 and allocation-fill parallelism remain separate deferred opportunities. The
-observed indirect-result research adapter limitation is now recorded with a
-validation/reopening condition in TODO; repairing that adapter is unnecessary
-for this capacity criterion. No language rule, specification or conformance
-verdict changed.
+later [adapter repair](#indirect-aggregate-result-adapter-repair-2026-09-23)
+closes the indirect-result world-selection TODO; the capacity observations
+above retain their original pinned binder and limits. No language rule,
+specification or conformance verdict changed.
 
 ## Query-retained zero-budget dispatch control
 
