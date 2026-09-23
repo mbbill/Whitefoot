@@ -1747,3 +1747,25 @@ criterion passed. Reopen that choice for a consumer
 dominated by retained reverse calls, a changed native toolchain, or a further
 material regression under the same matched-contract comparison. The
 maintained TODO keeps the remaining scalar gap and cost attribution open.
+
+## Inactive payload initialization compiler trial
+
+The maintained owning map selected the enum-bucket representation, compact
+returned-pair result and shared exchange helper. Its optimized construction
+and rebuild still initialize inactive payload storage, while the native
+controls initialize occupancy only. Starting from merged main `45ef2d53e`,
+the next question is whether the compiler can omit that work while preserving
+defined active values and the same ordinary ownership and call semantics.
+
+The experiment keeps the actual library source, representation, ABI,
+allocation policy and algorithm fixed. It neither reopens the library
+selection nor combines clearing with aggregate forwarding or enum overlay.
+Slab and Vector serve as bounded cross-consumer checks; their recorded
+transfer, layout and short-cycle questions remain open unless separately
+resolved by evidence. No source rule or container interface change is proposed.
+
+The prospective workload matrix, same-image null comparison, selection and
+stopping criteria, correctness boundaries and execution budgets are recorded
+once in the existing [map comparison](../../experiments/container-representation/map-library/RESULTS.md#same-source-inactive-storage-lowering-comparison),
+before compiler implementation or timing. That record owns the detailed
+measurement evidence; instruction counts alone will not establish a speedup.

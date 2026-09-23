@@ -8,13 +8,17 @@ which checks the native controls only. `map-check` also executes the source
 candidates and owning-child callers in three CLI configurations, checks their
 exact allocation identities with the existing formal observer, and compares
 WF/C trace contents and allocation totals. `map-measure` is the explicit
-timing caller; it is not a daily gate. The original eight-path source/control checks
-and the first paired timing matrix passed. The measurements split the
-representation tradeoff: sparse lookup/edit and dense wide rebuilding win
-different traces. They reopen the ordinary single-slot direct-migration
-alternative; they do not select a library representation yet. Keep this experiment while it
-owns this library comparison; remove it when a maintained successor preserves
-the same contracts and evidence.
+timing caller; it is not a daily gate. The original eight-path source/control
+checks and first paired timing matrix split the representation tradeoff:
+sparse lookup/edit and dense wide rebuilding won different traces. That
+original stage reopened the ordinary single-slot direct-migration alternative
+without selecting a library representation. The later
+[constant-interface comparison](#constant-interface-comparison-and-selected-helper-body)
+selected the maintained enum-bucket library with a shared exchange helper and
+compact returned-pair result. Its remaining initialization cost is now the
+consumer for the [same-source compiler comparison](#same-source-inactive-storage-lowering-comparison).
+Keep this experiment while it owns these comparisons; remove it when a
+maintained successor preserves the same contracts and evidence.
 
 ## Contract fixed before measurement
 
@@ -1123,3 +1127,160 @@ floor and is used in the table. Its cleanup remains ascending, while WF and
 source-shaped staged C clean up in descending order. The floor also avoids
 the source's staging/result work and inactive-payload clearing, so the whole
 gap cannot be assigned solely to the compiler or to layout.
+
+## Same-source inactive-storage lowering comparison
+
+This prospective criterion is fixed before implementing or timing the next
+compiler candidate. The baseline is merged main `45ef2d53e`. The question is
+whether omitting initialization of inactive storage improves the maintained
+owning map without changing its source contract, active-value semantics or
+representation. The earlier source comparisons identify retained stores but
+do not establish their share of elapsed time.
+
+### Fixed inputs and attribution boundary
+
+Build A with the baseline compiler and B with only the candidate compiler
+change. Both compile byte-identical current `lib/containers/hash-map.wf`,
+`map-library.wf`, comparison sources and C driver, using the same target,
+Clang flags and runtime objects. Preserve the shared exchange helper,
+24/272-byte bucket and compact Put layouts, allocation policy, hash functions,
+seeds and complete operation traces. Do not combine this comparison with
+`inline-rebuild.patch`, enum overlay, a different result ABI or a separate
+aggregate-transfer optimization. Record source, compiler, raw/optimized IR,
+native executable and runtime identities; the C optimized modules must agree
+between A and B.
+
+Reuse normal and retained modes with the existing public-operation and
+callback retention rules; private helpers remain ordinarily optimizable.
+Inspect optimized IR and native instructions for initialization stores,
+actual payload transfers, retained calls and local stack reservations.
+Layout, allocation requests/bytes/peaks and cleanup must remain equal.
+Removing a clear can change subsequent optimization: the experiment then
+measures the entire compiler change, not the clear's isolated latency.
+Neither fewer copy intrinsics nor the normal/retained time difference measures
+copy or call time by itself.
+
+### Selected workloads and checks
+
+Use the existing `map-costs.c` trace bodies, independent key-ID/content oracle,
+allocation accounting and seventeen-column CSV. Add only an explicit
+measurement-set selection in that driver and its existing Makefile caller.
+The earlier `library` set omits hit, edit and setup traces, while `primary`
+excludes the maintained library; neither alone supplies this comparison.
+Every row below uses the mixed hash distribution and seven-eighths occupancy.
+
+| Capacity / live count | Payloads | Paths | Workload cells |
+|---|---|---|---:|
+| 4096 / 3584 | u64 and 256-byte record | grow, rehash, setup-cleanup | 6 |
+| 64 / 56 | u64 and 256-byte record | replace, churn | 4 |
+| 64 / 56 | u64 and 256-byte record | hit, edit-first-word | 4 |
+
+All fourteen cells compare the actual WF library with the existing native
+ascending sparse control. The four grow/rehash cells additionally include
+the existing source-shaped staged C control. This gives 32
+cell/implementation combinations. Ascending C supplies the common timing
+control; its migration/cleanup order differs from WF, so its entire gap is
+not compiler cost. Staged C retains the source algorithm but does not
+initialize inactive payloads. No dense or per-bucket-window competition is
+reopened by this experiment.
+
+The two preselected primary consumers are the 4096-capacity record grow and
+rehash cells. Setup includes filling and cleanup and prices construction as a
+whole. Hit and edit test paths whose hot loops do not need the targeted empty
+payload initialization; their setup can still benefit. Do not subtract setup
+time to claim isolated operation latency. Preserve existing rounds and trace
+repetitions, eleven seeds, two reversed cohorts, implementation rotation and
+both helper modes. Each image contributes `32 * 11 * 2 * 2 = 1408` samples.
+
+Keep the complete existing correctness matrix, rather than narrow correctness
+to the timing cells. It covers empty/singleton/irregular/full capacities,
+three round counts, three seeds and two hash distributions. The formal
+`hash-map-program.wf` caller already covers zero capacity, unit/unit pairs,
+must-consume Box-owning keys and values, hostile equality, capacity refusal,
+owned callback results and all operation outcomes. Run its existing three
+CLI configurations with ordinary execution and the exact 28-allocation
+observer ledger. Zero-size cases are semantic and emitted-code controls,
+not new sub-clock-resolution timing workloads. Active tags, descriptor words
+and payloads must remain defined through construction, consumption, every
+selected variant and ordinary call boundaries.
+
+### Null control, order and selection rule
+
+First execute a null comparison whose two labelled sides A1 and A2 invoke
+the exact same baseline executable for each mode. Then execute the real A/B
+comparison in the same order. Each comparison has these four groups:
+
+1. First side, cohort zero: normal then retained.
+2. Second side, cohort zero: normal then retained.
+3. Second side, cohort one: retained then normal.
+4. First side, cohort one: retained then normal.
+
+The driver still rotates implementation order for each sample and reverses
+it between cohorts. Keep separate image identities and every raw sample,
+including tails. The null comparison has 2816 rows and A/B another 2816,
+for 5632 initial timing rows. A/A requires no second build. Do not treat
+the null halves as independent compiler variants.
+
+For equal seeds and trace sizes, report raw B/A, native-C B/A, and
+`(B_WF / B_C) / (A_WF / A_C)`. Take medians of these per-sample ratios,
+separately by cell, mode and cohort, rather than ratios of independent
+medians. Report staged C separately on the four rebuild cells. Its result
+qualifies algorithm cost, not a replacement normalization selected after
+seeing which control favors the candidate.
+
+The initial screening margin for each cell and mode is the maximum of:
+
+- 3%, the preselected materiality scale for this bounded experiment;
+- the largest absolute deviation from one of either cohort's raw or
+  C-normalized A/A median ratio for that cell and mode;
+- the timer-quantization envelope. Let `q` be the observed clock quantum and
+  `t_min` the shortest participating interval in that cell and mode across
+  null and A/B samples. For `t_min > q`, use
+  `((t_min + q) / (t_min - q))^2 - 1`, covering the four intervals in a
+  normalized ratio; an interval at or below `q` cannot select an improvement.
+
+This screen is not a confidence interval or a universal parity threshold.
+At least one preselected primary consumer must improve beyond its margin
+in both modes and both cohorts, with raw and C-normalized ratios agreeing
+in direction, before claiming a repeatable runtime benefit. No preselected
+cell may retain an unexplained regression beyond its own margin. Publish
+the before/after WF/C gaps without assigning all residual cost to stores,
+layout or helper boundaries. Initialization counts alone cannot select
+production behavior.
+
+Any correctness, defined-active-state, layout, allocation or ownership
+failure stops performance selection and is reported. If an apparent gain
+cannot be distinguished from null/control drift, directions reverse, or a
+material regression needs confirmation, permit at most one replay of this
+same full protocol with the outer invocation order reversed. Keep its
+results separate; do not add workloads, change seeds or pool away a reversal.
+Persistent sign changes or null variation comparable to the proposed gain
+mean the timing result is inconclusive and further sampling stops. If no
+relevant optimized code changes, record that outcome without inferring a
+speedup or inventing another consumer to rescue the candidate.
+
+### Other consumers and execution budget
+
+For Slab and Vector, first compare same-source A/B optimized IR and native
+instructions and run their complete existing correctness oracles. They test
+one-slot storage and existing consumption paths, respectively. If their
+relevant optimized bodies are unchanged, do not add timings. If this compiler
+change affects those bodies, reuse the affected consumer's complete existing
+normal/retained timing matrix and C controls; do not select only favorable
+lengths or payloads. Report this additional scope and sample count separately.
+The known Slab aggregate-return/layout costs and Vector short-cycle costs
+remain independent questions unless this controlled comparison resolves them.
+
+Across this bounded program experiment, including any triggered consumer
+checks and the one permitted replay, allow at most 180 seconds for experiment
+construction, 60 seconds for correctness execution and 60 seconds for timing.
+These are investigation limits, never source-acceptance budgets. Exceeding
+one triggers investigation and a report before further heavy commands; it
+does not justify dropping cases or overlapping another run. Historical map
+construction was about 21 seconds per image, cached cost checks about
+1.5 seconds, fixture-inclusive checks about 14 seconds, and the prior
+7744-row ABBA timing about 5.4 seconds; these guide cost monitoring rather
+than promise current durations. Guard heavy commands, separate construction
+from execution, and record Rust compiler construction and the final canonical
+gate separately from these program budgets. No new script, experiment
+directory, library copy or daily-gate dependency is needed.
