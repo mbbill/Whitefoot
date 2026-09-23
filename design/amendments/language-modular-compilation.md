@@ -4,6 +4,8 @@ Decision: A program is a closed, explicitly selected graph of interface-defined 
 
 Decision: One project-root graph file is the sole source of declared module dependencies, with each canonical module appearing once and listing only earlier modules as direct dependencies for both its interface and implementation, because explicit adjacency plus strict declaration-position descent makes the DAG inspectable and locally checkable while graph edits leave namespace paths unchanged, instead of ordered namespace subtrees, distributed ranks, repeated source import lists or unordered edges followed by cycle detection.
 
+Decision: The graph file owns source-root bindings, the optional public ordinary-function entry and any graph-wide no-heap declaration, with every listed module checked independently of entry reachability, because these are properties of selected program composition rather than one module's public API and an unused definition must not evade existing checks, instead of working-directory root search, implicit main selection, entry-reachable-only acceptance or program policy in a reusable module interface.
+
 Decision: Cached and fresh compilation establish the same specified judgments through one checker, with modular proof publication retaining the existing recursive-component restrictions and complete current dependency validation, because an implementation edit can change summary availability without changing a signature and a cache must not authorize a circular proof, instead of treating imported declarations or previously successful cache entries as independent fact sources.
 
 Rejected:

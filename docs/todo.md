@@ -17,8 +17,13 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   `.wfm` paths mirror directory namespaces. One project-root graph file is the
   proposed sole dependency authority, with ordered module rows listing exact
   earlier targets; `.wfm` and `.wf` do not duplicate dependency lists.
-  This remains an amendment, not implemented capability. Specify the complete
-  graph grammar and filename, canonical roots, row uniqueness, earlier-target
+  File-local alias headers may abbreviate canonical module or declaration names
+  without granting graph edges, creating new identities or exporting aliases;
+  `.wfm` carries all aliases needed to read its own API. This remains an
+  amendment, not implemented capability. Specify the complete `modules.wfg`,
+  interface/source and alias grammars with qualified-name factoring; naive
+  segmented paths make value/call alternatives share `IDENT ::` prefixes.
+  Validate canonical roots, row uniqueness, earlier-target
   checks, graph closure and public/implementation lookup against the same row.
   Reject undeclared references even to earlier or transitively reachable
   modules. Qualify parent/child edges in either permitted order and acyclic
@@ -29,11 +34,20 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   one file does not promise one-line repairs or conflict-free collaboration.
   These costs remain unmeasured; compare matched dependency edits before
   claiming an advantage over distributed ranks or subtree ordering.
+  Validate the graph-owned optional entry/no-heap declaration, check-only
+  library graphs, disconnected selected definitions and working-directory
+  independence, including distinct entry-only and program-policy invalidation.
+  Keep unused implicit prelude availability under its existing rules. Exercise
+  alias file isolation, domain/case/collision checks,
+  wrong targets, private access, chains and attempted re-export. Compare
+  same-target renaming with retargeting and body moves into a different alias
+  environment; retain ordinary scope invalidation when an unused alias collides.
   Validate complete interface/qualified grammars, normalized declaration
   correspondence, public semantic closure, order-independent top-level
   formation and checked abstract nominal capabilities/representation. Qualify
   direct directory membership without child collection, path/case/alias
-  ambiguity, namespace/declaration collisions and cross-file private calls.
+  ambiguity, selected-namespace/declaration collisions, exclusion of unselected
+  modules and cross-file private calls.
   Public declaration duplication and useful module sizes remain unmeasured.
   Preserve ordinary privacy without transitive access or parent/child
   privileges. Subtree-private separately compiled modules remain unselected:
@@ -42,6 +56,11 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   accessor facts in a body cannot express a private requirement in a wrapper
   or function-kind formal while FN-8 forbids ordinary calls in contracts; await
   owner direction on the proposed checked proof-expression/abbreviation route.
+  Public logical observations need a typed, pure total checked interpretation,
+  finite formation, state/support/write-kill rules and precise abstract effect
+  correspondence before selection. Validate a GrowVector wrapper and function-
+  kind formal preserving requirements and useful footprints without runtime
+  proof work; ordinary name aliases do not supply that mechanism.
   Copying hidden paths into a public interface does not satisfy self-containment.
   Establish component-proof composition, exercise graph-edge deletion and
   SCC changes despite acyclic module imports, and qualify complete LLVM

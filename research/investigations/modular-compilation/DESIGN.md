@@ -101,9 +101,10 @@ referenced dependency interfaces, without looking through its implementation
 files or requiring a generated interface to discover missing declarations.
 Self-containment is relative to explicitly named external interfaces, not
 duplication of every dependency's API into one file. External references are
-fully qualified in the public declarations; dependency permission comes only
-from the root graph file, not a second import list. Compiler inputs for layout,
-specialization and optimization are a separate concern.
+fully qualified or use aliases declared in that same interface file; dependency
+permission comes only from the root graph file, not a second import list.
+Compiler inputs for layout, specialization and optimization are a separate
+concern.
 
 This requirement selects full public declarations over the earlier thin
 export-list candidate. Checked repetition of a function declaration is an
@@ -134,8 +135,8 @@ selected requirement that the handwritten public contract stand on its own.
 ### One complete public interface file
 
 Each source module has exactly one `.wfm`. Its root-relative path owns the
-module name; its contents own complete public declarations, including fully
-qualified references to external declarations. Every ordinary top-level
+module name; its contents own complete public declarations and any file-local
+aliases needed to read their external references. Every ordinary top-level
 declaration in that file belongs to the public API; there is no separate
 export list or implementation-side `pub` switch. Public function declarations
 include generic parameters and bounds, parameter/result labels and modes,
@@ -143,7 +144,9 @@ types, capabilities, effects, and complete `requires`/`ensures` clauses.
 Public constants and interface/binding groups include their public definitions.
 Public concrete records and enums declare their externally visible schema
 there. No interface fragment, textual include, wildcard export or forwarding
-alias can fill in an omitted part from an implementation file.
+alias can fill in an omitted part from an implementation file. Alias headers
+are local name bindings rather than public declaration items; placing one in
+`.wfm` does not publish a second name for its target.
 
 The project-root graph file explicitly binds canonical source roots and names
 each selected module's direct dependencies. The filesystem rule below determines
@@ -220,9 +223,10 @@ All implementation files form one module namespace and one local declaration
 inventory. A helper defined in one file can be used by another, including
 mutual function recursion, without an interface entry, import or export.
 File boundaries are locations for authorship and diagnostics, not privacy,
-name-resolution or source linking boundaries. The public interface selects
-which of these identities external modules may use; it does not mediate
-internal references.
+shared-declaration visibility or source linking boundaries. File-local alias
+headers provide the separate abbreviation scope described below. The public
+interface selects which of these identities external modules may use; it does
+not mediate internal references.
 
 Each module's own implementation has a flat local inventory. Directory paths
 organize modules into qualified namespaces as specified below; a child `.wfm`
@@ -232,9 +236,9 @@ module-private declarations, and local spelling collisions still need ordinary
 diagnostics. Splitting a file inside the same module does not grant privacy.
 
 Local uses resolve against the full inventory; dependency uses have an
-explicit root-qualified path such as `app::counters::advance`. Module roots and
-local
-names have unambiguous ownership. There is no wildcard import, implicit
+explicit root-qualified path such as `app::counters::advance`, possibly
+abbreviated by a file-local alias. Module roots, aliases and local names have
+unambiguous ownership. There is no wildcard import, implicit
 transitive import, overload search or cross-module namespace extension.
 Selected source/dependency identity, canonical module path and local declaration
 identity determine a nominal, not its printed path without the selected root.
@@ -242,9 +246,9 @@ Implementation filenames do not determine declaration identities. Re-exports
 and export renaming remain unselected; a stable facade over independently changing
 modules is the concrete consumer that would reopen that choice.
 
-Collect all top-level names before resolving definitions. Functions, nominals,
-constants and interface/binding groups are visible independently of file/item
-order. This changes TYPE-6's lexical visibility of non-function top-level
+Collect all module declaration names before resolving definitions. Functions,
+nominals, constants and interface/binding groups are visible independently of
+file/item order. This changes TYPE-6's lexical visibility of non-function top-level
 declarations and CONST-2's earlier-declaration requirement. Name availability
 does not establish a valid value, type or proof: constant dependencies and
 group expansion remain acyclic, and finite instantiation and finite layout
@@ -260,10 +264,86 @@ do not gain dependency lookup. Existing `::` generic-call syntax requires
 factoring with qualified names in the strong-LL(2) grammar; this document does
 not claim that the complete productions have been checked.
 
-The build selects a module-qualified entry. The selected root interface owns
-`program no_heap;`, which constrains the entire selected dependency closure,
-including implementation-only dependencies, concrete instances and prelude
-definitions. Moving an allocation into a private dependency cannot hide it.
+The root graph owns the optional module-qualified entry and graph-wide
+`program no_heap;` declaration. A module interface no longer owns this
+program-wide choice. The constraint covers the complete selected graph,
+including dependencies used only by implementation and concrete instances,
+under STOR-8's ordinary type and call restrictions. Source uses of prelude
+declarations obey those restrictions; the implicit presence of an allocating
+prelude declaration is not itself a call. Moving an allocation into a private
+dependency cannot hide it.
+
+### File-local name aliases
+
+Introduce one header form, illustrated here before ordinary declarations:
+
+```text
+alias vec = app::containers::vector;
+alias Vector = app::containers::vector::Vector;
+alias append = app::containers::vector::append;
+```
+
+The file can then use `vec::append`, `Vector` or `append` in the roles their
+targets already admit. These are name bindings, not dependency declarations,
+new nominal types, function wrappers, generic specializations or textual
+macros. Alias resolution retains the original declaration identities and source
+locations; it does not rewrite the parsed tree into another source program.
+All generic arguments, named call arguments and ordinary proof obligations
+remain those of the target.
+
+Aliases occur only in a file's initial header, before all ordinary items, and
+are visible throughout the remainder of that file. They do not enter the
+module's shared declaration inventory. Different implementation files may use
+the same alias spelling for different targets; their actual functions/types
+still belong to the shared module inventory. There is no block-local alias,
+module-wide alias side file or implicit inheritance from `.wfm` into `.wf`.
+An interface must declare its own abbreviations, rather than obtain them from
+implementation files. This keeps reading and concurrent editing local.
+
+Every alias target is a complete canonical path beginning with a bound source
+root. It names a module or a source declaration spelling, with no alias on the
+right-hand side, relative-parent search, wildcard, grouped import, supplied
+generic argument or arbitrary type expression. There are no alias chains or
+cycles to resolve. A module/function/constant alias uses IDENT; a nominal,
+constructor or interface/binding-group alias uses TYPEID. Primitive types,
+operation-table rows, built-in numeric bounds, locals, fields, labels and proof
+invariant names are not alias targets.
+
+A declaration alias preserves the target path's entries in the ordinary
+grammar-selected name domains. A struct spelling therefore retains both its
+nominal and constructor entries; an enum type alias does not automatically
+bind its variants. If one legal canonical spelling has distinct entries in
+different domains, the alias preserves that distinction rather than resolving
+by expected type. Owner-dependent member labels are unchanged: aliases do not
+rename fields, named arguments, payload-field variant labels or result labels.
+Wrong-class uses receive the ordinary domain error. Duplicate alias names
+reject, and every occupied domain obeys the existing collision/no-shadowing
+rules. Module aliases also cannot shadow a canonical source-root name; they
+occupy the file's IDENT binding space but have no value or callable use.
+
+Targets are checked even when an alias is unused. A foreign target requires
+the owning module's direct edge and public visibility; a local target uses
+the current module's ordinary visibility. In `.wfm`, local targets must be
+declared in that same interface. Each use of a module alias still checks the
+canonical final owning module: naming a parent grants no child-module edge.
+Removing a dependency while an alias still names it is a source error, just
+as retaining an ordinary qualified use would be. Aliases never repair a
+missing graph edge, expose a private declaration or re-export the target.
+
+Interface and implementation declarations may choose different aliases or
+full paths. Correspondence compares resolved identities and normalized
+contracts, not the abbreviation spelling. Alias renaming alone creates no
+new nominal identity, generic instance, ABI name or runtime work. A changed
+target can change meaning and must invalidate its actual lookup consumers.
+Moving a definition between files preserves identity but must preserve or
+rewrite its aliases to keep the same resolved body.
+
+Rust `use ... as ...` supplies a useful name-binding comparator [E12]. WF's
+candidate deliberately has file scope, one header form, no glob/group imports
+and no public re-export. The spelling `alias` avoids overloading WF's existing
+`use` proof-step keyword; the two contexts could be parsed separately, so this
+is a clarity choice, not a claim of unavoidable ambiguity. The complete
+qualified-name grammar still requires qualification before implementation.
 
 ### Filesystem namespace paths and module ownership
 
@@ -309,10 +389,13 @@ conflicting root bindings and ambiguous canonical source paths. Reserve a
 child namespace component against a top-level declaration with the same name
 in its parent module: `vector/other.wfm` can coexist on disk with an exported
 function called `other` in `vector.wfm`, but that conflicting namespace is not
-accepted. The namespace inventory records those path components and negative
-lookups; it does not infer access privileges from their existence. Canonical
-path/case/alias rules must yield the same names on supported hosts, with
-ambiguity diagnosed rather than resolved by filesystem iteration order. Their
+accepted when both modules are selected. The namespace inventory records path
+components and negative lookups for selected module rows and their namespace
+prefixes; unselected modules do not enter that inventory merely because their
+files exist. The inventory does not infer access privileges from a component's
+existence. Canonical path/case/alias rules must yield the same names on
+supported hosts, with ambiguity diagnosed rather than resolved by filesystem
+iteration order. Their
 complete acceptance spelling remains part of grammar/input qualification.
 
 Moving a function between direct files of the same module preserves semantic
@@ -330,20 +413,44 @@ through simple consistency and per-edge checks. The dependency graph is now
 independent of the namespace tree. Keep canonical path-derived names, but
 declare all source-module edges in one file at the project root.
 
-Use `modules.wfg` as a provisional filename in this design; its final spelling
-and complete grammar remain to be specified. This investigation does not add
-a placeholder file at the repository root. The graph file contains canonical
-source-root bindings and one ordered declaration for each module in the
-selected graph. Each declaration lists exact direct dependencies, all of which
-must have been declared earlier. For example, after binding the `app` source
-root, the following is illustrative notation, not accepted build grammar:
+Use `modules.wfg` as the proposed project-root filename. The complete grammar
+and canonical rendering still need qualification. The graph file contains
+canonical source-root bindings and one ordered declaration for each module in
+the selected graph. Each declaration lists exact direct dependencies, all of which
+must have been declared earlier. The following is illustrative notation,
+not accepted build grammar:
 
 ```text
-app::shared::memory : [];
-app::vector::other  : [app::shared::memory];
-app::vector         : [app::shared::memory, app::vector::other];
-app::main           : [app::vector];
+root app = ".";
+
+app::shared::memory: [];
+app::vector::other: [app::shared::memory];
+app::vector: [app::shared::memory, app::vector::other];
+app::main: [app::vector];
+
+entry app::main::run;
 ```
+
+The schema is an optional graph-wide `program no_heap;`, one or more root
+bindings, one or more module rows, and an optional entry declaration, in that
+order. Root paths are explicit strings relative to the graph's project root,
+not the process working directory or an environment search path. A root name
+and every module-path component use WF's IDENT spelling; implementation
+filenames do not become identifiers. Selected roots and paths must have one
+unambiguous canonical interpretation on supported hosts; multiple names for
+one canonical module cannot evade row uniqueness or change nominal identity.
+
+All rows belong to the selected graph, including disconnected modules; entry
+reachability does not remove their required source checking. Checking a library
+graph needs no entry. Executable construction requires exactly one public
+ordinary function entry in a listed module, with the existing PROG-3 argument
+and contract obligations. The graph names the function; ordinary generic and
+runtime argument binding and result interpretation still belong to the build
+invocation under FN-7/PROG-3, without a new entry-signature restriction. The
+entry is not an alias from some source file.
+The no-heap declaration constrains the whole selected graph, not just entry-
+reachable functions. PRE-1 remains the compiler-owned implicit inventory under
+its existing rules; it is not a hidden writer-selectable source module.
 
 Each row supplies two distinct pieces of information: its listed edges are
 the declared graph, and its position certifies those edges' direction.
@@ -352,13 +459,14 @@ list without adjacency would not expose which dependencies the program
 actually declares.
 
 For this candidate, the graph file is the sole source of module-dependency
-permission. Source files contain ordinary qualified references, not additional
-imports that create or repeat graph edges. There are no wildcard edges,
-automatic transitive imports, per-directory dependency files, includes,
-conditional edge expressions or dependency-generating scripts in this graph
-format. The build selects the graph and entry; it cannot add hidden source
-edges through another channel. These restrictions concern the source graph,
-not the compiler's separate semantic/optimization queries.
+permission. Source files contain qualified references or file-local aliases,
+not additional imports that create or repeat graph edges. There are no
+wildcard edges, automatic transitive imports, per-directory dependency files,
+includes, conditional edge expressions or dependency-generating scripts in this graph
+format. The build selects the graph; that graph declares any executable entry.
+The build cannot add hidden source edges through another channel. These
+restrictions concern the source graph, not the compiler's separate
+semantic/optimization queries.
 
 ### Local validation and the DAG argument
 
@@ -370,9 +478,10 @@ Validate the graph against the selected canonical source snapshot:
 2. Each dependency list names exact modules without duplicates. Every target
    must already have a valid declaration in this same graph. Self, forward
    and unknown references reject at the row and offending edge.
-3. Every external source reference must name a public declaration in an
-   explicitly listed direct dependency. Both interface and implementation
-   references obey this rule. A missing edge rejects even if the target row
+3. Every external source reference, after file-local alias resolution, must
+   name a public declaration in an explicitly listed direct dependency.
+   Both interface and implementation references obey this rule. A missing
+   edge rejects even if the target row
    occurs earlier or is transitively reachable.
 4. The selected program is closed over declared dependencies and all selected
    definitions receive ordinary checking, including unused definitions.
@@ -417,13 +526,13 @@ access; prefixes without `.wfm` are still namespaces rather than modules.
 The former ordered-subtree counterexample becomes directly expressible:
 
 ```text
-app::A::a2 : [];
-app::B::b1 : [];
-app::B::b2 : [app::A::a2];
-app::A::a1 : [app::B::b1];
+app::a::a2: [];
+app::b::b1: [];
+app::b::b2: [app::a::a2];
+app::a::a1: [app::b::b1];
 ```
 
-Both `A/a1 -> B/b1` and `B/b2 -> A/a2` are legal with unchanged paths. No
+Both `a/a1 -> b/b1` and `b/b2 -> a/a2` are legal with unchanged paths. No
 complete subtree has to come before another. Shared providers can have many
 incoming edges without relocation into a special `shared` namespace. Moving
 a provider into such a directory is an organization choice, not an acyclicity
@@ -469,9 +578,9 @@ hash or changed numeric position must not invalidate all body proofs.
 
 The graph file makes dependency declarations inspectable in one place. A
 reader of a `.wfm` still sees its complete public signatures, contracts and
-explicitly qualified external references without implementation browsing;
-reading the graph establishes whether those references are authorized, not
-what an otherwise ambiguous public name means.
+external references, including every alias needed to interpret them, without
+implementation browsing; reading the graph establishes whether those
+references are authorized, not what an otherwise ambiguous public name means.
 
 ### Alternatives and selection grounds
 
@@ -572,8 +681,12 @@ Cache interface declarations, implementation declarations, correspondence,
 body checks and lookup results separately. Adding a private file checks its
 definitions and affected lookup/scope consumers, not all module bodies.
 Reordering the canonical source inventory changes no semantic identity. Moving
-a definition between files in the same module preserves its semantic identity and proof
-dependencies; source maps and debug-information consumers may still change.
+a definition between files in the same module preserves its declaration
+identity. Proof reuse additionally requires the same resolved body, including
+its new file's alias bindings; source maps and debug-information consumers may
+still change. Track used aliases, missing-name results and collision checks,
+not one whole-file alias-table hash in every body key. An added unused alias
+can still change a collision/no-shadowing result and must not bypass that check.
 Never key every body or object by the entire `.wfm` or build-file digest.
 
 Validate each external reference against the source module's normalized
@@ -598,7 +711,7 @@ This does not choose the units of compiler computation:
 
 | Boundary | Selected responsibility |
 |---|---|
-| Source file | Storage, editing, parsing and source coordinates |
+| Source file | Storage, editing, parsing, local alias bindings and source coordinates |
 | WF module | Public API, shared internal namespace, privacy and implementation ownership |
 | Checking query / proof component | Reuse of declarations, correspondence, body judgments and recursive proof publication |
 | LLVM optimization region | Bodies that need joint optimization under the chosen policy |
@@ -652,12 +765,12 @@ These families name responsibilities, not a proposed public Rust API:
 | Query | Relevant inputs | Reusable output |
 |---|---|---|
 | Source formation | Interface/source bytes, selected canonical roots, direct directory inventory, grammar/spec identity | Tokens, canonical trees, source maps |
-| Module surface / lookup | Canonical path components, public/private inventories, direct dependency paths, lookup role and spelling | Stable declaration or diagnostic |
-| Graph formation / edge validation | Root graph bytes, canonical module inventory, exact adjacency rows and earlier-target relations | Stable per-module dependency sets and valid order certificate, or located graph diagnostic |
+| Module surface / lookup | Canonical path components, public/private inventories, relevant file aliases, direct dependency paths, lookup role and spelling | Stable declaration or diagnostic |
+| Graph formation / edge validation | Root graph bytes, canonical module inventory, exact adjacency rows and earlier-target relations | Resolved roots, stable per-module dependency sets, entry, program policy and valid order certificate, or located graph diagnostic |
 | Module dependency permission | Canonical source/target identities and membership in the source's normalized adjacency row | Allowed direct dependency or missing-edge diagnostic |
 | Interface correspondence | Resolved public declaration and selected implementation declaration | Matching identity and checked normalized declaration, or diagnostic |
-| Contract / type shape | Resolved declaration, arguments, capabilities and projections | Normalized semantic boundary |
-| Template check | Symbolic body, bounds, callee boundaries and summary availability | Symbolic checked body |
+| Contract / type shape | Resolved declaration, arguments, capabilities, projections and applicable program policy | Normalized semantic boundary |
+| Template check | Symbolic body, bounds, callee boundaries, summary availability and applicable program policy | Symbolic checked body |
 | Concrete body check | Body, complete substitution and semantic query results | Typed body, ownership/effects and obligations |
 | Proof component | Current component membership, obligations and predecessor summaries | Verified clauses and derivations |
 | Allocation / call summary | Current local seeds and call edges | Specified fixed-point summaries |
@@ -673,6 +786,13 @@ edited file can be reparsed while unchanged item values stop downstream
 invalidation. Token-level editor parsing is not necessary to avoid checking
 untouched files and bodies.
 
+Graph parsing projects roots, per-module edges, entry and program policy
+separately. Source type/call checks read the no-heap policy where required;
+startup checking reads the selected entry, its signature and the invocation's
+bound arguments. Changing only the entry does not change every module's
+source judgments, while changing the no-heap policy must revalidate all of
+its affected uses, including disconnected selected definitions.
+
 Re-evaluate affected queries and compare their result values before invalidating
 consumers. A changed body with the same verified callable boundary does not
 change ordinary call-site checking inputs. Track negative lookup results,
@@ -681,9 +801,10 @@ unprofitable inline candidate can become relevant. Do not place the hash of
 every imported module's entire source in every consumer key.
 
 Separate stable identity from revision. Declaration identity uses selected
-module identity, declaration domain and name; item-local node identities plus
-the current source map recover diagnostic locations. Concrete instances add the complete
-normalized type, const and function argument vector. Dense FunctionId/NominalId
+module identity, declaration domain and name, never an alias spelling;
+item-local node identities plus the current source map recover diagnostic
+locations. Concrete instances add the complete normalized type, const and
+function argument vector. Dense FunctionId/NominalId
 values and whole-program NodePaths can remain in-memory indices, never
 persistent identity. Adding an unrelated declaration must not rename all later
 functions or LLVM symbols.
@@ -1042,8 +1163,8 @@ must update the affected rules together, not merely remove PROG-1's prohibition.
 
 | Owner | Before | Proposed change |
 |---|---|---|
-| PROG-1/2/3 | One ordered bundle, no modules, unqualified entry | One project-root ordered adjacency file is the sole source-module graph; earlier-target checks certify acyclicity independently of path-derived names and direct .wf ownership; checked composition remains required |
-| FORM-2/3, GRAM-1/2/3/4/5, DIAG-1 | One root and unqualified name roles | Complete interface/source and root-graph forms, module-qualified names and diagnostics joining graph rows, declarations and definitions |
+| PROG-1/2/3, FN-7 | One ordered bundle, no modules, build-selected unqualified entry | One project-root ordered adjacency file owns roots, optional entry and no-heap declaration; earlier-target checks certify acyclicity independently of path-derived names and direct .wf ownership; checked composition and ordinary startup obligations remain required |
+| FORM-2/3, GRAM-1/2/3/4/5, DIAG-1 | One root and unqualified name roles | Complete interface/source and root-graph forms, file alias headers, qualified names and diagnostics joining graph rows, aliases, declarations and definitions |
 | TYPE-6, CONST-2, FN-3 | Whole-unit identity; non-function top-level visibility follows source order | Path-qualified modules with shared local names; only structurally permitted direct interfaces are visible; ordinary privacy, order-independent top-level names, dependency validity and lexical local scope retained |
 | Public declaration correspondence / type representation | No separate interface or public/private source boundary | Self-contained public semantic declarations, exact normalized callable correspondence, one nominal identity, and checked abstract representation/capability correspondence |
 | Type/ownership/release consumers | Descriptions in one inventory | Same judgments over imported descriptions; privacy grants no storage or release exemption |
@@ -1053,12 +1174,13 @@ must update the affected rules together, not merely remove PROG-1's prohibition.
 | PRE-1 / native binding | Compiler-owned declarations and linked bodies | Bind selected prelude, runtime and target identity into composition/codegen inputs |
 
 The candidate uses the .wfm path as the module declaration and puts complete
-public declarations with fully qualified external references in that file.
+public declarations with explicit external references and any file-local
+aliases in that file.
 There is no second module-name declaration, source import list,
 implementation-side `pub` or namespace block. Direct directory membership
 determines implementation records. One project-root graph file binds source
 roots and lists ordered modules with their exact direct dependencies. Its
-provisional name is `modules.wfg`; exact graph syntax, declaration terminators,
+proposed name is `modules.wfg`; exact graph/alias syntax, declaration terminators,
 canonical path/collision rules, abstract nominal/capability syntax and
 normalized correspondence remain to be specified. META-5 deltas require the
 complete grammars and judgments with strong-LL(2) checks; no count is invented
@@ -1067,7 +1189,7 @@ here.
 | Current implementation owner | Required structural change |
 |---|---|
 | `source.rs`, syntax/canonical rendering | Canonical selected roots, direct directory snapshots, interface/source and graph grammar roots, stable path/item identity and source maps |
-| `resolution/engine*` | Canonical path namespaces, root-graph adjacency and earlier-target validation, direct-dependency permission checks, shared local inventories, public closure, correspondence and positive/negative lookup dependencies |
+| `resolution/engine*` | Canonical path namespaces, root-graph adjacency and earlier-target validation, file-local aliases, direct-dependency permission checks, shared local inventories, public closure, correspondence and positive/negative lookup dependencies |
 | `semantic/check.rs`, `check/generics*` | Query-owned body/instance checking and reusable owned results instead of whole-unit borrow chains |
 | `semantic/entailment*`, `postcondition.rs` | Stable claims, retained derivations, current SCC availability and composition |
 | `semantic/model.rs`, allocation/permission consumers | Stable identities and tracked fixed-point/target dependencies |
@@ -1136,6 +1258,78 @@ and expose limits; they are not measurements of WF or proofs of this design.
   selected full-declaration mechanism as a legitimate checked design, not as
   an inherently unverified boundary. WF's contract and nominal correspondence
   rules still need specification and evidence.
+- **E12 — [Rust use declarations](https://doc.rust-lang.org/reference/items/use-declarations.html).**
+  A use declaration creates synonymous local bindings and supports explicit
+  renaming. Rust also permits module/block scopes, grouped and glob imports,
+  and public re-exports. WF borrows the name-binding purpose, not that complete
+  scope/visibility system: aliases have file-header scope and grant no graph
+  edge, publication or new type identity.
+
+## Implementation entry and remaining semantic work
+
+The selected name/graph design can now be translated into the active
+specification and the compiler. That translation is implementation work;
+this investigation does not claim that a syntax sketch is already a complete
+language amendment. No second checker or temporary trusted-interface path is
+needed for the first usable multi-module build.
+
+The remaining responsibilities are concrete:
+
+| Area | Required behavior and evidence |
+|---|---|
+| Graph and source formation | `modules.wfg` owns roots, ordered exact edges, the optional entry and the whole-graph no-heap declaration. `.wfm` and `.wf` have alias headers followed by their own item forms. Verify all three complete grammars and canonical renderings with the ordinary generator/parser checks. |
+| Identity and lookup | Root identity and canonical module/declaration identity are separate from source revision, physical file placement, row position and aliases. Equal spellings in different modules are distinct; moving a body between files requires equivalent resolved aliases for reuse. |
+| Public correspondence | Form interfaces without reading implementation bodies; compare implementation headers by resolved type/const/function identities and normalized contracts. A matching declaration still needs its checked body and current composition evidence. |
+| Proof composition | Keep FN-6/FN-9 template, instance and recursive-component rules separate from the source DAG. Callers may reuse an unchanged claim only with current availability/evidence; deletion must retract dependencies and rebuild affected fixed points. |
+| Representation and abstract contracts | Concrete public types have complete public definitions in `.wfm`; private implementation types stay local. General representation-hiding public nominals additionally need checked capabilities, abstract logical vocabulary and effect/ownership correspondence. The existing gap below is not closed by aliases. |
+| Optimization and caching | Use the same query/checker path for cold and warm builds, retain checked generic bodies and physical layouts where needed, and track optimizer dependencies separately. Source module boundaries must not require runtime indirection or prevent cross-module specialization. |
+
+There is a specific syntax obstacle to resolve, rather than an invitation to
+use a symbol-aware parser. Current `expr := atom infix_tail? | call` can choose
+an unqualified value versus call using short token prefixes. Naively replacing
+names by segmented paths makes both a qualified constant and a qualified call
+start with `IDENT ::`, so the first two tokens no longer select those arms.
+Factor the shared name prefix and its call/value continuation in the complete
+grammar, preserving the ordinary distinction from `::<...>` generic arguments,
+group-member calls and owner-dependent field/variant labels. A lexical
+qualified-name representation is another viable technical alternative, but is
+not selected here. In either case run the existing strong-LL(2) and token-
+predicate checks before making parser behavior normative; no table counts or
+passing prototype are claimed by this design.
+
+The private-contract gap is more than a syntax question. The existing
+GrowVector preconditions use `storage.inner.len`, while FN-8 excludes ordinary
+accessor calls from contracts. Hiding that field prevents a wrapper or
+function-kind formal from stating the same requirement. A recommended research
+route is a public logical observation declared in `.wfm`, with a private,
+checked, pure total interpretation. Clients could name a length observation
+in requirements and invariants without naming a representation field. This
+would be proof syntax, not a name alias or an executable getter.
+
+Before selecting that mechanism, establish its typed interpretation, finite
+formation/expansion rules, value-state identity, entry snapshots, support and
+invalidation on writes. Also define abstract effect/region correspondence:
+replacing every precise footprint with `writes(values)` can lose independence
+that the current source can prove. Public guarantees need checked realization,
+not assumed axioms, hidden ordinary calls or new runtime checks. A concrete
+witness must carry GrowVector through an external wrapper and a function-kind
+formal, retain its preconditions and useful effect precision, and demonstrate
+that a state-changing operation kills the right facts. A by-value abstract
+type must still have compiler-available checked layout and capability/release
+facts. No observer/region syntax or new automatic proof family is selected
+here, and the existing P2 remains open until those judgments are specified.
+
+The first implementation should connect graph formation, qualified/alias
+resolution, complete interface correspondence and checked composition to the
+existing executable path using a real library and caller. Use the general
+query boundaries from the start, then persist them and qualify affected-region
+proof and optimized-code reuse on edits. A concrete public-type consumer can
+exercise this path while the abstract-contract work proceeds; it is not
+evidence that representation-hiding APIs work. The final endpoint retains the
+full proof, abstraction and optimization requirements rather than treating
+that first consumer as completion. Runtime quality, cache precision and
+multi-agent coordination require observations from implementation, not more
+unmeasured design prose.
 
 ## Discriminating validation criteria
 
@@ -1147,6 +1341,7 @@ measurements have been made for this proposal.
 Verify that a caller can determine every public signature, capability, effect
 and proof clause from the handwritten interface and explicit dependency
 interfaces, without implementation browsing or generated missing clauses.
+Every alias used by that interface must be declared in its own header.
 Use ordinary complete declarations, including generic/function-kind APIs.
 Preserve GrowVector's actual proof requirements when evaluating an abstract
 interface; its unresolved logical-vocabulary gap is not permission to weaken
@@ -1161,6 +1356,16 @@ dependencies. Changing only an implementation requirement must diagnose a
 correspondence failure. Interface-only declaration checking must not authorize
 lowering without a checked implementation. A private helper in one file must
 be usable from another without a public declaration or per-file import.
+
+Require equivalent interface/implementation signatures with different local
+aliases, and rejection when an alias instead names a different nominal or
+callable. Exercise module, function, constant, type/constructor and group
+aliases in their actual grammar roles, including generic calls, matches and
+contracts. Check file isolation, same short name with different targets in two
+implementation files, missing graph edges, alias chains, duplicate names,
+wrong-case/domain aliases, private targets, shadowing and attempted re-export.
+An alias in `.wfm` must not become a public member or silently enter a `.wf`.
+Owner-dependent field/argument/payload labels must keep their declared spelling.
 
 Permute directory enumeration and top-level item order; preserve local lexical scope
 and reject constant/group cycles and invalid recursive layouts by their actual
@@ -1189,7 +1394,9 @@ collect child implementation files; an unmatched implementation directory must
 not acquire an ancestor owner. Check that canonical directory enumeration,
 member addition/removal, duplicate declarations, namespace/declaration clashes
 and ambiguous root/path bindings have deterministic results across supported
-hosts. No implementation filename introduces another namespace.
+hosts. Only selected modules and their prefixes enter namespace lookup;
+adding an unselected module on disk must not silently add a declaration or
+name collision. No implementation filename introduces another namespace.
 
 Require a declared direct grandchild dependency and a cross-subtree
 `a/b/c -> d/e/f` edge when the target row is earlier. Exercise child-to-parent
@@ -1216,6 +1423,15 @@ queries separately. A single-file declaration does not imply a one-line diff,
 no merge conflicts or a solution for truly cyclic requirements. Consumer-scale
 coordination costs remain unmeasured.
 
+Exercise check-only graphs without an entry, executable entry resolution and
+no-heap enforcement over disconnected selected modules as well as the entry's
+dependency closure. Ordinary allocating-prelude calls still reject under
+no-heap, while unused implicit prelude availability does not. Working-directory
+changes must not change root binding.
+Canonical path aliases must not let one module appear twice in the graph.
+An entry-only edit preserves unrelated source judgments; a no-heap policy edit
+revalidates its affected type/call uses throughout the selected graph.
+
 Check incremental invalidation for graph edges, graph row ordering, root
 bindings, directory inventory, interface/body edits and path renames. A valid
 order-only edit must preserve module/declaration identities and unchanged
@@ -1228,6 +1444,14 @@ become all-body cache keys. Changing an ancestor's API has no effect on a leaf
 consumer solely because the names share a directory prefix. The strict
 position argument establishes the abstract guarantee, not implementation or
 performance.
+
+For aliases, compare renaming with the same target against retargeting to a
+different declaration. A semantics-preserving rename may update locations but
+must not duplicate generic instances or reprove unrelated bodies. Moving a
+body to a file with a differently bound alias must change its resolved input;
+adding an unused alias that collides with a local must still invalidate the
+scope check. These witnesses distinguish identity from spelling and prevent a
+blanket claim that alias-only edits never affect acceptance.
 
 ### Correctness and dependency precision
 
@@ -1297,15 +1521,15 @@ not have a requirement here and are not selected.
 The pending tree revision replaces the language root's closed-single-unit
 decision with one project-root ordered adjacency file for all source-module
 dependencies, including those used only by implementation. Earlier-target
-checks certify acyclicity without coupling dependency direction to directories. It replaces name-resolution's
-global inventory and top-level order dependence with
-filesystem-qualified modules, direct directory ownership, shared local names
-and complete checked public interfaces. Root graph rows declare the exact
-direct dependencies; row order certifies them without adding unlisted edges
-or private access privileges.
+checks certify acyclicity without coupling dependency direction to directories.
+It replaces name-resolution's global inventory and top-level order dependence
+with filesystem-qualified modules, direct directory ownership, shared declaration
+names, file-local aliases and complete checked public interfaces. Root graph
+rows declare the exact direct dependencies; row order certifies them without
+adding unlisted edges or private access privileges.
 The proposal also clarifies the compiler root's artifact boundary and adds one
-compiler child for persistent incremental computation. The constitution's safety and
-performance priorities, fixed deterministic proof families, generic
+compiler child for persistent incremental computation. The constitution's
+safety and performance priorities, fixed deterministic proof families, generic
 specialization and finite-cycle rule, callable contracts, source ownership,
 backend fact obligations, self-tail semantics and runtime model remain in
 force. The current generic scratch-analysis rejection is retained: different
@@ -1314,14 +1538,14 @@ verification contexts cannot share proofs merely because IDs are stable.
 Four uncertainties are implementation acceptance work, not weaker endpoints:
 
 - Verify interface/source grammars, exact declaration correspondence, public
-  semantic closure, abstract representation/capability matching, order-independent
-  formation and exact specification deltas. Qualify canonical root/path rules,
-  direct directory membership and namespace/declaration collisions. Specify
+  semantic closure, file-local alias formation, abstract representation/capability
+  matching, order-independent formation and exact specification deltas. Qualify
+  canonical root/path rules, direct directory membership and namespace/declaration collisions. Specify
   the root graph's complete ordered adjacency format, one canonical row per
   selected module, earlier-target checks and sole dependency authority.
   Qualify deep, parent/child and interleaved dependencies with ordinary privacy,
-  complete public qualification and no duplicate import lists. A separately
-  compiled module private to a parent subtree remains a possible capability
+  complete interface-local alias qualification and no duplicate import lists.
+  A separately compiled module private to a parent subtree remains a possible capability
   with no selected rule; reopen only for a concrete consumer that cannot use
   one module's private files. Qualify edge deletion, reordering and root binding;
   measure single-file coordination and query invalidation before claiming an
