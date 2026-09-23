@@ -1,0 +1,314 @@
+struct DequeObservation {
+  total: u64;
+  sequence: u64;
+  count: u64;
+}
+
+struct DequeItem {
+  id: u64;
+}
+
+nodrop struct DequeTicket {
+  payload: Box<DequeItem>;
+}
+
+fn deque_observe(env: &DequeObservation, value: own u64) -> result: own unit writes(env) {
+  set deref(env).total = deref(env).total +wrap value;
+  let prefix = deref(env).sequence *wrap 257_u64;
+  set deref(env).sequence = prefix +wrap value;
+  set deref(env).count = deref(env).count +wrap 1_u64;
+  return unit;
+}
+
+fn deque_scalar_visit(env: &DequeObservation, value: &u64) -> result: own unit reads(value), writes(env) {
+  deque_observe(env: env, value: deref(value));
+  return unit;
+}
+
+binding DequeScalarVisit : DequeVisit<u64, DequeObservation> {
+  accept = deque_scalar_visit;
+}
+
+binding DequeScalarDrain : DequeDrain<u64, DequeObservation> {
+  accept = deque_observe;
+}
+
+fn deque_owned_visit(env: &DequeObservation, value: &Box<DequeItem>) -> result: own unit reads(value), writes(env) {
+  deque_observe(env: env, value: deref(value).inner.id);
+  return unit;
+}
+
+fn deque_owned_consume(env: &DequeObservation, value: own Box<DequeItem>) -> result: own unit writes(env) {
+  deque_observe(env: env, value: value.inner.id);
+  return unit;
+}
+
+binding DequeOwnedVisit : DequeVisit<Box<DequeItem>, DequeObservation> {
+  accept = deque_owned_visit;
+}
+
+binding DequeOwnedDrain : DequeDrain<Box<DequeItem>, DequeObservation> {
+  accept = deque_owned_consume;
+}
+
+fn deque_ticket_new(id: own u64) -> result: own DequeTicket pure {
+  let value = DequeItem(id: id);
+  let payload = box_new::<DequeItem>(value: value);
+  return DequeTicket(payload: move payload);
+}
+
+fn deque_ticket_visit(env: &DequeObservation, value: &DequeTicket) -> result: own unit reads(value), writes(env) {
+  deque_observe(env: env, value: deref(value).payload.inner.id);
+  return unit;
+}
+
+fn deque_ticket_consume(env: &DequeObservation, value: own DequeTicket) -> result: own unit writes(env) {
+  let DequeTicket(payload: payload) = move value;
+  deque_owned_consume(env: env, value: move payload);
+  return unit;
+}
+
+binding DequeTicketVisit : DequeVisit<DequeTicket, DequeObservation> {
+  accept = deque_ticket_visit;
+}
+
+binding DequeTicketDrain : DequeDrain<DequeTicket, DequeObservation> {
+  accept = deque_ticket_consume;
+}
+
+fn deque_unit_consume(env: &DequeObservation, value: own unit) -> result: own unit writes(env) {
+  deque_observe(env: env, value: 1_u64);
+  return unit;
+}
+
+binding DequeUnitDrain : DequeDrain<unit, DequeObservation> {
+  accept = deque_unit_consume;
+}
+
+fn deque_scalar_chain() -> code: own u64 pure {
+  let seen = DequeObservation(total: 0_u64, sequence: 0_u64, count: 0_u64);
+  let zero = deque_new::<u64, 0>(capacity: 0_u64);
+  deque_visit::<DequeScalarVisit>(values: &zero, env: &seen);
+  deque_drain::<DequeScalarDrain>(values: &zero, env: &seen);
+  let zero_rebased = deque_rebase::<u64, 0>(values: move zero, capacity: 0_u64);
+  deque_free_empty::<u64>(values: move zero_rebased);
+  if seen.count != 0_u64 {
+    return 1_u64;
+  }
+  let single = deque_new::<u64, 1>(capacity: 1_u64);
+  let placed_seven = deque_push_front::<u64>(values: &single, value: 7_u64);
+  let seven = deque_pop_back::<u64>(values: &single);
+  let placed_eight = deque_push_back::<u64>(values: &single, value: 8_u64);
+  let eight = deque_pop_front::<u64>(values: &single);
+  deque_free_empty::<u64>(values: move single);
+  if seven != 7_u64 {
+    return 2_u64;
+  }
+  if eight != 8_u64 {
+    return 3_u64;
+  }
+  let values = deque_new::<u64, 9>(capacity: 4_u64);
+  let one = deque_push_back::<u64>(values: &values, value: 1_u64);
+  let original_first = &values.inner[0_u64];
+  let two = deque_push_back::<u64>(values: &values, value: 2_u64);
+  let first_after_append = deref(original_first);
+  if first_after_append != 1_u64 {
+    return 19_u64;
+  }
+  let three = deque_push_back::<u64>(values: &values, value: 3_u64);
+  let four = deque_push_back::<u64>(values: &values, value: 4_u64);
+  let first = deque_pop_front::<u64>(values: &values);
+  let second = deque_pop_front::<u64>(values: &values);
+  let five = deque_push_back::<u64>(values: &values, value: 5_u64);
+  let six = deque_push_back::<u64>(values: &values, value: 6_u64);
+  if first != 1_u64 {
+    return 4_u64;
+  }
+  if second != 2_u64 {
+    return 5_u64;
+  }
+  if values.inner.head != 2_u64 {
+    return 6_u64;
+  }
+  deque_visit_at::<DequeScalarVisit>(values: &values, index: 2_u64, env: &seen);
+  if seen.sequence != 5_u64 {
+    return 7_u64;
+  }
+  let last = deque_pop_back::<u64>(values: &values);
+  let restored_two = deque_push_front::<u64>(values: &values, value: 2_u64);
+  let next_last = deque_pop_back::<u64>(values: &values);
+  let restored_one = deque_push_front::<u64>(values: &values, value: 1_u64);
+  let final_last = deque_pop_back::<u64>(values: &values);
+  let wrapped_zero = deque_push_front::<u64>(values: &values, value: 0_u64);
+  if last != 6_u64 {
+    return 8_u64;
+  }
+  if next_last != 5_u64 {
+    return 9_u64;
+  }
+  if final_last != 4_u64 {
+    return 10_u64;
+  }
+  if values.inner.head != 3_u64 {
+    return 11_u64;
+  }
+  let expanded = deque_rebase::<u64, 9>(values: move values, capacity: 9_u64);
+  invariant expanded_length: expanded.inner.len == 4_u64;
+  invariant expanded_capacity: expanded.inner.cap == 9_u64;
+  invariant expanded_head: expanded.inner.head == 0_u64;
+  set seen.total = 0_u64;
+  set seen.sequence = 0_u64;
+  set seen.count = 0_u64;
+  deque_visit::<DequeScalarVisit>(values: &expanded, env: &seen);
+  if seen.sequence != 66566_u64 {
+    return 12_u64;
+  }
+  if seen.count != 4_u64 {
+    return 13_u64;
+  }
+  let compact = deque_rebase::<u64, 9>(values: move expanded, capacity: 4_u64);
+  set seen.total = 0_u64;
+  set seen.sequence = 0_u64;
+  set seen.count = 0_u64;
+  deque_drain::<DequeScalarDrain>(values: &compact, env: &seen);
+  deque_drain::<DequeScalarDrain>(values: &compact, env: &seen);
+  if seen.total != 6_u64 {
+    return 14_u64;
+  }
+  if seen.sequence != 66566_u64 {
+    return 15_u64;
+  }
+  if seen.count != 4_u64 {
+    return 16_u64;
+  }
+  invariant reusable: compact.inner.cap == 4_u64;
+  let reused_front = deque_push_front::<u64>(values: &compact, value: 9_u64);
+  let reused_back = deque_push_back::<u64>(values: &compact, value: 10_u64);
+  let nine = deque_pop_front::<u64>(values: &compact);
+  let ten = deque_pop_back::<u64>(values: &compact);
+  deque_free_empty::<u64>(values: move compact);
+  if nine != 9_u64 {
+    return 17_u64;
+  }
+  if ten != 10_u64 {
+    return 18_u64;
+  }
+  return 0_u64;
+}
+
+fn deque_owned_chain() -> code: own u64 pure {
+  let seen = DequeObservation(total: 0_u64, sequence: 0_u64, count: 0_u64);
+  let values = deque_new::<Box<DequeItem>, 5>(capacity: 2_u64);
+  let first_item = DequeItem(id: 11_u64);
+  let first_cell = box_new::<DequeItem>(value: first_item);
+  let first = deque_push_back::<Box<DequeItem>>(values: &values, value: move first_cell);
+  let second_item = DequeItem(id: 22_u64);
+  let second_cell = box_new::<DequeItem>(value: second_item);
+  let second = deque_push_back::<Box<DequeItem>>(values: &values, value: move second_cell);
+  let removed = deque_pop_front::<Box<DequeItem>>(values: &values);
+  deque_owned_consume(env: &seen, value: move removed);
+  let third_item = DequeItem(id: 33_u64);
+  let third_cell = box_new::<DequeItem>(value: third_item);
+  let third = deque_push_back::<Box<DequeItem>>(values: &values, value: move third_cell);
+  if values.inner.head != 1_u64 {
+    return 1_u64;
+  }
+  let visited = DequeObservation(total: 0_u64, sequence: 0_u64, count: 0_u64);
+  deque_visit::<DequeOwnedVisit>(values: &values, env: &visited);
+  if visited.sequence != 5687_u64 {
+    return 2_u64;
+  }
+  let expanded = deque_rebase::<Box<DequeItem>, 5>(values: move values, capacity: 5_u64);
+  deque_drain::<DequeOwnedDrain>(values: &expanded, env: &seen);
+  deque_free_empty::<Box<DequeItem>>(values: move expanded);
+  if seen.sequence != 732226_u64 {
+    return 3_u64;
+  }
+  if seen.count != 3_u64 {
+    return 4_u64;
+  }
+  return 0_u64;
+}
+
+fn deque_ticket_chain() -> code: own u64 pure {
+  let failures = 0_u64;
+  let seen = DequeObservation(total: 0_u64, sequence: 0_u64, count: 0_u64);
+  let values = deque_new::<DequeTicket, 5>(capacity: 3_u64);
+  let one = deque_ticket_new(id: 1_u64);
+  let placed_one = deque_push_back::<DequeTicket>(values: &values, value: move one);
+  let two = deque_ticket_new(id: 2_u64);
+  let placed_two = deque_push_back::<DequeTicket>(values: &values, value: move two);
+  let three = deque_ticket_new(id: 3_u64);
+  let placed_three = deque_push_back::<DequeTicket>(values: &values, value: move three);
+  let removed_one = deque_pop_front::<DequeTicket>(values: &values);
+  deque_ticket_consume(env: &seen, value: move removed_one);
+  let four = deque_ticket_new(id: 4_u64);
+  let placed_four = deque_push_back::<DequeTicket>(values: &values, value: move four);
+  if values.inner.head != 1_u64 {
+    set failures = failures +wrap 1_u64;
+  }
+  let inspected = DequeObservation(total: 0_u64, sequence: 0_u64, count: 0_u64);
+  deque_visit::<DequeTicketVisit>(values: &values, env: &inspected);
+  if inspected.sequence != 132873_u64 {
+    set failures = failures +wrap 1_u64;
+  }
+  let expanded = deque_rebase::<DequeTicket, 5>(values: move values, capacity: 5_u64);
+  invariant length_after_rebase: expanded.inner.len == 3_u64;
+  let removed_four = deque_pop_back::<DequeTicket>(values: &expanded);
+  deque_ticket_consume(env: &seen, value: move removed_four);
+  let zero = deque_ticket_new(id: 0_u64);
+  let placed_zero = deque_push_front::<DequeTicket>(values: &expanded, value: move zero);
+  if expanded.inner.head != 4_u64 {
+    set failures = failures +wrap 1_u64;
+  }
+  let compact = deque_rebase::<DequeTicket, 5>(values: move expanded, capacity: 3_u64);
+  deque_drain::<DequeTicketDrain>(values: &compact, env: &seen);
+  deque_free_empty::<DequeTicket>(values: move compact);
+  if seen.sequence != 4430369290_u64 {
+    set failures = failures +wrap 1_u64;
+  }
+  if seen.count != 5_u64 {
+    set failures = failures +wrap 1_u64;
+  }
+  if seen.total != 10_u64 {
+    set failures = failures +wrap 1_u64;
+  }
+  return failures;
+}
+
+fn deque_zero_size_chain() -> code: own u64 pure {
+  let values = deque_new::<unit, 3>(capacity: 2_u64);
+  let one = deque_push_back::<unit>(values: &values, value: unit);
+  let two = deque_push_front::<unit>(values: &values, value: unit);
+  let front = deque_pop_front::<unit>(values: &values);
+  let three = deque_push_back::<unit>(values: &values, value: unit);
+  let expanded = deque_rebase::<unit, 3>(values: move values, capacity: 3_u64);
+  let seen = DequeObservation(total: 0_u64, sequence: 0_u64, count: 0_u64);
+  deque_drain::<DequeUnitDrain>(values: &expanded, env: &seen);
+  deque_free_empty::<unit>(values: move expanded);
+  if seen.count != 2_u64 {
+    return 1_u64;
+  }
+  return 0_u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "Complete direct-Box deque chains cover zero and full capacity, singleton endpoints, wrap in both directions, a filled-slot reference surviving push_back, logical index visitation, borrowed whole-window visitation, wrapped consuming growth and shrink, original-order drain, reuse and explicit empty release. Scalar, droppable owning, must-consume owning and zero-sized elements share the generic implementation. Rebase immediately drains a freshly published backing while its old source had a nonzero wrapped head. The native observer checks every backing and payload allocation identity; allocation is total under STOR-8, so there is no allocation-refusal arm.";
+  let scalar = deque_scalar_chain();
+  if scalar != 0_u64 {
+    return exit_status(code: 1_u8);
+  }
+  let owned = deque_owned_chain();
+  if owned != 0_u64 {
+    return exit_status(code: 2_u8);
+  }
+  let tickets = deque_ticket_chain();
+  if tickets != 0_u64 {
+    return exit_status(code: 3_u8);
+  }
+  let zero_size = deque_zero_size_chain();
+  if zero_size != 0_u64 {
+    return exit_status(code: 4_u8);
+  }
+  return exit_status(code: 0_u8);
+}

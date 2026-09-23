@@ -1,4 +1,4 @@
-// The release ledger of the container library's test program, observed by
+// The release ledger of each bundled container test program, observed by
 // interposing every generated allocation and release.
 //
 // Retired subject: the allocation-refusal sweep. v0.59 returned null at each
@@ -56,7 +56,7 @@ static void unlock_ledger(void) {
 
 static void require(bool condition, const char *message) {
     if (!condition) {
-        fprintf(stderr, "vector allocation observer: %s\n", message);
+        fprintf(stderr, "container allocation observer: %s\n", message);
         exit(1);
     }
 }
@@ -145,7 +145,7 @@ int main(int argc, char **argv) {
         int status = wf_fixture_main(0, NULL);
         if (status != 0) {
             fprintf(stderr,
-                    "vector allocation observer: the fixture returned status %d, "
+                    "container allocation observer: the fixture returned status %d, "
                     "expected 0\n",
                     status);
             exit(1);
@@ -158,7 +158,7 @@ int main(int argc, char **argv) {
     for (size_t index = 0; index < allocation_count; ++index) {
         if (!allocations[index].released) {
             fprintf(stderr,
-                    "vector allocation observer: request %zu (%" PRIu64
+                    "container allocation observer: request %zu (%" PRIu64
                     " bytes) was never released\n",
                     allocations[index].request, allocations[index].bytes);
             exit(1);
@@ -166,7 +166,7 @@ int main(int argc, char **argv) {
     }
     for (size_t index = 0; index < allocation_count; ++index)
         free(allocations[index].pointer);
-    printf("vector allocation observer: %zu allocations, each released exactly once\n",
+    printf("container allocation observer: %zu allocations, each released exactly once\n",
            allocation_count);
     unlock_ledger();
     return 0;
