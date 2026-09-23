@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-22 Carry Result evidence through ordinary local value flow
+
+Nodes: language/checks-and-proofs/automatic-facts, compiler/checker-facts
+
+Owner-approved: The owner explicitly directed correction of all five review findings and accepted both complete Result proof-transport amendments after the Chinese PR #87 handoff for ba876003.
+
+Summary: Apply the two reviewed amendments unchanged. Local own Results with integer payloads carry isolated conditional evidence through ordinary transfers and read it only under their own success condition. Reuse the existing weakest-bound joins, support invalidation and continuing-backedge rules, with a private child of the ordinary entailment flow owning evidence operations and the walker retaining event order. The [Result investigation](../research/investigations/result-proof-transport/DESIGN.md) records the composition failures, alternatives, finite representation argument and measured costs behind these choices. Retain the sharing/projection and broader storage questions in TODO, remove the accepted amendments and their directory, and preserve the existing live decisions. This ruling does not authorize a merge.
+
 ## 2026-09-22 Resolve source input, zero-stride addressing and proof-name boundaries
 
 Nodes: compiler/prelude-records, compiler/storage-representation, language/name-resolution
