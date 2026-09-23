@@ -571,6 +571,9 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// the function driver clears this scratch state on every retry.
     deferred_loop_reference_uses: RefCell<Vec<references::DeferredLoopReferenceUse>>,
     loop_reference_summaries: RefCell<HashMap<references::LoopReferenceToken, Vec<ResolvedPlace>>>,
+    /// Resolved origins established by this structural function attempt.
+    /// Every retry starts fresh; only its complete final walk is published.
+    reference_origins: RefCell<Vec<Vec<ResolvedPlace>>>,
     /// Successful declaration-only FN-4 queries. A complete member check
     /// stages its batch before publishing here, and the whole checker remains
     /// failure-atomic with the prospective checked program [DIAG-2].
@@ -1142,6 +1145,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             call_separations: RefCell::new(Vec::new()),
             deferred_loop_reference_uses: RefCell::new(Vec::new()),
             loop_reference_summaries: RefCell::new(HashMap::new()),
+            reference_origins: RefCell::new(Vec::new()),
             contract_queries: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
             prelude_types: Vec::new(),
@@ -1727,6 +1731,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // inventory. No deferred REF-2 dependency may cross that namespace
         // boundary.
         self.deferred_loop_reference_uses.borrow_mut().clear();
+        self.reference_origins.borrow_mut().clear();
         self.check_musttail_callees(signature)?;
         self.check_entry_formers(signature)?;
         let mut bindings = HashMap::new();
@@ -1743,10 +1748,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             next_binding = next_binding
                 .checked_add(1)
                 .ok_or(SemanticCompilerFailure::CounterOverflow)?;
-            bindings.insert(
-                parameter.declaration,
-                self.parameter_local(parameter, binding)?,
-            );
+            let local = self.parameter_local(parameter, binding)?;
+            if let Some(reference) = &local.reference {
+                self.record_reference_origins(binding, &reference.paths);
+            }
+            bindings.insert(parameter.declaration, local);
             parameters.push(CheckedParameter {
                 name: parameter.name.clone(),
                 declaration: parameter.declaration,
@@ -1916,6 +1922,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             requirements,
             postconditions,
             body: (!declaration_only).then_some(checked.statements),
+            reference_origins: std::mem::take(&mut *self.reference_origins.borrow_mut()),
             body_disposition: super::model::CheckedBodyDisposition::Inhabited,
             call_separations: {
                 let mut separations = std::mem::take(&mut *self.call_separations.borrow_mut());

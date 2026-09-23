@@ -109,3 +109,16 @@ PARITY ACHIEVED: the 1.6-1.8x gap was entirely the i64-recurrence lowering,
 as diagnosed. The experiment's DECISION IS UNCHANGED: this remains a
 no-fact-advantage workload (safe Rust expresses the identical algorithm);
 what changed is that Whitefoot's scalar codegen no longer owes anyone 1.6x.
+
+### Scope of the tag-width evidence
+
+The addendum measures the combined copy-rule, i1 lowering and source-dataflow
+changes. It supports the reported width-16 vectorization and near-parity on
+this workload; it does not isolate the contribution of tag width alone.
+The later `9d44262b` implementation record also reports an owner's comparison
+of word-sized `ScanState` with one-bit `Bool` as a 34 percent penalty, but no
+original paired samples for that comparison were recovered. That percentage
+is an unverified historical observation, not a result established by this
+table. Extending one-bit lowering to equivalent two-state user enums avoids
+a representation distinction; the 32-bit choice for larger enums is not
+selected by this two-state experiment.

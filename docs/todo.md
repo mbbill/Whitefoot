@@ -35,6 +35,20 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   operation selection and implementation to the requested conversion review;
   reopen when that review starts or a real numeric workload needs a workaround.
 
+- **Validate further sharing of dense Result evidence when larger consumers need it.**
+  The [cost comparison](../research/investigations/result-proof-transport/DESIGN.md#selected-cost-result)
+  still places 32 independent outcomes at about 62 ms and 32 joins at about
+  265 ms, versus 22 and 26 ms before value-associated proof transport. A dense
+  matrix remains per live value and every surviving context participates in a
+  join. Sharing more unchanged ordinary cells may reduce this cost, but the
+  benefit and representation complexity remain unmeasured. Require matched
+  time/RSS improvement on a larger real consumer, identical acceptance and
+  valid retained proofs, and candidate/fallback preservation through support
+  kills and joins. Defer a broader storage change because numeric-core reuse
+  meets the recorded real-program and scale targets; reopen when more live
+  Results or wider storage support makes this cost material. The language
+  extensions below remain a separate question.
+
 - **Joined reference proofs lose useful target-relative information.** A
   reference selecting either of two freshly empty Slots cannot establish the
   append precondition from both constructors' facts; captured disjoint ranges
@@ -52,17 +66,16 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   Branch-local range images additionally need target-presence and capture-
   generation information; a plain union of branch images is insufficient.
 
-- **Establish whether the reference-summary depth fallback is source-reachable.**
-  `PlaceMap::resolve_root` returns wholly unresolved beyond 32 recursive summary
-  expansions. Any unresolved child discards the whole alternative set; inspected
-  proof and parallel consumers fail closed, so no partial-origin omission or
-  incorrect acceptance is established. Ordinary aliases are flattened when
-  recorded, and a long source alias chain is not itself a reproducer. Trace
-  checked-source summary construction and test the internal boundary with a
-  shallow sibling; if reachable, replace the depth-dependent precision boundary
-  with source-bounded traversal and explicit cycle handling. Deferred until
-  reference-summary work provides a discriminating source witness or proves the
-  cap redundant; reopen before reusing this resolver for a new proof family.
+- **Distinguish resolved formal anchors from holder queries in proof consumers.**
+  Some entailment support/overlap consumers pass an already resolved formal
+  root back through `PlaceMap::resolve`, which also serves written reference
+  holders. After a parameter rebind this can conservatively add its other
+  observed targets. Audit these calls before changing their interpretation;
+  use entry-anchor/rebound-holder pairs and overlapping controls to establish
+  whether separating the APIs recovers useful precision without omitting an
+  origin. No incorrect acceptance or measured benefit is established. Defer
+  this consumer change to the joined-reference work above; reopen when that
+  work establishes point-current target authority or a real proof needs it.
 
 - **Validate reuse of selected-target element layouts during emission.**
   [Zero-stride addressing](../compiler/src/backend/target.rs) currently queries
@@ -204,13 +217,92 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   [transfer evidence](../research/experiments/container-representation/vector-library/RESULTS.md#v061-copy-and-consumption-trial)
   separates this opportunity from the library's remaining element relocation.
 
+- **Parallel footprints omit ordinary result-list bindings.** The
+  [sparse-routing trial](../research/investigations/compute-model/DESIGN.md#sparse-destination-routing-trial-2026-09-21)
+  exposes a receiver map denied solely because one statement binds two local
+  results. PAR-2 allows iteration-owned writes, but the current PAR-1/PAR-2
+  walkers model one result definition per statement and refuse this form.
+  A two-field record admits the same receiver map without added allocation or
+  traversal. Defer a general multi-definition footprint implementation while
+  measuring the algorithm; reopen when that workaround materially complicates
+  a real consumer. Validate complete effects, consumption, exits and lowering
+  for all result ordinals rather than granting a tuple-specific exception.
+
+- **Initialized allocation can impose serial span on parallel work.** The
+  [private-outbox representation](../research/investigations/compute-model/DESIGN.md#private-outboxes-without-frontier-compaction)
+  requires a fresh C-by-D head matrix each level; its element fill is a
+  sequential emitted loop before otherwise independent routing. Initialization
+  remains linear work but can dominate the full critical path. The end-to-end
+  cost is not yet attributed. Measure fill/allocation separately from useful
+  routing before choosing a general lowering change; preserve initial values,
+  cleanup and the unchanged sequential image in any later experiment. Defer
+  repair until the sparse oracle and bounded comparison establish materiality.
+
+- **Loop capture selection remains conservative beyond forwarding.** The
+  [needed-capture change](../research/investigations/compute-model/DESIGN.md#needed-loop-captures)
+  retains every ordinary instruction and call argument. Removing an unused
+  pure computation or an unused callee formal could shrink further frames,
+  but needs independent effect and call-interface reasoning; no blocked
+  consumer currently justifies that scope. Broader dead-computation or
+  dead-formal analysis remains deferred: reopen
+  when an otherwise useful map still exceeds the fixed frame bound, and
+  validate smaller emitted frames on the same source without changing calls,
+  cleanup or results before selecting that wider scope.
+
+- **Pruning already-fitting loop frames needs a qualified benefit.** The
+  [capture investigation](../research/investigations/compute-model/DESIGN.md#needed-loop-captures)
+  now selects capture pruning only to rescue an originally oversized frame.
+  Pruning fitting tasks changes transport and code placement without admitting
+  a new loop, and records repeatedly reports an adverse W4 observation whose
+  cause remains unresolved. Smaller frames could still help another consumer,
+  but that benefit is unverified. Defer the broader optimization until a real
+  fitting-frame consumer exposes a material transport cost; reopen with an
+  unchanged-source comparison that retains native results, cleanup and a
+  same-image null control, establishes its benefit and clears the protected
+  records case before selecting the wider policy.
+
+- **First-index search needs a variable-cost expression probe.** The
+  [ordered-batch analysis](../research/investigations/io-model/CONCURRENCY-CATALOG.md#21-parallel-search-with-early-exit-added)
+  avoids mandatory full-input scanning, but its invocation bound does not
+  bound predicate cost. Block helpers that return at local matches remain
+  unqualified. After the current capture, BFS and stencil evidence is complete,
+  make this the next bounded expression probe: preserve the lowest matching
+  index or N on read-only input with a pure, infallible record predicate;
+  compare sequential search, batch folds and local-return helpers with a
+  useful native first-index search. Check all small-input hit positions and
+  absence, then count inspected records and bytes, including work committed
+  in the final wave. A cheap hit followed by a costly record in another helper
+  distinguishes an invocation bound from a cost bound; actual skipped tails
+  and completed helper work distinguish useful early return from a full scan
+  or serial execution. Defer until those active qualifications finish; no
+  executor or new concurrency rule is selected by this follow-up.
+
+- **Runtime DAG fan-in costs remain unqualified.** The
+  [catalog's level decomposition](../research/investigations/io-model/CONCURRENCY-CATALOG.md#5-task-dag-with-dependencies-static-and-dynamic)
+  can add large span, but a denied shared-counter scatter does not establish
+  mandatory global barriers or retirement passes for every representation.
+  Test a runtime-length spine with independent long leaves, two sources
+  notifying two destination owners, and fan-in edges A-to-C, B-to-C, B-to-D.
+  Preserve every task's output and exactly one evaluation per task against
+  an independent topological oracle; compare with a useful edge-triggered
+  native executor and charge routing, initialization, work, span and peak
+  workspace. Overlap along the spine or destination-owned retirement would
+  falsify the corresponding universal level/serial-pass claim, not establish
+  an efficient general DAG solution. Defer while capture, BFS and stencil
+  evidence is qualified. Reopen after that work when a concrete runtime-DAG
+  consumer requires the fan-in contract; begin with bounded source witnesses,
+  not a new executor project.
+
 - **Parallel grain policy needs a dedicated study.** Captured extents are a
   provisional scheduling input, not an established broadly suitable policy.
   The [first same-source trial](../research/investigations/compute-model/DESIGN.md#runtime-extent-trial-result)
   improves prefix, histogram and stencil, but makes chain-pull 51 percent
   slower at two workers and incurs substantial CPU costs in some faster
-  cases. Those measurements precede the continuation-accounting correction;
-  its performance has not been remeasured. Study whether a robust common
+  cases. Those measurements precede the continuation-accounting correction.
+  The [frozen `6fdb6768` baseline](../research/investigations/compute-model/DESIGN.md#frozen-compute-baseline-2026-09-21)
+  observes useful regular parallel work and substantial wide-stencil CPU cost;
+  it does not isolate that correction's effect. Its scalar native controls do
+  not establish optimized-native competitiveness. Study whether a robust common
   policy exists or workload, input shape, worker count and hardware require
   different choices, comparing wall time, CPU and scheduling/profile overhead.
   [Runtime profiles and PGO](ideas.md#parallel-grain-policies-and-runtime-profiles)
@@ -220,7 +312,7 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   tradeoffs are recorded.
 
 - **Array-helper pricing beyond original read-only references remains conservative.**
-  The pending [typed Box-array extent proposal](../research/investigations/compute-model/DESIGN.md#read-only-box-array-helper-work-pricing)
+  The accepted [typed Box-array extent extension](../research/investigations/compute-model/DESIGN.md#read-only-box-array-helper-work-pricing)
   keeps static estimates for local owners, write-capable formals and references
   changed away from the original formal. Some unchanged forwarded references
   also lose the exact capture identity and fall back. Retaining those runtime extents could
@@ -232,30 +324,55 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   that case supplies both the benefit and the availability evidence; pricing
   must not infer a separate source lifetime.
 
-- **Stable scatter has low parallel utilization and unresolved costs.** The
-  [reference-model trial](../research/investigations/compute-model/DESIGN.md#reference-model-scatter-result-2026-09-20)
-  removes the owned tally/packing transfers and verifies nonempty helper work
-  in both input partitioning and output packing. At eight workers its mixed
-  input uses roughly 2.63 occupied CPUs for Whitefoot and 3.96 for oneTBB chain,
-  from process-CPU/wall-time medians; this includes runtime work and does not
-  identify the remaining cause. Attribute wall time, CPU time, runnable work and
-  worker activity to block partitioning, count tally, packing and final copy.
-  Hold the algorithm and representation fixed for scheduling controls, and
-  distinguish insufficient parallel work or a long serial critical path from
-  available work not reaching workers. Both implementations have a packing
-  chain and final two-way copy, with different recursive-budget realizations.
-  Padded initialization, partition payload construction, linear packing span
-  and final copying remain costs; use the attribution to choose between task expansion,
-  scheduling, critical-path reduction and a balanced destination representation.
-  Reestablish the baseline after the reference-model merge using the
-  [post-port attribution boundary](../research/investigations/compute-model/DESIGN.md#post-port-attribution-boundary-2026-09-21).
-  The earlier indexed-aggregate copy candidate was not performance-qualified;
-  revisit it only if current emitted code still exposes that cost on identical
-  source. Its old phase injector targets a retired ABI and is not a current tool.
-  Preserve stable order and machine-checked bounds. This local investigation
-  precedes the separate general grain/profile/PGO study. Remove this item when
-  the cause is established and the trial's work, space and measured-cost
-  criteria are met, or its remaining tradeoffs are accepted.
+- **Known-zero loop dispatch has a qualified combined cost, but no production mechanism.**
+  The [bounded stencil control](../research/investigations/compute-model/DESIGN.md#zero-budget-stencil-dispatch-control)
+  removes 65,504 queries returning zero and inner splitter entries together in
+  the parallel world, enabling pixel inlining and alias-check movement. Its
+  corrected W4 trial improves all five pairs, with a 17.97 percent median benefit
+  against 4.25 percent maximum null drift. It does not isolate query cost or
+  justify a grain-policy change.
+  Defer implementation until a general lowering/runtime path is selected;
+  reopen with a design that handles zero and nonzero budgets, configured work
+  floors, nested loops and the sequential world without copying a fixture's
+  threshold into lowering. Preserve ordinary operations and exact-once cleanup,
+  inspect optimized paths, and validate full oracles plus a prospective bounded
+  paired/null whole-call criterion. A query-retained direct-chunk control is
+  the smallest additional observation if choosing that mechanism requires
+  distinguishing query effects from splitter removal and resulting optimization;
+  select its cost cap and stop rule before running it, rather than extending
+  the completed trial.
+
+- **Stable scatter retains construction and packing costs.** The dated merged-model
+  [joined-phase result](../research/investigations/compute-model/DESIGN.md#joined-phase-result-2026-09-21)
+  identifies about 0.596 ms of chunk initialization and 0.569 ms of packing at
+  W8, against a 1.930 ms ordinary mixed-input call. That image clears
+  and copies a full inactive chunk payload per appended `None`, and expands
+  aggregate transfers during input partitioning; borrowed tally/packing reads
+  no longer retain that full-copy cost. These observations do not measure
+  current main. A narrower, unverified opportunity is to construct a single-use
+  aggregate directly in its fresh placement destination while retaining full
+  initialization. The observed `None` path could lose its staging copy without
+  skipping the inactive payload clear. Feasibility across ordinary call
+  boundaries and loop re-entry, and the whole-call benefit, remain unestablished.
+  Defer this behind the current pricing, sparse-discovery and baseline work.
+  Reopen when current optimized code reproduces material staging traffic;
+  compare unchanged source, require that transfer to disappear, qualify whole-call
+  wall/CPU results, and preserve enum/affine snapshots, alias behavior, window
+  length updates and exact-once cleanup. Eliminating inactive payload initialization
+  still needs a separate general initialized-value treatment, not a
+  consumer-specific patch.
+  A direct `Array` replacement is not admitted: `Chunk` contains `nocopy`
+  slots and the fill constructor requires a copy element. Any alternative
+  affine construction interface needs its own language/library grounds.
+  Expanding the existing recursion frontier supplies no qualified win at 32;
+  disabling it makes mixed input 30–37 percent slower at W2/W4/W8 despite more
+  successful steals. Investigate packing span/batching or a balanced output
+  representation while preserving stable order and machine-checked bounds.
+  Short-phase CPU counter deltas and several small/skew controls remain
+  unqualified, so they do not diagnose worker idleness. No general grain policy
+  follows. Close this item only after the remaining construction and packing
+  costs meet explicit work, space and performance criteria, or their tradeoffs
+  are accepted.
 
 - **The formal compute comparison has unresolved attribution and measurement costs.**
   [Hosted observations](../research/investigations/test-economy/redesign.md#identical-image-host-control-failure)
@@ -276,8 +393,19 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   Its identical-image control nevertheless retained a `records` W4 suspect at
   0.962815708 with four adverse pairs. The concrete PR 70 regression is repaired,
   while its cause and the earlier and remaining control variation are not
-  attributed. Keep this item until those observations and the resulting
-  measurement/detection tradeoff are explained.
+  attributed. The [PR 78 hosted records inspection](../research/investigations/compute-model/DESIGN.md#records-w4-hosted-comparison-remains-unresolved)
+  retains repeated W4 suspects at `30198a19` and `53c68c29`: the latter has
+  wall/CPU ratios 0.898002/0.908317 with four adverse pairs, while its records
+  null is not suspect. Exact x86 objects show unchanged hot work and runtime
+  objects alongside reduced capture transport and changed linked placement;
+  they establish no cause or fix. Existing raw data lacks scheduling counters,
+  and ARM or emulated results cannot clear this Linux signal. A retained-image
+  W4 paired/null counter check is a possible discriminator, not selected or
+  run. Defer mechanism changes until evidence distinguishes the possible causes;
+  reopen on selection of a bounded Linux attribution experiment and preserve
+  the suspect if that experiment is uninformative. Keep this item
+  until the observations and measurement/detection tradeoff are explained by
+  discriminating evidence, rather than a later pass or changed threshold.
 
 - **Box/window representation costs remain unqualified.** The current runtime-
   capacity Box is one pointer to one header-first allocation; `grow` uses
@@ -404,15 +532,8 @@ each is resolved by a discussion and a tree change.
   distinguish this wrapper boundary from indexed postcondition targets and
   from storing an already-related Result. Reopen it when a library wrapper
   needs the relation, with direct-carrier, nested-field and stale-write controls.
-  Also assess
-  sharing or projecting per-local conditional fact matrices when many outcomes
-  remain live: 32 outcome additions measured 585 ms versus 23 ms at the
-  baseline, and 32 chained joins measured 721 ms and 214 MiB peak RSS. These
-  are whole compilations of small sources; the benefit and precision tradeoff
-  of sharing/projection remain unverified by that observation. Compare checking
-  time, retained evidence and peak memory
-  on the investigation's scaled sources before selecting that representation
-  improvement. These extensions are deferred because the selected ordinary
+  Conditional fact representation cost is the separate compiler defect above.
+  These language extensions are deferred because the selected ordinary
   local composition rule can be validated without widening the storage or
   predicate vocabulary.
 - **Declaration and call-boundary syntax after the ownership redesign.**

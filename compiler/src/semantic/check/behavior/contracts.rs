@@ -285,6 +285,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             requirements,
             postconditions: Vec::new(),
             body: None,
+            reference_origins: Vec::new(),
             body_disposition: Default::default(),
             allocates: false,
             call_separations: Vec::new(),

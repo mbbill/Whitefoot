@@ -750,6 +750,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             } else {
                 Vec::new()
             };
+            if let Some(reference) = &reference {
+                self.record_reference_origins(binding, &reference.paths);
+            }
             if bindings
                 .insert(
                     declaration.id(),

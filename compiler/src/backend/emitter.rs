@@ -25,7 +25,7 @@ use std::fmt::Write;
 
 use super::abi::FunctionAbi;
 pub use super::runtime::*;
-use super::storage::{FunctionStoragePlan, is_stored_aggregate, operation_operands};
+use super::storage::{FunctionStoragePlan, is_stored_aggregate};
 use super::target::{
     TargetAggregateLayout, TargetFramePlan, TargetFrameSlot, TargetLayout, TargetLayoutFailure,
     TargetStorageType, parallel_lane_frame_layout, plan_target_frame, validate_program,
@@ -1660,7 +1660,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::RunInsert { run, index, .. } => {
                 self.materialize_operands([*run, *index])?;
             }
-            _ => self.materialize_operands(operation_operands(operation))?,
+            _ => self.materialize_operands(operation.operands())?,
         }
         self.emit_value_definition(result, ty, operation)?;
         if !self.overlap_handed_out.contains(&result) {

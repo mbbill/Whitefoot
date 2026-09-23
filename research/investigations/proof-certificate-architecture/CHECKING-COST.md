@@ -142,6 +142,8 @@ against baseline for selection; this does not claim the two speedups multiply
 independently. Keep prefix and histogram as real-program
 controls using their ordinary current source and unchanged LLVM emission.
 
+<a id="query-preparation-selection"></a>
+
 ## Paired selection, 2026-09-14
 
 The [combined comparison](../../experiments/proof-use-cost/paired-combined-2026-09-14.tsv)

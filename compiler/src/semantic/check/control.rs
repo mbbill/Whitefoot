@@ -507,6 +507,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 None
             };
             if matched.can_continue
+                && let Some(reference) = &reference
+            {
+                self.record_reference_origins(binding, &reference.paths);
+            }
+            if matched.can_continue
                 && bindings
                     .insert(
                         declaration_id,
@@ -565,7 +570,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 scope,
             );
         }
-        let expression_owner = if self.tree.production(node)? == Production::ContractDefine {
+        let contract_definition = self.tree.production(node)? == Production::ContractDefine;
+        let expression_owner = if contract_definition {
             node
         } else {
             self.tree
@@ -589,6 +595,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let reference = value.reference.clone();
         if mode.is_reference() && reference.is_none() {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        // Contract definitions use temporary binding namespaces and are
+        // erased, so they do not contribute to the executable body's map.
+        if !contract_definition && let Some(reference) = &reference {
+            self.record_reference_origins(binding, &reference.paths);
         }
         if bindings
             .insert(

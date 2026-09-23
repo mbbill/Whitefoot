@@ -547,6 +547,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return Err(CheckStop::ReferenceSummaryChanged);
             }
         }
+        self.record_reference_origins(binding, &reference.paths);
         let local = bindings
             .get_mut(&declaration)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;

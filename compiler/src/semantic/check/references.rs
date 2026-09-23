@@ -400,6 +400,23 @@ pub(super) enum RequiredReferent {
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    /// Retains the structural walk's already-resolved [REF-1] paths without
+    /// interpreting their roots again. Recording at formation and rebinding
+    /// sites also retains origins of invalidated and out-of-scope holders;
+    /// validity and point-current targets remain the ordinary walk's facts.
+    pub(super) fn record_reference_origins(&self, binding: BindingId, paths: &[ResolvedPlace]) {
+        let mut origins = self.reference_origins.borrow_mut();
+        let index = binding.0 as usize;
+        if origins.len() <= index {
+            origins.resize_with(index + 1, Vec::new);
+        }
+        for path in paths {
+            if !origins[index].contains(path) {
+                origins[index].push(path.clone());
+            }
+        }
+    }
+
     /// [REF-1] one root is added once; a differing shape becomes a cone
     /// whose finite anchor can only shorten. Repeated visits cannot unroll
     /// its unknown tail or mint additional captured identities.

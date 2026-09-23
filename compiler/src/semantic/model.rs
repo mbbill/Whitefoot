@@ -2209,19 +2209,6 @@ pub(crate) struct PropagationContext {
     pub(crate) node_path: NodePath,
 }
 
-/// One outer reference whose value may cross this loop's normal backedge.
-///
-/// `paths` are the finite static-shape or descendant header covers [REF-1]. Every
-/// index and range capture that a continuing rebinding may replace carries a
-/// compiler-owned loop generation rather than the source occurrence in the
-/// body. This is proof metadata for place resolution and permission only;
-/// lowering carries the binding's ordinary runtime reference value.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedLoopCarriedReference {
-    pub(crate) binding: BindingId,
-    pub(crate) paths: Vec<super::places::ResolvedPlace>,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedStatement {
     Let {
@@ -2319,7 +2306,6 @@ pub(crate) enum CheckedStatement {
     },
     Loop {
         id: CheckedLoopId,
-        carried_references: Vec<CheckedLoopCarriedReference>,
         /// Formed source invariants awaiting the normal semantic proof
         /// checker. Their presence alone grants no authority.
         invariants: Vec<CheckedLoopInvariant>,
@@ -2328,7 +2314,6 @@ pub(crate) enum CheckedStatement {
     },
     CountedRange {
         id: CheckedLoopId,
-        carried_references: Vec<CheckedLoopCarriedReference>,
         node_path: NodePath,
         binder: BindingId,
         lower: CheckedExpression,
@@ -2435,6 +2420,12 @@ pub(crate) struct CheckedFunction {
     /// clause at every selected exit.
     pub(crate) postconditions: Vec<super::postcondition::CheckedPostcondition>,
     pub(crate) body: Option<Vec<CheckedStatement>>,
+    /// Function-wide union of the resolved paths each reference holder names
+    /// during the final structural walk, indexed by `BindingId`. Roots are
+    /// owned bindings, constants or immutable incoming-reference anchors,
+    /// never mutable reference-holder links to expand again. This inventory is
+    /// not authority for the holder's target at any particular program point.
+    pub(crate) reference_origins: Vec<Vec<super::places::ResolvedPlace>>,
     /// Whether the independently established body-entry requirements close to
     /// a contradiction. The contradiction is retained proof metadata.
     pub(crate) body_disposition: CheckedBodyDisposition,

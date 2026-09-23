@@ -95,11 +95,11 @@
 #define RC_RECORD_BOUND ((uint64_t)1048576)
 
 extern void wf_bench_records_par(const uint8_t *, uint64_t, const uint64_t *, uint64_t,
-                                 uint64_t, uint64_t, uint64_t **, uint64_t *);
-extern void wf_bench_records_par_release(uint64_t *, uint64_t);
+                                 uint64_t, uint64_t, uint64_t **, uint64_t *, void **);
+extern void wf_bench_records_par_release(void *);
 extern void wf_bench_records_seq(const uint8_t *, uint64_t, const uint64_t *, uint64_t,
-                                 uint64_t, uint64_t, uint64_t **, uint64_t *);
-extern void wf_bench_records_seq_release(uint64_t *, uint64_t);
+                                 uint64_t, uint64_t, uint64_t **, uint64_t *, void **);
+extern void wf_bench_records_seq_release(void *);
 
 /* The independent oracle, copied verbatim from the research bundle's
  * records_oracle.c. It is a decoder, not an automaton: it accumulates the
@@ -181,6 +181,7 @@ typedef struct {
     uint64_t *offsets, *held_offsets;
     uint64_t *expected;
     uint64_t *output;
+    void *output_held;
     int output_source;
     size_t n, capacity, count, grain;
 } Work;
@@ -279,10 +280,11 @@ static void native_chunk(void *opaque, size_t chunk) {
 
 static void release(Work *w) {
     if (!w->output) return;
-    if (w->output_source == RC_FROM_PAR) wf_bench_records_par_release(w->output, w->count);
-    else if (w->output_source == RC_FROM_SEQ) wf_bench_records_seq_release(w->output, w->count);
+    if (w->output_source == RC_FROM_PAR) wf_bench_records_par_release(w->output_held);
+    else if (w->output_source == RC_FROM_SEQ) wf_bench_records_seq_release(w->output_held);
     else free(w->output);
     w->output = NULL;
+    w->output_held = NULL;
 }
 
 /* One complete call on `w`. This is the whole timed interval and nothing
@@ -294,10 +296,10 @@ static void run(Work *w, const char *form, unsigned width, int poison) {
         int sequential = !strcmp(form, "wf-seq");
         if (sequential)
             wf_bench_records_seq(w->data, (uint64_t)w->n, w->offsets, (uint64_t)w->count + 1,
-                                 0, (uint64_t)w->count, &out, &length);
+                                 0, (uint64_t)w->count, &out, &length, &w->output_held);
         else
             wf_bench_records_par(w->data, (uint64_t)w->n, w->offsets, (uint64_t)w->count + 1,
-                                 0, (uint64_t)w->count, &out, &length);
+                                 0, (uint64_t)w->count, &out, &length, &w->output_held);
         if (length != (uint64_t)w->count) wfb_fail("records: generated length");
         w->output = out;
         w->output_source = sequential ? RC_FROM_SEQ : RC_FROM_PAR;
