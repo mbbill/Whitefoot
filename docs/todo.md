@@ -96,9 +96,9 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   production layout despite identical relevant instructions and dependencies.
   A controlled 32-byte padding experiment restores the endpoint addresses
   without reliably removing the difference, so neither endpoint placement
-  nor an intrinsic assumption cost is established as its cause. Preserve
-  both results when evaluating the proposed performance tradeoff; no measured
-  application mix makes the forward gain cancel the reverse loss.
+  nor an intrinsic assumption cost is established as its cause. The owner
+  selected provisional retention of the fact with both results preserved;
+  no measured application mix makes the forward gain cancel the reverse loss.
   Compare the remaining scalar work with the same source, independent oracle
   and C controls, preserving native code/data placement and recording
   execution-state variation before attributing a cost to the interface or

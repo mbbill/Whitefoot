@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-22 Qualify empty window storage and retain the payload-address fact
+
+Nodes: compiler/storage-representation, compiler/backend-facts
+
+Owner-approved: The owner explicitly accepted both complete PR #93 amendments and the provisional performance tradeoff after the post-DCR handoff for 3ad6b293, replying that they were accepted and work should continue.
+
+Summary: Apply both reviewed additions unchanged. Omit nonexistent element alignment from constant-capacity zero Array, Slots and Ring payloads while retaining the window descriptors. Publish the signed nonnegativity of the qualified, normalized physical payload index through portable `llvm.assume`, without changing acceptance, target qualification, logical coordinates or wrapping arithmetic. Retain that fact provisionally for its repeatable inline-path benefit while accepting the unexplained retained-reverse cost; the original selection criterion remains unmet and the reopening conditions remain in force. The [Ring address investigation](../research/investigations/containers-and-resources/X1-LIBRARY.md#ring-payload-address-qualification) and [paired Deque comparison](../research/experiments/container-representation/deque-library/RESULTS.md) supply the contract, measurements, alternatives and limitations. Preserve the existing decisions and rejections, remove the two resolved amendments and their directory, and update the affected investigation and TODO status. The specification is unchanged; this ruling does not authorize a merge.
+
 ## 2026-09-22 Adopt ordinary Slab and Deque library boundaries
 
 Nodes: compiler/checker-facts, language/data-model/storage-shapes, language/ownership/range-reference, language/data-model/slab-storage, language/data-model/deque-rebase

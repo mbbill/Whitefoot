@@ -1089,9 +1089,8 @@ Selection criteria, recorded before this experiment's timings:
 Keep the implementation within ordinary address emission and the existing
 toolchain-capability path where possible. Do not change source syntax,
 container representation, Ring range admission, or host/runtime protocols to
-obtain this result. A material compiler choice is proposed beside the design
-tree before its completion review; implementation can proceed while that
-proposal awaits the owner's ruling.
+obtain this result. The material compiler choices were reviewed as amendments
+beside the design tree; the owner approved both revisions after DCR.
 
 ### Representation premise and target contract
 
@@ -1180,14 +1179,15 @@ assumption: it recovers the observed local optimization without a new LLVM
 dialect requirement. A build-time syntax probe would inspect the build's
 compiler, while the native builder uses its selected native compiler; those
 need not be the same consumer. The existing [comparison record](../../experiments/container-representation/deque-library/RESULTS.md)
-owns the probe commands, counts and artifacts. Production selection still
-depends on the complete normal/retained paired matrix above.
+owns the probe commands, counts and artifacts. After the complete
+normal/retained paired comparison, the owner selected production emission
+provisionally with the tradeoff recorded below.
 
 The implementation stays in the shared run projection and intrinsic registry.
 A test-only withholding choice exercises that same emitter after the same
 target validation; it is not a source mode or a second qualification path.
-The corresponding proposal is in `compiler/backend-facts`; the zero-capacity
-representation proposal is in `compiler/storage-representation`. This keeps
+The corresponding decision is in `compiler/backend-facts`; the zero-capacity
+representation decision is in `compiler/storage-representation`. This keeps
 the representation repair independent of the optional optimization and needs
 neither a second table of per-address qualification nor a public compiler
 switch. No source rule or container contract changes.
@@ -1235,16 +1235,16 @@ production-layout regression therefore remains unexplained; neither the
 first alignment failure nor the second mixed result establishes a particular
 cache or branch-prediction cause. No padding enters production.
 
-The predeclared selection criterion is **not fully met**. The proposal for
-the owner is to retain the qualified fact provisionally for its reproducible
+The predeclared selection criterion is **not fully met**. After DCR, the owner
+selected provisional retention of the qualified fact for its reproducible
 inline scalar forward and rebase improvements, explicitly accepting the
 recorded retained-reverse cost and its unresolved cause. The alternative is
 to remove the optional fact and deliver the independently verified
 zero-capacity representation repair alone. No application-frequency
 distribution has been measured, so the results do not establish that every
-Deque consumer benefits from the tradeoff. The pending backend-facts
-amendment proposes the first choice; it is not an owner ruling or a claim
-that the original criterion passed. Reopen that choice for a consumer
+Deque consumer benefits from the tradeoff. The owner-approved backend-facts
+decision records the first choice; it does not establish that the original
+criterion passed. Reopen that choice for a consumer
 dominated by retained reverse calls, a changed native toolchain, or a further
 material regression under the same matched-contract comparison. The
 maintained TODO keeps the remaining scalar gap and cost attribution open.
