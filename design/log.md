@@ -13,6 +13,14 @@ Owner-approved: After the final PR #99 handoff and clean DCR at 5d29d4665, the o
 
 Summary: Apply the two reviewed proposal bodies unchanged: uniform exact, checked and domain-query interfaces, same-type bit copies, captured integer Result equality, explicit conversion modes, direct proved lowering and positive-only sufficient bounds within the existing proof machinery. Name the compiler node numeric-conversion-lowering to preserve globally unique node names. The [conversion comparison](../research/investigations/numeric-conversions/DESIGN.md#design-alternatives) records the alternatives and grounds. Defer integer `cvt.wrap` to the maintained TODO because it selects a separate result policy beyond this exact-conversion scope; do not adopt it into the language or this implementation. Remove all three resolved amendments and their directory. The specification and implementation are unchanged by this ruling; it does not authorize a merge.
 
+## 2026-09-23 Fit aggregate loop captures to the selected target
+
+Nodes: compiler/parallel-lowering/two-worlds
+
+Owner-approved: After the final handoff for PR #105 at 55e88e418829aafa8b0b707eda6f07ce7a7f6e6f and PR #100 at 6be774329ca7e585cdcd4a4f82a8efd53830c34e, the owner explicitly approved all three proposals, including this complete PR #105 amendment.
+
+Summary: Apply the reviewed decision and two rejected alternatives unchanged: after needed-capture selection, use shared selected-target layout to rescue a conservatively oversized loop whose transported frame fits, preserving already-fitting paths and direct CFG reuse on real refusal. The [target-fitting investigation](../research/investigations/compute-model/DESIGN.md#selected-target-loop-frame-fitting) supplies the consumer, qualification and limits. Remove the accepted amendment and its directory. The compiler implementation and specification are unchanged by this ruling; it does not authorize a merge.
+
 ## 2026-09-23 Defer call-group bridges and DONE-before-help after the cost-control failure
 
 Nodes: compiler/parallel-lowering, compiler/parallel-lowering/parallel-runtime

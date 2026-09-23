@@ -15,12 +15,13 @@ mod pinned_sentences;
 
 use rejection::Located;
 
+use crate::backend::{emitter::emit_llvm_with_layout, target::TargetLayout};
 use crate::{
     ACTIVE_KERNEL_SPEC_HASH, BackendFailure, CanonicalLimits, CanonicalOutcome, CheckedProgram,
     FinalizeLimits, FinalizeOutcome, LexLimits, LexOutcome, LoweringFailure, ParseLimits,
     ParseOutcome, ResolutionOutcome, SemanticLocation, SemanticOutcome, SourceBundle, SourceInput,
     SourceLimits, TerminalLimits, TerminalOutcome, audit_canonical, check_semantics,
-    classify_terminals, emit_llvm, finalize, lex, lower_checked, parse, resolve,
+    classify_terminals, finalize, lex, lower_checked_with_layout, parse, resolve,
 };
 
 /// Host-compiler optimization arguments for every Whitefoot executable.
@@ -144,7 +145,7 @@ pub enum CompilationStage {
     Resolution,
     /// Target-independent semantic checking.
     Semantics,
-    /// Checked-program to target-independent IR lowering.
+    /// Checked-program to typed IR lowering, including optional loop shapes.
     Lowering,
     /// Selected-target representability and target-domain discharge.
     TargetLayout,
@@ -213,6 +214,25 @@ impl CompilationFailure {
             rule_id: None,
             detail: format!("{detail:?}"),
         }
+    }
+
+    fn lowering(failure: LoweringFailure) -> Self {
+        let (stage, kind) = match failure {
+            LoweringFailure::TargetLayout(_) => (
+                CompilationStage::TargetLayout,
+                CompilationFailureKind::TargetLayout,
+            ),
+            // An unavailable compiler-owned body is a capability stop after
+            // semantic acceptance, never a source verdict.
+            LoweringFailure::UnimplementedPreludeRow(_) => (
+                CompilationStage::Lowering,
+                CompilationFailureKind::Unsupported,
+            ),
+            LoweringFailure::InvalidCheckedProgram | LoweringFailure::CounterOverflow => {
+                (CompilationStage::Lowering, CompilationFailureKind::Lowering)
+            }
+        };
+        Self::new(stage, kind, failure)
     }
 
     /// One source-language rejection carrying the rule its stage attributed.
@@ -645,21 +665,10 @@ fn lower_selected(
         }
     }
     let permission_ledger = checked.data.permission_ledger.clone();
-    let ir = lower_checked(checked, overlap).map_err(|failure: LoweringFailure| {
-        CompilationFailure::new(
-            CompilationStage::Lowering,
-            // A [PRE-1] record whose compiler-owned body this version does not
-            // build yet is an unimplemented capability, not a broken lowering
-            // invariant and never a source verdict.
-            match failure {
-                LoweringFailure::UnimplementedPreludeRow(_) => CompilationFailureKind::Unsupported,
-                LoweringFailure::InvalidCheckedProgram | LoweringFailure::CounterOverflow => {
-                    CompilationFailureKind::Lowering
-                }
-            },
-            failure,
-        )
-    })?;
+    let target =
+        TargetLayout::host().map_err(|failure| CompilationFailure::lowering(failure.into()))?;
+    let ir = lower_checked_with_layout(checked, overlap, target)
+        .map_err(CompilationFailure::lowering)?;
     // What this lowering did with each permission it was given, appended after
     // the judgment's own lines. The judgment reports the same verdicts with or
     // without `--par`; these lines report an actualization, which only a
@@ -669,7 +678,7 @@ fn lower_selected(
         .map(|line| line.text)
         .collect();
     ledger.extend_from_slice(ir.actualization_ledger());
-    emit_llvm(&ir)
+    emit_llvm_with_layout(&ir, target)
         .and_then(|module| {
             // Emission decides which recursive components carry a runtime
             // budget after their clone families are known.
@@ -2187,6 +2196,59 @@ fn main() -> status: ExitStatus pure {{
         assert_eq!(failure.kind(), CompilationFailureKind::TargetLayout);
         assert_eq!(failure.rule_id(), None);
         assert!(failure.detail().contains("Unrepresentable"));
+    }
+
+    #[test]
+    fn a_loop_frame_outside_the_selected_address_domain_stays_a_target_failure() {
+        use crate::backend::target::{TargetLayout, TargetLayoutFailure, TargetObject};
+
+        let source = br#"fn folded(values: Array<u8, 216>) -> result: u64 pure {
+  let total = 0_u64;
+  for (i in 0_u64..2_u64) {
+    let copied = values;
+    let byte = copied[0_u64];
+    let word = cvt::<u8, u64>(byte);
+    set total = total +wrap word;
+  }
+  return total;
+}
+
+fn main() -> status: ExitStatus pure {
+  let values = array_filled::<u8, 216>(value: 17_u8);
+  let total = folded(values: values);
+  return exit_status(code: 0_u8);
+}
+"#;
+        let target = TargetLayout::host()
+            .expect("supported test target")
+            .with_address_index_max_for_test(255);
+        let failure = super::with_checked_program(
+            &[SourceInput::new("frame.wf", source)],
+            CompilerLimits::default(),
+            |checked, _| {
+                crate::lower_checked_with_layout(checked, crate::OverlapLowering::On, target)
+                    .map(|_| ())
+                    .map_err(super::CompilationFailure::lowering)
+            },
+        )
+        .expect_err("the complete 256-byte frame exceeds the selected address domain");
+        assert_eq!(failure.stage(), CompilationStage::TargetLayout);
+        assert_eq!(failure.kind(), CompilationFailureKind::TargetLayout);
+        assert_eq!(failure.rule_id(), None);
+        assert!(failure.detail().contains("ParallelLaneFrame"));
+        assert_eq!(
+            crate::LoweringFailure::from(TargetLayoutFailure::Unrepresentable(
+                TargetObject::ParallelLaneFrame
+            )),
+            crate::LoweringFailure::TargetLayout(TargetLayoutFailure::Unrepresentable(
+                TargetObject::ParallelLaneFrame
+            )),
+        );
+        assert_eq!(
+            crate::LoweringFailure::from(TargetLayoutFailure::InvalidIr),
+            crate::LoweringFailure::InvalidCheckedProgram,
+            "malformed compiler data must not be published as a target-domain failure",
+        );
     }
 
     #[test]

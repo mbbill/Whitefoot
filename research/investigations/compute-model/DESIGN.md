@@ -1731,6 +1731,13 @@ for serial initialization. Reusing exact target layout for nominal captures
 would need to preserve aggregate payload transport, alignment and the fixed
 256-byte bound; it is not part of this source experiment.
 
+Those observations belong to frozen main `345e2966a`. The later
+[selected-target fitting control](#selected-target-loop-frame-fitting)
+qualifies the 72-byte initialization frame and useful worker execution on a
+larger control using the same source. The original small matrix and its
+recorded source/runtime/adapter identities remain unchanged; neither result
+establishes a speed gain.
+
 The balanced sibling pair has PAR-1 permission and emitted acquisition,
 publication, refusal fallback, join and release. Each offer occupies 224 bytes:
 ten range descriptors, six u64 arguments, unit result/padding and the recursive
@@ -1806,6 +1813,424 @@ values in source-ID order; the recursive W4 case had five steals. Admission,
 actual task overlap and preserved fan-in therefore have separate witnesses.
 No matrix was repeated to improve a schedule, and no elapsed-performance claim
 or immediate compiler-policy change follows from this qualification.
+
+## First-index search expression probe (2026-09-22)
+
+This bounded probe starts at merged `3d7fa496` and qualifies the
+[catalog's ordered-batch and local-return forms](../io-model/CONCURRENCY-CATALOG.md#21-parallel-search-with-early-exit-added).
+The result is the lowest matching record index, or N when absent. Inputs are
+read-only framed byte records; the pure, infallible predicate finds a NUL byte
+and may return before the record ends. Record boundaries are checked before
+forming a range reference, and the native fixture supplies monotone,
+in-bounds offsets. Empty records do not match.
+
+Compare ordinary sequential first-index search, `imin` folds over ordered
+batches (including sizes 1, 2, 4, ...), and ordered waves of contiguous
+two-record helpers. Each helper returns at its first local match; the caller
+folds its index and decides whether to stop only after the complete wave.
+PAR-2 judges that caller's counted body, not a return inside the called
+helper. Every helper in a started wave still completes; there is no shared
+stop flag or interruption of another helper's predicate.
+
+Return predicate and helper diagnostics as nominal records. Each counted
+iteration writes its helper's result into its own affine trace slot and uses
+only one accumulator, `imin`. Sum record and byte counts after the join in
+the native observer, so diagnostic accumulators do not deny the permission
+being studied. Trace entries must identify the actual visited record prefix,
+not infer skipped work from the final minimum. Count logical byte tests,
+including every completed helper in the final wave; these are not physical
+memory-traffic or optimized-instruction measurements. Trace construction,
+initialization and storage are diagnostic costs, not a production search
+speed measurement.
+
+The following criteria are fixed before source construction or execution:
+
+- For every N from 0 through 16, check absence and every single matching
+  position. Check every hit mask through N = 8 to distinguish the lowest
+  index from an arbitrary match. Include empty records, short and long
+  nonmatches, and markers at the first, middle and last byte. A small C
+  `memchr`-based first-index search independently supplies the result and
+  per-record logical byte counts; derive each expected helper prefix from
+  those per-record outcomes. Compare complete traces and unchanged input
+  bytes, not only the final index.
+- Use T = 1 and T = 65,536 for two fixed four-record controls. With lengths
+  `[1, T, T, 1]`, only record 0 matching, and helper ranges `[0, 2)` and
+  `[2, 4)`, sequential search visits one record and one byte, a four-item
+  fold visits four records and `2*T + 2` bytes, and local-return helpers
+  visit three records and `T + 2` bytes. The first helper skips record 1;
+  the second completes records 2 and 3. With lengths `[1, T, 1, T]` and
+  matches at records 0 and 2, the helpers visit two records and two bytes,
+  skipping both expensive local tails. Retain both T values and all results.
+- Also retain the catalog's geometric batches `[0]`, then `[1, 2]`: a
+  one-byte nonmatch at 0, a one-byte match at 1, and a T-byte nonmatch at 2
+  cost two bytes sequentially and `T + 2` bytes in the started batches.
+  The invocation bound cannot give a weighted-work bound independent of T.
+- Qualify `--no-overlap` and ordinary `--par` images against the same oracle.
+  Compare plain and diagnostic forms' `--par-ledger` and emitted search
+  helper bodies; trace outputs may change work pricing or lowering, and any
+  difference remains explicit. Establish
+  nonempty search work on another native thread before claiming executed
+  overlap; pool startup, permission, splitter emission or grants alone do
+  not establish it. A separate diagnostic may observe helper entry and
+  completion, but contributes no production timing result. If the ordinary
+  grain policy leaves the candidate serial, report that boundary without
+  changing thresholds to manufacture participation.
+
+The useful C reference is sequential. Already-started, noninterruptible
+expensive predicates can also cost native parallel first-index search. This
+trial can establish Whitefoot's local skipping, completed-wave work and
+current actualization; it cannot establish a universal Whitefoot/native gap,
+a speedup from logical counts, or a reason to select cancellation.
+
+Use one research source beside this investigation, one C oracle/caller and
+one host adapter in `research/experiments/compute-bench`, and an explicit
+target in that bundle's existing Makefile. Retain each only while this
+investigation uses it, including as reproducible evidence; remove it when
+superseded or no longer supporting this question. Reuse the coordinated
+exact-main compiler and existing native runtime. No dependency build, runner framework,
+correctness-CI path, timing comparison, compiler change or specification
+revision is selected. Keep source analysis/emission, native construction and
+oracle execution as separate guarded stages, each capped at 30 seconds with
+at most two build jobs. A proof or capability failure stops native
+construction until classified against the specification. A wrong index or
+trace, changed input, artifact-identity drift or exceeded cap stops the
+qualification and preserves its output; it is not a performance verdict.
+
+**Design suitability.** Local-return helpers may avoid costly suffixes while
+retaining ordinary functions, read-only sharing and a single admitted fold.
+Their costs are ordered joins, diagnostic trace space and completed work in
+other helpers; useful overlap under current pricing remains uncertain. The
+affected scope is this research source and caller, not an executor or a
+language interface. Qualify the bounded form now. Defer any broader
+first-index or cancellation mechanism until a real consumer and evidence
+separate its requirements from the unavoidable cost of already-started
+predicates; no live-tree revision is proposed by this probe.
+
+### Native expression result
+
+The [source](first-index.wf) and
+[native oracle](../../experiments/compute-bench/first_index_probe.c) qualify
+local suffix skipping and the complete source-level work of each started
+wave. The [retained record](../../experiments/compute-bench/first-index-2026-09-22.tsv)
+contains the input and image identities, source-construction diagnostics,
+emission ledger, construction commands, intentional bad-trace rejection and
+all native result rows. The compiler binary is
+`5baa66723a48fef6899713f0c84266b6f2d968af77d8112fa7f75f2311794ae6`,
+reused from a gate build whose 380 tracked compiler/specification inputs
+match `3d7fa496` byte for byte. No compiler or specification changed.
+
+Each of `--no-overlap` at W1 and ordinary `--par` at W1 and W4 passed 1,129
+fixtures: 612 single-hit/absence fixtures, 511 exhaustive hit masks, and six
+weighted-work controls. Each configuration checks 9,032 first-index results,
+722,560 trace fields and 2,503,616 unchanged input bytes. Every trace field,
+including unused slots and completed empty tail helpers, matches the
+independent per-record `memchr` outcomes. An intentional change from one
+inspected byte to zero follows that same comparison path and exits 2 with
+the expected mismatch; it is recorded separately from qualification.
+
+The diagnostic source's explicit wrapping sums are exact in its bounded
+domain: at most 16 records each inspect at most 2^24 bytes, so the total is
+at most 2^28. The native fixture supplies valid framing; the source also
+defines malformed framing as a match without inspecting payload, a path
+outside this qualification. Counts describe source-level visits and byte
+tests, not optimized instructions or physical memory traffic.
+
+All three configurations produce the following counts at T = 65,536.
+Entries are inspected records / logical byte tests; T = 1 controls are also
+retained. The geometric form starts with a one-record batch, which explains
+its immediate stop in the first two rows.
+
+| Input | Sequential | Fixed four-record fold | Doubling folds | Two local-return helpers |
+| --- | ---: | ---: | ---: | ---: |
+| Cheap hit at 0; expensive record in the other helper | 1 / 1 | 4 / 131,074 | 1 / 1 | 3 / 65,538 |
+| Hits at both helper starts; expensive local tails | 1 / 1 | 4 / 131,074 | 1 / 1 | 2 / 2 |
+| Cheap hit at 1; expensive nonmatch at 2 | 2 / 2 | 3 / 65,538 | 3 / 65,538 | 3 / 65,538 |
+
+In the first row the first helper visits only record 0; the second completes
+records 2 and 3, inspecting 65,537 bytes. In the second row both helpers skip
+their expensive suffixes. This establishes local early return and completed
+wave work without attributing either to cancellation. The third row realizes
+the catalog's distinction between invocation and byte-work bounds. The C
+reference is sequential; no native parallel cancellation comparison was run.
+
+All four wave loops are permitted under PAR-2 and emit an `imin` splitter.
+Plain and diagnostic forms retain the same permission but different pricing
+and captures. Static inspection of the actual query operands and ordinary
+runtime gives:
+
+| Wave | Captures | Lane frame | Iteration price | Minimum span for a positive split budget |
+| --- | ---: | ---: | ---: | ---: |
+| Flat, plain | 5 | 96 bytes | 146 | 2,056 |
+| Flat, diagnostic | 7 | 120 bytes | 3,036 | 100 |
+| Block, plain | 4 | 88 bytes | 2,336 | 130 |
+| Block, diagnostic | 5 | 104 bytes | 3,044 | 100 |
+
+These frames fit the existing lane bound. The ordinary 150,000 work unit
+requires at least two affordable chunks for a positive budget; the source's
+flat spans are at most 16 and block spans are two. Every query therefore
+returns zero, making all four publish paths unreachable. Native plain and
+diagnostic steal deltas are zero throughout, including W4. This probe
+establishes no executed search overlap or speedup. Trace outputs change the
+static estimates substantially, so they cannot stand in for a production
+performance image.
+
+Record extents come from indexed offsets and actual early exit depends on
+contents; neither is an available captured scalar or extent-summary input at
+these wave sites. Increasing T from 1 to 65,536 leaves the static price
+unchanged. This is a concrete validation opportunity for the existing
+[grain-policy TODO](../../../docs/todo.md), not grounds to force a lower
+threshold: an absent/late-hit or otherwise balanced costly case and a fair
+native comparison must establish that useful search work should overlap.
+The cheap-hit adverse control alone cannot establish that benefit.
+
+Construction first required binding nested Bool constructors, binding the
+checked sum before its FN-9 return, and dropping an unnecessary width-bound
+invariant whose conditional initializer supplied no base proof. The width
+bound is not needed by any partial operation: `limited_end` proves its
+addition from the remaining length, and doubling is guarded by `width < 8`.
+All failed invocations and their repairs are retained; no source diagnostic
+is presented as a language limitation. Successful parallel and sequential
+emissions each took 0.1 seconds, native construction 0.64 seconds, and the
+three-configuration oracle stage 0.42 seconds under separate 30-second caps.
+These are qualification costs on Darwin 25.6.0 arm64 with Apple clang 21.0.0,
+not timed search comparisons. All 50 recorded runtime/probe input and artifact
+hashes checked unchanged after execution. The bounded probe ends here, with
+no executor, cancellation, grain-policy or live-tree revision selected.
+
+### Main correspondence (2026-09-23)
+
+After merging main `9bed1c33`, the unchanged source was checked and emitted
+with gate CLI
+`f883886c1a0ab3c292419aa9ede5353b41656b9bb30256148bdb016ac0208fbc`.
+Its 380 tracked compiler/specification inputs match that main revision; the
+saved CLI was reused and its original construction cost is unrecorded.
+Both complete raw LLVM modules are byte-identical to the original `3d7fa496`
+modules, and all 52 parallel and 43 sequential ledger records match exactly.
+The separate guarded emission stages took 0.62 and 0.10 seconds under their
+30-second caps. The same evidence stream retains these identities and
+comparisons separately. Native inputs and the original artifacts remain
+unchanged, so the existing native qualification is reused without native
+reconstruction or execution; this supplies no new performance measurement
+and does not relabel the original dated result.
+
+After rebasing onto main `345e2966a`, the source follows GRAM-2/GRAM-3's
+value syntax by removing 39 `own` annotations from 14 function declarations;
+all bodies, contracts and reference parameters are unchanged. Gate CLI
+`cbffd4dd1ae8641ef03790457181188988bf70cc4af1a53c50c1f406307bb7f9`
+was reused from clean `9be78e355`, whose 381 tracked compiler/specification
+inputs match this main revision. Both complete raw LLVM modules and all
+52 parallel/43 sequential ledger records again match the original bytes,
+without normalization or metadata differences. Each guarded emission took
+0.10 seconds under its 30-second cap. The 39 runtime inputs and 10 unchanged
+probe inputs/artifacts retain their original hashes; the evidence stream
+records the migrated source separately. This correspondence reuses the
+original native qualification without compiler or native reconstruction,
+native execution, or a new performance claim.
+
+### Adjacent helper-pair criterion
+
+The next bounded qualification starts at `7d718329` and changes only how the
+same two local-return helpers are composed. Keep the four-record ordered
+waves and the existing `scan_plain`, `record_hit` and `has_zero` bodies. Pass
+already computed first/middle/end bounds to an ordinary wave helper whose
+first two statements call `scan_plain` on the two contiguous blocks, then
+combine their scalar results with `imin`. Both calls finish before the caller
+decides whether to start another wave. This tests a source decomposition
+under PAR-1; it selects no arbitrary-arity executor or new grain policy.
+
+The current loop's two iterations cannot reach the 130-iteration minimum
+at its price of 2,336. Its indexed offset loads and payload-dependent early
+returns have no available expression in the current work summary. Captured
+scalars, descriptors and original read-only Box headers are available;
+checked bounds could support a different upper-bound policy, but neither
+bounds nor read-only effects establish a representative cost or profitability.
+At fixed lengths and offsets, absent and first-byte-hit payloads still have
+different work. The existing grain-policy and unavailable-helper-extent
+items in `docs/todo.md` retain this general question. The paired-call result
+will qualify a source form, not resolve those policies.
+
+All bounds are parameters at the pair site so a preceding bound-producing
+call cannot consume one member of the intended pair in greedy grouping.
+Inspect the actual group and offered target: a granted bound call is not
+search participation. Any observed grouping interference is a separate
+compiler limitation to retain, not a reason to count that work as a scan.
+Use the existing source, native probe, adapter, Makefile targets and evidence
+stream; add no repository file or harness. Preserve the original modes and
+dated measurements. The existing diagnostic block form remains the logical
+trace reference; its nominal result and pricing do not certify the new
+plain form's actualization.
+
+The fixed four-record controls use T = 1, 65,536 and 1,048,576. All have the
+same input length `2*T + 2` and five offsets for each T. A stated hit is at
+the record's first byte except for the late hit, which is at its last byte.
+Counts below are inspected records / logical byte tests.
+
+| Control | Record lengths and hits | Sequential | Complete paired wave |
+| --- | --- | ---: | ---: |
+| Balanced absence | `[1, T, 1, T]`, no hit | `4 / (2*T + 2)` | `4 / (2*T + 2)` |
+| Balanced late hit | `[1, T, 1, T]`, hit at record 3 | `4 / (2*T + 2)` | `4 / (2*T + 2)` |
+| Cheap first hit, distant expense | `[1, T, T, 1]`, hit at record 0 | `1 / 1` | `3 / (T + 2)` |
+| Both local tails skipped | `[1, T, 1, T]`, hits at records 0 and 2 | `1 / 1` | `2 / 2` |
+
+Before selecting the form, require all of the following:
+
+- Reuse the existing 1,129-fixture oracle matrix for the new form, including
+  empty and partial waves, and compare its lowest index, unchanged inputs and
+  complete logical prefixes with the existing independent `memchr` outcomes.
+  Retain the old loop form as the same-partition control. A small C reference
+  in the existing probe also executes those two blocks, using one native
+  helper and the caller, and joins both before taking the minimum. It carries
+  private prefix records and has no shared cancellation flag. Charge every
+  started block; the sequential C search remains the useful early-hit baseline.
+- Inspect emitted permission, scalar-result offers, frames and the three
+  unchanged plain scan bodies. The intended offered target must be a scan,
+  and the old loop's ordinary split queries must still explain its zero
+  budget. Do not change runtime constants, refusal switches or source work to
+  manufacture participation.
+- In a diagnostic copy of the ordinary paired plain module, add entry/return
+  hooks to `has_zero`. Callbacks in the existing C probe record its range,
+  native thread identity and entry/completion event ordinals. These controls
+  have positive record lengths, so each range identifies its visited record.
+  Use no clock interval, sleep, barrier or wait in the observer. Check actual
+  visited prefixes, including skipped tails, rather than inferring them from
+  the final minimum. Require completed nonempty predicates on the caller and
+  another native thread, with overlapping entry/completion intervals, for
+  both balanced T = 1,048,576 controls. The uninstrumented plain image must
+  independently report a positive per-case steal delta with the verified
+  scan target; diagnostic participation alone is insufficient. Observer
+  hooks and any observer-induced optimization changes remain explicit and
+  supply no production timing result.
+  The same event validator must reject a copy of the first observed W1
+  balanced-absence T = 1 stream with one required completion removed
+  (eight events expected, seven supplied); preserve the raw stream and make
+  no additional Whitefoot call or retry.
+
+Reuse the frozen current-main CLI and ordinary runtime inputs. Run source
+emission, native construction and oracle execution as separate guarded
+stages, each capped at 30 seconds and construction at two jobs. Keep W1 and
+W4 only, exactly one fixed pass per selected image/width over the twelve
+controls; the largest payload is 2,097,154 bytes, within the existing
+16-MiB input domain. Stop on an acceptance/capability failure, changed
+uninstrumented predicate body, wrong index or prefix, changed input, or artifact-identity
+drift. If actual nonempty helper work is absent in that fixed pass,
+the actualization claim fails for this witness; do not expand the inputs or
+lower a threshold after seeing that result. No timing comparison is selected.
+
+**Design suitability.** Two adjacent ordinary calls directly test whether the
+same useful search work can execute on helpers without a loaded-work policy.
+The cost remains completing the other block and joining each ordered wave;
+the cheap-first-hit control preserves that adverse tradeoff. Defer recursive
+wave trees, broader cost transport and performance selection until this
+bounded functional and participation evidence identifies a further need.
+
+### Adjacent helper-pair source qualification
+
+After the criterion was published at `719c6d8b`, mode 4 adds an ordinary
+`paired_wave_plain` helper and selects it from `search_plain` using
+precomputed bounds. The other 13 original source functions are byte-identical
+to `7d718329`, including their contracts. In both emitted modes, the complete
+`has_zero`, `record_hit` and `scan_plain` LLVM bodies match the preceding
+current-main modules byte for byte: six complete comparisons, with no
+normalization. The [evidence stream](../../experiments/compute-bench/first-index-2026-09-22.tsv)
+retains the source, module, ledger and individual body hashes.
+
+The first parallel emission permits exactly the intended two-member
+`scan_plain` group. It offers the left scan through a 64-byte frame, executes
+the right scan directly, joins and releases the left result, then takes
+`imin`. A refused offer runs that same left scan inline; the W1 sequential
+clone calls left then right before taking the minimum. No bound-producing
+call occupies the group. The four original counted-loop prices remain
+146, 3,036, 2,336 and 3,044, with their original zero budgets on this source's
+spans. Existing predicates and contracts still establish range validity and
+read-only independence; those safety facts do not price the bytes visited
+after indexed loads or payload-dependent early returns.
+
+The same frozen main `345e2966a` CLI accepts both forms on the first attempt.
+Each compiler command took 0.04 seconds (`user` 0.04, `sys` 0.00); each
+separate guarded stage took 0.11 seconds under its 30-second cap. These are
+emission costs, with no compiler reconstruction or search timing comparison.
+
+### Adjacent helper-pair native result
+
+The single fixed pass at `7639d989c` meets the prospective functional and
+participation criterion. Each of sequential W1, parallel W1 and parallel W4
+passes 1,141 cases (the original 1,129 plus twelve controls), 4,564 index
+comparisons and 9,540,464 unchanged input bytes. Its 365,120 trace-field
+comparisons cover the unchanged WF mode 3 diagnostic and the native two-block
+reference, which completes 1,758 waves per image. Both sets of prefixes match
+the independent record outcomes. The plain pair records 0, 0 and 526 steals
+respectively; the original counted-block and diagnostic
+forms record zero throughout. Each observed image passes the twelve controls,
+48 index comparisons, 3,840 trace fields and 8,914,560 unchanged input bytes.
+
+The new plain mode's matrix covers indices and unchanged inputs, including
+empty and partial waves; it does not return a trace of every execution.
+Complete logical-prefix correspondence follows from the byte-identical
+read-only scan bodies, identical two-block bounds (including an empty final
+block), and the same complete-wave minimum and stopping condition. The mode 3
+diagnostic and native reference check those expected prefixes across the
+matrix. Entry/return events directly check the new plain mode's actual
+prefixes only on the twelve positive-length, four-record controls at W1/W4,
+as selected by the observer criterion.
+
+The W4 fixed-control observations below retain every participation outcome.
+Observer columns belong to a separate diagnostic image; a stolen task with
+no overlapping predicate intervals does not satisfy the overlap criterion.
+All W1 controls have zero steals and only caller predicates.
+
+| T | Control | Plain steals | Observed caller / helper predicates | Observed overlapping pairs |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | Balanced absence | 0 | 2 / 2 | 0 |
+| 1 | Balanced late hit | 0 | 2 / 2 | 0 |
+| 1 | Cheap first hit, distant expense | 0 | 3 / 0 | 0 |
+| 1 | Both local tails skipped | 1 | 2 / 0 | 0 |
+| 65,536 | Balanced absence | 0 | 2 / 2 | 2 |
+| 65,536 | Balanced late hit | 1 | 2 / 2 | 2 |
+| 65,536 | Cheap first hit, distant expense | 1 | 2 / 1 | 1 |
+| 65,536 | Both local tails skipped | 0 | 2 / 0 | 0 |
+| 1,048,576 | Balanced absence | 1 | 2 / 2 | 2 |
+| 1,048,576 | Balanced late hit | 1 | 2 / 2 | 2 |
+| 1,048,576 | Cheap first hit, distant expense | 1 | 2 / 1 | 1 |
+| 1,048,576 | Both local tails skipped | 0 | 2 / 0 | 0 |
+
+Both required balanced T = 1,048,576 controls execute all four nonempty
+predicates. In each observed stream, the caller's long record 3 spans event
+ordinals 3--7 and the helper's long record 1 spans 6--8. These are overlapping
+predicate lifetimes, not a clock measurement. The observer also confirms the
+local skips: the cheap-first-hit control visits records 0, 2 and 3, retaining
+1,048,578 logical byte tests versus the sequential reference's one; the
+both-tails control visits only records 0 and 2, with two byte tests. The
+native reference has the same completed prefixes and charges all started
+blocks; it uses a new pthread per wave and supplies no worker-pool performance
+comparison or cancellation claim.
+
+The observed LLVM copy adds only two range extracts, three event calls and
+one declaration to the ordinary linked module. Removing those lines restores
+the original bytes; no effect attribute was changed. Callback and resulting
+optimization perturbations remain diagnostic costs. The negative control,
+published at `7639d989c` before execution, removes completion ordinal 2 from
+a copy of the observed W1 T = 1 absence stream. The same validator rejects
+eight expected events versus seven supplied, while the raw stream retains
+all eight. No Whitefoot call was repeated.
+
+The separate guarded native construction and oracle stages pass on their
+first attempts: command/guard times are 0.57/0.65 and 1.16/1.19 seconds. They
+reuse twelve current-main runtime objects, with no compiler, runtime or
+third-party build. All twenty construction inputs and six output artifacts
+match their before/after hashes. The evidence stream retains the commands,
+identities and complete oracle output; [reproduction commands](../../experiments/compute-bench/README.md#first-index-expression-probe)
+use the existing manual targets. These are validation costs, not search
+timings.
+
+**Design suitability.** The ordinary two-call form qualifies bounded parallel
+search with the existing predicate contract and local skips. It adds no
+general recursive executor. The counted-loop pricing gap remains: at fixed
+T, the absence and both-tails controls have identical offsets and descriptors
+but different work, so even exact record spans would not predict early exit.
+Safety bounds and read-only facts do not select a representative price.
+Keep this source form as a qualified option; defer loaded-work policy, PGO
+and speed claims until a representative consumer and a prospective performance
+criterion justify measuring their costs.
 
 ## Sparse destination routing trial (2026-09-21)
 
@@ -4615,6 +5040,366 @@ that block without a sweep. Attribution and its validation remain deferred in
 the [formal-compute TODO](../../../docs/todo.md), because a mechanism change
 needs evidence distinguishing these possible causes. No threshold, runtime,
 compiler, specification or correctness-CI change follows from this inspection.
+
+## Selected-target loop frame fitting
+
+The prospective protocol published for this change starts from main
+`345e2966a45c995d6cebbb7f6b128a66235cd20f`. The separate runtime-DAG trial at
+[`b68f6777`](https://github.com/mbbill/Whitefoot/blob/b68f6777a0ef8c31a41da8a6a785ac6f67e644bb/research/investigations/compute-model/DESIGN.md#runtime-adjacency-all-predecessor-probe)
+reports a permitted ordinary output-initialization loop refused after needed
+captures have already been selected. Its unchanged
+[source](https://github.com/mbbill/Whitefoot/blob/b68f6777a0ef8c31a41da8a6a785ac6f67e644bb/research/investigations/compute-model/dag-fanin.wf)
+has SHA-256
+`1d536089caa1204af95569817760471fd0006613b6c7c6c08ea95a29d1304ffe`.
+The two retained inputs are the output range descriptor and a used `TaskCell`
+value. That frozen splitter charges 40 fixed bytes, 16 descriptor bytes and
+256 bytes for any nominal, giving 312 against the unchanged 256-byte slot.
+The target representation of `TaskCell` is two u64 fields; the same ordered
+frame would occupy 72 bytes. At protocol publication this was a layout
+deduction, not an emitted or qualified candidate; the result below supplies
+the later qualification. The prior trial's twelve native configurations qualify
+its original behavior only, and its small inputs do not supply positive grain
+for this initialization. This obstruction is neither unused capture retention
+nor the separate serial fill inside an allocation primitive.
+
+The selected implementation boundary is the final `frame_decline` in
+`lowering/builder/split.rs`, after one completed chunk and existing capture
+pruning but before delayed helper reservation. Retain the initial conservative
+precheck and the complete established path whenever the final conservative
+estimate fits. Only a final estimated refusal asks the existing selected-target
+lane-layout calculation whether the exact transported signature fits. Use
+`Capture.ty`, not the original binding's storage type, in signature order
+`seed, lower, upper, captures..., allowance`, followed by the result. The
+allowance is already a u64 parameter; it must not also be counted as a hidden
+recursion budget. A fit continues through the existing reservation and
+outlining path. A representable slot refusal reuses `splice_chunk` once, with
+its nested helpers, scheduling metadata and cleanup intact and no new call
+around the ordinary loop. Any retained estimate in its ledger is labelled
+conservative rather than presented as exact layout.
+
+Reuse `backend/target.rs`'s `parallel_lane_frame_layout` arithmetic, field
+alignment, padding, address-domain checks and runtime slot test through one
+signature-level query. That query takes the selected target, lowered nominal
+and element tables, ordered parameter types, result type and the existing
+optional recursion-budget flag. Those tables already exist before function
+bodies are built. `LayoutComputer` should read the tables it needs; the
+surrounding program-validation helpers receive the full program explicitly
+where they also need function or constant lookup. Do not create an incomplete
+`IrProgram`, duplicate a nominal-size walker, or introduce a later CFG rewrite.
+The driver selects the target after complete semantic acceptance and passes
+that same target through lowering and emission; target-specific test helpers
+do likewise. Host convenience entry points may delegate to this one path.
+An unrepresentable layout retains `TargetLayout` failure classification and no
+source rule; malformed compiler data remains a compiler failure. A valid
+layout exceeding a lane slot remains an optional scheduling decline.
+
+The affected production set is target layout/query visibility, lowering's
+context and splitter, and driver/error plumbing. Ordinary call layout remains
+a consumer of the same query. The two-world clone rule, source permissions,
+capture reconstruction, CFG reuse, storage representation, runtime policy and
+language rules retain their current grounds. The
+[approved addition](../../../design/compiler/parallel-lowering/two-worlds.md) to
+`compiler/parallel-lowering/two-worlds` extends its rescue decision; no current
+decision is replaced or retired. No specification or conformance rule changed.
+
+Enlarging lane slots would charge all tasks without resolving the estimator's
+missing type information. A second size calculator could disagree with
+emission on padding or address domains. Passing every candidate to the emitter
+would leave real refusals paying recursive splitter overhead. A later rewrite
+or another lowering of a refused source body would replace the established
+single-construction fallback. Exact fitting before pruning would change the
+chosen capture interface and helper order beyond the demonstrated gap. These
+alternatives do not serve this bounded capability better than the shared
+post-pruning query.
+
+### Prospective qualification
+
+Before implementation, require the following observations:
+
+- Extend existing compiler layout/lowering cases with small nonzero nominal
+  and fixed aggregate payloads, the exact 256-byte boundary and a true oversize,
+  alignment-sensitive padding, and a reduced address domain that fails as
+  `TargetLayout`. Check that an explicit selected target is used for both
+  fitting and emission and that the allowance is counted once. A zero-only
+  initializer cannot qualify aggregate transport.
+- Extend existing native loop coverage, sharing compatible construction, for
+  value snapshots/copies, joined results and source-owned cleanup at W1/W4 and
+  controlled refusal. Retain nested true refusal with an admitted inner split,
+  metadata and cleanup, and the existing candidate-construction counter for
+  increasing refusal depth. Ordinary scalar cases whose conservative frame
+  already fits must retain their capture ABI and emitted modules under the
+  same flags. These properties belong in maintained compiler tests, with no
+  research input or new Rust test binary in the daily gate.
+- Emit the pinned DAG source with frozen main and the candidate under ordinary
+  `--par --emit-llvm --par-ledger`. Record source/compiler/module identities,
+  actual initialization frame size and its emitted price `w`. The saved main
+  compiler has SHA-256
+  `cbffd4dd1ae8641ef03790457181188988bf70cc4af1a53c50c1f406307bb7f9`;
+  rebuild only if its identity or availability requires it. Inspect the
+  reachable `form=0`, `C=1` path before native execution: the owner prefix is
+  empty, report/reset spans are one, and initialization must be the only
+  executable offer source. Emitted offers elsewhere do not establish this.
+- Fix one larger disconnected graph with all task costs one and absent
+  successors encoded by `N`. Let `q=max(1,ceil(150000/max(1,w)))` and
+  `N=16*q`, at most 2,400,000. Choose N once from candidate emission before
+  native outcomes; ordinary W4 grain then permits 16 chunks at an empty
+  entry deque, without a work-floor override. Run the plain main and candidate
+  images once at W1 and W4. Reuse the pinned probe's independent recurrence,
+  full element/count comparison, nonzero initial outputs, unchanged-input and
+  canary checks; require `{status=0, rounds=1, notices=0}`. Record the change
+  in actual steals around this invocation. Candidate W4 worker execution,
+  with initialization isolated as above, is the capability criterion. A zero
+  steal result remains unqualified and is not rerun for a better schedule.
+
+Reuse the
+[pinned probe](https://github.com/mbbill/Whitefoot/blob/b68f6777a0ef8c31a41da8a6a785ac6f67e644bb/research/experiments/compute-bench/dag_fanin_probe.cpp)
+and its LLVM adapter by scratch extraction, recording extraction and bounded
+adaptation commands and digests with the results. The large control uses no
+trace engine, quadratic pair-overlap enumeration, per-task log, or oneTBB
+build. Keep full per-element checks but print only counts and a digest. No
+second permanent benchmark suite or dependency on the separate PR's compiler
+or runtime candidate is introduced.
+
+For this no-edge control, source auxiliary storage is `96*N + 32` payload
+bytes plus seven allocation headers, output is `16*N`, and input costs and
+successors occupy `24*N` bytes. The probe's retained graph, oracle, guarded
+copies and comparison storage must also be inventoried before construction.
+Use a conservative requested-data bound of `256*N + 64 MiB`, below 768 MiB
+at the maximum N; stop if the adapted probe exceeds this bound. The fixed
+runtime storage and one-gibibyte stack reservations per participating thread
+are charged separately; this bound is neither measured RSS nor virtual
+address usage. Initialization, validation, the seven fills, owner work and
+oracle work remain in the whole-call accounting.
+
+Construct and run only after the shared heavy slot is released, through
+`.github/run-check.pl` with two jobs and explicit caps: each research emission,
+native construction and native execution stage has 30 seconds. Record compiler
+and native construction separately from program execution, plus emitted code
+growth and whole-call costs; no elapsed-time success threshold or universal
+speed claim is selected. Applicable focused compiler checks and the canonical
+gate qualify the eventual delivered revision. Stop and reassess if fitting
+requires a broader capture, clone, scheduling or pipeline change, if the
+target/error paths cannot share the existing calculation, if already-fitting
+interfaces change, or if the resource/phase caps prevent the prescribed run.
+
+**Design suitability at protocol selection.** The existing completed candidate and prebuilt type
+tables make a shared signature query the smallest general addition serving
+this consumer. Its cost is explicit target/error plumbing and layout work
+only after an estimated refusal; aggregate transport and actual worker
+participation remain unverified until the checks above. Wider pruning of
+fitting captures and allocation-fill parallelism remain the distinct,
+already-recorded TODO opportunities. This change addresses neither and does
+not use their unmeasured benefits to justify its scope.
+
+### Implementation and focused checks
+
+The candidate retains the selected boundary: one signature layout calculation
+over the lowered type tables, an explicit selected target through lowering and
+emission, and no exact-layout query on a conservatively fitting loop. Invalid
+compiler data remains a lowering failure; a layout outside the selected
+address domain is a target failure without a source rule. Semantic checking
+and the generic IR value/control-flow representation remain target-independent;
+the optional loop shape is selected for the target. Host convenience delegates
+are test-only because the production driver now selects one target explicitly.
+
+Eight focused maintained cases pass. They cover copied arrays of 1, 216 and
+217 bytes on the host and Windows target, emitted frames of 48 and 256 bytes,
+direct refusal at 264 bytes, and the 256-byte frame's failure in a 255-byte
+address domain. The existing native capture case now carries a nonzero padded
+24-byte record and a 24-byte inline array in an 88-byte frame; its copies,
+nonzero reduction seed and complete output agree with unsplit lowering at W1,
+W4 and a controlled real-worker schedule. Existing ordinary lane boundaries,
+already-fitting capture interfaces, increasing nested refusal depth, inner
+split/metadata/cleanup reuse and single construction remain covered. No Rust
+test binary, native test construction path, conformance case or research input
+was added to the daily gate.
+
+Construction and failed observations are retained separately. The first CLI
+build failed in 6.58 seconds because the nominal index accessor was private;
+matching its existing element/block counterparts' crate visibility fixed that
+interface. The corrected CLI built in 44.34 seconds. Library construction took
+79.93 seconds; four of six initial layout/shape cases passed, while two new
+fixtures indexed their original array and therefore transported a pointer
+rather than their intended array payload. Copying that array inside the loop
+corrected the fixtures without changing production code. The library rebuilt
+in 80.47 seconds, and those two cases passed in 0.75 seconds. The nonzero native
+capture and existing true-refusal cases had already passed together in 2.61
+seconds and were not repeated after this fixture-only correction. Construction
+used two jobs and 180-second guards; focused execution used two threads and a
+30-second guard. These observations are focused checks, not a canonical gate.
+
+### Reproducing the bounded runtime control
+
+The [portable probe patch](../../experiments/compute-bench/loop-target-fitting-probe.patch)
+applies only to the pinned `b68f6777` probe. It extracts its generic Graph,
+independent Kahn recurrence oracle, complete-row comparator and known-result
+control into the prescribed one-fixture WF-only entry, reserving the oracle
+ready queue once. The removed code is the unselected matrices, oneTBB engines
+and tracing machinery; the source program and LLVM adapter remain byte-for-byte
+pinned. This patch is reproducibility data for this control, not another
+benchmark suite or gate input. Retire it if the control is superseded or ceases
+to be retained as useful evidence.
+
+Extract and apply it in scratch from the repository root:
+
+```sh
+repo=$PWD
+trial=$(mktemp -d)
+pin=b68f6777a0ef8c31a41da8a6a785ac6f67e644bb
+git show "$pin:research/investigations/compute-model/dag-fanin.wf" > "$trial/dag-fanin.wf"
+git show "$pin:research/experiments/compute-bench/dag_fanin_probe.cpp" > "$trial/dag_fanin_probe.cpp"
+git show "$pin:research/experiments/compute-bench/dag_fanin_host.ll" > "$trial/dag_fanin_host.ll"
+git show "$pin:research/experiments/compute-bench/dag_fanin_trace.awk" > "$trial/dag_fanin_trace.awk"
+git show "$pin:tests/programs/compute/host-adapter.awk" > "$trial/host-adapter.awk"
+patch -d "$trial" -p1 < "$repo/research/experiments/compute-bench/loop-target-fitting-probe.patch"
+```
+
+The original probe SHA-256 is
+`748d882424a19db8abf7489340a727eb4ed11927b76a4c674e30ae92f58ea3c2`;
+after this patch it is
+`44b56b24648f8cfab17ec87169bdd919b97a0a3830ddbd7b50379a81ce2dde90`.
+Patch application was checked against the actual constructed probe. For each
+already-built main/candidate CLI, emit the same extracted source with
+`--par --par-ledger --emit-llvm ... -o <arm>.raw.ll`, then run
+`awk -f host-adapter.awk <arm>.raw.ll dag_fanin_host.ll` into `<arm>.bound.ll`
+and `awk -v observed=0 -f dag_fanin_trace.awk <arm>.bound.ll` into
+`<arm>_plain.ll`. No observed image is built or executed.
+
+Build both images from one scratch Makefile, sharing the probe and production
+runtime objects. The `arm` module names below are `main_plain.ll` and
+`candidate_plain.ll` from the preceding emission:
+
+```sh
+cat > "$trial/Makefile" <<'MAKE'
+.DEFAULT_GOAL := all
+CLANG := clang
+include $(ROOT)/compiler/runtime.mk
+all: $(BUILD)/main_plain $(BUILD)/candidate_plain
+$(BUILD)/probe.o: $(TRIAL)/dag_fanin_probe.cpp
+	mkdir -p $(dir $@)
+	clang++ -std=c++17 -pthread -O2 -Wall -Wextra -Werror -Wpedantic -c $< -o $@
+$(BUILD)/%_plain.o: $(TRIAL)/%_plain.ll
+	mkdir -p $(dir $@)
+	clang -pthread -O2 -Wno-override-module -c $< -o $@
+$(BUILD)/%_plain: $(BUILD)/%_plain.o $(BUILD)/probe.o $(NATIVE_OBJECTS)
+	clang++ -pthread -O2 $^ -lm -o $@
+.SECONDARY: $(BUILD)/main_plain.o $(BUILD)/candidate_plain.o
+MAKE
+WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl loop-fit-native-build \
+  make -j2 -f "$trial/Makefile" ROOT="$repo" TRIAL="$trial" BUILD="$trial/native"
+```
+
+The recorded native construction took 1.19 seconds.
+Both images were checked for strong floor, lane acquire/publish and successful
+steal-counter symbols.
+
+The pinned host adapter recognizes assigned result calls; its indirect-result
+`call void @wf_dag_runtime` remains direct at both worker counts. W1 has no
+pool and receives zero split budgets. That route is preserved in this
+capability control and is not presented as a cost comparison of ordinary W1
+world selection. The later
+[adapter repair](#indirect-aggregate-result-adapter-repair-2026-09-23) qualifies
+ordinary W1 sequential-world and W4 parallel-world entry for both result ABIs.
+This pinned control continues to reproduce the earlier binder and its recorded
+route; its rows do not measure the corrected W1 entry cost.
+
+The native allocation inventory is bounded by phase. Graph costs and successor
+slots require `24*N` bytes. Generic oracle construction peaks at `128*N + 4096`
+including both adjacency-vector arrays, its five scalar work arrays and result
+rows. During the source call the retained graph/oracle, guarded output,
+guarded inputs and immutable copies use `104*N + 112`; source auxiliary
+payload adds `96*N + 32` and seven 8-byte headers, so the conservative call
+bound is `200*N + 4096`. After source cleanup the comparison copy brings the
+probe to `120*N + 4096`; value/count corruption controls mutate and restore its
+first row without another full copy. The patch checks the count and the
+`256*N + 64 MiB` ceiling before constructing the fixture. Fixed runtime data,
+allocator behavior and per-participant stack reservations remain separate;
+no resident-memory claim follows from these requested-data bounds.
+
+### Bounded control result
+
+The [recorded observations and identities](../../experiments/compute-bench/loop-target-fitting-2026-09-23.tsv)
+qualify the selected capability. Frozen main still refuses the used two-capture
+initializer with its 312-byte estimate. Candidate emission produces the exact
+72-byte frame and a constant initialization price of `w=4`; before native
+construction or outcomes this fixed `q=37,500` and `N=600,000`. Ordinary W4
+policy permits 16 chunks, budget 4, at an empty entry deque. The requested-data
+ceiling is 220,708,864 bytes and the modeled invocation peak is 120,004,096.
+
+The emitted call graph was inspected before execution. `dag_runtime` has one
+initialization budget query, reaching its 72-byte splitter. For `form=0`,
+`C=1`, the owner-prefix span is zero and head-reset/report spans are one;
+their splitters cannot acquire a lane. The recursive-tree branch is excluded.
+Validation, task draining, recurrence, initial ready-list construction and
+the seven allocation fills contain no other executable offer. Other DAG
+entries and the renamed source main are not called by this probe. Thus an
+increase of the successful-steal counter around the invocation is attributable
+to initialization.
+
+| Image | Workers setting | Actual steals | Whole call (ms) | Full rows checked |
+| --- | ---: | ---: | ---: | ---: |
+| Frozen main | 1 | 0 | 11.696458 | 600,000 |
+| Frozen main | 4 | 0 | 8.874417 | 600,000 |
+| Candidate | 1 | 0 | 9.459667 | 600,000 |
+| Candidate | 4 | 5 | 8.450625 | 600,000 |
+
+Every run returns `{status=0, rounds=1, notices=0}` and the same complete-output
+digest `2acd7570bbeeed18`, after comparing every value and evaluation count.
+The probe starts every output cell with a nonzero guard; immutable-input,
+canary and comparator-corruption checks pass. Each native configuration ran
+exactly once, with only its `WF_WORKERS` setting in an otherwise empty
+environment; none was
+rerun for a preferred outcome. The W4 candidate's five steals meet the
+preselected worker-execution criterion. Single whole-call intervals are cost
+accounting only: they include initialization, validation, seven fills, owner
+work and cleanup, and establish no speed result. Oracle construction,
+input/output preparation, comparison and complete process costs are recorded
+separately in the data file.
+
+For reproduction after fixing N from emission, the four commands are:
+
+```sh
+for arm in main candidate; do
+  for workers in 1 4; do
+    WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl "loop-fit-$arm-W$workers" \
+      env -i "WF_WORKERS=$workers" "$trial/native/${arm}_plain" 600000
+  done
+done
+```
+
+Raw LLVM grows from 332,996 to 337,563 bytes; module `__TEXT` grows from 26,100
+to 26,716 bytes and linked `__text` from 59,312 to 59,832. The linked images
+share 2,361,628 bytes of fixed BSS. Stack reservation remains one GiB per
+participant plus a 64 KiB alternate signal stack, separate from the input-
+dependent requested-data ceiling and from resident memory. No lane-slot or
+runtime policy changes contribute to this result.
+
+The existing 27-scalar fitting fixture retains all 27 captures and its 256-byte
+frame; the 28-scalar fixture retains its existing one-capture pruning rescue
+and 48-byte frame. Emitting both maintained source forms through frozen main
+and the candidate under identical `--par --emit-llvm` flags produced
+byte-identical complete modules. Their source forms remain owned by
+`a_fitting_loop_retains_its_interface_and_one_extra_field_triggers_rescue`,
+and the data file records both module identities.
+
+The native-control and correspondence commands shared one 30-second parent
+guard and completed in 1.72 seconds. Before actual native execution, three
+guard acquisitions returned 75 while unrelated worktrees owned verification;
+they ran no command and no owner or lock was removed. Together with the build
+and fixture failures above, these setup observations remain in the evidence.
+No additional native, focused or performance run was selected after success;
+the final published revision still requires its separate canonical gate and
+completion review.
+
+**Design suitability.** Shared exact fitting admits the demonstrated ordinary
+initializer and nonzero aggregate transports without another representation
+walker or refused-loop rewrite. The initial estimate still owns pruning and
+helper order, and fitting scalar emission is unchanged. Wider capture pruning
+and allocation-fill parallelism remain separate deferred opportunities. The
+later [adapter repair](#indirect-aggregate-result-adapter-repair-2026-09-23)
+closes the indirect-result world-selection TODO; the capacity observations
+above retain their original pinned binder and limits. No language rule,
+specification or conformance verdict changed.
 
 ## Query-retained zero-budget dispatch control
 

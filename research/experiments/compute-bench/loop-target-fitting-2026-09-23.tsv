@@ -1,0 +1,31 @@
+# Selected-target loop frame fitting; one capacity control, not a speed comparison.
+# Protocol bb0360f7fa3b06c27cf28af224e01a68c74cc477; compiler/runtime base345e2966a45c995d6cebbb7f6b128a66235cd20f.
+# Pinned source/probe/adapter revisionb68f6777a0ef8c31a41da8a6a785ac6f67e644bb; source unchanged.
+# Host Darwin arm64, macOS26.6.2, Apple clang21.0.0(clang-2100.3.34.2). No oneTBB or traced image.
+# N selected before native construction/outcomes from emitted initweight4: q=ceil(150000/4)=37500; N=16*q=600000; cap2400000.
+# Form0, owners1, costs[N]=1, successors[2N]=N; sole executable offer is output init. Prefixspan0, reset/reportspan1, tree branch excluded.
+# Runtime unchanged; each process starts with env -i WF_WORKERS=1 or4. Exactly one actual call per arm/width, no retry or favorable rerun.
+# Pinned indirect-result adapter enters wf_dag_runtime directly atW1/W4; W1 has no pool/zero budgets, not the ordinary bootstrap's sequential clone route.
+# Every row/value/evaluation count compared; initialized output nonzero, guarded output/report and unchanged guarded input copies checked. Value/count corruption controls both rejected.
+# Requested data: oraclepeak76804096, invocationpeak120004096, ceiling220708864bytes. Source auxiliary payload57600032 + seven8-byte headers. No RSS claim.
+# Fixed linkedBSS2361628bytes per image; floor reserves1GiB stack/participant plus64KiB alternate signal stack. Fixed code/runtime and OS mappings are separate from requested-data bound.
+# RawLLVM main332996/candidate337563bytes; module__TEXT26100/26716bytes; linked__text59312/59832bytes. No change to runtime slot256bytes.
+# Source SHA2561d536089caa1204af95569817760471fd0006613b6c7c6c08ea95a29d1304ffe.
+# Original probe SHA256748d882424a19db8abf7489340a727eb4ed11927b76a4c674e30ae92f58ea3c2; patched44b56b24648f8cfab17ec87169bdd919b97a0a3830ddbd7b50379a81ce2dde90.
+# Probe patch SHA256a91a5ffbb81bcefaba0ce0b532f7fe6713de1a4dee56351b3c85b5b9b8fc1ba4; neutral pinned-input patch reproduced constructed probe byte-for-byte.
+# Main CLI SHA256cbffd4dd1ae8641ef03790457181188988bf70cc4af1a53c50c1f406307bb7f9; candidate CLI SHA256da3f4143d553a5c42f022e17eabec4a84a449a9a96a2ca0efed564676314921a.
+# Main rawLLVM SHA256a827b4910130f153f885cf86d4844c94059c7d04c0507fe92de13a7ec126094c; candidate243c0464682e8ff40bb6c876b0aa2d41fa9fcde5a02cff09ecce530612a8fcc7.
+# Main native SHA2564f07d5a6c2d822d9696a571b7f09e4153abbe9372427888f10d3cc2269ebd201; candidate7f0d6597de47afa968fb9d2f1768ee8a0cf237507034e6a5005064f308a70296.
+# Successful stage guardwallseconds: CLI44.34; library79.93; native-source-admission.11; corrected-boundary-emission.53; correctedlibrary80.47; nativecapture/refusal2.61; correctedboundarytests.75; mainDAGemission.42; candidateDAGemission.43; nativebuild1.19.
+# Failed observations: initialCLI6.58s exit101 private nominal index; initial6focusedtests.87s exit101 (4pass,2newfixturefail: indexing captured pointer). Copy-inside-loop fixtures corrected with production unchanged. Successful native/other focused cases reused.
+# Before construction an initial formatting parse error in a new test was corrected; no image existed at that point. No cost observation was recorded for that edit.
+# Three guard refusals(exit75) did not execute commands: nativebuild while indexed-paired-series owned lock; two W1 attempts while indexed-repeat then ordered-map gate owned lock. No owner/lock removed.
+# Actual parent control+correspondenceguard1.72s includes native process guards mainW1.54, mainW4.11, candidateW1.33, candidateW4.11; corresponding /usr/bin/time real.46,.03,.29,.03seconds. This includes startup/oracle/comparison beyond whole_call_ms.
+# Already-fitting correspondence: 27scalars retains27captures/frame256; 28scalars is pre-existing pruning rescue retaining1/frame48. Entire raw modules identical old/candidate; SHA256eb3c5332cf7b89a82527c17e7d6e5774d0346380ecd07625f38845efd8afa896 and14d6fe8ebd34afb5363047825ec8c81a12b36e6e88abc89325a028b93eed51d1 respectively. Four emissions .10/.10/.11/.11guardseconds.
+# Construction guards jobs2/cap180CLI+library; research/native guards jobs2/cap30. The later canonical gate is separate. Raw logs/input manifests remain in scratch; this file preserves selected numeric outcomes and source/artifact identities.
+# Reproduction and allocation inventory: research/investigations/compute-model/DESIGN.md#selected-target-loop-frame-fitting. Retire with this control if superseded or no longer useful evidence.
+arm	workers	n	init_frame_bytes	init_weight	actual_steals	status	rounds	notices	checked_rows	digest	graph_and_oracle_ms	input_output_setup_ms	whole_call_ms	comparison_ms
+main	1	600000	refused	none	0	0	1	0	600000	2acd7570bbeeed18	21.958750	2.581167	11.696458	4.669584
+main	4	600000	refused	none	0	0	1	0	600000	2acd7570bbeeed18	13.142166	2.093292	8.874417	3.679333
+candidate	1	600000	72	4	0	0	1	0	600000	2acd7570bbeeed18	12.459750	2.091125	9.459667	3.855000
+candidate	4	600000	72	4	5	0	1	0	600000	2acd7570bbeeed18	11.627833	1.852708	8.450625	3.601833

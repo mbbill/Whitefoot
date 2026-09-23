@@ -15,8 +15,11 @@ every claim that can be grounded in a measured number in this repository is,
 and every claim that cannot is labelled an estimate with its reasoning.
 
 The executable compute consumers in §§13--15 supersede their earlier range-loan
-predictions. Other sections remain analysis of the stated I/O brief, not
-compiler capability claims or an authorization to start I/O work.
+predictions. The bounded trials in §§5 and 21 qualify runtime fan-in and
+local-return search under their stated contracts, including actual helper
+execution, without a speed comparison. Other sections remain analysis of the
+stated I/O brief, not compiler capability claims or an authorization to start
+I/O work.
 
 Nothing here proposes changing the model. Where a rule costs something, the
 cost is priced, not appealed.
@@ -2742,7 +2745,17 @@ exit from the loop judged by PAR-2: the call contributes its declared
 footprint, not the callee's return edges. A batch can fold those helper
 results with `imin` and decide whether to stop after the join. This candidate
 can skip each helper's local suffix but supplies no cancellation of another
-helper; its source acceptance and native behavior remain unqualified here.
+helper. The [bounded first-index probe](../compute-model/DESIGN.md#native-expression-result)
+qualifies source acceptance, lowest-index native results, actual local suffix
+skipping and every completed helper's source-level visits and byte tests.
+Its original small counted waves remain sequential under ordinary pricing.
+The later [adjacent-call qualification](../compute-model/DESIGN.md#adjacent-helper-pair-native-result)
+passes the same two blocks to an ordinary PAR-1 helper. For balanced absent
+and late-hit controls, the plain W4 image steals a scan and the diagnostic
+copy records completed nonempty predicates on both caller and helper with
+overlapping lifetimes. Local suffix skips and the lowest-index result remain
+intact. This is a fixed two-call decomposition; it adds no shared cancellation
+or general recursive executor and establishes no search speed result.
 
 Invocation counts do not bound variable predicate cost. With batches `[0]`
 and `[1, 2]`, a cheap match at index 1 still waits for a cost-T predicate at
@@ -2750,7 +2763,9 @@ index 2 if that batch evaluates every item, while sequential search stops
 after two cheap predicates. Both Whitefoot and native comparisons must charge
 work already started in the final batch; stopping inside a running predicate
 would require a different predicate interface. Join costs and these weighted
-work costs remain unmeasured.
+runtime costs remain unmeasured. The probe realizes this example with 65,538
+source-level byte tests versus two for sequential search. Returned counters
+are not measurements of physical memory traffic or optimized instructions.
 
 ### (d) Performance expectation
 
@@ -2773,8 +2788,9 @@ scaling and equal-cost predicates — which for a uniformly distributed match is
 
 The full-scan form invokes the predicate `n` times; with constant-cost
 predicates its work is proportional to `n`. The ordered-batch form has the
-invocation bounds above, with weighted work, latency and memory still
-requiring a concrete implementation and measurement.
+invocation bounds above. The bounded implementation qualifies the stated
+source-level work controls; latency, production workspace cost and parallel
+competitiveness still require measurement.
 
 **Strictly worse case:** validation passes that almost always find their answer
 immediately — "is any record malformed", "does this input contain a byte > 127".
@@ -2788,7 +2804,11 @@ no profitability result.
 denies PAR-2, but an outer sequential loop can stop between parallel batches
 while preserving the first-index result. The full-scan substitute can amplify
 work substantially; the ordered-batch alternative bounds predicate invocations
-without establishing a weighted-work or runtime-performance bound.
+without establishing a weighted-work or runtime-performance bound. Qualified
+local-return helpers skip local tails, while all helpers in a started wave
+complete. The original counted waves execute sequentially; the adjacent-call
+form qualifies actual helper search on bounded absent/late-hit controls.
+Weighted-work pricing and parallel profitability remain open.
 
 ---
 
@@ -2832,7 +2852,7 @@ only.
 | 18 | Event loop / reactor | **`[R]` restructure, no loss** — the batch model *is* the reactor | same verdict, same caveat as 17 | callback graph → a dispatch `match` on a row; the state machine is still written by hand; timers need an API timer pending (**not expressible** without one) | **parity to 1.15x libuv**, 0.95–1.0 of raw batched io_uring; the dispatch loop is parallel where a reactor's is not. **Memory a row plus a pooled buffer — the earlier "30x worse per idle connection" is withdrawn with the stackful design** | E |
 | 19 | Async/await runtime | **`[R]` restructure, bounded loss**; **not expressible** (dynamic heterogeneous spawn; cancelling work not represented as a `Pending`) | same verdict, same caveat as 17 | **await depth → hand-written phases** — the largest source cost in the I/O half; per-task cancellation *is* reachable via a cancel operation on a `Pending` | estimate 0.95–1.0 of batched io_uring, **1.0–1.2x tokio**; memory a row plus a pooled buffer. The staged design's non-associative-accumulator latitude is **withdrawn** | E |
 | 20 | Responsive loop + long compute | restructure, bounded loss (largest source tax) | — | hand-written resumable work stack; chunk budget = p99 knob; needs `wait_batch` to have a deadline or poll form | compute 1.1–1.3x slower (resumable form); p99 recoverable to near-parity on a **busy** server and at **10–16% overhead** on a quiet one; **throughput cap improves from one request per chunk to one batch per chunk** | R/E |
-| 21 | Parallel search with early exit | restructure; formulation-dependent costs | — | no exit from an admitted loop; helpers may return locally; stop between joined batches | doubling batches use fewer than 2(h+1) predicate calls for first hit h, analytically; this does not bound weighted work; helper formulation and join costs unmeasured | R |
+| 21 | Parallel search with early exit | restructure; formulation-dependent costs | — | no exit from an admitted loop; helpers may return locally; stop between joined batches | doubling batches use fewer than 2(h+1) predicate calls for first hit h, analytically; adjacent calls qualify actual helper execution; weighted-work bounds, join costs and speed remain unestablished | R/M |
 
 ---
 
@@ -2910,7 +2930,9 @@ join while preserving the first index, and block helpers may return at local
 matches. §21 bounds predicate invocations; it does not bound the weighted
 cost of work already started in the final batch. Neither full-scan
 amplification nor a measured speed ratio is inherent to all formulations.
-The helper candidate, batch joins and weighted work remain unqualified.
+The bounded probe qualifies local suffix skips, complete joined-wave work and
+actual helper participation; general weighted-work bounds, join costs and
+parallel profitability remain unresolved.
 
 **T9. Sparse frontier → source-ordered work or destination-owned parallel discovery.**
 (5′, 13)
