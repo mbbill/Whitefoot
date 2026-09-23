@@ -1512,10 +1512,14 @@ fn boxed_runtime_ring_wraps_and_releases_each_owner_in_order() {
     let source = include_str!("../../../../tests/programs/runtime_ring_wrap.wf");
     let fixed = source.replace(
         "  let ring = box_ring_new::<Box<u64>>(capacity: 3_u64);",
-        "  let empty = ring_new::<Box<u64>, 3>();\n  \
-         let ring = box_new::<Ring<Box<u64>, 3>>(value: move empty);\n  \
-         if ring.inner.len != 0_u64 { return exit_status(code: 12_u8); }\n  \
-         if ring.inner.head != 0_u64 { return exit_status(code: 13_u8); }",
+        r#"  let empty = ring_new::<Box<u64>, 3>();
+  let ring = box_new::<Ring<Box<u64>, 3>>(value: move empty);
+  if ring.inner.len != 0_u64 {
+    return exit_status(code: 12_u8);
+  }
+  if ring.inner.head != 0_u64 {
+    return exit_status(code: 13_u8);
+  }"#,
     );
     assert_ne!(fixed, source);
     let (partial, _) = fixed

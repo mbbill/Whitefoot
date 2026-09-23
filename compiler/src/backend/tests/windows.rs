@@ -954,9 +954,9 @@ fn a_referenced_pool_tree_preserves_range_reference_and_result_abi() {
     for function in [build, checksum] {
         let header = function.lines().next().expect("helper signature");
         assert_eq!(header.matches("{ ptr, i64 }").count(), 2);
-        assert!(function.lines().any(|line| {
-            line.trim_start().starts_with("store %wf.t") && line.ends_with(", ptr %wf.result")
-        }));
+        // The result pointer still addresses the tag, u64 success payload
+        // and three-variant PoolError, each written on its selected route.
+        assert_scalar_result_fields(&llvm, function, &["i32", "i64", "i32"]);
     }
     assert!(
         build

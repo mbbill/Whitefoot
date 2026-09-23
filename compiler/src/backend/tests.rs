@@ -688,6 +688,43 @@ fn emitted_function<'module>(module: &'module str, name: &str) -> &'module str {
     &module[function_start..function_end]
 }
 
+/// These fixtures construct every variant of a result with scalar fields.
+/// Check its typed caller destination and field writes independently of a
+/// preliminary whole-aggregate store or the module's nominal numbering.
+fn assert_scalar_result_fields(module: &str, function: &str, fields: &[&str]) {
+    let mut initialized = vec![false; fields.len()];
+    for line in function.lines() {
+        let Some((address, operation)) = line.trim().split_once(" = ") else {
+            continue;
+        };
+        let Some(projection) = operation.strip_prefix("getelementptr inbounds ") else {
+            continue;
+        };
+        let Some((result_type, field)) = projection.split_once(", ptr %wf.result, i32 0, i32 ")
+        else {
+            continue;
+        };
+        assert!(
+            module.contains(&format!("{result_type} = type {{ {} }}", fields.join(", "))),
+            "the result destination has the expected scalar layout: {line}"
+        );
+        let field = field.parse::<usize>().expect("result field ordinal");
+        let field_type = fields.get(field).expect("declared result field");
+        assert!(
+            function.lines().any(|store| {
+                store.trim().starts_with(&format!("store {field_type} "))
+                    && store.ends_with(&format!(", ptr {address}"))
+            }),
+            "the selected result field is initialized: {line}"
+        );
+        initialized[field] = true;
+    }
+    assert!(
+        initialized.iter().all(|field| *field),
+        "the fixture writes the tag and every variant's scalar payload: {initialized:?}"
+    );
+}
+
 /// One monomorphized instance of a compiler-owned [PRE-1] record.
 ///
 /// Those records are emitted as ordinary out-of-line bodies, one per instance
@@ -766,7 +803,7 @@ fn main() -> status: ExitStatus pure {
         return exit_status(code: 3_u8);
       }
     }
-    Wide(first: first, last: last) => {
+    Wide(first: first_word, last: last_byte) => {
       return exit_status(code: 4_u8);
     }
   }
@@ -776,7 +813,7 @@ fn main() -> status: ExitStatus pure {
     Value(number: value) => {
       return exit_status(code: 5_u8);
     }
-    Wide(first: first, last: last) => {
+    Wide(first: first_word, last: last_byte) => {
       return exit_status(code: 6_u8);
     }
   }
@@ -787,11 +824,11 @@ fn main() -> status: ExitStatus pure {
     Value(number: value) => {
       return exit_status(code: 8_u8);
     }
-    Wide(first: first, last: last) => {
-      if first != 511_u64 {
+    Wide(first: first_word, last: last_byte) => {
+      if first_word != 511_u64 {
         return exit_status(code: 9_u8);
       }
-      if last != 127_u8 {
+      if last_byte != 127_u8 {
         return exit_status(code: 10_u8);
       }
     }
