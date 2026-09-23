@@ -106,42 +106,41 @@ fn maps_leaf_splits_pages_and_compact_owner_regressions_execute() {
     }
 }
 
-#[test]
-fn grow_vector_executes_and_releases_every_allocation_in_both_lowering_modes() {
-    // Filesystem locations and source-envelope logical names are independent.
-    let sources: [(&str, &[u8]); 2] = [
-        (
-            "lib/containers/grow-vector.wf",
-            include_bytes!("../../../lib/containers/grow-vector.wf"),
-        ),
-        (
-            "containers/grow-vector-program.wf",
-            include_bytes!("../../../tests/programs/containers/grow-vector-program.wf"),
-        ),
-    ];
+fn execute_container_program(
+    name: &str,
+    sources: &[(&str, &[u8])],
+    expected_allocations: usize,
+    check_observer_controls: bool,
+) {
     let modes = [
-        ("sequential", compile_sources(&sources)),
+        ("sequential", compile_sources(sources)),
         (
             "parallel",
-            compile_sources_with_cli_parallel_defaults(&sources),
+            compile_sources_with_cli_parallel_defaults(sources),
         ),
     ];
 
     for (mode, llvm) in modes {
+        let context = format!("{name}/{mode}");
+        // Exercise ordinary deallocation as well as the observed image below:
+        // the ledger quarantines released allocations to distinguish identities.
         let output = build_program(&llvm).run_with_workers(None);
-        assert_eq!(output.status.code(), Some(0), "{mode}: {output:?}");
-        assert!(output.stdout.is_empty(), "{mode}: {output:?}");
-        assert!(output.stderr.is_empty(), "{mode}: {output:?}");
+        assert_eq!(output.status.code(), Some(0), "{context}: {output:?}");
+        assert!(output.stdout.is_empty(), "{context}: {output:?}");
+        assert!(output.stderr.is_empty(), "{context}: {output:?}");
 
-        assert!(llvm.contains("@malloc("), "{mode}: missing allocator calls");
-        assert!(llvm.contains("@free("), "{mode}: missing release calls");
-        assert_eq!(llvm.matches("define i32 @main(").count(), 1, "{mode}");
+        assert!(
+            llvm.contains("@malloc("),
+            "{context}: missing allocator calls"
+        );
+        assert!(llvm.contains("@free("), "{context}: missing release calls");
+        assert_eq!(llvm.matches("define i32 @main(").count(), 1, "{context}");
         let observed = llvm
             .replace("@malloc(", "@wf_observe_allocate(")
             .replace("@free(", "@wf_observe_release(")
             .replace("@main(", "@wf_fixture_main(");
         let observer =
-            include_str!("../../../tests/programs/containers/grow-vector-allocation-observer.c");
+            include_str!("../../../tests/programs/containers/container-allocation-observer.c");
         let observed_program = build_program_with_driver_arguments(
             &observed,
             Some(observer),
@@ -154,15 +153,18 @@ fn grow_vector_executes_and_releases_every_allocation_in_both_lowering_modes() {
             ],
         );
         let output = observed_program.run_with_workers(None);
-        assert_eq!(output.status.code(), Some(0), "{mode}: {output:?}");
-        assert!(output.stderr.is_empty(), "{mode}: {output:?}");
+        assert_eq!(output.status.code(), Some(0), "{context}: {output:?}");
+        assert!(output.stderr.is_empty(), "{context}: {output:?}");
         assert_eq!(
             output.stdout,
-            b"vector allocation observer: 25 allocations, each released exactly once\n",
-            "{mode}: {output:?}"
+            format!(
+                "container allocation observer: {expected_allocations} allocations, each released exactly once\n"
+            )
+            .as_bytes(),
+            "{context}: {output:?}"
         );
 
-        if mode == "parallel" {
+        if check_observer_controls && mode == "parallel" {
             // Reuse this native image for observer controls: simultaneous
             // registration and cross-worker release, then three independent
             // wrong ledgers. No extra WF compilation or C build is needed.
@@ -172,7 +174,7 @@ fn grow_vector_executes_and_releases_every_allocation_in_both_lowering_modes() {
             assert!(concurrent.stderr.is_empty(), "{concurrent:?}");
             assert_eq!(
                 concurrent.stdout,
-                b"vector allocation observer: 32 allocations, each released exactly once\n"
+                b"container allocation observer: 32 allocations, each released exactly once\n"
             );
             for (argument, message) in [
                 ("double-release", "allocation released twice"),
@@ -190,10 +192,64 @@ fn grow_vector_executes_and_releases_every_allocation_in_both_lowering_modes() {
                 assert_eq!(output.status.code(), Some(1), "{argument}: {output:?}");
                 assert_eq!(
                     output.stderr,
-                    format!("vector allocation observer: {message}\n").as_bytes(),
+                    format!("container allocation observer: {message}\n").as_bytes(),
                     "{argument}: {output:?}"
                 );
             }
         }
     }
+}
+
+#[test]
+fn grow_vector_executes_and_releases_every_allocation_in_both_lowering_modes() {
+    // Filesystem locations and source-envelope logical names are independent.
+    let sources: [(&str, &[u8]); 2] = [
+        (
+            "lib/containers/grow-vector.wf",
+            include_bytes!("../../../lib/containers/grow-vector.wf"),
+        ),
+        (
+            "containers/grow-vector-program.wf",
+            include_bytes!("../../../tests/programs/containers/grow-vector-program.wf"),
+        ),
+    ];
+    execute_container_program("grow-vector", &sources, 25, true);
+}
+
+#[test]
+fn slab_operations_and_memberships_release_every_owner_in_both_lowering_modes() {
+    let sources: [(&str, &[u8]); 3] = [
+        (
+            "lib/containers/slab.wf",
+            include_bytes!("../../../lib/containers/slab.wf"),
+        ),
+        (
+            "containers/slab-membership-program.wf",
+            include_bytes!("../../../tests/programs/containers/slab-membership-program.wf"),
+        ),
+        (
+            "containers/slab-program.wf",
+            include_bytes!("../../../tests/programs/containers/slab-program.wf"),
+        ),
+    ];
+    // Seven total backings, nine operation payloads (four affine and five
+    // nodrop), and three payloads in the two membership protocols.
+    execute_container_program("slab", &sources, 19, false);
+}
+
+#[test]
+fn deque_wrap_rebase_and_consumption_release_every_owner_in_both_lowering_modes() {
+    let sources: [(&str, &[u8]); 2] = [
+        (
+            "lib/containers/deque.wf",
+            include_bytes!("../../../lib/containers/deque.wf"),
+        ),
+        (
+            "containers/deque-program.wf",
+            include_bytes!("../../../tests/programs/containers/deque-program.wf"),
+        ),
+    ];
+    // Six scalar, two affine, three nodrop and two zero-sized backings;
+    // three affine and five nodrop payloads. Every rebase creates a new backing.
+    execute_container_program("deque", &sources, 21, false);
 }

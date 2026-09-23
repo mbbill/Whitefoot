@@ -1892,6 +1892,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         declaration: DeclarationId,
     ) -> Result<IntegerType, CheckStop> {
+        self.const_generic_types()
+            .find_map(|(candidate, ty)| (candidate == declaration).then_some(ty))
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
+    }
+
+    /// The declared type of each const parameter, before any caller supplies
+    /// it to a differently typed const formal or uses it as a storage extent.
+    /// ENT-2's symbolic constant identity remains its declaration in each use.
+    pub(super) fn const_generic_types(
+        &self,
+    ) -> impl Iterator<Item = (DeclarationId, IntegerType)> + '_ {
         self.function_templates
             .iter()
             .flat_map(|template| template.generic_parameters.iter())
@@ -1906,14 +1917,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .values()
                     .flat_map(|formal| formal.parameters.iter()),
             )
-            .find_map(|parameter| match parameter {
-                GenericParameter::Const {
-                    declaration: candidate,
-                    ty,
-                } if *candidate == declaration => Some(*ty),
+            .filter_map(|parameter| match parameter {
+                GenericParameter::Const { declaration, ty } => Some((*declaration, *ty)),
                 _ => None,
             })
-            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     pub(super) fn call_is_inside_postcondition(&self, call: NodeId) -> Result<bool, CheckStop> {

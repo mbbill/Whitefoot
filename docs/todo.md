@@ -88,6 +88,38 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   against direct C and the current WF implementation. No new language operation
   is selected yet.
 
+- **Ring payload addressing withholds a useful unsigned offset fact.** The
+  [Deque comparison](../research/experiments/container-representation/deque-library/RESULTS.md)
+  observes a 2.256–2.405x scalar forward-churn cost against C with ordinary
+  inlining at v0.64. A bounded IR-only probe adding `nuw` to four positive-stride
+  payload GEPs lets Clang keep the descriptor in registers; merely splitting
+  the address calculation does not. No timing recovery or general validity
+  claim follows from that probe. Qualify the effective byte offset against
+  the actual padded header, stride, allocation domain and parent extent,
+  including zero-capacity, zero-size and maximum-index cases; do not apply
+  the fact to wrapping head arithmetic. Older LLVM needs a supported spelling
+  or an equally justified portable fact. Compare identical source with the
+  fact on and off, retain the independent oracle, and measure the full
+  normal/retained matrix before selecting production emission. Defer that
+  backend change while completing the library baseline; reopen for the next
+  container lowering experiment. Zero-stride address steps now use the
+  selected-target zero displacement; that repair does not qualify an unsigned
+  flag for positive-stride payload steps.
+
+- **Slab aggregate results retain extra transfers and layout overhead.**
+  The [Slab comparison](../research/experiments/container-representation/slab-library/RESULTS.md)
+  separates the one-slot cell's extra word from its helper boundary: retained
+  wide removal and consumption has three 256-byte transfers in WF versus one
+  in C, and WF's product-layout result differs from the C union ABI. Keep
+  this distinction when interpreting timing; a cell-layout change alone
+  cannot remove these costs. Validate forwarding or result placement with
+  the same owning return paths, failed insertion returning the offered owner,
+  partial cleanup and alias controls, checking optimized transfers and
+  same-source timings on supported toolchains. Defer general enum layout and
+  call ABI changes until that experiment establishes which transfer can be
+  removed without changing ownership; reopen with the owning-map library or
+  a workload dominated by wide Slab removal.
+
 - **Short Vector cycles retain unresolved lowering costs.** The paired
   consumption experiment improves the large-record paths but slows the
   16-element scalar reuse chain in both source orders. Ordinary optimization
@@ -327,8 +359,8 @@ each is resolved by a discussion and a tree change.
   multi-result and resource APIs. A candidate must preserve explicit boundary
   types, unambiguous result references, useful mismatch diagnostics and one
   grammar-defined spelling, without site-dependent inference relief. The
-  benefit and final spelling are unverified; defer selection while result-proof
-  transport is investigated, and reopen at the next syntax-design discussion.
+  benefit and final spelling are unverified; defer selection until the next
+  syntax-design discussion.
 - **Ownership transfer and reference-access forms.** Audit unnecessary
   owner-in/owner-out APIs now expressible with reference parameters and exact
   effect rows, the differing consumption spellings of calls, returns, matches
@@ -341,8 +373,8 @@ each is resolved by a discussion and a tree change.
   Require the ordinary positive and invalid-use examples to remain explainable
   by one rule per operation, with no additional runtime checks or transfers.
   Reduced ceremony is an opportunity, not an established gain. Defer these
-  interface and syntax choices to a dedicated discussion after the current
-  result-proof study; reopen with those same-operation comparisons.
+  interface and syntax choices to a dedicated discussion; reopen with those
+  same-operation comparisons.
 - **Expression composition and canonical source policy.** Reassess mandatory
   three-address computation and intermediate names together with the ban on
   comments and rejection of noncanonical formatting. Compare authoring,
@@ -365,10 +397,40 @@ each is resolved by a discussion and a tree change.
   An unconstrained `K` also admits those linear values under OWN-1 and
   PROV-6. A numeric phase alone cannot prove that a returned enum slot is
   vacant; an occupied variant still contains a key that must be consumed.
-  Investigate an ordinary state encoding or checked variant-state relation
-  that lets rehash move every must-consume key without an impossible cleanup
-  branch. Retain occupancy as program data, and do not add an implicit
-  discard merely to satisfy the checker.
+  The [Slab trial](../research/investigations/containers-and-resources/X1-LIBRARY.md#exact-unavailable-source-forms)
+  uses an inline `Slots<T,1>` per cell and executes insertion, removal, reuse
+  and cleanup for nodrop T; it supplies an ordinary state encoding, at a
+  metadata cost measured against tagged C cells. This does not establish a
+  complete map rehash or select the same layout for it. Reopen for the next
+  owning-map library trial: compare the one-slot encoding and ordinary enum
+  alternatives through collision, replacement, tombstone reuse and rehash,
+  including bytes and helper transfers. Retain occupancy as program data and
+  do not add an implicit discard or impossible cleanup branch to satisfy the
+  checker. A new variant-state relation needs a remaining measured consumer.
+- **Deque still lacks zero-copy two-span access over Ring.** REF-4 rejects
+  every Ring range, even empty and proved non-wrapping ones. The current
+  library's slot visitor is not a substitute for a native consumer accepting
+  two contiguous extents. A fully initialized Array works for copy elements
+  but adds spare-capacity initialization and does not provide arbitrary T.
+  The [source analysis](../research/investigations/containers-and-resources/X1-LIBRARY.md#ring-range-correspondence)
+  identifies the missing contiguous-span interface. An extension needs a
+  concrete span consumer, precise empty/non-wrap formation and invalidation
+  rules, native-cost comparison and negative wrap/stale-reference cases.
+  Defer extension while this library tests endpoint and rebase costs; reopen
+  before using it for scatter/gather or another required bulk span consumer.
+- **Deque rebase is an explicit new-owner conversion.** Reference-based
+  replacement currently loses the exchanged owners' measures; append's
+  lower-bound-only contract also lacks the exact sum needed by the library's
+  return contract. The current counted take/place conversion supports nodrop
+  T without an impossible cleanup branch, but its cost must be separated
+  from a two-extent native transfer. The
+  [source limits](../research/investigations/containers-and-resources/X1-LIBRARY.md#exact-unavailable-source-forms)
+  and [cost comparison](../research/experiments/container-representation/deque-library/RESULTS.md)
+  distinguish interface precision from lowering. Keep the explicit conversion
+  for this slice; reopen if a real caller needs automatic reference-based
+  growth or rebase dominates its work. Evaluate the already-open affine
+  contract question below before choosing a new storage operation; require
+  exact length, emptied-old-owner and unchanged element-order evidence.
 - **The automatic-fact menu is a leftover.** [ENT-3] admits a narrow and
   asymmetric set of arithmetic idioms as automatic facts, each added for one
   proof pattern, with no general criterion and no counterpart for rows it
