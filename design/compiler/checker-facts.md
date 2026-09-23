@@ -24,6 +24,10 @@ Decision: Measure placement follows owned fields, payloads and Box content struc
 
 Decision: A symbolic integer constant's term and affine image use its declaration identity and exact declared integer type, obtained from one read-only declaration-type inventory shared by the entailment contexts, because a narrower constant can be forwarded through a wider formal and used as a storage extent without becoming a different constant or acquiring the consumer's bounds, instead of widening every checked extent and captured-index constant representation with a copied type. The ordinary implicit-bound and affine-atom paths consume that type; neither adds a new fact family.
 
+Decision: The ordinary entailment walk associates each live local Result with an isolated conditional fact state whose typed payload parameter is substituted away at success delivery, using the same difference-bound closure, support kills and joins as ordinary numeric facts, because one finite context per value preserves the verified call's authority and composes with existing control flow without a second solver or a product of independent guards, instead of delayed contract re-instantiation against mutable arguments or a source-shaped publication token.
+
+Decision: Result evidence construction and transport belong to a private child of the existing flow module while the walker retains event order, because the mechanism has one coherent representation and the shared flow already owns the call authority and invalidation consumers it needs, instead of adding another analysis pass or extending the large statement walker with all conditional-state operations inline.
+
 Rejected:
 - Reducing a joined reference to its first target or treating a containing prefix as the exact selected target: rejected because safety checks must cover every possible member and overlap does not establish target equality; a per-root cover is allowed only as a may-alias description.
 - Reusing a function-wide separation result: rejected because a proof about immutable captures is available only in the flow context that established it; a sibling arm or a zero-trip loop cannot inherit it.
@@ -31,3 +35,5 @@ Rejected:
 - Rechecking every structural body after entailment supplies separation results: rejected because ordinary functions need no extra replay, while the existing replay ends before the complete function inventory is analyzed and therefore supplies neither the cross-phase identity contract nor the provenance needed by that additional pass.
 - Demanding separation at every potential invalidation: rejected because a reference may legally become invalid when no later use depends on it.
 - Proving preservation at the reference use: rejected because a later guard or postcondition cannot restore a validity fact removed by an earlier write.
+- Re-instantiating a saved call's contract when its outcome is matched: rejected because mutable arguments may denote different values by then and a dead support cannot be revived.
+- Combining the conditional states of different live outcomes before either success is selected: rejected because each state assumes a different guard and their conjunction is unavailable on an ordinary continuation.

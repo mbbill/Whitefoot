@@ -13,6 +13,14 @@ Owner-approved: The owner explicitly adopted all five revisions presented for PR
 
 Summary: Apply the five reviewed amendments unchanged. Retain a symbolic integer constant's declaration identity and exact source type through the shared read-only inventory. Correct the storage-versus-range wording and qualify source Ring growth without promising a native copy count. Retain REF-4's Ring-range exclusion as a fresh ruling, not a recovered historical decision, leaving proved-contiguous and two-span admission open to a concrete consumer. Select the ordinary one-slot Slab representation with its measured storage and transfer costs, and direct boxed Ring endpoints with an explicit consuming rebase, without claiming universal native parity or automatic reference-based growth. The [library investigation](../research/investigations/containers-and-resources/X1-LIBRARY.md#slab-and-deque-trial-over-v063), [Slab controls](../research/experiments/container-representation/slab-library/RESULTS.md) and [Deque controls](../research/experiments/container-representation/deque-library/RESULTS.md) supply the grounds and alternatives. Remove the resolved amendments and their directory. The specification is unchanged; this ruling does not authorize a merge.
 
+## 2026-09-22 Carry Result evidence through ordinary local value flow
+
+Nodes: language/checks-and-proofs/automatic-facts, compiler/checker-facts
+
+Owner-approved: The owner explicitly directed correction of all five review findings and accepted both complete Result proof-transport amendments after the Chinese PR #87 handoff for ba876003.
+
+Summary: Apply the two reviewed amendments unchanged. Local own Results with integer payloads carry isolated conditional evidence through ordinary transfers and read it only under their own success condition. Reuse the existing weakest-bound joins, support invalidation and continuing-backedge rules, with a private child of the ordinary entailment flow owning evidence operations and the walker retaining event order. The [Result investigation](../research/investigations/result-proof-transport/DESIGN.md) records the composition failures, alternatives, finite representation argument and measured costs behind these choices. Retain the sharing/projection and broader storage questions in TODO, remove the accepted amendments and their directory, and preserve the existing live decisions. This ruling does not authorize a merge.
+
 ## 2026-09-22 Resolve source input, zero-stride addressing and proof-name boundaries
 
 Nodes: compiler/prelude-records, compiler/storage-representation, language/name-resolution

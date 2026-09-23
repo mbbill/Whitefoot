@@ -19,7 +19,7 @@ use super::super::places::{CapturedRange, CapturedValue};
 use super::VerifiedPostconditionSummaryRef;
 use super::affine::{AffineForm, AffineInequality};
 use super::term::{MeasureBound, TermId, TermKind, TermTable, ZERO, type_range};
-use crate::{BuiltinPreludeId, NodePath};
+use crate::NodePath;
 
 /// One normalized source relation over interned terms.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -541,14 +541,17 @@ pub(crate) enum DerivationNode {
         relation: Box<Relation>,
         parent: DerivationId,
     },
-    PostconditionDirectMatch {
-        call: NodePath,
-        variant: BuiltinPreludeId,
-        field: BuiltinPreludeId,
-        tag: u32,
-        binding: BindingId,
+    /// Forward substitution into or out of an isolated Ok-payload context.
+    ResultTransport {
+        statement: NodePath,
+        from: TermId,
+        to: TermId,
         relation: Box<Relation>,
         parent: DerivationId,
+    },
+    /// An Err constructor makes its conditional Ok context unreachable.
+    ResultErr {
+        statement: NodePath,
     },
     PostconditionDirectReceiver {
         statement: NodePath,
@@ -558,15 +561,7 @@ pub(crate) enum DerivationNode {
         target_event: FlowEventId,
         parent: DerivationId,
     },
-    PostconditionSelectedReceiver {
-        statement: NodePath,
-        payload: BindingId,
-        binding: BindingId,
-        relation: Box<Relation>,
-        target_event: FlowEventId,
-        parent: DerivationId,
-    },
-    /// One eligible `value_if` edge after forward carrier-to-receiver
+    /// One eligible value-initializer edge after forward carrier-to-receiver
     /// substitution and the edge's ordinary kills.
     PostconditionGive {
         statement: NodePath,
@@ -717,9 +712,8 @@ impl DerivationNode {
             | Self::MaterializedContradiction { parent, .. }
             | Self::PostconditionExit { parent, .. }
             | Self::PostconditionDirectResult { parent, .. }
-            | Self::PostconditionDirectMatch { parent, .. }
             | Self::PostconditionDirectReceiver { parent, .. }
-            | Self::PostconditionSelectedReceiver { parent, .. }
+            | Self::ResultTransport { parent, .. }
             | Self::PostconditionGive { parent, .. } => visit(*parent),
             Self::Equality {
                 forward, reverse, ..
@@ -778,6 +772,7 @@ impl DerivationNode {
             | Self::SourceGoal { .. }
             | Self::BooleanLiteral { .. }
             | Self::SignatureContract { .. }
+            | Self::ResultErr { .. }
             | Self::ImplicitBound { .. } => {}
         }
     }
@@ -813,9 +808,8 @@ impl DerivationNode {
             | Self::MaterializedContradiction { .. }
             | Self::PostconditionExit { .. }
             | Self::PostconditionDirectResult { .. }
-            | Self::PostconditionDirectMatch { .. }
             | Self::PostconditionDirectReceiver { .. }
-            | Self::PostconditionSelectedReceiver { .. }
+            | Self::ResultTransport { .. }
             | Self::PostconditionGive { .. } => 1,
             Self::JoinBound { parents, .. }
             | Self::JoinDistinct { parents, .. }
@@ -842,6 +836,7 @@ impl DerivationNode {
             | Self::SourceGoal { .. }
             | Self::BooleanLiteral { .. }
             | Self::SignatureContract { .. }
+            | Self::ResultErr { .. }
             | Self::ImplicitBound { .. } => 0,
         }
     }
@@ -857,6 +852,8 @@ impl DerivationNode {
 
     fn rank(&self) -> u8 {
         match self {
+            Self::ResultTransport { .. } => 42,
+            Self::ResultErr { .. } => 43,
             Self::UnsignedDivisionProduct { .. } => 36,
             Self::SourceBound { .. } => 0,
             Self::SourceDistinct { .. } => 1,
@@ -886,9 +883,7 @@ impl DerivationNode {
             Self::SignatureContract { .. } => 35,
             Self::PostconditionCall { .. } => 25,
             Self::PostconditionDirectResult { .. } => 26,
-            Self::PostconditionDirectMatch { .. } => 27,
             Self::PostconditionDirectReceiver { .. } => 28,
-            Self::PostconditionSelectedReceiver { .. } => 29,
             Self::PostconditionGive { .. } => 30,
             Self::PostconditionDeliveryJoin { .. } => 31,
             Self::IntegerDomain { .. } => 32,
@@ -965,16 +960,13 @@ pub(crate) enum DerivationRootKind {
     PostconditionState {
         occurrence: u32,
     },
+    PostconditionConditional {
+        occurrence: u32,
+    },
     PostconditionDirectResult {
         occurrence: u32,
     },
-    PostconditionDirectMatch {
-        occurrence: u32,
-    },
     PostconditionDirectReceiver {
-        occurrence: u32,
-    },
-    PostconditionSelectedReceiver {
         occurrence: u32,
     },
     PostconditionGive {
@@ -1284,9 +1276,7 @@ impl DerivationLedger {
                 | DerivationNode::SourceDistinct { .. }
                 | DerivationNode::PostconditionCall { .. }
                 | DerivationNode::PostconditionDirectResult { .. }
-                | DerivationNode::PostconditionDirectMatch { .. }
                 | DerivationNode::PostconditionDirectReceiver { .. }
-                | DerivationNode::PostconditionSelectedReceiver { .. }
                 | DerivationNode::PostconditionGive { .. }
                 | DerivationNode::PostconditionDeliveryJoin { .. }
         );
@@ -1507,6 +1497,7 @@ impl DerivationLedger {
                     | DerivationNode::JoinContradiction { parents, .. } => {
                         parents.capacity() * size_of::<JoinParent>()
                     }
+                    DerivationNode::ResultTransport { .. } => size_of::<Relation>(),
                     DerivationNode::PostconditionAggregate { parents, .. } => {
                         parents.capacity() * size_of::<DerivationId>()
                     }
@@ -1568,15 +1559,15 @@ impl DerivationLedger {
                 .nodes
                 .iter()
                 .filter_map(|node| match node {
-                    DerivationNode::PostconditionExit { statement, .. } => Some(statement),
+                    DerivationNode::PostconditionExit { statement, .. }
+                    | DerivationNode::ResultTransport { statement, .. }
+                    | DerivationNode::ResultErr { statement } => Some(statement),
                     DerivationNode::PostconditionAggregate { block, .. }
                     | DerivationNode::SignatureContract { block, .. } => Some(block),
                     DerivationNode::PostconditionCall { detail } => Some(&detail.call),
                     DerivationNode::ContractCall { call, .. } => Some(call),
-                    DerivationNode::PostconditionDirectMatch { call, .. } => Some(call),
                     DerivationNode::PostconditionDirectResult { statement, .. }
                     | DerivationNode::PostconditionDirectReceiver { statement, .. }
-                    | DerivationNode::PostconditionSelectedReceiver { statement, .. }
                     | DerivationNode::PostconditionGive { statement, .. } => Some(statement),
                     DerivationNode::PostconditionDeliveryJoin { detail } => Some(&detail.statement),
                     _ => None,
@@ -1817,15 +1808,13 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
                 parents.get(index - 1).map(|parent| parent.0)
             }
         }
+        DerivationNode::ResultTransport {
+            from, to, parent, ..
+        } => [from.0, to.0, parent.0].get(index).copied(),
+        DerivationNode::ResultErr { .. } => None,
         DerivationNode::PostconditionDirectResult {
             binding, parent, ..
         } => [binding.0, parent.0].get(index).copied(),
-        DerivationNode::PostconditionDirectMatch {
-            tag,
-            binding,
-            parent,
-            ..
-        } => [*tag, binding.0, parent.0].get(index).copied(),
         DerivationNode::PostconditionDirectReceiver {
             binding,
             receiver_formal,
@@ -1833,15 +1822,6 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
             parent,
             ..
         } => [binding.0, *receiver_formal, target_event.0, parent.0]
-            .get(index)
-            .copied(),
-        DerivationNode::PostconditionSelectedReceiver {
-            payload,
-            binding,
-            target_event,
-            parent,
-            ..
-        } => [payload.0, binding.0, target_event.0, parent.0]
             .get(index)
             .copied(),
         DerivationNode::PostconditionGive {
@@ -1888,10 +1868,6 @@ fn node_event(node: &DerivationNode) -> Option<FlowEventId> {
             target_event: event,
             ..
         }
-        | DerivationNode::PostconditionSelectedReceiver {
-            target_event: event,
-            ..
-        }
         | DerivationNode::PostconditionGive { event, .. } => Some(*event),
         DerivationNode::PostconditionDeliveryJoin { detail } => Some(detail.event),
         _ => None,
@@ -1912,10 +1888,6 @@ fn node_event_mut(node: &mut DerivationNode) -> Option<&mut FlowEventId> {
         | DerivationNode::MaterializedGoal { event, .. }
         | DerivationNode::MaterializedContradiction { event, .. }
         | DerivationNode::PostconditionDirectReceiver {
-            target_event: event,
-            ..
-        }
-        | DerivationNode::PostconditionSelectedReceiver {
             target_event: event,
             ..
         }
@@ -2007,9 +1979,8 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
         | DerivationNode::MaterializedContradiction { parent, .. }
         | DerivationNode::PostconditionExit { parent, .. }
         | DerivationNode::PostconditionDirectResult { parent, .. }
-        | DerivationNode::PostconditionDirectMatch { parent, .. }
         | DerivationNode::PostconditionDirectReceiver { parent, .. }
-        | DerivationNode::PostconditionSelectedReceiver { parent, .. }
+        | DerivationNode::ResultTransport { parent, .. }
         | DerivationNode::PostconditionGive { parent, .. } => remap_id(parent, remap),
         DerivationNode::PostconditionDeliveryJoin { detail } => {
             for parent in &mut detail.parents {
@@ -2046,6 +2017,7 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
         | DerivationNode::SourceGoal { .. }
         | DerivationNode::BooleanLiteral { .. }
         | DerivationNode::SignatureContract { .. }
+        | DerivationNode::ResultErr { .. }
         | DerivationNode::ImplicitBound { .. } => {}
     }
 }
@@ -2879,6 +2851,36 @@ impl FactState {
                 self.distinct_proofs[&(left, right)],
             )
         }));
+        relations
+    }
+
+    /// Every independently live numeric candidate, including the ordinary
+    /// fallback behind a stronger call-dependent bound. Value transport must
+    /// preserve both when their later support kills differ.
+    pub(crate) fn l0_candidates(&self) -> Vec<(Relation, DerivationId)> {
+        if self.all_derivable {
+            return Vec::new();
+        }
+        let mut relations = Vec::new();
+        for (left, right, _, _) in self.bounds.cells() {
+            for (bound, parent) in self.bounds.candidates((left, right)) {
+                relations.push((Relation::Bound { left, right, bound }, parent));
+            }
+        }
+        let mut pairs = self.distinct_candidates.keys().copied().collect::<Vec<_>>();
+        pairs.sort_unstable();
+        for (left, right) in pairs {
+            for parent in &self.distinct_candidates[&(left, right)] {
+                relations.push((
+                    Relation::Distinct {
+                        left,
+                        right,
+                        difference: 0,
+                    },
+                    *parent,
+                ));
+            }
+        }
         relations
     }
 
@@ -3887,7 +3889,9 @@ fn for_each_implicit_bound(
             emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
             emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
         }
-        TermKind::CommitValue { ty, .. } | TermKind::CallDatum { ty, .. } => {
+        TermKind::ResultPayload(ty)
+        | TermKind::CommitValue { ty, .. }
+        | TermKind::CallDatum { ty, .. } => {
             let (minimum, maximum) = type_range(*ty);
             emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
             emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);

@@ -271,8 +271,7 @@ pub(crate) struct CheckedSourceProof {
 }
 
 /// The checked source production that owns a value initializer. These forms
-/// share GIVE-1 typing and lowering, but only `value_if` is an ENT-5 relation
-/// carrier.
+/// share GIVE-1 typing and lowering and ENT-5 relation delivery.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum ValueInitializerKind {
     ValueIf,

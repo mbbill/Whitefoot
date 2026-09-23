@@ -37,6 +37,10 @@ pub(crate) enum TermKind {
     /// An in-scope const-generic parameter with its exact written integer
     /// type [MSR-6], which supplies its implicit bounds under [ENT-2].
     ConstParameter(DeclarationId, IntegerType),
+    /// The typed payload parameter of one isolated conditional Result context.
+    /// Contexts interpret this parameter independently; selection substitutes
+    /// it away before publishing anything into ordinary flow.
+    ResultPayload(IntegerType),
     /// A tracked place [ENT-2] clause (a) whose final selected type is one
     /// fragment type, carried as the one resolved path the checker has
     /// [REF-1].
