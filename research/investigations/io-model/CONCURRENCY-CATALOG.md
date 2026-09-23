@@ -2929,7 +2929,9 @@ join while preserving the first index, and block helpers may return at local
 matches. §21 bounds predicate invocations; it does not bound the weighted
 cost of work already started in the final batch. Neither full-scan
 amplification nor a measured speed ratio is inherent to all formulations.
-The helper candidate, batch joins and weighted work remain unqualified.
+The bounded probe qualifies local suffix skips, complete joined-wave work and
+actual helper participation; general weighted-work bounds, join costs and
+parallel profitability remain unresolved.
 
 **T9. Sparse frontier → source-ordered work or destination-owned parallel discovery.**
 (5′, 13)
