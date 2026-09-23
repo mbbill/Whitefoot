@@ -849,13 +849,176 @@ whether one syntax is shorter.
 
 Pool-indexed nodes make descent a scalar-ID loop under REF-1. Store an explicit
 index path for rebalancing and reacquire references after growth or mutation;
-avoid silently re-searching from the root after every iterator step. Box-linked
-nodes may use recursion, but loop-carried path extension is refused. The
-[wildcard-path investigation](https://github.com/mbbill/Whitefoot/blob/dafff1748603530e867cd7d7c164a35b78f8f5a9/research/investigations/wildcard-path/REPORT.md)
-identifies the refinement and finite-analysis work behind that proposed
-extension. Its proposal is not assumed present in this baseline. Compare
-pool descent and recursion first; an extra mechanism needs the remaining
-performance or resource problem as its consumer.
+avoid silently re-searching from the root after every iterator step. The early
+snapshot refused loop-carried Box descent; current REF-1/REF-2 admit it, as
+[owned_link_cursors.wf](../../../tests/programs/owned_link_cursors.wf) exercises.
+Its affine list edit does not establish linear atomic replacement for arbitrary
+owning K/V. Independent cursors under one descendant cover also do not acquire
+equality or disjointness merely from matching suffixes. The current
+[cursor design](../wildcard-path/DESIGN.md) supplies those distinctions; compare
+actual pool, recursive and cursor algorithms before proposing more machinery.
+
+### Ordered map trial at v0.68
+
+**Prospective experiment, not library adoption.** Starting at `345e2966a`, test
+whether a complete arbitrary-K/V B-tree can retain ordinary ownership at useful
+cost. The consumer is a reusable map and an ordinary writer that builds an
+owning record index, replaces and edits records, removes keys, visits bounded
+ranges and consumes the remainder. The existing scalar
+[leaf split](../../../tests/programs/containers/ordered.wf) is only one component.
+This trial selects boxed nodes before the family sketch's pool candidate to
+avoid whole-pool relocation and a new node-ID protocol; measurements may reject
+that choice. No implementation or new compiler run supports this section yet.
+
+Use one common pair region, fixed fanout, and an explicit root vacancy:
+
+```wf
+struct OrderedPair<K, V> { key: K; value: V; }
+struct OrderedNode<K, V> {
+  entries: Slots<OrderedPair<K, V>, 15>;
+  children: Slots<Box<OrderedNode<K, V>>, 16>;
+}
+struct OrderedMap<K, V, const ceiling: u64> {
+  root: Slots<Box<OrderedNode<K, V>>, 1>;
+  length: u64;
+}
+enum OrderedReturnReason { OrderedReplaced(); OrderedFull(); }
+enum OrderedPut<K, V> {
+  OrderedInserted();
+  OrderedReturned(reason: OrderedReturnReason, pair: OrderedPair<K, V>);
+}
+interface OrderedKey<K, E> {
+  fn compare(env: &E, left: &K, right: &K) -> order: i32 reads(env), reads(left), reads(right);
+}
+```
+
+These are proposed shapes, not a checked source bundle. K/V have no copy/drop
+bound. The ceiling limits logical entries; nodes grow by fixed-size Box
+allocation, with no allocation-failure result. Replacement remains available
+at the ceiling. A consistent comparator and environment determine map order;
+negative/zero/positive results suffice, without a -1/0/1 requirement. Every
+descent and local loop must terminate independently of comparison laws,
+provided callbacks return. Environment-backed order is already exercised by
+[the generic priority witness](../../../tests/conformance/cases/run-generic-priority-behavior.wf).
+
+In the API shapes below, M abbreviates `OrderedMap<K,V,ceiling>`, E is the
+comparison environment, and F is a disjoint callback environment. Generic
+function-kind parameters follow the existing HashMap callback forms:
+
+| Operation and typed arguments | Owned result and behavior |
+| --- | --- |
+| `ordered_map_new::<K,V,ceiling>()` | M, initially empty. |
+| `ordered_map_len(map: &M)` | u64; observation requires no caller knowledge of node fields. |
+| `ordered_map_put(map: &M, key: K, value: V, env: &E)` | `OrderedPut<K,V>`; insertion, old complete pair on replacement, or offered pair on logical Full. |
+| `ordered_map_lookup(map: &M, key: &K, key_env: &E, visit_env: &F)` | `Result<R,unit>` from an observing callback, or absent. |
+| `ordered_map_edit(map: &M, key: &K, key_env: &E, edit_env: &F)` | `Result<R,unit>` from a value-editing callback, or absent; the stored key stays read-only. |
+| `ordered_map_remove(map: &M, key: &K, env: &E)` | `Option<OrderedPair<K,V>>`; caller owns every removed key and value. |
+| `ordered_map_each(map: &M, env: &F)` | unit; visit every pair in order. |
+| `ordered_map_range(map: &M, lower: &K, upper: &K, key_env: &E, visit_env: &F)` | unit; ordered half-open `[lower,upper)` visit, empty for equal/inverted bounds under lawful order. |
+| `ordered_map_free(map: M, env: &F)` | unit; explicitly consume every remaining pair and release all nodes. |
+
+Observe/visit callbacks read key and value and write their environment; edit
+reads key and writes value/environment, and may return arbitrary owned R.
+Consume takes owned K and V and writes its environment. Lookup/each/range read
+the map; put/edit/remove write it. All comparisons read their explicit key and
+environment paths. Each callback row is disjoint from other supplied paths
+under EFF-5. No operation requires a borrowed result, stored reference, stable
+node address or caller-proved internal shape invariant. Free's consume order
+is unspecified; the ordered visitor is a separate operation.
+
+The complete mutation chain is part of the experiment, including deletion:
+
+- B-tree promotion moves a complete median pair, so it needs no cloned key.
+  `split_off` transfers the upper entries/children; parent insertion shifts
+  its filled prefixes. Re-form child selections after those shifts.
+- Borrow exchanges the parent separator with a sibling boundary pair and
+  transfers the corresponding child when internal. Prove distinct child
+  indexes below one captured parent, rather than trusting independent cursors.
+- Merge first extracts the right child Box, then reads its local measures and
+  appends its entries/children into the left child. Append empties the local
+  source; subsequent Box consumption/destructuring can carry those empty facts
+  to `free_empty`. Extracting only after emptying in-place loses that evidence.
+- Internal deletion replaces by a predecessor/successor pair or merges and
+  descends; root contraction extracts the root before inspecting and removing
+  its sole child. Every detached owner is reinstalled, returned or consumed.
+- Range traversal visits internal pairs as well as leaves, with O(h+k) node
+  work for k results at height h under lawful order. Full visitation/cleanup
+  is O(n); recursively consuming suffixes needs no stored reference stack.
+
+These protocols are rule deductions awaiting complete compilation. OP-12's
+affine/copy update does not admit a linear `set link = f(move link)`. Swapping
+through local None preserves owners but does not publish the vacant variant
+needed to discard a linear temporary; explicit one-slot windows avoid that
+assumption. MSR-3 does not transport nested measures through window extraction.
+PRE-1's `split_off` does not publish the destination's exact transferred count;
+reread measures and use real control flow where needed. REF-3 forbids escaping
+references, and OWN-7/OP-11 retain their alias/ancestry obligations. Do not add
+an impossible Some cleanup arm, silently drop an owner, or call an internal
+shape refusal Full. If these API outcomes cannot express an actual required
+path, report its exact source/rule boundary before altering the contract.
+
+| Alternative | Ground for retaining it, and present scope |
+| --- | --- |
+| Boxed AVL | Complete find/edit/replace/remove and range visitation via two one-slot links and a balance enum; rotations transfer Box owners. Per-entry allocation and dependent loads may lose to B-tree fanout, while wide payload occupancy may win. Include a bounded native comparison before claiming a default winner; no second WF library is budgeted initially. |
+| Pool-indexed B-tree | Materialized vacant nodes can retain empty windows and copied child IDs, avoiding extraction/cleanup problems. Growth relocates materialized node storage and adds ID validation/reuse work. Existing Slab is bounded and its visit is read-only; it is not already this growing node pool. |
+| B+ tree | A copied leaf separator requires copy/clone K; stable IDs to centrally owned keys avoid that bound but add ownership, indirection and separator-refresh protocols. Retain for a concrete scan/identity requirement, without assuming the scalar split generalizes. |
+
+Current [target layout](../../../compiler/src/backend/target.rs) gives both
+`Option<Box<Node>>` and `Slots<Box<Node>,1>` 16 bytes; a native nullable pointer
+is 8. Do not charge an extra word to Slots relative to WF Option. Repeated Pair
+fields in Leaf/Branch variants duplicate storage under the current product
+enum layout. For eight-byte-aligned pair size P, the proposed node is `15P+144`
+bytes: 384 for P=16 and 4,104 for P=264, before allocation overhead. At 7--15
+entries per non-root node this is about 55--26 or 586--274 bytes per live pair.
+A WF binary node with two links and a three-state balance enum is about P+40.
+These are layout deductions; occupancy and timings remain measurements.
+
+**Comparison budget and criteria, fixed before coding/timing.** Implement one
+complete WF B-tree, a source-shaped C B-tree and a direct C B-tree. Both C
+controls are required; compare ordinary optimization and a retained-public-helper
+mode with public operations and callbacks kept out of line in every language.
+Private node helpers remain ordinarily optimizable. Match comparator and
+callback work, ownership outcomes and ceiling policy. The source-shaped control
+matches WF headers/branches/transfers; the direct control may use efficient
+native layout and movement. Add one complete native AVL within this matrix if
+feasible; without it report B-tree costs without claiming a default ordered
+representation. No fanout sweep, second WF tree or new language mechanism is
+part of this first budget. Initial program construction is bounded to 120
+seconds, complete correctness execution to 40 seconds and the timing matrix to
+60 seconds, measured separately; compiler builds and the canonical gate have
+their own recorded costs. Investigate any exceeded stage before extending its
+budget, and record the reason before another run. These experimental budgets
+never select source acceptance.
+
+| Axis | Bounded selection |
+| --- | --- |
+| Payload | 16-byte scalar pairs and 264-byte inline pairs; separate owning/nodrop correctness instances. |
+| Live count | 8, 256 and 4,096: one leaf and sizes forcing multiple levels with fanout 16. |
+| Work | Build; balanced hit/miss lookups; fixed-cardinality remove/reinsert and replacement churn; bounded range visits; final cleanup. Identical deterministic operation streams and callback digests across controls. |
+| Sampling | One warm-up and five paired samples with alternating execution order; shared batching, build time separate. Investigate abnormal stage cost; repeat only for unresolved variance or changed code. |
+| Accounting | Execution time, allocations, node occupancy, reserved/peak bytes, pair/pointer transfers, retained guards and generated helper code. |
+
+Reject whole-node copying per descent, quadratic full traversal/cleanup, or
+comparator-dependent termination before interpreting timings. Split/merge work
+must stay O(B), with no relocation of unrelated nodes. A representation
+dominated across this matrix lacks default-selection grounds; explain mixed
+results by workload instead of declaring universal native parity or an upfront
+winner. Any proposed compiler/proof improvement needs the completed ordinary
+consumer and an isolated material cost or exact rule discrepancy.
+
+Correctness uses an independent sorted oracle and exact owner accounting:
+zero/one entries, root splits, both borrow directions, merges, internal-key
+deletion, contraction to empty, reuse, equal-key replacement with distinct
+owners, edit returning an owned value, empty/inverted ranges and partial final
+cleanup. Hostile comparisons check bounded progress and ownership, not sorted
+semantics. The owning/nodrop chain must cover every operation above.
+
+**Design suitability.** Packed boxed nodes trade more balancing source for
+fewer allocations and avoid pool-wide movement; this fits the performance-first
+objective without selecting new machinery. Wide-value occupancy remains the
+main representation risk and AVL its meaningful alternative. Indexed composite
+work and prior container/lowering cost questions retain their own scope; this
+trial does not close them or amend the language.
 
 ## Ceiling challenges connected to real source contracts
 
@@ -912,7 +1075,7 @@ The following are specified limits, not bugs to silently fix in #70:
 | `count(part: &ring[0_u64..0_u64])` in [ring-range.wf](../../experiments/container-representation/x1/ring-range.wf) | REF-4 | Element visitation, copying into Slots, or a full copy-element Array with two physical spans. Only the last preserves zero-copy ranges, and it requires initialization/filler. |
 | `ensures deref(destination).len == deref(entry(destination)).len + deref(entry(source)).len;` in [append-contract.wf](../../experiments/container-representation/x1/append-contract.wf) | FN-9 admits only one datum plus a constant on each relation side | Reread lengths and use ordinary control flow where necessary; an affine postcondition extension is separately proposed work, not assumed here. |
 | `struct Record { header: Header; tail: Array<u8>; }` (declaration fragment) | TYPE-9 permits a runtime-capacity shape only directly as Box content | Encoded byte block, or a separate Box for the tail. Neither is an implicitly packed typed trailing member. |
-| `set cursor = &deref(cursor).next.Some.value.inner;` carried by a loop (path fragment) | REF-1 static path shape; REF-2 also matters when leaving the Some arm | Pool indexes or ordinary recursive descent. Do not assume wildcard-path or musttail work has already landed. |
+| `set cursor = &deref(cursor).next.Some.value.inner;` carried by a loop (path fragment) | Historical baseline refusal, superseded by current REF-1/REF-2 | Current [owned cursor tests](../../../tests/programs/owned_link_cursors.wf) exercise iterative descent and affine edits. Linear atomic replacement and independently selected cursor aliasing retain their separate limits; no musttail claim follows. |
 | An `ensures` exporting a returned handle's indexed generation/variant relation | FN-9's relation datums and routes exclude that shape | Return a bounded scalar index, then validate/match locally or inside the consuming callback. Measure repeated checks before widening contracts. |
 
 ## Library home and evidence after the merge
