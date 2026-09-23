@@ -1,4 +1,4 @@
-# Kernel Specification v0.66
+# Kernel Specification v0.65
 
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives. These bytes are this version's identity; nothing else records it.
 
@@ -3289,5 +3289,5 @@ Its unique machine-checked content is that no rule ID is defined twice and every
 [META-4] Every normative fact is stated once; other mentions are rule-ID cross-references.
 [META-5] Every change to this artifact declares its spec delta (rules ±, tokens ±, spellings ±, exceptions ±) and its SELECTION GROUND (evidence-selected vs minimality-selected) in the change that makes it.
 This document states the language and carries no commentary about its own versions: no delta declaration, no description of what a version changed, and no selection ground appear in these bytes, and a version's own such text is not retained here after it activates.
-`AGENTS.md` defines the repository's four branch-and-main rules: work-branch changes need no approval, while merging into `main` requires owner approval of the exact tested revision and the records those rules require.
+`CLAUDE.md` defines the repository's four branch-and-main rules: work-branch changes need no approval, while merging into `main` requires owner approval of the exact tested revision and the records those rules require.
 DEFERRED markers are tracked specification-delta obligations and do not create another approval point.
