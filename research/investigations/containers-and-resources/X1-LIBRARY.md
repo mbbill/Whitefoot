@@ -879,25 +879,266 @@ already separate workload obligations from Vec, pointer, arena, or dictionary
 choices in the host language. Their old WF adaptation comments are historical;
 the candidates here use x1. No upstream application was newly benchmarked.
 
-A useful composite trial is a small in-memory record index, not a production
-database: a Slab owns records, a HashMap maps IDs to handles, and an indexed
-priority queue schedules retirement. Feed inserts, duplicate replacement,
-priority updates, deletion, expiry and slot reuse; verify a sorted-vector oracle
-and a per-record consumption ledger. Run separate weak-index and retained-index
-contracts, rather than comparing them as interchangeable implementations.
-Force generation exhaustion with a bounded test representation. Add variable
-payload sizes and a batched byte-page variant to expose boxing and encoding
-tradeoffs. The ordered-tree trial separately adds range scans and rebalancing;
-it need not make this first composite program larger.
+### Indexed composite trial
 
-For later matched measurements use distinct construction and steady-state
-phases, capacities spanning cache regimes, small and large payloads, controlled
-collision distributions, retained and normally inlined helpers, and explicit
-allocation/transfer/peak-space accounting. C or Rust controls must implement
-the same selected contracts. End-to-end latency, not compiler proof count,
-chooses whether a remaining runtime validation is material. General concurrent
-reclamation, RCU and lock-free containers are outside these sequential/fork-join
-trials and receive no coverage claim from them.
+This prospective experiment starts from the ordinary PriorityQueue at
+`c3c2a50fd`. Its maintained caller establishes the non-indexed operation and
+ownership chain described below; it establishes neither arbitrary-position
+updates nor reverse-position repair. Preserve that source and its public
+contracts as the plain-queue comparison baseline. The following criteria are
+recorded before composite implementation or timings and select no new language
+mechanism or adopted heap architecture.
+
+The minimum consumer is a coordinated record store with several simultaneously
+live records. One Slab owns each record and its payload, one HashMap maps IDs
+to Slab handles, and an indexed min-heap schedules expiry. A heap entry contains
+only its deadline, ID and copyable index/generation handle. Comparison reads
+these ordering keys directly, with a deterministic tie-breaker, so a sift does
+not repeatedly look up a payload in Slab. Large owning payloads stay in Slab.
+Each record carries an ID-membership flag and a reverse heap position. The
+candidate absent-position value is the heap's const ceiling: every resident
+position is strictly below the current length, which is at most that ceiling.
+This uses ordinary integers without an extra optional payload; actual layout
+and cost remain measurement questions. A malformed non-sentinel position must
+not be interpreted as permission to delete a retained object.
+
+#### Coordinated operations and membership policies
+
+The application-facing operations accept IDs or handles, never a saved heap
+position. Before heap removal or rescheduling, resolve the handle's current Slab
+generation and occupancy, read its position, establish `position < heap.len`,
+and compare the entry's complete handle with the requested handle. Only then
+call an internal position-based helper. Reacquire this relation after a heap
+mutation; an in-bounds old position can name a different record. A helper may
+publish a scalar result's bound on the current heap length through FN-9, but
+that bound alone does not establish identity. The existing
+`priority_queue_len` relation supplies nonemptiness for ordinary root access;
+it does not validate a reverse position or establish a record-to-entry relation.
+Invalid, expired and unscheduled requests return explicit outcomes before
+mutating heap membership. This API boundary does not make ordinary fields or
+constructors inaccessible; independently authored bookkeeping mutations remain
+outside the composite protocol.
+
+The complete first operation chain has these ownership outcomes:
+
+| Operation | Required behavior |
+| --- | --- |
+| Insert an object | Slab receives the payload and returns a handle, or returns the offered owner unchanged at exhaustion. The new record starts without memberships. |
+| Attach an ID; schedule a handle | Validate the live handle, then add the selected membership and its bookkeeping. Refusal leaves the object owned by Slab. Reattaching an existing membership has an explicit already-present outcome; it never increments a hidden count or inserts a second live heap entry. |
+| Lookup and duplicate payload replacement | Lookup returns owned observations or a handle. Replacement swaps the offered payload into the existing record and returns its previous payload, preserving the ID, generation and memberships. A miss returns the offered payload. Replacing record identity itself is a different operation. |
+| Reschedule; cancel | Update a live member's deadline in either direction, or remove its arbitrary heap position, repairing every moved entry. Neither operation consumes the record's payload. |
+| Detach an ID; delete an object | Detach only the intended ID/handle association. Deletion reports missing, busy where required by policy, or the matching owned record. Removing one membership leaves the other usable. |
+| Expire due entries; destroy the store | Pop due entries, repair survivors, validate generation, detach any matching ID association, and return or explicitly consume each expired owner. Final destruction retires both indexes before consuming remaining Slab owners and releasing all backings. |
+
+Attaching an ID already naming a different live handle is refused. Under the
+weak policy an expired association can be replaced by the new handle. Duplicate
+payload replacement instead updates the record already named by that ID; these
+outcomes keep the one-ID-membership bookkeeping unambiguous.
+
+These operations coordinate the three containers without promising an atomic
+three-container insertion. If attachment fails after object insertion, the
+owner remains reachable through its returned handle; the caller can retry,
+detach established memberships and delete, or consume it during final cleanup.
+Do not silently assume that a later Slab removal returns `Some` because an
+earlier insertion succeeded: the current contract does not publish that
+indexed relation. The native control must use the same staged outcomes.
+
+Run two distinct policies over this operation chain. Under the **weak** policy,
+object deletion may leave ID and heap entries holding stale handles; lookup
+reports expiry, and later heap processing skips that generation. A stale entry
+may coexist with a replacement using the same slot or ID. Position reporting
+must skip the old generation, and expiry must not remove an ID mapping that
+now names the replacement. Those stale entries occupy space until explicitly
+detached or popped; include that space and work in refusal and cost accounting.
+Cancellation through a stale object handle reports expiry and does not promise
+an indexed search for its remaining stale heap entry.
+
+Under the **retained** policy, deletion is busy while either the target's ID
+membership or heap membership remains. Test both detach orders and deletion
+of one unheld record while unrelated records remain indexed. Expiry first
+retires the target's heap membership and matching ID membership, then removes
+its owner. The two stored membership states avoid an additional counter whose
+consistency would itself need maintenance. These are ordinary protocol
+invariants maintained by the composite operations, not an unrestricted static
+theorem about arbitrary source mutations. The existing
+[one-object caller](../../../tests/programs/containers/slab-membership-program.wf)
+remains evidence for its narrower contract only.
+
+The trial's public handle includes an ordinary store-ID check before its Slab
+handle is interpreted. The wrong-store witness must use two distinct store IDs and
+show rejection without changing either store. Caller-chosen IDs and source
+constructors do not authenticate a store or establish global uniqueness; no
+unforgeable handle, external retention ticket or surviving reference is claimed.
+
+#### Ordinary edit and movement boundaries
+
+The reusable Slab addition to try is an edit callback with the same handle
+validation as `slab_visit`. The prospective signature below omits its body and
+has not been checked as a complete source function:
+
+```wf
+interface SlabEdit<T, E, R> {
+  fn edit(env: &E, value: &T) -> result: R writes(env), writes(value);
+}
+
+fn slab_edit<interface SlabEdit<T, E, R>, const ceiling: u64, const generation_limit: u64>(slab: &Slab<T, ceiling, generation_limit>, handle: SlabHandle, env: &E) -> result: Result<R, unit> writes(slab.cells), writes(env) contract {
+  ensures deref(slab).cells.inner.len == deref(entry(slab)).cells.inner.len;
+  ensures deref(slab).cells.inner.cap == deref(entry(slab)).cells.inner.cap;
+}
+```
+
+It calls the member exactly once for a present generation and not at all for
+a missing, reused or retired handle. The callback receives the payload, not
+the containing Slab cell, generation or free list; it may return ordinary
+owned data. This serves both position edits and owning payload replacement.
+For replacement, pass a local offered owner by reference as the environment
+and swap it with the record's payload. Success leaves the previous payload in
+that local; a failed validation leaves the offered payload there. Both exits
+can return their owner without extracting an unproved occupied slot.
+
+The separate heap movement callback has this prospective boundary:
+
+```wf
+interface PriorityPosition<T, P> {
+  fn placed(env: &P, value: &T, index: u64) -> result: unit reads(value), writes(env);
+}
+```
+
+Keep the existing read-only comparator separate. The composite's position
+implementation writes its Slab through `&store.objects`, while heap operations
+write `store.due.storage`; OWN-7 and EFF-5 can separate those fields. Passing
+`&store` as the writable callback environment overlaps the heap operation.
+REF-3 also excludes an environment aggregate containing borrowed fields as a
+way around that overlap. The position callback reads its borrowed heap entry
+and uses Slab edit to record the new position only for the matching live handle.
+
+Every placement reports the entry's actual resident position, including an
+insertion that performs no swap. An exchange reports both resident entries
+after it completes. Arbitrary removal takes the last entry, installs it in the
+removed position when that position remains in range, reports that placement,
+and repairs upward or downward; removing the former last entry needs no repair.
+Rescheduling validates its position, changes the key and chooses a strictly
+progressing rise or sink. Clearing the removed member's position is explicit
+in the composite operation, not a sentinel index sent to `placed`. If the shared
+core supports indexed heapify, initialize every position, including untouched
+leaves, before its ordinary bottom-up repair. The consumer may start empty;
+changing the shared core still requires preserving ordinary heapify behavior.
+
+Retain the current sift's arithmetic certificates, bounded child-selection
+result and length/capacity contracts. Internal arbitrary-position helpers
+require the position to be below the current length and publish preserved
+capacity and the appropriate unchanged or decremented length. The callback's
+declared `writes(env)` does not write the disjoint heap or justify any subscript.
+Comparator consistency and faithful position bookkeeping are conditions for
+the intended logical contents, not assumed laws authorizing memory access or
+termination. For every returning callback, the heap's own bounds and monotone
+sift progress must stand independently; callback bodies obey ordinary ownership.
+
+The known source limits remain explicit. REF-3 forbids returning or storing
+references. FN-9/CALL-4 admit `slab_find_index`'s outer scalar bound but not an
+indexed cell's occupancy or generation postcondition, nor arbitrary nominal
+result-field relations. A caller must validate locally or keep validation and
+access inside its callback. Writes retain their ordinary fact invalidation and
+reference-validity rules; stable slot numbers do not preserve a reference
+across a destructive ancestor write. These constraints are not grounds for
+adding casts, hidden proof assumptions, runtime proof traps or a language change.
+
+#### Comparisons registered before implementation
+
+| Candidate or control | Discriminating property |
+| --- | --- |
+| Compose the current public heap and scan to repair positions | Establishes an ordinary executable fallback, but an O(n) scan after each update/removal fails the selected O(log n) indexed-operation requirement. It is not the proposed production path. |
+| Push a new entry for every priority update and lazily discard old entries | Changes bounded space, cancellation, expiry work and exhaustion outcomes. It cannot substitute for the selected one-entry-per-live-membership indexed contract. Weak stale entries caused by actual object deletion remain a separate, explicit policy. |
+| Standalone indexed sift with direct position reporting | Supplies the same swap algorithm, validation and callback work without changing the plain queue. Its cost is the extra maintained sift implementation. Keep it a bounded comparison control rather than introduce a second full public queue family. |
+| Shared rise-from-index/sink core with supplied position reporting | Can serve both queues with one progress and ownership implementation. Compare its indexed specialization against the standalone control and its no-op specialization against the preserved plain queue before selecting it. |
+
+The shared candidate is preferred for investigation because it can avoid sift
+duplication while preserving the required algorithm. Direct-call specialization
+does not establish that an empty position callback, extra argument, environment
+load or state reload disappears. Inspect emitted code and actual surviving
+calls under normal optimization and retained public operations. Match retained
+boundaries in the standalone and C controls; private sift and child-selection
+helpers remain ordinarily optimizable. Do not force every helper to remain or
+charge one candidate for a callback boundary the other inlines by construction.
+
+Use one source-shaped full-slot-swap C control and one direct indexed C control,
+both implementing the same selected policy, staged outcomes, capacity/growth
+rules, generation retirement and owner returns. The latter may use a hole sift;
+its advantage is an algorithm/control-flow comparison, not evidence that WF
+emits the same operations. Match external invalid-handle behavior and include
+all required stale-generation checks. Attribute additional internal checks,
+result transfers or position updates with the source-shaped control rather than
+silently deleting them from the WF contract.
+
+The composite matrix covers live lengths 16, 256 and 4096, small and wide owning
+records, both membership policies, and normal/retained public-operation modes.
+Use a reserved mixed lookup/replacement/reschedule/cancel/expiry/reuse trace and
+a separate construction/growth/final-consumption trace. Keep heap entry size
+fixed when payload size changes. Fix input seeds, operation counts, collision
+distribution and stale-entry fraction before timing; run repeated samples in
+two reversed implementation orders with unchanged C controls. Record phase
+times without subtracting setup estimates. Preserve the existing plain-queue
+matrix for the baseline/no-op comparison, including its owning cases and native
+controls. Add no further storage layouts, notification interfaces or callback
+policy variants to this discriminator.
+
+Before timing, require agreement with an independent sorted-vector/ID oracle
+over the full operation transcript, including returned payload identities,
+expiry order and retained busy outcomes. The maintained composite caller must
+exercise several live objects, upward and downward rescheduling, root/middle/
+last removal, collisions, duplicate replacement, both detach orders, refusal
+and retry, stale and wrong-store handles, same-slot and same-ID reuse, bounded
+generation exhaustion, and partial final cleanup. Include droppable owning
+payloads and a nodrop instance. A per-owner identity ledger must distinguish
+each offered, returned and consumed owner; a sum or checksum alone cannot
+detect loss paired with duplication. Exercise the same source bundle under
+sequential and parallel lowering, with ordinary releases and the existing
+allocation observer. No successful timing establishes heap-allocation failure
+behavior; STOR-8 still owns that boundary.
+
+Report comparison, swap, position-report, validation and hash-probe counts;
+complete backing and result layouts; payload transfers; allocation/release
+identities; and requested/peak bytes, including stale entries and simultaneous
+growth backings. Keep diagnostic counting separate from timed images unless
+the same instrumentation is deliberately present in every control. The
+selection criterion is complete operation/ownership agreement, no material
+indexed regression beyond unchanged-control variation, and no unexplained
+material regression from the shared no-op path in the plain queue. A claimed
+indexed benefit must repeat beyond control variation in both cohorts and have
+an emitted-code or algorithmic attribution. Equivalent code and costs
+permit reuse on maintenance grounds; an unexplained shared-core loss leaves the
+standalone implementation viable and the selection open. Do not average the two
+membership contracts or workload cells into an unmeasured application mix, or
+infer native parity from transfer counts, accepted source or one timing cohort.
+
+The prospective experiment has separate budgets of **120 seconds for artifact
+construction, 40 seconds for native correctness execution, and 60 seconds for
+the timing matrix**. Compiler construction and the canonical repository gate
+are separate guarded stages, not charges hidden in those execution budgets.
+Investigate a stage exceeding its budget before extending it; elapsed time
+selects neither source acceptance nor a successful correctness verdict. Run
+heavy stages through the repository guard and inspect an existing owner before
+starting another. These budgets do not narrow the canonical gate.
+
+Reusable Slab/heap support belongs with the existing source libraries; its
+maintained consumer and oracle wiring belong in the existing container corpus.
+Any comparison-only sources, harness and results belong under
+`research/experiments/container-representation/indexed-composite`, with one
+explicit experiment caller and no correctness-gate dependency. Their purpose
+is this complete consumer and sharing/cost discriminator; retire them when
+superseded and no maintained claim needs their replay. Retire a maintained
+fixture only when equivalent maintained coverage replaces it. A packed byte-page
+payload, full ordered tree, externally held retention tickets and concurrent
+reclamation remain separate consumers rather than added variants of this trial.
+
+**Design suitability.** Small heap entries separate scheduling movement from
+payload ownership, and ordinary Slab edit addresses a concrete reusable access
+need. The shared notification core is a candidate whose benefit and no-op cost
+must be established against the standalone and preserved plain-queue controls.
+The main uncertainty is the cost of repeated validation and callback boundaries,
+not an established language expressiveness defect. The complete multi-object
+protocol and independent ledgers must precede any broader membership or
+performance claim; the current one-object witness is insufficient for them.
 
 ## Findings rechecked against merged PR #70
 
