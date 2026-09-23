@@ -1731,6 +1731,13 @@ for serial initialization. Reusing exact target layout for nominal captures
 would need to preserve aggregate payload transport, alignment and the fixed
 256-byte bound; it is not part of this source experiment.
 
+Those observations belong to frozen main `345e2966a`. The later
+[selected-target fitting control](#selected-target-loop-frame-fitting)
+qualifies the 72-byte initialization frame and useful worker execution on a
+larger control using the same source. The original small matrix and its
+recorded source/runtime/adapter identities remain unchanged; neither result
+establishes a speed gain.
+
 The balanced sibling pair has PAR-1 permission and emitted acquisition,
 publication, refusal fallback, join and release. Each offer occupies 224 bytes:
 ten range descriptors, six u64 arguments, unit result/padding and the recursive
@@ -5033,6 +5040,366 @@ that block without a sweep. Attribution and its validation remain deferred in
 the [formal-compute TODO](../../../docs/todo.md), because a mechanism change
 needs evidence distinguishing these possible causes. No threshold, runtime,
 compiler, specification or correctness-CI change follows from this inspection.
+
+## Selected-target loop frame fitting
+
+The prospective protocol published for this change starts from main
+`345e2966a45c995d6cebbb7f6b128a66235cd20f`. The separate runtime-DAG trial at
+[`b68f6777`](https://github.com/mbbill/Whitefoot/blob/b68f6777a0ef8c31a41da8a6a785ac6f67e644bb/research/investigations/compute-model/DESIGN.md#runtime-adjacency-all-predecessor-probe)
+reports a permitted ordinary output-initialization loop refused after needed
+captures have already been selected. Its unchanged
+[source](https://github.com/mbbill/Whitefoot/blob/b68f6777a0ef8c31a41da8a6a785ac6f67e644bb/research/investigations/compute-model/dag-fanin.wf)
+has SHA-256
+`1d536089caa1204af95569817760471fd0006613b6c7c6c08ea95a29d1304ffe`.
+The two retained inputs are the output range descriptor and a used `TaskCell`
+value. That frozen splitter charges 40 fixed bytes, 16 descriptor bytes and
+256 bytes for any nominal, giving 312 against the unchanged 256-byte slot.
+The target representation of `TaskCell` is two u64 fields; the same ordered
+frame would occupy 72 bytes. At protocol publication this was a layout
+deduction, not an emitted or qualified candidate; the result below supplies
+the later qualification. The prior trial's twelve native configurations qualify
+its original behavior only, and its small inputs do not supply positive grain
+for this initialization. This obstruction is neither unused capture retention
+nor the separate serial fill inside an allocation primitive.
+
+The selected implementation boundary is the final `frame_decline` in
+`lowering/builder/split.rs`, after one completed chunk and existing capture
+pruning but before delayed helper reservation. Retain the initial conservative
+precheck and the complete established path whenever the final conservative
+estimate fits. Only a final estimated refusal asks the existing selected-target
+lane-layout calculation whether the exact transported signature fits. Use
+`Capture.ty`, not the original binding's storage type, in signature order
+`seed, lower, upper, captures..., allowance`, followed by the result. The
+allowance is already a u64 parameter; it must not also be counted as a hidden
+recursion budget. A fit continues through the existing reservation and
+outlining path. A representable slot refusal reuses `splice_chunk` once, with
+its nested helpers, scheduling metadata and cleanup intact and no new call
+around the ordinary loop. Any retained estimate in its ledger is labelled
+conservative rather than presented as exact layout.
+
+Reuse `backend/target.rs`'s `parallel_lane_frame_layout` arithmetic, field
+alignment, padding, address-domain checks and runtime slot test through one
+signature-level query. That query takes the selected target, lowered nominal
+and element tables, ordered parameter types, result type and the existing
+optional recursion-budget flag. Those tables already exist before function
+bodies are built. `LayoutComputer` should read the tables it needs; the
+surrounding program-validation helpers receive the full program explicitly
+where they also need function or constant lookup. Do not create an incomplete
+`IrProgram`, duplicate a nominal-size walker, or introduce a later CFG rewrite.
+The driver selects the target after complete semantic acceptance and passes
+that same target through lowering and emission; target-specific test helpers
+do likewise. Host convenience entry points may delegate to this one path.
+An unrepresentable layout retains `TargetLayout` failure classification and no
+source rule; malformed compiler data remains a compiler failure. A valid
+layout exceeding a lane slot remains an optional scheduling decline.
+
+The affected production set is target layout/query visibility, lowering's
+context and splitter, and driver/error plumbing. Ordinary call layout remains
+a consumer of the same query. The two-world clone rule, source permissions,
+capture reconstruction, CFG reuse, storage representation, runtime policy and
+language rules retain their current grounds. The
+[approved addition](../../../design/compiler/parallel-lowering/two-worlds.md) to
+`compiler/parallel-lowering/two-worlds` extends its rescue decision; no current
+decision is replaced or retired. No specification or conformance rule changed.
+
+Enlarging lane slots would charge all tasks without resolving the estimator's
+missing type information. A second size calculator could disagree with
+emission on padding or address domains. Passing every candidate to the emitter
+would leave real refusals paying recursive splitter overhead. A later rewrite
+or another lowering of a refused source body would replace the established
+single-construction fallback. Exact fitting before pruning would change the
+chosen capture interface and helper order beyond the demonstrated gap. These
+alternatives do not serve this bounded capability better than the shared
+post-pruning query.
+
+### Prospective qualification
+
+Before implementation, require the following observations:
+
+- Extend existing compiler layout/lowering cases with small nonzero nominal
+  and fixed aggregate payloads, the exact 256-byte boundary and a true oversize,
+  alignment-sensitive padding, and a reduced address domain that fails as
+  `TargetLayout`. Check that an explicit selected target is used for both
+  fitting and emission and that the allowance is counted once. A zero-only
+  initializer cannot qualify aggregate transport.
+- Extend existing native loop coverage, sharing compatible construction, for
+  value snapshots/copies, joined results and source-owned cleanup at W1/W4 and
+  controlled refusal. Retain nested true refusal with an admitted inner split,
+  metadata and cleanup, and the existing candidate-construction counter for
+  increasing refusal depth. Ordinary scalar cases whose conservative frame
+  already fits must retain their capture ABI and emitted modules under the
+  same flags. These properties belong in maintained compiler tests, with no
+  research input or new Rust test binary in the daily gate.
+- Emit the pinned DAG source with frozen main and the candidate under ordinary
+  `--par --emit-llvm --par-ledger`. Record source/compiler/module identities,
+  actual initialization frame size and its emitted price `w`. The saved main
+  compiler has SHA-256
+  `cbffd4dd1ae8641ef03790457181188988bf70cc4af1a53c50c1f406307bb7f9`;
+  rebuild only if its identity or availability requires it. Inspect the
+  reachable `form=0`, `C=1` path before native execution: the owner prefix is
+  empty, report/reset spans are one, and initialization must be the only
+  executable offer source. Emitted offers elsewhere do not establish this.
+- Fix one larger disconnected graph with all task costs one and absent
+  successors encoded by `N`. Let `q=max(1,ceil(150000/max(1,w)))` and
+  `N=16*q`, at most 2,400,000. Choose N once from candidate emission before
+  native outcomes; ordinary W4 grain then permits 16 chunks at an empty
+  entry deque, without a work-floor override. Run the plain main and candidate
+  images once at W1 and W4. Reuse the pinned probe's independent recurrence,
+  full element/count comparison, nonzero initial outputs, unchanged-input and
+  canary checks; require `{status=0, rounds=1, notices=0}`. Record the change
+  in actual steals around this invocation. Candidate W4 worker execution,
+  with initialization isolated as above, is the capability criterion. A zero
+  steal result remains unqualified and is not rerun for a better schedule.
+
+Reuse the
+[pinned probe](https://github.com/mbbill/Whitefoot/blob/b68f6777a0ef8c31a41da8a6a785ac6f67e644bb/research/experiments/compute-bench/dag_fanin_probe.cpp)
+and its LLVM adapter by scratch extraction, recording extraction and bounded
+adaptation commands and digests with the results. The large control uses no
+trace engine, quadratic pair-overlap enumeration, per-task log, or oneTBB
+build. Keep full per-element checks but print only counts and a digest. No
+second permanent benchmark suite or dependency on the separate PR's compiler
+or runtime candidate is introduced.
+
+For this no-edge control, source auxiliary storage is `96*N + 32` payload
+bytes plus seven allocation headers, output is `16*N`, and input costs and
+successors occupy `24*N` bytes. The probe's retained graph, oracle, guarded
+copies and comparison storage must also be inventoried before construction.
+Use a conservative requested-data bound of `256*N + 64 MiB`, below 768 MiB
+at the maximum N; stop if the adapted probe exceeds this bound. The fixed
+runtime storage and one-gibibyte stack reservations per participating thread
+are charged separately; this bound is neither measured RSS nor virtual
+address usage. Initialization, validation, the seven fills, owner work and
+oracle work remain in the whole-call accounting.
+
+Construct and run only after the shared heavy slot is released, through
+`.github/run-check.pl` with two jobs and explicit caps: each research emission,
+native construction and native execution stage has 30 seconds. Record compiler
+and native construction separately from program execution, plus emitted code
+growth and whole-call costs; no elapsed-time success threshold or universal
+speed claim is selected. Applicable focused compiler checks and the canonical
+gate qualify the eventual delivered revision. Stop and reassess if fitting
+requires a broader capture, clone, scheduling or pipeline change, if the
+target/error paths cannot share the existing calculation, if already-fitting
+interfaces change, or if the resource/phase caps prevent the prescribed run.
+
+**Design suitability at protocol selection.** The existing completed candidate and prebuilt type
+tables make a shared signature query the smallest general addition serving
+this consumer. Its cost is explicit target/error plumbing and layout work
+only after an estimated refusal; aggregate transport and actual worker
+participation remain unverified until the checks above. Wider pruning of
+fitting captures and allocation-fill parallelism remain the distinct,
+already-recorded TODO opportunities. This change addresses neither and does
+not use their unmeasured benefits to justify its scope.
+
+### Implementation and focused checks
+
+The candidate retains the selected boundary: one signature layout calculation
+over the lowered type tables, an explicit selected target through lowering and
+emission, and no exact-layout query on a conservatively fitting loop. Invalid
+compiler data remains a lowering failure; a layout outside the selected
+address domain is a target failure without a source rule. Semantic checking
+and the generic IR value/control-flow representation remain target-independent;
+the optional loop shape is selected for the target. Host convenience delegates
+are test-only because the production driver now selects one target explicitly.
+
+Eight focused maintained cases pass. They cover copied arrays of 1, 216 and
+217 bytes on the host and Windows target, emitted frames of 48 and 256 bytes,
+direct refusal at 264 bytes, and the 256-byte frame's failure in a 255-byte
+address domain. The existing native capture case now carries a nonzero padded
+24-byte record and a 24-byte inline array in an 88-byte frame; its copies,
+nonzero reduction seed and complete output agree with unsplit lowering at W1,
+W4 and a controlled real-worker schedule. Existing ordinary lane boundaries,
+already-fitting capture interfaces, increasing nested refusal depth, inner
+split/metadata/cleanup reuse and single construction remain covered. No Rust
+test binary, native test construction path, conformance case or research input
+was added to the daily gate.
+
+Construction and failed observations are retained separately. The first CLI
+build failed in 6.58 seconds because the nominal index accessor was private;
+matching its existing element/block counterparts' crate visibility fixed that
+interface. The corrected CLI built in 44.34 seconds. Library construction took
+79.93 seconds; four of six initial layout/shape cases passed, while two new
+fixtures indexed their original array and therefore transported a pointer
+rather than their intended array payload. Copying that array inside the loop
+corrected the fixtures without changing production code. The library rebuilt
+in 80.47 seconds, and those two cases passed in 0.75 seconds. The nonzero native
+capture and existing true-refusal cases had already passed together in 2.61
+seconds and were not repeated after this fixture-only correction. Construction
+used two jobs and 180-second guards; focused execution used two threads and a
+30-second guard. These observations are focused checks, not a canonical gate.
+
+### Reproducing the bounded runtime control
+
+The [portable probe patch](../../experiments/compute-bench/loop-target-fitting-probe.patch)
+applies only to the pinned `b68f6777` probe. It extracts its generic Graph,
+independent Kahn recurrence oracle, complete-row comparator and known-result
+control into the prescribed one-fixture WF-only entry, reserving the oracle
+ready queue once. The removed code is the unselected matrices, oneTBB engines
+and tracing machinery; the source program and LLVM adapter remain byte-for-byte
+pinned. This patch is reproducibility data for this control, not another
+benchmark suite or gate input. Retire it if the control is superseded or ceases
+to be retained as useful evidence.
+
+Extract and apply it in scratch from the repository root:
+
+```sh
+repo=$PWD
+trial=$(mktemp -d)
+pin=b68f6777a0ef8c31a41da8a6a785ac6f67e644bb
+git show "$pin:research/investigations/compute-model/dag-fanin.wf" > "$trial/dag-fanin.wf"
+git show "$pin:research/experiments/compute-bench/dag_fanin_probe.cpp" > "$trial/dag_fanin_probe.cpp"
+git show "$pin:research/experiments/compute-bench/dag_fanin_host.ll" > "$trial/dag_fanin_host.ll"
+git show "$pin:research/experiments/compute-bench/dag_fanin_trace.awk" > "$trial/dag_fanin_trace.awk"
+git show "$pin:tests/programs/compute/host-adapter.awk" > "$trial/host-adapter.awk"
+patch -d "$trial" -p1 < "$repo/research/experiments/compute-bench/loop-target-fitting-probe.patch"
+```
+
+The original probe SHA-256 is
+`748d882424a19db8abf7489340a727eb4ed11927b76a4c674e30ae92f58ea3c2`;
+after this patch it is
+`44b56b24648f8cfab17ec87169bdd919b97a0a3830ddbd7b50379a81ce2dde90`.
+Patch application was checked against the actual constructed probe. For each
+already-built main/candidate CLI, emit the same extracted source with
+`--par --par-ledger --emit-llvm ... -o <arm>.raw.ll`, then run
+`awk -f host-adapter.awk <arm>.raw.ll dag_fanin_host.ll` into `<arm>.bound.ll`
+and `awk -v observed=0 -f dag_fanin_trace.awk <arm>.bound.ll` into
+`<arm>_plain.ll`. No observed image is built or executed.
+
+Build both images from one scratch Makefile, sharing the probe and production
+runtime objects. The `arm` module names below are `main_plain.ll` and
+`candidate_plain.ll` from the preceding emission:
+
+```sh
+cat > "$trial/Makefile" <<'MAKE'
+.DEFAULT_GOAL := all
+CLANG := clang
+include $(ROOT)/compiler/runtime.mk
+all: $(BUILD)/main_plain $(BUILD)/candidate_plain
+$(BUILD)/probe.o: $(TRIAL)/dag_fanin_probe.cpp
+	mkdir -p $(dir $@)
+	clang++ -std=c++17 -pthread -O2 -Wall -Wextra -Werror -Wpedantic -c $< -o $@
+$(BUILD)/%_plain.o: $(TRIAL)/%_plain.ll
+	mkdir -p $(dir $@)
+	clang -pthread -O2 -Wno-override-module -c $< -o $@
+$(BUILD)/%_plain: $(BUILD)/%_plain.o $(BUILD)/probe.o $(NATIVE_OBJECTS)
+	clang++ -pthread -O2 $^ -lm -o $@
+.SECONDARY: $(BUILD)/main_plain.o $(BUILD)/candidate_plain.o
+MAKE
+WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl loop-fit-native-build \
+  make -j2 -f "$trial/Makefile" ROOT="$repo" TRIAL="$trial" BUILD="$trial/native"
+```
+
+The recorded native construction took 1.19 seconds.
+Both images were checked for strong floor, lane acquire/publish and successful
+steal-counter symbols.
+
+The pinned host adapter recognizes assigned result calls; its indirect-result
+`call void @wf_dag_runtime` remains direct at both worker counts. W1 has no
+pool and receives zero split budgets. That route is preserved in this
+capability control and is not presented as a cost comparison of ordinary W1
+world selection. The later
+[adapter repair](#indirect-aggregate-result-adapter-repair-2026-09-23) qualifies
+ordinary W1 sequential-world and W4 parallel-world entry for both result ABIs.
+This pinned control continues to reproduce the earlier binder and its recorded
+route; its rows do not measure the corrected W1 entry cost.
+
+The native allocation inventory is bounded by phase. Graph costs and successor
+slots require `24*N` bytes. Generic oracle construction peaks at `128*N + 4096`
+including both adjacency-vector arrays, its five scalar work arrays and result
+rows. During the source call the retained graph/oracle, guarded output,
+guarded inputs and immutable copies use `104*N + 112`; source auxiliary
+payload adds `96*N + 32` and seven 8-byte headers, so the conservative call
+bound is `200*N + 4096`. After source cleanup the comparison copy brings the
+probe to `120*N + 4096`; value/count corruption controls mutate and restore its
+first row without another full copy. The patch checks the count and the
+`256*N + 64 MiB` ceiling before constructing the fixture. Fixed runtime data,
+allocator behavior and per-participant stack reservations remain separate;
+no resident-memory claim follows from these requested-data bounds.
+
+### Bounded control result
+
+The [recorded observations and identities](../../experiments/compute-bench/loop-target-fitting-2026-09-23.tsv)
+qualify the selected capability. Frozen main still refuses the used two-capture
+initializer with its 312-byte estimate. Candidate emission produces the exact
+72-byte frame and a constant initialization price of `w=4`; before native
+construction or outcomes this fixed `q=37,500` and `N=600,000`. Ordinary W4
+policy permits 16 chunks, budget 4, at an empty entry deque. The requested-data
+ceiling is 220,708,864 bytes and the modeled invocation peak is 120,004,096.
+
+The emitted call graph was inspected before execution. `dag_runtime` has one
+initialization budget query, reaching its 72-byte splitter. For `form=0`,
+`C=1`, the owner-prefix span is zero and head-reset/report spans are one;
+their splitters cannot acquire a lane. The recursive-tree branch is excluded.
+Validation, task draining, recurrence, initial ready-list construction and
+the seven allocation fills contain no other executable offer. Other DAG
+entries and the renamed source main are not called by this probe. Thus an
+increase of the successful-steal counter around the invocation is attributable
+to initialization.
+
+| Image | Workers setting | Actual steals | Whole call (ms) | Full rows checked |
+| --- | ---: | ---: | ---: | ---: |
+| Frozen main | 1 | 0 | 11.696458 | 600,000 |
+| Frozen main | 4 | 0 | 8.874417 | 600,000 |
+| Candidate | 1 | 0 | 9.459667 | 600,000 |
+| Candidate | 4 | 5 | 8.450625 | 600,000 |
+
+Every run returns `{status=0, rounds=1, notices=0}` and the same complete-output
+digest `2acd7570bbeeed18`, after comparing every value and evaluation count.
+The probe starts every output cell with a nonzero guard; immutable-input,
+canary and comparator-corruption checks pass. Each native configuration ran
+exactly once, with only its `WF_WORKERS` setting in an otherwise empty
+environment; none was
+rerun for a preferred outcome. The W4 candidate's five steals meet the
+preselected worker-execution criterion. Single whole-call intervals are cost
+accounting only: they include initialization, validation, seven fills, owner
+work and cleanup, and establish no speed result. Oracle construction,
+input/output preparation, comparison and complete process costs are recorded
+separately in the data file.
+
+For reproduction after fixing N from emission, the four commands are:
+
+```sh
+for arm in main candidate; do
+  for workers in 1 4; do
+    WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl "loop-fit-$arm-W$workers" \
+      env -i "WF_WORKERS=$workers" "$trial/native/${arm}_plain" 600000
+  done
+done
+```
+
+Raw LLVM grows from 332,996 to 337,563 bytes; module `__TEXT` grows from 26,100
+to 26,716 bytes and linked `__text` from 59,312 to 59,832. The linked images
+share 2,361,628 bytes of fixed BSS. Stack reservation remains one GiB per
+participant plus a 64 KiB alternate signal stack, separate from the input-
+dependent requested-data ceiling and from resident memory. No lane-slot or
+runtime policy changes contribute to this result.
+
+The existing 27-scalar fitting fixture retains all 27 captures and its 256-byte
+frame; the 28-scalar fixture retains its existing one-capture pruning rescue
+and 48-byte frame. Emitting both maintained source forms through frozen main
+and the candidate under identical `--par --emit-llvm` flags produced
+byte-identical complete modules. Their source forms remain owned by
+`a_fitting_loop_retains_its_interface_and_one_extra_field_triggers_rescue`,
+and the data file records both module identities.
+
+The native-control and correspondence commands shared one 30-second parent
+guard and completed in 1.72 seconds. Before actual native execution, three
+guard acquisitions returned 75 while unrelated worktrees owned verification;
+they ran no command and no owner or lock was removed. Together with the build
+and fixture failures above, these setup observations remain in the evidence.
+No additional native, focused or performance run was selected after success;
+the final published revision still requires its separate canonical gate and
+completion review.
+
+**Design suitability.** Shared exact fitting admits the demonstrated ordinary
+initializer and nonzero aggregate transports without another representation
+walker or refused-loop rewrite. The initial estimate still owns pruning and
+helper order, and fitting scalar emission is unchanged. Wider capture pruning
+and allocation-fill parallelism remain separate deferred opportunities. The
+later [adapter repair](#indirect-aggregate-result-adapter-repair-2026-09-23)
+closes the indirect-result world-selection TODO; the capacity observations
+above retain their original pinned binder and limits. No language rule,
+specification or conformance verdict changed.
 
 ## Query-retained zero-budget dispatch control
 

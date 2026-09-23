@@ -1,6 +1,7 @@
 //! Conservative textual LLVM emission for the active Whitefoot specification.
 //!
-//! Emission consumes only target-independent IR. It preserves every retained
+//! Emission consumes typed IR after optional loop shapes have been selected for
+//! the same target. It preserves every retained
 //! check, emits no overflow or alias promises, initializes complete aggregate
 //! representations, and keeps a defensive abort edge for enum discriminants.
 
@@ -87,6 +88,7 @@ impl LlvmModule {
     }
 }
 
+#[cfg(test)]
 pub fn emit_llvm(program: &IrProgram<'_, '_, '_>) -> Result<LlvmModule, BackendFailure> {
     let target = TargetLayout::host().map_err(BackendFailure::TargetLayout)?;
     emit_llvm_with_layout(program, target)
@@ -129,7 +131,7 @@ pub(crate) fn sequential_entry_symbol(
 }
 
 /// Emits the same ordinary callable ABI with a selected physical target layout.
-pub(super) fn emit_llvm_with_layout(
+pub(crate) fn emit_llvm_with_layout(
     program: &IrProgram<'_, '_, '_>,
     target: TargetLayout,
 ) -> Result<LlvmModule, BackendFailure> {
@@ -2193,9 +2195,15 @@ fn ordinary_overlap_lane_frames(
             .functions()
             .get(ordinal as usize)
             .ok_or(BackendFailure::InvalidIr)?;
-        let Some(layout) =
-            parallel_lane_frame_layout(target, program, callee, carries_budget(ordinal))
-                .map_err(BackendFailure::TargetLayout)?
+        let Some(layout) = parallel_lane_frame_layout(
+            target,
+            program.nominals(),
+            program.elements(),
+            callee.parameters().iter().map(|(_, ty)| *ty),
+            callee.result(),
+            carries_budget(ordinal),
+        )
+        .map_err(BackendFailure::TargetLayout)?
         else {
             return Ok(None);
         };

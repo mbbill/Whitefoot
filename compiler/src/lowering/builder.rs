@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::backend::target::TargetLayout;
+
 mod buffers;
 mod loops;
 mod prelude;
@@ -27,9 +29,20 @@ use loops::LoopTarget;
 use split::{Synthesis, SynthesisCell};
 use storage::collect_addressed_bindings;
 
+#[cfg(test)]
 pub fn lower_checked<'classified, 'lexed, 'source>(
     checked: CheckedProgram<'classified, 'lexed, 'source>,
     overlap: OverlapLowering,
+) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
+    lower_checked_with_layout(checked, overlap, TargetLayout::host()?)
+}
+
+/// Select optional target-fitting loop shapes after semantic acceptance, using
+/// the same target that will qualify and emit their transported signatures.
+pub(crate) fn lower_checked_with_layout<'classified, 'lexed, 'source>(
+    checked: CheckedProgram<'classified, 'lexed, 'source>,
+    overlap: OverlapLowering,
+    target: TargetLayout,
 ) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
     let sequential_compute_refusal = matches!(
         overlap,
@@ -166,6 +179,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         .map(|(index, variant)| {
             let function = &checked.data.functions[variant.source.0 as usize];
             let context = LoweringContext {
+                target,
                 erasure: TypeLowering {
                     nominals: &maps[index].nominals,
                     elements: &maps[index].elements,
@@ -219,6 +233,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
 /// growing an argument list at every level.
 #[derive(Clone, Copy)]
 struct LoweringContext<'program> {
+    target: TargetLayout,
     /// [S20, PROV-1] each nominal's lowered identity, with its region axis
     /// erased.
     erasure: TypeLowering<'program>,
@@ -571,6 +586,7 @@ struct BuildingBlock {
 }
 
 struct IrBuilder<'program> {
+    target: TargetLayout,
     /// [S20, PROV-1] each nominal's lowered identity, with its region axis
     /// erased.
     erasure: TypeLowering<'program>,
@@ -640,6 +656,7 @@ impl<'program> IrBuilder<'program> {
         function_name: &'program str,
     ) -> Result<Self, LoweringFailure> {
         let LoweringContext {
+            target,
             erasure,
             physical_calls,
             nominals,
@@ -649,6 +666,7 @@ impl<'program> IrBuilder<'program> {
             synthesis,
         } = context;
         let mut builder = Self {
+            target,
             erasure,
             physical_calls,
             nominals,
@@ -694,6 +712,7 @@ impl<'program> IrBuilder<'program> {
     /// This builder's own shared half, for the builders it creates.
     const fn context(&self) -> LoweringContext<'program> {
         LoweringContext {
+            target: self.target,
             erasure: self.erasure,
             physical_calls: self.physical_calls,
             nominals: self.nominals,

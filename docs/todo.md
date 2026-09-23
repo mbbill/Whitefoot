@@ -242,22 +242,6 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   validate smaller emitted frames on the same source without changing calls,
   cleanup or results before selecting that wider scope.
 
-- **Aggregate-size estimates can refuse fitting loop captures.** The
-  [runtime-adjacency output initialization](../research/investigations/compute-model/DESIGN.md#source-construction-and-admission)
-  has PAR-2 permission and only two used captures after pruning, but split
-  admission charges its 16-byte `TaskCell` nominal 256 bytes. The resulting
-  312-byte estimate refuses a frame whose target field layout would be 72
-  bytes; that smaller frame was not emitted or qualified. This is distinct
-  from unused-capture analysis and from allocation primitives' serial fills.
-  Exact aggregate sizing could admit useful maps, but this tiny qualification
-  matrix is below the ordinary grain threshold and establishes no speed gain.
-  Defer repair until an ordinary map's useful offers are blocked by this
-  estimate. Reopen with selected-target size/alignment and address-domain
-  checks, small and genuinely oversized aggregate controls, native payload
-  snapshot/copy checks and unchanged results/fitting-frame behavior. Preserve
-  complete aggregate transport and the fixed 256-byte slot bound; no wider
-  dead-computation analysis is implied.
-
 - **Pruning already-fitting loop frames needs a qualified benefit.** The
   [capture investigation](../research/investigations/compute-model/DESIGN.md#needed-loop-captures)
   now selects capture pruning only to rescue an originally oversized frame.

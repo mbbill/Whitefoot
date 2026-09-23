@@ -66,6 +66,7 @@
 
 use std::{cell::RefCell, collections::HashMap};
 
+use crate::backend::target::parallel_lane_frame_layout;
 use crate::semantic::{
     BindingId, CheckedDrop, CheckedLoopId, CheckedStatement, LoopActualization, LoopCombine,
     LoopPermission,
@@ -137,7 +138,7 @@ impl Decline {
     fn reason(self) -> String {
         match self {
             Self::FrameTooWide { bytes, captures } => format!(
-                "the lane frame would be {bytes} bytes over {captures} captured bindings, past the {LANE_FRAME_BYTES}-byte bound, so no lane could ever be granted"
+                "the lane frame does not fit its {LANE_FRAME_BYTES}-byte runtime slot; the conservative estimate is {bytes} bytes over {captures} captured bindings, so no lane could ever be granted"
             ),
             Self::AccumulatorAddressed => {
                 "the accumulator is borrowed, so its site value is an address rather than the value to fold".to_owned()
@@ -364,7 +365,21 @@ impl IrBuilder<'_> {
             .zip(candidate.needed.iter().copied())
             .filter_map(|(capture, needed)| needed.then_some(capture))
             .collect();
-        if let Some(decline) = self.frame_decline(result_type, &captures)? {
+        if let Some(decline) = self.frame_decline(result_type, &captures)?
+            && parallel_lane_frame_layout(
+                self.target,
+                self.nominals,
+                self.elements,
+                [result_type, U64, U64]
+                    .into_iter()
+                    .chain(captures.iter().map(|capture| capture.ty))
+                    .chain([U64]),
+                result_type,
+                // The splitter's allowance is already its final parameter.
+                false,
+            )?
+            .is_none()
+        {
             self.note(node_path, &format!("declined: {}", decline.reason()));
             // Keep the ordinary ledger order: this refusal precedes the
             // nested decisions that remain in its reused body.
@@ -477,9 +492,9 @@ impl IrBuilder<'_> {
     ) -> Result<Option<Decline>, LoweringFailure> {
         // `{ seed, lo, hi, captures…, budget, result }`, each field charged its
         // own size rounded up to the widest scalar the backend puts in a frame.
-        // Over-charging refuses a little early; under-charging would let every
-        // lane acquisition be refused at run time, which is the silent case
-        // this exists to close.
+        // Keep this estimate as the established capture-pruning and helper-
+        // reservation boundary. A final estimated refusal consults the shared
+        // selected-target layout before declining the completed candidate.
         let mut bytes = 3 * FRAME_FIELD_ALIGN + 2 * frame_bytes(result_type);
         for capture in captures {
             let ty = self
@@ -1227,9 +1242,8 @@ fn frame_bytes(ty: IrType) -> u64 {
         // are one pointer each.
         IrType::Buffer { .. } | IrType::Range { .. } => 2 * FRAME_FIELD_ALIGN,
         IrType::Address(_) | IrType::RuntimeBoxPayload { .. } => FRAME_FIELD_ALIGN,
-        // A nominal travels by value. Charging it the whole frame refuses every
-        // loop that would capture one, which is the fail-closed direction until
-        // a program asks for it.
+        // Aggregates trigger capture selection and the final exact-layout
+        // query; a conservative fit retains its established capture interface.
         IrType::Nominal(_) | IrType::Array { .. } | IrType::Window { .. } => LANE_FRAME_BYTES,
     };
     raw.div_ceil(FRAME_FIELD_ALIGN) * FRAME_FIELD_ALIGN

@@ -6,11 +6,13 @@ mod graph;
 mod runtime;
 mod stack_ledger;
 mod storage;
-mod target;
+pub(crate) mod target;
 
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+pub use emitter::emit_llvm;
 pub use emitter::{
     BackendFailure, COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_FILE_POSIX_HEADER,
@@ -21,6 +23,6 @@ pub use emitter::{
     FLOOR_WINDOWS_RUNTIME_SOURCE, ORDINARY_VALUES_HEADER, ORDINARY_VALUES_LLVM,
     ORDINARY_VALUES_SOURCE, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER,
     SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_PRIM_WINDOWS_SOURCE,
-    WINDOWS_RUNTIME_HEADER, WINDOWS_RUNTIME_SOURCE, emit_llvm, module_requires_parallel_runtime,
+    WINDOWS_RUNTIME_HEADER, WINDOWS_RUNTIME_SOURCE, module_requires_parallel_runtime,
 };
 pub use stack_ledger::{Architecture, stack_ledger};
