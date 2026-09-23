@@ -35,6 +35,17 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   operation selection and implementation to the requested conversion review;
   reopen when that review starts or a real numeric workload needs a workaround.
 
+- **Result transport loses practical compilation performance.** The matched
+  [maintained-program comparison](../research/investigations/result-proof-transport/DESIGN.md#maintained-program-cost-and-optimization-criterion)
+  measures raw DEFLATE at 697 ms with transport versus 228 ms before it, and
+  the existing 32-step independent-outcome and join probes expose further
+  growth. Attribute the checker cost and preserve completed closure work or
+  share conditional numeric state without changing acceptance, fallback
+  candidates, support invalidation or guard isolation. Validate against the
+  stated real-program and scale criteria plus independent proof checks. The
+  real-program regression reopens the previous deferral; storage extensions
+  below remain a separate language question.
+
 - **Joined reference proofs lose useful target-relative information.** A
   reference selecting either of two freshly empty Slots cannot establish the
   append precondition from both constructors' facts; captured disjoint ranges
@@ -482,15 +493,9 @@ each is resolved by a discussion and a tree change.
   library example needs one of these boundaries. Validate matched direct/local/
   projected programs, alias and descriptor writes, joins, loop iterations and
   stronger-contract negatives before choosing an extension; do not infer a
-  general refinement system from the local-result implementation. Also assess
-  sharing or projecting per-local conditional fact matrices when many outcomes
-  remain live: 32 outcome additions measured 585 ms versus 23 ms at the
-  baseline, and 32 chained joins measured 721 ms and 214 MiB peak RSS. These
-  are whole compilations of small sources; the benefit and precision tradeoff
-  of sharing/projection remain unverified by that observation. Compare checking
-  time, retained evidence and peak memory
-  on the investigation's scaled sources before selecting that representation
-  improvement. These extensions are deferred because the selected ordinary
+  general refinement system from the local-result implementation. Conditional
+  fact representation cost is the separate compiler defect above. These
+  language extensions are deferred because the selected ordinary
   local composition rule can be validated without widening the storage or
   predicate vocabulary.
 - **Declaration and call-boundary syntax after the ownership redesign.**

@@ -427,12 +427,11 @@ Copying stays near startup cost. Independent calls add immutable call datums;
 joins retain several conditional contexts. Both expose steep growth: at 32
 steps, candidate compilation is about 25 times baseline for outcome additions
 and 28 times for joins. This supports an executable local transport experiment,
-not a claim of cheap general refinement checking. Matrix sharing/projection is
-a concrete TODO with these measurements as its baseline. Defer that change
-until a matched precision/cost experiment or a real program needs many live
-outcomes: ordinary composition and maintained programs can be exercised without
-it, and changing the stored fact set needs its own correspondence argument.
-No acceptance limit hides the measured cost.
+not a claim of cheap general refinement checking. Matrix sharing/projection
+was deferred pending a matched precision/cost experiment or a real-program
+cost signal. The maintained-program comparison below supplies that signal and
+reopens implementation cost. Changing the stored fact set still needs a
+correspondence argument. No acceptance limit hides the measured cost.
 
 Reproduce on macOS from this branch. Set `wf_result_compiler` to the prebuilt
 baseline or candidate executable, and create `wf_result_scratch` as above.
@@ -450,6 +449,47 @@ separately require the recovered facts. All twelve matched LLVM files are
 byte-for-byte identical, while the runtime transport case executes the newly
 accepted success and error paths. This is evidence of erased transport on
 these inputs; runtime representations and lowering were not changed.
+
+### Maintained-program cost and optimization criterion
+
+A second comparison on the same host uses the exact pre-merge parent
+`e8e1c411` and the merged implementation `a1aa1aa7` (the same tree as merge
+`8d6da723`). The six maintained workloads' source files are unchanged. Both
+compilers use the gate profile; one warmup per compiler/workload precedes five
+alternating paired samples. The timed operation remains the complete
+`--emit-llvm` invocation, with no compiler build, native linking or execution.
+[program-cost.csv](program-cost.csv) retains the samples; like the scale data,
+it serves this representation comparison and can be retired when superseded.
+
+| Workload | Before transport ms | With transport ms | Before MiB | With MiB |
+|---|---:|---:|---:|---:|
+| Dense container control | 33.407 | 33.626 | 15.95 | 15.53 |
+| Grayscale conversion | 24.089 | 25.164 | 12.14 | 11.92 |
+| Telemetry packet | 25.816 | 27.263 | 12.86 | 12.56 |
+| Prefix expression | 23.593 | 23.953 | 11.25 | 11.34 |
+| wfgrep | 824.066 | 847.021 | 249.52 | 252.27 |
+| Raw DEFLATE vectors | 227.915 | 697.128 | 78.22 | 115.53 |
+
+The DEFLATE ranges are 227.076-233.065 ms before and 691.773-697.451 ms after;
+all six final LLVM pairs are byte-identical. This exposes a real-program
+regression, rather than establishing a whole-suite slowdown or attributing
+cost to a specific checker function. The DEFLATE workload has many direct
+matches and separate checking functions; it is not the synthetic workload's
+33 simultaneous local outcomes.
+
+Before selecting an optimization, require unchanged acceptance and retained
+proof validity, including ordinary fallback candidates, conditional guard
+isolation, replacement, support kills, joins and loop boundaries. Compare
+against the unoptimized compiler on identical maintained and scaled inputs,
+with prebuilt binaries and alternating samples. The practical target is to
+bring DEFLATE within 25% of the pre-transport cost and cut both 32-step outcome
+and join costs by at least half, without a reproducible regression above 10%
+on the other maintained workloads. These are experiment selection criteria,
+not compiler acceptance limits. A missed criterion requires investigating the
+remaining cost; it does not justify weakening proof rules. Profile first;
+prefer preserving the existing closure's completed work over introducing
+another solver or omitting facts. Any representation choice must state its
+correspondence argument before it is selected by timing.
 
 ## Candidate evidence and remaining validation
 
