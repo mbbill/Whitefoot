@@ -11,16 +11,16 @@ struct HashMapTestSeen {
   observed: u64;
 }
 
-fn hash_map_test_fail(seen: &HashMapTestSeen) -> result: own unit writes(seen) {
+fn hash_map_test_fail(seen: &HashMapTestSeen) -> result: unit writes(seen) {
   set deref(seen).failures = deref(seen).failures +wrap 1_u64;
   return unit;
 }
 
-fn hash_map_test_scalar_hash(env: &HashMapHashEnv, key: &u64) -> result: own u64 reads(key) {
+fn hash_map_test_scalar_hash(env: &HashMapHashEnv, key: &u64) -> result: u64 reads(key) {
   return deref(key) % 1_u64;
 }
 
-fn hash_map_test_scalar_equal(env: &HashMapHashEnv, left: &u64, right: &u64) -> result: own Bool reads(env), reads(left), reads(right) {
+fn hash_map_test_scalar_equal(env: &HashMapHashEnv, left: &u64, right: &u64) -> result: Bool reads(env), reads(left), reads(right) {
   if deref(env).hostile {
     return False();
   }
@@ -32,18 +32,18 @@ binding HashMapScalarKey : HashMapKey<u64, HashMapHashEnv> {
   equal = hash_map_test_scalar_equal;
 }
 
-fn hash_map_test_scalar_read(env: &HashMapTestSeen, key: &u64, value: &u64) -> result: own u64 reads(value), writes(env) {
+fn hash_map_test_scalar_read(env: &HashMapTestSeen, key: &u64, value: &u64) -> result: u64 reads(value), writes(env) {
   set deref(env).visits = deref(env).visits +wrap 1_u64;
   set deref(env).observed = deref(env).observed +wrap deref(value);
   return deref(value);
 }
 
-fn hash_map_test_scalar_visit(env: &HashMapTestSeen, key: &u64, value: &u64) -> result: own unit reads(value), writes(env) {
+fn hash_map_test_scalar_visit(env: &HashMapTestSeen, key: &u64, value: &u64) -> result: unit reads(value), writes(env) {
   let observed = hash_map_test_scalar_read(env: env, key: key, value: value);
   return unit;
 }
 
-fn hash_map_test_scalar_consume(env: &HashMapTestSeen, key: own u64, value: own u64) -> result: own unit writes(env) {
+fn hash_map_test_scalar_consume(env: &HashMapTestSeen, key: u64, value: u64) -> result: unit writes(env) {
   set deref(env).consumed = deref(env).consumed +wrap 1_u64;
   set deref(env).key_sum = deref(env).key_sum +wrap key;
   set deref(env).value_sum = deref(env).value_sum +wrap value;
@@ -54,7 +54,7 @@ binding HashMapScalarConsume : HashMapConsume<u64, u64, HashMapTestSeen> {
   consume = hash_map_test_scalar_consume;
 }
 
-fn hash_map_test_check_reserve(outcome: own Result<unit, unit>, expected: own Bool, seen: &HashMapTestSeen) -> result: own unit writes(seen) {
+fn hash_map_test_check_reserve(outcome: Result<unit, unit>, expected: Bool, seen: &HashMapTestSeen) -> result: unit writes(seen) {
   match outcome {
     Ok(value: success) => {
       if expected {
@@ -71,7 +71,7 @@ fn hash_map_test_check_reserve(outcome: own Result<unit, unit>, expected: own Bo
   return unit;
 }
 
-fn hash_map_test_scalars() -> result: own u64 pure {
+fn hash_map_test_scalars() -> result: u64 pure {
   let seen = HashMapTestSeen(failures: 0_u64, consumed: 0_u64, key_sum: 0_u64, value_sum: 0_u64, visits: 0_u64, observed: 0_u64);
   let true_value = True();
   let env = HashMapHashEnv(hostile: true_value);
@@ -152,7 +152,7 @@ fn hash_map_test_scalars() -> result: own u64 pure {
   return seen.failures;
 }
 
-fn hash_map_test_identity_hash(env: &HashMapHashEnv, key: &u64) -> result: own u64 reads(key) {
+fn hash_map_test_identity_hash(env: &HashMapHashEnv, key: &u64) -> result: u64 reads(key) {
   return deref(key);
 }
 
@@ -161,7 +161,7 @@ binding HashMapIdentityKey : HashMapKey<u64, HashMapHashEnv> {
   equal = hash_map_test_scalar_equal;
 }
 
-fn hash_map_test_scalar_expect(map: &HashMap<u64, u64, 8>, key: own u64, expected: own u64, env: &HashMapHashEnv, seen: &HashMapTestSeen) -> result: own unit reads(map), reads(env), writes(seen) {
+fn hash_map_test_scalar_expect(map: &HashMap<u64, u64, 8>, key: u64, expected: u64, env: &HashMapHashEnv, seen: &HashMapTestSeen) -> result: unit reads(map), reads(env), writes(seen) {
   let observed = hash_map_lookup::<HashMapIdentityKey, u64, HashMapTestSeen, u64, fn hash_map_test_scalar_read, 8>(map: map, key: &key, key_env: env, visit_env: seen);
   match observed {
     Ok(value: found_value) => {
@@ -176,7 +176,7 @@ fn hash_map_test_scalar_expect(map: &HashMap<u64, u64, 8>, key: own u64, expecte
   return unit;
 }
 
-fn hash_map_test_wrapping() -> result: own u64 pure {
+fn hash_map_test_wrapping() -> result: u64 pure {
   let seen = HashMapTestSeen(failures: 0_u64, consumed: 0_u64, key_sum: 0_u64, value_sum: 0_u64, visits: 0_u64, observed: 0_u64);
   let false_value = False();
   let true_value = True();
@@ -244,7 +244,7 @@ fn hash_map_test_wrapping() -> result: own u64 pure {
   return seen.failures;
 }
 
-fn hash_map_test_cycle_hash(env: &HashMapHashEnv, key: &u64) -> result: own u64 pure {
+fn hash_map_test_cycle_hash(env: &HashMapHashEnv, key: &u64) -> result: u64 pure {
   return 2_u64;
 }
 
@@ -253,7 +253,7 @@ binding HashMapCycleKey : HashMapKey<u64, HashMapHashEnv> {
   equal = hash_map_test_scalar_equal;
 }
 
-fn hash_map_test_cycle() -> result: own u64 pure {
+fn hash_map_test_cycle() -> result: u64 pure {
   doc "Three live entries collide at home two in a three-slot table. Rehash must preserve every pair; all subsequent lookups are checked without depending on physical order.";
   let seen = HashMapTestSeen(failures: 0_u64, consumed: 0_u64, key_sum: 0_u64, value_sum: 0_u64, visits: 0_u64, observed: 0_u64);
   let false_value = False();
@@ -297,7 +297,7 @@ fn hash_map_test_cycle() -> result: own u64 pure {
   return seen.failures;
 }
 
-fn hash_map_test_scalar_increment(env: &HashMapTestSeen, key: &u64, value: &u64) -> result: own u64 writes(env), writes(value) {
+fn hash_map_test_scalar_increment(env: &HashMapTestSeen, key: &u64, value: &u64) -> result: u64 writes(env), writes(value) {
   set deref(env).visits = deref(env).visits +wrap 1_u64;
   set deref(value) = deref(value) +wrap 1_u64;
   return deref(value);
@@ -321,18 +321,18 @@ struct HashMapOwnerLedger {
   visits: u64;
 }
 
-fn hash_map_test_owned_make(id: own u64, serial: own u64) -> result: own HashMapOwnedNode pure {
+fn hash_map_test_owned_make(id: u64, serial: u64) -> result: HashMapOwnedNode pure {
   let record = HashMapOwnedRecord(id: id, serial: serial);
   let child = box_new::<HashMapOwnedRecord>(value: record);
   return HashMapOwnedNode(child: move child);
 }
 
-fn hash_map_test_owned_fail(ledger: &HashMapOwnerLedger) -> result: own unit writes(ledger) {
+fn hash_map_test_owned_fail(ledger: &HashMapOwnerLedger) -> result: unit writes(ledger) {
   set deref(ledger).failures = deref(ledger).failures +wrap 1_u64;
   return unit;
 }
 
-fn hash_map_test_owned_release(value: own HashMapOwnedNode, ledger: &HashMapOwnerLedger) -> result: own unit writes(ledger) {
+fn hash_map_test_owned_release(value: HashMapOwnedNode, ledger: &HashMapOwnerLedger) -> result: unit writes(ledger) {
   let HashMapOwnedNode(child: owned_child) = move value;
   let serial = owned_child.inner.serial;
   if serial < deref(ledger).releases.len {
@@ -343,21 +343,21 @@ fn hash_map_test_owned_release(value: own HashMapOwnedNode, ledger: &HashMapOwne
   return unit;
 }
 
-fn hash_map_test_owned_consume(env: &HashMapOwnerLedger, key: own HashMapOwnedNode, value: own HashMapOwnedNode) -> result: own unit writes(env) {
+fn hash_map_test_owned_consume(env: &HashMapOwnerLedger, key: HashMapOwnedNode, value: HashMapOwnedNode) -> result: unit writes(env) {
   hash_map_test_owned_release(value: move key, ledger: env);
   hash_map_test_owned_release(value: move value, ledger: env);
   return unit;
 }
 
-fn hash_map_test_owned_hash(env: &HashMapOwnerEnv, key: &HashMapOwnedNode) -> result: own u64 reads(key) {
+fn hash_map_test_owned_hash(env: &HashMapOwnerEnv, key: &HashMapOwnedNode) -> result: u64 reads(key) {
   return deref(key).child.inner.id % 1_u64;
 }
 
-fn hash_map_test_owned_equal(env: &HashMapOwnerEnv, left: &HashMapOwnedNode, right: &HashMapOwnedNode) -> result: own Bool reads(left), reads(right) {
+fn hash_map_test_owned_equal(env: &HashMapOwnerEnv, left: &HashMapOwnedNode, right: &HashMapOwnedNode) -> result: Bool reads(left), reads(right) {
   return deref(left).child.inner.id == deref(right).child.inner.id;
 }
 
-fn hash_map_test_owned_read(env: &HashMapOwnerLedger, key: &HashMapOwnedNode, value: &HashMapOwnedNode) -> result: own u64 reads(key), reads(value), writes(env) {
+fn hash_map_test_owned_read(env: &HashMapOwnerLedger, key: &HashMapOwnedNode, value: &HashMapOwnedNode) -> result: u64 reads(key), reads(value), writes(env) {
   if deref(key).child.inner.serial != 4_u64 {
     hash_map_test_owned_fail(ledger: env);
   }
@@ -368,7 +368,7 @@ fn hash_map_test_owned_read(env: &HashMapOwnerLedger, key: &HashMapOwnedNode, va
   return deref(value).child.inner.id;
 }
 
-fn hash_map_test_owned_increment(env: &HashMapOwnerLedger, key: &HashMapOwnedNode, value: &HashMapOwnedNode) -> result: own u64 reads(key), writes(env), writes(value) {
+fn hash_map_test_owned_increment(env: &HashMapOwnerLedger, key: &HashMapOwnedNode, value: &HashMapOwnedNode) -> result: u64 reads(key), writes(env), writes(value) {
   if deref(key).child.inner.serial != 4_u64 {
     hash_map_test_owned_fail(ledger: env);
   }
@@ -389,7 +389,7 @@ binding HashMapOwnedConsume : HashMapConsume<HashMapOwnedNode, HashMapOwnedNode,
   consume = hash_map_test_owned_consume;
 }
 
-fn hash_map_test_owned_check_pair(pair: &HashMapPair<HashMapOwnedNode, HashMapOwnedNode>, key: own u64, value: own u64, ledger: &HashMapOwnerLedger) -> result: own unit reads(pair), writes(ledger) {
+fn hash_map_test_owned_check_pair(pair: &HashMapPair<HashMapOwnedNode, HashMapOwnedNode>, key: u64, value: u64, ledger: &HashMapOwnerLedger) -> result: unit reads(pair), writes(ledger) {
   if deref(pair).key.child.inner.id != key {
     hash_map_test_owned_fail(ledger: ledger);
   }
@@ -399,7 +399,7 @@ fn hash_map_test_owned_check_pair(pair: &HashMapPair<HashMapOwnedNode, HashMapOw
   return unit;
 }
 
-fn hash_map_test_owned() -> result: own u64 pure {
+fn hash_map_test_owned() -> result: u64 pure {
   doc "Distinct child serials distinguish the replaced pair from the offered pair even when key IDs compare equal. Callbacks check retained identities around edit, and a second edit returns a fresh owned Box holding the prior value for separate caller consumption.";
   let releases = array_filled::<u64, 32>(value: 0_u64);
   let ledger = HashMapOwnerLedger(releases: releases, failures: 0_u64, visits: 0_u64);
@@ -526,7 +526,7 @@ fn hash_map_test_owned() -> result: own u64 pure {
   return ledger.failures;
 }
 
-fn hash_map_test_scalar_outcome(outcome: own HashMapPut<u64, u64>, expected: own u64, key: own u64, value: own u64, seen: &HashMapTestSeen) -> result: own unit writes(seen) {
+fn hash_map_test_scalar_outcome(outcome: HashMapPut<u64, u64>, expected: u64, key: u64, value: u64, seen: &HashMapTestSeen) -> result: unit writes(seen) {
   match outcome {
     HashMapInserted() => {
       if expected != 0_u64 {
@@ -558,7 +558,7 @@ fn hash_map_test_scalar_outcome(outcome: own HashMapPut<u64, u64>, expected: own
   return unit;
 }
 
-fn hash_map_test_owned_outcome(outcome: own HashMapPut<HashMapOwnedNode, HashMapOwnedNode>, expected: own u64, key: own u64, value: own u64, ledger: &HashMapOwnerLedger) -> result: own unit writes(ledger) {
+fn hash_map_test_owned_outcome(outcome: HashMapPut<HashMapOwnedNode, HashMapOwnedNode>, expected: u64, key: u64, value: u64, ledger: &HashMapOwnerLedger) -> result: unit writes(ledger) {
   match outcome {
     HashMapInserted() => {
       if expected != 0_u64 {
@@ -597,7 +597,7 @@ fn hash_map_test_owned_outcome(outcome: own HashMapPut<HashMapOwnedNode, HashMap
   return unit;
 }
 
-fn hash_map_test_owned_snapshot(env: &HashMapOwnerLedger, key: &HashMapOwnedNode, value: &HashMapOwnedNode) -> result: own Box<HashMapOwnedRecord> reads(key), writes(env), writes(value) {
+fn hash_map_test_owned_snapshot(env: &HashMapOwnerLedger, key: &HashMapOwnedNode, value: &HashMapOwnedNode) -> result: Box<HashMapOwnedRecord> reads(key), writes(env), writes(value) {
   set deref(env).visits = deref(env).visits +wrap 1_u64;
   let record = HashMapOwnedRecord(id: deref(value).child.inner.id, serial: deref(key).child.inner.serial);
   let snapshot = box_new::<HashMapOwnedRecord>(value: record);
@@ -605,7 +605,7 @@ fn hash_map_test_owned_snapshot(env: &HashMapOwnerLedger, key: &HashMapOwnedNode
   return move snapshot;
 }
 
-fn hash_map_test_snapshot_consume(snapshot: own Box<HashMapOwnedRecord>, ledger: &HashMapOwnerLedger) -> result: own unit writes(ledger) {
+fn hash_map_test_snapshot_consume(snapshot: Box<HashMapOwnedRecord>, ledger: &HashMapOwnerLedger) -> result: unit writes(ledger) {
   doc "The caller transfers the fresh callback result into this consumer. Its ordinary Box release must appear in the native allocation ledger, independently of the ten stored or query child identities.";
   if snapshot.inner.id != 223_u64 {
     hash_map_test_owned_fail(ledger: ledger);
@@ -616,7 +616,7 @@ fn hash_map_test_snapshot_consume(snapshot: own Box<HashMapOwnedRecord>, ledger:
   return unit;
 }
 
-fn hash_map_test_edit() -> result: own u64 pure {
+fn hash_map_test_edit() -> result: u64 pure {
   let seen = HashMapTestSeen(failures: 0_u64, consumed: 0_u64, key_sum: 0_u64, value_sum: 0_u64, visits: 0_u64, observed: 0_u64);
   let false_value = False();
   let env = HashMapHashEnv(hostile: false_value);
@@ -673,11 +673,11 @@ fn hash_map_test_edit() -> result: own u64 pure {
   return seen.failures;
 }
 
-fn hash_map_test_unit_hash(env: &HashMapHashEnv, key: &unit) -> result: own u64 pure {
+fn hash_map_test_unit_hash(env: &HashMapHashEnv, key: &unit) -> result: u64 pure {
   return 0_u64;
 }
 
-fn hash_map_test_unit_equal(env: &HashMapHashEnv, left: &unit, right: &unit) -> result: own Bool reads(env) {
+fn hash_map_test_unit_equal(env: &HashMapHashEnv, left: &unit, right: &unit) -> result: Bool reads(env) {
   if deref(env).hostile {
     return False();
   }
@@ -689,18 +689,18 @@ binding HashMapUnitKey : HashMapKey<unit, HashMapHashEnv> {
   equal = hash_map_test_unit_equal;
 }
 
-fn hash_map_test_unit_read(env: &HashMapTestSeen, key: &unit, value: &unit) -> result: own unit writes(env) {
+fn hash_map_test_unit_read(env: &HashMapTestSeen, key: &unit, value: &unit) -> result: unit writes(env) {
   set deref(env).visits = deref(env).visits +wrap 1_u64;
   return unit;
 }
 
-fn hash_map_test_unit_edit(env: &HashMapTestSeen, key: &unit, value: &unit) -> result: own unit writes(env), writes(value) {
+fn hash_map_test_unit_edit(env: &HashMapTestSeen, key: &unit, value: &unit) -> result: unit writes(env), writes(value) {
   set deref(env).visits = deref(env).visits +wrap 1_u64;
   set deref(value) = unit;
   return unit;
 }
 
-fn hash_map_test_unit_consume(env: &HashMapTestSeen, key: own unit, value: own unit) -> result: own unit writes(env) {
+fn hash_map_test_unit_consume(env: &HashMapTestSeen, key: unit, value: unit) -> result: unit writes(env) {
   set deref(env).consumed = deref(env).consumed +wrap 1_u64;
   return unit;
 }
@@ -709,7 +709,7 @@ binding HashMapUnitConsume : HashMapConsume<unit, unit, HashMapTestSeen> {
   consume = hash_map_test_unit_consume;
 }
 
-fn hash_map_test_unit_outcome(outcome: own HashMapPut<unit, unit>, expected: own u64, seen: &HashMapTestSeen) -> result: own unit writes(seen) {
+fn hash_map_test_unit_outcome(outcome: HashMapPut<unit, unit>, expected: u64, seen: &HashMapTestSeen) -> result: unit writes(seen) {
   match outcome {
     HashMapInserted() => {
       if expected != 0_u64 {
@@ -735,7 +735,7 @@ fn hash_map_test_unit_outcome(outcome: own HashMapPut<unit, unit>, expected: own
   return unit;
 }
 
-fn hash_map_test_units() -> result: own u64 pure {
+fn hash_map_test_units() -> result: u64 pure {
   doc "HashMapPair<unit, unit> has no key or value bytes. Three non-reflexive insertions grow exact capacities zero, one, two, three; the last step saturates an irregular ceiling. Rehash preserves all three owners without equality. Switching to reflexive equality exercises replacement and removal without claiming which identical entry is selected.";
   let seen = HashMapTestSeen(failures: 0_u64, consumed: 0_u64, key_sum: 0_u64, value_sum: 0_u64, visits: 0_u64, observed: 0_u64);
   let true_value = True();
@@ -852,7 +852,7 @@ fn hash_map_test_units() -> result: own u64 pure {
   return seen.failures;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "One representation-independent library caller covers copyable pairs, must-consume Box-owning pairs, zero-sized pairs, hostile equality, wrap, tombstones, replacement, real capacity refusal, growth, rehash, borrowed edit, owned callback results and exact cleanup. All observations use public operations rather than bucket fields or iteration order.";
   let scalar_failures = hash_map_test_scalars();
   let wrapping_failures = hash_map_test_wrapping();
