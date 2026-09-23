@@ -12,6 +12,19 @@ enum Owner {
   Full(value: PairBuffers);
 }
 
+fn make_empty() -> result: Owner pure {
+  return Empty();
+}
+
+fn relay(owner: Owner) -> result: Owner pure {
+  return move owner;
+}
+
+fn clear(owner: &Owner) -> result: unit writes(owner) {
+  set deref(owner) = make_empty();
+  return unit;
+}
+
 fn abandon(owner: Owner) -> result: unit pure {
   return unit;
 }
@@ -41,16 +54,20 @@ fn main() -> status: ExitStatus pure {
   place_back(window: &abandoned_right.inner, value: 9_u8);
   let abandoned_pair = PairBuffers(left: move abandoned_left, right: move abandoned_right);
   let abandoned = Full(value: move abandoned_pair);
+  let empty = make_empty();
+  swap(first: &abandoned, second: &empty);
+  swap(first: &empty, second: &empty);
+  clear(owner: &empty);
   abandon(owner: move abandoned);
-  let empty = Empty();
-  abandon(owner: move empty);
   let consumed_left = box_slots_new::<u8>(capacity: 1_u64);
   place_back(window: &consumed_left.inner, value: 11_u8);
   let consumed_right = box_slots_new::<u8>(capacity: 1_u64);
   place_back(window: &consumed_right.inner, value: 13_u8);
   let consumed_pair = PairBuffers(left: move consumed_left, right: move consumed_right);
   let consumed = Full(value: move consumed_pair);
-  let consumed_byte = consume(owner: move consumed);
+  set empty = move consumed;
+  let carried = relay(owner: move empty);
+  let consumed_byte = consume(owner: move carried);
   if consumed_byte != 11_u8 {
     return exit_status(code: 1_u8);
   }
@@ -96,14 +113,45 @@ fn main() -> status: ExitStatus pure {
     assert!(!consume.contains(&format!("call void @{cleanup}")));
     assert_eq!(consume.matches("call void @free").count(), 2);
 
-    let output = compile_and_run(&llvm);
-    assert!(
-        output.status.success(),
-        "resource enum program failed: {}",
-        String::from_utf8_lossy(&output.stderr)
+    // A linked wrapper supplies a valid, deliberately dirty result destination
+    // to the same WF constructor. A second linked implementation writes only
+    // the active tag through that ordinary signature. The inactive Box
+    // representations must never enter cleanup in either implementation.
+    let wrapped = llvm.replacen(
+        "define void @wf_make_empty(",
+        "define void @wf_test_empty_body(",
+        1,
     );
-    assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
+    assert_ne!(wrapped, llvm);
+    let wrapped = format!("{wrapped}\ndeclare void @wf_make_empty(ptr)\n");
+    let wrapper = r#"
+typedef struct { void *left; void *right; } wf_test_pair;
+typedef struct { uint32_t tag; wf_test_pair value; } wf_test_owner;
+extern void wf_test_empty_body(wf_test_owner *result);
+void wf_make_empty(wf_test_owner *result) {
+    memset(result, 0xa5, sizeof(*result));
+    wf_test_empty_body(result);
+}
+"#;
+    let linked_constructor = wrapper.replace("wf_test_empty_body(result);", "result->tag = 0;");
+    assert_ne!(linked_constructor, wrapper);
+    for (module, linked) in [
+        (&llvm, ""),
+        (&wrapped, wrapper),
+        (&wrapped, linked_constructor.as_str()),
+    ] {
+        let observed = super::owned_places::retain_calls(module)
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(");
+        let host = format!("{}{linked}", super::owned_places::allocation_observer(4, 0));
+        let output = compile_link_and_run(&observed, Some(&host), &[]);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        // The first Full travels by swap, then a reference write replaces it
+        // with Empty. The second Full reuses that binding, crosses a retained
+        // result boundary, and is consumed through its selected payload.
+        assert_eq!(output.stdout, b"A1;A2;F1;F2;A3;A4;F3;F4;", "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
 }
 
 /// The same transfer, error and abandonment program over an inline run.

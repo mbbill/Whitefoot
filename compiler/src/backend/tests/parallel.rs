@@ -1512,6 +1512,111 @@ fn owned_pair_results_survive_ordinary_join_and_forced_refusal() {
     run_owned_lane_cases(OWNED_PAIR_RESULTS, &module, 0, 1, 0, 0, 1);
 }
 
+/// Both Empty and a partial window of Box owners cross argument and result
+/// boundaries. Each granted frame keeps its dirty inactive storage until join;
+/// refusal executes the same calls and must release the same four cells.
+#[test]
+fn owning_enum_windows_survive_lane_arguments_results_and_refusal() {
+    let source = br#"enum Owner {
+  Empty();
+  Full(values: Slots<Box<u64>, 3>);
+}
+
+fn transform(owner: Owner, value: u64) -> result: Owner pure {
+  match move owner {
+    Empty() => {
+      let values = slots_new::<Box<u64>, 3>();
+      let cell = box_new::<u64>(value: value);
+      place_back(window: &values, value: move cell);
+      return Full(values: move values);
+    }
+    Full(values: carried_values) => {
+      if carried_values.len != 1_u64 {
+        return Full(values: move carried_values);
+      }
+      let cell = take_back(window: &carried_values);
+      if cell.inner != value {
+        return Full(values: move carried_values);
+      }
+      return Empty();
+    }
+  }
+}
+
+fn main() -> status: ExitStatus pure {
+  let left_values = slots_new::<Box<u64>, 3>();
+  let left_cell = box_new::<u64>(value: 17_u64);
+  place_back(window: &left_values, value: move left_cell);
+  let left = Full(values: move left_values);
+  let empty_left = Empty();
+  let right_values = slots_new::<Box<u64>, 3>();
+  let right_cell = box_new::<u64>(value: 29_u64);
+  place_back(window: &right_values, value: move right_cell);
+  let right = Full(values: move right_values);
+  let empty_right = Empty();
+  let first = transform(owner: move left, value: 17_u64);
+  let second = transform(owner: move empty_left, value: 41_u64);
+  let third = transform(owner: move empty_right, value: 53_u64);
+  let fourth = transform(owner: move right, value: 29_u64);
+  match move first {
+    Empty() => {
+    }
+    Full(values: unexpected_first) => {
+      return exit_status(code: 1_u8);
+    }
+  }
+  match move second {
+    Empty() => {
+      return exit_status(code: 2_u8);
+    }
+    Full(values: second_values) => {
+      if second_values.len != 1_u64 {
+        return exit_status(code: 3_u8);
+      }
+      let second_cell = take_back(window: &second_values);
+      if second_cell.inner != 41_u64 {
+        return exit_status(code: 4_u8);
+      }
+    }
+  }
+  match move fourth {
+    Empty() => {
+    }
+    Full(values: unexpected_fourth) => {
+      return exit_status(code: 5_u8);
+    }
+  }
+  match move third {
+    Empty() => {
+      return exit_status(code: 6_u8);
+    }
+    Full(values: third_values) => {
+      if third_values.len != 1_u64 {
+        return exit_status(code: 7_u8);
+      }
+      let third_cell = take_back(window: &third_values);
+      if third_cell.inner != 53_u64 {
+        return exit_status(code: 8_u8);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let module = super::owned_places::retain_calls(&emit_with_overlap(source));
+    let main = function_body(&module, "@wf_main");
+    // The first permission run also contains the preceding constructions, so
+    // the four calls form two sibling pairs. Full->Empty and Empty->Full each
+    // occupy a published position; the first join retires before the next pair.
+    assert_eq!(main.matches("call void @wf__par_publish(ptr ").count(), 2);
+    assert_eq!(main.matches("call void @wf__par_join(ptr ").count(), 2);
+    assert!(
+        function_body(&module, "@wf_transform").starts_with("define void @wf_transform(ptr "),
+        "the same aggregate ABI serves ordinary calls and published thunks"
+    );
+    run_owned_lane_cases(source, &module, 0, 2, 4, 0, 1);
+}
+
 // `heap_box_loop_keeps_provider_order_and_updates_borrowed_owners` retired
 // here with [PROV-1] and [BLK-0] through [BLK-4]: its observation was a
 // per-allocation refusal schedule over a `Heap<'heap>` store provider, and
@@ -1632,6 +1737,7 @@ const OWNED_LANE_OBSERVER: &str = r#"#include <stdatomic.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 
 extern void *wf__par_acquire_lane(unsigned long bytes);
@@ -1654,7 +1760,10 @@ void *wf_test_acquire_lane(unsigned long bytes) {
     const char *refuse = getenv("WF_TEST_REFUSE_LANE");
     if (refuse != NULL && refuse[0] == '1') return NULL;
     void *frame = wf__par_acquire_lane(bytes);
-    if (frame != NULL) atomic_fetch_add(&granted, 1);
+    if (frame != NULL) {
+        memset(frame, 0xa5, bytes);
+        atomic_fetch_add(&granted, 1);
+    }
     return frame;
 }
 
@@ -1704,6 +1813,7 @@ void *wf_test_source_allocate(size_t size) {
     if (id >= 10) abort();
     void *value = malloc(size);
     if (value == NULL) abort();
+    memset(value, 0xa5, size);
     sizes[id] = size;
     atomic_store(&held[id], value);
     return value;

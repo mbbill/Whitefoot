@@ -542,8 +542,10 @@ accounted for. The library therefore retains the shared exchange helper. The
 inline source and its measurements remain a replayable rejected alternative,
 not the delivered library or evidence that the removed clear alone costs the
 observed timing difference. No compiler implementation, source-language rule
-or conformance evidence is changed. The pending storage amendment records the
-two proposed library choices; the proof-contract and remaining performance limits stay in
+or conformance evidence is changed. The adopted
+[HashMap storage decisions](../../../design/language/data-model/hash-map-storage.md)
+record the enum-bucket/shared-helper and compact returned-pair choices;
+the proof-contract and remaining performance limits stay in
 [`docs/todo.md`](../../../docs/todo.md).
 
 The following complete controls retain the trial's proof boundaries under
@@ -861,15 +863,16 @@ actual pool, recursive and cursor algorithms before proposing more machinery.
 
 ### Ordered map trial at v0.68
 
-**Prospective experiment, not library adoption.** Starting at `345e2966a`, test
-whether a complete arbitrary-K/V B-tree can retain ordinary ownership at useful
+**Registered before implementation.** Starting at `345e2966a`, this experiment
+tested whether a complete arbitrary-K/V B-tree can retain ordinary ownership at useful
 cost. The consumer is a reusable map and an ordinary writer that builds an
 owning record index, replaces and edits records, removes keys, visits bounded
 ranges and consumes the remainder. The existing scalar
 [leaf split](../../../tests/programs/containers/ordered.wf) is only one component.
 This trial selects boxed nodes before the family sketch's pool candidate to
 avoid whole-pool relocation and a new node-ID protocol; measurements may reject
-that choice. The initial ownership probe below supports only its bounded
+that choice. The owner subsequently adopted the completed baseline described
+below; the initial ownership probe supports only its bounded
 transfer and cleanup protocol, not yet the complete map.
 
 Use one common pair region, fixed fanout, and an explicit root vacancy:
@@ -1115,10 +1118,14 @@ now preserves 1,152 samples including warm-up: wide-pair costs remain material
 against direct C and AVL, while the scalar/range results are mixed. The complete
 canonical gate remains a separate validation stage.
 
+The owner adopted the fanout-16 boxed B-tree as the reusable measured baseline,
+as recorded in the [ordered-map storage decision](../../../design/language/data-model/ordered-map-storage.md).
+Both later insertion candidates remain rejected under their registered criteria.
+
 **Design suitability.** Packed boxed nodes trade more balancing source for
 fewer allocations and avoid pool-wide movement. Bundling edges with separator
 ownership removes a cross-window capacity premise at an explicit space cost;
-the measurements must decide whether that tradeoff is useful. Wide-value
+the measurements bound the adopted baseline's costs. Wide-value
 occupancy remains a representation risk and AVL a meaningful alternative. Indexed composite
 work and prior container/lowering cost questions retain their own scope; this
 trial does not close them or amend the language.
@@ -1290,7 +1297,7 @@ updates nor reverse-position repair. Preserve that source and its public
 contracts as the plain-queue comparison baseline. The following criteria were
 recorded before composite implementation or timings. The maintained composite
 now establishes the complete operation and ownership chain below. The completed
-comparison supports the qualified shared-core proposal recorded below; it does
+comparison supports the owner's qualified shared-core selection recorded below; it does
 not establish a speedup or native parity. No new language mechanism is selected.
 
 The minimum consumer is a coordinated record store with several simultaneously
@@ -1598,10 +1605,13 @@ retained deletion stays busy until both memberships retire. It does not make
 bookkeeping unforgeable, authenticate caller-selected store IDs, provide
 independently held retention tickets, or preserve references across mutation.
 The old one-object caller retains its narrower evidence. The registered
-comparison below owns the measured validation/storage costs and shared-core
-proposal; this correctness result alone establishes no native parity.
+comparison below owns the measured validation/storage costs and grounds for
+shared-core selection; this correctness result alone establishes no native parity.
 
 #### Registered cost comparison
+
+The following controls and criteria were registered before implementation and
+timing; the measured disposition follows them.
 
 | Candidate or control | Discriminating property |
 | --- | --- |
@@ -1689,7 +1699,7 @@ fixture only when equivalent maintained coverage replaces it. A packed byte-page
 payload, full ordered tree, externally held retention tickets and concurrent
 reclamation remain separate consumers rather than added variants of this trial.
 
-#### Measured shared-core proposal
+#### Measured shared-core selection
 
 The [complete comparison](../../experiments/container-representation/indexed-library/RESULTS.md#measured-result)
 retains 36,288 rows from the initial series and its sole permitted complete
@@ -1703,7 +1713,7 @@ pop/push at 16 entries, 0.969773/0.990951 against a 3% band. It establishes
 neither a repeated benefit nor a remaining regression. The result is not
 "all cells equivalent"; every initial and repeated sample remains evidence.
 
-The recommendation is shared-core reuse on maintenance grounds, with that
+The owner selected shared-core reuse on maintenance grounds, with that
 uncertainty retained. Indexed costs stay within the registered comparison
 bands, and the independently built standalone/shared indexed executables are
 byte-identical in normal and retained modes with the same runtime objects and
@@ -1715,8 +1725,9 @@ code without imposing an artificial retained callback boundary. Actual indexed
 callbacks retain the selected boundary and the complete ownership/position
 validation protocol. One core avoids a second maintained sift implementation;
 this selects neither a demonstrated speedup nor uniform native parity. The
-proposal extends the inherited priority-queue amendment rather than adding
-a new language mechanism or design node.
+choice is recorded in the existing
+[priority-queue storage decision](../../../design/language/data-model/priority-queue-storage.md)
+and adds no language mechanism.
 
 The native comparison still has operation-specific costs. Retained small
 payload growth/cleanup at 4096 records costs 1.354--1.368 times swap C and
@@ -1735,7 +1746,7 @@ canonical gate remain separate stages.
 payload ownership, and ordinary Slab edit addresses a concrete reusable access
 need. The complete multi-object protocol and independent identity/allocation
 ledgers establish the selected correctness boundary. The shared core is
-recommended because the comparison supports source reuse without a repeatable
+selected because the comparison supports source reuse without a repeatable
 material regression, while preserving the single-cohort uncertainty and native
 cost qualifications above. Independent retention authority and surviving
 references remain outside this protocol. No broader mechanism follows from
@@ -1809,9 +1820,9 @@ language questions in
 | [Vector](../../../lib/containers/grow-vector.wf) | Reserve/growing append, insert, ordered and swap removal, truncate, ordered drain and release; copy/drop/nodrop callers | Selected library chain complete. Extra drain movement and short-cycle lowering costs remain measured questions. |
 | [Deque](../../../lib/containers/deque.wf) | Both endpoints, wrap, logical visitation, consuming grow/shrink rebase, drain and release | Selected endpoint/rebase chain complete. Automatic reference-based growth and Ring two-span access are separate interfaces; scalar costs remain unresolved. |
 | [Slab](../../../lib/containers/slab.wf) | Lazy bounded slots, validated visit/edit with owned results, returned-owner exhaustion, removal, reuse, expiry, generation retirement and consumption | Selected stable-slot chain complete; the indexed composite below exercises multi-object memberships. Aggregate transfers, the extra cell word, independent retention tickets and surviving references remain separate questions. |
-| [HashMap](../../../lib/containers/hash-map.wf) | Generic owning collision/replacement/removal/reuse, lookup/edit, growth/rehash, visitation and consumption | Selected map chain complete. Inactive-storage lowering is the separate PR #101 comparison; wide result/migration costs and double-backing peaks retain their own evidence. |
-| [PriorityQueue](../../../lib/containers/priority-queue.wf) | Arbitrary-T growth, peek/pop/replace-top, heapify, ordered drain and physical cleanup; copy/drop/nodrop callers and exact release ledgers | Plain chain and [matched comparison](../../experiments/container-representation/priority-library/RESULTS.md) complete, with qualified result-boundary and wide-sift costs. The [shared no-op comparison](#measured-shared-core-proposal) shows no repeatable material regression; its remaining single-cohort possible benefit is not a speedup claim. |
-| Indexed composite | [Multi-object weak/retained caller](../../../tests/programs/containers/indexed-membership-program.wf): Slab ownership, HashMap ID lookup/replacement, indexed reschedule/removal with reverse-position repair, expiry/reuse and complete owner cleanup | Complete correctness chain passes both lowering modes and exact 129-allocation ledgers. The [matched comparison](../../experiments/container-representation/indexed-library/RESULTS.md#measured-result) supports qualified shared-core reuse: all 48 indexed cells stay within variation in both series, while native costs depend on payload and operation. Independent tickets, unforgeable membership and surviving references remain unestablished; this is no native-parity claim. |
+| [HashMap](../../../lib/containers/hash-map.wf) | Generic owning collision/replacement/removal/reuse, lookup/edit, growth/rehash, visitation and consumption | Selected map chain complete. The owner rejected the [inactive-payload omission trial](#inactive-payload-initialization-compiler-trial), retaining baseline production clearing; wide result/migration costs and double-backing peaks retain their own evidence. |
+| [PriorityQueue](../../../lib/containers/priority-queue.wf) | Arbitrary-T growth, peek/pop/replace-top, heapify, ordered drain and physical cleanup; copy/drop/nodrop callers and exact release ledgers | Plain chain and [matched comparison](../../experiments/container-representation/priority-library/RESULTS.md) complete, with qualified result-boundary and wide-sift costs. The [shared no-op comparison](#measured-shared-core-selection) shows no repeatable material regression; its remaining single-cohort possible benefit is not a speedup claim. |
+| Indexed composite | [Multi-object weak/retained caller](../../../tests/programs/containers/indexed-membership-program.wf): Slab ownership, HashMap ID lookup/replacement, indexed reschedule/removal with reverse-position repair, expiry/reuse and complete owner cleanup | Complete correctness chain passes both lowering modes and exact 129-allocation ledgers. The owner selected shared-core reuse from the [matched comparison](../../experiments/container-representation/indexed-library/RESULTS.md#measured-result): all 48 indexed cells stay within variation in both series, while native costs depend on payload and operation. Independent tickets, unforgeable membership and surviving references remain unestablished; this is no native-parity claim. |
 | [OrderedMap](../../../lib/containers/ordered-map.wf) | Arbitrary owning keys/values, find/edit/insert/replace, split/promotion, delete/borrow/merge/root contraction, ordered/range visitation and complete cleanup; the [maintained caller](../../../tests/programs/containers/ordered-map-program.wf) checks 103 allocations and each owner identity | The [complete baseline comparison and two rejected insertion trials](../../experiments/container-representation/ordered-library/RESULTS.md) preserve replacement, node-transfer and occupancy costs; no default tree or native-parity claim. |
 
 The six libraries' maintained callers and the indexed composite are registered
@@ -1838,8 +1849,9 @@ generic owning chain at competitive executable cost, including growth and
 retained helper boundaries. The current comparator witness already mutates
 through references and exchanges arbitrary T without holes; its scalar
 instances and historical small-heap timings do not establish this larger
-contract. This trial proceeds independently of PR #101's unchanged-source
-inactive-storage comparison and selects no new storage or proof mechanism.
+contract. This trial ran independently of the unchanged-source
+inactive-storage comparison, which the owner subsequently rejected, and
+selected no new storage or proof mechanism.
 
 The candidate owns `Box<Slots<T>>` in `PriorityQueue<T, const ceiling: u64>`.
 The ceiling bounds concrete allocation sites; growth doubles or saturates at
@@ -1993,19 +2005,19 @@ ordinary correctness gate depends on that research directory. Retire its
 sources or harness when the comparison is superseded and no maintained claim
 depends on their replay.
 
-**Design suitability.** A boxed prefix and borrowed comparator build on the
+**Design suitability at registration.** A boxed prefix and borrowed comparator build on the
 current generic witness, preserve arbitrary ownership and give the indexed
 consumer a reusable heap core. The proposed nonempty interface needs the
 public-access proof discriminator above; wide-element sift movement and result
 transfers need the matched experiment. Indexed updates and the full ordered
-chain remain required following slices. The existing cost and language
+chain were reserved for the later trials now recorded above. The existing cost and language
 questions keep their own reopening criteria rather than becoming implied
 prerequisites for this implementation.
 
 ### PriorityQueue source and proof boundary
 
-The [ordinary library](../../../lib/containers/priority-queue.wf) now implements
-the proposed operation chain. The maintained
+The [ordinary library](../../../lib/containers/priority-queue.wf) implements
+the registered operation chain. The maintained
 [caller](../../../tests/programs/containers/priority-queue-program.wf) admits
 and executes under sequential and CLI-parallel lowering on the unchanged
 v0.68 compiler. Its independent insertion-sort oracle checks scalar ordering;
@@ -2076,6 +2088,8 @@ also retain more movement than native hole sifting. The Result ABI and
 inactive-result stores are specific code differences, not isolated timing
 attributions. This establishes a reusable ordinary implementation and a
 replayable cost baseline, not uniform native parity or an optimal heap fanout.
+The owner adopted this baseline and its distinct ordered-drain/physical-cleanup
+boundary in the [priority-queue storage decisions](../../../design/language/data-model/priority-queue-storage.md).
 The maintained TODO retains these separate validation questions.
 
 ## Vector consumption trial
@@ -2849,3 +2863,172 @@ criterion passed. Reopen that choice for a consumer
 dominated by retained reverse calls, a changed native toolchain, or a further
 material regression under the same matched-contract comparison. The
 maintained TODO keeps the remaining scalar gap and cost attribution open.
+
+## Inactive payload initialization compiler trial
+
+The owner rejected adoption of both candidates in this completed trial.
+Production lowering retains baseline destination initialization; the following
+records the registered protocols and negative outcomes, not a selected
+optimization.
+
+The maintained owning map selected the enum-bucket representation, compact
+returned-pair result and shared exchange helper. Its optimized construction
+and rebuild still initialize inactive payload storage, while the native
+controls initialize occupancy only. The trial was framed on merged main
+`45ef2d53e` and rebased onto v0.68 main `345e2966a` before measurement. The
+question is whether the compiler can omit that work while preserving
+defined active values and the same ordinary ownership and call semantics.
+
+The experiment keeps the actual library source, representation, ABI,
+allocation policy and algorithm fixed. It neither reopens the library
+selection nor combines clearing with aggregate forwarding or enum overlay.
+Slab and Vector serve as bounded cross-consumer checks; their recorded
+transfer, layout and short-cycle questions remain open unless separately
+resolved by evidence. No source rule or container interface change is proposed.
+
+The prospective workload matrix, same-image null comparison, selection and
+stopping criteria, correctness boundaries and execution budgets are recorded
+once in the existing [map comparison](../../experiments/container-representation/map-library/RESULTS.md#same-source-inactive-storage-lowering-comparison),
+before compiler implementation or timing. That record owns the detailed
+measurement evidence; instruction counts alone will not establish a speedup.
+
+### Initialized-state and representation boundary
+
+WIN-1 and WIN-2 admit element access only within the initialized window;
+PROV-6 visits that window and the active enum variant during cleanup. Enum
+payload projection requires the selected-variant refinement. Array differs:
+every declared element is a value and still requires initialization. STOR-7
+permits relocating the representation, without exposing an owner's address
+or inactive storage as source data. These existing rules support omitting
+writes to inactive storage; no acceptance rule or new initialized-state
+analysis is proposed.
+
+The bounded candidate changes destination construction only: write an enum's
+tag and selected fields, every struct field, and an empty inline window's
+length plus Ring head. Runtime-capacity windows already initialize their
+header without filling their free slots. Keep capacity and reference
+descriptors defined, including empty and zero-size cases. Retain complete
+aggregate transfers, existing indirect calls and return placement, and the
+current zero-based SSA constructors. All active state must be initialized
+before an ordinary return or parallel publication; join still precedes
+consumption.
+
+Inactive payload fields are LLVM value fields, not ABI padding. The
+[LLVM 21 memory rules](https://releases.llvm.org/21.1.0/docs/LangRef.html#memory-access-and-addressing-operations)
+allow loads of uninitialized storage to produce undefined parts; transporting
+them is different from using them as an active value, condition or address.
+The existing aggregate ABI has no whole-value
+[`noundef` promise](https://releases.llvm.org/21.1.0/docs/LangRef.html#parameter-attributes).
+`dereferenceable` concerns the pointer and accessible storage, not complete
+pointee initialization. This is a qualified argument for leaving bytes
+unwritten, not for inserting poison or freezing a missing active field.
+The same ordinary-value contract applies to linked bodies: there is no
+native-origin exception or requirement that an inactive representation be
+zero. Future ABI attributes or representation-wide observations must revisit
+this argument.
+
+The trial also identified possible clear removal in the stable-scatter
+consumer recorded in the maintained TODO. Its staging copies, packing costs
+and whole-call performance remain outside this bounded comparison; neither
+the historical profile nor a map improvement closes that question. Broader
+SSA construction, aggregate forwarding and overlay layouts remain separate
+opportunities because they change more paths or require distinct interference
+and ABI evidence. The smaller unchanged-source comparison was the first
+discriminator.
+
+### First result and bounded constructor follow-up
+
+The first candidate fails its prospective performance criterion. The
+[complete comparison](../../experiments/container-representation/map-library/RESULTS.md#completed-comparison-gains-with-unresolved-regressions)
+retains the wide-map rebuild improvements, the repeated normal wide
+replacement regression and the retained scalar Slab lookup regression.
+Private exchange inlining increases Map's stack temporaries and payload
+transfers. In Slab, writing a small result's fields separately loses the
+baseline's single combined store. These are observed code differences, not
+measurements of their isolated causal shares. Do not select the candidate
+merely from fewer initialization writes or average away the consumer losses.
+
+After the first failure, one further general emission form received a bounded
+discriminator: form an
+aggregate value from a poison seed, insert its tag and every active field,
+then store that aggregate once. Materialize every source operand before the
+store so overlapping result placement cannot overwrite an unread operand.
+This changes destination construction only; it does not change layouts,
+source acceptance, allocation, calls or window descriptors. Other existing
+SSA constructors keep their current behavior. LLVM's
+[partial-aggregate example](https://releases.llvm.org/21.1.0/docs/LangRef.html#insertvalue-instruction)
+supports defined inserted components beside inactive poison components.
+No inactive component may be observed as a condition, address or source
+value, including across an ordinary linked call. Do not introduce an undef
+seed or a whole-value noundef promise. A whole aggregate store permits LLVM
+to write inactive bytes physically; omission of every such write is not its
+semantic contract.
+
+This form can also lose: the existing emitter deliberately avoids loading
+large stored payloads into SSA because SROA can expand their arrays into
+individual operations. Before implementing or measuring this candidate,
+fix the following discriminator. Build it on an isolated local branch and
+use the existing unchanged Map and Slab sources, target and C controls.
+First inspect optimized IR and native code: require at least one fewer
+surviving 256-byte transfer than the first candidate on normal wide
+replacement's matched-key path,
+continued omission of the large vacant-bucket and empty-window clears, and
+no extra successful-path instructions in retained scalar Slab lookup relative
+to baseline A. Also inspect large-array construction for new bulk
+scalarization and preserve operand snapshots through overlapping placement.
+If any required screen fails, stop this variant without timing or thresholds,
+identity tests, forced inlining, or another emission variant to rescue it.
+
+If the screen passes, qualify active fields, all variants, ordinary linked
+and parallel boundaries with the maintained regressions before performance
+selection. Then conduct a fresh A/A and A/candidate comparison over the same
+complete Map and triggered Slab matrices, preserving every cohort, mode,
+seed, allocation oracle and raw tail. Use the earlier per-cell null/quantum
+screen and require both a primary rebuild improvement and no unexplained
+material regression. This is a new compiler candidate, not another replay
+of the completed first trial. Allow no timing replay in this discriminator;
+an ambiguous outcome remains ambiguous. Keep its separate construction,
+correctness and timing totals, bounded at 90, 30 and 40 seconds respectively;
+compiler construction and the canonical gate are separate. Investigate any
+overrun before extending work.
+
+Generic copy forwarding remains deferred: one redundant optimized Map copy
+is between nonescaping private allocations created by LLVM inlining, not a
+general proof that the backend's exposed owner snapshots can be forwarded.
+Supporting that case before optimization needs a separate interference,
+liveness and representation argument. The maintained TODO records that
+scope; rejecting this trial establishes no benefit for those separate paths.
+
+The isolated SSA constructor discriminator also failed, before correctness
+execution or timing. Its measured local revision is
+`fa50c0d873a6c1f9c48d4a87b98890fd295bf4fc`, based on `e31d9422f`; the frozen
+compiler SHA-256 is
+`b95c6167e483010b4a49b294488b047adc7b25494217db9c67b3c0a14e76c29f`.
+The durable [replay patch](../../experiments/container-representation/map-library/inactive-ssa-construction.patch)
+and [reconstruction instructions](../../experiments/container-representation/map-library/RESULTS.md#rejected-ssa-construction-follow-up-and-replay)
+preserve this rejected source independently of the local commit.
+All Map/Slab source, harness and shared runtime inputs match the retained A
+identities, and both generated C controls are byte-identical to A. These are
+negative structural observations on the same Apple Clang target, not timings
+or a replacement production implementation:
+
+| Required screen | Observed result |
+| --- | --- |
+| Slab scalar successful lookup no larger than A | 28 executed native instructions versus A's 23 and the first candidate's 27; tag plus two byte stores remain. Fails. |
+| No new large-array expansion | Wide Map put grows from 6 to 105 LLVM loads with 102 insertvalue operations; its native body grows from 113 to 211 instructions. Fails. |
+| Fewer full replacement copies | The matched path has three full 256-byte transfers versus five in the first candidate, but a private exchange call and 48 bytes of payload spills remain. |
+| Vacant/pending construction clears remain absent | Absent in the inspected bodies; separate 272-byte inactive-result clears reappear. |
+| Inputs captured before aggregate store | Present in raw IR; runtime alias qualification was not run after the independent screen failures. |
+
+Compiler construction took 45.23 seconds and artifact emission, linking and
+disassembly 7.13 seconds. Correctness execution and timing each took zero:
+the predeclared stopping rule applied. The prototype's original measured
+two-file diff, including context, has SHA-256
+`4e4d04400d0ea0ec7c11e25499490a492505b8827f2b828a5cc9ffd39aa21e1f`;
+the zero-context replay overlay has its separate identity in the reconstruction
+record and produces the same source. It is excluded from production.
+The owner rejected the initialization omission
+and this constructor follow-up because they failed their registered criteria.
+Baseline clearing is retained, with the measurements and rejected source kept
+as evidence. No further constructor form or timing replay is selected here;
+reopening requires distinct grounds that address these optimizer losses.

@@ -96,8 +96,8 @@ library checks each supplied position's bound, while the application owns the
 entry-identity and membership protocol.
 
 Plain operations retain their existing public signatures and use the shared
-sifts with a no-op reporter. The [matched comparison](../../research/experiments/container-representation/indexed-library/RESULTS.md#measured-result)
-supports sharing on maintenance grounds: indexed cells stay within control
+sifts with a no-op reporter. The owner selected sharing on maintenance grounds
+from the [matched comparison](../../research/experiments/container-representation/indexed-library/RESULTS.md#measured-result): indexed cells stay within control
 variation, and the plain path shows no repeatable material regression.
 The measured plain code erases the no-op calls. A remaining single-cohort
 possible benefit is not a proven speedup, and the result establishes no native
@@ -123,8 +123,8 @@ bundles each separator with its right child link. The
 [matched comparison](../../research/experiments/container-representation/ordered-library/RESULTS.md)
 includes C matching the original source, a direct C B-tree and native AVL;
 wide-pair transfers and reserved storage costs remain. Both single-descent
-insertion trials failed their replacement-cost criteria. This implementation
-therefore remains the reusable measured baseline, with no default representation
+insertion trials failed their replacement-cost criteria. The owner adopted
+this implementation as the reusable measured baseline, with no default representation
 or native parity claim. The
 [ordered-map trial](../../research/investigations/containers-and-resources/X1-LIBRARY.md#ordered-map-trial-at-v068)
 records the source and representation choices.

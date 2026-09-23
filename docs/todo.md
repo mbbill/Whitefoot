@@ -230,19 +230,28 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   The [paired samples and limits](../research/experiments/container-representation/vector-library/RESULTS.md)
   are the starting evidence, not a claim of uniform improvement.
 
-- **Empty owning slots initialize inactive payload bytes.** In the owning-map
-  trial's optimized wide code, constructing each vacant enum slot zeros the
-  inactive 264-byte Pair region. A one-slot window similarly zeros that region
-  together with its length, although the native controls initialize only
-  occupancy. This is shared lowering work, not a necessary cost of one
-  sparse representation. The [map comparison](../research/experiments/container-representation/map-library/RESULTS.md)
-  separates these stores from later per-live-owner transfers. Investigate
-  leaving inactive storage uninitialized without allowing an active value,
-  discriminant or length to become undefined; check consuming projections,
-  all variants, empty windows, must-consume owners and ordinary call boundaries.
-  Measure an unchanged-source compiler comparison before claiming a runtime
-  gain. Defer the compiler change during representation selection; reopen
-  when the library's construction/rebuild trace supplies the measured consumer.
+- **Inactive-payload omission has measured optimizer regressions.** The
+  destination-construction candidate removes the owning map's 264-byte vacant
+  payload clear and its local pending-window clear while preserving active
+  fields, descriptors, ownership and the ordinary ABI. The unchanged-source
+  [comparison](../research/experiments/container-representation/map-library/RESULTS.md#same-source-inactive-storage-lowering-comparison)
+  and its reversed replay show wide growth and rehash gains, but normal wide
+  replacement regresses by 7.5--9.0 percent after C normalization. Retained
+  scalar Slab lookup also regresses. The registered selection criterion is
+  not met; fewer stores are not grounds to accept these costs silently.
+  In the replacement path, private exchange inlining adds stack temporaries
+  and payload transfers; in Slab, a small result becomes separate field
+  stores rather than one combined store. Their causal shares remain
+  unisolated. The bounded poison-seeded aggregate-store follow-up also failed
+  its structural screen: Slab's successful path grows from 23 to 28 native
+  instructions, and wide Map put expands arrays into 105 LLVM loads. It was
+  stopped before timings. The owner rejected both candidates; production
+  retains baseline destination initialization. Reopening needs a distinct
+  argument addressing those optimizer losses. Compare the same full matrices,
+  null controls and ordinary/retained boundaries; preserve the dirty-storage,
+  selected-variant, partial-window, linked-body and parallel cleanup checks.
+  SSA construction and general aggregate forwarding are separate paths, not
+  improvements established by this candidate.
 
 - **Consumed aggregate locals can retain an argument snapshot.** An exposed
   mutable local is loaded into an immutable argument snapshot before a consuming
@@ -413,18 +422,18 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   and copies a full inactive chunk payload per appended `None`, and expands
   aggregate transfers during input partitioning; borrowed tally/packing reads
   no longer retain that full-copy cost. These observations do not measure
-  current main. A narrower, unverified opportunity is to construct a single-use
-  aggregate directly in its fresh placement destination while retaining full
-  initialization. The observed `None` path could lose its staging copy without
-  skipping the inactive payload clear. Feasibility across ordinary call
+  current main. A separate, unverified opportunity is to construct a single-use
+  aggregate directly in its fresh placement destination, independently of
+  whether inactive payload bytes are cleared. Feasibility across ordinary call
   boundaries and loop re-entry, and the whole-call benefit, remain unestablished.
   Defer this behind the current pricing, sparse-discovery and baseline work.
   Reopen when current optimized code reproduces material staging traffic;
   compare unchanged source, require that transfer to disappear, qualify whole-call
   wall/CPU results, and preserve enum/affine snapshots, alias behavior, window
-  length updates and exact-once cleanup. Eliminating inactive payload initialization
-  still needs a separate general initialized-value treatment, not a
-  consumer-specific patch.
+  length updates and exact-once cleanup. The shared destination-initialization
+  trial above was rejected; its initialized-value argument and measured
+  tradeoffs do not establish which scatter paths benefit or their
+  whole-call cost. Those source-specific observations remain unmeasured.
   A direct `Array` replacement is not admitted: `Chunk` contains `nocopy`
   slots and the fill constructor requires a copy element. Any alternative
   affine construction interface needs its own language/library grounds.
@@ -637,8 +646,8 @@ each is resolved by a discussion and a tree change.
   both removal orders, reuse and final cleanup; sequential/parallel observed
   images each release all 129 allocations exactly once. The
   [matched comparison](../research/experiments/container-representation/indexed-library/RESULTS.md#measured-result)
-  supports qualified shared-core reuse on maintenance grounds, not a proven
-  speedup or native parity. The protocol does not protect bookkeeping from
+  grounds the owner's qualified shared-core selection for maintenance, not a
+  proven speedup or native parity. The protocol does not protect bookkeeping from
   independently authored mutations: ordinary handles and nodrop tickets do
   not authenticate a Slab or make membership unforgeable, and stable slots do
   not supply surviving references. Defer stronger authority while consumers
@@ -787,17 +796,22 @@ condition under which it is taken up.
   growth trace still costs about 1.64–1.69 times direct C with the same
   migration direction, and replacement about 2.09–2.35 times. These are
   complete checked traces, not isolated copy costs.
-  Optimized migration still initializes inactive payload bytes, stages live
-  pairs and reads the displaced payload before its tag is used. Public owning
-  results retain transfers. Compare unchanged-source initialization/forwarding
-  improvements against the same contract and verify all owner-return paths;
-  copying counts alone do not establish their runtime contribution.
+  In that baseline, optimized migration initializes inactive payload bytes,
+  stages live pairs and reads the displaced payload before its tag is used.
+  The rejected unchanged-source initialization candidate above reduces the
+  measured wide growth gap to about 1.19 times direct C with ordinary helpers and
+  1.27--1.29 times with retained helpers, but normal replacement worsens to
+  2.26--2.29 times and retained replacement remains 2.16--2.23 times. Public
+  owning results still retain transfers. A forwarding follow-up must preserve
+  every owner-return path and distinguish code-generation changes from their
+  measured contribution; copy counts alone do not establish that contribution.
   Dense storage remains faster for wide growth but adds reserved metadata and
   dependent lookup, while a fresh sparse rehash retains two complete backings.
   Reopen for a workload dominated by these costs, preserving full backing and
   peak bytes, hash/load policy, retained helpers and exact cleanup. Defer a
-  second maintained representation and compiler changes until that consumer or
-  a discriminating unchanged-source improvement supplies their grounds.
+  second maintained representation until that consumer supplies its grounds;
+  the rejected compiler trial's optimizer losses and reopening grounds are
+  recorded above.
   SIMD-group probing and a general projected-storage benefit remain untested;
   the earlier [native hash-slot study](https://github.com/mbbill/Whitefoot/blob/38c28403a2defd0b65b8a2ab2b5e4794315e9940/research/experiments/hash-slot-occupancy/RESULTS.md)
   did not establish a recurring tag-check tax. A working library does not

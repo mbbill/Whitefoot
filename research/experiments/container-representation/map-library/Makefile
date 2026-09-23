@@ -22,7 +22,7 @@ OBSERVER := $(ROOT)/tests/programs/containers/container-allocation-observer.c
 
 include $(ROOT)/compiler/runtime.mk
 
-.PHONY: native-check staged-source build-candidates check-candidates build-costs check-costs compact-source build-compact check-compact inline-source build-inline check-inline check measure summarize clean
+.PHONY: native-check staged-source build-candidates check-candidates build-costs check-costs compact-source build-compact check-compact inline-source build-inline check-inline check measure measure-inactive summarize clean
 
 $(BUILD):
 	mkdir -p $@
@@ -204,6 +204,12 @@ check-inline: build-inline
 
 measure: check
 	@set -eu; output='$(SAMPLES)'; first=yes; \
+	  if test '$(MEASURE_SET)' = inactive; then \
+	    for mode in normal retained; do \
+	      $(BUILD)/map-costs-$$mode$(EXE) clock-quantum > $(BUILD)/clock-quantum-$$mode.txt; \
+	      cat $(BUILD)/clock-quantum-$$mode.txt; \
+	    done; \
+	  fi; \
 	  for cohort in 0 1; do \
 	    if test "$$cohort" = 0; then modes='normal retained'; else modes='retained normal'; fi; \
 	    for mode in $$modes; do \
@@ -214,6 +220,10 @@ measure: check
 	    done; \
 	  done; \
 	  echo "Raw samples: $$output"
+
+# The same-source compiler comparison uses its fixed fourteen-cell selection.
+measure-inactive:
+	$(MAKE) measure MEASURE_SET=inactive SOURCE_SHAPE=original
 
 # One median per mode, reversed cohort, workload, implementation and source
 # shape. Keep those distinctions; this is not a weighted application score.

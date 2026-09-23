@@ -15,16 +15,16 @@ nodrop struct SparseTicket {
   id: u64;
 }
 
-fn sparse_test_fail(seen: &SparseTestSeen) -> result: own unit writes(seen) {
+fn sparse_test_fail(seen: &SparseTestSeen) -> result: unit writes(seen) {
   set deref(seen).failures = deref(seen).failures +wrap 1_u64;
   return unit;
 }
 
-fn sparse_scalar_hash(env: &SparseHashEnv, key: &u64) -> result: own u64 reads(key) {
+fn sparse_scalar_hash(env: &SparseHashEnv, key: &u64) -> result: u64 reads(key) {
   return deref(key) % 1_u64;
 }
 
-fn sparse_scalar_equal(env: &SparseHashEnv, left: &u64, right: &u64) -> result: own Bool reads(env), reads(left), reads(right) {
+fn sparse_scalar_equal(env: &SparseHashEnv, left: &u64, right: &u64) -> result: Bool reads(env), reads(left), reads(right) {
   if deref(env).hostile {
     return False();
   }
@@ -36,11 +36,11 @@ binding SparseScalarKey : SparseKey<u64, SparseHashEnv> {
   equal = sparse_scalar_equal;
 }
 
-fn sparse_ticket_hash(env: &SparseHashEnv, key: &SparseTicket) -> result: own u64 reads(key) {
+fn sparse_ticket_hash(env: &SparseHashEnv, key: &SparseTicket) -> result: u64 reads(key) {
   return deref(key).id % 1_u64;
 }
 
-fn sparse_ticket_equal(env: &SparseHashEnv, left: &SparseTicket, right: &SparseTicket) -> result: own Bool reads(env), reads(left), reads(right) {
+fn sparse_ticket_equal(env: &SparseHashEnv, left: &SparseTicket, right: &SparseTicket) -> result: Bool reads(env), reads(left), reads(right) {
   if deref(env).hostile {
     return False();
   }
@@ -52,24 +52,24 @@ binding SparseTicketKey : SparseKey<SparseTicket, SparseHashEnv> {
   equal = sparse_ticket_equal;
 }
 
-fn sparse_scalar_read(env: &SparseTestSeen, key: &u64, value: &u64) -> result: own u64 reads(value), writes(env) {
+fn sparse_scalar_read(env: &SparseTestSeen, key: &u64, value: &u64) -> result: u64 reads(value), writes(env) {
   set deref(env).visits = deref(env).visits +wrap 1_u64;
   set deref(env).observed = deref(env).observed +wrap deref(value);
   return deref(value);
 }
 
-fn sparse_scalar_visit(env: &SparseTestSeen, key: &u64, value: &u64) -> result: own unit reads(value), writes(env) {
+fn sparse_scalar_visit(env: &SparseTestSeen, key: &u64, value: &u64) -> result: unit reads(value), writes(env) {
   let observed = sparse_scalar_read(env: env, key: key, value: value);
   return unit;
 }
 
-fn sparse_ticket_read(env: &SparseTestSeen, key: &SparseTicket, value: &SparseTicket) -> result: own u64 reads(value), writes(env) {
+fn sparse_ticket_read(env: &SparseTestSeen, key: &SparseTicket, value: &SparseTicket) -> result: u64 reads(value), writes(env) {
   set deref(env).visits = deref(env).visits +wrap 1_u64;
   set deref(env).observed = deref(env).observed +wrap deref(value).id;
   return deref(value).id;
 }
 
-fn sparse_ticket_visit(env: &SparseTestSeen, key: &SparseTicket, value: &SparseTicket) -> result: own unit reads(value), writes(env) {
+fn sparse_ticket_visit(env: &SparseTestSeen, key: &SparseTicket, value: &SparseTicket) -> result: unit reads(value), writes(env) {
   let observed = sparse_ticket_read(env: env, key: key, value: value);
   return unit;
 }
@@ -82,14 +82,14 @@ binding SparseTicketVisit : SparseVisit<SparseTicket, SparseTicket, SparseTestSe
   visit = sparse_ticket_read;
 }
 
-fn sparse_scalar_consume(env: &SparseTestSeen, key: own u64, value: own u64) -> result: own unit writes(env) {
+fn sparse_scalar_consume(env: &SparseTestSeen, key: u64, value: u64) -> result: unit writes(env) {
   set deref(env).consumed = deref(env).consumed +wrap 1_u64;
   set deref(env).key_sum = deref(env).key_sum +wrap key;
   set deref(env).value_sum = deref(env).value_sum +wrap value;
   return unit;
 }
 
-fn sparse_ticket_consume(env: &SparseTestSeen, key: own SparseTicket, value: own SparseTicket) -> result: own unit writes(env) {
+fn sparse_ticket_consume(env: &SparseTestSeen, key: SparseTicket, value: SparseTicket) -> result: unit writes(env) {
   let SparseTicket(id: key_id) = move key;
   let SparseTicket(id: value_id) = move value;
   sparse_scalar_consume(env: env, key: key_id, value: value_id);
@@ -104,7 +104,7 @@ binding SparseTicketConsume : SparseConsume<SparseTicket, SparseTicket, SparseTe
   consume = sparse_ticket_consume;
 }
 
-fn sparse_scalar_outcome(outcome: own SparsePut<u64, u64>, expected: own u64, key: own u64, value: own u64, seen: &SparseTestSeen) -> result: own unit writes(seen) {
+fn sparse_scalar_outcome(outcome: SparsePut<u64, u64>, expected: u64, key: u64, value: u64, seen: &SparseTestSeen) -> result: unit writes(seen) {
   match outcome {
     SparseInserted() => {
       if expected != 0_u64 {
@@ -139,7 +139,7 @@ fn sparse_scalar_outcome(outcome: own SparsePut<u64, u64>, expected: own u64, ke
   return unit;
 }
 
-fn sparse_ticket_outcome(outcome: own SparsePut<SparseTicket, SparseTicket>, expected: own u64, key: own u64, value: own u64, seen: &SparseTestSeen) -> result: own unit writes(seen) {
+fn sparse_ticket_outcome(outcome: SparsePut<SparseTicket, SparseTicket>, expected: u64, key: u64, value: u64, seen: &SparseTestSeen) -> result: unit writes(seen) {
   match outcome {
     SparseInserted() => {
       if expected != 0_u64 {
@@ -174,7 +174,7 @@ fn sparse_ticket_outcome(outcome: own SparsePut<SparseTicket, SparseTicket>, exp
   return unit;
 }
 
-fn sparse_check_reserve(outcome: own Result<unit, unit>, expected: own Bool, seen: &SparseTestSeen) -> result: own unit writes(seen) {
+fn sparse_check_reserve(outcome: Result<unit, unit>, expected: Bool, seen: &SparseTestSeen) -> result: unit writes(seen) {
   match outcome {
     Ok(value: success) => {
       if expected {
@@ -191,7 +191,7 @@ fn sparse_check_reserve(outcome: own Result<unit, unit>, expected: own Bool, see
   return unit;
 }
 
-fn sparse_ticket_deleted(map: &SparseMap<SparseTicket, SparseTicket, 4>) -> result: own u64 reads(map) {
+fn sparse_ticket_deleted(map: &SparseMap<SparseTicket, SparseTicket, 4>) -> result: u64 reads(map) {
   let deleted = 0_u64;
   let count = deref(map).cells.inner.len;
   for (index in 0_u64..count) {
@@ -209,7 +209,7 @@ fn sparse_ticket_deleted(map: &SparseMap<SparseTicket, SparseTicket, 4>) -> resu
   return deleted;
 }
 
-fn sparse_test_tickets() -> result: own u64 pure {
+fn sparse_test_tickets() -> result: u64 pure {
   let seen = SparseTestSeen(failures: 0_u64, consumed: 0_u64, key_sum: 0_u64, value_sum: 0_u64, visits: 0_u64, observed: 0_u64);
   let false_value = False();
   let true_value = True();
@@ -327,7 +327,7 @@ fn sparse_test_tickets() -> result: own u64 pure {
   return seen.failures;
 }
 
-fn sparse_test_scalars() -> result: own u64 pure {
+fn sparse_test_scalars() -> result: u64 pure {
   let seen = SparseTestSeen(failures: 0_u64, consumed: 0_u64, key_sum: 0_u64, value_sum: 0_u64, visits: 0_u64, observed: 0_u64);
   let true_value = True();
   let env = SparseHashEnv(hostile: true_value);
@@ -417,7 +417,7 @@ fn sparse_test_scalars() -> result: own u64 pure {
   return seen.failures;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let scalar_failures = sparse_test_scalars();
   let ticket_failures = sparse_test_tickets();
   let wrapping_failures = sparse_test_wrapping();
@@ -441,7 +441,7 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 
-fn sparse_identity_hash(env: &SparseHashEnv, key: &u64) -> result: own u64 reads(key) {
+fn sparse_identity_hash(env: &SparseHashEnv, key: &u64) -> result: u64 reads(key) {
   return deref(key);
 }
 
@@ -450,7 +450,7 @@ binding SparseIdentityKey : SparseKey<u64, SparseHashEnv> {
   equal = sparse_scalar_equal;
 }
 
-fn sparse_scalar_expect(map: &SparseMap<u64, u64, 8>, key: own u64, expected: own u64, env: &SparseHashEnv, seen: &SparseTestSeen) -> result: own unit reads(map), reads(env), writes(seen) {
+fn sparse_scalar_expect(map: &SparseMap<u64, u64, 8>, key: u64, expected: u64, env: &SparseHashEnv, seen: &SparseTestSeen) -> result: unit reads(map), reads(env), writes(seen) {
   let observed = sparse_map_lookup::<SparseIdentityKey, u64, SparseTestSeen, u64, fn sparse_scalar_read, 8>(map: map, key: &key, key_env: env, visit_env: seen);
   match observed {
     Ok(value: found_value) => {
@@ -465,7 +465,7 @@ fn sparse_scalar_expect(map: &SparseMap<u64, u64, 8>, key: own u64, expected: ow
   return unit;
 }
 
-fn sparse_test_wrapping() -> result: own u64 pure {
+fn sparse_test_wrapping() -> result: u64 pure {
   let seen = SparseTestSeen(failures: 0_u64, consumed: 0_u64, key_sum: 0_u64, value_sum: 0_u64, visits: 0_u64, observed: 0_u64);
   let false_value = False();
   let true_value = True();
@@ -521,7 +521,7 @@ fn sparse_test_wrapping() -> result: own u64 pure {
   return seen.failures;
 }
 
-fn sparse_cycle_hash(env: &SparseHashEnv, key: &u64) -> result: own u64 pure {
+fn sparse_cycle_hash(env: &SparseHashEnv, key: &u64) -> result: u64 pure {
   return 2_u64;
 }
 
@@ -530,7 +530,7 @@ binding SparseCycleKey : SparseKey<u64, SparseHashEnv> {
   equal = sparse_scalar_equal;
 }
 
-fn sparse_test_cycle() -> result: own u64 pure {
+fn sparse_test_cycle() -> result: u64 pure {
   doc "A full three-slot table with home two has physical source order keys2,3,1. Rehash plans the three-cycle destinations2,0,1; every post-rebuild lookup is checked independently of physical order.";
   let seen = SparseTestSeen(failures: 0_u64, consumed: 0_u64, key_sum: 0_u64, value_sum: 0_u64, visits: 0_u64, observed: 0_u64);
   let false_value = False();
@@ -574,13 +574,13 @@ fn sparse_test_cycle() -> result: own u64 pure {
   return seen.failures;
 }
 
-fn sparse_scalar_increment(env: &SparseTestSeen, key: &u64, value: &u64) -> result: own u64 writes(env), writes(value) {
+fn sparse_scalar_increment(env: &SparseTestSeen, key: &u64, value: &u64) -> result: u64 writes(env), writes(value) {
   set deref(env).visits = deref(env).visits +wrap 1_u64;
   set deref(value) = deref(value) +wrap 1_u64;
   return deref(value);
 }
 
-fn sparse_test_edit() -> result: own u64 pure {
+fn sparse_test_edit() -> result: u64 pure {
   let seen = SparseTestSeen(failures: 0_u64, consumed: 0_u64, key_sum: 0_u64, value_sum: 0_u64, visits: 0_u64, observed: 0_u64);
   let false_value = False();
   let env = SparseHashEnv(hostile: false_value);
