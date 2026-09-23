@@ -2424,6 +2424,22 @@ that first case, so the send half of every round trip stopped parking. The
 Windows leaf answers that the host would wait for every transfer, so nothing
 moves there.
 
+### Grounds for the retained tuning constants
+
+The comparison above supports the reap budget of 64; it does not measure all
+completion-runtime constants together. The 10-microsecond join spin trades a
+bounded amount of idle CPU for avoiding a sleep/wake pair, as explained beside
+`WF_BRIDGE_JOIN_SPIN_NS` in
+[bridge.c](../../../compiler/src/backend/completion/bridge.c). The submission
+depth of 64 is inherited from the former slot count, not selected by a new
+measurement. The 2,048-entry completion queue accommodates the network
+control's in-flight requests; overflow still requires correct flushing, as
+the 129-connection/128-entry control in [NETWORK.md](NETWORK.md) demonstrates.
+Both ring constants and their distinct grounds are recorded in
+[linux_io_uring.h](../../../compiler/src/backend/completion/linux_io_uring.h).
+These are selected defaults with separate grounds, not a jointly optimized
+configuration or a claim of universally optimal sizes.
+
 ### The second series: where the remaining margin is
 
 The same method on the runtime after E1 and E5, at 64 connections, three
