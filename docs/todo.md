@@ -447,7 +447,22 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   criteria. No candidate comparison ran. The variation is unattributed and
   supplies neither a compiler-regression verdict nor evidence of host noise;
   any later attribution needs its own bounded discriminator, not a favorable
-  rerun or relaxed threshold.
+  rerun or relaxed threshold. The
+  [retained-data diagnosis](../research/investigations/compute-model/DESIGN.md#follow-up-diagnosis-of-retained-identical-image-variation)
+  reproduces all reductions but finds a CPU delta exceeding the eight-CPU
+  wall-interval capacity, substantial within-process CPU variation, and fixed
+  per-family label order in the earlier BFS control. Establish short-interval
+  CPU accounting separately from cumulative process totals before using those
+  deltas to diagnose worker idleness. Per-thread activity, placement and
+  competing-load observations are absent, so neither runtime work nor the
+  wall-time variation is attributed. Preserve both stopped controls and defer
+  scheduling or threshold changes. The selected
+  [two-process baseline diagnostic](../research/investigations/compute-model/DESIGN.md#prospective-baseline-cpu-accounting-diagnostic)
+  compares short and enclosing accounting against physical capacity and
+  terminal process CPU, with fixed work and no rerun. Reopen CPU attribution
+  only on those declared observations; a missing reproduction or inconsistent
+  total leaves the question open, and no outcome clears the old null or
+  attributes the separate wall-time variation.
   [Hosted observations](../research/investigations/test-economy/redesign.md#identical-image-host-control-failure)
   include an identical-image stencil control failing the unchanged three-percent
   band, and a separate actual records comparison failing at two widths while

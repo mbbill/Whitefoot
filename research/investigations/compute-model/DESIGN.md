@@ -925,10 +925,14 @@ Use monotonic wall time and all-thread process CPU time, with the existing
 research wall-outer/CPU-inner bracket. Darwin uses `task_info` live plus
 exited user/system accounting; Linux uses process CPU time. Print the clock
 sources and raw interval totals, and subtract no clock overhead. Darwin's
-four microsecond-quantized components contribute approximately at most
-4 microseconds of quantization error to an interval difference, about 0.4%
-at the 1-millisecond floor. This bounds quantization, not all measurement
-noise or clock-read overhead; the controls below qualify this invocation.
+four aggregate components were originally estimated to contribute at most
+approximately 4 microseconds of quantization error to an interval difference,
+about 0.4% at the 1-millisecond floor. That historical rationale is corrected
+by the [retained-data diagnosis](#follow-up-diagnosis-of-retained-identical-image-variation):
+conversion occurs per live thread before aggregation, and accuracy of
+unsuspended live totals at short interval boundaries is not established.
+The original 1-millisecond floor and control criteria below remain unchanged;
+meeting the floor alone does not qualify interval attribution.
 
 Use five passes, numbered 0 through 4. The nominal fixture order is N0..N15,
 wide-cheap, wide-costly, spine-8-0, spine-8-1. In pass `p`, width position `v`
@@ -1245,6 +1249,145 @@ The candidate's earlier deterministic behavior and focused correctness
 evidence remain valid records of that experiment, not grounds for bypassing
 its cost criterion. Applicable final-tree checks follow the withdrawal;
 none are claimed by this measurement result.
+
+### Follow-up diagnosis of retained identical-image variation
+
+Offline reanalysis of the retained amended-null data reproduced every field
+of all forty paired rows, including separate wall/CPU directions and the two
+failed verdicts. All 400 stdout files match their raw-stream blocks, all 400
+stderr files are empty, and the 400 warmups plus 2,000 measured batches have
+the specified order, identities and counts. No workload was executed again.
+This diagnosis preserves the stopped campaign and its withdrawal consequence.
+
+The two failed cells expose different observations. Across their ten fresh
+processes, the medians of five measured batches have these ranges:
+
+| Cell | Process wall median, ms | Process CPU median, ms |
+| --- | ---: | ---: |
+| N12/W4 | 3.581–3.663 | 4.879–7.848 |
+| Spine 8, costly leaves, W4 | 6.962–9.645 | 19.263–30.007 |
+
+N12's CPU variation also occurs within processes: the median sample
+coefficient of variation across its ten five-batch CPU series is 0.391,
+against 0.0064 for wall time. Thus fresh-process variation alone does not
+describe that cell. Nor does a passing final median establish tight individual
+pairs: the passing N0/W4 cell has wall B/C pairs from 0.606055 to 1.055881.
+These are descriptive observations from the failed control, not new thresholds
+or a statistical estimate of future false alarms.
+
+The CPU readings have a stronger interval-validity witness outside the two
+failed cells. `wide-costly`, baseline label, W4, pass 3, sample 4 reports
+31,369,000 ns CPU inside 3,623,000 ns wall: 8.658294 CPU/wall. Eight CPUs, the
+retained host inventory, could accumulate at most 28,984,000 ns during that
+wall interval. The 2,385,000 ns excess cannot describe synchronous CPU work
+inside the stated bracket or follow from a few microseconds of rounding.
+Across all 1,000 measured W4 batches, 42 ratios exceed four and one exceeds
+eight; four is a requested worker width, not a measured process-thread count.
+This limits the interpretation of short CPU deltas, without identifying the
+cause of the separate wall-time variation.
+
+The local SDK and Apple's
+[task-info declaration](https://github.com/apple-oss-distributions/xnu/blob/xnu-12377.1.9/osfmk/mach/task_info.h#L198-L205)
+qualify live-thread totals as "only accurate if suspended". The probe reads
+them while workers may run. The public same-major XNU
+[aggregation path](https://github.com/apple-oss-distributions/xnu/blob/xnu-12377.1.9/osfmk/kern/task.c#L5177-L5201)
+sums per-thread time values, so the original four-aggregate-component rounding
+rationale is incomplete: live-thread rounding occurs before aggregation.
+Neither microsecond representation nor a positive delta establishes current
+accounting at each boundary. This source is not the exact installed kernel
+patch and does not prove the mechanism behind a particular retained sample.
+
+Longer accounting and short-interval attribution are distinct questions.
+Every phase's sum of six-batch CPU intervals is below its separately recorded
+command user-plus-system total. That broader total includes startup, checking
+and shutdown; it neither contradicts cumulative accounting nor validates the
+allocation of CPU to each measured batch. The retained raw rows omit absolute
+live/exited components, per-thread CPU and placement, worker activity, and
+timestamped competing-load observations. They cannot distinguish counter
+freshness from actual scheduler work, identify core placement or contention,
+or assign the wall-time differences to those mechanisms.
+
+The DAG's actual order matches its formula: each cell has three pairs in one
+label order and two in the reverse, while each width has fifty pairs in each
+order. Pooled W4 first/second ratios have medians 0.99994 for wall and 1.00046
+for CPU. This does not show a common positional shift, but it cannot exclude
+workload-dependent order effects with five pairs. The earlier
+[BFS null](#native-phase-qualification-and-prospective-fifo-comparison-2026-09-22)
+is less balanced: its fixture
+rotation and role reversal cancel, leaving tree A-before-B and collision
+B-before-A in every pass at both widths. Its retained 40 processes and
+120 warm samples reproduce all four published medians; collision/W4 remains
+outside its original band. Neither null identifies a candidate benefit or
+loss, and neither is reopened by this reanalysis.
+
+### Prospective baseline CPU-accounting diagnostic
+
+The next bounded diagnostic tests short-interval CPU attribution, using the
+`wide-costly` physical-bound witness alone. It is separate from the stopped
+null and supplies no candidate qualification. Reuse the frozen baseline LLVM
+and runtime objects; extend only the host probe in scratch. Run W1 then W4,
+one process each, with one checked warmup and 64 checked measured batches of
+32 complete calls. Keep the existing resets, full checks and flushing between
+batches. There is no label comparison, order treatment or acceptance band;
+two processes check accounting invariants within their own executions.
+
+Record absolute live-user, live-system, exited-user and exited-system values,
+with a wall timestamp immediately before and after each CPU snapshot. Retain
+the existing wall-outer/CPU-inner batch brackets, signed snapshot-to-snapshot
+gap deltas, and a separate enclosing pair spanning all 64 batches and their
+checking/printing gaps. A parent mode in the same scratch instrument
+forks/executes each child once and uses `wait4` to retain its lifetime
+user-plus-system CPU and outer lifetime wall time. A sum of short and gap
+deltas equalling the enclosing delta is only algebraic consistency; the
+terminal `wait4` reading is the separate lifetime cross-check. A gap delta
+does not by itself identify CPU work performed in that gap.
+
+At startup and completion, record raw `hw.logicalcpu` and `hw.nperflevels`
+query results and errors, `sysconf` and existing primitive returns, requested
+workers, actual helpers from `wf__sched_pool_running`, and the live-thread
+count from `task_threads`. Any idle-window rule calculated from these
+primitive returns is labelled derived policy; it is not an observation of
+the runtime's private startup state. This diagnostic does not measure
+per-thread placement or prove how much useful, helping or idle work occurred.
+
+On this eight-CPU host, compare each short and enclosing CPU delta with eight
+times its enclosing wall span. Use a conservative rounding allowance at
+each endpoint of two microseconds per live thread plus two microseconds for
+the terminated total, sum the endpoint allowances, and report the thread
+counts used. Preserve signed or nonpositive deltas as observations instead
+of discarding or retrying them. Per-snapshot thread enumeration and extra
+clock reads can perturb cadence; this instrumentation cannot recover the
+original null's timestamps. The prospective distinctions are:
+
+- Short-window physical-bound violations with a bounded enclosing rate and
+  accounted totals no greater than the `wait4` lifetime CPU beyond rounding
+  support failure of short-window attribution. They do not identify an exact
+  kernel update mechanism or qualify the old CPU ratios. Bounded enclosing
+  totals do not establish accuracy at the old three-percent wall or ten-percent
+  CPU comparison bands.
+- An enclosing or lifetime inconsistency leaves total accounting unresolved;
+  longer intervals are not then accepted as a repair.
+- No observed violation means only that this witness was not reproduced in
+  these two processes. It is not a passing null or evidence of worker idleness,
+  host noise, candidate performance or a suitable threshold.
+
+All 130 warmup/batch result, evaluation-count, input and canary checks must
+pass. Raw host-query failures are retained observations of fallback inputs.
+Clock, thread-enumeration, fork/exec/wait or execution failure stops that arm
+and preserves its logs; build failure stops construction. Expected helpers
+after warmup are zero at W1 and three at W4; a mismatch is retained and makes
+the requested-width interpretation inconclusive. Construction and execution
+each have a separate 30-second shared-guard cap. There is no rerun, extension,
+changed batch, candidate action or revival of either stopped comparison.
+Publish this criterion before construction or execution and retain its input
+hashes, exact commands, outputs and separately measured construction/execution
+costs.
+
+**Design suitability.** The two-process probe adds only the observations
+needed to test the concrete accounting contradiction. It leaves compiler and
+runtime mechanisms unchanged and defers broader wall-variation attribution
+because placement and runtime activity need different evidence. The original
+cost stop and pending design rulings remain in force.
 
 ## Runtime-adjacency all-predecessor probe
 
@@ -1842,7 +1985,13 @@ timing image, and the candidate's source and algorithm remain unchanged.
 
 Use five fixed paired passes. Each fresh process performs one verified warm-up
 and three verified warm calls with `WFB_GAP_US=0`; rotate and reverse cell order
-across passes. Preserve all wall-time, process-CPU and steal observations.
+across passes. This was the intended ordering; inspection of the retained
+driver and raw sequence shows that fixture and width order rotate, but fixture
+rotation cancels role reversal. Tree always runs A then B and collision always
+runs B then A, at both widths in all five passes. Label and within-pair
+position therefore remain confounded within each family. This clarification
+preserves the historical criterion and failed result; it is not a corrected
+execution. Preserve all wall-time, process-CPU and steal observations.
 Reduce to each process's median of its three warm calls, then compare matched
 per-pass medians and report their median ratio, spread and count below one.
 First run forty processes for an identical-image A/B control: both primary
