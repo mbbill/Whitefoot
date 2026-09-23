@@ -39,6 +39,19 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   costs without combining independent guards. Defer until such a consumer
   demonstrates the need; remove when a selected evidence rule covers it.
 
+- **Qualify broader proved-range transport to the backend.** The
+  [bounded conversion control](../research/investigations/numeric-conversions/DESIGN.md#optimized-helpers)
+  removes a residual check when its already-verified entry range is supplied
+  as an LLVM assumption. Direct lowering under the proposed bare conversion
+  proof solves that conversion case without a general transport family.
+  Broader transport may benefit operations outside that family, but needs a
+  concrete consumer and a complete retained-evidence-to-target mapping, with
+  ordinary value support, mutation and call boundaries preserved. Reopen when
+  such a consumer retains measurable work despite checked facts; require a
+  matched benefit and unchanged acceptance/behavior before choosing a family.
+  Defer from the exact-conversion change, and remove after selection and
+  qualification or a documented decision that the candidate brings no benefit.
+
 - **Numeric generic conversion remains unimplemented.** The
   [generic witness](../research/investigations/numeric-conversions/generic-conversion.wf)
   discards `cvt::<T, f64>` inside an Int-generic function called with u32 and
