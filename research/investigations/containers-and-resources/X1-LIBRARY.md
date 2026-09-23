@@ -875,13 +875,13 @@ Use one common pair region, fixed fanout, and an explicit root vacancy:
 
 ```wf
 struct OrderedPair<K, V> { key: K; value: V; }
-struct OrderedEntry<K, V> {
+struct OrderedEntry<K, V, N> {
   pair: OrderedPair<K, V>;
-  after: Slots<Box<OrderedNode<K, V>>, 1>;
+  after: Slots<Box<N>, 1>;
 }
 struct OrderedNode<K, V> {
   leading: Slots<Box<OrderedNode<K, V>>, 1>;
-  entries: Slots<OrderedEntry<K, V>, 15>;
+  entries: Slots<OrderedEntry<K, V, OrderedNode<K, V>>, 15>;
 }
 struct OrderedMap<K, V, const ceiling: u64> {
   root: Slots<Box<OrderedNode<K, V>>, 1>;
@@ -897,8 +897,15 @@ interface OrderedKey<K, E> {
 }
 ```
 
-These are proposed shapes, not a checked complete source bundle. K/V have no copy/drop
-bound. The ceiling limits logical entries; nodes grow by fixed-size Box
+The generic `N` in `OrderedEntry` avoids a forward nominal reference: writing
+`Box<OrderedNode<K,V>>` before declaring `OrderedNode` rejects as invisible
+under TYPE-6 (the resolution diagnostic is classified TYPE-5). The later node
+can instantiate that earlier entry with itself. This ordinary type argument
+changes neither storage nor the ownership protocol.
+
+These shapes pass the bounded ownership probe below; the complete map still
+awaits admission and execution. K/V have no copy/drop bound. The ceiling
+limits logical entries; nodes grow by fixed-size Box
 allocation, with no allocation-failure result. Replacement remains available
 at the ceiling. A consistent comparator and environment determine map order;
 negative/zero/positive results suffice, without a -1/0/1 requirement. Every
@@ -946,8 +953,12 @@ The complete mutation chain is part of the experiment, including deletion:
   into the left child. Append empties the local source; subsequent Box
   consumption/destructuring carries the empty fact to `free_empty`. Capacity
   depends on entry counts alone, without a separate child-count relation.
-- Internal deletion replaces by a predecessor/successor pair or merges and
-  descends; root contraction extracts the root before inspecting its entry
+- Internal deletion takes a successor pair from the right subtree and then
+  repairs underflow on return. An underflow at child zero borrows or merges
+  with its right sibling; other children use their left sibling. Insertion
+  similarly carries a promoted entry upward and splits a full receiving node.
+  This bottom-up protocol keeps temporary ownership explicit. Root contraction
+  extracts the root before inspecting its entry
   count. For an empty root, move its zero-or-one leading link into the now-empty
   root window and consume the emptied locals. Every detached owner is
   reinstalled, returned or consumed.
@@ -955,7 +966,8 @@ The complete mutation chain is part of the experiment, including deletion:
   work for k results at height h under lawful order. Full visitation/cleanup
   is O(n); recursively consuming suffixes needs no stored reference stack.
 
-These protocols are rule deductions awaiting complete compilation. OP-12's
+The bounded probe qualifies split, merge and root contraction, not yet the
+complete insertion/deletion chain. OP-12's
 affine/copy update does not admit a linear `set link = f(move link)`. Swapping
 through local None preserves owners but does not publish the vacant variant
 needed to discard a linear temporary; explicit one-slot windows avoid that
@@ -980,11 +992,25 @@ additional movement, which the matched source control must retain.
 
 Deletion also needs the bound on the separate child window after extracting
 a node. A bound on its entry count alone supplies no relation to that other
-window. The bundled candidate above removes this particular capacity premise
-by attaching each following edge to its separator entry. Its zero-or-one
-links are ordinary data, not stored references or a new proof mechanism.
-The complete split/borrow/merge chain for this changed representation remains
-to be compiled and measured. A two-window implementation with a genuine
+window. With only the two entry-count bounds `left.entries.len <= 7` and
+`right.entries.len <= 7`, removing the independent child-count requirements
+from the otherwise admitted merge refuses this statement under FN-8:
+
+```wf
+append(destination: &deref(left).children, source: &deref(right).children);
+```
+
+It cannot prove the required
+`right.children.len <= left.children.cap - left.children.len`; the actual
+frozen-compiler check took 0.03 seconds. No language rule derives that relation
+from the entries' lengths. The bundled candidate above removes this
+particular capacity premise by attaching each following edge to its separator
+entry. Its zero-or-one links are ordinary data, not stored references or a
+new proof mechanism. Its nodrop split, sibling borrow/merge and root-contraction
+probe builds in 0.62 seconds and executes in 0.44 seconds, consuming all 15
+pairs on the expected merged branch. Complete map admission, the independent
+operation-chain oracle and cost measurements remain outstanding. A two-window
+implementation with a genuine
 checked operation protocol remains an alternative; an impossible failure arm
 added only to discharge its missing relation does not establish that protocol.
 
