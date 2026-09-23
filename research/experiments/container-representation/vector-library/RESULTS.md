@@ -1,5 +1,11 @@
 # Growable vector library costs
 
+The later [same-source inactive-storage compiler comparison](../map-library/RESULTS.md#completed-comparison-gains-with-unresolved-regressions)
+passes this experiment's complete correctness matrix and finds unchanged
+native bodies in both modes, so it adds no Vector timing samples. Its v0.68
+fixture migration removes only the former `own` signature annotation; the
+historical measurements below retain their original conditions.
+
 This experiment bundles the current reusable
 [`GrowVector`](../../../../lib/containers/grow-vector.wf), not a second
 benchmark-only implementation. The selection criteria precede measurement in

@@ -1,0 +1,3 @@
+Node: compiler/storage-representation
+
+Decision: Destination construction writes every active field, enum tag and window descriptor without clearing inactive payloads, because those are the source-observable values and the ordinary ABI does not promise defined inactive fields, instead of whole-representation clearing. The [same-source comparison](../../research/experiments/container-representation/map-library/RESULTS.md#same-source-inactive-storage-lowering-comparison) shows wide-map growth gains but also normal wide replacement and retained scalar Slab lookup regressions; adopting this candidate would accept those costs, not satisfy its original performance criterion. Full transfers, Array initialization and zero-based SSA construction remain unchanged.

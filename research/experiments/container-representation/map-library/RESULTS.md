@@ -1308,6 +1308,13 @@ quantum supplies the preselected timer envelope; it neither changes the
 seventeen-column samples nor replaces the unchanged trace and allocation
 oracles. All earlier measurement sets retain their selection.
 
+For this invocation, use the largest of the participating image/mode minimum
+positive clock deltas as `q`. If the prescribed replay is triggered, reverse
+the outer side order to B/cohort 0, A/cohort 0, A/cohort 1, B/cohort 1 (and
+the corresponding A2/A1 labels for the null), retaining the cohort-specific
+helper order and reporting the replay separately. These operational details
+are fixed before collecting any timing sample.
+
 Before the rebase, a baseline using compiler SHA-256
 `c57f989b1b0073769d4999266f3353143d758b2f400c26a74e8d260b684afe33`
 completed Map construction in 20.01 seconds and the full cached correctness
@@ -1315,3 +1322,192 @@ target in 14.34 seconds. These are obsolete preparation costs, retained in
 the investigation's construction/execution accounting; they are not timings
 of the program comparison and establish no post-rebase result. No performance
 samples were collected from that image.
+
+### Completed comparison: gains with unresolved regressions
+
+The candidate does **not** meet the prospective selection rule. Both primary
+wide rebuild consumers improve beyond their screening margins in both helper
+modes and cohorts, including the one reversed replay, but normal wide
+replacement has a repeatable regression. Slab adds a retained scalar lookup
+regression. These results support a bounded rebuild benefit and an explicit
+tradeoff for review, not an unqualified performance improvement or selection
+of the candidate. No further sampling was performed after the permitted Map
+replay and the triggered Slab matrix.
+
+The trial ran on 2026-09-23 UTC on an Apple M1 Pro, eight CPUs, 32 GiB RAM,
+macOS 26.6.2 (25G83), using Apple Clang 21.0.0
+(`clang-2100.3.34.2`), target `arm64-apple-darwin25.6.0`, and the existing
+`-O2` recipes. A uses the compiler built from clean main `345e2966a`; B uses
+the compiler built from candidate revision `483f64401`. Both consume the
+same migrated WF sources, C drivers, helper-retention transformations and
+the exact same twelve runtime object files, in the same link order. The
+normal and retained optimized C modules are byte-identical between A and B
+for Map, Slab and Vector.
+
+The Map correctness target passed for both images: each helper mode ran
+22,896 checked traces and ten C policy chains; all existing ordinary and
+observed fixture configurations passed, including the maintained library's
+three 28-allocation ledgers and the observer's concurrent/negative controls.
+Slab passed 864 executions per mode and image; Vector passed 6,300 per mode
+and image. Their existing retained-call checks passed. Every timing sample
+also passed its independent content/outcome and allocation oracle. Across
+each paired matrix, trace sizes, checksums, requests, requested bytes and
+peak bytes match exactly for equal implementation/seed/configuration keys.
+No allocation, ownership or correctness failure occurred in these cases.
+
+#### Map timings
+
+The initial A/A plus A/B protocol produced 5,632 samples. The repeatable
+normal wide-replacement regression triggered exactly one full replay, with
+the predeclared reversed side order, producing another 5,632 samples.
+Each of the eight side images has exactly 1,408 rows: 32 implementation/cell
+combinations, eleven seeds, two cohorts and two helper modes. All eight clock
+probes reported a 1,000 ns minimum positive delta. The shortest participating
+interval was 31,000 ns; none was at or below the observed quantum. The
+quantization screen is consequently appreciable for the shortest scalar
+cells, and it is not replaced by a universal 3% threshold.
+
+The [complete paired summary](measurements-inactive-summary.csv) retains
+all fourteen cells, both cohorts, both modes and both protocols separately.
+Its entries are medians of eleven equal-seed ratios, never ratios of
+independent medians. It includes raw WF B/A, ascending C B/A, the registered
+C-normalized B/A, before/after WF/C gaps, null ratios, minimum intervals and
+screening margins. Staged C and WF/staged-C ratios remain separate on all
+four rebuild cells; staged C is never substituted as the normalizer.
+
+The principal 256-byte results below show **cohort 0 / cohort 1**. Ratios
+below one favor B. The displayed values are rounded; the screening used
+the unrounded ratios in the summary.
+
+| Path / mode | Initial WF B/A | Initial C B/A | Initial normalized | Replay WF B/A | Replay C B/A | Replay normalized |
+|---|---:|---:|---:|---:|---:|---:|
+| grow / normal | 0.690 / 0.712 | 0.974 / 0.992 | 0.719 / 0.719 | 0.718 / 0.710 | 1.000 / 0.996 | 0.717 / 0.712 |
+| grow / retained | 0.766 / 0.725 | 1.002 / 0.945 | 0.764 / 0.765 | 0.797 / 0.759 | 0.983 / 0.989 | 0.780 / 0.761 |
+| rehash / normal | 0.859 / 0.878 | 0.972 / 0.990 | 0.908 / 0.891 | 0.891 / 0.898 | 1.001 / 1.004 | 0.887 / 0.897 |
+| rehash / retained | 0.910 / 0.900 | 1.002 / 0.996 | 0.908 / 0.900 | 0.906 / 0.903 | 1.005 / 1.001 | 0.911 / 0.903 |
+| replace / normal | 1.091 / 1.092 | 1.000 / 1.008 | 1.088 / 1.075 | 1.093 / 1.090 | 1.012 / 1.000 | 1.075 / 1.090 |
+| replace / retained | 0.957 / 0.915 | 0.996 / 0.955 | 0.962 / 0.957 | 0.896 / 0.938 | 0.963 / 1.000 | 0.957 / 0.939 |
+
+The primary screens are 3% except retained wide grow, whose null variation
+raises its margin to 5.386% initially and 4.197% on replay. Wide replacement's
+normal-mode screen remains 3% in both trials; its regression exceeds that
+margin in both cohorts each time. Retained replacement improves, so pooling
+the helper modes would hide a real distinction.
+
+Normal scalar churn is another unresolved observation: initial raw B/A is
+1.028 / 1.041 and normalized B/A is 1.014 / 1.009, against a 3.965% screen;
+replay raw B/A is 1.018 / 1.116 and normalized B/A is 1.023 / 1.058, against
+a 3% screen. The replay's second cohort is materially slower by both measures,
+but the initial evidence is weaker. Scalar setup also has one replay raw
+regression accompanied by C drift (1.046 raw, 1.002 normalized). These remain
+visible without extending the sampling or claiming a common causal account.
+
+The residual wide-grow WF/ascending-C gap across the separately retained
+cohort medians is 1.189–1.197 in normal mode and 1.265–1.285 retained.
+Normal wide replacement changes from 2.078–2.091 in A to 2.259–2.286 in B;
+retained replacement changes from 2.310–2.342 to 2.159–2.232. These are
+whole-trace gaps. Ascending C differs in migration/cleanup order, and neither
+its gap nor the helper-mode difference is an isolated store, copy or call
+cost. No setup time was subtracted.
+
+#### Emitted-code attribution and other consumers
+
+The full Map harness's raw IR changes from 371 whole-aggregate zero stores
+to zero, while explicit active tags and descriptors remain. The change also
+affects subsequent optimization. In particular, normal wide `try_put` changes
+from 112 native instructions with a 288-byte local frame and a private
+`exchange` call (64-byte frame) to 272 instructions with a 784-byte local
+frame and the exchange inlined. Its matched-key branch performs five
+256-byte transfers through two temporaries. The public `put` keeps its two
+`try_put` sites and 1,136-byte frame. This identifies concrete optimizer
+fallout accompanying replacement's slowdown; it does not isolate which
+instruction change causes the measured difference. The focused lowering
+analysis is recorded with the [compiler investigation](../../../investigations/containers-and-resources/X1-LIBRARY.md).
+
+Slab's relevant optimized bodies change, triggering its complete existing
+matrix: both 8-byte and 256-byte payloads, counts 16/256/4096, prefilled lookup,
+reuse churn and setup/cleanup, all three implementations, eleven seeds, two
+internal cohorts, both modes and both existing outer runs. Each side has
+4,752 rows; its A/A plus A/B comparisons retain 19,008 rows in total. The
+existing outer run orders are preserved, with the four side groups A/run 0,
+B/run 0, B/run 1, A/run 1. There was no additional Slab replay.
+
+The [complete Slab paired summary](../slab-library/measurements-inactive-summary.csv)
+retains all four run/cohort groups per cell and mode. Its `screening_margin`
+is a descriptive application of the same 3%/null/quantum calculation across
+those groups and both C normalizations, using the observed 1,000 ns quantum;
+it is not an additional prospectively selected Slab acceptance rule.
+Ranges below span the separate group medians, not pooled samples:
+
+| Slab observation | Raw WF B/A | Window-C-normalized B/A | Tagged-C-normalized B/A |
+|---|---:|---:|---:|
+| retained scalar lookup, count 16 | 1.067–1.099 | 1.098–1.105 | 1.098–1.111 |
+| retained scalar lookup, count 256 | 1.051–1.106 | 1.104–1.109 | 1.105–1.107 |
+| retained scalar lookup, count 4096 | 1.038–1.079 | 1.045–1.082 | 1.048–1.077 |
+| normal wide churn, all three counts | 0.886–0.948 | 0.911–0.922 | 0.906–0.925 |
+| retained wide churn, all three counts | 0.905–0.985 | 0.918–0.952 | 0.925–0.951 |
+| normal wide setup, all three counts | 0.897–0.929 | 0.915–0.935 | 0.913–0.930 |
+| retained scalar setup, all three counts | 0.817–0.883 | 0.820–0.873 | 0.816–0.881 |
+
+Retained scalar lookup is slower in every run/cohort group at all three
+lengths, with both unchanged C controls agreeing on direction. Its null
+normalized medians range 0.984–1.006 for window C and 0.967–1.004 for tagged C.
+This is a separate regression to explain, not evidence of blanket Slab
+improvement. Retained wide setup has raw sign changes (0.964–1.081), while
+its window-C-normalized medians span 0.986–1.011; its largest raw slowdown
+coincides with C drift. Other small/control-sensitive differences remain in
+the complete summary and all their raw tails remain in the archive.
+
+Vector passes its complete correctness matrix. In each mode, all 47 inspected
+relevant WF native function bodies are unchanged, including branch operands
+and positions, despite SSA naming/order differences in optimized IR.
+Accordingly no Vector timing was added. The existing Vector short-cycle and
+Slab layout/result-ABI questions remain unresolved by this comparison.
+
+#### Retained data, identities and cost accounting
+
+The [Map raw archive](measurements-inactive-raw.tar.gz) contains eight
+1,408-row CSVs named `{initial,replay}-{null,ab}-{A,B}.csv`, each retaining the
+driver's seventeen columns, plus all clock observations and `identities.sha256`.
+In `null` files A and B mean the labels A1 and A2 invoking the identical A
+executable; in `ab` files they mean the distinct compiler images. Filtering
+by `(contract,cohort)` restores each original invocation. The
+[Slab raw archive](../slab-library/measurements-inactive-raw.tar.gz) contains
+four 4,752-row `{null,ab}-{A,B}.csv` files in its existing fifteen-column
+Makefile format, including `run`; `(run,contract)` restores its invocations.
+No row, seed, tail or cohort was discarded. The two summaries have 112 Map
+and 144 Slab rows, respectively. The archives contain source, compiler,
+raw/optimized IR, executable and shared-runtime SHA-256 identities, including
+the untimed Vector comparison in the Map manifest.
+
+| Artifact | SHA-256 |
+|---|---|
+| A compiler, main `345e2966a` | `cbffd4dd1ae8641ef03790457181188988bf70cc4af1a53c50c1f406307bb7f9` |
+| B compiler, candidate `483f64401` | `4d6afc99e1882a70f1ad7caafe9d6127095fffd59488bc05d2ce7b657060f3a4` |
+| Map raw archive | `505b583ce5163014d386915228c6268a98ecb7c00a6896c182f4c13634bae83b` |
+| Map paired summary | `31af0ac9649f36b7d51871e74ec1a89ccc89b062cad5ea0447988211cf35937b` |
+| Slab raw archive | `41f97d4c512b5d2a7713ee428c7f02cd07af5d53079f13dd2fef1351c559e3a1` |
+| Slab paired summary | `687578de3f0f5ce5e4c21733a257f6f0464b8a251dfbc5e8f9a643d602ea0218` |
+
+All program construction, correctness and timing commands used the shared
+verification guard sequentially. Wall seconds below include the obsolete
+pre-rebase preparation, but only the new A/B images contributed samples:
+
+| Stage | Construction | Correctness execution | Timing |
+|---|---:|---:|---:|
+| Obsolete pre-rebase A | 20.01 | 14.34 | 0 |
+| v0.68 A Map | 19.54 | 14.65 | 0 |
+| v0.68 B Map | 19.76 | 14.35 | 0 |
+| Slab and Vector, A and B | 4.47 | 3.37 | 0 |
+| Map initial A/A plus A/B | 0 | 0 | 2.84 |
+| Map single reversed replay | 0 | 0 | 2.82 |
+| Slab complete A/A plus A/B | 0 | 0 | 18.40 |
+| Total / investigation limit | 63.78 / 180 | 46.71 / 60 | 24.06 / 60 |
+
+Rust compiler construction is separate: the clean rebased A compiler took
+47.75 seconds; the verified B binary and unit harness took 47.10 and 83.38
+seconds. A shared-target freshness error initially retained the A binary when
+building B; its identical hash exposed that error before B program construction
+or timing, and the package was cleaned and rebuilt before freezing B.
+The complete canonical gate belongs to the enclosing compiler change and is
+reported separately; these experiment checks do not replace it.

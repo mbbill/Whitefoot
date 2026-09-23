@@ -1813,3 +1813,66 @@ the historical profile nor a map improvement closes that question. Broader
 SSA construction, aggregate forwarding and overlay layouts remain separate
 opportunities because they change more paths or require distinct interference
 and ABI evidence. First establish this smaller unchanged-source comparison.
+
+### First result and bounded constructor follow-up
+
+The first candidate fails its prospective performance criterion. The
+[complete comparison](../../experiments/container-representation/map-library/RESULTS.md#completed-comparison-gains-with-unresolved-regressions)
+retains the wide-map rebuild improvements, the repeated normal wide
+replacement regression and the retained scalar Slab lookup regression.
+Private exchange inlining increases Map's stack temporaries and payload
+transfers. In Slab, writing a small result's fields separately loses the
+baseline's single combined store. These are observed code differences, not
+measurements of their isolated causal shares. Do not select the candidate
+merely from fewer initialization writes or average away the consumer losses.
+
+One further general emission form merits a bounded discriminator: form an
+aggregate value from a poison seed, insert its tag and every active field,
+then store that aggregate once. Materialize every source operand before the
+store so overlapping result placement cannot overwrite an unread operand.
+This changes destination construction only; it does not change layouts,
+source acceptance, allocation, calls or window descriptors. Other existing
+SSA constructors keep their current behavior. LLVM's
+[partial-aggregate example](https://releases.llvm.org/21.1.0/docs/LangRef.html#insertvalue-instruction)
+supports defined inserted components beside inactive poison components.
+No inactive component may be observed as a condition, address or source
+value, including across an ordinary linked call. Do not introduce an undef
+seed or a whole-value noundef promise. A whole aggregate store permits LLVM
+to write inactive bytes physically; omission of every such write is not its
+semantic contract.
+
+This form can also lose: the existing emitter deliberately avoids loading
+large stored payloads into SSA because SROA can expand their arrays into
+individual operations. Before implementing or measuring this candidate,
+fix the following discriminator. Build it on an isolated local branch and
+use the existing unchanged Map and Slab sources, target and C controls.
+First inspect optimized IR and native code: require at least one fewer
+surviving 256-byte transfer than the first candidate on normal wide
+replacement's matched-key path,
+continued omission of the large vacant-bucket and empty-window clears, and
+no extra successful-path instructions in retained scalar Slab lookup relative
+to baseline A. Also inspect large-array construction for new bulk
+scalarization and preserve operand snapshots through overlapping placement.
+If any required screen fails, stop this variant without timing or thresholds,
+identity tests, forced inlining, or another emission variant to rescue it.
+
+If the screen passes, qualify active fields, all variants, ordinary linked
+and parallel boundaries with the maintained regressions before performance
+selection. Then conduct a fresh A/A and A/candidate comparison over the same
+complete Map and triggered Slab matrices, preserving every cohort, mode,
+seed, allocation oracle and raw tail. Use the earlier per-cell null/quantum
+screen and require both a primary rebuild improvement and no unexplained
+material regression. This is a new compiler candidate, not another replay
+of the completed first trial. Allow no timing replay in this discriminator;
+an ambiguous outcome remains ambiguous. Keep its separate construction,
+correctness and timing totals, bounded at 90, 30 and 40 seconds respectively;
+compiler construction and the canonical gate are separate. Investigate any
+overrun before extending work.
+
+Generic copy forwarding remains deferred: one redundant optimized Map copy
+is between nonescaping private allocations created by LLVM inlining, not a
+general proof that the backend's exposed owner snapshots can be forwarded.
+Supporting that case before optimization needs a separate interference,
+liveness and representation argument. The maintained TODO records that
+scope. Pending tree proposals describe the current trial, not a production
+selection or permission to edit the live tree.
