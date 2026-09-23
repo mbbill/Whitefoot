@@ -2093,6 +2093,10 @@ Before selecting the form, require all of the following:
   scan target; diagnostic participation alone is insufficient. Observer
   hooks and any observer-induced optimization changes remain explicit and
   supply no production timing result.
+  The same event validator must reject a copy of the first observed W1
+  balanced-absence T = 1 stream with one required completion removed
+  (eight events expected, seven supplied); preserve the raw stream and make
+  no additional Whitefoot call or retry.
 
 Reuse the frozen current-main CLI and ordinary runtime inputs. Run source
 emission, native construction and oracle execution as separate guarded
@@ -2111,6 +2115,33 @@ The cost remains completing the other block and joining each ordered wave;
 the cheap-first-hit control preserves that adverse tradeoff. Defer recursive
 wave trees, broader cost transport and performance selection until this
 bounded functional and participation evidence identifies a further need.
+
+### Adjacent helper-pair source qualification
+
+After the criterion was published at `719c6d8b`, mode 4 adds an ordinary
+`paired_wave_plain` helper and selects it from `search_plain` using
+precomputed bounds. The other 13 original source functions are byte-identical
+to `7d718329`, including their contracts. In both emitted modes, the complete
+`has_zero`, `record_hit` and `scan_plain` LLVM bodies match the preceding
+current-main modules byte for byte: six complete comparisons, with no
+normalization. The [evidence stream](../../experiments/compute-bench/first-index-2026-09-22.tsv)
+retains the source, module, ledger and individual body hashes.
+
+The first parallel emission permits exactly the intended two-member
+`scan_plain` group. It offers the left scan through a 64-byte frame, executes
+the right scan directly, joins and releases the left result, then takes
+`imin`. A refused offer runs that same left scan inline; the W1 sequential
+clone calls left then right before taking the minimum. No bound-producing
+call occupies the group. The four original counted-loop prices remain
+146, 3,036, 2,336 and 3,044, with their original zero budgets on this source's
+spans. Existing predicates and contracts still establish range validity and
+read-only independence; those safety facts do not price the bytes visited
+after indexed loads or payload-dependent early returns.
+
+The same frozen main `345e2966a` CLI accepts both forms on the first attempt.
+Each compiler command took 0.04 seconds (`user` 0.04, `sys` 0.00); each
+separate guarded stage took 0.11 seconds under its 30-second cap. These are
+emission costs, with no compiler reconstruction or search timing comparison.
 
 ## Sparse destination routing trial (2026-09-21)
 

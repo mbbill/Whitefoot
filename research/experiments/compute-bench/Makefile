@@ -433,6 +433,7 @@ LINK_LIBS := -L$(DEPS)/lib -Wl,-rpath,$(DEPS)/lib -ltbb \
         dag-fanin-emit dag-fanin-build dag-fanin-build-inputs dag-fanin-run \
         dag-fanin-cost-check dag-fanin-cost-run \
         first-index-emit first-index-build first-index-verify \
+        first-index-pair-build first-index-pair-verify \
         verdict-test module-symbols-test baseline-entry-test baseline-check clean clean-deps FORCE
 all: build
 
@@ -548,7 +549,8 @@ dag-fanin-cost-run:
 # Explicit untimed first-index expression probe; no correctness-CI caller.
 # Retain its source, oracle and adapter while they support this investigation.
 FIRST_INDEX_SOURCE := $(ROOT)/research/investigations/compute-model/first-index.wf
-.SECONDARY: $(BUILD)/first-index-par.linked.ll $(BUILD)/first-index-seq.linked.ll
+.SECONDARY: $(BUILD)/first-index-par.linked.ll $(BUILD)/first-index-seq.linked.ll \
+            $(BUILD)/first-index-observed.linked.ll
 first-index-emit: compiler
 	@mkdir -p $(BUILD)
 	$(WFC) --par --par-ledger --emit-llvm $(FIRST_INDEX_SOURCE) -o $(BUILD)/first-index-par.ll
@@ -561,6 +563,7 @@ $(BUILD)/first-index-%.linked.ll: $(BUILD)/first-index-%.ll first_index_host.ll 
 
 $(BUILD)/first-index-%: $(BUILD)/first-index-%.linked.ll first_index_probe.c $(RUNTIME_OBJS)
 	$(CC) $(WF_FLAGS) -Wall -Wextra -Werror $< first_index_probe.c \
+	    $(if $(filter observed,$*),-DWF_FIRST_INDEX_OBSERVED=1,) \
 	    $(RUNTIME_OBJS) -lm -o $@
 
 first-index-build: $(BUILD)/first-index-par $(BUILD)/first-index-seq
@@ -569,6 +572,42 @@ first-index-verify:
 	WF_WORKERS=1 $(BUILD)/first-index-seq seq
 	WF_WORKERS=1 $(BUILD)/first-index-par par
 	WF_WORKERS=4 $(BUILD)/first-index-par par
+
+# Diagnostic copy only. Preserve the ordinary module and reject a changed
+# predicate shape or effect attributes instead of silently misinstrumenting it.
+$(BUILD)/first-index-observed.linked.ll: $(BUILD)/first-index-par.linked.ll
+	awk '\
+	    /readnone|readonly|argmemonly|inaccessiblememonly|nosync|speculatable|willreturn|mustprogress|memory\(/ { bad = 1 } \
+	    /^define i1 @wf_has_zero\(\{ ptr, i64 \} %v0\)/ { active = 1; definitions++ } \
+	    active && /^entry:/ { \
+	        print; \
+	        print "  %wfi.data = extractvalue { ptr, i64 } %v0, 0"; \
+	        print "  %wfi.length = extractvalue { ptr, i64 } %v0, 1"; \
+	        print "  call void @wf_probe_predicate_event(ptr %wfi.data, i64 %wfi.length, i64 0)"; \
+	        entries++; next \
+	    } \
+	    active && /^  ret i1 / { \
+	        print "  call void @wf_probe_predicate_event(ptr %wfi.data, i64 %wfi.length, i64 1)"; \
+	        returns++ \
+	    } \
+	    { print } \
+	    active && /^}/ { active = 0 } \
+	    END { \
+	        if (bad || definitions != 1 || entries != 1 || returns != 2) exit 2; \
+	        print "declare void @wf_probe_predicate_event(ptr, i64, i64)" \
+	    }' $< > $@.tmp
+	mv $@.tmp $@
+
+first-index-pair-build: first-index-build $(BUILD)/first-index-observed
+
+# Each invocation is one fixed pass. No ordinary verification or CI target
+# depends on this experiment, and no timing or retry loop is selected.
+first-index-pair-verify:
+	WF_WORKERS=1 $(BUILD)/first-index-seq seq pair
+	WF_WORKERS=1 $(BUILD)/first-index-par par pair
+	WF_WORKERS=4 $(BUILD)/first-index-par par pair
+	WF_WORKERS=1 $(BUILD)/first-index-observed observed pair-observe
+	WF_WORKERS=4 $(BUILD)/first-index-observed observed pair-observe
 
 # -------------------------------------------------------------------- deps --
 # `fetch` is the only network step; everything after it is offline. A

@@ -375,3 +375,45 @@ correspondence-345e-2026-09-23	emission-seq	sys 0.00
 correspondence-345e-2026-09-23	emission-seq	== END first-index-345e-seq-correspondence: 0.10 s, exit 0 ==
 correspondence-345e-2026-09-23	verification	all 39 runtime and 10 unchanged probe input/artifact hashes pass shasum -a 256 -c after emission; migrated source and reused CLI hashes unchanged by emission
 correspondence-345e-2026-09-23	reuse	complete emission correspondence and unchanged native inputs/artifacts support reuse of the original dated native qualification; no native reconstruction/execution or new timing comparison
+paired-call-2026-09-23	prospective-protocol	719c6d8b958d57c76560e64ad270a56760a59592; fixed four control families at T=1,65536,1048576; one pass per selected image/width; no timing comparison
+paired-call-2026-09-23	source-baseline	7d7183291c0d3063631afa60e22d7d93988ddc0c; sha256 fb7fc2515e122903b1051ee84027f220e55513eebd555d5e64af0cb68de050a7
+paired-call-2026-09-23	source-sha256	e0c9e83219b50d488d09a8be992d575b35a170792fd402c2ae7b14c11cb2f589
+paired-call-2026-09-23	source-scope	add paired_wave_plain and mode4 selection with precomputed first/middle/end bounds; 13 other original functions, including their contracts, byte-identical; modes0-3 source branches retained
+paired-call-2026-09-23	compiler	main=345e2966a45c995d6cebbb7f6b128a66235cd20f; reused CLI sha256 cbffd4dd1ae8641ef03790457181188988bf70cc4af1a53c50c1f406307bb7f9; compiler/specification correspondence recorded above remains unchanged
+paired-call-2026-09-23	parallel-module-sha256	4207968d8126496c15c77f7d90741e4db89b2a78e58e180affd2261fdc6efb93
+paired-call-2026-09-23	sequential-module-sha256	ec4e3efd8db8b8dec6d2b1c1c6672b2daf426295aaf14816f648225ded178cf7
+paired-call-2026-09-23	parallel-ledger-sha256	38b3224041ca8061ee9463f78f41d56b2543aae06e04c1c9c9988cfd8b33e27f
+paired-call-2026-09-23	sequential-ledger-sha256	5d083973bbf6fedda73494b035756838c49e743e4f2aad9cd08bb4a3acb9f4e5
+paired-call-2026-09-23	parallel-emission-log-sha256	4c8f8710542f6df5439ce77b065d994d1d38ca4875c7319c7c2c12d0dd527dfd
+paired-call-2026-09-23	sequential-emission-log-sha256	7c7fb8321ee1dc568f2bae42bad04f31d5b2e33dd9fc5892f46311b1a1814dbf
+paired-call-2026-09-23	body-comparison-report-sha256	0dbfc1e1ec1c8db26183e7ec86803407d18be59f138051ba08b4df4975672bce
+paired-call-2026-09-23	body-comparison	13 complete source functions and six complete LLVM bodies byte-identical to preceding current-main artifacts; no normalization
+paired-call-2026-09-23	source-body-has_zero	3f58e2f1d2aca6c9f34befa514fc801fa5d6821825e1c0a5ea9d6917172e067b
+paired-call-2026-09-23	source-body-probe_zero	972597df95c165d6341a4500f40389155ae32099fe22ce814fcdca0515c7c2a5
+paired-call-2026-09-23	source-body-record_hit	154da437497efd18dd079097236dd25d6788bd7eb9ea26d4d21b5cdfc23c84c4
+paired-call-2026-09-23	source-body-record_probe	43bf997827f8cff49baecd2ad0485da832d80ffbc48e26b1b48be2a8e2ad71fe
+paired-call-2026-09-23	source-body-limited_end	02f5539ff07c6efdc3d6515573edb594f49c7c47d7c76d3bc9404b59c47e0534
+paired-call-2026-09-23	source-body-scan_plain	4ef4061e6398f4c197ee0013dde15f3cd8a33f7a2be080ef35012453bb766359
+paired-call-2026-09-23	source-body-scan_trace	3acb921240d6ad6d58d7718b8113b55feb634b1b4b658ba4e46726bcd9c3513c
+paired-call-2026-09-23	source-body-flat_wave_plain	ef278c9ea7e3f88f36e6f4e3df97eb3d4f9d2fc2f3c5f4426b71f3cf589efd75
+paired-call-2026-09-23	source-body-flat_wave_trace	64525e07479a0662f628915a7d0b49ee37b1e0af6b1f2c7029dd859d0ef2bd2b
+paired-call-2026-09-23	source-body-block_wave_plain	527b7a1c28310483fab7ffa0e157aeb2e1a934c6b6fe68981c1739e8468e19b6
+paired-call-2026-09-23	source-body-block_wave_trace	8ac4601cadf20b03487f97771f1980a377edc53dba5bf7dd2b02395d34a80f28
+paired-call-2026-09-23	source-body-search_trace	10aa59f9ef44b78af12cec36b04e968184fbd893792f1bc682720bb9b5af07d4
+paired-call-2026-09-23	source-body-main	af10275b0468b063aec665860a7aed7d6f14ef29a61f3acb7370667b4842ba69
+paired-call-2026-09-23	parallel-body-has_zero	daab2a887cdcfb848752ba4db9fdcdc098d3e8eeaa852ea6a9d9b73b859cf156
+paired-call-2026-09-23	parallel-body-record_hit	d5fe9b4c6adebf54d6e56073cdb21d17964b14d371dbbb907bae565dbca81a22
+paired-call-2026-09-23	parallel-body-scan_plain	77159dcf020fd08c8a2c08458d4393e9c8c8b278f831cab2784ef9aeae248c2a
+paired-call-2026-09-23	sequential-body-has_zero	daab2a887cdcfb848752ba4db9fdcdc098d3e8eeaa852ea6a9d9b73b859cf156
+paired-call-2026-09-23	sequential-body-record_hit	d5fe9b4c6adebf54d6e56073cdb21d17964b14d371dbbb907bae565dbca81a22
+paired-call-2026-09-23	sequential-body-scan_plain	77159dcf020fd08c8a2c08458d4393e9c8c8b278f831cab2784ef9aeae248c2a
+paired-call-2026-09-23	permission	first-index.wf:206-207; permitted pair(scan_plain,scan_plain), two-member run; no bound-producing call in group
+paired-call-2026-09-23	offer	wf_paired_wave_plain acquires 64-byte frame; wf__par_thunk_0 calls left wf_scan_plain; right wf_scan_plain runs directly; join/release precedes llvm.umin
+paired-call-2026-09-23	fallback	refused left offer executes identical left scan inline after right; W1 sequential clone calls left then right and combines minimum
+paired-call-2026-09-23	old-prices	flat-plain=146; flat-trace=3036; block-plain=2336; block-trace=3044; same four old splitters and zero budgets at original spans; one added paired-call publish site
+paired-call-2026-09-23	cost-boundary	existing predicates/contracts prove range validity and read-only independence; indexed offsets and payload-dependent early returns still have no representative work expression; no runtime, compiler, pricing or language change
+paired-call-2026-09-23	emission-par-command	WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl first-index-pair-par-emission <current-compiler-artifact>/whitefootc --par --emit-llvm --par-ledger research/investigations/compute-model/first-index.wf -o <scratch-root>/first-index-par.ll
+paired-call-2026-09-23	emission-par-time	compiler command real=0.04s user=0.04s sys=0.00s; guarded stage=0.11s; exit=0; limit=30s
+paired-call-2026-09-23	emission-seq-command	WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl first-index-pair-seq-emission <current-compiler-artifact>/whitefootc --no-overlap --emit-llvm --par-ledger research/investigations/compute-model/first-index.wf -o <scratch-root>/first-index-seq.ll
+paired-call-2026-09-23	emission-seq-time	compiler command real=0.04s user=0.04s sys=0.00s; guarded stage=0.11s; exit=0; limit=30s
+paired-call-2026-09-23	emission-attempts	one source revision; both emissions pass on first attempt; raw logs and modules preserved; no compiler/native construction or native execution in these emission stages

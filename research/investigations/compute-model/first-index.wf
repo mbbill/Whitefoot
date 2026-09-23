@@ -196,12 +196,25 @@ fn block_wave_trace(input: &[u8], offsets: &[u64], first: u64, total: u64, trace
   return best;
 }
 
+fn paired_wave_plain(input: &[u8], offsets: &[u64], first: u64, middle: u64, end: u64, total: u64) -> result: u64 reads(input), reads(offsets) contract {
+  define offsets_count = deref(offsets).len;
+  requires first <= middle;
+  requires middle <= end;
+  requires end <= total;
+  requires total < offsets_count;
+} {
+  let left = scan_plain(input: input, offsets: offsets, first: first, end: middle, total: total);
+  let right = scan_plain(input: input, offsets: offsets, first: middle, end: end, total: total);
+  let best = imin(left, right);
+  return best;
+}
+
 fn search_plain(input: &[u8], offsets: &[u64], total: u64, mode: u64) -> result: u64 reads(input), reads(offsets) contract {
   define offsets_count = deref(offsets).len;
   requires total < offsets_count;
   requires total <= 16_u64;
 } {
-  doc "Modes are sequential, fixed four-record folds, doubling folds, and two two-record helpers per ordered wave.";
+  doc "Modes 0 through 3 are sequential, fixed four-record folds, doubling folds, and two two-record helpers in a counted wave. Mode 4 uses the same two helpers as adjacent calls.";
   if mode == 0_u64 {
     return scan_plain(input: input, offsets: offsets, first: 0_u64, end: total, total: total);
   }
@@ -222,7 +235,14 @@ fn search_plain(input: &[u8], offsets: &[u64], total: u64, mode: u64) -> result:
       let local = block_wave_plain(input: input, offsets: offsets, first: first, total: total);
       give local;
     } else {
-      let local = flat_wave_plain(input: input, offsets: offsets, first: first, end: end, total: total);
+      let local = if mode == 4_u64 {
+        let middle = limited_end(first: first, total: end, width: 2_u64);
+        let paired = paired_wave_plain(input: input, offsets: offsets, first: first, middle: middle, end: end, total: total);
+        give paired;
+      } else {
+        let folded = flat_wave_plain(input: input, offsets: offsets, first: first, end: end, total: total);
+        give folded;
+      }
       give local;
     }
     if best < total {
