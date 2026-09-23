@@ -126,6 +126,9 @@ W1/W4 mean total participants; native mode uses a matching oneTBB arena and
 does not start a WF worker pool. Source and observer byte counts are logical
 payloads, excluding allocator metadata, oneTBB internal nodes, runtime lanes,
 native stacks and canaries; no physical peak-memory measurement is claimed.
+`actual_steals` counts tasks actually stolen through the runtime's legacy
+`wf__par_grants` API. The saved initial default rows named that same counter
+`grants`; it does not count offer attempts or successful lane acquisition.
 `DAG_VARIANT` and `DAG_EMIT_FLAGS` allow a separately labelled, explicitly
 selected compiler control without overwriting the ordinary default evidence.
 

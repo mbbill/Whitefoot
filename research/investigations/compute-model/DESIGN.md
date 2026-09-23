@@ -79,6 +79,19 @@ native construction and execution are separate stages guarded through
 and one host-wide owner; inspect an existing owner instead of competing.
 Record compiler and source identities, flags, workers and observer changes.
 
+The selected cutoff-attribution control uses the unchanged source with
+`--par --par-recursive-frontier off`, in separately labelled ordinary and
+traced images. Run the same complete 115-case WF matrix once at W1 and once
+at W4 in each image, preserving the oracle, comparator-corruption check,
+observer and original graph edges; do not repeat the oneTBB matrix. Expected
+correspondence is unchanged acceptance and task results with the recursive
+budget family removed. Compare the emitted deep-suffix offers and any
+distinct-native-thread overlap between two tasks whose IDs are both at least
+16 against the preserved default result. Missing overlap remains inconclusive;
+there is no elapsed-time criterion or rerun for a more favourable schedule.
+The largest spine remains 32, so this control does not qualify behavior beyond
+the existing 64 retained frames per lane or select a replacement policy.
+
 **Design suitability.** Existing references, effects, ranges and call lowering
 fit these questions; no executor, grain, cancellation or specification change
 is selected. Assess revealed compiler structural choices against their owner

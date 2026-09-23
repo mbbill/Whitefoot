@@ -333,7 +333,8 @@ int run_matrix(bool native, unsigned workers) {
         observation.events.assign(traced ? 2 * count : 0, Event{});
         observation.next.store(0);
         observation.overflow.store(false);
-        const unsigned long grants = native ? 0 : wf__par_grants();
+        // The runtime's legacy API name returns successful lane steals.
+        const unsigned long steals_before = native ? 0 : wf__par_grants();
         if (native) native_graph(graph, costs.data() + 1, storage.data() + 1,
                                   receipt_storage.data() + 1,
                                   *arena, traced);
@@ -349,12 +350,12 @@ int run_matrix(bool native, unsigned workers) {
         for (std::size_t i = 0; i != 4; ++i)
             if (receipt_storage[i + 1] != expected.receipts[i])
                 fail(graph.name + ": notification receipt mismatch");
-        const unsigned long used = native ? 0 : wf__par_grants() - grants;
-        if (!native && workers == 1 && used != 0) fail("W1 handed out work");
+        const unsigned long steals = native ? 0 : wf__par_grants() - steals_before;
+        if (!native && workers == 1 && steals != 0) fail("W1 recorded stolen work");
         std::printf("case\t%s\ttasks=%zu\tedges=%zu\twork_rounds=%llu\tcritical_rounds=%llu"
                     "\tlevel_rounds=%llu\toutput_bytes=%zu\tinput_cost_bytes=%zu"
                     "\tsource_notice_init_slots=%u\tsource_notice_inspections=%u"
-                    "\tobserver_bytes=%zu\tgrants=%lu\n",
+                    "\tobserver_bytes=%zu\tactual_steals=%lu\n",
                     graph.name.c_str(), count, graph.edges.size(),
                     static_cast<unsigned long long>(expected.work),
                     static_cast<unsigned long long>(expected.critical),
@@ -362,7 +363,7 @@ int run_matrix(bool native, unsigned workers) {
                     count * sizeof(std::uint64_t),
                     !native && graph.family == Family::notify ? 4U : 0U,
                     !native && graph.family == Family::notify ? 4U : 0U,
-                    observation.events.size() * sizeof(Event), used);
+                    observation.events.size() * sizeof(Event), steals);
         for (std::size_t id = 0; id != count; ++id)
             std::printf("task\t%s\t%zu\tsteps=%llu\tvalue=%016llx\tevaluations=%llu\n",
                         graph.name.c_str(), id, static_cast<unsigned long long>(graph.costs[id]),
