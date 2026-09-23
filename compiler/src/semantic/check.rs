@@ -1556,6 +1556,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let declaration = self.declaration_at(node, DeclarationRole::NamedConst)?;
         let declaration_id = declaration.id();
         let name = declaration.spelling().to_owned();
+        // CONST-2 can be the first use of a concrete nominal. Prepare the
+        // declared type and every written initializer argument before the
+        // read-only type/value checks, just as for ordinary constructions.
+        self.ensure_nominals_in_node(node, &GenericSubstitution::default())?;
         let ty_node = self
             .tree
             .first_child_with(node, Production::Type)?
