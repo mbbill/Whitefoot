@@ -88,7 +88,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::Call {
                 function,
                 arguments,
-            } if !self.overlap_handed_out.contains(&result) => {
+            } if !self.overlap_schedule.frames.contains_key(&result) => {
                 self.emit_call(result, ty, *function, arguments)?;
             }
             IrOperation::Window => self.emit_fixed_vector(result, ty)?,

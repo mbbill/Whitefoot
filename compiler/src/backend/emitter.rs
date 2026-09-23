@@ -46,11 +46,11 @@ pub(crate) use frontier::is_recursion_budget_symbol;
 use frontier::{Grain, RecursiveFrontiers, recursion_budget_symbol};
 pub use parallel::module_requires_parallel_runtime;
 use parallel::{
-    HandedOut, LoopSplitSite, PARALLEL_POOL_QUERY_DECLARATION, PARALLEL_POOL_QUERY_FALLBACK,
-    PARALLEL_RECURSION_BUDGET_DECLARATION, PARALLEL_RECURSION_BUDGET_FALLBACK,
-    PARALLEL_RUNTIME_DECLARATIONS, PARALLEL_RUNTIME_FALLBACK, PARALLEL_SPLIT_BUDGET_DECLARATION,
-    PARALLEL_SPLIT_BUDGET_FALLBACK, ParallelThunks, par_done_label, sequential_clone_set,
-    sequential_clone_symbol,
+    HandedOut, LoopSplitSite, OverlapSchedule, PARALLEL_POOL_QUERY_DECLARATION,
+    PARALLEL_POOL_QUERY_FALLBACK, PARALLEL_RECURSION_BUDGET_DECLARATION,
+    PARALLEL_RECURSION_BUDGET_FALLBACK, PARALLEL_RUNTIME_DECLARATIONS, PARALLEL_RUNTIME_FALLBACK,
+    PARALLEL_SPLIT_BUDGET_DECLARATION, PARALLEL_SPLIT_BUDGET_FALLBACK, ParallelThunks,
+    par_done_label, par_offered_label, sequential_clone_set, sequential_clone_symbol,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1039,26 +1039,10 @@ struct FunctionEmitter<'program, 'state> {
     /// The module's outlined thunks, shared by every function that hands a
     /// call out.
     parallel: &'state mut ParallelThunks,
-    /// The overlap groups *this world* actualizes: the judgment's groups in
-    /// the ordinary lowering, and none at all in a sequential clone.
-    ///
-    /// Every consumer reads this one slice and none reads `function.overlaps()`
-    /// again, which is what keeps the blocks a world emits and the labels its
-    /// phis name from disagreeing: a `par.done` label can be named only where
-    /// the same slice caused the block to be emitted.
-    overlaps: Vec<IrOverlap>,
-    /// Values whose defining call is handed to a worker lane [PAR-1
-    /// candidate], and the values whose definitions are the join sites that
-    /// complete them.
-    overlap_handed_out: HashSet<IrValueId>,
-    overlap_join_sites: HashSet<IrValueId>,
-    /// Selected-target layouts of the exact `{ arguments..., result }`
-    /// aggregates this world may place in runtime lane storage.
-    ///
-    /// This map is built before any function text is emitted. Its membership
-    /// is therefore also the proof that the aggregate fits the runtime's
-    /// 256-byte, 16-byte-aligned slot and the target's address-index domain.
-    ordinary_lane_frames: HashMap<IrValueId, TargetAggregateLayout>,
+    /// This world's selected calls and retirement boundaries, including exact
+    /// fitted frames. Emission and phi labels consume the same schedule; the
+    /// sequential world has an empty one.
+    overlap_schedule: OverlapSchedule,
     /// Ordinary calls awaiting the group's join.
     handed_out: Vec<HandedOut>,
     /// The functions that have a sequential clone, when this emitter is
@@ -1119,34 +1103,13 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             grain,
             window_address_facts,
         } = module;
-        let mut overlaps = Vec::new();
-        let mut ordinary_lane_frames = HashMap::new();
-        if sequential_clones.is_none() {
-            for overlap in function.overlaps() {
-                // One ordinary ABI, with a budget field only for a synthesized variant.
-                let Some(frames) =
-                    ordinary_overlap_lane_frames(program, target, function, overlap, &|callee| {
-                        grain.is_some_and(|grain| frontiers.spends(callee, grain))
-                    })?
-                else {
-                    continue;
-                };
-                for (result, layout) in frames {
-                    if ordinary_lane_frames.insert(result, layout).is_some() {
-                        return Err(BackendFailure::InvalidIr);
-                    }
-                }
-                overlaps.push(overlap.clone());
-            }
-        }
-        let overlap_handed_out = overlaps
-            .iter()
-            .flat_map(|overlap| overlap.handed_out().iter().copied())
-            .collect();
-        let overlap_join_sites = overlaps
-            .iter()
-            .filter_map(crate::IrOverlap::join_site)
-            .collect();
+        let overlap_schedule = if sequential_clones.is_none() {
+            OverlapSchedule::select(program, target, function, &|callee| {
+                grain.is_some_and(|grain| frontiers.spends(callee, grain))
+            })?
+        } else {
+            OverlapSchedule::default()
+        };
         let storage =
             FunctionStoragePlan::build_in_world(program, function, sequential_clones.is_some())?;
         let result_slot = places::returned_storage_slot(function, &storage);
@@ -1175,10 +1138,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             materialized: HashMap::new(),
             temporary: 0,
             parallel,
-            overlaps,
-            overlap_handed_out,
-            overlap_join_sites,
-            ordinary_lane_frames,
+            overlap_schedule,
             handed_out: Vec::new(),
             sequential_clones,
             refusal_clones,
@@ -1240,10 +1200,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 .map_err(|_| BackendFailure::TextEmission)?;
         }
         Ok(facts)
-    }
-
-    fn is_overlap_join_site(&self, value: IrValueId) -> bool {
-        self.overlap_join_sites.contains(&value)
     }
 
     /// The symbol one call names, and the budget operand it carries.
@@ -1430,6 +1386,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             for (instruction_index, instruction) in block.instructions().iter().enumerate() {
                 self.emit_instruction(block_id, instruction_index, instruction)?;
             }
+            if !self.handed_out.is_empty() {
+                return Err(BackendFailure::InvalidIr);
+            }
             self.emit_terminator(block_id, block.terminator())?;
         }
         self.output.push_str("}\n\n");
@@ -1551,7 +1510,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     block_exit_label(
                         edge.predecessor,
                         self.block(edge.predecessor)?,
-                        &self.overlaps,
+                        &self.overlap_schedule,
                     )
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
@@ -1568,6 +1527,13 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         index: usize,
         instruction: &IrInstruction,
     ) -> Result<(), BackendFailure> {
+        let before = self
+            .overlap_schedule
+            .before
+            .get(&(block, index))
+            .cloned()
+            .unwrap_or_default();
+        self.emit_overlap_joins(&before)?;
         match instruction {
             IrInstruction::StoreSlice {
                 slice,
@@ -1588,6 +1554,15 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrInstruction::Define { .. } => {}
         }
         self.emit_instruction_body(block, index, instruction)?;
+        if let IrInstruction::Define { result, .. } = instruction {
+            let after = self
+                .overlap_schedule
+                .after
+                .get(result)
+                .cloned()
+                .unwrap_or_default();
+            self.emit_overlap_joins(&after)?;
+        }
         Ok(())
     }
 
@@ -1597,14 +1572,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         _index: usize,
         instruction: &IrInstruction,
     ) -> Result<(), BackendFailure> {
-        // A group's join rides the definition of its last member: the members
-        // before it were handed out and their values do not exist until here.
-        if let IrInstruction::Define { result, .. } = instruction
-            && self.is_overlap_join_site(*result)
-        {
-            self.emit_definition_then_join(instruction, *result)?;
-            return Ok(());
-        }
         match instruction {
             IrInstruction::Define {
                 result,
@@ -1623,19 +1590,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             } => self.emit_store(*address, *value, *referent),
             IrInstruction::Drops(drops) => self.emit_drops(drops),
         }
-    }
-
-    /// Emits the last member of an overlap group and then its joins.
-    fn emit_definition_then_join(
-        &mut self,
-        instruction: &IrInstruction,
-        result: IrValueId,
-    ) -> Result<(), BackendFailure> {
-        let IrInstruction::Define { ty, operation, .. } = instruction else {
-            return Err(BackendFailure::InvalidIr);
-        };
-        self.emit_definition(result, *ty, operation)?;
-        self.emit_overlap_joins(result)
     }
 
     fn emit_definition(
@@ -1663,7 +1617,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             _ => self.materialize_operands(operation.operands())?,
         }
         self.emit_value_definition(result, ty, operation)?;
-        if !self.overlap_handed_out.contains(&result) {
+        if !self.overlap_schedule.frames.contains_key(&result) {
             self.save_value_result(result)?;
         }
         Ok(())
@@ -1684,7 +1638,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 function,
                 arguments,
             } => {
-                if self.overlap_handed_out.contains(&result) {
+                if self.overlap_schedule.frames.contains_key(&result) {
                     self.emit_handed_out_call(result, ty, *function, arguments)
                 } else {
                     self.emit_call(result, ty, *function, arguments)
@@ -2412,27 +2366,29 @@ fn variant_field_base(
     Err(BackendFailure::InvalidIr)
 }
 
-/// The member of the overlap group `result` joins whose join settles the
-/// block's label, if `result` is a join site at all. Its `par.done` block is
-/// where the block continues. Ordinary lane calls join newest first.
-fn overlap_join_tail(overlaps: &[IrOverlap], result: IrValueId) -> Option<IrValueId> {
-    overlaps
-        .iter()
-        .find(|overlap| overlap.join_site() == Some(result))?
-        .handed_out()
-        .first()
-        .copied()
-}
-
 /// Account for every instruction that opens an LLVM block when naming phis.
-fn block_exit_label(block_id: IrBlockId, block: &IrBlock, overlaps: &[IrOverlap]) -> String {
+fn block_exit_label(block_id: IrBlockId, block: &IrBlock, schedule: &OverlapSchedule) -> String {
     let mut label = block_label(block_id);
     for (index, instruction) in block.instructions().iter().enumerate() {
-        definition_exit_label(block_id, index, instruction, &mut label);
-        if let IrInstruction::Define { result, .. } = instruction
-            && let Some(last) = overlap_join_tail(overlaps, *result)
+        if let Some(last) = schedule
+            .before
+            .get(&(block_id, index))
+            .and_then(|results| results.last())
         {
-            label = par_done_label(last);
+            label = par_done_label(*last);
+        }
+        definition_exit_label(block_id, index, instruction, &mut label);
+        if let IrInstruction::Define { result, .. } = instruction {
+            if schedule.frames.contains_key(result) {
+                label = par_offered_label(*result);
+            }
+            if let Some(last) = schedule
+                .after
+                .get(result)
+                .and_then(|results| results.last())
+            {
+                label = par_done_label(*last);
+            }
         }
     }
     label

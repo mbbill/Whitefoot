@@ -1464,6 +1464,440 @@ fn an_interposed_builtin_retains_the_outlined_call_and_join() {
     assert!(fold.contains(", ptr @wf__par_thunk_"));
 }
 
+// B/A and D/C are full independent groups; only the exact A/D adjacency
+// connects them. D's argument must observe B, and C's must observe A. Holding
+// callbacks until their requested join makes an early operand read observable
+// without relying on any worker timing.
+const CALL_GROUP_BRIDGE: &[u8] = br#"fn stamp(slot: &u64, value: u64) -> result: u64 writes(slot) {
+  let result = deref(slot) +wrap value;
+  set deref(slot) = result;
+  return result;
+}
+
+fn choose(value: u64) -> result: u64 pure {
+  return value;
+}
+
+fn bridge(first: &u64, second: &u64) -> result: u64 writes(first), writes(second) {
+  let b = stamp(slot: first, value: 11_u64);
+  let a = stamp(slot: second, value: 22_u64);
+  let d = choose(value: deref(first));
+  let c = choose(value: deref(second));
+  let ab = b +wrap a;
+  let cd = c +wrap d;
+  return ab +wrap cd;
+}
+
+fn main() -> status: ExitStatus pure {
+  let first = 0_u64;
+  let second = 0_u64;
+  let result = bridge(first: &first, second: &second);
+  if result != 66_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if first != 11_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if second != 22_u64 {
+    return exit_status(code: 3_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+#[test]
+fn call_group_bridge_retires_dependencies_before_argument_reads() {
+    with_parallel_ir(CALL_GROUP_BRIDGE, |program| {
+        let function = program
+            .functions()
+            .iter()
+            .find(|function| function.name() == "bridge")
+            .unwrap();
+        assert_eq!(function.overlaps().len(), 2);
+        let [bridge] = function.overlap_bridges() else {
+            panic!("the exact tail/head permission must survive lowering");
+        };
+        assert_eq!(function.overlaps()[0].join_site(), Some(bridge.tail));
+        assert_eq!(function.overlaps()[1].handed_out(), &[bridge.head]);
+        let boundary = function.call_boundary(bridge.head).unwrap();
+        assert!(matches!(
+            function.blocks()[boundary.block.index()].instructions()[boundary.start],
+            crate::IrInstruction::Define {
+                operation: crate::IrOperation::Load { .. },
+                ..
+            }
+        ));
+    });
+    let module = emit_with_overlap(CALL_GROUP_BRIDGE);
+    let body = function_body(&module, "@wf_bridge");
+    assert_eq!(body.matches("call void @wf__par_publish(").count(), 3);
+    assert_eq!(body.matches("call void @wf__par_join(").count(), 3);
+    let sequential = emit(CALL_GROUP_BRIDGE);
+    assert_eq!(
+        function_body(&module, "@wf__par_seq_bridge").replace("@wf__par_seq_", "@wf_"),
+        function_body(&sequential, "@wf_bridge"),
+        "the sequential world must retain the ordinary emitted body"
+    );
+    run_owned_lane_cases(CALL_GROUP_BRIDGE, &module, 0, 3, 0, 0, 2);
+}
+
+#[test]
+fn call_group_bridge_requires_the_complete_adjacent_statement_permission() {
+    let original = std::str::from_utf8(CALL_GROUP_BRIDGE).unwrap();
+    let argument_conflict = original.replace(
+        "let d = choose(value: deref(first));",
+        "let d = choose(value: deref(second));",
+    );
+    let separated = original.replace(
+        "let d = choose(value: deref(first));",
+        "let interposed = 0_u64;\n  let d = choose(value: deref(first));",
+    );
+    let addressed_tail = original.replace(
+        "let ab = b +wrap a;",
+        "let observed = &a;\n  let ab = b +wrap deref(observed);",
+    );
+    let control_boundary = original.replace(
+        "let d = choose(value: deref(first));",
+        "if true { let marker = 0_u64; }\n  let d = choose(value: deref(first));",
+    );
+    for source in [
+        argument_conflict,
+        separated,
+        addressed_tail,
+        control_boundary,
+    ] {
+        with_parallel_ir(source.as_bytes(), |program| {
+            let function = program
+                .functions()
+                .iter()
+                .find(|function| function.name() == "bridge")
+                .unwrap();
+            assert_eq!(function.overlaps().len(), 2);
+            assert!(function.overlap_bridges().is_empty());
+        });
+        let module = emit_with_overlap(source.as_bytes());
+        assert_eq!(
+            function_body(&module, "@wf_bridge")
+                .matches("call void @wf__par_publish(")
+                .count(),
+            2,
+            "declining the bridge must retain both complete groups"
+        );
+    }
+}
+
+#[test]
+fn call_group_bridge_preserves_owned_results_and_exit_cleanup() {
+    let source = std::str::from_utf8(CALL_GROUP_BRIDGE)
+        .unwrap()
+        .replace(
+            "fn stamp(slot: &u64, value: u64) -> result: u64 writes(slot)",
+            "struct Pair { value: u64; checksum: u64; owner: Box<u64>; }\n\nfn stamp(slot: &u64, value: u64) -> result: Pair writes(slot)",
+        )
+        .replace(
+            "  return result;\n}",
+            "  let checksum = result +wrap 100_u64;\n  let owner = box_new::<u64>(value: result);\n  return Pair(value: result, checksum: checksum, owner: move owner);\n}",
+        )
+        .replace(
+            "  let ab = b +wrap a;",
+            "  if b.checksum != 111_u64 { return 0_u64; }\n  if a.checksum != 122_u64 { return 0_u64; }\n  if b.owner.inner != b.value { return 0_u64; }\n  if a.owner.inner != a.value { return 0_u64; }\n  let ab = b.value +wrap a.value;",
+        );
+    let module = emit_with_overlap(source.as_bytes());
+    assert_eq!(
+        function_body(&module, "@wf_bridge")
+            .matches("call void @wf__par_publish(")
+            .count(),
+        3
+    );
+    assert!(function_body(&module, "@wf_stamp").starts_with("define void @wf_stamp(ptr "));
+    run_owned_lane_cases(source.as_bytes(), &module, 0, 3, 2, 0, 2);
+}
+
+#[test]
+fn call_group_bridge_obeys_scalar_pruning_before_selection() {
+    let original = std::str::from_utf8(CALL_GROUP_BRIDGE).unwrap();
+    let tail_leaf = original
+        .replace(
+            "let a = stamp(slot: second, value: 22_u64);",
+            "let a = choose(value: 22_u64);",
+        )
+        .replace(
+            "let d = choose(value: deref(first));",
+            "let d = stamp(slot: second, value: deref(first));",
+        )
+        .replace(
+            "let c = choose(value: deref(second));",
+            "let c = choose(value: a);",
+        )
+        .replace("if second != 22_u64", "if second != 11_u64");
+    let all = emit_with_overlap(tail_leaf.as_bytes());
+    assert_eq!(
+        function_body(&all, "@wf_bridge")
+            .matches("call void @wf__par_publish(")
+            .count(),
+        3
+    );
+    // The source-last member was inline in the original group. Promoting it
+    // to a bridge offer must still obey the ordinary scalar-leaf control.
+    let filtered = super::emit_lowered(
+        tail_leaf.as_bytes(),
+        crate::OverlapLowering::OnWithoutSmallScalarLeaves {
+            maximum_operations: 0,
+        },
+    );
+    assert_eq!(
+        function_body(&filtered, "@wf_bridge")
+            .matches("call void @wf__par_publish(")
+            .count(),
+        2
+    );
+    // In the original fixture pruning the right head removes the entire
+    // two-member right group, so there is no retained group to bridge to.
+    let no_right_group = super::emit_lowered(
+        CALL_GROUP_BRIDGE,
+        crate::OverlapLowering::OnWithoutSmallScalarLeaves {
+            maximum_operations: 0,
+        },
+    );
+    assert_eq!(
+        function_body(&no_right_group, "@wf_bridge")
+            .matches("call void @wf__par_publish(")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn call_group_bridge_fits_the_new_tail_frame_and_recursive_budget() {
+    for (padding, recursive, offers) in [(232, false, 3), (233, false, 2), (232, true, 2)] {
+        let recursion = if recursive {
+            "  if value == 0_u64 {\n    let first = 0_u64;\n    let second = 0_u64;\n    return bridge(first: &first, second: &second);\n  }\n"
+        } else {
+            ""
+        };
+        let wide = format!(
+            "fn wide_stamp(slot: &u64, pad: Array<u8, {padding}>, value: u64) -> result: u64 writes(slot) {{\n{recursion}  let result = deref(slot) +wrap value;\n  set deref(slot) = result;\n  return result;\n}}\n\n"
+        );
+        let source = wide
+            + &std::str::from_utf8(CALL_GROUP_BRIDGE)
+                .unwrap()
+                .replace(
+                    "  let b = stamp(slot: first, value: 11_u64);",
+                    &format!("  let pad = array_filled::<u8, {padding}>(value: 0_u8);\n  let b = stamp(slot: first, value: 11_u64);"),
+                )
+                .replace(
+                    "let a = stamp(slot: second, value: 22_u64);",
+                    "let a = wide_stamp(slot: second, pad: pad, value: 22_u64);",
+                );
+        with_parallel_ir(source.as_bytes(), |program| {
+            let host = TargetLayout::host().unwrap();
+            let tail = program
+                .functions()
+                .iter()
+                .find(|function| function.name() == "wide_stamp")
+                .unwrap();
+            let frame = parallel_lane_frame_layout(host, program, tail, recursive).unwrap();
+            if offers == 3 {
+                assert_eq!(frame.unwrap().size(), crate::LANE_FRAME_BYTES);
+            } else {
+                assert!(frame.is_none());
+            }
+        });
+        let module = emit_with_overlap(source.as_bytes());
+        let symbol = if recursive {
+            "@wf__par_budget_bridge"
+        } else {
+            "@wf_bridge"
+        };
+        assert_eq!(
+            function_body(&module, symbol)
+                .matches("call void @wf__par_publish(")
+                .count(),
+            offers,
+            "declining only the bridge must preserve both original groups"
+        );
+    }
+}
+
+#[test]
+fn call_group_bridges_preserve_wide_groups_and_consecutive_boundaries() {
+    let original = std::str::from_utf8(CALL_GROUP_BRIDGE).unwrap();
+    let wide = original
+        .replace(
+            "  let a = stamp(slot: second, value: 22_u64);",
+            "  let extra_left = choose(value: 7_u64);\n  let a = stamp(slot: second, value: 22_u64);",
+        )
+        .replace(
+            "  let c = choose(value: deref(second));",
+            "  let extra_right = choose(value: 9_u64);\n  let c = choose(value: deref(second));",
+        )
+        .replace(
+            "  return ab +wrap cd;",
+            "  let extra = extra_left +wrap extra_right;\n  let subtotal = ab +wrap cd;\n  return subtotal +wrap extra;",
+        )
+        .replace("result != 66_u64", "result != 82_u64");
+    let chain = original
+        .replace(
+            "  let ab = b +wrap a;",
+            "  let f = choose(value: d);\n  let e = choose(value: c);\n  let ab = b +wrap a;",
+        )
+        .replace(
+            "  return ab +wrap cd;",
+            "  let ef = e +wrap f;\n  let subtotal = ab +wrap cd;\n  return subtotal +wrap ef;",
+        )
+        .replace("result != 66_u64", "result != 99_u64");
+    for (source, widths, bridges, pending) in
+        [(wide, vec![3, 3], 1, 3), (chain, vec![2, 2, 2], 2, 2)]
+    {
+        with_parallel_ir(source.as_bytes(), |program| {
+            let function = program
+                .functions()
+                .iter()
+                .find(|function| function.name() == "bridge")
+                .unwrap();
+            assert_eq!(
+                function
+                    .overlaps()
+                    .iter()
+                    .map(|group| group.handed_out().len() + 1)
+                    .collect::<Vec<_>>(),
+                widths
+            );
+            assert_eq!(function.overlap_bridges().len(), bridges);
+        });
+        let module = emit_with_overlap(source.as_bytes());
+        assert_eq!(
+            function_body(&module, "@wf_bridge")
+                .matches("call void @wf__par_publish(")
+                .count(),
+            5
+        );
+        run_owned_lane_cases(source.as_bytes(), &module, 0, 5, 0, 0, pending);
+    }
+}
+
+#[test]
+fn call_group_bridge_uses_the_original_dynamic_range_captures() {
+    let original = std::str::from_utf8(CALL_GROUP_BRIDGE).unwrap();
+    let helpers = original.split_once("fn main()").unwrap().0;
+    let ranged = helpers
+        .replace(
+            "fn stamp(slot: &u64, value: u64) -> result: u64 writes(slot) {",
+            "fn stamp(slot: &[u64], value: u64) -> result: u64 writes(slot) contract { requires 1_u64 <= deref(slot).len; } {",
+        )
+        .replace("deref(slot)", "deref(slot)[0_u64]")
+        .replace("deref(slot)[0_u64].len", "deref(slot).len")
+        .replace(
+            "fn bridge(first: &u64, second: &u64) -> result: u64 writes(first), writes(second) {",
+            "fn bridge(values: &Array<u64, 4>, split: u64) -> result: u64 writes(values) contract { requires 1_u64 <= split; requires split < 4_u64; } {\n  let first = &deref(values)[0_u64..split];\n  let second = &deref(values)[split..4_u64];",
+        )
+        .replace("deref(first)", "deref(first)[0_u64]")
+        .replace("deref(second)", "deref(second)[0_u64]");
+    let main = "fn main() -> status: ExitStatus pure {\n  let values = array_filled::<u64, 4>(value: 0_u64);\n  let result = bridge(values: &values, split: 2_u64);\n  if result != 66_u64 { return exit_status(code: 1_u8); }\n  if values[0_u64] != 11_u64 { return exit_status(code: 2_u8); }\n  if values[2_u64] != 22_u64 { return exit_status(code: 3_u8); }\n  return exit_status(code: 0_u8);\n}\n";
+    let source = ranged.clone() + main;
+    let module = emit_with_overlap(source.as_bytes());
+    assert_eq!(
+        function_body(&module, "@wf_bridge")
+            .matches("call void @wf__par_publish(")
+            .count(),
+        3
+    );
+    run_owned_lane_cases(source.as_bytes(), &module, 0, 3, 0, 0, 2);
+
+    // Rebinding an endpoint after formation cannot change either captured
+    // footprint, even though the current scalar would separate the ranges.
+    let stale = ranged.replace(
+        "  let first = &deref(values)[0_u64..split];\n  let second = &deref(values)[split..4_u64];",
+        "  let start = 0_u64;\n  let first = &deref(values)[0_u64..2_u64];\n  let second = &deref(values)[start..2_u64];\n  set start = 2_u64;",
+    ) + main;
+    with_parallel_ir(stale.as_bytes(), |program| {
+        let function = program
+            .functions()
+            .iter()
+            .find(|function| function.name() == "bridge")
+            .unwrap();
+        assert!(function.overlap_bridges().is_empty());
+    });
+}
+
+#[test]
+fn call_group_bridge_survives_loop_capture_pruning_and_frame_refusal() {
+    for (parameters, used, split) in [(1, 1, true), (32, 1, true), (32, 32, false)] {
+        let declarations = (0..parameters)
+            .map(|index| format!("a{index}: u64"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let arguments = (0..parameters)
+            .map(|index| format!("a{index}: {index}_u64"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let bias = (1..used)
+            .map(|index| format!("    let bias{index} = bias{} +wrap a{index};\n", index - 1))
+            .collect::<String>();
+        let helpers = std::str::from_utf8(CALL_GROUP_BRIDGE)
+            .unwrap()
+            .split_once("fn bridge(")
+            .unwrap()
+            .0;
+        let expected = 2 * (66 + 1 + used * (used - 1) / 2);
+        let source = format!(
+            "{helpers}fn folded({declarations}) -> result: u64 pure {{
+  let input = box_array_filled::<u64>(count: 1_u64, value: 0_u64);
+  let boundary = 0_u64;
+  let unused = box_array_filled::<u64>(count: 1_u64, value: 0_u64);
+  let total = 0_u64;
+  for (i in 0_u64..2_u64) {{
+    let first = 0_u64;
+    let second = 0_u64;
+    let b = stamp(slot: &first, value: 11_u64);
+    let a = stamp(slot: &second, value: 22_u64);
+    let d = choose(value: first);
+    let c = choose(value: second);
+    let ab = b +wrap a;
+    let cd = c +wrap d;
+    let calls = ab +wrap cd;
+    let bias0 = a0;
+{bias}    let base = calls +wrap bias{};
+    let contribution = base +wrap input.inner.len;
+    set total = total +wrap contribution;
+  }}
+  return total;
+}}
+
+fn main() -> status: ExitStatus pure {{
+  let result = folded({arguments});
+  if result != {expected}_u64 {{ return exit_status(code: 1_u8); }}
+  return exit_status(code: 0_u8);
+}}
+",
+            used - 1,
+        );
+        with_parallel_ir(source.as_bytes(), |program| {
+            let selected = program
+                .functions()
+                .iter()
+                .filter(|function| !function.overlap_bridges().is_empty())
+                .collect::<Vec<_>>();
+            let [function] = selected.as_slice() else {
+                panic!("one source loop must retain its exact call bridge");
+            };
+            assert_eq!(function.overlap_bridges().len(), 1);
+            assert_eq!(
+                function.synthesis() == Some(crate::IrSynthesis::Chunk),
+                split
+            );
+            crate::emit_llvm(program).expect("the selected graph and phi predecessors must emit");
+        });
+        if !split {
+            // All 32 live scalars keep the frame too wide after rescue. The
+            // imported source loop must preserve the same argument boundaries
+            // and its latch's real LLVM predecessor, including refused calls.
+            let module = emit_with_overlap(source.as_bytes());
+            run_owned_lane_cases(source.as_bytes(), &module, 0, 6, 2, 0, 2);
+        }
+    }
+}
+
 // Stored results need independent caller destinations after lane retirement;
 // scalar and descriptor-returning fixtures do not exercise that adapter.
 const OWNED_PAIR_RESULTS: &[u8] = br#"struct Pair {
@@ -1562,7 +1996,11 @@ fn run_owned_lane_cases(
         .replace("@free(", "@wf_test_source_release(");
     let executable = build_linked_executable(&observed, Some(OWNED_LANE_OBSERVER), &[], &directory);
     let mut outcomes = Vec::new();
-    for (mode, workers) in [("1", "1"), ("0", "4"), ("2", "4")] {
+    let mut schedules = vec![("1", "1"), ("0", "4"), ("2", "4")];
+    if attempts > 1 {
+        schedules.extend([("3", "4"), ("4", "4")]);
+    }
+    for (mode, workers) in schedules {
         let output = Command::new(&executable)
             .current_dir(&directory)
             .env("WF_WORKERS", workers)
@@ -1616,6 +2054,12 @@ fn run_owned_lane_cases(
                 granted > 0,
                 "a real lane must exercise the joined result: {report}"
             );
+            if matches!(*mode, "3" | "4") {
+                assert!(
+                    granted < attempts,
+                    "the alternating schedule must refuse an offer: {report}"
+                );
+            }
         }
         assert_eq!(count("released"), granted, "{report}");
         assert_eq!(count("allocations"), allocations, "{report}");
@@ -1650,9 +2094,11 @@ static unsigned pending, peak;
 int wf_test_parallel_world(void) { return 1; }
 
 void *wf_test_acquire_lane(unsigned long bytes) {
-    atomic_fetch_add(&attempts, 1);
+    unsigned attempt = atomic_fetch_add(&attempts, 1);
     const char *refuse = getenv("WF_TEST_REFUSE_LANE");
     if (refuse != NULL && refuse[0] == '1') return NULL;
+    if (refuse != NULL && refuse[0] == '3' && (attempt & 1u) != 0) return NULL;
+    if (refuse != NULL && refuse[0] == '4' && (attempt & 1u) == 0) return NULL;
     void *frame = wf__par_acquire_lane(bytes);
     if (frame != NULL) atomic_fetch_add(&granted, 1);
     return frame;

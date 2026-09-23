@@ -1333,7 +1333,14 @@ void wf__par_publish(void *frame, void (*fn)(void *)) {
 void wf__par_join(void *frame) {
     struct wf__par_slot *target = (struct wf__par_slot *)frame;
     struct wf__par_lane *lane = target->home;
-    struct wf__par_slot *slot = wf__par_pop(lane);
+    struct wf__par_slot *slot;
+
+    /* An older completed target must not make this continuation run a newer
+     * queued call first. Completion after this check still permits helping. */
+    if (__atomic_load_n(&target->state, __ATOMIC_ACQUIRE) == WF_PAR_SLOT_DONE) {
+        return;
+    }
+    slot = wf__par_pop(lane);
 
     if (slot == target) {
 #if defined(WF_PAR_TRACE)

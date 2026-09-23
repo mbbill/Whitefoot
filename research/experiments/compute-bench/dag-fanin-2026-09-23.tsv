@@ -648,3 +648,110 @@ rolling-main-runtime	event-witness	engine=wf	n-9-3	4	3	begin	thread=1	value=ffff
 rolling-main-runtime	event-witness	engine=wf	n-9-3	5	3	end	thread=1	value=5bf64eff47a0b251	steps=0
 rolling-main-runtime	event-witness	engine=wf	n-9-3	6	2	begin	thread=1	value=ffffffffffffffe7	steps=1
 rolling-main-runtime	event-witness	engine=wf	n-9-3	7	2	end	thread=1	value=a1be00e2137b2022	steps=0
+rolling-done-first-runtime	protocol	criterion_revision=c5b550472e3abc5e15ecd6e7fd79258f160469c3	source_and_probe=frozen c5b550472 inputs	comparison=rolling-main-runtime plus only DONE-before-pop core.c change	engine=wf	cases_per_configuration=115	rows_per_configuration=956	repeats_per_configuration=1	forced_waits=none	timing_comparison=none
+rolling-done-first-runtime	artifact	role=candidate-compiler	file=whitefootc	sha256=7830fd35330901d6e8e0b16d008eeb7627254ebf2681a285486bc1e6459512e6
+rolling-done-first-runtime	artifact	role=frozen-input-manifest	file=inputs.sha256	sha256=6e5f7b083ae42bde2559a6657a95ced3960b0a5b6bc0f9692c184d3ef62ea766
+rolling-done-first-runtime	artifact	role=frozen-source	file=dag-fanin.wf	sha256=5b66aa892b7da036c24b1aa3e8972ac5e0d1e808c0c419944216803ec3c09152
+rolling-done-first-runtime	artifact	role=DONE-first-C-core	file=core.c	sha256=79aefbd14afd647ed22ae5806e57785aee23d3f8136fb003507b5f2fa4d6f625
+rolling-done-first-runtime	artifact	role=reused-LLVM	file=dag_fanin_rolling-done-first.raw.ll	sha256=b77b1bbbbcdc0d1c83deead1b0909371b70243ab6c3f4a4eba199fe55729af74
+rolling-done-first-runtime	artifact	role=plain-image	file=dag_fanin_rolling-done-first_plain	sha256=2d8dc0ee82dcf94e5b623e423eac782eae202de58f7e1087afee0a700095a511
+rolling-done-first-runtime	artifact	role=trace-image	file=dag_fanin_rolling-done-first_trace	sha256=42bd8ef26242a192ff9e2c2596a46b310e6e2f01f5098f69bf767c4075e23aa5
+rolling-done-first-runtime	artifact	role=native-object-comparison	file=rolling-done-first-object-comparison.tsv	sha256=f703fce635d01463d551ef19bb742f63176bccd9256dfeec406e567ab8c7b81d
+rolling-done-first-runtime	artifact	role=linked-observer-disassembly	file=rolling-done-first-wf-observer-disassembly.txt	sha256=cac79063bf056f1d57e43eb3df6688ac3d499c05f6616e23439d6ce6dc41500b
+rolling-done-first-runtime	artifact	role=case9-witness	file=rolling-done-first-case9-witness.tsv	sha256=15ef521b18bd0a4ca396c65aa3355aee52831670bb83c1a4846992c8285d2911
+rolling-done-first-runtime	artifact	role=qualification-manifest	file=rolling-done-first-qualification.sha256	sha256=adcd00ca68c706705be334ed57a0356e297ecdaf2d365d4a78c2f57d9e011df3
+rolling-done-first-runtime	static-control	input_manifest_changes=only core.c among34 inputs	native_objects_changed=only sched_core.o among15 objects	plain_trace_WF_objects=byte-identical to rolling-main-runtime	probe_object=byte-identical	LLVM=exact reused modules, no re-emission	observer_bracketing=linked optimized recurrence verified
+rolling-done-first-runtime	raw-log	file=dag-fanin-rolling-done-first-runtime-build.log	sha256=357cb070b44315b8c0489b1f4d4435d2f11fc6b074f442ed18863e552baf7ad0
+rolling-done-first-runtime	phase	label=dag-fanin-rolling-done-first-runtime-build	stage=native-construction	command_wall_s=2.02	process_user_s=1.84	process_system_s=0.48	guard_wall_s=2.13	exit=0	benchmark_interval=false
+rolling-done-first-runtime	raw-log	file=dag-fanin-rolling-done-first-runtime-wf-plain-W1.log	sha256=94a72b8f0a85375f5bb49880d0c5409e5392ba344f5dd63a2f0b81f4d6e0f47f
+rolling-done-first-runtime	phase	label=dag-fanin-rolling-done-first-runtime-wf-plain-W1	stage=complete-matrix-execution	command_wall_s=0.39	process_user_s=0.08	process_system_s=0.02	guard_wall_s=0.42	exit=0	benchmark_interval=false
+rolling-done-first-runtime	matrix	engine=wf	image=plain	workers=1	PASS	cases=115	task_rows=956	trace=0	events=0	checks=all_values,exactly_once,input_costs,output_canaries,notification_receipts
+rolling-done-first-runtime	negative-control	engine=wf	image=plain	workers=1	output-corruption	rejected=task value mismatch at 0
+rolling-done-first-runtime	raw-log	file=dag-fanin-rolling-done-first-runtime-wf-plain-W4.log	sha256=29c2d43770ed6229dcfefac206d40534e684a7d65ca3ec8ac1b1ecb1bc7fa619
+rolling-done-first-runtime	phase	label=dag-fanin-rolling-done-first-runtime-wf-plain-W4	stage=complete-matrix-execution	command_wall_s=0.08	process_user_s=0.06	process_system_s=0.02	guard_wall_s=0.11	exit=0	benchmark_interval=false
+rolling-done-first-runtime	matrix	engine=wf	image=plain	workers=4	PASS	cases=115	task_rows=956	trace=0	events=0	checks=all_values,exactly_once,input_costs,output_canaries,notification_receipts
+rolling-done-first-runtime	negative-control	engine=wf	image=plain	workers=4	output-corruption	rejected=task value mismatch at 0
+rolling-done-first-runtime	raw-log	file=dag-fanin-rolling-done-first-runtime-wf-trace-W1.log	sha256=a064bb05a46a88eaf5499a0be30c79e9de8a50549c16d045a56de4caaa429840
+rolling-done-first-runtime	phase	label=dag-fanin-rolling-done-first-runtime-wf-trace-W1	stage=complete-matrix-execution	command_wall_s=0.38	process_user_s=0.08	process_system_s=0.01	guard_wall_s=0.44	exit=0	benchmark_interval=false
+rolling-done-first-runtime	matrix	engine=wf	image=trace	workers=1	PASS	cases=115	task_rows=956	trace=1	events=1912	checks=all_values,exactly_once,input_costs,output_canaries,notification_receipts,event_ids_inputs_values,exact_events,original_edge_order,stable_thread
+rolling-done-first-runtime	negative-control	engine=wf	image=trace	workers=1	output-corruption	rejected=task value mismatch at 0
+rolling-done-first-runtime	negative-control	engine=wf	image=trace	workers=1	trace-corruption	rejected=trace event count mismatch
+rolling-done-first-runtime	raw-log	file=dag-fanin-rolling-done-first-runtime-wf-trace-W4.log	sha256=fe0c2cce12ec12ec92d1ea5b3eb8a281d872638dd7f82ba9fe156aea9d624999
+rolling-done-first-runtime	phase	label=dag-fanin-rolling-done-first-runtime-wf-trace-W4	stage=complete-matrix-execution	command_wall_s=0.08	process_user_s=0.06	process_system_s=0.01	guard_wall_s=0.11	exit=0	benchmark_interval=false
+rolling-done-first-runtime	matrix	engine=wf	image=trace	workers=4	PASS	cases=115	task_rows=956	trace=1	events=1912	checks=all_values,exactly_once,input_costs,output_canaries,notification_receipts,event_ids_inputs_values,exact_events,original_edge_order,stable_thread
+rolling-done-first-runtime	negative-control	engine=wf	image=trace	workers=4	output-corruption	rejected=task value mismatch at 0
+rolling-done-first-runtime	negative-control	engine=wf	image=trace	workers=4	trace-corruption	rejected=trace event count mismatch
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-0-0	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-0-1	AB=0	AD=0	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-0-2	AB=0	AD=0	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-0-3	AB=0	AD=0	CD=0	actual_steals=2	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-1-0	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-1-1	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-1-2	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-1-3	AB=1	AD=0	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-2-0	AB=1	AD=0	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-2-1	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-2-2	AB=1	AD=0	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-2-3	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-3-0	AB=1	AD=0	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-3-1	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-3-2	AB=1	AD=1	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-3-3	AB=1	AD=0	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-4-0	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-4-1	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-4-2	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-4-3	AB=0	AD=0	CD=1	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-5-0	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-5-1	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-5-2	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-5-3	AB=1	AD=0	CD=1	actual_steals=2	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-6-0	AB=1	AD=0	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-6-1	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-6-2	AB=1	AD=0	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-6-3	AB=0	AD=0	CD=1	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-7-0	AB=1	AD=0	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-7-1	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-7-2	AB=1	AD=1	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-7-3	AB=1	AD=0	CD=0	actual_steals=2	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-8-0	AB=0	AD=0	CD=1	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-8-1	AB=0	AD=1	CD=1	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-8-2	AB=0	AD=1	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-8-3	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-9-0	AB=0	AD=0	CD=1	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-9-1	AB=0	AD=1	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-9-2	AB=0	AD=1	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-9-3	AB=1	AD=0	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-10-0	AB=1	AD=0	CD=1	actual_steals=2	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-10-1	AB=0	AD=1	CD=1	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-10-2	AB=1	AD=0	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-10-3	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-11-0	AB=1	AD=0	CD=1	actual_steals=2	observed_threads=3
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-11-1	AB=0	AD=1	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-11-2	AB=1	AD=1	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-11-3	AB=1	AD=0	CD=1	actual_steals=2	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-12-0	AB=0	AD=0	CD=1	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-12-1	AB=0	AD=1	CD=1	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-12-2	AB=0	AD=1	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-12-3	AB=0	AD=0	CD=1	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-13-0	AB=0	AD=0	CD=1	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-13-1	AB=0	AD=1	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-13-2	AB=0	AD=1	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-13-3	AB=1	AD=0	CD=1	actual_steals=2	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-14-0	AB=1	AD=0	CD=1	actual_steals=2	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-14-1	AB=0	AD=1	CD=1	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-14-2	AB=1	AD=0	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-14-3	AB=0	AD=0	CD=1	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-15-0	AB=1	AD=0	CD=1	actual_steals=2	observed_threads=3
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-15-1	AB=0	AD=1	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-15-2	AB=1	AD=1	CD=0	actual_steals=1	observed_threads=2
+rolling-done-first-runtime	N-pairs-W4	engine=wf	case=n-15-3	AB=1	AD=0	CD=1	actual_steals=2	observed_threads=3
+rolling-done-first-runtime	criterion	case=n-9-3	required=distinct-thread A/D overlap in traced W4	observed=false	disposition=useful-overlap qualification failed	A=begin0,end3,thread1	D=begin6,end7,thread1	actual_steals_plain_W4=1	actual_steals_trace_W4=1	runtime_benefit=unqualified	rerun=false
+rolling-done-first-runtime	limits	W4_mode3_weights=16	W4_mode3_AB_cases=8	W4_mode3_AD_cases=0	W4_mode3_CD_cases=8	compiler_only_mode3_CD_cases=0	absence_of_overlap=single schedule observation, not impossibility	timing_benefit=not measured
+rolling-done-first-runtime	event-witness	engine=wf	n-9-3	0	0	begin	thread=1	value=ffffffffffffffe7	steps=65536
+rolling-done-first-runtime	event-witness	engine=wf	n-9-3	1	1	begin	thread=3	value=ffffffffffffffe7	steps=1
+rolling-done-first-runtime	event-witness	engine=wf	n-9-3	2	1	end	thread=3	value=1db14b23dd30a222	steps=0
+rolling-done-first-runtime	event-witness	engine=wf	n-9-3	3	0	end	thread=1	value=929b63f1ad8f38e0	steps=0
+rolling-done-first-runtime	event-witness	engine=wf	n-9-3	4	2	begin	thread=1	value=ffffffffffffffe7	steps=1
+rolling-done-first-runtime	event-witness	engine=wf	n-9-3	5	2	end	thread=1	value=a1be00e2137b2022	steps=0
+rolling-done-first-runtime	event-witness	engine=wf	n-9-3	6	3	begin	thread=1	value=ffffffffffffffe7	steps=65536
+rolling-done-first-runtime	event-witness	engine=wf	n-9-3	7	3	end	thread=1	value=5bf64eff47a0b251	steps=0

@@ -6,7 +6,9 @@
 //! thunk over the frame — is published to the lane. The remaining member then
 //! runs inline on the calling thread, and each handed-out member is joined
 //! immediately after it — before the group's values are read and before any
-//! exit edge.
+//! exit edge. A selected bridge additionally offers that last member and
+//! retires only the calls required before the next source argument boundary;
+//! the target-fitted schedule below owns those publication and join events.
 //!
 //! By default both edges call the same monomorphized function on the same
 //! arguments. The opt-in sequential-refusal experiment instead calls its
@@ -55,15 +57,104 @@
 //! before this module existed. That is a reserved namespace, not a name check
 //! — nothing here inspects a source function's spelling.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
-use super::{BackendFailure, FunctionEmitter, IntrinsicDeclaration, llvm_type, value_name};
-use crate::backend::abi::{FunctionAbi, ResultAbi};
-use crate::{
-    IrAddressed, IrFunction, IrInstruction, IrNominalKind, IrOperation, IrProgram, IrSynthesis,
-    IrType, IrValueId, IrWorkEstimate,
+use super::{
+    BackendFailure, FunctionEmitter, IntrinsicDeclaration, definition_operation, llvm_type,
+    ordinary_overlap_lane_frames, value_name,
 };
+use crate::backend::abi::{FunctionAbi, ResultAbi};
+use crate::backend::target::{TargetAggregateLayout, TargetLayout, parallel_lane_frame_layout};
+use crate::{
+    IrAddressed, IrBlockId, IrFunction, IrInstruction, IrNominalKind, IrOperation, IrProgram,
+    IrSynthesis, IrType, IrValueId, IrWorkEstimate,
+};
+
+/// One world's final ordinary-call schedule. Permission groups remain in the
+/// IR; only this target-fitted selection owns offers, retirements and labels.
+#[derive(Default)]
+pub(super) struct OverlapSchedule {
+    pub(super) frames: HashMap<IrValueId, TargetAggregateLayout>,
+    pub(super) before: HashMap<(IrBlockId, usize), Vec<IrValueId>>,
+    pub(super) after: HashMap<IrValueId, Vec<IrValueId>>,
+}
+
+impl OverlapSchedule {
+    pub(super) fn select(
+        program: &IrProgram<'_, '_, '_>,
+        target: TargetLayout,
+        function: &IrFunction,
+        carries_budget: &dyn Fn(u32) -> bool,
+    ) -> Result<Self, BackendFailure> {
+        let mut schedule = Self::default();
+        let mut retained = HashSet::new();
+        for group in function.overlaps() {
+            let Some(frames) =
+                ordinary_overlap_lane_frames(program, target, function, group, carries_budget)?
+            else {
+                continue;
+            };
+            let join = group.join_site().ok_or(BackendFailure::InvalidIr)?;
+            retained.insert(join);
+            schedule
+                .after
+                .insert(join, group.handed_out().iter().rev().copied().collect());
+            for (result, layout) in frames {
+                if schedule.frames.insert(result, layout).is_some() {
+                    return Err(BackendFailure::InvalidIr);
+                }
+            }
+        }
+        for bridge in function.overlap_bridges() {
+            // Both original groups must survive policy and complete target
+            // fitting. Declining a bridge leaves their schedule untouched.
+            if !retained.contains(&bridge.tail) || !retained.contains(&bridge.right_join) {
+                continue;
+            }
+            let Some(boundary) = function.call_boundary(bridge.head) else {
+                continue;
+            };
+            let Some(IrOperation::Call {
+                function: ordinal, ..
+            }) = definition_operation(function, bridge.tail)
+            else {
+                continue;
+            };
+            let callee = program
+                .functions()
+                .get(*ordinal as usize)
+                .ok_or(BackendFailure::InvalidIr)?;
+            let Some(layout) =
+                parallel_lane_frame_layout(target, program, callee, carries_budget(*ordinal))
+                    .map_err(BackendFailure::TargetLayout)?
+            else {
+                continue;
+            };
+            // The head's operands are part of its source statement. Retire
+            // the other left members before its first instruction, not at
+            // its call definition after those operands have already loaded.
+            let earlier = schedule
+                .after
+                .remove(&bridge.tail)
+                .ok_or(BackendFailure::InvalidIr)?;
+            schedule
+                .before
+                .entry((boundary.block, boundary.start))
+                .or_default()
+                .extend(earlier);
+            schedule
+                .after
+                .entry(bridge.head)
+                .or_default()
+                .push(bridge.tail);
+            if schedule.frames.insert(bridge.tail, layout).is_some() {
+                return Err(BackendFailure::InvalidIr);
+            }
+        }
+        Ok(schedule)
+    }
+}
 
 /// The counted loop's index type [FN-1], which fixes every width question the
 /// split could otherwise have.
@@ -442,7 +533,8 @@ impl FunctionEmitter<'_, '_> {
         let result_field = field_types.len();
         field_types.push(result_type.clone());
         let frame_layout = self
-            .ordinary_lane_frames
+            .overlap_schedule
+            .frames
             .get(&result)
             .copied()
             .ok_or(BackendFailure::InvalidIr)?;
@@ -795,21 +887,23 @@ impl FunctionEmitter<'_, '_> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
-    /// Completes every hand-out of the group whose last member just ran.
+    /// Completes exactly the schedule's selected hand-outs at this boundary.
     ///
     /// A granted lane is waited for, read, and given back; a refused one runs
     /// the same call on this thread. Either way the group's values exist from
-    /// here on, and no exit edge of the block is reachable before this point.
-    /// Hand-outs are joined in reverse publication order.
+    /// here on. The schedule drains every remaining hand-out before exit.
+    /// Its retirement lists are already in newest-first order.
     pub(super) fn emit_overlap_joins(
         &mut self,
-        join_site: IrValueId,
+        results: &[IrValueId],
     ) -> Result<(), BackendFailure> {
-        if !self.is_overlap_join_site(join_site) {
-            return Ok(());
-        }
-        let queue = std::mem::take(&mut self.handed_out);
-        for pending in queue.into_iter().rev() {
+        for result in results {
+            let index = self
+                .handed_out
+                .iter()
+                .position(|pending| pending.result == *result)
+                .ok_or(BackendFailure::InvalidIr)?;
+            let pending = self.handed_out.remove(index);
             let condition = format!("%{}", self.next_temporary()?);
             let refused = format!("%{}", self.next_temporary()?);
             let waited = format!("%{}", self.next_temporary()?);
@@ -944,7 +1038,7 @@ fn par_offer_label(value: IrValueId) -> String {
 
 /// The label both edges of lane acquisition continue in, and so the block the inline
 /// member of the group runs in.
-fn par_offered_label(value: IrValueId) -> String {
+pub(super) fn par_offered_label(value: IrValueId) -> String {
     format!("par.offered.v{}", value.ordinal())
 }
 
@@ -966,4 +1060,4 @@ pub(super) fn par_done_label(value: IrValueId) -> String {
 
 // The former mixed completion/worker join-order assertions are retired by
 // v0.55's deletion of PAR-3 and direct completion handouts. Every ordinary
-// worker group now joins in reverse publication order in emit_overlap_joins.
+// retirement set joins in reverse publication order in emit_overlap_joins.

@@ -79,6 +79,13 @@ pub(super) fn prune(functions: &mut [IrFunction], limit: u32, ledger: &mut Vec<S
         function
             .overlaps
             .retain(|overlap| overlap.members.len() >= 2);
+        // A normally-inline tail becomes an offer only at a bridge. Apply
+        // the same policy to it without changing source membership/adjacency.
+        function.overlap_bridges.retain(|bridge| {
+            let keep = !small_results.contains(&bridge.tail);
+            removed += usize::from(!keep);
+            keep
+        });
         if removed != 0 {
             ledger.push(format!(
                 "PAR actualization  {}  scalar leaf limit {limit}: omitted {removed} compute offers",

@@ -719,15 +719,25 @@ on thread 1; B began at 1 and ended at 2 on thread 3; D ran at events 4–5
 and C at 6–7, both on thread 1. Thus the A/D overlap criterion failed despite
 the selected publication order. These single schedule observations establish
 neither impossibility nor a timing result. Adoption remains provisional and
-runtime benefit unqualified pending the separately labelled runtime arm;
-the failed arm is retained without a favourable rerun.
+runtime benefit unqualified; the failed arm is retained without a favourable
+rerun alongside the separately labelled runtime arm below.
 
-### Conditional final trial: tail-first publication at a chain root
+### Final trial: tail-first publication at a chain root
 
-This prospective trial is conditional and not yet selected: if the separate
-initial-completion-observation arm also fails the preselected A/D criterion,
-consider one final bounded compiler scheduling trial on the same frozen DAG
-source and that runtime. After scalar pruning and complete target frame
+The separate `rolling-done-first-runtime` arm passed all four 115-case,
+956-task matrices and rejected all six negative controls, but also failed the
+preselected A/D criterion. Only the scheduler-core object changed; the LLVM
+and probe inputs were identical to the compiler-only arm. In case 9, A again
+ran at events 0–3 on thread 1 and B at 1–2
+on thread 3; C ran at 4–5 and D at 6–7, both on thread 1. Across all sixteen
+traced W4 mode 3 assignments, A/B, A/D and C/D overlap counts were 8, 0 and 8,
+versus 7, 0 and 0 in the compiler-only arm. C/D overlap returned in this
+observation, while the required A/D overlap remained absent. The conditional
+trial published before that result is therefore selected as one final bounded
+compiler scheduling trial on the same frozen DAG source and that runtime;
+these failed observations do not justify adoption or a speed claim.
+
+After scalar pruning and complete target frame
 fitting select bridges, a full group qualifies for reordered publication
 only when it has an outgoing selected bridge and no incoming selected bridge.
 This boundary applies to arbitrary retained group width. Other groups keep
@@ -780,8 +790,8 @@ compare sequential and unchanged-function bodies. Earlier failed arms remain
 recorded. No favourable rerun or timing claim is allowed. If this final arm
 fails the overlap criterion, defer further compiler/runtime scheduling
 expansion in this investigation; adoption still needs the separately assessed
-correctness and cost evidence. Selection, if made, must update the pending
-lowering amendment before production edits.
+correctness and cost evidence. The pending lowering amendment records this
+selection before production edits; no live-tree decision is changed.
 
 **Design suitability.** This bounded extension addresses the missing A/D
 consumer through the existing checked-call path. If bridging is retained,
