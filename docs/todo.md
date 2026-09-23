@@ -153,6 +153,12 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   call ABI changes until that experiment establishes which transfer can be
   removed without changing ownership; reopen with the owning-map library or
   a workload dominated by wide Slab removal.
+  The [map's exhaustive returned-owner protocol](../research/investigations/containers-and-resources/X1-LIBRARY.md#generic-owning-map-trial-after-the-ring-comparison)
+  also supplies an ordinary enum alternative to reassess for Slab's extra
+  cell word. Its fit and cost for stable slots, generation retirement,
+  exhaustion and removal are unverified; compare that full Slab contract
+  before replacing the maintained one-slot form. Defer that distinct
+  consumer experiment rather than infer a Slab improvement from map timings.
 
 - **Short Vector cycles retain unresolved lowering costs.** The paired
   consumption experiment improves the large-record paths but slows the
@@ -451,27 +457,6 @@ each is resolved by a discussion and a tree change.
   until the syntax review reaches this group; close it only with an explicit
   disposition supported by these comparisons.
 
-- **Sparse containers over must-consume linear elements need ownership-visible
-  slot state.** The maintained
-  [owning-map witness](../tests/programs/containers/owning-behavior.wf)
-  uses `interface Key<K: drop, E>`, so it covers copyable and droppable keys,
-  including Box owners, but excludes keys with a must-consume obligation.
-  An unconstrained `K` also admits those linear values under OWN-1 and
-  PROV-6. A numeric phase alone cannot prove that a returned enum slot is
-  vacant; an occupied variant still contains a key that must be consumed.
-  In particular, matching a vacancy before `swap` does not publish that
-  variant at the exchanged local afterward: the ordinary write row kills
-  the old facts and supplies no exchanged-variant relation.
-  The [Slab trial](../research/investigations/containers-and-resources/X1-LIBRARY.md#exact-unavailable-source-forms)
-  uses an inline `Slots<T,1>` per cell and executes insertion, removal, reuse
-  and cleanup for nodrop T; it supplies an ordinary state encoding, at a
-  metadata cost measured against tagged C cells. This does not establish a
-  complete map rehash or select the same layout for it. Reopen for the next
-  owning-map library trial: compare the one-slot encoding and ordinary enum
-  alternatives through collision, replacement, tombstone reuse and rehash,
-  including bytes and helper transfers. Retain occupancy as program data and
-  do not add an implicit discard or impossible cleanup branch to satisfy the
-  checker. A new variant-state relation needs a remaining measured consumer.
 - **Retained membership beyond the single-object composite is unestablished.**
   The [Slab membership caller](../tests/programs/containers/slab-membership-program.wf)
   verifies two indexes over one object: deleting one membership preserves the
@@ -620,27 +605,29 @@ condition under which it is taken up.
   a proposed rule change before implementation. Keep the admitted wrapper
   while it supplies the needed proof; validate aliases and false preservation
   claims as well as checking cost for any improvement.
-- **Open-addressing tables with non-Copy payloads.** The recorded extra null
-  check per hit versus hashbrown is a hypothesis to test on a real table,
-  not an established universal cost. The native
-  [hash-slot study](https://github.com/mbbill/Whitefoot/blob/38c28403a2defd0b65b8a2ab2b5e4794315e9940/research/experiments/hash-slot-occupancy/RESULTS.md)
-  did not establish a recurring tag-check tax and did not compare SIMD-group
-  probing. Reopen in the owning-map trial: match ownership, hash policy,
-  occupancy and probe traces, separating occupancy checks from boxing, complete
-  backing bytes, dense reverse-index repair and helper/result transfers.
-  Defer a projected layout until a remaining measured cost justifies it;
-  neither the C study nor the one-slot Slab establishes WF map parity.
-  A one-slot-per-bucket map could migrate owners directly with ordinary
-  append, avoiding the enum candidate's planning/permutation, but adds a word
-  per bucket and retains a second payload backing. Its owning source chain
-  executes; its transfer costs remain to be compared. The [map trial](../research/investigations/containers-and-resources/X1-LIBRARY.md#generic-owning-map-trial-after-the-ring-comparison)
-  records the algorithm, peak-memory tradeoff and measured lookup/growth
-  split that motivates the bounded comparison. Validate actual admission,
-  zero capacity, hostile hash/equality, exact owner cleanup and scalar/wide
-  growth and same-capacity costs before selecting it. Leave broader policy
-  and layout variants deferred unless these costs reveal a further concrete
-  consumer; success on one map representation does not establish a general
-  projected-storage benefit.
+- **Owning HashMap has a remaining large-value performance gap.** The
+  [matched comparison](../research/experiments/container-representation/map-library/RESULTS.md)
+  exercises the actual generic library, including must-consume pairs, without
+  requiring one Box per payload. Its compact result and direct enum migration
+  improve the original planned sparse source, but the measured 256-byte-value
+  growth trace still costs about 1.64–1.69 times direct C with the same
+  migration direction, and replacement about 2.09–2.35 times. These are
+  complete checked traces, not isolated copy costs.
+  Optimized migration still initializes inactive payload bytes, stages live
+  pairs and reads the displaced payload before its tag is used. Public owning
+  results retain transfers. Compare unchanged-source initialization/forwarding
+  improvements against the same contract and verify all owner-return paths;
+  copying counts alone do not establish their runtime contribution.
+  Dense storage remains faster for wide growth but adds reserved metadata and
+  dependent lookup, while a fresh sparse rehash retains two complete backings.
+  Reopen for a workload dominated by these costs, preserving full backing and
+  peak bytes, hash/load policy, retained helpers and exact cleanup. Defer a
+  second maintained representation and compiler changes until that consumer or
+  a discriminating unchanged-source improvement supplies their grounds.
+  SIMD-group probing and a general projected-storage benefit remain untested;
+  the earlier [native hash-slot study](https://github.com/mbbill/Whitefoot/blob/38c28403a2defd0b65b8a2ab2b5e4794315e9940/research/experiments/hash-slot-occupancy/RESULTS.md)
+  did not establish a recurring tag-check tax. A working library does not
+  close either question or imply a universal native-performance ceiling.
 - **Channel primitive.** An ownership-transfer queue in the trusted base for
   producer/consumer pipelines and work stealing; lock-free rings are not
   expressible without it and batched fork-join is the available form. Research

@@ -253,3 +253,20 @@ fn deque_wrap_rebase_and_consumption_release_every_owner_in_both_lowering_modes(
     // three affine and five nodrop payloads. Every rebase creates a new backing.
     execute_container_program("deque", &sources, 21, false);
 }
+
+#[test]
+fn hash_map_operations_preserve_owned_pairs_in_both_lowering_modes() {
+    let sources: [(&str, &[u8]); 2] = [
+        (
+            "lib/containers/hash-map.wf",
+            include_bytes!("../../../lib/containers/hash-map.wf"),
+        ),
+        (
+            "containers/hash-map-program.wf",
+            include_bytes!("../../../tests/programs/containers/hash-map-program.wf"),
+        ),
+    ];
+    // Seventeen map backings, ten payload/query child Boxes, and one fresh
+    // Box returned by the borrowed edit callback and consumed by its caller.
+    execute_container_program("hash-map", &sources, 28, false);
+}

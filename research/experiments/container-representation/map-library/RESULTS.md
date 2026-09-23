@@ -733,6 +733,10 @@ in both optimized modules.
 
 ### Four-candidate rebuild measurements
 
+Exact source/build replay of this image uses checkpoint `5970393e`, before
+the actual library was added to the combined module. Later builds retain
+the comparison sources but are separate executable identities.
+
 The combined image produced 2,288 samples: thirteen implementations per
 payload, four cells, eleven paired seeds, normal/retained modes and two
 reversed cohorts. All checksums and allocation counters passed during timing.
@@ -876,3 +880,246 @@ for dense/planned sparse; change its two variant names for the other
 comparisons. These samples retain the original three-variant public/private
 result shape. They do not measure a later compact library or an inlined
 migration exchange.
+
+## Inline compact library trial
+
+This image bundled the then-current [real library](../../../../lib/containers/hash-map.wf)
+directly, with compact public Put results and an exhaustive slot swap/match
+inside migration. No research copy stands in for it. The old comparison
+sets keep their variant membership and order; the new `library` set selects
+four rebuild cells with fourteen implementations and four cap-64,
+7/8-occupied replace/churn cells with eight. Its 3,872 samples preserve the
+same seeds, trace sizes, oracle, two modes and reversed cohorts. Library
+rows say `library-compact`; older WF rows remain `original`, and C rows
+remain `c-shared`. All are in the same executable for each mode.
+
+Construction passed in 21.57 s and correctness execution in 13.82 s. Each
+mode passed 14,400 C-only and 22,896 WF/C traces plus ten policy chains.
+All 48 ordinary/observed fixture executions passed, including 28 exact
+allocation identities for the actual library in each of the three CLI
+configurations. All 84 retained public/callback definitions and their
+selected calls passed inspection. The four timing invocations completed
+in 2.71 s. Independent validation checked every sample's allocation formula,
+checksum equality, complete groups and exact reconstruction of the four
+original CSVs. The shortest sample is 39 microseconds; the observed clock
+quantum remains 1 microsecond.
+
+The tables again report cohort-zero / cohort-one medians of eleven paired
+per-seed ratios. `C descending` is the native direct enum migration floor.
+`C staged` retains the earlier local-staging/exchange algorithm and shared
+payload result; it is a source-algorithm control, not a claim that its
+instructions match the new inline migration.
+
+| Payload / rebuild / mode | Library / planned WF | Library / dense WF | Library / old staged WF | Library / C descending | Library / C staged |
+|---|---:|---:|---:|---:|---:|
+| 8 B / grow / normal | 0.792 / 0.800 | 0.960 / 0.960 | 0.997 / 1.003 | 1.013 / 1.023 | 1.020 / 1.013 |
+| 8 B / grow / retained | 0.823 / 0.816 | 0.936 / 0.924 | 1.000 / 0.997 | 1.090 / 1.087 | 0.912 / 0.910 |
+| 8 B / rehash / normal | 0.912 / 0.905 | 0.929 / 0.931 | 0.994 / 0.980 | 0.950 / 0.938 | 0.974 / 0.978 |
+| 8 B / rehash / retained | 0.924 / 0.922 | 0.973 / 0.966 | 0.998 / 0.996 | 1.024 / 1.018 | 0.972 / 0.957 |
+| 256 B / grow / normal | 0.900 / 0.906 | 1.282 / 1.298 | 0.883 / 0.892 | 1.602 / 1.619 | 1.094 / 1.096 |
+| 256 B / grow / retained | 0.918 / 0.914 | 1.211 / 1.232 | 0.877 / 0.889 | 1.594 / 1.612 | 0.908 / 0.926 |
+| 256 B / rehash / normal | 0.845 / 0.838 | 1.051 / 1.053 | 0.922 / 0.920 | 1.232 / 1.227 | 1.026 / 1.018 |
+| 256 B / rehash / retained | 0.882 / 0.879 | 1.051 / 1.055 | 0.949 / 0.944 | 1.241 / 1.235 | 0.942 / 0.932 |
+
+| Payload / steady path / mode | Library / planned WF | Library / dense WF | Library / native sparse C | Library / planned sparse C |
+|---|---:|---:|---:|---:|
+| 8 B / replace / normal | 0.967 / 1.000 | 0.807 / 0.827 | 1.228 / 1.276 | 1.014 / 1.014 |
+| 8 B / replace / retained | 0.943 / 0.935 | 0.824 / 0.825 | 1.288 / 1.262 | 0.941 / 0.932 |
+| 8 B / churn / normal | 1.009 / 1.009 | 0.657 / 0.650 | 0.981 / 0.990 | 0.931 / 0.899 |
+| 8 B / churn / retained | 1.003 / 0.996 | 0.862 / 0.853 | 1.051 / 0.996 | 0.894 / 0.891 |
+| 256 B / replace / normal | 0.823 / 0.817 | 0.877 / 0.871 | 2.119 / 2.089 | 1.297 / 1.254 |
+| 256 B / replace / retained | 0.857 / 0.857 | 0.832 / 0.830 | 2.353 / 2.327 | 1.227 / 1.239 |
+| 256 B / churn / normal | 0.898 / 0.904 | 0.764 / 0.775 | 1.335 / 1.398 | 0.975 / 0.974 |
+| 256 B / churn / retained | 0.914 / 0.941 | 0.807 / 0.806 | 1.249 / 1.287 | 0.867 / 0.864 |
+
+The library improves wide rebuild versus the original staged source, but
+that comparison changes both public result shape and migration body. It
+does not isolate the benefit of inlining exchange. The library remains
+21–30% slower than dense for wide growth and about 5% slower for wide rehash;
+wide replacement
+still costs more than twice the native sparse control. Small scalar
+differences remain subject to clock quantization and cohort variation.
+
+The library has exactly the staged enum allocation totals in the earlier
+table: four requests across two growth traces, three across the two-rehash
+trace, and the same 24/272-byte bucket strides. At capacity 64, replace/churn
+request one backing, with requested and peak bytes both 1552 for scalar or
+17424 for wide values. Rehash's simultaneous old/new backings still peak at
+196640/2228256 bytes versus planned sparse's 135200/1151008. Fewer requests
+do not imply a lower peak for that operation.
+
+Optimized wide inline rebuild has only the 272-byte pending local, with no
+Put result storage, result clear or private exchange call. It keeps a
+272-byte pending clear per live owner, old Pair-to-pending and pending-to-
+destination transfers of 264 bytes, an unconditional old-destination read,
+and a Filled-only restaging transfer. New cells still clear 264 inactive
+payload bytes. Both native modes preserve those clears and destination
+reads. Public compact put/try-put/exchange/remove instruction bodies match
+the earlier compact control after structural type/attribute expansion and
+namespace/instance/metadata-ID/comment normalization; this is instruction
+text correspondence, not metadata-graph equality or a whole-growth claim.
+The public entry/caller copies therefore remain, including the 264-byte
+Pair then 256-byte value projections on replace/remove.
+
+The exact library source is
+`86d05b964168b8131eb25b495d1540cfbfffbf547bf926c3e5a062811162ee64`;
+adapter `ff3b3e90a98436d09a3c232edf4d09cf94cf6dae890a75b0132b265a20198d05`,
+C driver `959092c98d52d457d1fb0e4f8fb39858d2c60d272925fec5c823aa80916f08f2`,
+and Makefile `8fe96a36217091a9c8ba85855b2039be9ffd83139ac9545c87ae9fd74759fa91`.
+The same v0.67 compiler is used; all twelve runtime objects are byte-identical
+to the preceding build. Old candidate sources are unchanged.
+
+| Actual-library image artifact | SHA-256 |
+|---|---|
+| Raw WF | `8e301269601966236cf25cab5a7f800153e65bef6506eee08d33167bbd20dd9b` |
+| Normal optimized WF | `2b52e6af605a46d8e24840994b5bcd98cce5b4c62eeceec81e22b563e5ca1249` |
+| Retained optimized WF | `181893a5e631a8d7a33cf8f1395db9e9c3b71ebe3c5341b54cb9733462b39630` |
+| Normal optimized C | `b32ded46396d24a7ae7cead506ad3d6109fdfa22b6bf41f9519f5d6eb83a0dc3` |
+| Retained optimized C | `ba336022dbda8e839a4748f2bc203d742d7aef63be6b9ba60ddc59cdb4f04b43` |
+| Normal executable | `88afe95bee5cb3eb99b9053b4e68582b6fbd76d03093928c8eb37a2b6a39efeb` |
+| Retained executable | `54782b5d5d6f161637cb89d48e3915940fc05ef57b189ec002e59e50195e3bb3` |
+
+[The library archive](measurements-library.csv.gz) has 3,872 data rows,
+gzip SHA-256 `41507cf657fc9afb7ee735738556337f805ed307ed90629042f822a24e6fbd90`
+and uncompressed SHA-256
+`9795715a9d2b19d66752f576138b0b57cf6b958d9c0fcd441ddcc1fbe6b209b1`.
+Its unchanged seventeen columns and cohort/mode order allow exact recovery
+of each input CSV. Reproduce with `MEASURE_SET=library SOURCE_SHAPE=original`
+on the existing `measure` target; `original` describes the comparison
+sources, while the tested library retains its explicit compact label. The
+following controlled comparison supersedes this trial as the selection
+evidence; these samples remain evidence for the identified inline source.
+
+### Constant-interface comparison and selected helper body
+
+To separate public result compaction from migration inlining, a control
+restores the shared exchange helper while keeping the compact public API
+and every source byte outside rebuild unchanged. Its source SHA-256 is
+`772da5d8755c902916f3dee7ed8dfc472bf552ac7f4048aaee238034a9f53f0a`.
+Construction took 20.70 s and `check-costs` took 1.55 s, again passing 22,896
+traces per mode, ten policy chains and retained-call assertions. The original
+three-mode ordinary/observed caller had already passed with 28 allocations.
+C optimized modules and the runtime objects are byte-identical to the inline
+image. No private helper receives a `noinline` attribute.
+
+The two images then ran in ABBA order: inline normal/retained, helper
+normal/retained, helper retained/normal, inline retained/normal. All eight
+invocations completed in 5.41 s, yielding 7,744 validated samples. Each image
+has its own 3,872-row archive because its C rows have the same `c-shared`
+label. Independent validation checked all allocation/peak formulas,
+cross-image content checksums, complete groups and exact CSV reconstruction.
+The minimum times are 39/40 microseconds for inline/helper; both retain the
+1-microsecond clock quantum. No samples or tails were discarded.
+
+`I/H` below pairs equal seeds across the two images. `C I/H` uses the native
+ascending sparse control in the same samples; the normalized statistic is
+the median of `(I library / I C) / (H library / H C)`, not a ratio of medians.
+Each cell still gives cohort zero / cohort one.
+
+| Rebuild / mode | Raw inline/helper | C inline/helper | C-normalized inline/helper |
+|---|---:|---:|---:|
+| 8 B grow / normal | 0.987 / 1.006 | 0.987 / 1.007 | 1.006 / 0.997 |
+| 8 B grow / retained | 0.958 / 0.995 | 0.982 / 0.997 | 0.984 / 0.998 |
+| 8 B rehash / normal | 1.018 / 1.019 | 1.024 / 1.023 | 1.000 / 1.006 |
+| 8 B rehash / retained | 0.998 / 0.996 | 0.994 / 1.005 | 1.006 / 0.999 |
+| 256 B grow / normal | 0.941 / 0.981 | 0.922 / 1.008 | 1.045 / 0.971 |
+| 256 B grow / retained | 0.973 / 0.984 | 0.984 / 1.034 | 1.010 / 0.979 |
+| 256 B rehash / normal | 0.963 / 0.992 | 0.967 / 1.001 | 1.000 / 0.991 |
+| 256 B rehash / retained | 0.986 / 1.016 | 0.993 / 1.009 | 0.984 / 0.987 |
+
+The registered independent-inline-benefit criterion is not fully met.
+The raw wide-growth medians favor inline, but their control-normalized signs
+change between cohorts; the unchanged C control itself varies. Wide-growth
+raw per-seed I/H ratios span 0.760–1.373 across the four groups, while helper
+whole-trace medians span 868–964 microseconds and individual samples span
+863–1182 microseconds. Those ranges include seed-dependent work as well as
+execution variation; they are not an estimate of scheduler noise alone.
+The result does not justify assigning the earlier combined improvement to
+the inline body. The selected first-library body therefore uses the shared
+helper; the inline rewrite remains a measured alternative, not a production
+optimization selected from this run.
+
+IR explains what changes without predicting its speed. The helper rebuild
+adds a 272-byte Put local, an exchange call and an Inserted result clear of
+272 bytes; only Returned retries copy 264 bytes from the result to pending.
+Inline removes that result path, while keeping fresh-cell/pending clears,
+the common owner transfers and destination reads described above. The
+helper's native local stack reservation is 672/656 bytes in normal/retained
+mode, versus inline's 416/464; exchange reserves another 64 bytes while
+called. These are function-local reservations, not whole-program peaks.
+Instruction grouping also changes, so even a stable timing difference would
+not identify the result clear alone. Public put/try-put/exchange/remove and
+the wide trace's own optimized instructions match between these images
+after metadata-ID normalization; their called rebuild implementation differs.
+
+The following selected-helper estimates compare implementations within the
+same helper image. They keep the original bucket-size/allocation tradeoffs,
+and do not imply a universal winner.
+
+| Payload / rebuild / mode | Helper / planned WF | Helper / dense WF | Helper / old staged WF | Helper / native descending C | Helper / staged C |
+|---|---:|---:|---:|---:|---:|
+| 8 B / grow / normal | 0.802 / 0.792 | 0.955 / 0.948 | 1.000 / 0.994 | 1.019 / 1.013 | 1.013 / 1.017 |
+| 8 B / grow / retained | 0.824 / 0.828 | 0.915 / 0.943 | 0.986 / 1.005 | 1.098 / 1.093 | 0.964 / 0.920 |
+| 8 B / rehash / normal | 0.882 / 0.899 | 0.922 / 0.928 | 0.985 / 0.985 | 0.947 / 0.939 | 0.967 / 0.977 |
+| 8 B / rehash / retained | 0.938 / 0.926 | 0.965 / 0.969 | 0.995 / 0.998 | 1.026 / 1.018 | 0.969 / 0.964 |
+| 256 B / grow / normal | 0.926 / 0.934 | 1.341 / 1.303 | 0.913 / 0.905 | 1.689 / 1.663 | 1.131 / 1.140 |
+| 256 B / grow / retained | 0.928 / 0.931 | 1.257 / 1.262 | 0.903 / 0.896 | 1.642 / 1.637 | 0.937 / 0.947 |
+| 256 B / rehash / normal | 0.848 / 0.866 | 1.073 / 1.066 | 0.949 / 0.946 | 1.242 / 1.255 | 1.048 / 1.046 |
+| 256 B / rehash / retained | 0.891 / 0.886 | 1.071 / 1.071 | 0.952 / 0.950 | 1.259 / 1.262 | 0.949 / 0.948 |
+
+| Payload / steady path / mode | Helper / planned WF | Helper / dense WF | Helper / native sparse C | Helper / planned sparse C |
+|---|---:|---:|---:|---:|
+| 8 B / replace / normal | 0.966 / 1.000 | 0.814 / 0.827 | 1.326 / 1.234 | 1.014 / 1.024 |
+| 8 B / replace / retained | 0.898 / 0.952 | 0.833 / 0.820 | 1.295 / 1.300 | 0.952 / 0.958 |
+| 8 B / churn / normal | 1.000 / 0.976 | 0.663 / 0.661 | 0.959 / 0.899 | 0.888 / 0.853 |
+| 8 B / churn / retained | 0.993 / 0.971 | 0.809 / 0.861 | 1.028 / 1.004 | 0.902 / 0.892 |
+| 256 B / replace / normal | 0.849 / 0.849 | 0.901 / 0.895 | 2.090 / 2.108 | 1.253 / 1.282 |
+| 256 B / replace / retained | 0.855 / 0.845 | 0.820 / 0.822 | 2.307 / 2.351 | 1.253 / 1.222 |
+| 256 B / churn / normal | 0.901 / 0.910 | 0.775 / 0.779 | 1.312 / 1.312 | 0.955 / 0.985 |
+| 256 B / churn / retained | 0.910 / 0.916 | 0.806 / 0.775 | 1.254 / 1.336 | 0.862 / 0.864 |
+
+Allocation requests, bytes and peaks are identical between the two compact
+images and the earlier staged enum rows. In particular, same-capacity
+rehash still retains both backings, and wide growth remains 26–34% slower
+than dense in these helper-image traces. The steady-state wide replacement
+gap versus native C remains 2.090–2.351, alongside the unchanged public/caller
+aggregate transfers. Those costs are retained evidence, not removed by the
+source selection.
+
+| Helper image artifact | SHA-256 |
+|---|---|
+| Raw WF | `1660b310a4eed700bed52feaa0af60a4780616117460f354005549f89c97d7ae` |
+| Normal optimized WF | `3caf363513f77b18842b98ede84b837e4d8e92f2548c245b376e36c45fea6eb3` |
+| Retained optimized WF | `023205e0bb82df9ebcc0343469ac1e03c21ca8c7f33276d1c87ca9aa38b438e4` |
+| Normal executable | `5d92456ccdd7427ed0a237f56fe66943a0b2c4d77d50f68cc4ead7343cb208f6` |
+| Retained executable | `52968598a329c9850f17cdc6b89e2c1211c901deb09039264fa066ad92968f5a` |
+
+The inline image's identities are unchanged from its preceding trial. Both
+control archives retain the native driver's seventeen columns; each has
+3,872 rows and restores its four input CSVs by `(contract,cohort)` filtering.
+
+| ABBA archive | gzip SHA-256 | Uncompressed CSV SHA-256 |
+|---|---|---|
+| [inline](measurements-library-inline-control.csv.gz) | `29b6dc4a6555363554386db397987853442b0143857225c0c309a19d09b2cb7b` | `5ef61d9c7331dd816b18081aeaa6d60744601046c95a2c8861175faad85e221c` |
+| [helper](measurements-library-helper-control.csv.gz) | `2b034302b909debe26c224e3ea8e38d054e36f5d42a95820c8af1196f48304ca` | `147eb5cc3b7cdc7f21597196a268cc47570dcf06b696c09d97e272028c99aa08` |
+
+The selected library now contains the measured helper source directly.
+[inline-rebuild.patch](inline-rebuild.patch), SHA-256
+`c4bf0557159a5c891bedd141895949749c02e5d5518154178c5730c47bcfb07f`,
+reconstructs the rejected inline source without another library copy.
+`inline-source` applies it with zero fuzz, `build-inline` builds the same
+comparison harness, and `check-inline` runs its normal/retained oracle and
+retention checks. The generated source was verified byte-identical to the
+measured `86d05b96` source. Keep this overlay only while it provides the
+constant-interface comparison; a successor may retire it with this checkpoint
+retained in Git. The replay-target-only Makefile revision has SHA-256
+`2dc81c3e5d90ed9624c527d33d7d1710c38c30c540915c5246c1461c1bb5d588`;
+it does not alter the compiler flags, trace or instrumentation used above.
+
+For clarity, the selected helper's wide-growth ratio to **ascending** native
+sparse migration is 1.560–1.676; to **descending** native sparse migration it
+is 1.637–1.689. The descending control is the closer migration-direction
+floor and is used in the table. Its cleanup remains ascending, while WF and
+source-shaped staged C clean up in descending order. The floor also avoids
+the source's staging/result work and inactive-payload clearing, so the whole
+gap cannot be assigned solely to the compiler or to layout.

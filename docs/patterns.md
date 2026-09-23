@@ -119,6 +119,26 @@ distinguishes an index that may expire from a composite protocol that refuses
 deletion while another index retains the object; ordinary public bookkeeping
 does not prove that arbitrary client functions preserve that protocol.
 
+The [owning hash map](../lib/containers/hash-map.wf) stores keys and values
+inline in ordinary enum buckets, including `nodrop` values. Supply hashing
+and equality through `HashMapKey`. `hash_map_try_put` uses existing capacity;
+`hash_map_put` may grow up to the written ceiling. Replacement installs the
+complete offered pair and returns the complete old pair. A full table returns
+the offered pair unchanged, distinguished by the reason in
+`HashMapReturned`; consume that pair explicitly when either member is
+`nodrop`. Allocation itself remains total under STOR-8.
+
+Use `hash_map_lookup` for borrowed observation and `hash_map_edit` to update
+the stored value through a callback, without removing and reinserting it.
+Both callbacks can return owned results. `hash_map_each` visits live pairs,
+and `hash_map_free` supplies every remaining pair to `HashMapConsume` before
+freeing the backing. Read the current count and capacity through
+`hash_map_len` and `hash_map_capacity`; reserve and rehash may relocate all
+payloads. Consistent key laws determine ordinary map behavior, but they do
+not grant ownership or bounds authority. The
+[caller](../tests/programs/containers/hash-map-program.wf) also exercises
+non-reflexive equality, zero-sized pairs and owned callback results.
+
 ## P3. Reach heap content through `Box.inner`
 
 `Box<T>` owns one heap cell. Its content is the ordinary field `inner`;

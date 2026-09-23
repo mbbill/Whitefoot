@@ -59,6 +59,8 @@ extern uint64_t wf_map_cost_slot_word_trace(uint64_t, uint64_t, uint64_t, uint64
 extern uint64_t wf_map_cost_slot_record_trace(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t wf_map_cost_staged_word_trace(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t wf_map_cost_staged_record_trace(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t wf_map_cost_library_word_trace(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t wf_map_cost_library_record_trace(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 #endif
 
 static void require(bool condition, const char *message) {
@@ -1178,7 +1180,7 @@ static uint64_t oracle(bool wide, uint64_t count, uint64_t rounds,
 }
 
 typedef uint64_t (*Trace)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-enum { WF_VARIANT = 1, REBUILD_VARIANT = 2, ZERO_REHASH_NOOP = 4 };
+enum { WF_VARIANT = 1, REBUILD_VARIANT = 2, ZERO_REHASH_NOOP = 4, LIBRARY_VARIANT = 8 };
 typedef struct {
     const char *name;
     bool wide, dense, planned;
@@ -1217,6 +1219,8 @@ static const Variant variants[] = {
     {"record-wf-slot", true, false, false, sizeof(record_slot_Cell), 0, wf_map_cost_slot_record_trace, NULL, WF_VARIANT | REBUILD_VARIANT | ZERO_REHASH_NOOP},
     {"word-wf-staged", false, false, false, sizeof(word_staged_Cell), 0, wf_map_cost_staged_word_trace, NULL, WF_VARIANT | REBUILD_VARIANT | ZERO_REHASH_NOOP},
     {"record-wf-staged", true, false, false, sizeof(record_staged_Cell), 0, wf_map_cost_staged_record_trace, NULL, WF_VARIANT | REBUILD_VARIANT | ZERO_REHASH_NOOP},
+    {"word-wf-library", false, false, false, sizeof(word_staged_Cell), 0, wf_map_cost_library_word_trace, NULL, WF_VARIANT | LIBRARY_VARIANT | ZERO_REHASH_NOOP},
+    {"record-wf-library", true, false, false, sizeof(record_staged_Cell), 0, wf_map_cost_library_record_trace, NULL, WF_VARIANT | LIBRARY_VARIANT | ZERO_REHASH_NOOP},
 #endif
 };
 
@@ -1312,9 +1316,13 @@ static uint64_t nanoseconds(void) {
 /* Timings are complete, independently checked traces. Growth is one real
  * reserve; rehash includes deletion, verification and reinsertion. No setup
  * baseline is subtracted to invent an isolated operation latency. */
-enum { PRIMARY_SET, BOUNDARY_SET, EDIT_SET, REBUILD_SET };
+enum { PRIMARY_SET, BOUNDARY_SET, EDIT_SET, REBUILD_SET, LIBRARY_SET };
 static bool selected_cohort(unsigned set, bool wide, uint64_t capacity,
                             unsigned occupancy, bool collide, unsigned path) {
+    if (set == LIBRARY_SET)
+        return occupancy == 1 && !collide
+            && ((capacity == 4096 && (path == GROW || path == REHASH))
+                || (capacity == 64 && (path == REPLACE || path == CHURN)));
     if (set == EDIT_SET) return capacity == 64 && !collide && path == EDIT;
     if (set == REBUILD_SET)
         return capacity == 4096 && occupancy == 1 && !collide
@@ -1332,13 +1340,16 @@ static bool selected_cohort(unsigned set, bool wide, uint64_t capacity,
     return capacity == 64 && occupancy == 0 && (path == MISS || path == CHURN);
 }
 
+static bool selected_variant(unsigned set, unsigned path, const Variant *variant) {
+    if (variant->flags & LIBRARY_VARIANT) return set == LIBRARY_SET;
+    if (set == LIBRARY_SET)
+        return !(variant->flags & REBUILD_VARIANT) || path == GROW || path == REHASH;
+    return set == REBUILD_SET || !(variant->flags & REBUILD_VARIANT);
+}
+
 static void measure(unsigned cohort, unsigned set, const char *source_shape) {
     const uint64_t capacities[] = {64, 4096};
     const char *paths[] = {"hit", "miss", "replace", "churn", "grow", "rehash", "setup-cleanup", "edit-first-word"};
-    size_t active[sizeof variants / sizeof variants[0]], variant_count = 0;
-    for (size_t v = 0; v < sizeof variants / sizeof variants[0]; ++v)
-        if (set == REBUILD_SET || !(variants[v].flags & REBUILD_VARIANT))
-            active[variant_count++] = v;
     puts("contract,cohort,element_bytes,path,capacity,count,hash,variant,source_shape,sample,rounds,traces,elapsed_ns,checksum,requests,requested_bytes,peak_bytes");
     for (unsigned wide = 0; wide < 2; ++wide)
             for (size_t n = 0; n < sizeof capacities / sizeof capacities[0]; ++n)
@@ -1348,6 +1359,10 @@ static void measure(unsigned cohort, unsigned set, const char *source_shape) {
                         uint64_t count = occupancy ? capacity * 7 / 8 : capacity / 2;
                         for (unsigned path = 0; path < PATH_COUNT; ++path) {
                             if (!selected_cohort(set, wide != 0, capacity, occupancy, collide != 0, path)) continue;
+                            size_t active[sizeof variants / sizeof variants[0]], variant_count = 0;
+                            for (size_t v = 0; v < sizeof variants / sizeof variants[0]; ++v)
+                                if (selected_variant(set, path, &variants[v]))
+                                    active[variant_count++] = v;
                             uint64_t rounds = path == SETUP ? 0
                                 : (path == GROW ? 1 : UINT64_C(8192) / count);
                             uint64_t traces = path == SETUP || path == GROW
@@ -1374,10 +1389,13 @@ static void measure(unsigned cohort, unsigned set, const char *source_shape) {
                                     accounting.bytes *= traces;
                                     check_ledger(accounting);
                                     observed ^= checksum;
+                                    const char *shape = (variant->flags & LIBRARY_VARIANT) ? "library-compact"
+                                        : (variant->flags & WF_VARIANT) ? ((variant->flags & REBUILD_VARIANT) ? "original" : source_shape)
+                                        : "c-shared";
                                     printf("%s,%u,%zu,%s,%" PRIu64 ",%" PRIu64 ",%s,%s,%s,%u,%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%zu,%zu,%zu\n",
                                            CONTRACT, cohort, wide ? sizeof(Record) : sizeof(uint64_t), paths[path],
                                            capacity, count, collide ? "colliding" : "mixed", variant->name,
-                                           (variant->flags & WF_VARIANT) ? source_shape : "c-shared", sample,
+                                           shape, sample,
                                            rounds, traces, elapsed, checksum, ledger.requests, ledger.bytes, ledger.peak);
                                 }
                             }
@@ -1387,7 +1405,7 @@ static void measure(unsigned cohort, unsigned set, const char *source_shape) {
 #endif
 
 int main(int argc, char **argv) {
-    require(argc >= 2, "usage: map-costs check | measure 0|1 primary|boundary|edit|rebuild original|compact");
+    require(argc >= 2, "usage: map-costs check | measure 0|1 primary|boundary|edit|rebuild|library original|compact");
     if (strcmp(argv[1], "check") == 0) {
         require(argc == 2, "check takes no arguments"); check();
     }
@@ -1399,9 +1417,12 @@ int main(int argc, char **argv) {
         if (strcmp(argv[3], "boundary") == 0) set = BOUNDARY_SET;
         else if (strcmp(argv[3], "edit") == 0) set = EDIT_SET;
         else if (strcmp(argv[3], "rebuild") == 0) set = REBUILD_SET;
+        else if (strcmp(argv[3], "library") == 0) set = LIBRARY_SET;
         else require(strcmp(argv[3], "primary") == 0, "unknown measurement set");
         require(strcmp(argv[4], "original") == 0 || strcmp(argv[4], "compact") == 0,
                 "unknown source shape");
+        require(set != LIBRARY_SET || strcmp(argv[4], "original") == 0,
+                "library set uses the original comparison sources");
         measure((unsigned)(argv[2][0] - '0'), set, argv[4]);
     }
 #endif

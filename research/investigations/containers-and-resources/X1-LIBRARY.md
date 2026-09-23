@@ -507,6 +507,44 @@ from the result's reserved width. The native control already has one Pair
 region, so its matching semantic outcome alone does not establish ABI parity
 with the initial WF result.
 
+The first reusable library uses the compact returned-pair result and direct
+enum migration through the shared exchange helper. Its complete
+[public caller](../../../tests/programs/containers/hash-map-program.wf)
+uses no representation fields and executes collision, replacement after a
+tombstone, removal, reuse, bounded growth, rehash, borrowed editing and final
+consumption. Separate key/value identities distinguish returning the old pair
+from merely returning an equivalent offered key. Must-consume children,
+zero-sized pairs, inconsistent equality and a fresh owned callback result
+exercise the same source. The allocator observer accounts for seventeen
+backings, ten child Boxes and the callback's returned Box, each released once.
+The formal program test bundles the actual library; it has no research input.
+
+The source selection has two distinct grounds. Sharing the public result's
+payload reduces the measured wide replacement and churn cost as well as its
+reserved width. Direct enum migration removes the planning arrays and avoids
+the extra word in every one-slot bucket. The selected helper source's wide
+growth trace is about 0.93 of the planned sparse source, but remains
+1.64--1.69 times the direct C floor with the same descending migration
+direction and 1.25--1.34 times the dense WF source. Same-capacity rehash also
+retains two complete backings. These are reasons to preserve dense storage and
+lowering improvements as measured opportunities, not to call this a universal
+fastest map. The C floor, source-shaped C, raw paired samples and peak-byte
+accounting remain separate in the
+[comparison](../../experiments/container-representation/map-library/RESULTS.md#constant-interface-comparison-and-selected-helper-body).
+No application-frequency distribution is inferred from the test matrix.
+
+The inline-exchange criterion above was **not fully met**. Holding the compact
+public interface fixed removes the private result's stack slot, call and
+Inserted clearing, but reversed ABBA source controls do not establish a stable
+independent timing benefit after the unchanged C controls' variation is
+accounted for. The library therefore retains the shared exchange helper. The
+inline source and its measurements remain a replayable rejected alternative,
+not the delivered library or evidence that the removed clear alone costs the
+observed timing difference. No compiler implementation, source-language rule
+or conformance evidence is changed. The pending storage amendment records the
+two proposed library choices; the proof-contract and remaining performance limits stay in
+[`docs/todo.md`](../../../docs/todo.md).
+
 The following complete controls retain the trial's proof boundaries under
 kernel v0.67 and the compiler identified in the comparison's
 [build identities](../../experiments/container-representation/map-library/RESULTS.md#sample-and-build-identities).
