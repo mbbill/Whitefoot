@@ -2441,6 +2441,14 @@ impl BoundStore {
         candidates
     }
 
+    fn contains_candidate(&self, pair: (TermId, TermId), candidate: (i128, DerivationId)) -> bool {
+        self.get(pair.0, pair.1) == Some(candidate)
+            || self
+                .extra
+                .get(&pair)
+                .is_some_and(|extra| extra.contains(&candidate))
+    }
+
     /// Adds one candidate. The selection is the least candidate by bound and
     /// then proof, so only the new candidate and the current selection
     /// compete; the loser is kept among the other candidates.
@@ -2454,12 +2462,7 @@ impl BoundStore {
             self.store_single(pair.0, pair.1, candidate.0, candidate.1);
             return;
         };
-        if selected == candidate
-            || self
-                .extra
-                .get(&pair)
-                .is_some_and(|extra| extra.contains(&candidate))
-        {
+        if self.contains_candidate(pair, candidate) {
             return;
         }
         let preferred = candidate.0 < selected.0
@@ -2947,12 +2950,29 @@ impl FactState {
         proof: DerivationId,
         ledger: &DerivationLedger,
     ) {
+        let pair = (left, right);
+        if self.bounds.contains_candidate(pair, (bound, proof)) {
+            return;
+        }
         self.closed_view.take();
-        self.closure.mark_fresh_cell((left, right));
+        // A new proof candidate must remain available to later support kills,
+        // but only a stronger numeric bound changes this layer's closure.
+        // Result transport routinely imports already-known ordinary bounds.
+        if self
+            .bounds
+            .get(left, right)
+            .is_none_or(|(old, _)| bound < old)
+        {
+            self.closure.mark_fresh_cell(pair);
+        }
         if ledger.depends_on_postcondition_call(proof) {
             self.postcondition_candidates = true;
-        } else {
-            self.ordinary_closure.mark_fresh_cell((left, right));
+        } else if self
+            .bounds
+            .candidate_minimum(pair, |parent| !ledger.depends_on_postcondition_call(parent))
+            .is_none_or(|old| bound < old)
+        {
+            self.ordinary_closure.mark_fresh_cell(pair);
         }
         Rc::make_mut(&mut self.bounds).add_candidate((left, right), (bound, proof), ledger);
     }
@@ -2963,12 +2983,29 @@ impl FactState {
         proof: DerivationId,
         ledger: &DerivationLedger,
     ) {
+        if self
+            .distinct_candidates
+            .get(&pair)
+            .is_some_and(|candidates| candidates.contains(&proof))
+        {
+            return;
+        }
         self.closed_view.take();
-        self.closure.mark_fresh_cell(pair);
-        self.closure.mark_fresh_cell((pair.1, pair.0));
+        if !self.distinct.contains(&pair) {
+            self.closure.mark_fresh_cell(pair);
+            self.closure.mark_fresh_cell((pair.1, pair.0));
+        }
         if ledger.depends_on_postcondition_call(proof) {
             self.postcondition_candidates = true;
-        } else {
+        } else if !self
+            .distinct_candidates
+            .get(&pair)
+            .is_some_and(|candidates| {
+                candidates
+                    .iter()
+                    .any(|parent| !ledger.depends_on_postcondition_call(*parent))
+            })
+        {
             self.ordinary_closure.mark_fresh_cell(pair);
             self.ordinary_closure.mark_fresh_cell((pair.1, pair.0));
         }
