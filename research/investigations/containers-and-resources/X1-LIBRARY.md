@@ -92,10 +92,10 @@ Three different questions must not be collapsed:
 | Specified interface limit | A range over a Ring, even an empty/unwrapped one, is refused by REF-4 | A generic two-span API is unavailable on that representation. A fully initialized copy-element Array is a different available representation. |
 | Resolved snapshot defect | The earlier reserve helper supplied unrestricted u64 capacity to `grow` | OP-9 requires a size bound. The merged library supplies one through `ceiling`; the unbounded research negative remains correctly rejected. |
 
-The candidate layouts below are recommendations for implementation trials,
-not changes to language decisions or adopted library interfaces. No live-tree
-revision is proposed by this research. Existing temporary-reference, global-heap,
-no-hole and no-stored-reference choices remain premises. Their grounds are in
+The family sketches below started as recommendations for implementation trials,
+not adopted library interfaces. The later Vector and v0.63 sections identify
+the executable libraries, their evidence and the selected boundaries. Existing temporary-reference,
+global-heap, no-hole and no-stored-reference choices remain premises. Their grounds are in
 the [data-model](../../../design/language/data-model.md),
 [ownership](../../../design/language/ownership.md) and
 [generics](../../../design/language/generics.md) decisions; rules, not those
@@ -114,8 +114,8 @@ to duplicate every library.
 | Family | First ordinary candidate | Complete operation chain | Proof and ownership obligations | Cost obligations, not measured WF parity |
 | --- | --- | --- | --- | --- |
 | Vector | `Box<Slots<T>>`; `Slots<T,N>` for inline bounded use | Construct, reserve, append, insert, ordered remove, swap-remove, truncate, ordered consume/drain, final release | OP-9 on growth; index/room facts; exact count changes over references; a consume callback for nodrop T; `free_empty` after complete consumption | O(1) no-growth append; amortized O(1) under geometric growth; O(n-i) ordered insert/remove; O(1) swap-remove; O(n) drain. No owner round trip for mutation. |
-| Deque | `Box<Ring<T>>`, fresh ring plus `append` for growth; fixed Ring for bounded queues | Push/pop both ends, wrap, indexed access, grow/rebase, consume, release | Bounds in logical coordinates; front operations invalidate old slot references; new backing invalidates every old path; source emptied before releasing it | O(1) endpoints and logical access; O(n) growth; one visit per drained element. Generic two-span consumption remains a separate unavailable interface, discussed below. |
-| Slab | `Box<Slots<Cell<T>>>`, a free-list head and generation handles; every materialized Cell is a valid enum | Insert/handle, validate/get, remove, expiry, reuse, exhaustion/limit outcome, grow if selected, final consumption | Swap a valid vacancy with an occupant; return every removed T; never wrap a generation into an old handle's generation; distinguish a slot ID from a physical address | O(1) free-list operations and validation; no payload movement on ordinary reuse. Backing growth moves inline cells; boxing each payload trades that for allocations and indirection. |
+| Deque | `Box<Ring<T>>`, fresh ring plus a counted take/place transfer for exact rebase contracts; fixed Ring for bounded queues | Push/pop both ends, wrap, indexed access, grow/rebase, consume, release | Bounds in logical coordinates; front operations invalidate old slot references; new backing invalidates every old path; source emptied before releasing it | O(1) endpoints and logical access; O(n) growth; one visit per drained element. Generic two-span consumption remains a separate unavailable interface, discussed below. |
+| Slab | `Box<Slots<SlabCell<T>>>`, with `Slots<T,1>` occupancy, a free-list head and generation handles; compare a compact tagged native cell | Insert/handle, validate/get, remove, expiry, reuse, exhaustion/limit outcome, final consumption | Return every removed T; never wrap a generation into an old handle's generation; distinguish a slot ID from a physical address | O(1) free-list operations and validation; no payload movement on ordinary reuse. The bounded library does not grow its backing; its extra occupancy word is a measured cost. |
 | Hash map | One window of valid `Vacant/Deleted/Occupied(K,V)` slots; compare a dense-entry/index-table alternative for large payloads | Construct, collision insertion, duplicate replacement, lookup after tombstone, remove, reuse, growth/rehash, iterate, consume | K and V need not be copy/drop if replacement returns the old pair and final cleanup explicitly consumes them; bounded probing; no assumed behavior laws; preserve every owner during rehash | Hash/equality cost plus probes; ordinary load-dependent expected constant access, capacity-bounded worst-case lookup. Rehash scans old capacity and reinserts live entries; adversarial collisions can make it quadratic. |
 | Priority queue | Slots of T, with an explicit comparison behavior; indexed variant adds a reverse-position map | Push, peek via a local reference/callback, pop, replace top, change priority/remove by handle when selected, heapify, drain | Compare borrowed T; exchange slots then take a boundary value; every sift step progresses along an index; arithmetic domains and child bounds proved independently of comparator laws | O(log n) sifts and O(n) bottom-up heapify; no aggregate owner transfer per level. Count reverse-index repairs in an indexed queue. |
 | Ordered map | Pool-indexed B-tree nodes with fixed-capacity key/value and child windows; compare owned Box-linked nodes | Find, insert, split/promotion, replace, remove, borrow/merge, root contraction, ordered iteration, cleanup | Node and child bounds; distinct node indexes at simultaneous writes; rotations return/move all owners; no key duplication assumed; index stack for paths | O(log n) node visits at balanced height, O(B) local shifts, O(n) full traversal. Bound retained path storage; charge pool validation and node fragmentation. |
@@ -166,7 +166,8 @@ empty old backing. For nodrop T the zero-length fact must reach the owned
 backing that `free_empty` consumes; after a swap or an ordinary owned helper
 return, check whether its declared contracts preserve that fact. An explicit
 length reread is a possible validation cost; silently dropping the old owner
-is not. This complete generic growth chain has not been checked here.
+is not. The generic library instead uses the explicit consuming rebase in the
+v0.63 trial below; this reference-based exchange is not its growth contract.
 
 The merged append row now also publishes
 `destination.len >= entry(source).len`. That is useful when the destination
@@ -194,7 +195,7 @@ separate interface candidate if the restriction is intentional. The first
 library trial must settle a complete nodrop growth route before claiming an
 unbounded growable Deque.
 
-REF-4 deliberately refuses *all* Ring range references. Therefore a function
+REF-4 refuses *all* Ring range references. Therefore a function
 that accepts two `&[T]` extents in queue order cannot obtain them directly
 from Ring, even after testing that a subrange does not wrap.
 
@@ -215,7 +216,7 @@ not evidence that queues in general require a language amendment.
 
 ### Slab: reuse, addresses, and retained membership
 
-One representation sketch is:
+The original enum representation sketch was:
 
 ```wf
 struct Handle {
@@ -241,7 +242,10 @@ is retired instead of wrapping; a reduced-width model should force this path
 in the next implementation's tests. A handle is interpreted relative to the
 supplied slab. Without an additional application identity field it does not
 authenticate a different slab. These are ordinary data contracts under OP-13,
-not new brands or memory-safety authority.
+not new brands or memory-safety authority. The v0.63 insertion trial below
+exposes the missing variant fact after the reverse exchange; the implemented
+Slab therefore uses a one-element window in each cell. The sketch alone is
+not a complete nodrop implementation.
 
 `find_index` may return `Result<u64, unit>` with
 `ensures when Ok(value: i): i < deref(slab).cells.inner.len;`.
@@ -760,3 +764,487 @@ choices, including the measured large-record benefit alongside the repeatable
 costs stay in `docs/todo.md`; the selection claims neither uniform improvement
 nor native parity. Measurements compare both source algorithms through the
 same integrated compiler and keep the historical compiler comparisons separate.
+
+## Slab and Deque trial over v0.63
+
+This comparison began at merged `3a969235`, kernel v0.63. Box descendant
+placement and the selected Vector consumption repair were available; the
+remaining Vector timing costs retain their explicit reopening conditions.
+The end-to-end question is whether stable-slot reuse and a two-ended
+queue can support copyable, owning droppable and must-consume elements over
+ordinary values at an attributable native cost. The candidates below began as
+implementation trials; the selection and remaining-cost sections record their
+outcomes without a claim of native parity.
+
+For Slab, first try one boxed backing of cells, each containing an inline
+`Slots<T, 1>`, a generation and a free-list link. The inner window expresses
+vacancy with its ordinary zero-or-one length; insertion and removal use the
+existing place/take rows. An enum of vacant/live cells is a useful compact
+native control, but a generic source exchange currently loses the variant
+needed to consume an extracted vacant enum without an impossible ownership
+arm. Separate metadata plus dense payloads is another ordinary alternative;
+it spends a second backing and repairs reverse indexes on removal. The
+single-slot candidate is selected for a trial because it keeps one backing,
+constant-time reuse and each live payload in its slot without that repair.
+Its possible extra metadata word must be measured, not treated as free.
+
+The Slab constructor accepts a runtime capacity within a written const ceiling,
+which bounds allocation size, and materializes cells only on first insertion.
+Free-list reuse concerns already materialized empty cells. A slot retires
+when its generation reaches a caller-selected limit rather than wrapping;
+small limits exercise that same production rule. Exhaustion returns the
+uninserted owner. Handles are relative to the supplied slab and are ordinary
+data, not brands authenticating the allocation. The membership caller compares
+weak indexes with a composite retained protocol: removing one index preserves
+a remaining reader, object deletion expires weak handles, and the retained
+protocol refuses object deletion until its memberships are removed. This is
+not a theorem about arbitrary clients maintaining or being unable to forge
+ordinary bookkeeping fields.
+
+For Deque, keep endpoint mutation over references to `Box<Ring<T>>` and make
+reallocation an explicit consuming rebase that returns a newly allocated
+owner. A counted front-take/back-place loop can prove exact length
+preservation and release the emptied old backing for arbitrary T. This is a
+new-owner conversion, not an automatic-growth promise on a reference helper.
+The ordinary `swap` row does not publish exchanged measures, so exchanging
+old/new owners does not by itself establish the old-empty and new-length
+relations needed by that other interface. REF-4 also still refuses a Ring
+range, including an empty one: per-slot visitation does not supply zero-copy
+two-span access. Retain the exact rejected programs and these distinctions
+alongside the executable candidate.
+
+Before selecting either representation, require complete operation and cleanup
+chains with independent results, generation/expiry and wrap boundary cases,
+and exact allocation-release accounting through the ordinary formal tests.
+Reuse their existing sequential and parallel construction paths; the older
+three-mode and allocation-refusal prescriptions are not the v0.63 contract.
+Experiments stay outside daily correctness checking. For each candidate,
+compare the actual library with C implementing the same representation and
+operation contract, then a compact-slot or bulk-rebase control where it
+separates a source/layout cost. Record actual bytes per capacity unit,
+construction cost separately from steady-state lookup or churn, allocation
+counts, and emitted transfers with ordinary and retained helpers. Use scalar
+and large owning records, short and longer capacities, and checksum-sensitive
+operation sequences. A runtime branch or extra word is a measured cost;
+acceptance alone does not select it, and a changed ownership or callback
+contract is not a faster implementation of the same operation.
+
+### Executed library boundary
+
+The [Slab](../../../lib/containers/slab.wf) and
+[Deque](../../../lib/containers/deque.wf) sources have complete native callers
+in the formal corpus, reusing its sequential and parallel modes and shared
+allocation observer. Slab covers copy, owned Box and nodrop elements, lazy
+materialization, genuine full outcomes, wrong/expired handles, reuse and
+generation limits zero, one and u64 maximum. Deque adds zero-sized elements,
+zero/one/full capacities, wrapping from both ends, growth and shrink through
+rebase, callback order and reuse. Its precise back-append row also permits an
+existing filled-slot reference to remain valid. The independent release
+ledgers count 19 successful Slab allocations and 21 Deque allocations, including
+the membership caller; both ordinary deallocation and observed images execute.
+Heap allocation itself is total under STOR-8, so these are not allocation-
+refusal tests. Slot exhaustion is a separate ordinary Slab outcome.
+
+The [membership program](../../../tests/programs/containers/slab-membership-program.wf)
+answers the retained-membership question for a concrete composite: removing
+one index preserves the other reader; weak indexes expire on owner deletion;
+the retained composite refuses deletion with two memberships and still with
+one, then permits it after both retire. Its two index fields cover one central
+object. General multi-object indexing and protection from independently
+authored bookkeeping mutations are not established by this example.
+
+The matched [Slab comparison](../../experiments/container-representation/slab-library/RESULTS.md)
+and [Deque comparison](../../experiments/container-representation/deque-library/RESULTS.md)
+own cost conditions and results. Source acceptance and the formal execution
+above are not performance selection evidence.
+
+### Selection and remaining costs
+
+The selected Slab choice keeps one allocation and stable cell positions for
+arbitrary owned T. Its scalar cell costs 32 bytes against the tagged C
+control's 24; the 256-byte payload costs 280 against 272. The C window/tagged
+comparison isolates that extra word, while WF/window timings also include
+result layout and call lowering. Retained wide removal and consumption still
+perform redundant transfers, so these results do not select the representation
+as a performance ceiling. Keep this ordinary implementation available for
+composition, and test the remaining transfers before using a Slab cost alone
+to justify a compiler-known sparse layout. The approved
+`slab-storage` decision records that qualified choice.
+
+The selected Deque choice keeps precise endpoint rows and an explicit new-owner
+conversion. Its strongest measured gap is ordinary scalar forward churn;
+retaining helpers largely removes that gap, exposing optimization of the
+inlined address path rather than an unavoidable reference-interface cost.
+A bounded GEP-fact probe removes the redundant descriptor traffic, but its
+general target qualification and timing recovery remain unverified. Keep the
+library interface and the measured baseline while qualifying that optimization;
+do not add a Ring growth primitive solely from this comparison. The approved
+`deque-rebase` decision records the interface and its two-span limitation.
+
+These selected library choices supplement the typed-constant representation
+choice and the two approved corrections to storage/range correspondence. The
+two new leaf nodes do not increase the tree's depth.
+The affected current guidance is the container writer pattern and library
+README; unresolved source interfaces and lowering opportunities remain in
+`docs/todo.md`. No specification or conformance verdict change is part of this
+library slice.
+
+The original CSVs and artifact hashes remain evidence for the recorded
+pre-merge compiler. Main `7127bcb6` adds checker and aggregate-lowering repairs;
+its clean merge also required supplying the const-type inventory to a newly
+added unit-test context. The earlier emission comparison established only the
+const-forwarding repair's correspondence, not the main integration. The
+integrated compiler at `dcbfdc0f` was then checked separately: Deque raw and
+optimized IR were byte-identical to the preserved baseline, while Slab's
+optimized IR differed only in SSA names after the alias removal. Compiling
+the old/current optimized modules with Apple Clang 21 on arm64 produced
+byte-identical complete WF module assembly in both normal and retained modes.
+The [Slab integration record](../../experiments/container-representation/slab-library/RESULTS.md#integration-verification-at-dcbfdc0f)
+and [Deque integration record](../../experiments/container-representation/deque-library/RESULTS.md#integration-verification-at-dcbfdc0f)
+give the identities, method and rerun correctness checks. This establishes
+that emitted-module correspondence, not linked-image identity or a new timing
+run; the original CSVs keep their original compiler and measurement identity.
+
+The subsequent merge of main `95b21cfd` at `4da1710e` was checked with the
+rebuilt compiler as well. Fresh raw and normal/retained optimized LLVM for
+both libraries matched the saved `dcbfdc0f` artifacts byte-for-byte; all four
+C-control optimized modules were unchanged. The same integration records
+give this compiler identity and the bounded re-emission commands. The earlier
+native, assembly and timing evidence retains its original scope and identity.
+
+Main `e8e1c411`, integrated at `ce9a3870`, subsequently changed Ring front
+predecessor lowering and the resource-record writer. Slab's raw module changed,
+but both complete optimized modules remained byte-identical, so its earlier
+timing evidence was retained with that qualification. Deque's reverse-churn
+path changed and was measured again with the unchanged full matrix and C
+controls: 2,592 correctness executions passed and 6,336 fresh samples are in
+[`measurements-v0.64.csv`](../../experiments/container-representation/deque-library/measurements-v0.64.csv).
+The RESULTS records separate this new measurement from the preserved baseline
+and identify the changed helper instructions; no Slab timing or optional GEP
+probe was rerun.
+
+### Exact unavailable source forms
+
+These are the rejected additions or functions in the linked library's type
+context. They state current rules, not proposed amendments.
+
+| Rejected source | Rule and cause | Implemented alternative |
+| --- | --- | --- |
+| In `slab_new`: `ensures result.cells.inner.len == 0_u64;` | FN-9's result-selector domain does not include an arbitrary aggregate result field. A nominal Deque wrapper's `made.storage.inner.len` has the same limit. | Slab retains its necessary free-list state; the caller establishes length through an ordinary read/branch. Deque needs no extra wrapper state and uses direct `Box<Ring<T>>`, whose `made.inner.len` is admitted. |
+| In `slab_find_index`: `ensures when Ok(value: index): deref(slab).cells.inner[index].storage.len > 0_u64;` | FN-9/CALL-4 do not admit this indexed postcondition target. | Export the outer index bound; use `slab_visit` to keep validation and callback in one helper, or re-read occupancy before direct access. |
+| The signature `fn borrow_out<T>(value: &T) -> result: &T reads(value) {` | GRAM-3 requires `own` at the result; REF-3/FN-1 prohibit reference escape. | Return owned callback data or a validated index. |
+| After `let values = box_ring_new::<u64>(capacity: 4_u64);`: `let count = observe::<u64>(first: &values.inner[0_u64..0_u64], second: &values.inner[0_u64..0_u64]);`, with `observe` taking two `&[T]` arguments | REF-4 refuses even empty Ring ranges. | Per-slot visitation; this remains an explicit missing zero-copy two-span interface. |
+
+The vacant variant does not travel through swap's row to the extracted local.
+This complete generic helper rejects under PROV-6 because the admitted facts
+cannot show that `offered` no longer holds a must-consume T:
+
+```wf
+fn insert<T>(slot: &Option<T>, value: own T) -> result: own Result<unit, T> writes(slot) {
+  match deref(slot) {
+    Some(value: occupied) => {
+      return Err<unit, T>(error: move value);
+    }
+    None() => {
+    }
+  }
+  let offered = Some<T>(value: move value);
+  swap(first: slot, second: &offered);
+  return Ok<unit, T>(value: unit);
+}
+```
+
+The library's `Slots<T,1>` carries vacancy as an ordinary length whose
+place/take contracts are available. No impossible occupied cleanup arm or
+implicit nodrop discard is introduced. A native tagged cell remains a layout
+comparator; the Slab result does not solve every map operation.
+
+Swap also does not publish exchanged measures. Its ordinary write row kills
+both operands' old facts under ENT-5, so this helper fails its FN-9 return
+obligation:
+
+```wf
+fn replace_empty<T>(old: &Box<Ring<T>>, built: own Box<Ring<T>>) -> previous: own Box<Ring<T>> writes(old) contract {
+  requires deref(old).inner.len == 0_u64;
+  ensures previous.inner.len == 0_u64;
+} {
+  swap(first: old, second: &built);
+  return move built;
+}
+```
+
+A reread could validate an empty branch, but would not consume a nonempty
+nodrop remainder on the other branch. The existing
+[atomic-publish probe](../../experiments/container-representation/x1/linear-ring-publish.wf)
+also rejects under OP-12/WIN-3 for a nodrop target. The implemented rebase
+consumes the original owner directly and returns a genuinely new backing;
+no exchange fact is needed. Its counted element loop proves exact length;
+append's current lower-bound contract does not state the two-entry sum.
+
+### Ring range correspondence
+
+The [range-reference decision](../../../design/language/ownership/range-reference.md)
+previously listed Ring. Commit `a907d9d6` adopted that candidate text. The earlier
+`c79188a1` investigation's
+[amendment map](../access-effects/SPEC-AMENDMENT-MAP.md) had asked whether to
+refuse Ring ranges or admit proved non-wrapping ones, recommending refusal
+under its owner-rulings-needed heading. The subsequent `7bc07c04` specification
+draft introduced today's blanket refusal. Neither its commit message nor the
+retained PR #70 discussion supplies a Ring-specific ruling. The earlier
+released v0.59 VIEW-2 had admitted proved non-wrapping views, including empty
+ones. This established tree/spec drift and an unrecovered selection
+ground; it does not establish that the narrowing was unauthorized.
+
+The owner selected retention of REF-4 as a fresh ruling: the tree now excludes
+Ring ranges, including empty and non-wrapping ones. The alternative of admitting
+proved-contiguous Ring ranges still needs an explicit empty-range rule plus
+formation, invalidation and lowering evidence. Arbitrary wrapped logical ranges
+would also exceed the selected pointer/count representation. The ruling does
+not reconstruct the missing historical ground and does not make slot visitation
+a replacement for a two-span consumer; that capability remains a follow-up.
+
+### Compiler corrections exposed by composition
+
+The Slab visitor uncovered a partial-instantiation spelling defect. A generic
+callee binding R to unit while forwarding a type, const or function parameter
+was treated as its own symbolic spelling authority; `move` was then rejected
+as a copy move. OWN-1/FN-2 assigns that authority to the written template, not
+every partly substituted body. The correction compares declaration identities
+with the template's own symbolic substitution. The generic tests retain
+canonical copy-move and repeated-consume negatives; no ownership or overlap
+rule is weakened.
+
+A separate const-guard probe exposed lost source type information:
+
+```wf
+fn increment<const limit: u64>(value: own u64) -> result: own u64 pure {
+  if value < limit {
+    return value + 1_u64;
+  }
+  return value;
+}
+```
+
+The missing implicit maximum prevented ENT-2/ENT-4 from proving the OP-2
+increment domain. A local alias or a redundant written invariant happened to
+supply enough evidence through a different path. Conversely, the affine image
+path assigned u64 bounds even to a signed const parameter, incorrectly
+accepting a symbolic assertion that every i8 parameter is nonnegative.
+This demonstrated an incorrect template judgment, not an executable negative-
+value misuse. MSR-6 already requires the exact declared integer type.
+
+The correction retains that type with the declaration-anchored term and its
+affine image. A read-only declaration-type inventory serves the ordinary
+entailment and isolated refinement contexts, avoiding type propagation through
+every storage-extent and captured-index representation. This distinction
+matters when a u8 const parameter supplies a u64 formal or storage extent:
+the constant must remain one identity with its source bounds. It adds no
+automatic proof family. The corresponding compiler choice is recorded in
+checker-facts; domain, insufficient-guard and forwarding regressions
+exercise the existing proof checker.
+
+## Ring payload address qualification
+
+The next lowering experiment starts from merged main `1b916975`. The
+[Deque comparison](../../experiments/container-representation/deque-library/RESULTS.md)
+records a 2.256–2.405x normal-mode scalar forward-churn cost against its C
+control. Its separate, untimed four-GEP probe identifies an unsigned offset
+fact that removes repeated descriptor traffic in one concrete instance.
+That is a reason to investigate the general lowering contract, not evidence
+that adding the flag to every element address is valid or faster.
+
+The question is whether existing source bounds and selected-target layout
+qualification establish the complete LLVM promise for ordinary Slots/Ring
+payload projections. The argument must cover the actual padded header,
+element allocation stride, enclosing object extent, intermediate offsets,
+pointer-index width, zero capacity, zero stride, and any one-past use of the
+shared projection. Logical Ring wrap arithmetic is a separate operation;
+the candidate must not attach an unsigned no-wrap assertion to it merely
+because a final physical element is in bounds. The
+[LLVM instruction contract](https://llvm.org/docs/LangRef.html#getelementptr-instruction)
+is the target obligation; STOR-6 and DIAG-2 remain the language authorities.
+
+Selection criteria, recorded before this experiment's timings:
+
+- Every emitted optional fact has a complete argument from existing checked
+  and selected-target facts. Source acceptance and target-layout qualification
+  agree with this optional fact enabled or withheld. Unsupported assembler spelling
+  retains a correct portable lowering rather than rejecting a WF program.
+- Existing maintained regressions cover relevant ownership, wrap, zero-size,
+  nested-layout and target-domain boundaries. Add only observations absent
+  from those cases. Successful timing runs do not establish allocation-failure
+  behavior: the maintained exhaustion tests own the resource-failure boundary,
+  while the container caller and allocator observer own the exact release ledger.
+- Reuse the existing Deque workload, independent checksums, allocation ledger,
+  scalar and wide-record payloads, normal and retained helpers, C controls and
+  counterbalanced matrix. Compare fresh baseline and candidate emissions and
+  timings on the same toolchain. Withholding this fact is a correctness
+  control, not a substitute for isolating its performance contribution; this
+  experiment does not require a new public facts-mode switch.
+- Select production emission only if the complete target contract holds and
+  the paired results show a repeatable benefit beyond cohort and control
+  variation, without an unexplained material loss elsewhere in the matrix.
+  Attribute any remaining gap rather than claiming universal native parity.
+
+Keep the implementation within ordinary address emission and the existing
+toolchain-capability path where possible. Do not change source syntax,
+container representation, Ring range admission, or host/runtime protocols to
+obtain this result. The material compiler choices were reviewed as amendments
+beside the design tree; the owner approved both revisions after DCR.
+
+### Representation premise and target contract
+
+Inspection found a representation mismatch before extending optional facts.
+The target calculator gives `Slots<T, 0>` its eight-byte descriptor with
+eight-byte alignment. Emission instead retained `{ i64, [0 x T] }`.
+LLVM arrays keep their element's ABI alignment even at length zero
+([DataLayout implementation](https://llvm.org/doxygen/DataLayout_8cpp_source.html)).
+For the ordinary opaque `OutputStream` type, whose emitted representation is
+16-byte aligned, that LLVM aggregate has size and alignment 16. An outer
+runtime Ring of such values is therefore checked with header/stride 24/8
+while its emitted allocation arithmetic uses 32/16. This is a mismatch in
+qualification; the allocator uses the emitted size, so these calculations
+alone do not demonstrate an observed undersized allocation.
+
+OP-9's zero repetitions contain no element layout. Raising the checked size
+and alignment would force the nested allocation to fail the unchanged
+language ceiling. The selected repair instead extends the existing
+`Array<T, 0>` emission convention to the empty payload of constant-capacity
+Slots and Ring: `[0 x i8]`, retaining their length/head words. Nonzero-capacity
+zero-size elements and runtime-capacity typed tails keep their distinct
+representations. A maintained regression must compare the complete nested
+object and actual emitted allocation against the checked byte boundary,
+including Array conversion and cleanup, rather than only repeat the
+checker's preexisting size result.
+
+The maintained backend regression
+`zero_capacity_windows_keep_header_layout_inside_nonempty_storage` embeds
+both empty window shapes between scalar sentinels in one record. The checked
+record is 40 bytes with alignment eight, and its one-slot runtime Ring needs
+64 bytes including the header. A same-source native before/after run with
+retained helpers and an allocation observer measured 96 bytes from the saved
+`1b916975` baseline and 64 from the repair: the independent 64-byte oracle
+exits six before the fix and zero afterward. The test also checks a synthetic
+64-byte allocation limit and the rejection one byte below it, plus empty
+range formation, Array conversion, sentinel preservation and cleanup. These
+observations distinguish actual layout correspondence from an assertion
+about the calculator alone.
+
+Once representation and qualification agree, let `H` be the actual padded
+tail-field offset, `S` the actual allocation stride of that GEP's element,
+`C` the capacity, and `E` the complete window extent. On the currently
+supported targets the pointer index is i64 and qualification establishes
+`E <= M = 2^63 - 1`. For a positive-stride payload and an admissible physical
+offset `p`, including a one-past pointer when permitted:
+
+```text
+0 <= p <= C <= floor((M - H) / S)
+0 <= H <= H + p*S <= E <= M
+```
+
+The GEP's successive offsets are zero, the nonnegative header offset, and
+the nonnegative scaled physical index. Each fits both signed and unsigned
+index arithmetic. For a nested window at parent offset `q`, complete-parent
+qualification also establishes `q + E <= A`, the parent allocation extent.
+Every intermediate pointer remains in that same allocation. LLVM allocations
+cannot cross the unsigned address-space boundary, including their one-past
+pointer ([allocated-object contract](https://llvm.org/docs/LangRef.html#allocated-objects)).
+These facts establish all four `nuw` requirements, not only index scaling.
+For zero stride, ordinary emission already uses physical address operand
+zero; no bound on the potentially huge logical capacity is needed. For an
+erased constant-capacity-zero payload, the actual tail type is i8 and its
+only admissible boundary offset is zero. Ring wrap operations retain their
+own wrapping semantics and receive no new arithmetic assertion from this
+argument.
+
+Two target expressions deserve comparison before selection: direct GEP `nuw`
+with a supported-spelling probe and plain-`inbounds` fallback, or an
+`llvm.assume` that the actual normalized address index is signed nonnegative
+beside the existing `inbounds` projection. The latter states a subset of the
+same proved domain with portable syntax; whether optimization recovers the
+same benefit is an empirical question. GEP `nuw` first appears in
+[LLVM 19](https://releases.llvm.org/19.1.0/docs/ReleaseNotes.html#changes-to-the-llvm-ir);
+[LLVM 18](https://releases.llvm.org/18.1.8/docs/LangRef.html#getelementptr-instruction)
+already defines the nonnegative inbounds implication and the assumption
+intrinsic. Use the existing four-position probe only to discriminate these
+expressions, then validate the selected compiler path and full matrix.
+
+The four-position comparison on Apple Clang 21 admits both expressions and
+passes the same independent oracle. Both reduce the scalar forward loop from
+four loads/four stores to one payload load/one payload store; their hot-loop
+assembly is identical. Their complete scalar functions are not identical,
+so this observation does not establish timing parity elsewhere. The selected
+candidate for the full compiler experiment is the nonnegative-index
+assumption: it recovers the observed local optimization without a new LLVM
+dialect requirement. A build-time syntax probe would inspect the build's
+compiler, while the native builder uses its selected native compiler; those
+need not be the same consumer. The existing [comparison record](../../experiments/container-representation/deque-library/RESULTS.md)
+owns the probe commands, counts and artifacts. After the complete
+normal/retained paired comparison, the owner selected production emission
+provisionally with the tradeoff recorded below.
+
+The implementation stays in the shared run projection and intrinsic registry.
+A test-only withholding choice exercises that same emitter after the same
+target validation; it is not a source mode or a second qualification path.
+The corresponding decision is in `compiler/backend-facts`; the zero-capacity
+representation decision is in `compiler/storage-representation`. This keeps
+the representation repair independent of the optional optimization and needs
+neither a second table of per-address qualification nor a public compiler
+switch. No source rule or container contract changes.
+
+### Retained reverse-path discriminator
+
+The first complete Clang 21 baseline/candidate sweeps show a reproducible
+retained-scalar reverse-churn regression, about seven percent after the
+in-binary C normalization, alongside the large forward-path gain. Independent
+disassembly comparisons find identical reverse-loop and endpoint-helper
+instructions, register dependencies and memory operations. The loop stays at
+the same address, but both endpoint helpers move 32 bytes earlier. This is
+evidence of a code-placement difference, not yet evidence that placement
+causes the timing difference.
+
+Before additional timing, the discriminator is to give both scratch retained
+modules' scalar `pop_back` definition 128-byte alignment. Verify that the
+two endpoint helpers then occupy identical addresses and preserve their
+instructions, and that the calling loop remains unchanged; otherwise the
+experiment does not isolate the proposed cause. Use the existing native
+oracle and counterbalanced retained measurements, with the same source,
+seeds and C controls. If the regression collapses after this normalization,
+report the production-layout cost as placement-sensitive; if it persists,
+keep the regression unexplained. The scratch alignment is an instrument,
+not a proposed production alignment policy or a reason to select facts by
+element identity.
+
+The 128-byte-alignment construction failed that isolation check: it made
+the two endpoint addresses agree, but the linker also moved both complete
+WF text regions by 96 bytes, including the trace and callbacks. No oracle
+or timing was run on those images. The follow-up instrument therefore keeps
+the original section alignment and adds exactly 32 bytes of unreachable
+text padding before the candidate's scalar `pop_back` symbol. Before timing,
+verify against the original binaries that the trace and callbacks retain
+their addresses and instructions and both endpoints recover the original
+baseline addresses and instructions. If this narrower construction also
+fails isolation, do not time it or reinterpret the first experiment as a
+success. This padding is likewise confined to scratch evidence.
+
+The 32-byte padding control met the isolation checks and passed both native
+oracles. Its two measurement orders disagree: the normalized retained scalar
+reverse ratio stays about 1.06–1.08 in the first pair, then approaches one in
+the reversed pair because the last baseline itself slows. The original
+production-layout regression therefore remains unexplained; neither the
+first alignment failure nor the second mixed result establishes a particular
+cache or branch-prediction cause. No padding enters production.
+
+The predeclared selection criterion is **not fully met**. After DCR, the owner
+selected provisional retention of the qualified fact for its reproducible
+inline scalar forward and rebase improvements, explicitly accepting the
+recorded retained-reverse cost and its unresolved cause. The alternative is
+to remove the optional fact and deliver the independently verified
+zero-capacity representation repair alone. No application-frequency
+distribution has been measured, so the results do not establish that every
+Deque consumer benefits from the tradeoff. The owner-approved backend-facts
+decision records the first choice; it does not establish that the original
+criterion passed. Reopen that choice for a consumer
+dominated by retained reverse calls, a changed native toolchain, or a further
+material regression under the same matched-contract comparison. The
+maintained TODO keeps the remaining scalar gap and cost attribution open.

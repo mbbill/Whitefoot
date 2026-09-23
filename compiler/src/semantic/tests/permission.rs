@@ -366,6 +366,54 @@ fn main() -> status: own ExitStatus pure {
     assert_eq!(kind.halves(), ("write", "write"));
 }
 
+/// Rebinding two incoming holders cannot make their entry-storage anchors
+/// unresolved. A third destination remains independent, while either member
+/// of the exchanged origin set still prevents parallel writes.
+#[test]
+fn rebound_parameter_summaries_distinguish_independent_and_overlapping_writes() {
+    for (destination, effects, independent) in [
+        ("other", "writes(second), writes(other)", true),
+        ("first", "writes(second)", false),
+        ("saved", "writes(first), writes(second)", false),
+    ] {
+        let source = format!(
+            "fn write_first(value: &u64) -> result: own unit writes(value) {{
+  set deref(value) = 1_u64;
+  return unit;
+}}
+
+fn write_second(value: &u64) -> result: own unit writes(value) {{
+  set deref(value) = 2_u64;
+  return unit;
+}}
+
+fn exchange(first: &u64, second: &u64, other: &u64) -> result: own unit {effects} {{
+  let saved = first;
+  set first = &deref(second);
+  set second = &deref(saved);
+  let left = write_first(value: first);
+  let right = write_second(value: {destination});
+  return unit;
+}}
+
+fn main() -> status: own ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        let table = permission_of(source.as_bytes());
+        let pair = pair_of(&table, "exchange", "write_first", "write_second");
+        if independent {
+            assert!(pair.verdict.is_eligible(), "{pair:?}");
+        } else {
+            let Denial::Footprint { kind, .. } = denial(pair, 1) else {
+                panic!("known overlapping origins must retain their footprint conflict");
+            };
+            assert_eq!(kind.halves(), ("write", "write"));
+        }
+    }
+}
+
 /// Disjoint destinations do not save two calls that also write one shared
 /// cursor: the substituted rows meet on that one path whatever else they
 /// reach.

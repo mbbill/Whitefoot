@@ -51,7 +51,9 @@ probably not the next work.
 - `docs/ideas.md` collects candidate mechanisms, research questions, and links
   to their evidence. It is not a work queue or an implementation-status page;
   a listed idea grants or withholds nothing.
-- The active specification at `spec/kernel-spec.md` defines the language.
+- The active specification at `spec/kernel-spec.md` defines the language and
+  toolchain judgments, including its normative worked example. Keep repository
+  process, version history, and future-work bookkeeping out of it.
   The conformance results state what the compiler implements, `docs/todo.md`
   lists known defects and follow-up work, including improvement validation,
   and `design/compiler` records its decisions.
@@ -256,6 +258,12 @@ only reports the same class of mistake earlier.
   and `make check` checks identity consistency and archive immutability.
   A spec/compiler discrepancy is a technical defect;
   implementation convenience never selects language behavior.
+- State each normative fact once; use rule-ID cross-references elsewhere.
+  Rule IDs have one definition and bracketed references resolve. Express
+  conditions as total positive rules or table data, without exception clauses.
+- Surface names label checked invariants. Do not borrow backend terms naming
+  lowering consequences; borrow another language's convention only after
+  comparing and recording semantic differences, and only when meanings match.
 - When the spec changes, bring everything derived from it to the newest version
   in the same work: conformance cases and verdicts, the lexer/parser and
   generated syntax data, tests, and docs. This consistency is your

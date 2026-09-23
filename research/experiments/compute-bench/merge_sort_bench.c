@@ -4,11 +4,11 @@
 
 #include "backend.h"
 #include "harness.h"
-static void native_release(uint64_t *p, uint64_t n) { (void)n; free(p); }
-extern void wf_bench_merge_sort_par(const uint64_t *, uint64_t, uint64_t **, uint64_t *);
-extern void wf_bench_merge_sort_seq(const uint64_t *, uint64_t, uint64_t **, uint64_t *);
-extern void wf_bench_merge_sort_par_release(uint64_t *, uint64_t);
-extern void wf_bench_merge_sort_seq_release(uint64_t *, uint64_t);
+static void native_release(void *held) { free(held); }
+extern void wf_bench_merge_sort_par(const uint64_t *, uint64_t, uint64_t **, uint64_t *, void **);
+extern void wf_bench_merge_sort_seq(const uint64_t *, uint64_t, uint64_t **, uint64_t *, void **);
+extern void wf_bench_merge_sort_par_release(void *);
+extern void wf_bench_merge_sort_seq_release(void *);
 static const wfb_backend *backend;
 static unsigned width;
 static unsigned frontier;
@@ -68,7 +68,7 @@ static void sort_task(void *context) {
                        job->budget ? frontier : 0};
     merge_task(&merge);
 }
-static void native_entry(const uint64_t *input, uint64_t n, uint64_t **out, uint64_t *length) {
+static void native_entry(const uint64_t *input, uint64_t n, uint64_t **out, uint64_t *length, void **held) {
     if (backend == &wfb_backend_serial) {
         *out = oracle(input, n);
     } else {
@@ -81,10 +81,12 @@ static void native_entry(const uint64_t *input, uint64_t n, uint64_t **out, uint
         *out = result;
     }
     *length = n;
+    *held = *out;
 }
 static size_t count = 1048593;
 static unsigned distribution;
 static uint64_t *input, *expected, *output;
+static void *output_held;
 static sort_release release_output;
 static char workload[180];
 static void select_backend(const char *form, unsigned workers) {
@@ -107,14 +109,14 @@ static void prepare(unsigned workers) {
 static size_t call(const char *form, unsigned workers) {
     uint64_t length = UINT64_MAX;
     if (!strcmp(form, "wf")) {
-        wf_bench_merge_sort_par(input, count, &output, &length);
+        wf_bench_merge_sort_par(input, count, &output, &length, &output_held);
         release_output = wf_bench_merge_sort_par_release;
     } else if (!strcmp(form, "wf-seq")) {
-        wf_bench_merge_sort_seq(input, count, &output, &length);
+        wf_bench_merge_sort_seq(input, count, &output, &length, &output_held);
         release_output = wf_bench_merge_sort_seq_release;
     } else {
         select_backend(form, workers);
-        native_entry(input, count, &output, &length);
+        native_entry(input, count, &output, &length, &output_held);
         release_output = native_release;
     }
     if (length != count) fail("timed output length");
@@ -122,7 +124,7 @@ static size_t call(const char *form, unsigned workers) {
 }
 static size_t check(void) {
     size_t checked = compare(output, expected, count);
-    release_output(output, count); output = NULL;
+    release_output(output_held); output = NULL; output_held = NULL;
     return checked;
 }
 static size_t verify(const char *form, unsigned workers) {

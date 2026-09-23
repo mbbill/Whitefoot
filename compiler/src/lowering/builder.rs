@@ -188,6 +188,8 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
+    #[cfg(test)]
+    let loop_candidate_constructions = synthesis.borrow().candidate_constructions;
     let (synthesized, mut actualization) = synthesis.into_inner().finish()?;
     functions.extend(synthesized);
     split::assign_weights(&mut functions);
@@ -203,6 +205,8 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         actualization,
         sequential_compute_refusal,
         recursion_budget,
+        #[cfg(test)]
+        loop_candidate_constructions,
     })
 }
 
@@ -1105,7 +1109,6 @@ impl<'program> IrBuilder<'program> {
                     invariants: _,
                     body,
                     backedge_drops,
-                    carried_references: _,
                 } => self.lower_loop(*id, body, backedge_drops, give_target.clone())?,
                 CheckedStatement::CountedRange {
                     id,
@@ -1119,7 +1122,6 @@ impl<'program> IrBuilder<'program> {
                     invariants: _,
                     body,
                     backedge_drops,
-                    carried_references: _,
                 } => self.lower_counted_range(
                     *id,
                     node_path,

@@ -19,6 +19,7 @@
 
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
+use super::super::entailment::{DerivationRootKind, ObligationFamily};
 use super::super::loop_permission::{
     LoopActualization, LoopCombine, LoopDenial, LoopPermission, LoopVerdict,
 };
@@ -199,6 +200,84 @@ fn runtime_stride_sum_base_and_descendant_helper_calls_are_permitted() {
         judged.actualization,
         Some(LoopActualization::IndependentMap)
     );
+}
+
+/// A nonconstant preheader product creates a PRF-1 handle for `stride` before
+/// the counted loop. Its transparent image must agree with the endpoint's
+/// direct `start + stride` image, even after the original operands are set.
+#[test]
+fn runtime_preheader_products_expand_transparent_stride_handles() {
+    let source = RUNTIME_PARTITION_SOURCE
+        .replace(
+            "padding: own u64, base:",
+            "padding: own u64, rows: own u64, base:",
+        )
+        .replace(
+            "  requires base",
+            "  requires rows <= 8_u64;\n  requires base",
+        )
+        .replace("6_u64 * stride", "rows * stride")
+        .replace("0_u64..4_u64", "0_u64..rows")
+        .replace("i + 1_u64 <= 6_u64", "i + 1_u64 <= rows")
+        .replace(
+            "padding: 2_u64, base:",
+            "padding: 2_u64, rows: 4_u64, base:",
+        );
+    for writes in [
+        "",
+        "  invariant kept_stride: stride <= 16_u64;\n  set width = 0_u64;\n  set padding = 0_u64;\n",
+    ] {
+        let source = source.replace("  for (i", &format!("{writes}  for (i"));
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::Complete(program) = outcome else {
+                panic!("runtime partition must check: {outcome:?}");
+            };
+            let judged = only_loop(&program.data.permission, "partition");
+            assert_eq!(judged.verdict, LoopVerdict::PermittedEligible);
+            assert_eq!(
+                judged.actualization,
+                Some(LoopActualization::IndependentMap)
+            );
+
+            let function = program
+                .data
+                .functions
+                .iter()
+                .find(|function| function.name == "partition")
+                .expect("partition function");
+            let summary = &function.entailment;
+            let formations = summary
+                .obligations
+                .iter()
+                .filter(|outcome| outcome.family == ObligationFamily::RangeFormation)
+                .collect::<Vec<_>>();
+            assert_eq!(formations.len(), 2);
+            assert!(formations.iter().all(|outcome| outcome.discharged));
+            assert!(formations[0].range_partitions.is_empty());
+            assert_eq!(formations[1].range_partitions.len(), 1);
+            let partition = &formations[1].range_partitions[0];
+            assert_eq!(partition.stride.constant_value(), 0);
+            assert_eq!(partition.stride.terms().len(), 2);
+            assert!(
+                partition
+                    .stride
+                    .terms()
+                    .iter()
+                    .all(|term| term.coefficient() == 1)
+            );
+            let signs = summary
+                .derivations
+                .roots
+                .iter()
+                .filter_map(|root| match root.kind {
+                    DerivationRootKind::RangePartition { base, .. } => Some(base),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(signs, [false, true]);
+            super::entailment::validate_derivations(summary);
+        });
+    }
 }
 
 /// The same partition with its two endpoints bound through different exact

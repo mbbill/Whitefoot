@@ -7,6 +7,34 @@ criterion for deciding whether to pursue it. Entries do not select a design.
 Remove an item when its implementation and checks land, or its validation
 concludes with a recorded disposition; retain any selected follow-up work here.
 
+- **Generic struct constants are not implemented.** CONST-2's `cvalue`
+  grammar admits written type arguments, but
+  `compiler/src/semantic/check/types.rs::parse_const_construction` returns
+  `UnsupportedSemanticFeature::CompositeValues` whenever they are present.
+  This is an implementation gap, not a source-language rejection. Reopen when
+  extending static aggregate initialization: instantiate the exact named
+  const-eligible struct, preserve declared field order and field types, and
+  validate a generic struct constant's field reads against wrong-type,
+  wrong-order and non-const-eligible controls. Remove this item when those
+  cases pass through the ordinary compiler and conformance paths.
+
+- **Audit numeric conversion coverage and unnecessary fallible interfaces.**
+  The known starting case is integer low-bit narrowing: `cvt::<u32, u8>(x)`
+  preserves the numeric value and returns `Result`, while `reinterpret` only
+  admits its listed equal-width pairs. Masking with `iand(x, 255_u32)` before
+  `cvt` expresses the low-byte result but still exposes `Result`; there is no
+  direct total truncating conversion. Survey similar gaps across integer widths
+  and signedness, bit reinterpretation, saturation, and floating-point rounding
+  or narrowing, distinguishing existing compositions from missing operations.
+  Use small source examples and boundary controls to define each desired
+  behavior, including negative values, range edges, and relevant NaN/infinity
+  cases. Assess whether a clearer total operation or proved-domain form removes
+  unnecessary source branching without weakening exact conversion or proof
+  requirements; inspect ordinary emitted code before claiming a runtime cost
+  or improvement. Additional gaps and performance costs are unverified. Defer
+  operation selection and implementation to the requested conversion review;
+  reopen when that review starts or a real numeric workload needs a workaround.
+
 - **Joined reference proofs lose useful target-relative information.** A
   reference selecting either of two freshly empty Slots cannot establish the
   append precondition from both constructors' facts; captured disjoint ranges
@@ -24,28 +52,16 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   Branch-local range images additionally need target-presence and capture-
   generation information; a plain union of branch images is insufficient.
 
-- **Establish whether the reference-summary depth fallback is source-reachable.**
-  `PlaceMap::resolve_root` returns wholly unresolved beyond 32 recursive summary
-  expansions. Any unresolved child discards the whole alternative set; inspected
-  proof and parallel consumers fail closed, so no partial-origin omission or
-  incorrect acceptance is established. Ordinary aliases are flattened when
-  recorded, and a long source alias chain is not itself a reproducer. Trace
-  checked-source summary construction and test the internal boundary with a
-  shallow sibling; if reachable, replace the depth-dependent precision boundary
-  with source-bounded traversal and explicit cycle handling. Deferred until
-  reference-summary work provides a discriminating source witness or proves the
-  cap redundant; reopen before reusing this resolver for a new proof family.
-
-- **Counted-loop binder reservation has a separate normative mismatch.**
-  OP-1's exhaustive prohibited-role list omits `for_binding`, while DIAG-1's
-  reservation payload inventory includes `for-binder` and the resolver rejects
-  `for (cvt in 0_u64..1_u64)` with FORM-3. The existing resolver case
-  `counted_range_binder_uses_the_for_binder_reservation_role` requires that result.
-  Decide whether runtime loop binders join ordinary value binders in the reserved
-  domain, then align the two rule lists, resolver and positive/negative controls.
-  Invariant names have a separate proof-only lookup domain, so their exemption
-  does not decide this question. Deferred to an explicit runtime-name ruling;
-  reopen before changing reservation or counted-loop declaration inventory.
+- **Distinguish resolved formal anchors from holder queries in proof consumers.**
+  Some entailment support/overlap consumers pass an already resolved formal
+  root back through `PlaceMap::resolve`, which also serves written reference
+  holders. After a parameter rebind this can conservatively add its other
+  observed targets. Audit these calls before changing their interpretation;
+  use entry-anchor/rebound-holder pairs and overlapping controls to establish
+  whether separating the APIs recovers useful precision without omitting an
+  origin. No incorrect acceptance or measured benefit is established. Defer
+  this consumer change to the joined-reference work above; reopen when that
+  work establishes point-current target authority or a real proof needs it.
 
 - **Validate reuse of selected-target element layouts during emission.**
   [Zero-stride addressing](../compiler/src/backend/target.rs) currently queries
@@ -88,6 +104,53 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   against direct C and the current WF implementation. No new language operation
   is selected yet.
 
+- **Deque scalar costs remain after payload-address qualification.** The
+  [paired comparison](../research/experiments/container-representation/deque-library/RESULTS.md)
+  isolates the qualified index fact and reduces normal scalar forward churn
+  from about 2.3x C to 1.20–1.26x, leaving that residual gap unattributed.
+  Retained scalar reverse churn is about seven percent slower in the new
+  production layout despite identical relevant instructions and dependencies.
+  A controlled 32-byte padding experiment restores the endpoint addresses
+  without reliably removing the difference, so neither endpoint placement
+  nor an intrinsic assumption cost is established as its cause. The owner
+  selected provisional retention of the fact with both results preserved;
+  no measured application mix makes the forward gain cancel the reverse loss.
+  Compare the remaining scalar work with the same source, independent oracle
+  and C controls, preserving native code/data placement and recording
+  execution-state variation before attributing a cost to the interface or
+  choosing a production alignment policy. Require repeatable improvement in
+  both measurement orders and account for other affected paths. Defer broader
+  tuning while this causal question is open; reopen for a workload dominated
+  by retained reverse calls, a native-toolchain change or another material
+  regression under the matched comparison.
+
+- **Upstream LLVM on Darwin does not yet support the selected stack-probe
+  spelling.** The [Deque comparison](../research/experiments/container-representation/deque-library/RESULTS.md)
+  records LLVM 22.1.8 rejecting native construction of the unchanged baseline
+  with `Unsupported stack probing method`; the emitted
+  `"probe-stack"="__chkstk_darwin"` remains present. Parsing and optimization
+  succeed, and the native builder's Apple Clang path works, so this does not
+  establish a failure of the new address fact. Before offering upstream LLVM
+  as a native Darwin consumer, determine the supported probe form and link
+  requirements and validate large-frame and recursive exhaustion through the
+  existing floor tests. Disabling probes is not an acceptable workaround.
+  Defer this separate toolchain extension while the current native path is
+  supported; reopen when another native Darwin consumer is required.
+
+- **Slab aggregate results retain extra transfers and layout overhead.**
+  The [Slab comparison](../research/experiments/container-representation/slab-library/RESULTS.md)
+  separates the one-slot cell's extra word from its helper boundary: retained
+  wide removal and consumption has three 256-byte transfers in WF versus one
+  in C, and WF's product-layout result differs from the C union ABI. Keep
+  this distinction when interpreting timing; a cell-layout change alone
+  cannot remove these costs. Validate forwarding or result placement with
+  the same owning return paths, failed insertion returning the offered owner,
+  partial cleanup and alias controls, checking optimized transfers and
+  same-source timings on supported toolchains. Defer general enum layout and
+  call ABI changes until that experiment establishes which transfer can be
+  removed without changing ownership; reopen with the owning-map library or
+  a workload dominated by wide Slab removal.
+
 - **Short Vector cycles retain unresolved lowering costs.** The paired
   consumption experiment improves the large-record paths but slows the
   16-element scalar reuse chain in both source orders. Ordinary optimization
@@ -118,13 +181,92 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   [transfer evidence](../research/experiments/container-representation/vector-library/RESULTS.md#v061-copy-and-consumption-trial)
   separates this opportunity from the library's remaining element relocation.
 
+- **Parallel footprints omit ordinary result-list bindings.** The
+  [sparse-routing trial](../research/investigations/compute-model/DESIGN.md#sparse-destination-routing-trial-2026-09-21)
+  exposes a receiver map denied solely because one statement binds two local
+  results. PAR-2 allows iteration-owned writes, but the current PAR-1/PAR-2
+  walkers model one result definition per statement and refuse this form.
+  A two-field record admits the same receiver map without added allocation or
+  traversal. Defer a general multi-definition footprint implementation while
+  measuring the algorithm; reopen when that workaround materially complicates
+  a real consumer. Validate complete effects, consumption, exits and lowering
+  for all result ordinals rather than granting a tuple-specific exception.
+
+- **Initialized allocation can impose serial span on parallel work.** The
+  [private-outbox representation](../research/investigations/compute-model/DESIGN.md#private-outboxes-without-frontier-compaction)
+  requires a fresh C-by-D head matrix each level; its element fill is a
+  sequential emitted loop before otherwise independent routing. Initialization
+  remains linear work but can dominate the full critical path. The end-to-end
+  cost is not yet attributed. Measure fill/allocation separately from useful
+  routing before choosing a general lowering change; preserve initial values,
+  cleanup and the unchanged sequential image in any later experiment. Defer
+  repair until the sparse oracle and bounded comparison establish materiality.
+
+- **Loop capture selection remains conservative beyond forwarding.** The
+  [needed-capture change](../research/investigations/compute-model/DESIGN.md#needed-loop-captures)
+  retains every ordinary instruction and call argument. Removing an unused
+  pure computation or an unused callee formal could shrink further frames,
+  but needs independent effect and call-interface reasoning; no blocked
+  consumer currently justifies that scope. Broader dead-computation or
+  dead-formal analysis remains deferred: reopen
+  when an otherwise useful map still exceeds the fixed frame bound, and
+  validate smaller emitted frames on the same source without changing calls,
+  cleanup or results before selecting that wider scope.
+
+- **Pruning already-fitting loop frames needs a qualified benefit.** The
+  [capture investigation](../research/investigations/compute-model/DESIGN.md#needed-loop-captures)
+  now selects capture pruning only to rescue an originally oversized frame.
+  Pruning fitting tasks changes transport and code placement without admitting
+  a new loop, and records repeatedly reports an adverse W4 observation whose
+  cause remains unresolved. Smaller frames could still help another consumer,
+  but that benefit is unverified. Defer the broader optimization until a real
+  fitting-frame consumer exposes a material transport cost; reopen with an
+  unchanged-source comparison that retains native results, cleanup and a
+  same-image null control, establishes its benefit and clears the protected
+  records case before selecting the wider policy.
+
+- **First-index search needs a variable-cost expression probe.** The
+  [ordered-batch analysis](../research/investigations/io-model/CONCURRENCY-CATALOG.md#21-parallel-search-with-early-exit-added)
+  avoids mandatory full-input scanning, but its invocation bound does not
+  bound predicate cost. Block helpers that return at local matches remain
+  unqualified. After the current capture, BFS and stencil evidence is complete,
+  make this the next bounded expression probe: preserve the lowest matching
+  index or N on read-only input with a pure, infallible record predicate;
+  compare sequential search, batch folds and local-return helpers with a
+  useful native first-index search. Check all small-input hit positions and
+  absence, then count inspected records and bytes, including work committed
+  in the final wave. A cheap hit followed by a costly record in another helper
+  distinguishes an invocation bound from a cost bound; actual skipped tails
+  and completed helper work distinguish useful early return from a full scan
+  or serial execution. Defer until those active qualifications finish; no
+  executor or new concurrency rule is selected by this follow-up.
+
+- **Runtime DAG fan-in costs remain unqualified.** The
+  [catalog's level decomposition](../research/investigations/io-model/CONCURRENCY-CATALOG.md#5-task-dag-with-dependencies-static-and-dynamic)
+  can add large span, but a denied shared-counter scatter does not establish
+  mandatory global barriers or retirement passes for every representation.
+  Test a runtime-length spine with independent long leaves, two sources
+  notifying two destination owners, and fan-in edges A-to-C, B-to-C, B-to-D.
+  Preserve every task's output and exactly one evaluation per task against
+  an independent topological oracle; compare with a useful edge-triggered
+  native executor and charge routing, initialization, work, span and peak
+  workspace. Overlap along the spine or destination-owned retirement would
+  falsify the corresponding universal level/serial-pass claim, not establish
+  an efficient general DAG solution. Defer while capture, BFS and stencil
+  evidence is qualified. Reopen after that work when a concrete runtime-DAG
+  consumer requires the fan-in contract; begin with bounded source witnesses,
+  not a new executor project.
+
 - **Parallel grain policy needs a dedicated study.** Captured extents are a
   provisional scheduling input, not an established broadly suitable policy.
   The [first same-source trial](../research/investigations/compute-model/DESIGN.md#runtime-extent-trial-result)
   improves prefix, histogram and stencil, but makes chain-pull 51 percent
   slower at two workers and incurs substantial CPU costs in some faster
-  cases. Those measurements precede the continuation-accounting correction;
-  its performance has not been remeasured. Study whether a robust common
+  cases. Those measurements precede the continuation-accounting correction.
+  The [frozen `6fdb6768` baseline](../research/investigations/compute-model/DESIGN.md#frozen-compute-baseline-2026-09-21)
+  observes useful regular parallel work and substantial wide-stencil CPU cost;
+  it does not isolate that correction's effect. Its scalar native controls do
+  not establish optimized-native competitiveness. Study whether a robust common
   policy exists or workload, input shape, worker count and hardware require
   different choices, comparing wall time, CPU and scheduling/profile overhead.
   [Runtime profiles and PGO](ideas.md#parallel-grain-policies-and-runtime-profiles)
@@ -134,7 +276,7 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   tradeoffs are recorded.
 
 - **Array-helper pricing beyond original read-only references remains conservative.**
-  The pending [typed Box-array extent proposal](../research/investigations/compute-model/DESIGN.md#read-only-box-array-helper-work-pricing)
+  The accepted [typed Box-array extent extension](../research/investigations/compute-model/DESIGN.md#read-only-box-array-helper-work-pricing)
   keeps static estimates for local owners, write-capable formals and references
   changed away from the original formal. Some unchanged forwarded references
   also lose the exact capture identity and fall back. Retaining those runtime extents could
@@ -163,30 +305,37 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   drift, full output checks, CPU and first-call costs. Close when those costs
   are attributed or their measured tradeoff is explicitly accepted.
 
-- **Stable scatter has low parallel utilization and unresolved costs.** The
-  [reference-model trial](../research/investigations/compute-model/DESIGN.md#reference-model-scatter-result-2026-09-20)
-  removes the owned tally/packing transfers and verifies nonempty helper work
-  in both input partitioning and output packing. At eight workers its mixed
-  input uses roughly 2.63 occupied CPUs for Whitefoot and 3.96 for oneTBB chain,
-  from process-CPU/wall-time medians; this includes runtime work and does not
-  identify the remaining cause. Attribute wall time, CPU time, runnable work and
-  worker activity to block partitioning, count tally, packing and final copy.
-  Hold the algorithm and representation fixed for scheduling controls, and
-  distinguish insufficient parallel work or a long serial critical path from
-  available work not reaching workers. Both implementations have a packing
-  chain and final two-way copy, with different recursive-budget realizations.
-  Padded initialization, partition payload construction, linear packing span
-  and final copying remain costs; use the attribution to choose between task expansion,
-  scheduling, critical-path reduction and a balanced destination representation.
-  Reestablish the baseline after the reference-model merge using the
-  [post-port attribution boundary](../research/investigations/compute-model/DESIGN.md#post-port-attribution-boundary-2026-09-21).
-  The earlier indexed-aggregate copy candidate was not performance-qualified;
-  revisit it only if current emitted code still exposes that cost on identical
-  source. Its old phase injector targets a retired ABI and is not a current tool.
-  Preserve stable order and machine-checked bounds. This local investigation
-  precedes the separate general grain/profile/PGO study. Remove this item when
-  the cause is established and the trial's work, space and measured-cost
-  criteria are met, or its remaining tradeoffs are accepted.
+- **Stable scatter retains construction and packing costs.** The dated merged-model
+  [joined-phase result](../research/investigations/compute-model/DESIGN.md#joined-phase-result-2026-09-21)
+  identifies about 0.596 ms of chunk initialization and 0.569 ms of packing at
+  W8, against a 1.930 ms ordinary mixed-input call. That image clears
+  and copies a full inactive chunk payload per appended `None`, and expands
+  aggregate transfers during input partitioning; borrowed tally/packing reads
+  no longer retain that full-copy cost. These observations do not measure
+  current main. A narrower, unverified opportunity is to construct a single-use
+  aggregate directly in its fresh placement destination while retaining full
+  initialization. The observed `None` path could lose its staging copy without
+  skipping the inactive payload clear. Feasibility across ordinary call
+  boundaries and loop re-entry, and the whole-call benefit, remain unestablished.
+  Defer this behind the current pricing, sparse-discovery and baseline work.
+  Reopen when current optimized code reproduces material staging traffic;
+  compare unchanged source, require that transfer to disappear, qualify whole-call
+  wall/CPU results, and preserve enum/affine snapshots, alias behavior, window
+  length updates and exact-once cleanup. Eliminating inactive payload initialization
+  still needs a separate general initialized-value treatment, not a
+  consumer-specific patch.
+  A direct `Array` replacement is not admitted: `Chunk` contains `nocopy`
+  slots and the fill constructor requires a copy element. Any alternative
+  affine construction interface needs its own language/library grounds.
+  Expanding the existing recursion frontier supplies no qualified win at 32;
+  disabling it makes mixed input 30–37 percent slower at W2/W4/W8 despite more
+  successful steals. Investigate packing span/batching or a balanced output
+  representation while preserving stable order and machine-checked bounds.
+  Short-phase CPU counter deltas and several small/skew controls remain
+  unqualified, so they do not diagnose worker idleness. No general grain policy
+  follows. Close this item only after the remaining construction and packing
+  costs meet explicit work, space and performance criteria, or their tradeoffs
+  are accepted.
 
 - **The formal compute comparison has unresolved attribution and measurement costs.**
   [Hosted observations](../research/investigations/test-economy/redesign.md#identical-image-host-control-failure)
@@ -207,21 +356,20 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   Its identical-image control nevertheless retained a `records` W4 suspect at
   0.962815708 with four adverse pairs. The concrete PR 70 regression is repaired,
   while its cause and the earlier and remaining control variation are not
-  attributed. Keep this item until those observations and the resulting
-  measurement/detection tradeoff are explained.
+  attributed. The [PR 78 hosted records inspection](../research/investigations/compute-model/DESIGN.md#records-w4-hosted-comparison-remains-unresolved)
+  retains repeated W4 suspects at `30198a19` and `53c68c29`: the latter has
+  wall/CPU ratios 0.898002/0.908317 with four adverse pairs, while its records
+  null is not suspect. Exact x86 objects show unchanged hot work and runtime
+  objects alongside reduced capture transport and changed linked placement;
+  they establish no cause or fix. Existing raw data lacks scheduling counters,
+  and ARM or emulated results cannot clear this Linux signal. A retained-image
+  W4 paired/null counter check is a possible discriminator, not selected or
+  run. Defer mechanism changes until evidence distinguishes the possible causes;
+  reopen on selection of a bounded Linux attribution experiment and preserve
+  the suspect if that experiment is uninformative. Keep this item
+  until the observations and measurement/detection tradeoff are explained by
+  discriminating evidence, rather than a later pass or changed threshold.
 
-- **Recursive cleanup has no general bounded-stack lowering.** The current
-  emitter recursively calls release actions, so machine-stack use can grow
-  with owned value depth; its stack ledger reports the release cycle. The
-  [continuation models](../research/investigations/access-effects/cleanup-continuations/README.md)
-  demonstrate fixed-stack, nonallocating walks only for their selected layouts.
-  They establish neither an encoding for all WF types without extra object
-  fields nor its impossibility. Retain the existing lowering while researching
-  how every suspended aggregate, enum, array and window traversal records its
-  continuation. Preserve reverse binding order, declaration order within
-  aggregates, logical window order, and content-before-Box-free order. Close
-  this item when a general implementation and native regressions establish
-  those properties, or a different resource tradeoff is selected explicitly.
 - **Box/window representation costs remain unqualified.** The current runtime-
   capacity Box is one pointer to one header-first allocation; `grow` uses
   allocation, memmove and free. A one-word owner, one allocation and header
@@ -356,8 +504,8 @@ each is resolved by a discussion and a tree change.
   multi-result and resource APIs. A candidate must preserve explicit boundary
   types, unambiguous result references, useful mismatch diagnostics and one
   grammar-defined spelling, without site-dependent inference relief. The
-  benefit and final spelling are unverified; defer selection while result-proof
-  transport is investigated, and reopen at the next syntax-design discussion.
+  benefit and final spelling are unverified; defer selection until the next
+  syntax-design discussion.
 - **Ownership transfer and reference-access forms.** Audit unnecessary
   owner-in/owner-out APIs now expressible with reference parameters and exact
   effect rows, the differing consumption spellings of calls, returns, matches
@@ -370,8 +518,8 @@ each is resolved by a discussion and a tree change.
   Require the ordinary positive and invalid-use examples to remain explainable
   by one rule per operation, with no additional runtime checks or transfers.
   Reduced ceremony is an opportunity, not an established gain. Defer these
-  interface and syntax choices to a dedicated discussion after the current
-  result-proof study; reopen with those same-operation comparisons.
+  interface and syntax choices to a dedicated discussion; reopen with those
+  same-operation comparisons.
 - **Expression composition and canonical source policy.** Reassess mandatory
   three-address computation and intermediate names together with the ban on
   comments and rejection of noncanonical formatting. Compare authoring,
@@ -394,10 +542,40 @@ each is resolved by a discussion and a tree change.
   An unconstrained `K` also admits those linear values under OWN-1 and
   PROV-6. A numeric phase alone cannot prove that a returned enum slot is
   vacant; an occupied variant still contains a key that must be consumed.
-  Investigate an ordinary state encoding or checked variant-state relation
-  that lets rehash move every must-consume key without an impossible cleanup
-  branch. Retain occupancy as program data, and do not add an implicit
-  discard merely to satisfy the checker.
+  The [Slab trial](../research/investigations/containers-and-resources/X1-LIBRARY.md#exact-unavailable-source-forms)
+  uses an inline `Slots<T,1>` per cell and executes insertion, removal, reuse
+  and cleanup for nodrop T; it supplies an ordinary state encoding, at a
+  metadata cost measured against tagged C cells. This does not establish a
+  complete map rehash or select the same layout for it. Reopen for the next
+  owning-map library trial: compare the one-slot encoding and ordinary enum
+  alternatives through collision, replacement, tombstone reuse and rehash,
+  including bytes and helper transfers. Retain occupancy as program data and
+  do not add an implicit discard or impossible cleanup branch to satisfy the
+  checker. A new variant-state relation needs a remaining measured consumer.
+- **Deque still lacks zero-copy two-span access over Ring.** REF-4 rejects
+  every Ring range, even empty and proved non-wrapping ones. The current
+  library's slot visitor is not a substitute for a native consumer accepting
+  two contiguous extents. A fully initialized Array works for copy elements
+  but adds spare-capacity initialization and does not provide arbitrary T.
+  The [source analysis](../research/investigations/containers-and-resources/X1-LIBRARY.md#ring-range-correspondence)
+  identifies the missing contiguous-span interface. An extension needs a
+  concrete span consumer, precise empty/non-wrap formation and invalidation
+  rules, native-cost comparison and negative wrap/stale-reference cases.
+  Defer extension while this library tests endpoint and rebase costs; reopen
+  before using it for scatter/gather or another required bulk span consumer.
+- **Deque rebase is an explicit new-owner conversion.** Reference-based
+  replacement currently loses the exchanged owners' measures; append's
+  lower-bound-only contract also lacks the exact sum needed by the library's
+  return contract. The current counted take/place conversion supports nodrop
+  T without an impossible cleanup branch, but its cost must be separated
+  from a two-extent native transfer. The
+  [source limits](../research/investigations/containers-and-resources/X1-LIBRARY.md#exact-unavailable-source-forms)
+  and [cost comparison](../research/experiments/container-representation/deque-library/RESULTS.md)
+  distinguish interface precision from lowering. Keep the explicit conversion
+  for this slice; reopen if a real caller needs automatic reference-based
+  growth or rebase dominates its work. Evaluate the already-open affine
+  contract question below before choosing a new storage operation; require
+  exact length, emptied-old-owner and unchanged element-order evidence.
 - **The automatic-fact menu is a leftover.** [ENT-3] admits a narrow and
   asymmetric set of arithmetic idioms as automatic facts, each added for one
   proof pattern, with no general criterion and no counterpart for rows it
@@ -415,19 +593,20 @@ Items the owner asked to be kept on this list during the redesign recorded in
 `design/language` on 2026-09-19. None of them is a decision; each names the
 condition under which it is taken up.
 
-- **Mutual tail transfers.** [FN-10](../spec/kernel-spec.md) admits direct
-  self calls through `return musttail f(...);`. Extending the guarantee to
-  a different function needs a matching tail-call ABI and target evidence;
-  the current parameter reassignment and entry jump cannot cross a function
-  boundary. Reopen when a real mutually recursive program needs that bound.
-- **Totality and recursion-depth proofs.** Domains that need determinism about
-  resource use will need proved totality (termination) and proved recursion
-  depth as obligation families; the atomic in-place update deliberately
-  requires only a function that returns the place's type with no failure exit.
-  The current recursive-cleanup stack cost is a separate compiler limitation
-  recorded above; the call-site `musttail` guarantee covers only retained
-  activations at marked self transfers. Neither is an implemented
-  source-level recursion-depth proof.
+- **Fixed-resource execution with proved completion — deferred.** Resume from
+  the [research checkpoint](../research/investigations/fixed-resource-execution/README.md#deferred-work-and-resumption),
+  which preserves the stack, recursion, loop, allocation/runtime and cleanup
+  findings, proposals, probes and remaining validation. The goal is no heap,
+  proved completion and peak storage within supplied byte capacities; a depth
+  cap or `program no_heap;` alone does not establish it. Automatic qualification
+  is unimplemented, the diagnostic stack ledger has coverage/geometry gaps,
+  and general recursive release can still grow with value depth. Work is
+  deferred until this topic is explicitly resumed. Start by rechecking the
+  recorded compiler/target assumptions, then the complete acyclic stack-byte
+  inventory; preserve unknown-call/alignment controls and exact budget-boundary
+  cases. Progress proofs and full resource closure follow separately. The
+  checkpoint also retains the consumer conditions for mutual tail transfers,
+  general cleanup lowering and total-work estimation; none is scheduled now.
 - **Facts a contract can carry (after PR 70 merges; owner, 2026-09-20).**
   Three additive widenings, taken up together, each measured:
   (1) Affine `ensures`. A `requires` may already be an affine relation and

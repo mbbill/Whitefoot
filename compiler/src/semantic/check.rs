@@ -544,16 +544,15 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// `struct_decl` or `enum_decl` body is being read, and `None`
     /// everywhere else, where FORM-8 requires a written store argument.
     elided_store_brand: std::cell::Cell<Option<DeclarationId>>,
-    /// [FN-2, OWN-1, PROV-6] whether the body now being checked is a *concrete
-    /// instance* of a generic template whose spelling one symbolic instance
-    /// has already judged.
+    /// [FN-2, OWN-1, PROV-6] whether the body now being checked is an instance
+    /// other than its generic template's own symbolic spelling authority.
     ///
     /// The template is the spelling authority: a body whose parameter lacks
     /// copy writes `move`, a `copy`-bounded body writes bare use, and the one
-    /// symbolic instance decides both once. The concrete-instance recheck
-    /// therefore
-    /// does not re-judge the [OWN-1]/[FORM-1] spelling, and a `move` of a
-    /// template-affine value at a copy instance denotes a copy. Every other
+    /// symbolic instance decides both once. A recheck with supplied arguments,
+    /// even arguments still symbolic in a caller, does not re-judge the
+    /// [OWN-1]/[FORM-1] spelling, and a `move` of a template-affine value at a
+    /// copy instance denotes a copy. Every other
     /// [OWN-1] judgment — consume-once, dead roots, exclusivity — is
     /// re-judged as usual, because those are properties of the concrete
     /// instance and not of the written spelling.
@@ -572,6 +571,9 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// the function driver clears this scratch state on every retry.
     deferred_loop_reference_uses: RefCell<Vec<references::DeferredLoopReferenceUse>>,
     loop_reference_summaries: RefCell<HashMap<references::LoopReferenceToken, Vec<ResolvedPlace>>>,
+    /// Resolved origins established by this structural function attempt.
+    /// Every retry starts fresh; only its complete final walk is published.
+    reference_origins: RefCell<Vec<Vec<ResolvedPlace>>>,
     /// Successful declaration-only FN-4 queries. A complete member check
     /// stages its batch before publishing here, and the whole checker remains
     /// failure-atomic with the prospective checked program [DIAG-2].
@@ -1003,8 +1005,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// spelling [FORM-1] keys on a value's copy/affine class.
     ///
     /// That spelling is `move p` versus a bare `p` [OWN-1]: one spelling per
-    /// meaning, selected by the class. A concrete instance of a generic
-    /// template is not its authority: the template's one symbolic instance
+    /// meaning, selected by the class. A supplied instance of a generic
+    /// template is not its authority: the template's own symbolic instance
     /// judged it under the parameter's written bound, so at a copy instance a
     /// `move` of a template-affine value denotes a copy rather than reopening
     /// a judgment the template already made [PROV-6]. Every other judgment of
@@ -1143,6 +1145,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             call_separations: RefCell::new(Vec::new()),
             deferred_loop_reference_uses: RefCell::new(Vec::new()),
             loop_reference_summaries: RefCell::new(HashMap::new()),
+            reference_origins: RefCell::new(Vec::new()),
             contract_queries: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
             prelude_types: Vec::new(),
@@ -1645,19 +1648,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// [FN-2, OWN-1, PROV-6] one body, checked with the template's spelling
     /// authority recorded for the instance it is.
     ///
-    /// A concrete instance of a generic template is exactly the body whose
-    /// [OWN-1]/[FORM-1] spelling the template's own symbolic instance already
-    /// judged under the parameter's written bound, so this instance does not
-    /// re-judge it. A symbolic instance and a nongeneric body are their own
-    /// authority and judge the spelling here.
+    /// A supplied instance of a generic template is exactly the body whose
+    /// [OWN-1]/[FORM-1] spelling the template's own symbolic instance judges
+    /// under the parameter's written bound, so this instance does not re-judge
+    /// it. In particular, a caller may fix one argument to a copy type while
+    /// forwarding another still-symbolic type, const or function parameter.
+    /// Only the template's own symbolic instance and a nongeneric body judge
+    /// the written spelling here.
     fn check_function_signature(
         &self,
         signature: &FunctionSignature,
     ) -> Result<CheckedFunctionInventory, CheckStop> {
-        let previous = self.template_spelling_authority.replace(
-            signature.substitution.len() > 0
-                && signature.substitution.is_concrete(&self.elements.borrow()),
-        );
+        let previous = self
+            .template_spelling_authority
+            .replace(signature.substitution.len() > 0 && !signature.substitution.is_symbolic());
         self.loop_reference_summaries.borrow_mut().clear();
         let queries = self.contract_queries.borrow().len();
         let tail_rejections = self.musttail_rejections.borrow().len();
@@ -1727,6 +1731,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // inventory. No deferred REF-2 dependency may cross that namespace
         // boundary.
         self.deferred_loop_reference_uses.borrow_mut().clear();
+        self.reference_origins.borrow_mut().clear();
         self.check_musttail_callees(signature)?;
         self.check_entry_formers(signature)?;
         let mut bindings = HashMap::new();
@@ -1743,10 +1748,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             next_binding = next_binding
                 .checked_add(1)
                 .ok_or(SemanticCompilerFailure::CounterOverflow)?;
-            bindings.insert(
-                parameter.declaration,
-                self.parameter_local(parameter, binding)?,
-            );
+            let local = self.parameter_local(parameter, binding)?;
+            if let Some(reference) = &local.reference {
+                self.record_reference_origins(binding, &reference.paths);
+            }
+            bindings.insert(parameter.declaration, local);
             parameters.push(CheckedParameter {
                 name: parameter.name.clone(),
                 declaration: parameter.declaration,
@@ -1916,6 +1922,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             requirements,
             postconditions,
             body: (!declaration_only).then_some(checked.statements),
+            reference_origins: std::mem::take(&mut *self.reference_origins.borrow_mut()),
             body_disposition: super::model::CheckedBodyDisposition::Inhabited,
             call_separations: {
                 let mut separations = std::mem::take(&mut *self.call_separations.borrow_mut());
@@ -2103,6 +2110,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<PostconditionSchedule, CheckStop> {
         let selected = |index: usize| analyzed.is_none_or(|analyzed| analyzed[index]);
         let contract_queries = self.contract_queries.borrow().clone();
+        let const_parameter_types = self.const_generic_types().collect();
         // ENT is the single acceptance-bearing proof path for ordinary
         // obligations, call requirements, invariants and postconditions.
         let mut schedule =
@@ -2117,6 +2125,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     callees,
                     constants: &self.checked_constants,
                     constant_ids: &self.constants,
+                    const_parameter_types: &const_parameter_types,
                     nominals: &self.nominals,
                     elements: &self.elements.borrow(),
                     contract_queries: &contract_queries,
@@ -2189,6 +2198,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         callees,
                         constants: &self.checked_constants,
                         constant_ids: &self.constants,
+                        const_parameter_types: &const_parameter_types,
                         nominals: &self.nominals,
                         elements: &self.elements.borrow(),
                         contract_queries: &contract_queries,

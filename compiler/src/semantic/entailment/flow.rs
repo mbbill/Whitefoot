@@ -2309,9 +2309,18 @@ impl Analyzer<'_, '_> {
         self.postcondition_place_term(root, projections, ty)
     }
 
+    /// [ENT-2, MSR-6] every occurrence of a symbolic const parameter names
+    /// its original declaration and keeps that declaration's written type.
+    /// A storage extent or a differently typed formal does not create another
+    /// constant identity or grant that parameter a different interval.
+    fn const_parameter_term(&mut self, declaration: crate::DeclarationId) -> TermId {
+        let ty = self.context.const_parameter_types[&declaration];
+        self.terms.intern(TermKind::ConstParameter(declaration, ty))
+    }
+
     fn postcondition_constant_term(&mut self, value: &CheckedValue) -> Option<TermId> {
         if let CheckedValue::ConstGeneric { declaration, .. } = value {
-            return Some(self.terms.intern(TermKind::ConstParameter(*declaration)));
+            return Some(self.const_parameter_term(*declaration));
         }
         let value = match value {
             CheckedValue::Integer { ty, bits } => integer_value(*ty, *bits),
@@ -2420,9 +2429,9 @@ impl Analyzer<'_, '_> {
                     Some(CheckedConst::Value(value)) => {
                         Some(MeasureBound::Constant(i128::from(value)))
                     }
-                    Some(CheckedConst::Parameter(declaration)) => Some(MeasureBound::Equal(
-                        self.terms.intern(TermKind::ConstParameter(declaration)),
-                    )),
+                    Some(CheckedConst::Parameter(declaration)) => {
+                        Some(MeasureBound::Equal(self.const_parameter_term(declaration)))
+                    }
                     // A symbolic derived length has no [ENT-2] term form; the
                     // concrete instance, whose length is a value, restates the
                     // constant bound.
@@ -2438,9 +2447,9 @@ impl Analyzer<'_, '_> {
                     Some(CheckedConst::Value(value)) => {
                         Some(MeasureBound::Constant(i128::from(value)))
                     }
-                    Some(CheckedConst::Parameter(declaration)) => Some(MeasureBound::Equal(
-                        self.terms.intern(TermKind::ConstParameter(declaration)),
-                    )),
+                    Some(CheckedConst::Parameter(declaration)) => {
+                        Some(MeasureBound::Equal(self.const_parameter_term(declaration)))
+                    }
                     Some(CheckedConst::Derived(_)) | None => None,
                 },
                 // An independent runtime quantity of the value's own
@@ -2659,7 +2668,7 @@ impl Analyzer<'_, '_> {
                 let (_, projected_holders) = self.resolve_goal_support(&support);
                 holders.extend(projected_holders);
             }
-            TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => {}
+            TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(..) => {}
             TermKind::CountedCapture { .. }
             | TermKind::IndexCapture { .. }
             | TermKind::ResultPayload(_)
@@ -3060,7 +3069,7 @@ impl Analyzer<'_, '_> {
             self.terms.kind(term),
             TermKind::Zero
                 | TermKind::Constant(_)
-                | TermKind::ConstParameter(_)
+                | TermKind::ConstParameter(..)
                 | TermKind::CountedCapture { .. }
                 | TermKind::IndexCapture { .. }
                 | TermKind::ResultPayload(_)
@@ -4109,7 +4118,7 @@ impl Analyzer<'_, '_> {
         event: &KillEvent,
     ) -> bool {
         match self.terms.kind(term) {
-            TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => false,
+            TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(..) => false,
             // Counted captures and commit values are immutable. A counted
             // capture dies with its construct-scope exit, handled separately
             // from source-place write/consume events; a commit value names one
@@ -4281,7 +4290,7 @@ impl Analyzer<'_, '_> {
     /// every holder read through, which is the spelling root here.
     fn scope_kills_term(&self, term: TermId, exited: &HashSet<BindingId>) -> bool {
         match self.terms.kind(term) {
-            TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => false,
+            TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(..) => false,
             TermKind::CountedCapture { .. }
             | TermKind::IndexCapture { .. }
             | TermKind::ResultPayload(_)
@@ -4811,7 +4820,7 @@ impl Analyzer<'_, '_> {
             // constant term [ENT-2] clause (c) fixes; a concrete [FN-2]
             // instance has already folded it to an integer constant.
             CheckedExpression::Constant(CheckedValue::ConstGeneric { declaration, .. }) => {
-                return Some(self.terms.intern(TermKind::ConstParameter(*declaration)));
+                return Some(self.const_parameter_term(*declaration));
             }
             CheckedExpression::Constant(CheckedValue::Integer { ty, bits })
             | CheckedExpression::NamedConstant {
@@ -6076,7 +6085,7 @@ impl Analyzer<'_, '_> {
             GoalExpression::Datum(GoalDatum::Literal(CheckedValue::ConstGeneric {
                 declaration,
                 ..
-            })) => Some(self.terms.intern(TermKind::ConstParameter(*declaration))),
+            })) => Some(self.const_parameter_term(*declaration)),
             GoalExpression::Datum(GoalDatum::Literal(CheckedValue::Integer { ty, bits })) => Some(
                 self.terms
                     .intern(TermKind::Constant(integer_value(*ty, *bits))),
@@ -8817,14 +8826,18 @@ impl Analyzer<'_, '_> {
                 base: AffineForm::constant(0),
             });
         }
+        // A preheader product can mint a handle for a transparent sum. The
+        // handle and its image name the same value, so expand it before the
+        // invariant-atom case: otherwise the product's stride and an endpoint
+        // that reads the sum directly would have different canonical images.
+        if let Some(image) = self.handle_images.get(&term) {
+            return self.counted_value_image(image, binder, invariant, visiting);
+        }
         if invariant.contains(&term) {
             return Some(CountedValueImage {
                 stride: AffineForm::constant(0),
                 base: AffineForm::term(term),
             });
-        }
-        if let Some(image) = self.handle_images.get(&term) {
-            return self.counted_value_image(image, binder, invariant, visiting);
         }
         let (left, right) = *self.product_atoms.get(&term)?;
         let left =
@@ -9323,9 +9336,7 @@ impl Analyzer<'_, '_> {
             CapturedTerm::Literal(value) => {
                 Some(self.terms.intern(TermKind::Constant(i128::from(value))))
             }
-            CapturedTerm::Const(declaration) => {
-                Some(self.terms.intern(TermKind::ConstParameter(declaration)))
-            }
+            CapturedTerm::Const(declaration) => Some(self.const_parameter_term(declaration)),
             CapturedTerm::Binding(_) if matches!(value.capture, CaptureId::Source(_)) => {
                 self.terms.interned(&TermKind::IndexCapture {
                     capture: value.capture,
@@ -9766,7 +9777,7 @@ impl Analyzer<'_, '_> {
             // [MSR-3] a measure datum inherits the atom of the term it
             // denotes, and [MSR-6] gives one immutable image to a symbolic
             // const parameter throughout the generic body.
-            TermKind::ConstParameter(_)
+            TermKind::ConstParameter(..)
             | TermKind::Measure(..)
             | TermKind::EntryDatum { .. }
             | TermKind::MeasureDatum { .. }
@@ -10830,7 +10841,7 @@ impl Analyzer<'_, '_> {
             // spelling of the parameter; treating the endpoint as an
             // unrelated unknown loses the exhaustion fact at the return.
             CheckedExpression::Constant(CheckedValue::ConstGeneric { declaration, .. }) => {
-                let term = self.terms.intern(TermKind::ConstParameter(*declaration));
+                let term = self.const_parameter_term(*declaration);
                 Some(self.measure_atom(term, state))
             }
             CheckedExpression::Binding { binding, ty, .. } => {
@@ -11908,10 +11919,8 @@ impl Analyzer<'_, '_> {
         let Some(product) = state.values.get(&binding).and_then(AffineForm::unit_term) else {
             return;
         };
-        // Constant-scaled products already have a transparent affine image.
-        // Do not mint opaque operand handles for them: a handle established
-        // before a loop becomes invariant and can hide a stride's affine sum
-        // from the counted partition decomposition.
+        // Constant-scaled products already have a transparent affine image
+        // and need no opaque operand handles for a nonlinear certificate fold.
         let nonconstant =
             |image: Option<AffineForm>| image.is_some_and(|image| !image.terms().is_empty());
         if !nonconstant(self.affine_pre_domain_form(left, state))
@@ -12067,7 +12076,7 @@ impl Analyzer<'_, '_> {
             // declaration-anchored image as an invariant or contract
             // spelling of the symbolic const parameter.
             CheckedExpression::Constant(CheckedValue::ConstGeneric { declaration, .. }) => {
-                let term = self.terms.intern(TermKind::ConstParameter(*declaration));
+                let term = self.const_parameter_term(*declaration);
                 Some(self.measure_atom(term, state))
             }
             CheckedExpression::Binding { binding, ty, .. } => {
@@ -12178,7 +12187,7 @@ impl Analyzer<'_, '_> {
                     // no [ENT-5] event kills it, so its image is one
                     // immutable atom for the whole walk.
                     CheckedAffineExpressionKind::ConstGeneric { declaration, .. } => {
-                        let term = self.terms.intern(TermKind::ConstParameter(*declaration));
+                        let term = self.const_parameter_term(*declaration);
                         values.push(self.measure_atom(term, state));
                     }
                     CheckedAffineExpressionKind::Add(left, right) => {
@@ -13175,7 +13184,7 @@ impl Analyzer<'_, '_> {
                     out.push(self.checked_measure_term(measure)?);
                 }
                 CheckedAffineExpressionKind::ConstGeneric { declaration, .. } => {
-                    out.push(self.terms.intern(TermKind::ConstParameter(*declaration)));
+                    out.push(self.const_parameter_term(*declaration));
                 }
             }
         }
@@ -13188,7 +13197,7 @@ impl Analyzer<'_, '_> {
         self.goal_operand(&goal)
     }
 
-    /// The image this program point holds for one measure term.
+    /// The image this program point holds for one measure or const-generic term.
     ///
     /// [MSR-4]'s automatic derivation reads the current edge's immutable
     /// value image. A written invariant captures that image in its theorem;
@@ -13232,7 +13241,15 @@ impl Analyzer<'_, '_> {
                 .insert(anchor, atom.clone());
             return atom;
         }
-        let atom = self.new_affine_atom(IntegerType::U64);
+        // [MSR-6] a symbolic const parameter has its declaration's integer
+        // type; measures and their immutable datums instead have type u64.
+        // Sharing the image path cannot give a signed parameter the unsigned
+        // nonnegativity bound or widen a narrower parameter's range.
+        let ty = match self.terms.kind(anchor) {
+            TermKind::ConstParameter(_, ty) => *ty,
+            _ => IntegerType::U64,
+        };
+        let atom = self.new_affine_atom(ty);
         state
             .measure_atoms
             .borrow_mut()
@@ -14923,7 +14940,6 @@ impl Analyzer<'_, '_> {
                 invariants,
                 body,
                 backedge_drops: _,
-                carried_references: _,
             } => {
                 for invariant in invariants {
                     self.judge_affine_relation_subscripts(&invariant.relation, state);
@@ -15000,7 +15016,6 @@ impl Analyzer<'_, '_> {
                 invariants,
                 body,
                 backedge_drops: _,
-                carried_references: _,
             } => {
                 let occurrence = self.encountered_counted;
                 self.encountered_counted = self
@@ -15988,7 +16003,7 @@ impl Analyzer<'_, '_> {
         match self.terms.kind(term) {
             TermKind::Zero => "0".to_owned(),
             TermKind::Constant(value) => value.to_string(),
-            TermKind::ConstParameter(_) => "<const parameter>".to_owned(),
+            TermKind::ConstParameter(..) => "<const parameter>".to_owned(),
             TermKind::Place(place, _) => self.render_place(place),
             TermKind::Measure(measure, place) => {
                 format!("{}.{}", self.render_place(place), measure.spelling())
@@ -16663,10 +16678,12 @@ mod indexed_goal_kill_tests {
     #[test]
     fn signed_indexed_facts_follow_offset_events_and_scope_exits() {
         let constant_ids = HashMap::new();
+        let const_parameter_types = HashMap::new();
         let context = EntailmentContext {
             callees: &[],
             constants: &[],
             constant_ids: &constant_ids,
+            const_parameter_types: &const_parameter_types,
             nominals: &[],
             elements: &[],
             contract_queries: &[],
@@ -16688,6 +16705,7 @@ mod indexed_goal_kill_tests {
             requirements: Vec::new(),
             postconditions: Vec::new(),
             body: None,
+            reference_origins: Vec::new(),
             body_disposition: Default::default(),
             allocates: false,
             call_separations: Vec::new(),

@@ -176,6 +176,95 @@ Branch-local range images also need presence and generation information: absence
 of an alternative on a predecessor differs from losing a fact about an alternative
 that is present. Blindly unioning endpoint images is not the proposed repair.
 
+## Reference-summary roots and expansion depth
+
+The baseline at `9450decc` stops `PlaceMap::resolve_root` after 32 recursive
+summary expansions. An unresolved child discards the complete result, including
+any shallow sibling; the limit is not evidence of an omitted target or an
+incorrect acceptance. Ordinary local aliases are flattened when recorded, so
+generating a long `let` chain alone cannot establish source reachability.
+
+The discriminating question is whether checked-source construction can retain
+a summary root that must itself be expanded. Trace every writer, including
+incoming-reference rebinding, value deliveries, payload aliases and imported
+loop-header covers. A source witness must exercise the ordinary checker and
+distinguish a genuine unresolved origin from an arbitrary expansion limit.
+Otherwise the construction argument must establish why stored roots are already
+ultimate storage identities, including when a reference parameter is rebound.
+
+Select a change only if it preserves every possible origin and complete paths,
+keeps an unresolved alternative from becoming a partial result, and terminates
+from a finite source-derived domain rather than a replacement depth budget.
+Positive and negative source controls must distinguish independent places from
+overlap. Synthetic summary graphs can check an internal invariant or algorithm,
+but cannot substitute for evidence that those graphs arise from source.
+
+The first source counterexample needs only two incoming references:
+
+```wf
+let saved = first;
+set first = &deref(second);
+set second = &deref(saved);
+```
+
+The structural checker keeps `saved` on entry `first`, then selects entry
+`second` and entry `first` for the assignments. The secondary prepass instead
+accumulates both entry roots in both holders and recursively looks up each root
+through the other holder. It reaches its depth fallback and loses the complete
+resolved result. A separate shallow origin does not save that result.
+
+Removing recursive lookup alone is insufficient. Given a recursive `Node`
+with `next: Option<Box<Node>>`, this straight-line descent has no loop:
+
+```wf
+let cursor = root;
+match deref(cursor).next {
+  Some(value: child) => {
+    set cursor = &deref(child).inner;
+  }
+  None() => {}
+}
+```
+
+The secondary fixed point repeatedly feeds the newly extended `cursor` path
+back into `child`, inventing arbitrarily many descents. The structural check
+already resolved this one descent; the prepass has no finite loop cover here.
+Increasing the depth limit or detecting recursive summary lookups cannot bound
+this path growth, which also occurs without a recursive lookup.
+
+The selected repair retains the resolved paths established for each reference
+holder by the ordinary structural walk. Formation, delivery, payload binding,
+rebinding and settled loop headers contribute to a function-wide inventory;
+each whole-function retry discards the previous attempt's inventory. `PlaceMap`
+reads that inventory without reconstructing reference flow or recursively
+interpreting a stored entry anchor as a mutable holder. Its construction is
+bounded by the final structural traversal and the finite paths that traversal
+already establishes. This reuses REF-1's existing loop convergence rather than
+adding another iteration rule, cutoff or proof family.
+
+The inventory remains a function-wide over-approximation, not point-current
+proof authority. Existing consumers can still conservatively resolve a formal
+anchor through that inventory; this repair does not select the deferred
+joined-reference proof extension. The source-derived tests cover exchanged
+parameters, every joined origin, preserved payload/Box suffixes, independent
+versus overlapping writes, and one-step recursive descent.
+
+The retired prepass's three synthetic known-payload tests move to a source
+test covering different prefix fields on two roots, a field after Box content,
+nested payload selection, sibling fields and overlapping variant storage.
+Unknown-origin propagation belonged to that removed reconstruction pass:
+the structural producer publishes every resolved path or finite cover, never
+a known subset plus an unrepresented alternative. A direct resolver control
+still checks that a missing summary, or a known path accompanied by an explicit
+unknown flag, cannot publish an apparently complete result.
+
+On the unchanged baseline, the exchanged-parameter source tests fail with an
+empty target set and an `UnresolvedFootprint` parallel denial. The replacement
+nested-payload source test passes against that same baseline, independently of
+the repair. A bounded baseline CLI probe of the single descent was stopped
+after three seconds without a result; the unbounded path recurrence above,
+not that elapsed limit, establishes why the secondary fixed point cannot close.
+
 ## Reserved names and declaration roles
 
 OP-1's exhaustive reservation list excludes invariant declarations, but DIAG-1
@@ -197,6 +286,15 @@ cases cover execution with both spellings, a missing proof name, and an expired
 header proof name. They use the ordinary conformance adapter; existing value/field
 reservation and proof-scope controls remain.
 
-A separate mismatch remains for the counted `for_binding`: OP-1 omits it while
-DIAG-1 and the resolver reserve it. That rule question is retained in the TODO;
-the invariant-domain rationale does not decide runtime binder naming.
+The counted `for_binding` had a separate mismatch: OP-1 omitted it while
+DIAG-1 and the resolver reserved it. The selected rule includes counted binders
+in OP-1's runtime-name reservation, because a counted binder introduces an
+ordinary value binding just as a `let` does. Permitting operation and mode words
+only in counted bindings would make value-name availability depend on the
+binding's syntax. This is a naming policy, not a claim that the loop grammar
+cannot parse those names. The proof-only invariant domain remains separate.
+The specification now lists `for_binding` explicitly; the resolver's existing
+`for-binder` diagnostic mapping needs no behavior change. Conformance controls
+reject `cvt` and `checked`, admit nearby names and a label named `@cvt`, and retain
+the existing proof-name acceptance case. Resolver tests additionally cover all
+five mode words with both labeled and unlabeled loops.

@@ -95,6 +95,30 @@ equality goal. An ordinary-loop header hypothesis itself expires at loop
 exit. Publish the required outer conclusion as a local `invariant` before
 `break` when the continuation needs it [ENT-5, INV-1].
 
+The [deque library](../lib/containers/deque.wf) uses `Box<Ring<T>>` directly.
+Endpoint helpers take a reference and require the caller to prove room or
+nonemptiness. `deque_rebase` consumes the old owner and returns a genuinely new
+backing, with the same logical length and head zero; it can grow or shrink to
+any sufficient capacity within the written ceiling. `DequeVisit` borrows each
+element in logical order, while `DequeDrain` consumes them in that order and
+leaves the allocation reusable. Per-element visitation does not provide two
+contiguous ranges: REF-4 refuses all Ring range references, even after a
+non-wrap test. The [caller](../tests/programs/containers/deque-program.wf)
+also shows an existing filled-slot reference surviving a back append whose
+row writes only the next slot and length.
+
+The [slab library](../lib/containers/slab.wf) reserves one bounded backing and
+materializes cells lazily. Each cell has an inline `Slots<T, 1>` for its
+zero-or-one occupant, a generation and a free-list link. An exhausted insert
+returns the offered owner; removal returns its occupant and retires the slot
+at the generation limit instead of wrapping. `SlabVisit` supplies borrowed
+access with an owned result, and `SlabConsume` handles every live element at
+teardown. Handles are ordinary index/generation data relative to a slab. The
+[membership example](../tests/programs/containers/slab-membership-program.wf)
+distinguishes an index that may expire from a composite protocol that refuses
+deletion while another index retains the object; ordinary public bookkeeping
+does not prove that arbitrary client functions preserve that protocol.
+
 ## P3. Reach heap content through `Box.inner`
 
 `Box<T>` owns one heap cell. Its content is the ordinary field `inner`;

@@ -208,6 +208,31 @@ as `chunks=na` by the harness's static header extraction; `steals` remains the
 actual runtime observation. Retain these rows while the estimate investigation
 or a design decision cites them; subsequent trials do not replace them.
 
+[`compute-baseline-2026-09-21.tsv`](compute-baseline-2026-09-21.tsv) retains the
+frozen `6fdb6768` baseline after the continuation correction, with the
+`f19d53e2` retained-handle caller adaptation. Its `main-*` and `null-*` groups
+contain all 4,290 checked calls from ten fixed fixtures; `calibration-*` groups
+are prior one-call cost checks. Common provenance, source/image hashes,
+construction and execution costs appear once under `context`. The
+[interpretation and pinned reproduction commands](../../investigations/compute-model/DESIGN.md#frozen-compute-baseline-2026-09-21)
+retain the noisy nulls and the native scalar/WF optimizing flag asymmetry.
+The null invokes one identical image path twice: it qualifies host/cadence,
+not separately linked layouts, despite the reducer's generic twin boilerplate.
+These rows do not establish native competitiveness or isolate the historical
+continuation fix. Keep them while the investigation or its dependents cite them.
+
+[`native-kernel-vectorization-2026-09-22.tsv`](native-kernel-vectorization-2026-09-22.tsv)
+adds the bounded wide-stencil/FIR W1/W4 control against those same frozen
+objects. It retains all 1,200 checked timing calls, full oracle results,
+identical-image and unchanged-WF-object controls, optimized callback excerpts,
+and the exact one-shot construction recipe. The complete native kernel C
+translation units permit vectorization; FIR also removes its local tap-loop
+prohibition. Cached scheduler libraries retain their original flags. Both
+fixtures cross the predeclared native-improvement criterion; the
+[interpretation](../../investigations/compute-model/DESIGN.md#native-kernel-vectorization-control)
+keeps the noisy stencil null, the remaining stencil W4 gap, and the limits on
+causal attribution. No default build flags change.
+
 The `wf` row is the module `whitefootc` emits from the kernel's `.wf` source
 under **plain `--par --emit-llvm` and no other flag**, linked with
 the complete ordinary native library under `compiler/src/backend/`
@@ -222,6 +247,13 @@ their defined functions and all corresponding references; this preserves
 linkage and optimization attributes and leaves library imports and weak
 runtime hooks unchanged. Changing a strong definition to internal linkage
 would change the compiler optimization being measured.
+
+Owned array results cross the host adapter as a borrowed element pointer and
+length plus a retained `Box` handle. Every caller passes that handle to the
+generated release entry after checking the result, outside the timed interval.
+Native results keep their allocation pointer as the equivalent release handle.
+This follows the formal host ABI without changing the algorithms, fixtures,
+allocation boundaries, or result checks. Scalar quadrature needs no handle.
 
 - No C adapter to any runtime is labelled WF.
 - No research copy of the Whitefoot runtime is carried here; the runtime
@@ -1123,22 +1155,19 @@ WFB_GAP_US ?=
 
 `-fno-lto` is repeated on every link line, not only on compiles.
 
-**The two flag sets are an admitted asymmetry, and it is disclosed rather than
-glossed.** `WF_FLAGS` applies to `<kernel>-par.o`, `<kernel>-seq.o` and the full
-Whitefoot native library — of the plain image and of the twin alike, with the
-same bytes in the variable for both; `CFLAGS`/`CXXFLAGS` apply to every
-reference, every oracle and the harness. So **the WF module and the Whitefoot
-runtime are built at `-O2` with no `-march`, because that is what a Whitefoot
-program gets, while every reference is built at `-O3` with
-`-march=x86-64-v3`.** Building the runtime any other way would measure a
-runtime no Whitefoot program ever gets, and `-Wpedantic -Werror` over the
-compiler's own sources is a build that can fail for reasons that have nothing
-to do with the table. The asymmetry cuts **against** the WF row — the row this
-bundle is trying not to flatter — and a reader who finds the WF row slow should
-see this immediately rather than derive it from two Makefile variables.
+**The two flag sets differ.** `WF_FLAGS` applies to `<kernel>-par.o`,
+`<kernel>-seq.o` and the full Whitefoot native library — of the plain image and
+of the twin alike, with the same base flags for both. `CFLAGS`/`CXXFLAGS`
+apply to the C/C++ reference code, oracles and harness. The WF module and
+runtime use the driver's `-O2` without `-march` or flags disabling vectorization. Native C/C++
+references use `-O3` with vectorization disabled; their `-march=x86-64-v3`
+override applies only on x86_64. Rust reference kernels also disable loop and
+SLP vectorization. These differences have no uniform direction: WF can benefit
+from vectorization that the reference flags prevent. The resulting comparisons
+include code generation, representation and decomposition costs; they do not
+establish competitiveness against optimized native implementations.
 
-**`WF_ALIGN` is the one part of that asymmetry the bundle closes, and it is
-placement control rather than a performance flag.** On x86_64 it appends
+**`WF_ALIGN` controls placement within the WF A/B pair.** On x86_64 it appends
 `-falign-functions=64 -falign-loops=32` to `WF_FLAGS`, so every Whitefoot
 translation unit of **both** images starts its functions on a 64-byte boundary
 and its hot loops on a 32-byte one. It exists for the regression gate's paired
@@ -1173,17 +1202,14 @@ this bundle's largest confound, and six byte-identical kernel bodies at
 different offsets once split a width-one median 7.3 ms against 10.7 ms with no
 scheduler involved.
 
-**And it adds one asymmetry while closing another, which is the first that runs
-the WF row's way.** `-falign-functions=64` now reaches the Whitefoot
-translation units and no reference, no oracle and not the harness, in a bundle
-whose own record says function placement once split a width-one median 7.3 ms
-against 10.7 ms. Every other line of this section runs against the WF row; this
-one does not, and a WF-versus-reference ratio recorded from this commit onward
-carries it. It is not normalized the other way because `-falign-functions=64`
-on the references would move every reference row in every recorded table for a
-gate's benefit, which is a worse trade than disclosing it here.
+**Function alignment is another difference between WF and the references.**
+On x86_64, `-falign-functions=64` reaches the Whitefoot translation units and
+no reference, oracle or harness. Its effect is part of each WF/reference
+comparison; the bundle's historical placement results do not establish a
+direction or size for that effect in a new image. The retained tables keep
+their original flags and measurements.
 
-**What is not normalized, and cannot be.** `-march=x86-64-v3` reaches the C and
+**Remaining build differences.** On x86_64, `-march=x86-64-v3` reaches the C and
 C++ kernels and no Whitefoot translation unit, and `-falign-functions=64`
 reaches the Whitefoot units and nothing else. The separately built oneTBB
 shared library gets only the three scalar flags, with no `-march` and no
@@ -1192,13 +1218,23 @@ where `BENCH_ARCH` names it, and Rust's precompiled standard library is not
 rebuilt with them. Library scheduler internals are therefore not
 code-placement-matched with the kernels.
 
-**Vectorization is off for every implementation of every kernel**, in C, C++ and
-Rust alike. The emitted module's `fmul.strict` and `fadd.strict` cannot be
-reassociated, so a vectorized reference would compare code generation against
-scalar code generation rather than one decomposition against another. This is
-why the old bundle's lane-blocked SIMD FIR kernels — bit-identical to the scalar
-kernel and roughly nine times faster with SLP enabled — are not carried, and it
-is a deliberate departure from that bundle's FIR flag set.
+**Strict floating-point operations do not prohibit independent-lane
+vectorization.** They preserve the required operation order and forbid
+reassociation and multiply/add contraction; vector operations can still
+compute independent lanes with those semantics. Inspection of the frozen
+`6fdb6768` objects in the [2026-09-21 baseline](compute-baseline-2026-09-21.tsv)
+finds packed `fadd.2d`/`fmul.2d` in WF stencil and packed multiplication followed
+by ordered scalar additions in WF FIR. The corresponding retained native
+kernel objects are scalar. The bounded
+[2026-09-22 control](native-kernel-vectorization-2026-09-22.tsv) permits native
+vectorization on these two fixtures and confirms packed arithmetic while
+retaining their numerical contracts. It improves the native baseline without
+isolating a WF scheduling or code-generation cause.
+The bundle's 2026-09-11 description (`aefb2bee`) reported roughly ninefold SLP
+gain for its bit-identical, lane-blocked FIR form. That observation remains
+evidence about its historical fixture and toolchain, not these images or a
+current native performance bound. That form is absent from the retained
+scalar comparison; no old rows are rewritten by this clarification.
 
 ## The four kernels
 

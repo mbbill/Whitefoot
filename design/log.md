@@ -5,6 +5,46 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-22 Reuse the structural checker's resolved reference origins
+
+Nodes: compiler/checker-facts
+
+Owner-approved: The owner explicitly accepted the complete PR #94 amendment and the unused-import cleanup after the DCR handoff for 5002e290, replying that both were agreed. This ruling does not authorize a merge.
+
+Summary: Apply the reviewed addition unchanged. Publish the final structural traversal's complete resolved reference-origin inventory and consume it directly in place summaries, preserving parameter entry roots and all observed alternatives without a second origin fixed point, recursive holder lookup or depth cutoff. Keep the inventory conservative rather than treating it as point-current proof authority. The [reference-summary investigation](../research/investigations/consistency-followups/DESIGN.md#reference-summary-roots-and-expansion-depth) records the source counterexamples, replacement-test evidence and validation criteria. Remove the resolved amendment and its directory, and apply the directed unused-import cleanup. The language specification is unchanged.
+
+## 2026-09-22 Rescue oversized loop frames without repeated lowering
+
+Nodes: compiler/parallel-lowering/two-worlds
+
+Owner-approved: The owner explicitly accepted the complete PR #78 amendment after the reviewed handoff at 37fb6336, replying that the amendment was agreed.
+
+Summary: Apply the two reviewed decisions and rejected alternatives unchanged. Select needed captures only to rescue a frame above the existing lane bound, preserving already-fitting interfaces and helper order. Reuse a still-oversized candidate's completed CFG to avoid exponential nested reconstruction without adding a fallback call, preserving original storage and nested parallel opportunities. Remove the accepted amendment and its directory. The compiler implementation and specification are unchanged; this ruling does not authorize a merge.
+
+## 2026-09-22 Qualify empty window storage and retain the payload-address fact
+
+Nodes: compiler/storage-representation, compiler/backend-facts
+
+Owner-approved: The owner explicitly accepted both complete PR #93 amendments and the provisional performance tradeoff after the post-DCR handoff for 3ad6b293, replying that they were accepted and work should continue.
+
+Summary: Apply both reviewed additions unchanged. Omit nonexistent element alignment from constant-capacity zero Array, Slots and Ring payloads while retaining the window descriptors. Publish the signed nonnegativity of the qualified, normalized physical payload index through portable `llvm.assume`, without changing acceptance, target qualification, logical coordinates or wrapping arithmetic. Retain that fact provisionally for its repeatable inline-path benefit while accepting the unexplained retained-reverse cost; the original selection criterion remains unmet and the reopening conditions remain in force. The [Ring address investigation](../research/investigations/containers-and-resources/X1-LIBRARY.md#ring-payload-address-qualification) and [paired Deque comparison](../research/experiments/container-representation/deque-library/RESULTS.md) supply the contract, measurements, alternatives and limitations. Preserve the existing decisions and rejections, remove the two resolved amendments and their directory, and update the affected investigation and TODO status. The specification is unchanged; this ruling does not authorize a merge.
+
+## 2026-09-22 Align counted-loop value-name reservation
+
+Nodes: language/name-resolution
+
+Owner-approved: The owner explicitly approved the complete counted-binder amendment presented after PR #90's independent review at be149728. This ruling does not authorize a merge.
+
+Summary: Apply the reviewed addition and its refused alternative unchanged. Counted-loop binders follow ordinary let bindings in the operation and mode-word reservation because both introduce ordinary value names; the proof-only invariant domain stays separate. OP-1 now includes the counted binder explicitly, matching DIAG-1 and the existing resolver. The [follow-up investigation](../research/investigations/consistency-followups/DESIGN.md#reserved-names-and-declaration-roles) records the alternatives and boundary cases. Remove the accepted amendment and its directory.
+
+## 2026-09-22 Adopt ordinary Slab and Deque library boundaries
+
+Nodes: compiler/checker-facts, language/data-model/storage-shapes, language/ownership/range-reference, language/data-model/slab-storage, language/data-model/deque-rebase
+
+Owner-approved: The owner explicitly adopted all five revisions presented for PR #86 at dcbfdc0f and directed both DCR responses: maintained multi-vacancy Slab coverage and correction plus verification of the integrated-emission evidence.
+
+Summary: Apply the five reviewed amendments unchanged. Retain a symbolic integer constant's declaration identity and exact source type through the shared read-only inventory. Correct the storage-versus-range wording and qualify source Ring growth without promising a native copy count. Retain REF-4's Ring-range exclusion as a fresh ruling, not a recovered historical decision, leaving proved-contiguous and two-span admission open to a concrete consumer. Select the ordinary one-slot Slab representation with its measured storage and transfer costs, and direct boxed Ring endpoints with an explicit consuming rebase, without claiming universal native parity or automatic reference-based growth. The [library investigation](../research/investigations/containers-and-resources/X1-LIBRARY.md#slab-and-deque-trial-over-v063), [Slab controls](../research/experiments/container-representation/slab-library/RESULTS.md) and [Deque controls](../research/experiments/container-representation/deque-library/RESULTS.md) supply the grounds and alternatives. Remove the resolved amendments and their directory. The specification is unchanged; this ruling does not authorize a merge.
+
 ## 2026-09-22 Carry Result evidence through ordinary local value flow
 
 Nodes: language/checks-and-proofs/automatic-facts, compiler/checker-facts

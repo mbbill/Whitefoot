@@ -1,0 +1,361 @@
+struct Discovery {
+  head: u64;
+  count: u64;
+}
+
+fn bucket_for(vertex: own u64, stride: own u64, tail: own u64) -> result: own u64 pure contract {
+  requires 1_u64 <= stride;
+  ensures result <= tail;
+} {
+  let raw = vertex / stride;
+  if raw < tail {
+    return raw;
+  }
+  return tail;
+}
+
+fn choose_stride(vertices: own u64, ready: own u64) -> result: own u64 pure contract {
+  requires 1_u64 <= vertices;
+  requires vertices <= 16777216_u64;
+  ensures 1_u64 <= result;
+  ensures result <= vertices;
+} {
+  doc "Choose about sqrt(ready) owners without observing workers. Ready controls decomposition, never a storage bound.";
+  let half = vertices / 2_u64;
+  let parts = 1_u64;
+  loop (
+    invariant positive: 1_u64 <= parts,
+    invariant bounded: parts <= vertices
+  ) {
+    let target = ready / parts;
+    if parts >= target {
+      let last = vertices - 1_u64;
+      let width = last / parts;
+      let stride = width + 1_u64;
+      return stride;
+    }
+    if parts > half {
+      return 1_u64;
+    }
+    let doubled = parts * 2_u64;
+    invariant doubled_bound: doubled <= vertices {
+      use 2 times (parts <= half);
+      use (2_u64 * half <= vertices);
+    }
+    set parts = doubled;
+  }
+  return 1_u64;
+}
+
+fn route_frontier(input: &[u64], links: &[u64], next: &[u64], buckets: &[u64], first: own u64, origin: own u64, capacity: own u64, stride: own u64, vertices: own u64) -> result: own unit reads(input), reads(links), writes(next), writes(buckets) contract {
+  requires deref(links).len <= 16777216_u64;
+  requires deref(input).len <= 67108864_u64;
+  requires 4_u64 * deref(links).len <= deref(input).len;
+  requires deref(input).len <= deref(next).len;
+  requires origin <= capacity;
+  requires origin + deref(input).len <= capacity;
+  requires capacity <= 67108864_u64;
+  requires 1_u64 <= deref(buckets).len;
+  requires 1_u64 <= stride;
+} {
+  doc "An original adjacency slot is its message node. Only active vertices' slots and this source owner's private bucket row are written.";
+  let width = deref(links).len;
+  let owners = deref(buckets).len;
+  let tail = owners - 1_u64;
+  let vertex = first;
+  loop {
+    if vertex >= width {
+      break;
+    }
+    let start = vertex * 4_u64;
+    let end = start + 4_u64;
+    invariant row_bound: end <= deref(input).len {
+      use 4 times (vertex + 1_u64 <= width);
+      use (4_u64 * width <= deref(input).len);
+    }
+    for (slot in start..end) {
+      let neighbor = deref(input)[slot];
+      if neighbor < vertices {
+        let owner = bucket_for(vertex: neighbor, stride: stride, tail: tail);
+        let previous = deref(buckets)[owner];
+        let message = origin + slot;
+        set deref(next)[slot] = previous;
+        set deref(buckets)[owner] = message;
+      }
+    }
+    set vertex = deref(links)[vertex];
+  }
+  return unit;
+}
+
+fn collect_bucket(input: &[u64], next: &[u64], first: own u64, visited: &[u64], links: &[u64], previous: own u64, origin: own u64, level: own u64, unseen: own u64) -> (head: own u64, count: own u64) reads(input), reads(next), writes(visited), writes(links) contract {
+  requires deref(input).len <= deref(next).len;
+  requires 1_u64 <= deref(visited).len;
+  requires deref(visited).len <= deref(links).len;
+} {
+  let capacity = deref(input).len;
+  let width = deref(visited).len;
+  let cursor = first;
+  let head = previous;
+  let count = 0_u64;
+  loop {
+    if cursor >= capacity {
+      return head, count;
+    }
+    let vertex = deref(input)[cursor];
+    let offset = vertex -wrap origin;
+    let local = offset % width;
+    if deref(visited)[local] == unseen {
+      set deref(visited)[local] = level;
+      set deref(links)[local] = head;
+      set head = local;
+      set count = count +wrap 1_u64;
+    }
+    set cursor = deref(next)[cursor];
+  }
+  return head, count;
+}
+
+fn collect_owner(input: &[u64], next: &[u64], buckets: &[u64], visited: &[u64], links: &[u64], destinations: own u64, owner: own u64, origin: own u64, level: own u64, unseen: own u64) -> result: own Discovery reads(input), reads(next), reads(buckets), writes(visited), writes(links) contract {
+  requires deref(input).len <= deref(next).len;
+  requires deref(buckets).len <= 281474976710656_u64;
+  requires 1_u64 <= destinations;
+  requires destinations <= 16777216_u64;
+  requires owner < destinations;
+  requires owner < deref(buckets).len;
+  requires 1_u64 <= deref(visited).len;
+  requires deref(visited).len <= deref(links).len;
+} {
+  doc "Walk one matrix column with a proved current index. The final-row branch ends the scan and is part of ordinary iteration semantics.";
+  let cells = deref(buckets).len;
+  let head = deref(visited).len;
+  let count = 0_u64;
+  let at = owner;
+  loop (
+    invariant current_cell: at < cells
+  ) {
+    let first = deref(buckets)[at];
+    let (found_head, found_count) = collect_bucket(input: input, next: next, first: first, visited: visited, links: links, previous: head, origin: origin, level: level, unseen: unseen);
+    set head = found_head;
+    set count = count +wrap found_count;
+    let remaining = cells - at;
+    if destinations >= remaining {
+      return Discovery(head: head, count: count);
+    }
+    let next_at = at + destinations;
+    invariant following_cell: next_at < cells;
+    set at = next_at;
+  }
+  return Discovery(head: head, count: count);
+}
+
+fn outbox_level(input: &[u64], messages: &[u64], visited: &[u64], links: &[u64], previous: &[u64], following: &[u64], vertices: own u64, source_stride: own u64, ready: own u64, level: own u64) -> (next_stride: own u64, count: own u64) reads(input), reads(previous), writes(messages), writes(visited), writes(links), writes(following) contract {
+  requires 1_u64 <= vertices;
+  requires vertices <= 16777216_u64;
+  requires 4_u64 * vertices <= deref(input).len;
+  requires deref(input).len <= 4_u64 * vertices;
+  requires deref(input).len <= deref(messages).len;
+  requires vertices <= deref(visited).len;
+  requires vertices <= deref(links).len;
+  requires vertices <= deref(previous).len;
+  requires vertices <= deref(following).len;
+  requires 1_u64 <= source_stride;
+  requires source_stride <= vertices;
+  requires level < vertices;
+  ensures 1_u64 <= next_stride;
+  ensures next_stride <= vertices;
+} {
+  let stride = choose_stride(vertices: vertices, ready: ready);
+  let last = vertices - 1_u64;
+  let source_full = last / source_stride;
+  let source_covered = source_full * source_stride;
+  let destination_full = last / stride;
+  let destination_covered = destination_full * stride;
+  let destinations = destination_full + 1_u64;
+  let source_bucket_end = source_full * destinations;
+  let matrix_size = source_bucket_end + destinations;
+  let capacity = vertices * 4_u64;
+  let buckets = box_array_filled::<u64>(count: matrix_size, value: capacity);
+  for (owner in 0_u64..source_full) {
+    let start = owner * source_stride;
+    let end = start + source_stride;
+    invariant source_bound: end <= source_covered {
+      use source_stride times (owner + 1_u64 <= source_full);
+    }
+    let edge_start = start * 4_u64;
+    let edge_end = end * 4_u64;
+    invariant edge_bound: edge_end <= capacity {
+      use 4 times (end <= vertices);
+    }
+    let bucket_start = owner * destinations;
+    let bucket_end = bucket_start + destinations;
+    invariant row_bound: bucket_end <= matrix_size {
+      use destinations times (owner <= source_full);
+    }
+    let neighbors = &deref(input)[edge_start..edge_end];
+    let frontier_links = &deref(links)[start..end];
+    let message_links = &deref(messages)[edge_start..edge_end];
+    let row = &buckets.inner[bucket_start..bucket_end];
+    let first = deref(previous)[owner];
+    let routed = route_frontier(input: neighbors, links: frontier_links, next: message_links, buckets: row, first: first, origin: edge_start, capacity: capacity, stride: stride, vertices: vertices);
+  }
+  let source_edge_end = source_covered * 4_u64;
+  invariant source_edge_bound: source_edge_end <= capacity {
+    use 4 times (source_covered <= vertices);
+  }
+  let tail_neighbors = &deref(input)[source_edge_end..capacity];
+  let tail_frontier = &deref(links)[source_covered..vertices];
+  let tail_messages = &deref(messages)[source_edge_end..capacity];
+  let tail_row = &buckets.inner[source_bucket_end..matrix_size];
+  let tail_first = deref(previous)[source_full];
+  let tail_routed = route_frontier(input: tail_neighbors, links: tail_frontier, next: tail_messages, buckets: tail_row, first: tail_first, origin: source_edge_end, capacity: capacity, stride: stride, vertices: vertices);
+  let discovery_level = level + 1_u64;
+  let changed = 0_u64;
+  for (owner in 0_u64..destination_full) {
+    let start = owner * stride;
+    let end = start + stride;
+    invariant destination_bound: end <= destination_covered {
+      use stride times (owner + 1_u64 <= destination_full);
+    }
+    let state = &deref(visited)[start..end];
+    let frontier = &deref(links)[start..end];
+    let matrix = &buckets.inner[0_u64..matrix_size];
+    let discovered = collect_owner(input: input, next: messages, buckets: matrix, visited: state, links: frontier, destinations: destinations, owner: owner, origin: start, level: discovery_level, unseen: vertices);
+    set deref(following)[owner] = discovered.head;
+    set changed = changed +wrap discovered.count;
+  }
+  let tail_state = &deref(visited)[destination_covered..vertices];
+  let tail_links = &deref(links)[destination_covered..vertices];
+  let matrix = &buckets.inner[0_u64..matrix_size];
+  let tail_discovered = collect_owner(input: input, next: messages, buckets: matrix, visited: tail_state, links: tail_links, destinations: destinations, owner: destination_full, origin: destination_covered, level: discovery_level, unseen: vertices);
+  set deref(following)[destination_full] = tail_discovered.head;
+  let found = changed +wrap tail_discovered.count;
+  return stride, found;
+}
+
+fn bfs_outbox(edges: &[u64]) -> result: own Box<Array<u64>> reads(edges) contract {
+  requires deref(edges).len <= 16777216_u64;
+} {
+  doc "Private source outboxes route sparse discoveries to disjoint vertex owners. Frontiers remain segmented intrusive lists, with no sort, compaction, or full-vertex scan per level.";
+  let slots = deref(edges).len;
+  let count = slots / 4_u64;
+  let capacity = count * 4_u64;
+  let distance = box_array_filled::<u64>(count: count, value: count);
+  if count == 0_u64 {
+    return move distance;
+  }
+  let links = box_array_filled::<u64>(count: count, value: count);
+  let messages = box_array_filled::<u64>(count: capacity, value: capacity);
+  let even = box_array_filled::<u64>(count: count, value: count);
+  let odd = box_array_filled::<u64>(count: count, value: count);
+  set distance.inner[0_u64] = 0_u64;
+  set even.inner[0_u64] = 0_u64;
+  let stride = count;
+  let ready = 1_u64;
+  for (
+    level in 0_u64..count,
+    invariant positive_stride: 1_u64 <= stride,
+    invariant bounded_stride: stride <= count
+  ) {
+    if ready == 0_u64 {
+      break;
+    }
+    let input = &deref(edges)[0_u64..capacity];
+    let scratch = &messages.inner[0_u64..capacity];
+    let visited = &distance.inner[0_u64..count];
+    let frontier = &links.inner[0_u64..count];
+    let parity = level % 2_u64;
+    if parity == 0_u64 {
+      let previous = &even.inner[0_u64..count];
+      let following = &odd.inner[0_u64..count];
+      let (next_stride, discovered) = outbox_level(input: input, messages: scratch, visited: visited, links: frontier, previous: previous, following: following, vertices: count, source_stride: stride, ready: ready, level: level);
+      set stride = next_stride;
+      set ready = discovered;
+    } else {
+      let previous = &odd.inner[0_u64..count];
+      let following = &even.inner[0_u64..count];
+      let (next_stride, discovered) = outbox_level(input: input, messages: scratch, visited: visited, links: frontier, previous: previous, following: following, vertices: count, source_stride: stride, ready: ready, level: level);
+      set stride = next_stride;
+      set ready = discovered;
+    }
+  }
+  return move distance;
+}
+
+fn bfs_sparse(edges: &[u64]) -> result: own Box<Array<u64>> reads(edges) contract {
+  requires deref(edges).len <= 67108864_u64;
+} {
+  doc "Sparse level traversal. Each vertex owns one intrusive frontier link, so no queue-capacity theorem or per-vertex allocation is needed. The count sentinel denotes both an absent edge and an undiscovered distance.";
+  let slots = deref(edges).len;
+  let count = slots / 4_u64;
+  let distance = box_array_filled::<u64>(count: count, value: count);
+  let covered = count * 4_u64;
+  invariant complete_rows: covered <= slots;
+  let links = box_array_filled::<u64>(count: count, value: count);
+  if count == 0_u64 {
+    return move distance;
+  }
+  set distance.inner[0_u64] = 0_u64;
+  let frontier = 0_u64;
+  for (level in 0_u64..count) {
+    if frontier >= count {
+      break;
+    }
+    let next = count;
+    let vertex = frontier;
+    loop {
+      if vertex >= count {
+        break;
+      }
+      let first = vertex * 4_u64;
+      let end = first + 4_u64;
+      invariant row_end: end <= covered {
+        use 4 times (vertex + 1_u64 <= count);
+      }
+      for (slot in first..end) {
+        let neighbor = deref(edges)[slot];
+        if neighbor < count {
+          if distance.inner[neighbor] == count {
+            set distance.inner[neighbor] = level + 1_u64;
+            set links.inner[neighbor] = next;
+            set next = neighbor;
+          }
+        }
+      }
+      set vertex = links.inner[vertex];
+    }
+    set frontier = next;
+  }
+  return move distance;
+}
+
+fn bfs(edges: &[u64], pull: own u64) -> result: own Box<Array<u64>> reads(edges) contract {
+  requires deref(edges).len <= 16777216_u64;
+} {
+  doc "Research ABI reuses the maintained BFS observer. Mode zero is unchanged sparse traversal; mode one is private-outbox push and supports directed graphs.";
+  if pull != 0_u64 {
+    return bfs_outbox(edges: edges);
+  }
+  return bfs_sparse(edges: edges);
+}
+
+fn release_bfs(output: own Box<Array<u64>>) -> result: own u64 pure {
+  return 0_u64;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let edges = array_filled::<u64, 12>(value: 3_u64);
+  set edges[0_u64] = 1_u64;
+  set edges[4_u64] = 0_u64;
+  set edges[5_u64] = 2_u64;
+  set edges[8_u64] = 1_u64;
+  let output = bfs(edges: &edges[0_u64..12_u64], pull: 1_u64);
+  let count = output.inner.len;
+  if count != 3_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if output.inner[2_u64] != 2_u64 {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

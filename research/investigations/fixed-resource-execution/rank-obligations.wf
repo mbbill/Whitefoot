@@ -1,0 +1,48 @@
+program no_heap;
+
+fn descend(remaining: own u64) -> result: own u64 pure contract {
+  requires remaining <= 32_u64;
+} {
+  let start = remaining;
+  if remaining == 0_u64 {
+    return 0_u64;
+  }
+  let next = remaining - 1_u64;
+  invariant local_progress: next < remaining;
+  invariant entry_progress: next < start;
+  let child = descend(remaining: next);
+  return child +wrap 1_u64;
+}
+
+fn countdown(limit: own u64) -> result: own u64 pure contract {
+  requires limit <= 32_u64;
+} {
+  let remaining = limit;
+  loop (
+    invariant cap: remaining <= limit
+  ) {
+    if remaining == 0_u64 {
+      break;
+    }
+    let before = remaining;
+    set remaining = remaining - 1_u64;
+    invariant backedge_progress: remaining < before;
+  }
+  return remaining;
+}
+
+fn main() -> status: own ExitStatus pure {
+  for (count in 0_u64..33_u64) {
+    let actual = descend(remaining: count);
+    let rest = countdown(limit: count);
+    if actual == count {
+      if rest == 0_u64 {
+      } else {
+        return exit_status(code: 2_u8);
+      }
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

@@ -25,7 +25,7 @@ use std::fmt::Write;
 
 use super::abi::FunctionAbi;
 pub use super::runtime::*;
-use super::storage::{FunctionStoragePlan, is_stored_aggregate, operation_operands};
+use super::storage::{FunctionStoragePlan, is_stored_aggregate};
 use super::target::{
     TargetAggregateLayout, TargetFramePlan, TargetFrameSlot, TargetLayout, TargetLayoutFailure,
     TargetStorageType, parallel_lane_frame_layout, plan_target_frame, validate_program,
@@ -133,6 +133,24 @@ pub(super) fn emit_llvm_with_layout(
     program: &IrProgram<'_, '_, '_>,
     target: TargetLayout,
 ) -> Result<LlvmModule, BackendFailure> {
+    emit_llvm_with_window_address_facts(program, target, WindowAddressFacts::Emit)
+}
+
+/// Controls only the optional fact about a window's normalized address
+/// operand. Withholding it is a test observation over the same checked IR,
+/// target qualification and ordinary lowering.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum WindowAddressFacts {
+    Emit,
+    #[cfg(test)]
+    Withhold,
+}
+
+pub(super) fn emit_llvm_with_window_address_facts(
+    program: &IrProgram<'_, '_, '_>,
+    target: TargetLayout,
+    window_address_facts: WindowAddressFacts,
+) -> Result<LlvmModule, BackendFailure> {
     validate_program(target, program).map_err(BackendFailure::TargetLayout)?;
     let mut intrinsics = BTreeSet::new();
     let mut thunks = ParallelThunks::default();
@@ -175,6 +193,7 @@ pub(super) fn emit_llvm_with_layout(
                 refusal_clones: &refusal_clones,
                 frontiers: &frontiers,
                 grain: None,
+                window_address_facts,
             },
         )?;
         functions.push_str(&emitter.emit()?);
@@ -199,6 +218,7 @@ pub(super) fn emit_llvm_with_layout(
                     refusal_clones: &refusal_clones,
                     frontiers: &frontiers,
                     grain: Some(grain),
+                    window_address_facts,
                 },
             )?
             .emit()?,
@@ -232,6 +252,7 @@ pub(super) fn emit_llvm_with_layout(
                         refusal_clones: &refusal_clones,
                         frontiers: &frontiers,
                         grain: None,
+                        window_address_facts,
                     },
                 )?
                 .emit()?,
@@ -334,6 +355,10 @@ pub(super) fn emit_llvm_with_layout(
     text.push_str(&drop_helpers);
     for intrinsic in intrinsics {
         match intrinsic {
+            IntrinsicDeclaration::Assume => {
+                writeln!(text, "declare void @llvm.assume(i1)")
+                    .map_err(|_| BackendFailure::TextEmission)?;
+            }
             IntrinsicDeclaration::MemoryCopy => {
                 writeln!(
                     text,
@@ -749,6 +774,7 @@ struct Incoming {
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum IntrinsicDeclaration {
+    Assume,
     MemoryCopy,
     MemoryMove,
     Overflow {
@@ -989,6 +1015,7 @@ struct FunctionEmitter<'program, 'state> {
     /// The selected target, for the extents a proved fact states in bytes
     /// (compiler/backend-facts).
     target: TargetLayout,
+    window_address_facts: WindowAddressFacts,
     intrinsics: &'state mut BTreeSet<IntrinsicDeclaration>,
     incoming: Vec<Vec<Incoming>>,
     output: String,
@@ -1073,6 +1100,7 @@ struct ModuleState<'state> {
     refusal_clones: &'state HashSet<u32>,
     frontiers: &'state RecursiveFrontiers,
     grain: Option<Grain>,
+    window_address_facts: WindowAddressFacts,
 }
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
@@ -1089,6 +1117,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             refusal_clones,
             frontiers,
             grain,
+            window_address_facts,
         } = module;
         let mut overlaps = Vec::new();
         let mut ordinary_lane_frames = HashMap::new();
@@ -1135,6 +1164,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             program,
             function,
             target,
+            window_address_facts,
             intrinsics,
             incoming: Vec::new(),
             output: String::new(),
@@ -1631,7 +1661,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::RunInsert { run, index, .. } => {
                 self.materialize_operands([*run, *index])?;
             }
-            _ => self.materialize_operands(operation_operands(operation))?,
+            _ => self.materialize_operands(operation.operands())?,
         }
         self.emit_value_definition(result, ty, operation)?;
         if !self.overlap_handed_out.contains(&result) {
@@ -2254,10 +2284,18 @@ pub(crate) fn llvm_type(
             element,
             capacity: Some(length),
         } => {
-            let element = llvm_type(
-                program,
-                program.element(element).ok_or(BackendFailure::InvalidIr)?,
-            )?;
+            // A zero-capacity window has no element representation. Keep
+            // the same byte tail as Array<T, 0>, so LLVM does not retain T's
+            // alignment beyond the header-only layout qualified by OP-9
+            // and STOR-6. A positive capacity of zero-sized T is distinct.
+            let element = if length == 0 {
+                "i8".to_owned()
+            } else {
+                llvm_type(
+                    program,
+                    program.element(element).ok_or(BackendFailure::InvalidIr)?,
+                )?
+            };
             Ok(match shape {
                 IrWindowShape::Slots => format!("{{ i64, [{length} x {element}] }}"),
                 IrWindowShape::Ring => format!("{{ i64, i64, [{length} x {element}] }}"),
