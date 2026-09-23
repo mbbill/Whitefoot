@@ -1072,8 +1072,9 @@ Selection criteria, recorded before this experiment's timings:
   retains a correct portable lowering rather than rejecting a WF program.
 - Existing maintained regressions cover relevant ownership, wrap, zero-size,
   nested-layout and target-domain boundaries. Add only observations absent
-  from those cases. Successful timing runs do not establish allocation-refusal
-  behavior; the maintained caller and allocator observer own that check.
+  from those cases. Successful timing runs do not establish allocation-failure
+  behavior: the maintained exhaustion tests own the resource-failure boundary,
+  while the container caller and allocator observer own the exact release ledger.
 - Reuse the existing Deque workload, independent checksums, allocation ledger,
   scalar and wide-record payloads, normal and retained helpers, C controls and
   counterbalanced matrix. Compare fresh baseline and candidate emissions and
