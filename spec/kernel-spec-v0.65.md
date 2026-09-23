@@ -1,4 +1,4 @@
-# Kernel Specification v0.66
+# Kernel Specification v0.65
 
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives. These bytes are this version's identity; nothing else records it.
 
@@ -913,7 +913,7 @@ Later typed operation checking uses the operand domains and, for the retained-ar
 Operand types never select between an operation family and a function.
 A bare `place` operand that a table-operation row reads without consuming — the base place of a subscript — is a non-consuming read: it neither moves nor partially consumes an affine root [OWN-1], exactly the reading [FN-8] already states for a place used as a non-consuming operand of an admitted table operation.
 
-No source declaration or FN-9 result-datum candidate in this closed list may use a member of `ReservedLowerNames`: the IDENT of `fn_decl`; the IDENT of `const_decl`; every `param` and `result_binding` IDENT; every `let_stmt` IDENT, including ordinary, propagate, value-match, and value-if lets; every `for_binding` IDENT; every `contract_define` IDENT; the second IDENT of any `fieldbind`, including a `result_route` payload binder; and every `field` and `vfield` IDENT.
+No source declaration or FN-9 result-datum candidate in this closed list may use a member of `ReservedLowerNames`: the IDENT of `fn_decl`; the IDENT of `const_decl`; every `param` and `result_binding` IDENT; every `let_stmt` IDENT, including ordinary, propagate, value-match, and value-if lets; every `contract_define` IDENT; the second IDENT of any `fieldbind`, including a `result_route` payload binder; and every `field` and `vfield` IDENT.
 Such a reserved spelling is rejected citing exactly FORM-3 before freshness ownership is considered.
 Dependent field declarations participate in this pre-resolution reservation inventory even though their owner/member duplicates remain deferred.
 No other declaration role is covered: type-generic TYPEIDs, const-generic IDENTs, LABELs, interface-member `fn_sig` IDENTs, and the IDENTs of `header_invariant` and `invariant_stmt` remain outside this prohibition.
