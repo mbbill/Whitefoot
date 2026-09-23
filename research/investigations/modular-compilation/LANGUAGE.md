@@ -74,8 +74,8 @@ alias; directory proximity is not an implicit alias. Ordinary type-owned
 group/variant qualification remains a distinct name domain.
 
 Canonical rendering extends the existing source renderer: one space after
-`public`/`observe`, ordinary declaration indentation, `;` on a bodyless function,
-`alias name = pkg::path;`, and `footprint name = path;`. A graph row renders as
+`public`, ordinary declaration indentation, `;` on a bodyless function,
+`alias name = pkg::path;`. A graph row renders as
 `pkg::path: [pkg::dependency, pkg::other];`, preserving written row and edge
 order, with one row per line. Targets use ordinary two-space block indentation,
 entry first and optional no_heap second. Semantic dependency sets normalize
@@ -102,18 +102,18 @@ throughout the module. Reject a second, partial, or extending `.wf` definition.
 A wholly implementation-private nominal may instead be defined once in `.wf`.
 The `.wfm` must form using its own declarations, prelude and allowed dependency
 interfaces; it never searches `.wf` for a missing type, constant, contract,
-footprint mapping, or callable signature.
+member path or callable signature.
 
 All `.wfm` function items, public or private, are declarations ending in `;`.
 Every one requires exactly one ordinary `.wf` definition. Definitions repeat
 the entire signature and contract without `public`; ordinary private helpers
 need no `.wfm` declaration. There are no executable bodies, generated property
 bodies or trusted external source declarations in `.wfm`. Constants, complete
-type schemas, groups, binding maps and footprints are declarative definitions.
+type schemas, groups and binding maps are declarative definitions.
 
 Compare declaration and definition after resolving aliases and canonical
 identities. Equality covers parameter order/names/modes/types, result
-order/names/types, generic order/kinds/bounds, the `observe` marker, normalized
+order/names/types, generic order/kinds/bounds, normalized
 effects, and ordered normalized requires/ensures. Alpha-normalize generic and
 contract-local binders; retain public argument/result labels because callers
 write them. Erased `define` sharing and equivalent resolved aliases may differ.
@@ -130,7 +130,8 @@ before any composed program or executable is published.
 
 ## Types, fields, variants, constants and groups
 
-`public` permits naming a field; ordinary ownership, effects, `readonly`,
+`public` permits executable field access; erased annotations also admit private
+interface fields under the rules below. Ordinary ownership, effects, `readonly`,
 `opaque`, reference validity and release rules determine its operations.
 External field construction requires every field accessible. There are no
 default private values or hidden constructor writes. A factory is an ordinary
@@ -195,315 +196,268 @@ formal calls still apply; no runtime dictionary or implicit implementation is
 introduced. A public bundle is an explicit API choice in the sole interface,
 unlike an alias that cannot publish anything.
 
-## Named footprints over private representation
+## Runtime access and annotation visibility
 
-A footprint is a declarative type member, usable only in effect paths:
+Field privacy restricts executable source access. A field declared in a
+complete `.wfm` representation may also be named in the following erased
+annotation contexts, whether or not that field is `public`:
+
+- `requires`, `ensures` and their contract-local `define` expressions;
+- loop-header and local invariants, including relation premises in `use`;
+- declared `reads` and `writes` paths, including function-kind signatures.
+
+This rule applies both to the defining module and to other modules. It allows
+an external wrapper, generic formal or explicit certificate to state the same
+condition as an imported operation. Restricting hidden terms to the checker's
+internal fact store would support some automatic call chains but leave those
+written boundaries inexpressible. A module interface is self-contained because
+its complete representations and the dependency interfaces contain every
+structural component these annotations use.
+
+The exception is for structural field/member selection, not general access to
+private declarations. The root value and its type must already be
+legally available in the writer's context. A path may traverse private supporting records in the
+complete interface closure; their types are obtained from the preceding
+field, not named as new public types. Ordinary type, variant-refinement,
+initialization, domain, reference-validity and proof-expression restrictions
+still apply at every step. A proof cannot inspect an uninitialized element or
+an inactive enum payload simply because the path is erased.
+
+Private top-level functions, constants and nominal names do not become public.
+Public callable types, generic bounds and named constants used by its public
+contracts must retain accessible vocabulary. Private constants needed only to
+evaluate a representation or public constant remain allowed under interface
+closure. No alias publishes private names or grants annotation privileges to
+executable uses. Representations defined only in `.wf` remain inaccessible
+outside their module; an annotation cannot make the interface read a body file.
+
+Every field selector written by an external author still requires the direct
+graph edge to that member's defining source module. Crossing into a dependency's
+record may therefore require another explicit edge; prelude members keep their
+ordinary availability. In contrast, consuming an already resolved callee
+contract is a metadata traversal, not a newly written source reference. The
+checker can carry its private-path facts without granting the caller new names
+or graph permissions. The query engine records those metadata dependencies.
+
+Executable field reads, writes, borrows, construction and consuming extraction
+continue to require ordinary public access. An ordinary `let`, branch condition,
+return expression or constant initializer is not an annotation merely because
+its value will later help a proof. An annotation produces no runtime value,
+borrow, memory read, instruction or effect, and cannot feed a value back into
+executable code. The source role is fixed before resolution; later dead-code
+elimination never changes which visibility rule applies. Diagnostic locations
+and messages must distinguish inaccessible executable access from an unproved
+or ill-formed annotation.
+
+This deliberately permits representation-dependent proofs. Changing a private
+field named by a public contract or client invariant can require client proof
+edits and rechecking. Unrelated private fields do not become dependencies just
+because their definition shares a file. Runtime encapsulation is preserved;
+representation-independent specification vocabulary is not promised by privacy.
+
+## Exact effects over private representation
+
+Effects use their ordinary structural paths directly:
 
 ```text
 public struct GrowVector<T, const ceiling: u64> {
   storage: Box<Slots<T>>;
   public tag: u64;
-  public footprint state = storage;
-  public footprint length = storage.inner.len;
-  public footprint capacity = storage.inner.cap;
-  public footprint elements = storage.inner;
 }
-```
 
-This adds no field, storage, executable getter, reference, capability, or proof
-axiom. `writes(values.state)` expands to `writes(values.storage)`;
-`reads(values.length)` expands to its length measure path. An operation that
-updates storage can remain independent of `values.tag`. Two different
-footprint names are **not** assumed disjoint. Their expanded paths decide.
-
-Formation resolves one relative structural path from this
-nominal's complete definition. Names share the field-label namespace and
-cannot collide with fields. Paths may traverse fields, prelude measures/window
-parts and enum payload steps. The final step may name an already formed
-footprint, including a public footprint of a dependency. Expand this acyclic
-single-successor chain; reject a cycle. One mapping refers to at most one other
-mapping and cannot duplicate its expansion. No union, value expression, function call,
-subscript, heap walk, object set, ghost state or recursive footprint definition
-is admitted in the declaration. Several independently named substates use
-several ordinary row entries; one union name is unnecessary for that precision.
-
-A concrete suffix after a footprint in an effect path must be well-typed for
-its expanded endpoint, retaining ordinary member-access checks for written
-suffixes. Ordinary argument-supplied indices and ranges therefore
-remain available on a footprint denoting a storage window. Expanded paths use the
-ordinary alias, prefix and range-overlap judgment. Check the ordinary duplicate
-and category/order rules after expansion too; two synonymous entries cannot
-evade the existing duplicate-path rejection. Internal prefix sharing does not
-silently repair an invalid written row.
-
-Check declared versus exhibited effects in both directions after expansion,
-with the existing EFF-2 coverage rule. Every expanded declared path needs its
-ordinary exhibited witness. `writes` keeps its existing coverage of reads. Only source access
-to the published footprint is authorized, not source access to its private
-path. The compiler may use that path for checking and optimization.
-Changing a footprint map revalidates consumers of its meaning, especially
-disjointness, observer support, function-kind refinement and proof kills.
-
-## Integer observations and executable getters
-
-`observe fn` selects a **finite scalar view**, not arbitrary execution in logic:
-
-```text
-public observe fn len<T, const ceiling: u64>(values: &GrowVector<T, ceiling>)
-  -> result: own u64 reads(values.length);
-```
-
-Its ordinary runtime definition lives in `.wf`. There is one callable identity,
-one signature, and one implementation; logical use is erased. Its `.wfm`
-declaration may state additional ordinary requires/ensures. Calls of an
-unmarked getter remain ordinary calls and cannot occur in proof expressions.
-
-The following admission is the selected complete rule, not a temporary trust
-path awaiting a general termination checker:
-
-1. One `own` result of an ENT-2 fragment integer type. Parameters are references
-   to ordinary values/windows or owned fragment integers. Type/const parameters
-   and explicitly `observe` function formals are allowed. No owning aggregate
-   input, returned reference, multiple result, float or Boolean observation.
-2. The implementation is a straight-line sequence of ordinary immutable `let`
-   bindings, local invariants and one return, optionally with its ordinary doc.
-   Its values are integer literals/constants, supported scalar projections,
-   or calls to admitted observations. Arithmetic is exact addition/subtraction
-   and multiplication by a compile-time integer constant, plus integer
-   conversions proved to preserve the mathematical value, producing an affine
-   DAG. A multiplier must be a constant in the current checking context;
-   an unresolved generic value is not silently treated as a known coefficient.
-   Ordinary range/overflow/domain and access obligations must all prove.
-   Non-affine arithmetic, branches, loops, recursion, `set`, consumption,
-   allocation, release, external operations, and calls to other ordinary
-   functions are outside this marked form, even when dead or optimized away.
-   The admitted arithmetic/conversion operation-table rows are typed affine
-   nodes, not a permission to call arbitrary prelude functions.
-3. Concrete observation dependencies from bodies and domains form an acyclic
-   graph. An observer's requirements may use predecessor observations only
-   when those predecessors have no requirements of their own. This permits
-   an indexed observation guarded by a total len, without recursively
-   generating a tree of domain obligations at each logical use. No observer
-   refers to itself or an admission that depends back on it.
-   Check generic schemas and each demanded concrete binding using the existing
-   finite-instantiation discipline. A function-formal actual must carry a
-   successfully checked observation realization as well as ordinary refinement.
-4. The normal body checker establishes exact read-only effects and every
-   declared guarantee without assuming its own guarantee. Separately, a linear
-   scan substitutes local SSA bindings into a shared affine view DAG. Its
-   nodes refer to parameter ordinals, canonical constants, private scalar
-   projection paths and predecessor observation identities. Arithmetic nodes
-   carry the ordinary discharged domain evidence. No new trusted function
-   declaration or unchecked equation is accepted.
-
-The acyclic finite expression and ordinary domain proofs establish a unique
-terminating integer result whenever the declared domain holds. Extraction is
-not general symbolic execution: no branch paths, loop iterations, recursive
-unfolding or runtime values are enumerated. A complicated runtime query can
-remain an ordinary getter; making every such query a logical term is not a
-requirement of a module boundary. General recursive mathematical functions
-would be a separate language decision with termination and proof-cost evidence.
-Builtin storage measures remain their existing field reads; no second builtin
-len_of/cap_of reader is introduced. A source observer defines the API of
-its own abstract type, with its body reading ordinary fields.
-
-At external boundaries the observation is opaque: callers use its identity,
-signature, exact support, integer range and checked guarantees. They do not
-receive its private equation. Inside its defining module, a view that is just
-one scalar projection, after eliminating local copies, is canonicalized to
-that projection at each source-written observation occurrence. That fixed
-automatic family handles `len`/`cap` and does not recursively unfold calls.
-
-For a computed affine view, an explicit step in a local invariant can request
-one checked expansion: `use view remaining(values: values);`. This replaces
-that application in the current certificate's goal/premises by its one-layer
-affine realization, then uses the ordinary affine certificate fold. Nested
-observations remain terms; each further expansion requires a written step.
-The application must occur in that certificate, its domain must already hold,
-and its body must belong to the checking module. Repeated, unnecessary or
-inaccessible expansions reject under ordinary certificate redundancy/access
-principles. The step changes no surrounding fact state except the invariant's
-proved conclusion. Its provenance includes the current realization receipt.
-No equality axiom, automatic recursive unfolding or solver search is added.
-
-Automatic work registers only applications written in source, runtime-call
-bridges, and those introduced by explicit one-layer steps. Congruence uses
-canonical identity and equal normalized argument/state keys; it generates no
-new applications. Graph formation, shared affine extraction and each explicit
-expansion are polynomial in declarations, materialized applications and written
-proof size, with integer bit complexity included. Existing automatic families
-run to completion on that finite term set; cache state and time limits never
-select acceptance. There is no attempt to derive arbitrary properties of an
-uninterpreted function.
-
-## State, contracts, ownership transfer and proofs
-
-An observation application has the key
-`(proof context, instance, scalar input datums, argument view identities, support versions)`.
-Images are scoped to their body/instance and proof context, including separate
-hypothetical refinement contexts; dense local IDs are not global identities.
-Proof support includes resolved read paths, the support of domain requirements,
-the holders needed to reach them, and index/range datums. A logical domain read
-adds proof support but no runtime effect. Even a constant-result observer with
-a mutable-state requirement cannot leave a live, well-defined application
-behind after that requirement's support is killed. Aliased references resolve
-to the same storage identity.
-A bare reference argument observes its current state. `entry(parameter)`
-selects its entry image; it never follows later mutation or reference rebinding.
-
-In an `ensures`, a current reference view denotes the post-state immediately
-before the selected return transfer; in `requires` it denotes the entry state.
-An owned parameter's proof view always denotes its entry value, including
-`&parameter` inside contracts, so consuming it in the body does not lose the
-written input relation. A result's proof view denotes the returned value
-before ownership transfer. `&made` in `len(values: &made)` is a proof-only
-view constructor in a contract, not an escaping reference or runtime borrow.
-The return/call mode and ordinary reference restrictions are unchanged.
-The explicit entry former remains restricted to ensures and a reference
-parameter written by the enclosing function. For an observation, at least one
-of that argument's observation-support paths must overlap the expanded write
-row. A disjoint/read-only observation uses its bare view. Entry of a local or
-owned parameter, nested entry, and runtime entry remain rejected. Owned input
-views already have their entry meaning without the former.
-
-Formation checks types, place validity, public access, domain requirements and
-non-consuming argument shapes. It does not execute a getter. Each occurrence
-must establish its observer's requirements from the entering context; a clause
-cannot establish the domain needed to make itself well-formed. `entry` domain
-obligations use entry facts, not later postconditions. Clause order does not
-permit circular domain discharge. Return-view formation also checks the
-actual returned value and its private layout where relevant.
-
-Every observation denotes one integer datum. FN-8 retains its existing clause
-judgments with this additional operand; FN-9 retains its difference-bound
-relation shape with observations as datums. A named aggregate result can now
-supply an observation datum even though the aggregate is not itself an integer.
-This is not arbitrary aggregate equality or admission of every nested result
-projection. Existing routed-result restrictions remain; general enum result
-routes are not silently introduced with modules.
-
-Writes kill facts supported by overlapping live views under ENT-5. A disjoint
-write preserves them. An entry observation is an immutable mathematical datum
-with no live storage support after capture; only the observations referenced
-by the contract/proof are captured. No runtime snapshot or object copy exists.
-After mutation, a new current observation is distinct from the old one; it is
-never equated merely because the argument still has the same source name.
-Reference validity is checked independently, so a stale path cannot form a new
-observation even if some old integer fact survives.
-
-A runtime observation call returns the same value as the corresponding
-pre-call view, with its domain proved and read support captured at that call.
-Its normal result binding receives that equality as a generated checked
-boundary relation, in addition to written ensures. The relation's authority is
-the independently checked view realization, not an assumed self-postcondition.
-If later mutation kills a relation to a *live* view, the scalar result value
-still exists; it does not magically become the new getter result.
-
-Aggregate construction, call-result binding and whole-owner transfer transport
-proof views by structural substitution of the transferred value image.
-Construction maps private field measures into the constructed owner's view;
-return maps that owner to the declared result ordinal; a caller binds the
-result view to its new destination. Move invalidates old live paths, then
-transports only the relevant scalar measure/observation facts and structural
-construction/copy equalities whose affected supports are carried by that value
-and whose other supports remain live. This is not a transfer of the complete
-local proof context. Across calls, only declared relations and the checked
-observation-call bridge are published. Effect roots still belong to the
-current destination; proof transport introduces no owned-value effect ancestry.
-References into the old owner remain invalid; value-view transport never
-revalidates them. Copy transports a value image to a distinct storage identity;
-future writes separate their live views. Replacement kills the destination's
-old views before binding the new ones. Multi-result transport is ordinal-local
-and failure-atomic. No arbitrary old local, unrelated heap fact, or killed
-support is resurrected. Constructor/factory postconditions therefore apply to
-ordinary by-value structs without boxing or a hidden identity field.
-
-There is no implicit source type invariant. Privacy alone establishes no
-relation between fields. Public operations write the requirements and guarantees
-they actually prove, and callbacks must satisfy their ordinary boundaries even
-when an implementation temporarily changes private state. A public mutable
-field tied to private storage cannot rely on an unstated preserved invariant.
-This retains the existing proof model instead of introducing a second
-construction/callback/invariant protocol as part of modules.
-
-## Composition argument and its implementation obligations
-
-The argument relies on the existing primitive operation, ownership and proof
-judgments; it is a design argument, not verification of an implementation.
-
-First, type/interface formation and footprint expansion add only checked names
-for the same nominal values and structural states. Their access restrictions
-remove source access; they neither invent values nor assume disjointness.
-Second, induction over the observation dependency DAG gives each admitted
-observer a total affine interpretation on its domain: leaves are valid scalar
-reads/constants, arithmetic has domain evidence, and predecessor calls have
-checked domains. Domain-free predecessors keep logical domain formation from
-recursively unfolding requirements. Runtime extraction and logical view refer
-to the same typed operations; contracts cannot justify their own realization.
-
-Third, each state transition either preserves disjoint support, kills changed
-live support, captures an immutable pre-state datum, or transports an actually
-transferred value image. These are separate from reference validity and effect
-root attribution. The constructor, copy, move, call and return cases need
-explicit implementation tests and proof-fragment parents; merely matching a
-view's printed name is insufficient.
-
-Fourth, ordinary postconditions publish only after their current concrete
-proof component succeeds, using no same-component postcondition assumptions.
-An external derivation is parametric in the opaque observation interpretation:
-it uses only the admitted domain/support and checked claims. A new realization
-can replace an old one when those consumed claims remain identical and have
-current evidence. A derivation that expanded the old realization is not
-parametric in it and must revalidate that dependency. This is the substitution
-ground for claim rebinding, not trust in unchanged `.wfm` bytes.
-
-Finally, the composed receipt validates every selected source obligation and
-current dependency/availability edge before publication. Native symbol
-resolution and successful linking cannot substitute for those premises.
-Differential cold/warm and mutation tests exercise the transitions and receipt
-bindings; they complement this argument rather than proving general soundness
-by agreement of two executions of the same checker.
-
-## Abstract-container qualification witness
-
-The selected boundary covers the existing GrowVector design without exposing
-`storage` to caller source. Its relevant declarations are these fragments;
-their omitted implementations are the existing algorithms to migrate, not
-code claimed executable by this document:
-
-```text
-public observe fn len<T, const ceiling: u64>(values: &GrowVector<T, ceiling>)
-  -> result: own u64 reads(values.length);
-public observe fn cap<T, const ceiling: u64>(values: &GrowVector<T, ceiling>)
-  -> result: own u64 reads(values.capacity);
-public fn append<T, const ceiling: u64>(values: &GrowVector<T, ceiling>, value: own T)
-  -> length: own u64 writes(values.state) contract {
-  requires len::<T, ceiling>(values: values) < ceiling;
-  ensures length == len::<T, ceiling>(values: values);
-  ensures len::<T, ceiling>(values: values) == len::<T, ceiling>(values: entry(values)) + 1_u64;
-  ensures cap::<T, ceiling>(values: values) >= cap::<T, ceiling>(values: entry(values));
+public fn len<T, const ceiling: u64>(values: &GrowVector<T, ceiling>)
+  -> result: own u64 reads(values.storage.inner.len) contract {
+  ensures result == deref(values).storage.inner.len;
 };
 ```
 
-`len` and `cap` implementations return `deref(values).storage.inner.len/cap`.
-Their checked projection realizations translate the implementation's view
-clauses to the current library's measure clauses. An external wrapper repeats
-the public clauses and calls `append`; it uses the checked summary without
-private unfolding. A function-kind formal repeats those same effects/clauses;
-the supplied append function is checked independently and calls use the formal
-boundary. `free_empty(values: own GrowVector<T, ceiling>)` can require
-`len::<T, ceiling>(values: &values) == 0_u64` using an owned entry view.
-The queue specimen supplies the corresponding constructor and aggregate result
-case with actual proposed source bodies.
+An operation can declare `writes(values.storage)` while leaving `values.tag`
+independent. A caller can repeat that row in a wrapper or function-kind formal,
+but cannot execute a private `storage` selection. There are no named footprint
+declarations, mapping expansion, extra disjointness axioms or new path syntax.
+Ordinary field, enum-payload, prelude-window, parameter-index and range steps
+retain their existing rules. Multiple substates use multiple ordinary row items.
 
-Required controls: reject a getter returning a different field while claiming
-an unproved bound; reject an unmarked getter, observation cycle or non-affine
-body in logic; invalidate a saved live length fact after append; preserve it
-across a tag-only write; distinguish two aliases of the same object from two
-independent objects; reject a stale borrowed holder; preserve the frozen entry
-length; reject `free_empty` after a nonempty transfer; reject a padded footprint;
-and recheck a private footprint-map change that creates overlap. These are
-semantic acceptance obligations for implementation, not passing test claims.
+Resolve each path to canonical member identities, then check declared versus
+exhibited effects in both directions using EFF-2. An annotation mentioning a
+field exhibits no runtime access and cannot justify a padded effect row.
+Every declared effect still needs its ordinary body witness; `writes` retains
+its existing coverage of reads. Aliases, prefixes, ranges and actual storage
+identity decide overlap. Different spellings never imply independence.
+
+`pure` retains its existing meaning: no state reads/writes and no promise of
+termination. A runtime getter over a reference declares its actual reads. Proof
+field mentions create support dependencies for fact validity but no runtime
+effect or scheduling edge. Layout/member changes revalidate the precise path,
+overlap, function-kind-refinement and fact-kill consumers that read them.
+
+## Ordinary getters and private contract facts
+
+There is no `observe` modifier, logical function call or `use view` step in
+this proposal. An ordinary getter has a declaration in `.wfm`, a body in `.wf`,
+and a written postcondition such as the `len` declaration above. Its body must
+prove that postcondition under the ordinary checker. No automatic body-derived
+equation is added to the caller's contract boundary.
+
+After a real normal-returning call, the checker substitutes the selected
+arguments/result into its verified postconditions, including private paths.
+For example, `n = len(q)` establishes a relation between n and q's current
+private length. A later branch `n < ceiling`, with no intervening overlapping
+write, can discharge append's private-length requirement through the existing
+integer proof rules. Caller executable source need not read the private field.
+A call that never returns reaches no such continuation; getter termination is
+not an added prerequisite. Getters may use ordinary control flow and arithmetic
+subject to existing safety, effect and contract rules.
+
+An erased contract cannot call this getter. It directly names the relevant
+field path instead. This retains FN-8's exclusion of ordinary callable execution
+and avoids introducing a second class of executable functions or a termination
+checker. Calling a getter solely to obtain a proof fact is unnecessary when an
+erased structural assertion can express the same obligation. When executable
+code needs the value, it uses the ordinary getter and its normal codegen path;
+no accessor-inlining or zero runtime cost is assumed without evidence.
+
+## State, contracts, ownership transfer and proofs
+
+A projected proof datum has the key
+`(proof context, value/state image, canonical projection path, support versions)`.
+Images are scoped to their body/instance and proof context, including separate
+hypothetical refinement contexts; dense local IDs are not global identities.
+Support includes the selected storage, holders needed to reach it, index/range
+datums and live evidence needed for path formation. Aliased references resolve
+to the same storage identity. Field privacy does not change that identity or
+turn a mutable projection into a timeless value.
+
+In a `requires`, a reference parameter's projected path denotes entry state.
+In an `ensures`, its ordinary path denotes post-state immediately before return
+transfer; `deref(entry(parameter)).field` selects its frozen entry image.
+The explicit entry former retains its existing restriction to ensures and a
+reference parameter whose selected path overlaps the enclosing function's
+declared writes. Entry of a local or owned parameter, nested entry and runtime
+entry remain rejected. A disjoint/read-only projection uses its bare path.
+
+An owned parameter's contract path denotes its entry value even if the body
+later consumes it. A named aggregate result's path, for example
+`made.storage.len`, denotes the returned value before ownership transfer.
+Extend the admitted FN-8/FN-9 operand forms to well-formed structural projections
+from those owned input/result roots whose final type belongs to the existing
+integer proof fragment. Retain the existing relation shapes and selected-result
+rules: no arbitrary aggregate equality, new general enum result route or
+proof-only borrow expression is introduced. Ordinary scalar result clauses
+continue unchanged.
+
+Each projection must satisfy the existing type, validity, refinement and
+partial-operation-domain judgments in the relevant state before becoming a
+datum. A requirement cannot assume itself to establish its own formation.
+Frozen entry paths are formed from entry facts; returning-value paths are
+checked against the actual returned value. Clause order supplies no circular
+domain proof. Representation shape determines legal projections, never an
+unstated relation between arbitrary fields.
+
+Writes kill facts whose live support overlaps under ENT-5; disjoint writes
+preserve them. Frozen entry datums are immutable mathematical values and do not
+follow later writes. Capture only the projections referenced by the contract or
+proof; no runtime snapshot or object copy is introduced. An old getter result
+continues to exist as a scalar after a write, but its equality with the current
+field no longer follows. Reference validity is checked independently: a retained
+integer fact cannot make a stale borrowed holder valid again.
+
+Construction, call-result binding and whole-owner transfer transport relevant
+projection facts by structural substitution of the transferred value image.
+Construction maps field values/measures into the constructed owner's image;
+return maps that owner to the result ordinal; the caller maps the result to its
+new destination. Move invalidates old live paths, then carries only relevant
+facts whose affected support moves with that value and whose other support
+remains live. Private fields participate exactly as public fields do.
+
+This is not transport of the entire local proof context. Across calls, only
+written verified relations and existing normative type facts are available.
+An unrelated local fact or an implementation-inferred stronger theorem does not
+cross the interface. Effect roots still belong to the current destination;
+proof transport introduces no owned-value effect ancestry. References into the
+old owner stay invalid. Copy creates a distinct storage identity with the copied
+value facts; later writes separate the live states. Replacement kills the old
+destination evidence. Multi-result transport is ordinal-local and failure-atomic.
+The queue constructor therefore states `ensures made.storage.len == 0_u64;`
+without a logical getter, hidden identity field or mandatory boxing.
+
+There is no implicit source type invariant. Privacy alone establishes no
+relation between fields. Public operations state their requirements and
+guarantees; callbacks obey their ordinary boundaries even while an implementation
+temporarily changes private state. A public mutable field linked to private
+storage cannot rely on an unstated preserved invariant.
+
+## Composition argument and its implementation obligations
+
+This argument assumes the existing primitive, ownership and proof judgments;
+it is a design argument, not a verification of an implementation.
+
+First, annotation visibility adds names for already described structural
+components. Formation still checks each term's type/domain/state. Naming a
+private field establishes no fact and authorizes no runtime access. An erased
+annotation has the same primitive meaning inside and outside the type's module.
+
+Second, each body proves exactly its declared requirements/effects/guarantees
+under the existing recursive-component restrictions. Exported clauses are
+resolved expressions with member identities, not strings reparsed with the
+caller's runtime privileges. Only normal-returning calls publish those verified
+postconditions. A declaration or an unverified implementation supplies no axiom.
+
+Third, substitution preserves the referenced state/value image. Actual writes
+remove overlapping facts before postconditions describe the new state; entry
+images remain frozen; checked ownership transfer renames only carried value
+facts. Current proof availability and dependency equality are required when a
+cached caller derivation is rebound to a changed implementation. Private-member
+identity and meaning are dependencies when the consumed clause uses them.
+
+Finally, composition validates every selected source obligation and current
+dependency/availability edge before publication. Native symbol resolution is
+insufficient. Cold/warm differential and mutation tests exercise these rules;
+agreement between two executions of the checker is not a general soundness proof.
+
+## Container, wrapper and explicit-proof qualification
+
+The GrowVector boundary uses its existing algorithms and direct private paths:
+
+```text
+public fn append<T, const ceiling: u64>(values: &GrowVector<T, ceiling>, value: own T)
+  -> length: own u64 writes(values.storage) contract {
+  requires deref(values).storage.inner.len < ceiling;
+  ensures length == deref(values).storage.inner.len;
+  ensures deref(values).storage.inner.len == deref(entry(values)).storage.inner.len + 1_u64;
+  ensures deref(values).storage.inner.cap >= deref(entry(values)).storage.inner.cap;
+};
+```
+
+An external wrapper can repeat those clauses and the precise effect row without
+executing a private selection. A function-kind formal can state the same complete
+boundary; actual refinement and calls use ordinary FN-4/FN-5. A consuming
+`free_empty(values: own GrowVector<T, ceiling>)` can require
+`values.storage.inner.len == 0_u64` using its owned entry value. The queue demo
+supplies the constructor/result-transport case and an external function-kind
+consumer that writes private paths in both its `.wfm` and `.wf` contracts.
+
+Use a caller loop with a header relation between its iteration counter and a
+private length to qualify writer-visible erased access. Also require an
+explicit multi-premise `use` certificate mentioning that length, beyond AUTO's
+automatic family, so merely carrying hidden checker terms cannot pass this
+criterion. Neither witness may insert runtime getter calls solely to name a
+proof datum. Each written private selector must receive the same direct-edge,
+type and state-formation checks as the equivalent public selector.
+
+Positive/negative controls must distinguish the same private path in an
+invariant from an executable `let`, branch, borrow, write, constructor or
+destructure; only the erased uses get the visibility exception. Reject an
+ordinary getter call in a contract, an unproved getter postcondition, use of
+private top-level names, missing member-owner edges, uninitialized projections,
+inactive payloads and stale references. Invalidate a saved live length relation
+after append but preserve it across a tag-only write; keep its entry datum;
+distinguish aliasing objects from independent ones; reject `free_empty` after a
+nonempty transfer and declared effects without a body witness. Recheck consumed
+private-path changes, but reuse source proofs after a getter body edit whose
+written claims and current availability remain equal. These are implementation
+acceptance obligations, not executed test results.
+
 
 ## Target requirements
 
@@ -532,7 +486,7 @@ closure, seeded by the entry and platform startup. Include all syntactic calls
 in selected concrete bodies, called function-formal actuals, materialized
 parameter/local/result/value layouts, derived release and required native/
 runtime supplies. Include calls in branches regardless of constant conditions;
-exclude erased proof observations and uncalled declarations. Phantom type
+exclude erased proof annotations and uncalled declarations. Phantom type
 arguments contribute only through their actual value/layout/release uses.
 An allocation, required heap-bearing value, heap release or runtime heap need
 rejects that target. Private representation is not an exemption. Fixed-point
@@ -547,11 +501,27 @@ proofs are shared between heap-enabled and no-heap targets.
 
 ## Sources and rejected extensions
 
-[Dafny's reference](https://dafny.org/latest/DafnyRef/DafnyRef) distinguishes
-function domains, read frames and termination; that comparison explains why
-read-only is not sufficient for an observation. This proposal instead selects
-a finite affine view and Whitefoot's existing proof families, without Dafny's
-solver or general recursive functions. [Why3's type-invariant rules](https://why3.org/doc/syntaxref.html#record-types)
-illustrate that implicit invariants need construction and call-boundary
-obligations. This proposal retains explicit operation contracts. Neither
-reference is an acceptance authority for Whitefoot.
+[OpenJML's visibility explanation](https://www.openjml.org/tutorial/Visibility)
+separates executable access from specification visibility and describes the
+representation coupling of directly exposed specification fields. WF selects
+one role-based rule for interface fields rather than another per-field
+visibility modifier. This is a comparison, not adoption of JML's solver or
+logical method calls. [Why3's type-invariant rules](https://why3.org/doc/syntaxref.html#record-types)
+illustrate the extra construction and call-boundary obligations of implicit
+invariants; WF retains explicit operation contracts.
+
+The earlier finite `observe` / `use view` and named `footprint` candidate is
+superseded: its premise that public annotations must hide every private path
+is no longer selected. Direct erased paths cover the queue, wrapper, generic
+formal, explicit-certificate and precise-effect requirements with existing
+proof/effect families. Checker-only hidden facts were considered and rejected
+as the complete authoring boundary because they leave external contracts and
+manual invariants without names for required conditions.
+
+Representation-independent model properties and mathematical functions remain
+possible separate extensions. Reopen them for a concrete consumer whose
+representation changes or algorithmic contract makes direct structural proofs
+unsuitable; compare migration cost, totality/proof requirements and incremental
+invalidation before choosing a new mechanism. No such abstraction is required
+for this module implementation, and arbitrary runtime functions remain excluded
+from erased proof expressions. No external reference defines WF acceptance.

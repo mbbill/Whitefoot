@@ -25,7 +25,7 @@ The [complete source specimen](demo/README.md) makes this direction concrete:
 five modules form a fixed-capacity job queue, a function-kind batch consumer,
 an allocation-free entry and a heap-using tool. It includes every interface
 and body, the root graph, a reading order, expected behavior and predicted
-edit effects. The selected declaration, observation and footprint rules are in
+edit effects. The selected declaration, annotation-visibility and state rules are in
 [LANGUAGE.md](LANGUAGE.md), and [SYNTAX.md](SYNTAX.md) contains the complete
 strong-LL(2) candidate. The specimen is not an executable project or evidence
 that the compiler implements those judgments.
@@ -166,8 +166,8 @@ still only a file-local abbreviation and cannot carry `public`.
 Public function declarations
 include generic parameters and bounds, parameter/result labels and modes,
 types, capabilities, effects, and complete `requires`/`ensures` clauses.
-No executable function body belongs in `.wfm`, including a getter used by a
-public contract. Its public declaration is here and its checked body is in
+No executable function body belongs in `.wfm`, including an ordinary getter.
+Its public declaration and written contract are here and its checked body is in
 `.wf`, without repeating `public`. Every public source-defined struct has its
 one complete definition here, including unmarked private fields; its field
 schema is a data declaration, not an executable body.
@@ -190,7 +190,8 @@ dependency therefore need not rewrite the public interface.
 
 One direct-dependency set applies to both the public interface and private
 implementation. An edge permits reference to the target's public declarations;
-it does not re-export them or grant private access. Whether an edge is used by
+it does not re-export them or grant private executable access. Erased annotations
+may select interface-private fields under the role-specific rule below. Whether an edge is used by
 a public signature, an implementation, both, or neither is determined from
 checked references, not a second writer-maintained `api`/`impl` classification.
 A dependency used only in implementation remains absent from the handwritten
@@ -199,7 +200,7 @@ references or change their meaning through per-module aliases. Each canonical
 root has one selected identity. Version acquisition and package solving remain
 outside the language.
 
-Illustrative contents of `counters/module.wfm`, not an accepted grammar. The path
+Proposed contents of `counters/module.wfm`, not yet accepted by the compiler. The path
 already declares the module, so no second written module name is needed:
 
 ```text
@@ -296,9 +297,10 @@ no-shadowing rules remain; new globals can invalidate lookup or scope checks.
 Qualification must reach types, constructors, callees, function arguments,
 binding groups, constants, match variants, projections, destructuring and
 postcondition routes together. Fixed operation-table names and numeric bounds
-do not gain dependency lookup. Existing `::` generic-call syntax requires
-factoring with qualified names in the strong-LL(2) grammar; this document does
-not claim that the complete productions have been checked.
+do not gain dependency lookup. Existing `::` generic-call syntax is factored
+with qualified names in the candidate strong-LL(2) grammar. The existing
+generator checks those productions; source-role and semantic implementation
+still require the integration cases below.
 
 The root graph has one architecture and may declare multiple build targets.
 Each executable target pairs an entry with its environment requirements,
@@ -335,7 +337,7 @@ An interface must declare its own abbreviations, rather than obtain them from
 implementation files. This keeps reading and concurrent editing local.
 
 Every alias target is a complete root-qualified path beginning with the fixed
-`pkg` qualifier or an explicitly selected external dependency name.
+`pkg` qualifier; external dependency-name binding is deferred.
 Resolution binds that root in the source's owning-package context before forming
 the canonical identity. It names a module or a source declaration spelling,
 with no file-local alias on the
@@ -356,7 +358,7 @@ rename fields, named arguments, payload-field variant labels or result labels.
 Wrong-class uses receive the ordinary domain error. Duplicate alias names
 reject, and every occupied domain obeys the existing collision/no-shadowing
 rules. The `pkg` qualifier cannot be rebound, and module aliases cannot
-shadow an external dependency root available in that source context. They
+rebind the reserved `pkg` root. They
 occupy the file's IDENT binding space but have no value or callable use.
 
 Targets are checked even when an alias is unused. A foreign target requires
@@ -381,7 +383,8 @@ candidate deliberately has file scope, one header form, no glob/group imports
 and no public re-export. The spelling `alias` avoids overloading WF's existing
 `use` proof-step keyword; the two contexts could be parsed separately, so this
 is a clarity choice, not a claim of unavoidable ambiguity. The complete
-qualified-name grammar still requires qualification before implementation.
+qualified-name candidate passed the existing grammar-generator qualification;
+lexer/parser integration and executable semantic checks remain to implement.
 
 ### Fixed current-package qualifier
 
@@ -395,29 +398,17 @@ use the same spelling. The abbreviation names the package role without
 adopting Rust's term for its compilation unit. Merely having a source root
 does not create a module node or grant any dependency edge.
 
-In the active graph, `pkg::` denotes its primary root. In a `.wfm` or `.wf`,
-it denotes the selected root that owns that source. Thus a library selected
-under a dependency name such as `math` still writes `pkg::vector` internally;
-that use resolves to the selected library's vector module, not the importing
-application's vector module. This context comes from explicit source ownership,
-not a search for a nearer graph file. The active graph still registers all
-selected external modules and their exact edges; importing a library does
-not import another graph as a dependency authority.
+In the active graph and every selected `.wfm`/`.wf`, `pkg::` denotes that one
+package root. No nearer graph search, external root binding, version selection
+or imported graph is part of the selected grammar or implementation.
+The compiler-owned prelude is not an ordinary source package called `std`.
 
-An external source dependency retains an explicit name such as `std` or
-`math`. Its binding selects an actual dependency identity, not a second
-identity for each spelling. External names and the source's owning-package
-context must be recorded resolver inputs. The complete external-binding
-format, including dependency-name environments, multiple selected versions
-and references to the primary root from another root, remains qualification
-work; the single-package demo does not claim to exercise that system. All such
-selection must remain explicit in the one graph, and no name binding grants
-a module edge. The compiler-owned prelude remains distinct from an ordinary
-source library called `std`. External-library selection and library-to-library
-dependencies are deferred beyond the next implementation, which covers the
-primary package's module DAG. No external binding syntax, version resolver or
-graph-import tooling is selected here; reopen that design when external-library
-composition is explicitly selected.
+External libraries and library-to-library composition remain deferred. A future
+design should give dependencies explicit identities/names and preserve each
+library's internal owning-package qualifier under consumer renaming. That is
+a future compatibility aim, not a selected binding syntax, mandatory current
+resolver or permission to add another active dependency authority. Reopen it
+only when external composition is selected by the owner.
 
 The directory of the unique graph already answers where the primary root
 starts. A freely chosen local prefix therefore added a naming decision without
@@ -483,7 +474,7 @@ not justify maintaining a second ownership map under this requirement.
 
 Filesystem path uniqueness is only part of naming correctness. The compiler
 still rejects duplicate declarations across a module's implementation files,
-conflicting root bindings and ambiguous canonical source paths. Reserve a
+ambiguous canonical source paths and duplicate physical ownership. Reserve a
 child namespace component against a top-level declaration with the same name
 in its parent module: `vector/other/module.wfm` can coexist on disk with an
 exported function called `other` in `vector/module.wfm`, but that conflicting namespace is not
@@ -498,9 +489,10 @@ complete acceptance spelling remains part of grammar/input qualification.
 
 Moving a function between direct files of the same module preserves semantic
 identity. Moving or renaming a module path changes its qualified identity and
-requires affected imports and uses to change. Moving only the bound physical
-root while retaining its selected source identity and relative paths does not
-rename every module. Path-derived naming deliberately trades free module
+requires affected imports and uses to change. Moving the complete checkout
+preserves root-relative source spellings but can miss this version-private
+cache because its input namespace includes the canonical graph location.
+Path-derived naming deliberately trades free module
 relocation for one inspectable relationship between source layout and names.
 
 ### One root file for the explicit module graph
@@ -643,8 +635,10 @@ Validate the graph against the selected canonical source snapshot:
    must already have a valid declaration in this same graph. Self, forward
    and unknown references reject at the row and offending edge.
 3. Every external source reference, after file-local alias resolution, must
-   name a public declaration in an explicitly listed direct dependency.
-   Both interface and implementation references obey this rule. A missing
+   obey its name role and the explicitly listed direct dependency. Top-level
+   references require public declarations; erased member paths may select
+   interface-private fields under the annotation rule. Both interface and
+   implementation references obey these rules. A missing
    edge rejects even if the target row
    occurs earlier or is transitively reachable.
 4. The selected program is closed over declared dependencies and all selected
@@ -766,14 +760,23 @@ grammar/resolver and edit-locality qualification.
 
 ### Public semantic closure, representation and proof paths
 
-A public declaration must be understandable using its interface, explicit
-dependency interfaces and the ordinary language/prelude rules. Publicly usable
-signatures, fields, bounds, effects and proof expressions cannot require a
-caller to name a private type, helper, constant, group or representation path.
-Private field declarations in `.wfm` may use private support declared in that
-same interface. Private implementation contracts may use private paths normally;
-their presence as text in `.wfm` does not make those paths legal public contract
-vocabulary.
+A public declaration must be understandable from its `.wfm`, explicit dependency
+interfaces and ordinary language/prelude rules. Callable types, generic bounds,
+public fields and named contract constants retain accessible public vocabulary.
+Field visibility is role-specific: executable code needs ordinary public access,
+while requires/ensures, contract definitions, invariants, written proof premises
+and effect rows may select private fields described in the complete interface.
+
+The checker may also carry already resolved private-path facts from verified
+callee contracts. It never needs to grant runtime access or infer additional
+public guarantees from `.wf` bodies. Allowing only checker-internal hidden terms
+would leave external wrappers, generic formal contracts and explicit invariants
+without source names for needed conditions, so written erased paths are admitted
+as well. Paths retain ordinary type/domain/state validity and direct member-owner
+edge checks. Private top-level functions/types/constants are not promoted;
+traversal through private support obtains its type from the preceding field.
+[LANGUAGE.md](LANGUAGE.md#runtime-access-and-annotation-visibility) defines the
+complete boundary and negative cases.
 
 Every nominal that a caller must name belongs in `.wfm`, even when its fields
 are private. Type publication and field publication are separate choices:
@@ -781,8 +784,8 @@ are private. Type publication and field publication are separate choices:
 | Record form | Definition location | Implementation and caller access |
 |---|---|---|
 | Module-private implementation struct | One complete definition in `.wf`, without a visibility modifier | Available to the module's shared private inventory; cannot supply missing type information to `.wfm` |
-| Private supporting struct needed by an interface field | One complete unmarked definition in `.wfm` | Available throughout the owning module, inaccessible to external source |
-| Public struct with private fields | One complete `public struct` definition in `.wfm`, with only externally accessible fields marked `public` | The owning module sees all fields; external source sees only explicitly public fields |
+| Private supporting struct needed by an interface field | One complete unmarked definition in `.wfm` | Available throughout the owning module; external annotations may traverse its interface fields through an available value, but cannot name the private type or execute its fields |
+| Public struct with private fields | One complete `public struct` definition in `.wfm`, with only externally accessible fields marked `public` | The owning module uses all fields; external executable access requires public, while erased annotations may name all interface fields |
 | Fully public data record | One complete `public struct` definition in `.wfm`, with every field marked `public` | Ordinary field operations and construction remain subject to existing rules |
 
 The type itself being public is enough to require its full source definition
@@ -796,9 +799,9 @@ route.
 For example, a public buffer may declare a public caller-controlled `tag` and
 unmarked private storage in the same definition. A private storage helper used
 by that field also needs its complete definition in `.wfm`, without `public`,
-with any private supporting constants. Resolve this closure from the same
-interface, the ordinary prelude and permitted public dependency interfaces,
-never from `.wf` or another module's private names. A public field or callable
+with any private supporting constants. Resolve this type-declaration closure
+from the same interface, the ordinary prelude and permitted public dependency
+interfaces, never from `.wf` or another module's private top-level names. A public field or callable
 signature cannot expose that private helper type. Marking a field `public`
 inside a private type does not publish the enclosing type or create an external
 access route; effective access also requires an accessible enclosing type.
@@ -817,8 +820,9 @@ Both are superseded. Default-private also makes adding representation detail
 and expanding the public API distinct edits; default-public with `private`
 would publish an unmarked addition. The cost is more markers on public data,
 and private representation edits now change `.wfm`; private support can make
-that file larger. Privacy restricts source access, not whether a reader sees
-representation text. Reading and incremental costs remain unmeasured; one
+that file larger. Privacy restricts executable access, not erased field
+annotations or whether a reader sees representation text. A private field
+referenced by a contract or client proof is a real semantic dependency. Reading and incremental costs remain unmeasured; one
 agent per module remains the authoring assumption.
 
 Universal getter/setter mediation is not selected. A setter for each private
@@ -841,16 +845,18 @@ Do not key every client by the whole `.wfm` digest. Private access does not
 guarantee an unchanged ABI or that every accessor call will inline. These
 effects need the consumer evidence below.
 
-The contract-composition gap is addressed by the selected rules in
-[LANGUAGE.md](LANGUAGE.md#integer-observations-and-executable-getters): a
-marked getter has a checked finite affine realization in `.wf`, an opaque
-public integer observation in contracts, precise named read support, and
-explicit current/entry/result views. Named footprints expand private effect
-paths without publishing field access. The GrowVector wrapper/function-kind
-witness and queue result construction exercise those rules. This closes the
-previous unspecified-design P2; implementing and testing the judgments is
-still required, and this prose is not a soundness proof of a compiler.
-
+The contract-composition gap is addressed by ordinary private-path contracts,
+role-specific annotation visibility, and checked current/entry/owned-result
+projection transport in [LANGUAGE.md](LANGUAGE.md). A runtime getter publishes
+its written normal-return relation, such as result equals the private length;
+proof expressions name that length directly and never execute the getter.
+The queue constructor and external function-kind consumer, plus the GrowVector
+wrapper/invariant witnesses, exercise that boundary. No `observe`, `use view`,
+logical-call termination mechanism or named `footprint` declaration is selected.
+This supersedes the earlier abstraction machinery because its requirement to
+hide all private paths from public annotations has been removed. It closes the
+specified design gap; compiler implementation and executable evidence remain
+required, and this argument is not a soundness proof of a compiler.
 
 Self-containment concerns the source API, not all compiler information.
 Compiler-owned artifacts retain checked implementation evidence, generic
@@ -866,7 +872,7 @@ Composition validates those actual identities and inputs.
 
 [LANGUAGE.md](LANGUAGE.md) owns the complete proposed rules for field access,
 construction, residual release, derived capabilities, closed public enums,
-constants/groups, observation admission and state, named footprints, and
+constants/groups, annotation visibility, exact private-path effects, state, and
 absence of implicit type invariants. The examples below explain the already
 selected field/capability choices. Their acceptance cases belong to the
 implementation matrix, not a remaining menu of undecided language alternatives.
@@ -884,8 +890,9 @@ Direct public fields have the existing field semantics for copy reads,
 references, writes and in-place operations, with ordinary
 ownership, effects and `readonly` restrictions. Expose independent user data,
 such as a buffer's caller-controlled tag, this way. A changing length related
-to hidden storage can remain private and be observed through an ordinary
-public getter; admitting that getter in contracts is still separate work.
+to hidden storage can remain private and be read at runtime through an ordinary
+public getter. Contracts and other erased proofs use the private structural
+path directly; ordinary getter calls remain excluded from proof expressions.
 Existing TYPE-2 `readonly` forbids ordinary source writes inside the module
 as well as outside it, so it cannot quietly become an external-only access
 restriction. A public writable field does not establish a private invariant.
@@ -904,7 +911,8 @@ could owe that property to the extracted public field, a hidden field, or an
 explicit modifier. Previously, a private definition outside `.wfm` could change
 that remainder without a readable interface change. That ground for banning
 every external extraction no longer holds: all fields and their type support
-are now declared in `.wfm`, even though external code cannot name private paths.
+are now declared in `.wfm`; external executable code cannot name private paths,
+while erased annotations may do so.
 
 Permit direct public-field moves and consuming destructuring when ordinary
 residual-release checks pass. An external consume can bind only accessible
@@ -965,7 +973,8 @@ type's derived capabilities or residual-release conditions, requiring public
 surface reporting and precise invalidation. Compare concrete and generic
 instances across a dependency before choosing any additional capability
 annotation; a derived API display can improve readability without becoming a
-second source definition. Logical observations and the decision to retain explicit operation contracts are specified in LANGUAGE.md.
+second source definition. Erased private-path visibility and explicit operation
+contracts are specified in LANGUAGE.md.
 
 ### Public interface and generated compiler projections
 
@@ -975,7 +984,7 @@ generate distinct projections:
 
 | Projection | Content | Readers |
 |---|---|---|
-| Name surface | Public declaration identities, kinds and signatures | External lookup and declaration formation |
+| Name surface | Public declaration identities, kinds and signatures; role-indexed interface member lookup | External lookup and annotation/executable access checks |
 | Semantic boundary | Modes/types, capabilities, effects, normalized contracts, constants and bounds | Source checking and proofs |
 | Verification evidence | Matched interface, checked implementation, obligations, derivations and proof dependencies | Composition and audit |
 | Generic template | Resolved implementation body, symbolic check and explicit parameters | Concrete instantiation |
@@ -1008,7 +1017,7 @@ the modifier untouched.
 
 Report representation/layout/release changes separately when they preserve
 the usable source API, since they still affect backend consumers. A private
-field edit can also change source capabilities or extraction rights and then
+field edit can also change a consumed proof path, source capabilities or extraction rights and then
 belongs in the semantic report. Qualification needs witnesses for both cases,
 plus alias renaming with unchanged identity and alias retargeting with changed
 identity. The expected benefit is focused review without flagging every private
@@ -1118,7 +1127,7 @@ These families name responsibilities, not a proposed public Rust API:
 | Query | Relevant inputs | Reusable output |
 |---|---|---|
 | Source formation | Interface/source bytes, selected canonical roots, direct directory inventory, grammar/spec identity | Tokens, canonical trees, source maps |
-| Module surface / lookup | Owning-package identity, explicit external bindings, path components, public/private inventories, relevant file aliases, direct dependency paths, lookup role and spelling | Stable resolved declaration or diagnostic |
+| Module surface / lookup | Owning-package identity, path components, public/private inventories, relevant file aliases, direct dependency paths, executable/annotation lookup role and spelling | Stable resolved declaration or diagnostic |
 | Graph formation / edge validation | Root graph bytes, canonical module inventory, exact adjacency rows and earlier-target relations | Resolved roots, stable per-module dependency sets, target declarations and valid order certificate, or located graph diagnostic |
 | Target composition / heap requirement | Selected target, bound entry, declared module closure, concrete call/layout/release/native summaries and target requirement | Checked source composition, current execution closure and satisfied environment requirement, or diagnostic |
 | Module dependency permission | Canonical source/target identities and membership in the source's normalized adjacency row | Allowed direct dependency or missing-edge diagnostic |
@@ -1141,11 +1150,9 @@ invalidation. Token-level editor parsing is not necessary to avoid checking
 untouched files and bodies.
 
 Graph parsing projects roots, per-module edges and individual target records
-separately. The source's selected owning root and the external bindings it
-actually resolves are tracked inputs: identical text such as
-`pkg::vector::Vector` in two packages must not select one cache identity.
-Conversely an importer's name for a library does not by itself rename all
-internal declarations when the selected identity and bindings stay the same.
+separately. The selected package input namespace is a tracked input: identical
+text such as `pkg::vector::Vector` in two separate checkouts must not select one
+cache identity. External library bindings are outside this implementation.
 Source checking produces reusable declarations, proofs and heap
 requirements; target checking reads those results and the selected entry's
 ordinary argument binding. A target name or no-heap flag is not a blanket
@@ -1527,16 +1534,16 @@ must update the affected rules together, not merely remove PROG-1's prohibition.
 
 | Owner | Before | Proposed change |
 |---|---|---|
-| PROG-1/2/3, FN-7 | One ordered bundle, no modules, build-selected unqualified entry | One graph's directory fixes the primary source root; explicit external-root selection, ordered adjacency and named entry targets share that graph; source composition follows declared module closure while ordinary startup obligations remain required |
+| PROG-1/2/3, FN-7 | One ordered bundle, no modules, build-selected unqualified entry | One graph's directory fixes the sole package root; ordered adjacency and named entry targets share that graph; source composition follows declared module closure while ordinary startup obligations remain required |
 | FORM-2/3, GRAM-1/2/3/4/5, DIAG-1 | One root and unqualified name roles | Complete interface/source and root-graph forms, file alias headers, qualified names and diagnostics joining graph rows, aliases, declarations and definitions |
-| TYPE-6, CONST-2, FN-3 | Whole-unit identity; non-function top-level visibility follows source order | Directory-named modules with fixed module.wfm interfaces and shared local names; pkg resolves to the source's owning root, external names select explicit dependencies, and only permitted direct interfaces are visible; ordinary privacy, dependency validity and lexical local scope retained |
+| TYPE-6, CONST-2, FN-3 | Whole-unit identity; non-function top-level visibility follows source order | Directory-named modules with fixed module.wfm interfaces and shared local names; pkg resolves to the package root and only permitted direct interfaces are source-visible; ordinary privacy, dependency validity and lexical local scope retained |
 | Public declaration correspondence / type representation | No separate interface or public/private source boundary | Declarations and struct fields default private; only .wfm permits public. Every public source struct has one complete definition there, with private support; functions retain declaration-only interfaces and exact normalized body correspondence without repeating public |
 | Type/ownership/release consumers | Descriptions in one inventory | Same judgments over imported descriptions; privacy grants no storage or release exemption |
 | FN-2/4/6/9, ENT-3.S12 | Whole-unit instances and summary identities | Same instance and SCC rules across modules, with current cached claims and availability |
 | DIAG-2 | One exact-program value owns/discards all evidence | Checked component fragments and assembled receipt; failed composition grants no authority, unrelated valid entries survive |
 | STOR-8 | A no-heap unit rejects forbidden type/call spellings throughout its source | An entry target withdraws heap capability from its conservative concrete call/value/layout/release/native closure; ordinary checking still covers every definition in selected modules |
 | STOR-6, EFF-3, PAR-1/2 | Whole-program target/allocation/parallel metadata | Same rules over complete tracked layout, allocation and call-summary dependencies |
-| FN-8/9, ENT-2/3, EFF-1/3 | Ordinary function calls are excluded from contracts; pure is not a termination guarantee | Finite affine observe functions retain runtime bodies in .wf and supply checked current/entry/result views; named footprints preserve private effect precision; ordinary pure remains no termination promise |
+| FN-8/9, ENT-2/3, EFF-1/3 | Ordinary function calls are excluded from contracts; pure is not a termination guarantee | Erased annotations may name interface-private fields; owned input/result projections and state transport carry written contracts; ordinary calls remain excluded from logic and pure keeps its existing meaning |
 | PRE-1 / native binding | Compiler-owned declarations and linked bodies | Bind selected prelude, runtime and target identity into composition/codegen inputs |
 
 The candidate uses each directory's fixed module.wfm as its module declaration
@@ -1549,15 +1556,15 @@ primary root by its location and lists ordered modules
 with their exact direct dependencies and named entry targets. Current-package
 references use the fixed `pkg::` qualifier in the owning source context.
 The graph is named `modules.wfg`. LANGUAGE.md specifies its formation,
-namespace/privacy, correspondence, observations, footprints and target rules;
+namespace/privacy, correspondence, erased field paths, state transport and target rules;
 SYNTAX.md supplies the qualified complete grammar. External bindings remain
 outside the single-package scope. META-5 deltas and the active version are
 computed against the actual integration base; no count is invented here.
 
 | Current implementation owner | Required structural change |
 |---|---|
-| `source.rs`, syntax/canonical rendering | Canonical selected roots, direct directory snapshots, interface/source and graph grammar roots, stable path/item identity and source maps |
-| `resolution/engine*` | Owning-package and external-root resolution, canonical path namespaces, root-graph adjacency and earlier-target validation, file-local aliases, direct-dependency permission checks, shared local inventories, public closure, correspondence and positive/negative lookup dependencies |
+| `source.rs`, syntax/canonical rendering | One canonical package root, direct directory snapshots, interface/source and graph grammar roots, stable path/item identity and source maps |
+| `resolution/engine*` | Owning-package resolution, canonical path namespaces, root-graph adjacency and earlier-target validation, file-local aliases, direct-dependency permission checks, shared local inventories, public closure, correspondence and positive/negative lookup dependencies |
 | `semantic/check.rs`, `check/generics*` | Query-owned body/instance checking and reusable owned results instead of whole-unit borrow chains |
 | `semantic/entailment*`, `postcondition.rs` | Stable claims, retained derivations, current SCC availability and composition |
 | `semantic/model.rs`, allocation/permission consumers | Stable identities and tracked fixed-point/target dependencies |
@@ -1579,7 +1586,7 @@ correct composition and complete dependency tracking are required.
 
 ## External evidence
 
-Primary sources were inspected during 2026-09-21/22. They support mechanisms
+Primary sources were inspected during 2026-09-21 through 2026-09-23. They support mechanisms
 and expose limits; they are not measurements of WF or proofs of this design.
 
 - **E1 — [Rust incremental queries](https://rustc-dev-guide.rust-lang.org/queries/incremental-compilation-in-detail.html).**
@@ -1644,6 +1651,12 @@ and expose limits; they are not measurements of WF or proofs of this design.
   its proposed `module.wfm` puts the complete public contract beside the direct
   implementation files. Repeated interface basenames remain a navigation cost.
 
+- **E15 — [OpenJML specification visibility](https://www.openjml.org/tutorial/Visibility).**
+  Executable and specification visibility are separate dimensions; direct
+  specification fields can couple clients to representation. WF selects
+  role-based visibility for interface fields, without JML's extra field
+  modifier, solver or logical method-call mechanism.
+
 ## Implementation contract and sequence
 
 The source-language design is selected in [LANGUAGE.md](LANGUAGE.md); its
@@ -1663,8 +1676,8 @@ Read the corresponding live compiler nodes before implementing their structure.
 |---|---|---|
 | Source/graph session | Immutable input snapshot, `ModuleKey`, direct source inventory, graph rows/targets | `compiler/src/driver.rs` and source formation |
 | Syntax and resolution | Role-aware `.wfm`/`.wf` trees, factored qualified syntax, file aliases, canonical `DeclKey` | `compiler/src/syntax` and semantic declaration formation |
-| Interface index | Public claims, complete nominal schemas, footprint paths, derived capability projections, correspondence result | Nominal/call formation and visibility checks |
-| Observation checking | Admitted view DAG, domain/read support, realization receipt, current/entry/result view substitution | `semantic/check/requires.rs`, `ensures.rs`, `support.rs`, calls and result transfer |
+| Interface index | Public claims, complete nominal schemas, role-indexed member paths, derived capability projections, correspondence result | Nominal/call formation and visibility checks |
+| Annotation and state checking | Erased private-field access, typed projection/support keys, owned input/result and current/entry substitutions | `semantic/check/requires.rs`, `ensures.rs`, `support.rs`, calls and result transfer |
 | Dependency query store | Stable keys, canonical values, recorded reads, reverse edges, status and receipts | Existing checker entry points called by the driver |
 | Component scheduler | Current ordinary-call SCCs and generic/function-binding closure, predecessor availability | `semantic/check/publication.rs` and generic finiteness |
 | Proof fragment store | Local proof nodes plus imported claim slots; checked composition map | Current checked-program publication and audit/remapping |
@@ -1678,7 +1691,7 @@ ModuleKey = (package input namespace, normalized module components)
 DeclKey = (ModuleKey, declaration domain, optional type owner, declared name)
 InstanceKey = (DeclKey, ordered resolved type/const/function argument vector)
 ClaimKey = (InstanceKey, clause role/ordinal, normalized relation)
-ViewKey = (proof context, observer InstanceKey, scalar images, value images, support versions)
+ViewKey = (proof context, value/state image, canonical projection path, support versions)
 QueryKey = (query family/schema, subject key, explicit configuration inputs)
 Receipt = (producer QueryKey, canonical result, dependency results, local evidence)
 ObjectKey = (fragment identity, IR, backend plan, imported bodies, target/toolchain)
@@ -1728,15 +1741,16 @@ linear input-validation I/O while doing zero unchanged parsing/proof/backend
 work. Report that I/O separately instead of calling the entire no-op build
 constant-time.
 
-Observation realization and public meaning have separate dependencies. An
-external proof uses the abstract observation identity, admitted domain/support
-and checked public guarantees. A module proof that expands a view additionally
-reads its realization. Editing the getter's body revalidates its realization
-and every expansion consumer. If the public claims and their current
-availability remain identical, other callers can rebind current evidence;
-code containing or importing the old executable body must still regenerate.
-Footprint changes revalidate effect, overlap and view-support consumers even
-when source signatures have identical text.
+An ordinary getter's written claims and checked body have separate dependencies.
+A caller reads the public contract's resolved field identities, projections,
+state support and current proof availability. Editing only the getter body
+rechecks that implementation; unchanged claims and availability permit caller
+proof reuse. Optimized consumers of the old body must still regenerate.
+A private field mentioned by a consumed contract or explicit client annotation
+is part of that consumer's semantic input, so relevant representation changes
+may require source-proof edits and rechecking. Unused private fields do not
+become all-body dependencies through a whole-interface hash. There is no
+observation realization, logical-call bridge or footprint-expansion query.
 
 ### LLVM construction protocol
 
@@ -1779,7 +1793,7 @@ Do not mark the full work finished after merely generating several objects.
 | Slice | Implement | Required discriminating evidence |
 |---|---|---|
 | 1. Normative boundary | Reconcile this branch's v0.62 grammar with the exact integration base, amend/archive the active spec once, implement graph/source roles, names, publication, correspondence, complete nominal ownership | Grammar and parser cases; wrong-role, missing-edge, private access, duplicate definition and graph-order negatives; all existing single-bundle cases retain their stated behavior under the selected entry path |
-| 2. Abstract APIs | Footprints, finite affine observations, state/result views, explicit view expansion, public enum/group rules | Queue factory/client; GrowVector external wrapper and function-kind actual; stale-state, hidden linear remainder, exact-effect, unproved realization and recursive-observation negatives |
+| 2. Checked interfaces | Erased private-field visibility, owned/current/entry/result projections and transport, exact structural effects, public enum/group rules | Queue factory/client; GrowVector external wrapper, function-kind actual and explicit invariant/certificate; executable-private-access, stale-state, hidden linear remainder, exact-effect and unproved postcondition negatives |
 | 3. Query and proof persistence | Canonical keys, recorded read sets, local proof fragments, current SCC availability, atomic receipts and source-map remapping | Cold/warm edit sequences with equal verdicts, changed cycle/edge deletions, failed producer and corrupted cache miss; same source observations with optional optimizer facts disabled |
 | 4. Shared specialization and targets | Build-wide instance ownership, layout/release projections, entry binding, target heap closure and runtime selection | One instance requested by several modules; kernel/tool shared module including unused allocating helper; hidden heap and called generic actual negatives; no allocator symbol required by kernel output |
 | 5. Optimized fragments | Stable symbols, one prevailing definition, cross-module imports, complete persistent plans and cached optimized objects | Inline-body and formerly rejected import edits; layout/ABI changes; recursive helper and scheduler/runtime ownership; clean/warm executable equivalence |
@@ -1835,14 +1849,14 @@ interfaces, without implementation browsing or generated missing clauses.
 Every alias used by that interface must be declared in its own header.
 Use ordinary complete declarations, including generic/function-kind APIs.
 Preserve GrowVector's actual proof requirements when evaluating an abstract
-interface through the selected observations and footprints, without weakening
+interface through the selected erased structural paths, without weakening
 the library contract. Record declaration-edit costs, reading errors, interface
 and root-graph editing conflicts and cross-module coordination before
 claiming collaboration benefits. No such trial has been performed.
 
 Require negative witnesses for absent/duplicate implementations, mismatched
-labels, modes, bounds, effects or contracts, public references to private
-definitions, conflicting dependency roots and cycles involving private
+labels, modes, bounds, effects or contracts, executable private access, private
+top-level names in public signatures, conflicting dependency roots and cycles involving private
 dependencies. Changing only an implementation requirement must diagnose a
 correspondence failure. Interface-only declaration checking must not authorize
 lowering without a checked implementation. A private helper in one file must
@@ -1865,8 +1879,9 @@ Keep private support in `.wfm`; reject missing support in `.wf`, inaccessible
 types in public signatures/fields, a `public` alias and duplicate/extended struct
 definitions. A public field of a private enclosing type must not publish it.
 Qualify direct reads, writes, disjoint field borrows and the selected consuming
-operations, including droppable and linear private remainders. Reject private
-field access and external construction needing private fields. Derive and check
+operations, including droppable and linear private remainders. Reject executable
+private field access and external construction needing private fields; accept
+well-formed private paths in erased contracts, invariants and effect rows. Derive and check
 all capabilities rather than trusting a type's publication modifier.
 Retain ordinary `opaque`/`readonly` behavior and REF-3 rather than synthesizing
 reference-returning getters. Compare private layout changes against public
@@ -1908,15 +1923,13 @@ hosts. All graph-registered modules and their prefixes enter namespace lookup,
 independently of the selected target; adding an unregistered module on disk must not silently add a declaration or
 name collision. No implementation filename introduces another namespace.
 
-Check that neither an application nor a library declares a local root nickname:
-both use `pkg::`. Reject attempts to rebind that qualifier. Qualify graph
-paths against the primary root and source paths against their selected owning
-roots. Reuse unchanged library sources under different consumer dependency
-names without rebinding internal paths to those consumers. Complete and test
-external dependency-name environments, multiple selected instances and access
-to the primary root from another root before claiming external-source
-composition. Imported graph files must not add edges or select a second root
-implicitly; std naming does not import the entire prelude or grant edges.
+Check that the current package uses `pkg::` without an application/library
+nickname and reject attempts to rebind it. Resolve graph and source paths from
+the same explicitly selected graph directory, independent of working directory.
+Reject a second active graph or an external package binding in this grammar.
+The future external-package investigation, if selected, must separately test
+consumer renaming, versions, owning-package references and graph authority;
+those cases are not required for this single-package implementation.
 
 Require a declared direct grandchild dependency and a cross-subtree
 `a/b/c -> d/e/f` edge when the target row is earlier. Exercise child-to-parent
@@ -2009,9 +2022,10 @@ callers reuse source proofs. Optimizer consumers that imported the old body
 must be rebuilt. Invalidating every importer solely because a whole module's
 source hash changed fails the precision criterion.
 
-Cross-module privacy also needs executable/negative witnesses: private source
-field selection and hidden paths in public declarations reject, interface
-capabilities must match checked representations, and construction/destructuring
+Cross-module privacy also needs executable/annotation pairs: executable private
+field selection rejects while the same valid path is permitted in a public
+contract, invariant or effect row. No private top-level type/function becomes
+public. Interface capabilities must match checked representations, and construction/destructuring
 cannot bypass linear release or existing opacity. Cache eviction and an unrelated failed module
 never grant authority to an unverified component. Keep normative cold conformance
 execution and targeted incremental edit sequences distinct; do not replace
@@ -2042,14 +2056,16 @@ are reported as such; a small source edit is not a promise of constant work.
 ## Design suitability and implementation evidence
 
 The final proposed boundary is one explicit source DAG, self-contained
-interfaces with one representation definition, checked scalar observations
-and structural footprints, finer-grained source/proof/codegen queries, and
-ordinary native linking. The finite affine observation form deliberately
-retains the existing arithmetic proof model; arbitrary recursive mathematical
-functions and implicit object invariants would add separate termination and
-callback protocols without being required by the selected module consumers.
-Named single-path footprints preserve independently addressable private state
-without adding runtime handles or a set-valued effect language.
+interfaces with one representation definition, executable privacy with erased
+field visibility, finer-grained source/proof/codegen queries, and ordinary
+native linking. Ordinary getter postconditions and direct structural annotations
+cover the selected container, wrapper and explicit-proof witnesses. They avoid
+new logical function kinds, termination admission and effect-alias expansion.
+The deliberate cost is representation-dependent proofs: a private path used by
+an interface or client proof is a semantic dependency, not an invisible change.
+Representation-independent models remain a deferred opportunity with concrete
+reopening criteria in LANGUAGE.md and the maintained TODO. Implicit type
+invariants remain unselected; operations state and prove their own boundaries.
 
 The main engineering risks are complete dependency tracking, safe claim
 rebinding after component changes, result-view ownership transport, and the

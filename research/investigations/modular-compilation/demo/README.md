@@ -4,8 +4,8 @@ This is a complete **source design specimen** for the proposed module system:
 every declared function has an implementation, both entries have complete
 bodies, and all application dependencies are present. It is not currently an
 executable Whitefoot project. The active compiler does not accept `.wfg`,
-`.wfm`, qualified module paths, file-local aliases, explicit public visibility or
-logical getter calls. The proposed forms are identified below; no build
+`.wfm`, qualified module paths, file-local aliases or role-specific field visibility.
+The proposed forms are identified below; no build
 command, successful compiler run or incremental timing is implied.
 
 The application processes two jobs through a four-slot FIFO. The `kernel`
@@ -134,7 +134,7 @@ directions would be a cycle, and row reordering cannot make that legal.
 | Module | What the caller can read in its `.wfm` | Implementation ownership |
 |---|---|---|
 | `pkg::data` | All `Job` and `Report` fields; `boxed_copy`'s complete generic signature | `heap.wf` implements the callable and reuses the interface's record declarations |
-| `pkg::runtime::queue` | Public capacity, the one complete `Queue` definition with private storage, logical/runtime `len`, constructor, push and pop contracts | `storage.wf` owns the private constructor helper and getter body; `operations.wf` owns the other public bodies; both reuse the interface's type definition |
+| `pkg::runtime::queue` | Public capacity, the one complete `Queue` definition with private storage, ordinary runtime `len`, constructor, push and pop contracts | `storage.wf` owns the private constructor helper and getter body; `operations.wf` owns the other public bodies; both reuse the interface's type definition |
 | `pkg::runtime` | `run_two` and the complete required contract of its `take` argument | `batch.wf` calls the private `summarize` in `report.wf` through the shared module inventory |
 | `pkg::kernel` | The selected `start` callable | `start.wf` constructs jobs and a stack-resident queue |
 | `pkg::tools::inspect` | The selected `run` callable | `run.wf` also invokes the shared heap helper |
@@ -198,8 +198,8 @@ full. The edit scenarios below describe the desired finer reuse.
 ## The proof and execution story
 
 The following is the **intended argument**, not a compiler verification result.
-The selected logical getter and footprint judgments are described in the
-next section; their compiler implementation remains outstanding.
+The selected erased private-field and state-transfer judgments are described
+in the next section; their compiler implementation remains outstanding.
 
 | Point in either entry | Queue length known from the public contracts | Why the next operation is permitted |
 |---|---|---|
@@ -215,20 +215,22 @@ the proposed module names; it does not allocate a function object or introduce
 dynamic dispatch. Both targets select the same concrete
 `runtime::run_two<fn runtime::queue::pop>` instance.
 
-Inside the queue, `len` reads the built-in ring length. The private ring has
-capacity 4. A checked realization of that observation would let `push` and
-`pop` establish the ordinary `place_back`/`take_front` domains and transfer
-their length postconditions. The getter must be verified independently, not
-by assuming the relation its callers want to use.
+Inside the queue, `push` and `pop` directly name the private Ring length in
+requires/ensures, just as their bodies use the ordinary window operations.
+The Ring has capacity 4. The external `run_two` interface and its function-kind
+formal repeat the same private paths under erased annotation visibility; no
+executable access to Queue's storage is granted.
 
-Logical occurrences of `len` in contracts are erased. The occurrence in
-`runtime/batch.wf` after both removals is an ordinary runtime call that supplies
-the report's `remaining` field. Its result must agree with the observation at
-that state. The public `writes(queue)` boundary kills facts about the queue's
-old state before each verified postcondition supplies facts about its new
-state; an old runtime getter result is not a live reference to future length.
-`entry(queue)` denotes the immutable entry observation in an `ensures`, not a
-runtime snapshot of the queue.
+`len` is an ordinary getter with a written `result == private length`
+postcondition proved by its body. Its call in `runtime/batch.wf` after both
+removals supplies the report's `remaining` field. Normal-return substitution
+carries that relation to the caller; there are no getter calls in contracts.
+The `writes(queue.storage)` row kills overlapping live facts before the verified
+postcondition supplies the new state's facts. An old runtime getter result
+remains an integer, not a reference to the future length.
+`deref(entry(queue)).storage.len` is the frozen entry datum in an `ensures`,
+with no runtime snapshot. `made.storage.len` describes the constructor's
+returned value and is transported through construction, return and binding.
 
 The FIFO bodies select jobs `(tag: 7, payload: 250)` and
 `(tag: 9, payload: 10)` in that order. The private report helper computes an
@@ -276,18 +278,24 @@ the specimen or establish a compiler implementation.
 | `pkg::`, ordered graph rows and named targets | One implicit source root, exact earlier dependencies and target requirements |
 | `directory/module.wfm` | Complete declarations, one complete public representation, explicit `public`, no executable function bodies |
 | File-local `alias` headers | Abbreviations with the original identities and direct-edge checks |
-| `public footprint state = storage;` | Effect-only name for the private storage path; no storage or private field access is added |
-| `public footprint length = storage.len;` | Precise support of the public length observation |
-| `observe fn len(...)` | One executable getter in `.wf`, admitted as a finite scalar view and erased when used in a contract |
-| `len(queue: entry(queue))` | Frozen mathematical entry observation, independent of later mutation |
-| `len(queue: &made)` | Proof view of an aggregate result, transported through construction, return and caller binding |
+| `deref(queue).storage.len` in an annotation | A typed private-field path; it adds no runtime access or effect |
+| `reads(queue.storage.len)` / `writes(queue.storage)` | Exact structural effects, also writable in external wrapper/formal annotations |
+| Ordinary `fn len(...)` with a result-to-field `ensures` | Runtime getter; its verified postcondition is available after normal return |
+| `deref(entry(queue)).storage.len` | Frozen mathematical entry value, independent of later mutation |
+| `made.storage.len` | Aggregate result projection transported through construction, return and caller binding |
 
-The getter's body is a single checked measure projection. Implementations can
-normalize it to the Ring length while callers use the opaque public observation
-and checked operation summaries. `reads(queue.length)` records exact support;
-`writes(queue.state)` invalidates that live observation while preserving its
-entry image. Different footprint spellings do not prove disjointness: expanded
-paths do. No interface body, trusted axiom, runtime snapshot or box is needed.
+Executable callers still cannot read, write, borrow, construct or destructure
+private Queue storage. A caller may name it in requires/ensures, invariants,
+explicit proof premises and effect rows. That distinction lets a wrapper or
+manual proof state its own obligations without a runtime getter solely for
+proof naming. An annotation still checks path types, domains, state validity
+and direct module edges; it cannot assume its own conclusion.
+
+Private paths mentioned by a contract or client proof become semantic
+dependencies. A relevant representation edit may require changing that proof,
+while an ordinary getter body edit with unchanged verified claims need not
+reprove its callers. No `observe`, `use view`, footprint declaration, trusted
+axiom, implicit type invariant, runtime snapshot or mandatory box is needed.
 
 Implementing these rules must make both entries check and execute, qualify the
 rejection probes below, and include the larger GrowVector wrapper/function-kind
@@ -304,7 +312,7 @@ not measured invalidation results. Each experiment starts from this specimen.
 | Rewrite `summarize`'s body with equivalent operations and unchanged header | Public APIs and permissions remain unchanged | Recheck that helper and any affected private summary users; update code importing its implementation, then link. Do not reprove every library solely because one file changed |
 | Move `summarize` to another direct `runtime/*.wf` file, preserving its resolved aliases | Same private declaration identity; still callable from `batch.wf` | Refresh file membership and locations; reuse semantic work only when the resolved declaration/context and dependencies are unchanged |
 | Rename the `Work` alias in `report.wf`, updating its uses | Same canonical type, no change in other files | Refresh that file's formation/resolution; normalized semantic results may remain reusable |
-| Change the private `Queue.storage` declaration in `.wfm` | Clients still cannot name the field; derived capabilities or layout can change | Recheck actual capability/ownership, getter, body, layout/release/ABI and optimizer consumers; source proofs reuse only when their consumed facts are unchanged, not merely because the field is private |
+| Change the private `Queue.storage` declaration in `.wfm` | Executable access stays private; contracts/client proofs naming its paths, derived capabilities or layout can change | Recheck actual path/contract, capability/ownership, getter, body, layout/release/ABI and optimizer consumers; source proofs reuse only when their consumed facts are unchanged, not merely because the field is private |
 | Change `Report`'s public field schema | Callers may need source changes | Revalidate schema, field/type/ownership users and layout/codegen consumers; publication is a real dependency |
 | Delete `pkg::kernel`'s direct queue edge while keeping its runtime edge | Reject the kernel's queue aliases/uses | Revalidate the edge/lookup consumers; transitive reachability grants no source permission |
 | Change only the tool's aliases or body | Kernel source proofs are unchanged when their actual inputs are unchanged | Recheck tool consumers and its changed specialization/optimizer dependencies; no blanket graph-file or target key should reprove all shared bodies |
@@ -313,7 +321,7 @@ not measured invalidation results. Each experiment starts from this specimen.
 | Change an unselected allocating helper to contain an unproved partial operation | Reject the selected module's ordinary source checking | No-heap reachability is not an exemption from source safety |
 
 For additional rejection probes, try calling `fifo::new_storage` externally,
-naming `pending.storage`, changing only `push`'s implementation contract,
+reading `pending.storage` in an executable expression, changing only `push`'s implementation contract,
 placing the getter body in `.wfm`, adding `public` to any `.wf` declaration,
 removing `public` from `Job.tag` while its external uses remain, repeating the
 `Queue` definition in `.wf`, rebinding `pkg`, moving an interface to
@@ -325,7 +333,7 @@ compiler implements the proposed forms.
 A future CI review aid should compare the resolved public API, not only changed
 lines containing `public`. Changing a published field type or a getter contract
 without editing its modifier must still be reported. Private storage changes
-that alter public capabilities also matter; layout-only effects can be reported
+that alter public capabilities or proof paths also matter; layout-only effects can be reported
 separately. No comparison script or new review gate is implemented here.
 
 The eventual executable qualification must check both targets, the rejection

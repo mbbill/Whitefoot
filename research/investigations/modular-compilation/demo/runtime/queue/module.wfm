@@ -4,24 +4,23 @@ public const capacity: u64 = 4_u64;
 
 public nocopy struct Queue {
   storage: Ring<Job, capacity>;
-  public footprint state = storage;
-  public footprint length = storage.len;
 }
 
-public observe fn len(queue: &Queue) -> result: own u64 reads(queue.length) contract {
+public fn len(queue: &Queue) -> result: own u64 reads(queue.storage.len) contract {
+  ensures result == deref(queue).storage.len;
   ensures result <= capacity;
 };
 
 public fn new() -> made: own Queue pure contract {
-  ensures len(queue: &made) == 0_u64;
+  ensures made.storage.len == 0_u64;
 };
 
-public fn push(queue: &Queue, job: own Job) -> result: own unit writes(queue.state) contract {
-  requires len(queue: queue) < capacity;
-  ensures len(queue: queue) == len(queue: entry(queue)) + 1_u64;
+public fn push(queue: &Queue, job: own Job) -> result: own unit writes(queue.storage) contract {
+  requires deref(queue).storage.len < capacity;
+  ensures deref(queue).storage.len == deref(entry(queue)).storage.len + 1_u64;
 };
 
-public fn pop(queue: &Queue) -> job: own Job writes(queue.state) contract {
-  requires len(queue: queue) > 0_u64;
-  ensures len(queue: queue) + 1_u64 == len(queue: entry(queue));
+public fn pop(queue: &Queue) -> job: own Job writes(queue.storage) contract {
+  requires deref(queue).storage.len > 0_u64;
+  ensures deref(queue).storage.len + 1_u64 == deref(entry(queue)).storage.len;
 };

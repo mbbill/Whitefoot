@@ -48,7 +48,7 @@ they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge bounda
   cross-module optimization through object generation, with ordinary final
   linking. Its [source boundary rules](investigations/modular-compilation/LANGUAGE.md)
   and [qualified grammar](investigations/modular-compilation/SYNTAX.md) select
-  checked integer observations, named private-state footprints and complete
+  erased private-field contracts, exact structural effects and complete
   formation rules for implementation. A [complete source demo](investigations/modular-compilation/demo/README.md)
   follows a queue through shared libraries, a no-heap entry and a heap-using
   tool; its graph, interfaces and bodies illustrate proposed syntax, not

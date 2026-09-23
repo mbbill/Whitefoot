@@ -23,17 +23,13 @@ name_segment := IDENT | TYPEID
 item := "public"? item_decl
 item_decl := fn_decl | struct_decl | enum_decl | interface_decl | binding_decl | const_decl | heap_decl
 heap_decl := "program" "no_heap" ";"
-struct_decl := "opaque"? ("nocopy" | "nodrop")? "struct" TYPEID generics? "{" doc? struct_member* "}"
-struct_member := "public"? (field | footprint_decl)
-field := "readonly"? IDENT ":" type ";"
-footprint_decl := "footprint" IDENT "=" footprint_path ";"
-footprint_path := IDENT footprint_suffix*
-footprint_suffix := "." IDENT | "." TYPEID "." IDENT
+struct_decl := "opaque"? ("nocopy" | "nodrop")? "struct" TYPEID generics? "{" doc? field* "}"
+field := "public"? "readonly"? IDENT ":" type ";"
 enum_decl := ("nocopy" | "nodrop")? "enum" TYPEID generics? "{" doc? variant* "}"
 variant := "public"? TYPEID "(" vfield_list? ")" ";"
 vfield_list := vfield ("," vfield)*
 vfield := "public"? IDENT ":" type
-fn_decl := "observe"? "fn" IDENT generics? "(" param_list? ")" "->" (result_binding | "(" result_binding ("," result_binding)+ ")") effects contract_block? fn_tail
+fn_decl := "fn" IDENT generics? "(" param_list? ")" "->" (result_binding | "(" result_binding ("," result_binding)+ ")") effects contract_block? fn_tail
 fn_tail := ";" | "{" doc? stmt* "}"
 result_binding := IDENT ":" rtype
 contract_block := "contract" "{" contract_define* requires_clause* ensures_clause* "}"
@@ -43,7 +39,7 @@ ensures_clause := "ensures" ("when" result_route ":")? clause_expr ";"
 result_route := (IDENT "is")? TYPEID "(" fieldbind ")"
 interface_decl := "interface" TYPEID generics? "{" doc? (fn_sig ";")* "}"
 binding_decl := "binding" TYPEID ":" pack_use "{" doc? fn_bind* "}"
-fn_sig := "observe"? "fn" IDENT "(" param_list? ")" "->" (result_binding | "(" result_binding ("," result_binding)+ ")") effects contract_block?
+fn_sig := "fn" IDENT "(" param_list? ")" "->" (result_binding | "(" result_binding ("," result_binding)+ ")") effects contract_block?
 pack_use := type_name targs?
 function_arg := "fn" callee ("::" targs)?
 const_decl := "const" IDENT ":" type "=" cvalue ";"
@@ -89,11 +85,11 @@ for_stmt := "for" LABEL? "(" for_binding ("," header_invariant)* ")" "{" stmt* "
 for_binding := IDENT "in" atom ".." atom
 header_invariant := "invariant" IDENT ":" affine_expr compare_op affine_expr
 invariant_stmt := "invariant" IDENT ":" affine_expr compare_op affine_expr (";" | "{" proof_use+ "}")
-proof_use := "use" ("view" call | (("[0-9]+" | IDENT) "times")? use_premise) ";"
+proof_use := "use" (("[0-9]+" | IDENT) "times")? use_premise ";"
 use_premise := IDENT | "(" affine_expr compare_op affine_expr ")"
 affine_expr := affine_term (affine_add_op affine_term)*
 affine_term := affine_factor ("*" affine_factor)?
-affine_factor := operand | "(" affine_expr ")"
+affine_factor := atom | "(" affine_expr ")"
 affine_add_op := "+" | "-"
 break_stmt := "break" LABEL? ";"
 give_stmt := "give" expr ";"
@@ -156,7 +152,7 @@ erange := ".." IDENT
 ```
 
 The reserved spellings added to this base are `public`, `alias`, `pkg`,
-`target`, `observe`, `footprint`, and `view`. `entry` and `no_heap` already
+and `target`. `entry` and `no_heap` already
 exist. There is no new punctuation or comment syntax. `use_premise` is a real
 production already present in the base grammar, despite the base generator's
 older production-count assertion. Qualification derives the count from the

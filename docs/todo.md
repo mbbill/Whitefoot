@@ -16,15 +16,15 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   checks source/graph strong-LL(2) decisions; it does not implement formation,
   proof or execution. Follow the design's ordered implementation slices and
   discriminating acceptance matrix: graph/alias/privacy and correspondence;
-  complete representations and imported capability/release; checked affine
-  observations, frozen entry/result views and precise footprint expansion;
+  complete representations and imported capability/release; erased private-field
+  visibility, exact structural effects and frozen entry/owned-result projections;
   query/receipt persistence and deletion-sensitive proof SCCs; shared generic
   instances and target no-heap closure; incremental optimized LLVM plans and
   native objects. Extract useful cases into formal test ownership as each
   mechanism lands; no daily gate depends on the research probe or specimen.
   Compare clean/warm verdicts and executables across edits, including changed
-  summary availability with unchanged headers, observation-body versus public
-  boundary changes, hidden layout/heap changes, killed versus transported value
+  summary availability with unchanged headers, getter-body versus written-contract
+  or private-path changes, hidden layout/heap changes, killed versus transported value
   views, rejected import candidates becoming profitable, and failed builds.
   Measure input-validation I/O, source/proof/planning/backend/link work, runtime
   quality and peak memory separately on the queue, GrowVector, wfgrep, SHA-256,
@@ -38,11 +38,13 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   its benefit is detecting capability/contract changes that a `public` keyword
   diff misses. Validate same-identity alias renames, retargeting and private
   representation edits before wiring a report, with no additional approval
-  gate. General recursive/non-affine logical functions remain a separate
-  opportunity: they could express algorithmic models but require a finite
-  termination/proof design beyond scalar views. Reopen for a concrete contract
-  not expressible by the selected view/operation interface; require deterministic
-  polynomial checking and no runtime proof work. External-package resolution
+  gate. Representation-independent model properties and mathematical functions
+  remain deferred: they could reduce proof-source churn or express algorithmic
+  models, but introduce abstraction and potentially termination/proof machinery
+  beyond direct structural annotations. Reopen for a concrete representation
+  migration or contract that makes this cost worthwhile; compare source edits,
+  invalidation, interface size and proof cost with the direct-path design,
+  retaining deterministic polynomial checking and no runtime proof work. External-package resolution
   and library composition remain deferred by scope; reopen only when selected
   by the owner, with package identity/version/renaming cases. Subtree-private
   independently compiled modules remain unselected; reconsider for a concrete

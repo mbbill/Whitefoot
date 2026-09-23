@@ -2,12 +2,12 @@ alias fifo = pkg::runtime::queue;
 alias Job = pkg::data::Job;
 alias Report = pkg::data::Report;
 
-fn run_two<fn take(queue: &fifo::Queue) -> job: own Job writes(queue.state) contract {
-  requires fifo::len(queue: queue) > 0_u64;
-  ensures fifo::len(queue: queue) + 1_u64 == fifo::len(queue: entry(queue));
-}>(queue: &fifo::Queue) -> report: own Report writes(queue.state) contract {
-  requires fifo::len(queue: queue) >= 2_u64;
-  ensures fifo::len(queue: queue) + 2_u64 == fifo::len(queue: entry(queue));
+fn run_two<fn take(queue: &fifo::Queue) -> job: own Job writes(queue.storage) contract {
+  requires deref(queue).storage.len > 0_u64;
+  ensures deref(queue).storage.len + 1_u64 == deref(entry(queue)).storage.len;
+}>(queue: &fifo::Queue) -> report: own Report writes(queue.storage) contract {
+  requires deref(queue).storage.len >= 2_u64;
+  ensures deref(queue).storage.len + 2_u64 == deref(entry(queue)).storage.len;
 } {
   doc "The function-kind argument is monomorphized to a direct call. The first call's postcondition proves that the second call still has one job available.";
   let first = take(queue: queue);

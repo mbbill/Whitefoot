@@ -48,21 +48,13 @@ fn main() {
     );
     fs::write(scratch.join("generator/ebnf.rs"), ebnf).unwrap();
     let mut model = fs::read_to_string(base.join("generator/model.rs")).unwrap();
-    let additions = [
-        "public",
-        "alias",
-        "pkg",
-        "target",
-        "observe",
-        "footprint",
-        "view",
-    ]
-    .map(|name| {
-        let mut chars = name.chars();
-        let variant = chars.next().unwrap().to_uppercase().to_string() + chars.as_str();
-        format!("        ({name:?}, {variant:?}),\n")
-    })
-    .concat();
+    let additions = ["public", "alias", "pkg", "target"]
+        .map(|name| {
+            let mut chars = name.chars();
+            let variant = chars.next().unwrap().to_uppercase().to_string() + chars.as_str();
+            format!("        ({name:?}, {variant:?}),\n")
+        })
+        .concat();
     replace_once(
         &mut model,
         "    const TABLE: &[(&str, &str)] = &[\n",
