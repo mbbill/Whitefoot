@@ -1,4 +1,4 @@
-alias Work = app::data::Job;
+alias Work = crate::data::Job;
 
 fn new() -> made: own Queue pure contract {
   ensures len(queue: &made) == 0_u64;

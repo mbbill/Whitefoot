@@ -1,16 +1,14 @@
-root app = ".";
-
-app::data: [];
-app::runtime::queue: [app::data];
-app::runtime: [app::data, app::runtime::queue];
-app::kernel: [app::data, app::runtime::queue, app::runtime];
-app::tools::inspect: [app::data, app::runtime::queue, app::runtime];
+crate::data: [];
+crate::runtime::queue: [crate::data];
+crate::runtime: [crate::data, crate::runtime::queue];
+crate::kernel: [crate::data, crate::runtime::queue, crate::runtime];
+crate::tools::inspect: [crate::data, crate::runtime::queue, crate::runtime];
 
 target kernel {
-  entry app::kernel::start;
+  entry crate::kernel::start;
   no_heap;
 }
 
 target inspect {
-  entry app::tools::inspect::run;
+  entry crate::tools::inspect::run;
 }

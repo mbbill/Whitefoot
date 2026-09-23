@@ -27,12 +27,13 @@ It is not a daily CI input.
 
 1. [modules.wfg](modules.wfg): the entire dependency architecture and both
    target declarations.
-2. [data.wfm](data.wfm): two public data records and one generic allocating
-   function. No field-access wrappers are required for these records.
-3. [runtime/queue.wfm](runtime/queue.wfm): the complete abstract queue API,
-   including ownership capabilities, the getter and every operation's bounds.
-4. [runtime.wfm](runtime.wfm): a client of that API which states its own
-   precondition and accepts a function-kind argument with the queue's contract.
+2. [data/module.wfm](data/module.wfm): two public data records and one generic
+   allocating function. No field-access wrappers are required for these records.
+3. [runtime/queue/module.wfm](runtime/queue/module.wfm): the complete abstract
+   queue API, including capabilities, the getter and every operation's bounds.
+4. [runtime/module.wfm](runtime/module.wfm): a client of that API which states
+   its own precondition and accepts a function-kind argument with the queue's
+   contract.
 5. [kernel/start.wf](kernel/start.wf) and
    [tools/inspect/run.wf](tools/inspect/run.wf): complete uses of the same APIs,
    with different entry requirements and different local abbreviations.
@@ -42,48 +43,55 @@ It is not a daily CI input.
    [runtime/report.wf](runtime/report.wf) and [data/heap.wf](data/heap.wf):
    the implementation behind those contracts.
 
-The two entry interfaces, [kernel.wfm](kernel.wfm) and
-[tools/inspect.wfm](tools/inspect.wfm), contain only their ordinary public
-entry declarations. An entry is selected by the graph; it is not a special
+The two entry interfaces, [kernel/module.wfm](kernel/module.wfm) and
+[tools/inspect/module.wfm](tools/inspect/module.wfm), contain only their ordinary
+public entry declarations. An entry is selected by the graph; it is not a special
 function syntax or an implicit `main` name.
 
 ```text
 demo/
   README.md
   modules.wfg
-  data.wfm
   data/
+    module.wfm
     heap.wf
-  runtime.wfm
   runtime/
+    module.wfm
     batch.wf
     report.wf
-    queue.wfm
     queue/
+      module.wfm
       storage.wf
       operations.wf
-  kernel.wfm
   kernel/
+    module.wfm
     start.wf
   tools/
-    inspect.wfm
     inspect/
+      module.wfm
       run.wf
 ```
 
 ## What the graph says
 
-`root app = ".";` binds `app` to this directory relative to `modules.wfg`,
-not relative to the command's working directory. The five module rows register
-five exact interfaces. An arrow below means "may use that module's public API";
-it is not a runtime call or scheduling edge.
+The directory containing the sole active `modules.wfg` is this project's
+source root. No root declaration or project nickname is needed. The fixed
+`crate::` prefix means the current source crate, whether it builds a library
+or an executable. It does not mean the current directory of the compiler
+process or the directory of the individual `.wf` file. This demo has one
+source crate containing five modules and two executable targets.
+
+The five rows register five exact `module.wfm` interfaces. The filename is
+always the same; the containing directory supplies the module name. An arrow
+below means "may use that module's public API"; it is not a runtime call or
+scheduling edge.
 
 ```mermaid
 graph TD
-  K[app::kernel] --> D[app::data]
-  K --> Q[app::runtime::queue]
-  K --> R[app::runtime]
-  I[app::tools::inspect] --> D
+  K[crate::kernel] --> D[crate::data]
+  K --> Q[crate::runtime::queue]
+  K --> R[crate::runtime]
+  I[crate::tools::inspect] --> D
   I --> Q
   I --> R
   R --> D
@@ -100,7 +108,17 @@ list is still unavailable to that module's source.
 of **only** `runtime/batch.wf` and `runtime/report.wf`. It does not collect
 `runtime/queue/*.wf`. The separately declared child precedes its parent in
 the graph, and the parent's row explicitly grants access. Parenthood grants
-no private-field access. `tools` has no `.wfm` and is only a namespace prefix.
+no private-field access. `tools` has no `module.wfm` and is only a namespace
+prefix. The demo root likewise has no `module.wfm` and is not an extra module.
+
+For example, `crate::runtime::queue` always starts at `demo/` in these sources.
+An external dependency would have its own explicit name, such as `std` or
+`math`; source inside that selected dependency would use `crate::` for its
+own root. The compiler must retain that source ownership when checking an
+imported library. It must not reinterpret a library's internal `crate::`
+paths against `demo/`, search for another active graph or infer missing edges.
+This single-crate specimen does not select the external dependency-binding
+format or demonstrate cross-crate reuse.
 
 The tool reaches across directories to `runtime::queue` without moving that
 module to a common ancestor. It lists both `runtime` and `runtime::queue`
@@ -113,11 +131,11 @@ directions would be a cycle, and row reordering cannot make that legal.
 
 | Module | What the caller can read in its `.wfm` | Implementation ownership |
 |---|---|---|
-| `app::data` | All `Job` and `Report` fields; `boxed_copy`'s complete generic signature | `heap.wf` implements the callable and reuses the interface's record declarations |
-| `app::runtime::queue` | Capacity, abstract `Queue` capabilities, logical/runtime `len`, constructor, push and pop contracts | `storage.wf` owns the private representation, private constructor helper and getter body; `operations.wf` owns the other public bodies |
-| `app::runtime` | `run_two` and the complete required contract of its `take` argument | `batch.wf` calls the private `summarize` in `report.wf` through the shared module inventory |
-| `app::kernel` | The selected `start` callable | `start.wf` constructs jobs and a stack-resident queue |
-| `app::tools::inspect` | The selected `run` callable | `run.wf` also invokes the shared heap helper |
+| `crate::data` | All `Job` and `Report` fields; `boxed_copy`'s complete generic signature | `heap.wf` implements the callable and reuses the interface's record declarations |
+| `crate::runtime::queue` | Capacity, abstract `Queue` capabilities, logical/runtime `len`, constructor, push and pop contracts | `storage.wf` owns the private representation, private constructor helper and getter body; `operations.wf` owns the other public bodies |
+| `crate::runtime` | `run_two` and the complete required contract of its `take` argument | `batch.wf` calls the private `summarize` in `report.wf` through the shared module inventory |
+| `crate::kernel` | The selected `start` callable | `start.wf` constructs jobs and a stack-resident queue |
+| `crate::tools::inspect` | The selected `run` callable | `run.wf` also invokes the shared heap helper |
 
 `Job` and `Report` are copyable, droppable records by their complete public
 field schemas. Callers construct them and inspect their fields directly. The
@@ -134,15 +152,16 @@ reference-returning getter. The existing `opaque` modifier is not used as
 a privacy mechanism.
 
 `new_storage` is called from a different implementation file without being
-declared in `queue.wfm`. Likewise `summarize` is absent from `runtime.wfm`.
+declared in `runtime/queue/module.wfm`. Likewise `summarize` is absent from
+`runtime/module.wfm`.
 All declarations in a module share its inventory, regardless of source-file
 order. `capacity`, although declared in the interface, is reused by the
 private representation; no duplicated implementation constant can drift.
 
 Each public callable's implementation repeats its full header and contract.
-In `queue.wfm` the job type is called `Job`; in `operations.wf` it is called
-`Work`. Both aliases resolve directly to `app::data::Job`, so the declarations
-must match after resolution. `runtime.wfm` uses an alias for `len`, while
+In `runtime/queue/module.wfm` the job type is called `Job`; in `operations.wf`
+it is called `Work`. Both aliases resolve directly to `crate::data::Job`, so the declarations
+must match after resolution. `runtime/module.wfm` uses an alias for `len`, while
 `batch.wf` uses the module alias `fifo`; these also resolve to one callable.
 Result and named-argument labels remain the same.
 
@@ -157,6 +176,10 @@ same checked boundary need not change the other agent's source. API changes
 still require coordination with actual consumers; architectural edge changes
 meet in `modules.wfg`. The small module sizes here expose those relationships
 for reading and are not a recommendation to split production work this finely.
+The parent's assigned files exclude its child module's directory. The fixed
+interface basename keeps a module's own work together, but makes relative
+paths important when several `module.wfm` files are open. Neither sibling
+`data.wfm` nor repeated-name `data/data.wfm` is an alternative interface form.
 
 This ownership boundary also does not prescribe one LLVM module or object
 per source module. Body proofs and backend partitions have their own tracked
@@ -243,9 +266,10 @@ or claiming a new proof mechanism is implemented.
 
 | Form in these files | Intended reading | Qualification still required |
 |---|---|---|
-| `root`, ordered module rows and `target` in `.wfg` | One root binding, exact earlier dependencies, selected entry and optional heap prohibition | Full graph grammar, canonical paths, target/source/execution closure judgments |
+| `crate::`, ordered module rows and `target` in `.wfg` | Implicit primary root at the graph directory, exact earlier dependencies, selected entry and optional heap prohibition | Full graph grammar, owning-crate identity, external dependency bindings and target/source/execution closure judgments |
+| `directory/module.wfm` | The only interface location for the module named by that directory | Canonical path and direct-file ownership checks, including root modules and namespace-only prefixes |
 | Function header ending in `;` in `.wfm` | A complete public declaration with no executable body | Interface grammar and normalized implementation correspondence |
-| `alias short = app::path;` and qualified names | A file-local binding to a canonical module or declaration | Complete strong-LL(2) grammar, lookup domains and collision checks |
+| `alias short = crate::path;` and qualified names | A file-local binding to a canonical module or declaration | Complete strong-LL(2) grammar, lookup domains and collision checks |
 | `nocopy struct Queue: drop;` | An abstract public type with the complete capability pair: copy forbidden, drop permitted | Final capability syntax and checked private correspondence; this nongeneric case does not design conditional generic capabilities |
 | `observe fn len(...)` | One callable with an ordinary runtime implementation and an admissible total logical observation | Explicit admission, typed interpretation, deterministic finite realization checking and termination grounds; `observe` is only a spelling under evaluation |
 | `len(...)` as a contract relation term | The scalar observation at that argument's specified state, with no runtime call | New FN-8/FN-9/ENT term formation and state/support rules; arbitrary function calls remain outside this illustration |
@@ -295,7 +319,7 @@ not measured invalidation results. Each experiment starts from this specimen.
 | Rename the `Work` alias in `report.wf`, updating its uses | Same canonical type, no change in other files | Refresh that file's formation/resolution; normalized semantic results may remain reusable |
 | Change the private `Queue` representation while preserving its checked interface | Clients still cannot name the fields | Recheck representation/capabilities, getter realization and affected bodies; recompile actual layout/release/ABI and optimizer consumers even if source proofs remain reusable |
 | Change `Report`'s public field schema | Callers may need source changes | Revalidate schema, field/type/ownership users and layout/codegen consumers; publication is a real dependency |
-| Delete `app::kernel`'s direct queue edge while keeping its runtime edge | Reject the kernel's queue aliases/uses | Revalidate the edge/lookup consumers; transitive reachability grants no source permission |
+| Delete `crate::kernel`'s direct queue edge while keeping its runtime edge | Reject the kernel's queue aliases/uses | Revalidate the edge/lookup consumers; transitive reachability grants no source permission |
 | Change only the tool's aliases or body | Kernel source proofs are unchanged when their actual inputs are unchanged | Recheck tool consumers and its changed specialization/optimizer dependencies; no blanket graph-file or target key should reprove all shared bodies |
 | Add `no_heap;` to `target inspect` | Reject its reachable `boxed_copy<Report>`/`Box<Report>` heap requirement | Recheck target composition against shared heap summaries; do not reinterpret every function's ordinary proof |
 | Add the same storing call to `kernel/start.wf` | Reject the kernel's reachable allocation before optimization | Recheck the changed body, concrete execution closure and target requirement; optimizer deletion is not permission |
@@ -303,7 +327,8 @@ not measured invalidation results. Each experiment starts from this specimen.
 
 For additional rejection probes, try calling `fifo::new_storage` externally,
 naming `pending.storage`, changing only `push`'s implementation contract,
-placing the getter body in `.wfm`, or adding an edge to a later graph row.
+placing the getter body in `.wfm`, rebinding `crate`, moving an interface to
+the former sibling location, or adding an edge to a later graph row.
 Each should fail for that specific boundary; an unrelated earlier syntax
 failure is not evidence for it. These are review exercises until the real
 compiler implements the proposed forms.

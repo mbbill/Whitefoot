@@ -1,5 +1,5 @@
-alias Work = app::data::Job;
-alias Report = app::data::Report;
+alias Work = crate::data::Job;
+alias Report = crate::data::Report;
 
 fn summarize(first: own Work, second: own Work, remaining: own u64) -> report: own Report pure {
   doc "A private helper shared with batch.wf. The digest is deliberately an eight-bit modular sum, so 250 plus 10 produces 4.";

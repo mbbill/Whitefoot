@@ -13,8 +13,8 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   targets self-contained public `.wfm` interfaces, reusable source proofs and
   generic instances, dependency-tracked cross-module optimization and ordinary
   full final linking. Complete public declarations are checked against ordinary
-  implementations; direct `.wf` files share one local namespace and canonical
-  `.wfm` paths mirror directory namespaces. One project-root graph file is the
+  implementations; direct `.wf` files share one local namespace and each
+  directory's fixed `module.wfm` owns its path-derived module. One project-root graph file is the
   proposed sole dependency authority, with ordered module rows listing exact
   earlier targets; `.wfm` and `.wf` do not duplicate dependency lists.
   File-local alias headers may abbreviate canonical module or declaration names
@@ -23,6 +23,19 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   amendment, not implemented capability. Specify the complete `modules.wfg`,
   interface/source and alias grammars with qualified-name factoring; naive
   segmented paths make value/call alternatives share `IDENT ::` prefixes.
+  Validate the implicit primary root at the sole graph's directory and the
+  fixed `crate::` qualifier in graph/interface/implementation contexts. A
+  library's internal qualifier must bind to its selected owning root, not the
+  consuming application's root; it must not require a user-chosen app/lib name
+  or activate the library's own graph. Qualify explicit external names such
+  as std independently from the compiler-owned prelude. Complete the external
+  binding format and dependency-name environments before claiming reusable
+  cross-crate source: test import-name changes, multiple selected versions,
+  references to the primary root from another root and cache separation when
+  equal textual paths resolve to distinct source identities. These are open
+  design/validation tasks, deferred because the current demo has one source
+  crate; reopen with the first external-library consumer. Do not infer edges
+  from dependency-name bindings or imported graph files.
   Validate canonical roots, row uniqueness, earlier-target
   checks, graph closure and public/implementation lookup against the same row.
   Reject undeclared references even to earlier or transitively reachable
@@ -55,7 +68,9 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   Validate complete interface/qualified grammars, normalized declaration
   correspondence, public semantic closure, order-independent top-level
   formation and checked abstract nominal capabilities/representation. Qualify
-  direct directory membership without child collection, path/case/alias
+  the sole directory/module.wfm layout, rejection of the old sibling and
+  repeated-name layouts as interface lookup alternatives, direct directory
+  membership without child collection, optional registered root modules, path/case/alias
   ambiguity, graph-registered namespace/declaration collisions, exclusion of
   unregistered modules and cross-file private calls. Reject executable function
   bodies in .wfm, including getter bodies. Qualify public records with direct

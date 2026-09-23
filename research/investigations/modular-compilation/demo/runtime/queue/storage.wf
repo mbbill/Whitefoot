@@ -1,4 +1,4 @@
-alias Task = app::data::Job;
+alias Task = crate::data::Job;
 
 nocopy struct Queue {
   storage: Ring<Task, capacity>;
@@ -9,7 +9,7 @@ fn new_storage() -> storage: own Ring<Task, capacity> pure contract {
   ensures storage.cap == capacity;
   ensures storage.head == 0_u64;
 } {
-  doc "A module-private constructor used by operations.wf. No declaration in queue.wfm is needed for this internal call.";
+  doc "A module-private constructor used by operations.wf. No declaration in this directory's module.wfm is needed for this internal call.";
   let built = ring_new::<Task, capacity>();
   return move built;
 }

@@ -1,6 +1,6 @@
-alias fifo = app::runtime::queue;
-alias Job = app::data::Job;
-alias Report = app::data::Report;
+alias fifo = crate::runtime::queue;
+alias Job = crate::data::Job;
+alias Report = crate::data::Report;
 
 fn run_two<fn take(queue: &fifo::Queue) -> job: own Job writes(queue) contract {
   requires fifo::len(queue: queue) > 0_u64;

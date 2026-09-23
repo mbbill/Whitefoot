@@ -1,7 +1,7 @@
-alias Queue = app::runtime::queue::Queue;
-alias len = app::runtime::queue::len;
-alias Job = app::data::Job;
-alias Report = app::data::Report;
+alias Queue = crate::runtime::queue::Queue;
+alias len = crate::runtime::queue::len;
+alias Job = crate::data::Job;
+alias Report = crate::data::Report;
 
 fn run_two<fn take(queue: &Queue) -> job: own Job writes(queue) contract {
   requires len(queue: queue) > 0_u64;

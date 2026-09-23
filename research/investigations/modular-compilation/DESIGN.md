@@ -142,8 +142,9 @@ selected requirement that the handwritten public contract stand on its own.
 
 ### One complete public interface file
 
-Each source module has exactly one `.wfm`. Its root-relative path owns the
-module name; its contents own complete public declarations and any file-local
+Each source module has exactly one `module.wfm` inside its owning directory.
+The directory's root-relative path owns the module name; the interface owns
+complete public declarations and any file-local
 aliases needed to read their external references. Every ordinary top-level
 declaration in that file belongs to the public API; there is no separate
 export list or implementation-side `pub` switch. Public function declarations
@@ -160,8 +161,9 @@ alias can fill in an omitted part from an implementation file. Alias headers
 are local name bindings rather than public declaration items; placing one in
 `.wfm` does not publish a second name for its target.
 
-The project-root graph file explicitly binds canonical source roots and names
-each selected module's direct dependencies. The filesystem rule below determines
+The sole project-root graph file fixes the primary source root by its own
+directory, binds selected external roots and names each module's direct
+dependencies. The filesystem rule below determines
 module paths and direct implementation membership within that source snapshot;
 there is no separately editable module-name or member-file map. Neither
 `.wfm` nor `.wf` repeats a dependency-permission list. Adding an implementation
@@ -178,7 +180,7 @@ references or change their meaning through per-module aliases. Each canonical
 root has one selected identity. Version acquisition and package solving remain
 outside the language.
 
-Illustrative contents of `counters.wfm`, not an accepted grammar. The path
+Illustrative contents of `counters/module.wfm`, not an accepted grammar. The path
 already declares the module, so no second written module name is needed:
 
 ```text
@@ -241,14 +243,15 @@ interface selects which of these identities external modules may use; it does
 not mediate internal references.
 
 Each module's own implementation has a flat local inventory. Directory paths
-organize modules into qualified namespaces as specified below; a child `.wfm`
-introduces another module, not another file in the parent's private scope.
+organize modules into qualified namespaces as specified below; a child
+directory's `module.wfm` introduces another module, not another file in the
+parent's private scope.
 No separate `namespace` block is introduced. Internal code sees its own
 module-private declarations, and local spelling collisions still need ordinary
 diagnostics. Splitting a file inside the same module does not grant privacy.
 
 Local uses resolve against the full inventory; dependency uses have an
-explicit root-qualified path such as `app::counters::advance`, possibly
+explicit root-qualified path such as `crate::counters::advance`, possibly
 abbreviated by a file-local alias. Module roots, aliases and local names have
 unambiguous ownership. There is no wildcard import, implicit
 transitive import, overload search or cross-module namespace extension.
@@ -288,9 +291,9 @@ one particular executable requires the heap.
 Introduce one header form, illustrated here before ordinary declarations:
 
 ```text
-alias vec = app::containers::vector;
-alias Vector = app::containers::vector::Vector;
-alias append = app::containers::vector::append;
+alias vec = crate::containers::vector;
+alias Vector = crate::containers::vector::Vector;
+alias append = crate::containers::vector::append;
 ```
 
 The file can then use `vec::append`, `Vector` or `append` in the roles their
@@ -310,8 +313,11 @@ module-wide alias side file or implicit inheritance from `.wfm` into `.wf`.
 An interface must declare its own abbreviations, rather than obtain them from
 implementation files. This keeps reading and concurrent editing local.
 
-Every alias target is a complete canonical path beginning with a bound source
-root. It names a module or a source declaration spelling, with no alias on the
+Every alias target is a complete root-qualified path beginning with the fixed
+`crate` qualifier or an explicitly selected external dependency name.
+Resolution binds that root in the source's owning-crate context before forming
+the canonical identity. It names a module or a source declaration spelling,
+with no file-local alias on the
 right-hand side, relative-parent search, wildcard, grouped import, supplied
 generic argument or arbitrary type expression. There are no alias chains or
 cycles to resolve. A module/function/constant alias uses IDENT; a nominal,
@@ -328,7 +334,8 @@ by expected type. Owner-dependent member labels are unchanged: aliases do not
 rename fields, named arguments, payload-field variant labels or result labels.
 Wrong-class uses receive the ordinary domain error. Duplicate alias names
 reject, and every occupied domain obeys the existing collision/no-shadowing
-rules. Module aliases also cannot shadow a canonical source-root name; they
+rules. The `crate` qualifier cannot be rebound, and module aliases cannot
+shadow an external dependency root available in that source context. They
 occupy the file's IDENT binding space but have no value or callable use.
 
 Targets are checked even when an alias is unused. A foreign target requires
@@ -355,34 +362,89 @@ and no public re-export. The spelling `alias` avoids overloading WF's existing
 is a clarity choice, not a claim of unavoidable ambiguity. The complete
 qualified-name grammar still requires qualification before implementation.
 
+### Fixed current-crate qualifier
+
+There is one active `modules.wfg` for a build. Its directory is the primary
+source root, without a declaration such as `root app = ".";` and without a
+choice between application, library or project-name prefixes. Use the fixed
+qualifier `crate::` for the current source crate. A crate here is a selected
+source root and its dependency identity; it is not a module, executable
+target or LLVM compilation unit. Both a library and an executable's sources
+use the same spelling. Merely having a source root does not create a module
+node or grant any dependency edge.
+
+In the active graph, `crate::` denotes its primary root. In a `.wfm` or `.wf`,
+it denotes the selected root that owns that source. Thus a library selected
+under a dependency name such as `math` still writes `crate::vector` internally;
+that use resolves to the selected library's vector module, not the importing
+application's vector module. This context comes from explicit source ownership,
+not a search for a nearer graph file. The active graph still registers all
+selected external modules and their exact edges; importing a library does
+not import another graph as a dependency authority.
+
+An external source dependency retains an explicit name such as `std` or
+`math`. Its binding selects an actual dependency identity, not a second
+identity for each spelling. External names and the source's owning-crate
+context must be recorded resolver inputs. The complete external-binding
+format, including dependency-name environments, multiple selected versions
+and references to the primary root from another root, remains qualification
+work; the single-crate demo does not claim to exercise that system. All such
+selection must remain explicit in the one graph, and no name binding grants
+a module edge. The compiler-owned prelude remains distinct from an ordinary
+source library called `std`.
+
+The directory of the unique graph already answers where the primary root
+starts. A freely chosen local prefix therefore added a naming decision without
+solving that problem. A fixed current-crate qualifier [E13] instead distinguishes
+own-source references from named dependencies and lets library-internal names
+survive selection under a caller's dependency name. It is not needed for the
+DAG proof. Own-crate root-qualified paths use this one form rather than a
+second implicit-root spelling; ordinary local names and file-local aliases
+remain available.
+
 ### Filesystem namespace paths and module ownership
 
-Bind a canonical source root to one explicit root name, such as `app`. Within
-that root, `vector.wfm` declares `app::vector`, and `vector/other.wfm`
-declares `app::vector::other`. Qualified module paths mirror directories and
-the interface basename; there is no independent module-name declaration or
-directory-to-namespace remapping. An external dependency root also identifies
-the selected dependency instance, so equal relative paths in different roots
-do not identify the same nominal.
+Within a selected root, `vector/module.wfm` declares `crate::vector`, and
+`vector/other/module.wfm` declares `crate::vector::other` in that root's source
+context. The directory path alone supplies the name; `module.wfm` is a fixed
+interface filename, not a namespace component. There is no independent
+module-name declaration or directory-to-namespace remapping. Distinct selected
+dependency instances retain distinct nominal identities even when their
+relative directory paths are equal.
 
 ```text
-vector.wfm
 vector/
+  module.wfm
   core.wf
   growth.wf
-  other.wfm
   other/
+    module.wfm
     core.wf
 ```
 
-The direct `.wf` records in `vector/` implement `app::vector`. The direct
-`.wf` records in `vector/other/` implement `app::vector::other`. Neither the
+The direct `.wf` records beside `vector/module.wfm` implement `crate::vector`.
+The direct `.wf` records beside `vector/other/module.wfm` implement
+`crate::vector::other`. Neither the
 child interface nor its implementation is part of the parent implementation.
 Do not recursively collect `**/*.wf`. A selected implementation record must
-have the matching interface for its immediate owning directory; an unmatched
+have `module.wfm` in its immediate owning directory; an unmatched
 record cannot silently inherit some distant ancestor's ownership. A directory
-prefix such as `a/b/` may organize `a/b/c.wfm` without `a.wfm` or `a/b.wfm`:
+prefix such as `a/b/` may organize `a/b/c/module.wfm` without either
+`a/module.wfm` or `a/b/module.wfm`:
 such prefixes name locations, not implicit modules or dependency graph nodes.
+A source root may itself contain `module.wfm`; only an explicit graph row for
+that root module registers it. The qualifier alone does not do so.
+
+Only the in-directory fixed filename is an interface form. Do not search for
+the old sibling `vector.wfm` or the repeated-name `vector/vector.wfm` as an
+alternative. Keeping the interface beside its bodies makes a module's own
+files one review/work location; a fixed basename avoids another name to update
+when its directory is renamed. It costs filename-only navigation: diagnostics,
+links and review surfaces need the relative path to distinguish interfaces.
+Moving a directory also moves its child modules; an agent's ownership of the
+parent module is its interface and direct implementation files, not recursive
+ownership of the entire subtree. Rust's two filename forms [E14] are a useful
+comparison, not a compatibility requirement for WF.
 
 This replaces explicit member-file lists for the selected layout. Input
 formation captures a closed source snapshot and inventories direct entries
@@ -397,8 +459,8 @@ Filesystem path uniqueness is only part of naming correctness. The compiler
 still rejects duplicate declarations across a module's implementation files,
 conflicting root bindings and ambiguous canonical source paths. Reserve a
 child namespace component against a top-level declaration with the same name
-in its parent module: `vector/other.wfm` can coexist on disk with an exported
-function called `other` in `vector.wfm`, but that conflicting namespace is not
+in its parent module: `vector/other/module.wfm` can coexist on disk with an
+exported function called `other` in `vector/module.wfm`, but that conflicting namespace is not
 accepted when both modules are registered in the architecture graph. The
 namespace inventory records its module rows and namespace prefixes independently
 of which build target is selected; modules absent from that graph do not enter
@@ -425,37 +487,39 @@ declare all source-module edges in one file at the project root.
 
 Use `modules.wfg` as the proposed project-root filename. The complete grammar
 and canonical rendering still need qualification. The graph file contains
-canonical source-root bindings and one ordered declaration for each module in
+the implicit primary root, explicit external-source selection and one ordered
+declaration for each module in
 the selected graph. Each declaration lists exact direct dependencies, all of which
 must have been declared earlier. The following is illustrative notation,
 not accepted build grammar:
 
 ```text
-root app = ".";
-
-app::shared::memory: [];
-app::vector::other: [app::shared::memory];
-app::vector: [app::shared::memory, app::vector::other];
-app::kernel: [app::shared::memory];
-app::tools::image: [app::shared::memory, app::vector];
+crate::shared::memory: [];
+crate::vector::other: [crate::shared::memory];
+crate::vector: [crate::shared::memory, crate::vector::other];
+crate::kernel: [crate::shared::memory];
+crate::tools::image: [crate::shared::memory, crate::vector];
 
 target kernel {
-  entry app::kernel::start;
+  entry crate::kernel::start;
   no_heap;
 }
 
 target image_tool {
-  entry app::tools::image::run;
+  entry crate::tools::image::run;
 }
 ```
 
-The proposed schema is one or more root bindings, one or more module rows,
-and zero or more named target declarations, in that order. A target contains
+The proposed schema is zero or more explicit external-root bindings, one or
+more module rows, and zero or more named target declarations, in that order.
+No binding declares or renames the primary `crate` root. A target contains
 one entry and optionally `no_heap;`; it cannot change module edges or roots.
 Target names are unique IDENT labels for build selection, not source aliases.
-Root paths are explicit strings relative to the graph's project root,
-not the process working directory or an environment search path. A root name
-and every module-path component use WF's IDENT spelling; implementation
+The graph's directory fixes the primary root. External source locations, when
+written as paths, are explicit relative to that directory, not the process
+working directory or an environment search path. External names and every
+ordinary module-path component use WF's IDENT spelling; `crate` is the fixed
+leading qualifier. Implementation
 filenames do not become identifiers. Selected roots and paths must have one
 unambiguous canonical interpretation on supported hosts; multiple names for
 one canonical module cannot evade row uniqueness or change nominal identity.
@@ -554,8 +618,9 @@ this design does not claim an already implemented no-allocation verifier.
 
 Validate the graph against the selected canonical source snapshot:
 
-1. Root bindings are unambiguous. Every selected module has one canonical
-   identity and exactly one graph declaration, resolving to its `.wfm`;
+1. The implicit primary root and explicit external bindings are unambiguous.
+   Every selected module has one canonical identity and exactly one graph
+   declaration, resolving to its directory's `module.wfm`;
    canonical aliases cannot create distinct positions for one module.
 2. Each dependency list names exact modules without duplicates. Every target
    must already have a valid declaration in this same graph. Self, forward
@@ -608,10 +673,10 @@ access; prefixes without `.wfm` are still namespaces rather than modules.
 The former ordered-subtree counterexample becomes directly expressible:
 
 ```text
-app::a::a2: [];
-app::b::b1: [];
-app::b::b2: [app::a::a2];
-app::a::a1: [app::b::b1];
+crate::a::a2: [];
+crate::b::b1: [];
+crate::b::b2: [crate::a::a2];
+crate::a::a1: [crate::b::b1];
 ```
 
 Both `a/a1 -> b/b1` and `b/b2 -> a/a2` are legal with unchanged paths. No
@@ -660,9 +725,10 @@ hash or changed numeric position must not invalidate all body proofs.
 
 The graph file makes dependency declarations inspectable in one place. A
 reader of a `.wfm` still sees its complete public signatures, contracts and
-external references, including every alias needed to interpret them, without
-implementation browsing; reading the graph establishes whether those
-references are authorized, not what an otherwise ambiguous public name means.
+external references, including every file-local alias, without implementation
+browsing. The owning-crate context and explicitly selected dependency
+interfaces resolve those references; the graph supplies the root selections
+and permissions, not missing declaration text or implementation-only names.
 
 ### Alternatives and selection grounds
 
@@ -883,7 +949,7 @@ These families name responsibilities, not a proposed public Rust API:
 | Query | Relevant inputs | Reusable output |
 |---|---|---|
 | Source formation | Interface/source bytes, selected canonical roots, direct directory inventory, grammar/spec identity | Tokens, canonical trees, source maps |
-| Module surface / lookup | Canonical path components, public/private inventories, relevant file aliases, direct dependency paths, lookup role and spelling | Stable declaration or diagnostic |
+| Module surface / lookup | Owning-crate identity, explicit external bindings, path components, public/private inventories, relevant file aliases, direct dependency paths, lookup role and spelling | Stable resolved declaration or diagnostic |
 | Graph formation / edge validation | Root graph bytes, canonical module inventory, exact adjacency rows and earlier-target relations | Resolved roots, stable per-module dependency sets, target declarations and valid order certificate, or located graph diagnostic |
 | Target composition / heap requirement | Selected target, bound entry, declared module closure, concrete call/layout/release/native summaries and target requirement | Checked source composition, current execution closure and satisfied environment requirement, or diagnostic |
 | Module dependency permission | Canonical source/target identities and membership in the source's normalized adjacency row | Allowed direct dependency or missing-edge diagnostic |
@@ -906,7 +972,12 @@ invalidation. Token-level editor parsing is not necessary to avoid checking
 untouched files and bodies.
 
 Graph parsing projects roots, per-module edges and individual target records
-separately. Source checking produces reusable declarations, proofs and heap
+separately. The source's selected owning root and the external bindings it
+actually resolves are tracked inputs: identical text such as
+`crate::vector::Vector` in two crates must not select one cache identity.
+Conversely an importer's name for a library does not by itself rename all
+internal declarations when the selected identity and bindings stay the same.
+Source checking produces reusable declarations, proofs and heap
 requirements; target checking reads those results and the selected entry's
 ordinary argument binding. A target name or no-heap flag is not a blanket
 body-proof key. Changing an entry changes its selected composition and closure;
@@ -1287,9 +1358,9 @@ must update the affected rules together, not merely remove PROG-1's prohibition.
 
 | Owner | Before | Proposed change |
 |---|---|---|
-| PROG-1/2/3, FN-7 | One ordered bundle, no modules, build-selected unqualified entry | One project-root ordered adjacency file owns roots and multiple named targets; each target pairs an ordinary entry with its environment requirements; source composition follows declared module closure while ordinary startup obligations remain required |
+| PROG-1/2/3, FN-7 | One ordered bundle, no modules, build-selected unqualified entry | One graph's directory fixes the primary source root; explicit external-root selection, ordered adjacency and named entry targets share that graph; source composition follows declared module closure while ordinary startup obligations remain required |
 | FORM-2/3, GRAM-1/2/3/4/5, DIAG-1 | One root and unqualified name roles | Complete interface/source and root-graph forms, file alias headers, qualified names and diagnostics joining graph rows, aliases, declarations and definitions |
-| TYPE-6, CONST-2, FN-3 | Whole-unit identity; non-function top-level visibility follows source order | Path-qualified modules with shared local names; only structurally permitted direct interfaces are visible; ordinary privacy, order-independent top-level names, dependency validity and lexical local scope retained |
+| TYPE-6, CONST-2, FN-3 | Whole-unit identity; non-function top-level visibility follows source order | Directory-named modules with fixed module.wfm interfaces and shared local names; crate resolves to the source's owning root, external names select explicit dependencies, and only permitted direct interfaces are visible; ordinary privacy, dependency validity and lexical local scope retained |
 | Public declaration correspondence / type representation | No separate interface or public/private source boundary | Function declarations without executable bodies in .wfm; exact normalized callable correspondence; either complete public record schemas or abstract public structs with checked private representation/capability correspondence and one nominal identity |
 | Type/ownership/release consumers | Descriptions in one inventory | Same judgments over imported descriptions; privacy grants no storage or release exemption |
 | FN-2/4/6/9, ENT-3.S12 | Whole-unit instances and summary identities | Same instance and SCC rules across modules, with current cached claims and availability |
@@ -1299,14 +1370,17 @@ must update the affected rules together, not merely remove PROG-1's prohibition.
 | FN-8/9, ENT-2/3, EFF-1/3 | Ordinary function calls are excluded from contracts; pure is not a termination guarantee | Public getters remain ordinary declared callables with private bodies; their proposed logical use requires separately specified total interpretation, state identity, support and checked realization, not unrestricted calls or trust in a pure annotation |
 | PRE-1 / native binding | Compiler-owned declarations and linked bodies | Bind selected prelude, runtime and target identity into composition/codegen inputs |
 
-The candidate uses the .wfm path as the module declaration and puts complete
-public declarations with explicit external references and any file-local
-aliases in that file.
+The candidate uses each directory's fixed module.wfm as its module declaration
+and puts complete public declarations with explicit external references and
+any file-local aliases in that file.
 There is no second module-name declaration, source import list,
 implementation-side `pub` or namespace block. Direct directory membership
-determines implementation records. One project-root graph file binds source
-roots and lists ordered modules with their exact direct dependencies and named
-entry targets. Its proposed name is `modules.wfg`; exact graph/target/alias syntax, declaration terminators,
+determines implementation records. The one project-root graph file fixes the
+primary root by its location, selects external roots, and lists ordered modules
+with their exact direct dependencies and named entry targets. Current-crate
+references use the fixed `crate::` qualifier in the owning source context.
+The graph's proposed name is `modules.wfg`; exact external-binding,
+graph/target/alias syntax, declaration terminators,
 canonical path/collision rules, abstract nominal/capability syntax and
 normalized correspondence remain to be specified. META-5 deltas require the
 complete grammars and judgments with strong-LL(2) checks; no count is invented
@@ -1315,7 +1389,7 @@ here.
 | Current implementation owner | Required structural change |
 |---|---|
 | `source.rs`, syntax/canonical rendering | Canonical selected roots, direct directory snapshots, interface/source and graph grammar roots, stable path/item identity and source maps |
-| `resolution/engine*` | Canonical path namespaces, root-graph adjacency and earlier-target validation, file-local aliases, direct-dependency permission checks, shared local inventories, public closure, correspondence and positive/negative lookup dependencies |
+| `resolution/engine*` | Owning-crate and external-root resolution, canonical path namespaces, root-graph adjacency and earlier-target validation, file-local aliases, direct-dependency permission checks, shared local inventories, public closure, correspondence and positive/negative lookup dependencies |
 | `semantic/check.rs`, `check/generics*` | Query-owned body/instance checking and reusable owned results instead of whole-unit borrow chains |
 | `semantic/entailment*`, `postcondition.rs` | Stable claims, retained derivations, current SCC availability and composition |
 | `semantic/model.rs`, allocation/permission consumers | Stable identities and tracked fixed-point/target dependencies |
@@ -1390,6 +1464,16 @@ and expose limits; they are not measurements of WF or proofs of this design.
   and public re-exports. WF borrows the name-binding purpose, not that complete
   scope/visibility system: aliases have file-header scope and grant no graph
   edge, publication or new type identity.
+- **E13 — [Rust crate qualifier](https://doc.rust-lang.org/reference/paths.html#crate).**
+  `crate` resolves from the current crate's root. This is a comparator for one
+  fixed own-source qualifier, not a reason to adopt Rust's other path forms,
+  crate build boundaries or package machinery. WF retains its one explicit
+  module graph and separately tracked checking/backend partitions.
+- **E14 — [Rust module filenames](https://doc.rust-lang.org/reference/items/modules.html#module-source-filenames).**
+  Rust permits a named sibling source file or a directory's `mod.rs`, but not
+  both for one module. WF has no compatibility requirement to retain two forms;
+  its proposed `module.wfm` puts the complete public contract beside the direct
+  implementation files. Repeated interface basenames remain a navigation cost.
 
 ## Implementation entry and remaining semantic work
 
@@ -1403,8 +1487,8 @@ The remaining responsibilities are concrete:
 
 | Area | Required behavior and evidence |
 |---|---|
-| Graph and source formation | `modules.wfg` owns roots, ordered exact edges and named targets that pair an entry with optional no-heap. Architecture, source-module composition and concrete execution closure remain distinct. `.wfm` contains declarations and no executable bodies. Verify complete graph/target/interface/source grammars and canonical renderings with ordinary generator/parser checks. |
-| Identity and lookup | Root identity and canonical module/declaration identity are separate from source revision, physical file placement, row position and aliases. Equal spellings in different modules are distinct; moving a body between files requires equivalent resolved aliases for reuse. |
+| Graph and source formation | The sole modules.wfg fixes the primary root, explicitly selects external roots, orders exact edges and names entry targets with optional no-heap. Architecture, source-module composition and concrete execution closure remain distinct. Each registered directory's module.wfm contains declarations and no executable bodies. Verify complete binding/graph/target/interface/source grammars and canonical renderings with ordinary generator/parser checks. |
+| Identity and lookup | The fixed crate qualifier binds to the source's selected owning root; external dependency-name environments need explicit graph-owned selection. Resolved module/declaration identity is separate from spelling, source revision, physical placement and graph row position. Equal text in distinct crates is distinct; moving a body between files requires equivalent resolved aliases and root context for reuse. |
 | Public correspondence | Form interfaces without reading implementation bodies; compare implementation headers by resolved type/const/function identities and normalized contracts. A matching declaration still needs its checked body and current composition evidence. |
 | Proof composition | Keep FN-6/FN-9 template, instance and recursive-component rules separate from the source DAG. Callers may reuse an unchanged claim only with current availability/evidence; deletion must retract dependencies and rebuild affected fixed points. |
 | Representation and abstract contracts | Public records declare their complete field schema in `.wfm`; abstract public structs declare their name/generics/capabilities there and bind to one private representation. Public getter declarations belong in the interface, their bodies in implementation. Logical getter use and precise public effects need the checked judgments below. |
@@ -1553,8 +1637,11 @@ not the number of object files alone, select the backend grouping.
 
 ### Namespace and dependency qualification
 
-Exercise the paired `vector.wfm` / `vector/*.wf` and
-`vector/other.wfm` / `vector/other/*.wf` layout. Parent compilation must not
+Exercise `vector/module.wfm` with `vector/*.wf` and
+`vector/other/module.wfm` with `vector/other/*.wf`. Reject the former sibling
+and repeated-name paths as alternative interface lookup forms. Exercise an
+explicitly registered root module and an unregistered namespace-only root.
+Parent compilation must not
 collect child implementation files; an unmatched implementation directory must
 not acquire an ancestor owner. Check that canonical directory enumeration,
 member addition/removal, duplicate declarations, namespace/declaration clashes
@@ -1562,6 +1649,16 @@ and ambiguous root/path bindings have deterministic results across supported
 hosts. All graph-registered modules and their prefixes enter namespace lookup,
 independently of the selected target; adding an unregistered module on disk must not silently add a declaration or
 name collision. No implementation filename introduces another namespace.
+
+Check that neither an application nor a library declares a local root nickname:
+both use `crate::`. Reject attempts to rebind that qualifier. Qualify graph
+paths against the primary root and source paths against their selected owning
+roots. Reuse unchanged library sources under different consumer dependency
+names without rebinding internal paths to those consumers. Complete and test
+external dependency-name environments, multiple selected instances and access
+to the primary root from another root before claiming external-source
+composition. Imported graph files must not add edges or select a second root
+implicitly; std naming does not import the entire prelude or grant edges.
 
 Require a declared direct grandchild dependency and a cross-subtree
 `a/b/c -> d/e/f` edge when the target row is earlier. Exercise child-to-parent
