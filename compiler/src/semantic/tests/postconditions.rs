@@ -1184,7 +1184,7 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn an_earlier_ok_summary_is_available_only_at_direct_match_arm_entry() {
+fn an_earlier_ok_summary_is_available_when_its_payload_is_selected() {
     let source = br#"fn callee(value: own i32) -> result: own Result<i32, Overflow> pure contract {
   ensures when Ok(value: payload): payload == value;
 } {
@@ -1701,7 +1701,7 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_selected_payload_first_set_reestablishes_only_the_result_relation() {
+fn a_selected_payload_assignment_proves_the_downstream_requirement() {
     let source =
         br#"fn selected(value: own i32) -> result: own Result<i32, Overflow> pure contract {
   ensures when Ok(value: payload): payload == value;
@@ -1742,22 +1742,21 @@ fn main() -> status: own ExitStatus pure {
             .iter()
             .find(|function| function.name == "caller")
             .expect("caller function");
-        assert_eq!(
+        super::entailment::validate_derivations(&caller.entailment);
+        assert!(
             caller
                 .entailment
                 .derivations
                 .nodes
                 .iter()
-                .filter(|node| matches!(node, DerivationNode::PostconditionSelectedReceiver { .. }))
-                .count(),
-            1,
-            "the selected receiver route is retained once in the source context"
+                .any(|node| { matches!(node, DerivationNode::ResultTransport { .. }) }),
+            "the downstream requirement retains its payload selection"
         );
     });
 }
 
 #[test]
-fn selected_receiver_nonfirst_additional_write_and_call_actual_shapes_retain_no_route() {
+fn ordinary_payload_assignments_need_no_special_receiver_event() {
     let source = br#"struct Cell {
   value: i32;
 }
@@ -1846,9 +1845,6 @@ fn main() -> status: own ExitStatus pure {
                 .iter()
                 .find(|function| function.name == name)
                 .unwrap_or_else(|| panic!("{name} function"));
-            assert!(function.entailment.derivations.nodes.iter().all(|node| {
-                !matches!(node, DerivationNode::PostconditionSelectedReceiver { .. })
-            }));
             assert!(
                 function
                     .entailment
@@ -1900,7 +1896,7 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn an_ok_selector_rejects_a_stored_whole_result_return() {
+fn an_ok_selector_verifies_a_moved_whole_result_return() {
     let source = br#"fn stored(value: own i32) -> result: own Result<i32, Box<u8>> pure contract {
   ensures when Ok(value: payload): payload == value;
 } {
@@ -1912,7 +1908,7 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule_at(source, SemanticRule::Fn9, "return move outcome;");
+    assert_complete(source);
 }
 
 #[test]

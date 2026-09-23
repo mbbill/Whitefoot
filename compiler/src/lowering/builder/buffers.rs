@@ -11,13 +11,6 @@ use crate::semantic::{CheckedBufferRoot, CheckedExpression, CheckedTargetDomainO
 use super::*;
 
 impl IrBuilder<'_> {
-    pub(super) fn lower_buffer_borrow(
-        &mut self,
-        root: &CheckedBufferRoot,
-    ) -> Result<IrValueId, LoweringFailure> {
-        self.buffer_root(root)
-    }
-
     pub(super) fn lower_buffer_length(
         &mut self,
         root: &CheckedBufferRoot,

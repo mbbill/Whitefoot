@@ -1,0 +1,16 @@
+fn empty(choose: own Bool) -> result: own Result<i32, u8> pure contract {
+  ensures when Ok(value: payload): payload == 0_i32;
+} {
+  let outcome = if choose {
+    let error = Err<i32, u8>(error: 1_u8);
+    give error;
+  } else {
+    give Err<i32, u8>(error: 2_u8);
+  }
+  let saved = outcome;
+  return saved;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

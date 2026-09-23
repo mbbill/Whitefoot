@@ -5,6 +5,22 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-22 Carry Result evidence through ordinary local value flow
+
+Nodes: language/checks-and-proofs/automatic-facts, compiler/checker-facts
+
+Owner-approved: The owner explicitly directed correction of all five review findings and accepted both complete Result proof-transport amendments after the Chinese PR #87 handoff for ba876003.
+
+Summary: Apply the two reviewed amendments unchanged. Local own Results with integer payloads carry isolated conditional evidence through ordinary transfers and read it only under their own success condition. Reuse the existing weakest-bound joins, support invalidation and continuing-backedge rules, with a private child of the ordinary entailment flow owning evidence operations and the walker retaining event order. The [Result investigation](../research/investigations/result-proof-transport/DESIGN.md) records the composition failures, alternatives, finite representation argument and measured costs behind these choices. Retain the sharing/projection and broader storage questions in TODO, remove the accepted amendments and their directory, and preserve the existing live decisions. This ruling does not authorize a merge.
+
+## 2026-09-22 Resolve source input, zero-stride addressing and proof-name boundaries
+
+Nodes: compiler/prelude-records, compiler/storage-representation, language/name-resolution
+
+Owner-approved: The owner explicitly accepted all three reviewed amendments and both DCR wording corrections after the complete PR #88 handoff at 86e048de, replying that all were agreed. This ruling does not authorize a merge.
+
+Summary: Apply the three reviewed additions unchanged: require caller source records before public prelude injection while preserving the internal transport and complete resource accounting; canonicalize only zero-stride element-address operands while retaining logical coordinates and all layout obligations; and admit invariant IDENT spellings in their separate proof domain without additional operation-name reservation. STOR-6 defines the zero-stride length-bound case, and OP-1/DIAG-1 consistently exclude invariant declarations from that reservation. The [follow-up investigation](../research/investigations/consistency-followups/DESIGN.md) records the discriminating examples, alternatives and remaining validation tasks. Narrow the conformance result-binding explanation and correct the PR's runtime-check claim as reviewed. Remove the three accepted amendments and their directory.
+
 ## 2026-09-22 Retain Array extents through read-only Box helpers
 
 Nodes: compiler/parallel-lowering

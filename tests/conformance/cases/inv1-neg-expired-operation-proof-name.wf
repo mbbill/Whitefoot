@@ -1,0 +1,17 @@
+fn probe(limit: own u64) -> result: own unit pure {
+  let sum = 0_u64;
+  for (
+    i in 0_u64..limit,
+    invariant cvt: sum <= i
+  ) {
+    set sum = sum + 1_u64;
+  }
+  invariant scaled: 3_u64 * sum <= 3_u64 * limit {
+    use 3 times cvt;
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

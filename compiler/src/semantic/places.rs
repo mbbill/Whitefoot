@@ -52,7 +52,6 @@ pub(crate) enum CaptureId {
     },
     ValueDetermined,
     SpellingDetermined,
-    SubstitutedOffset,
     Unknown,
 }
 
