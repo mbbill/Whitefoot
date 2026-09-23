@@ -346,3 +346,32 @@ correspondence-2026-09-23	emission-seq	user 0.04
 correspondence-2026-09-23	emission-seq	sys 0.00
 correspondence-2026-09-23	emission-seq	== END first-index-9bed-seq-correspondence: 0.10 s, exit 0 ==
 correspondence-2026-09-23	reuse	both complete raw modules and all 52 parallel/43 sequential ledger records match original bytes; original source/modules/logs unchanged by before/after hashes; reuse original native evidence without reconstruction or execution
+correspondence-345e-2026-09-23	main	345e2966a45c995d6cebbb7f6b128a66235cd20f
+correspondence-345e-2026-09-23	source-baseline	04aa9ca7c53fd743a337e57ba2843cd549a9bd39
+correspondence-345e-2026-09-23	source-migration	39 own annotations removed from 14 function declarations under current GRAM-2/GRAM-3; normalized old-source comparison passes; bodies, contracts and reference parameters unchanged
+correspondence-345e-2026-09-23	source-sha256	fb7fc2515e122903b1051ee84027f220e55513eebd555d5e64af0cb68de050a7
+correspondence-345e-2026-09-23	compiler-sha256	cbffd4dd1ae8641ef03790457181188988bf70cc4af1a53c50c1f406307bb7f9
+correspondence-345e-2026-09-23	reference-commit	9be78e3556311c670c80d90801de247b018cf09e
+correspondence-345e-2026-09-23	compiler-tree	669636b763356721a9c8626050033fabb0ee78bb
+correspondence-345e-2026-09-23	spec-tree	df0cb94eac95e2a93caae0bb1ddd240670c3c81e
+correspondence-345e-2026-09-23	spec-identity	v0.68; 5917e3ee2234300a21affb2663a5d8fa80821257e66d7b759945e4c99d61ca14
+correspondence-345e-2026-09-23	input-correspondence	clean reference compiler/specification trees match main; all 381 tracked files match current source bytes and after-emission hashes; all 313 tracked compiler/active-spec inputs are no newer than the cached gate binary
+correspondence-345e-2026-09-23	input-manifest-sha256	4be2e31cd234c67f6a235c40ec223472689e014c9cc17664e3303a1135f336ee
+correspondence-345e-2026-09-23	construction	reused gate CLI; original compiler construction cost unrecorded here; no compiler or native construction in this action
+correspondence-345e-2026-09-23	parallel-module-sha256	a53b4bb11c4a7afd2deec259315a9a57361b295de79a3ad23fe359cac8ce53c6
+correspondence-345e-2026-09-23	sequential-module-sha256	425e04f657904ec9906785aa012a242c6b8d4885bbe3a9f570d4a2acd5f94e4f
+correspondence-345e-2026-09-23	parallel-ledger-sha256	c0b4bdc15c5566734785c0dc410e72c9a35efa55c3aa3178c4f4f667ecd7c00b
+correspondence-345e-2026-09-23	sequential-ledger-sha256	3f79e99182f4b0a5ea8fc41c0b942ccfe698e9866eb3488b264a00f89424afd9
+correspondence-345e-2026-09-23	comparison	diff -u: both complete raw LLVM modules and all 52 parallel/43 sequential ledger records byte-identical to original; all four comparisons exit 0, with no normalization or metadata differences
+correspondence-345e-2026-09-23	emission-par	== START first-index-345e-par-correspondence (limit 30s): <current-compiler-artifact>/whitefootc --par --emit-llvm --par-ledger research/investigations/compute-model/first-index.wf -o <scratch-root>/first-index-par.ll ==
+correspondence-345e-2026-09-23	emission-par	real 0.04
+correspondence-345e-2026-09-23	emission-par	user 0.04
+correspondence-345e-2026-09-23	emission-par	sys 0.00
+correspondence-345e-2026-09-23	emission-par	== END first-index-345e-par-correspondence: 0.10 s, exit 0 ==
+correspondence-345e-2026-09-23	emission-seq	== START first-index-345e-seq-correspondence (limit 30s): <current-compiler-artifact>/whitefootc --no-overlap --emit-llvm --par-ledger research/investigations/compute-model/first-index.wf -o <scratch-root>/first-index-seq.ll ==
+correspondence-345e-2026-09-23	emission-seq	real 0.04
+correspondence-345e-2026-09-23	emission-seq	user 0.03
+correspondence-345e-2026-09-23	emission-seq	sys 0.00
+correspondence-345e-2026-09-23	emission-seq	== END first-index-345e-seq-correspondence: 0.10 s, exit 0 ==
+correspondence-345e-2026-09-23	verification	all 39 runtime and 10 unchanged probe input/artifact hashes pass shasum -a 256 -c after emission; migrated source and reused CLI hashes unchanged by emission
+correspondence-345e-2026-09-23	reuse	complete emission correspondence and unchanged native inputs/artifacts support reuse of the original dated native qualification; no native reconstruction/execution or new timing comparison

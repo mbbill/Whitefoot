@@ -2006,6 +2006,20 @@ unchanged, so the existing native qualification is reused without native
 reconstruction or execution; this supplies no new performance measurement
 and does not relabel the original dated result.
 
+After rebasing onto main `345e2966a`, the source follows GRAM-2/GRAM-3's
+value syntax by removing 39 `own` annotations from 14 function declarations;
+all bodies, contracts and reference parameters are unchanged. Gate CLI
+`cbffd4dd1ae8641ef03790457181188988bf70cc4af1a53c50c1f406307bb7f9`
+was reused from clean `9be78e355`, whose 381 tracked compiler/specification
+inputs match this main revision. Both complete raw LLVM modules and all
+52 parallel/43 sequential ledger records again match the original bytes,
+without normalization or metadata differences. Each guarded emission took
+0.10 seconds under its 30-second cap. The 39 runtime inputs and 10 unchanged
+probe inputs/artifacts retain their original hashes; the evidence stream
+records the migrated source separately. This correspondence reuses the
+original native qualification without compiler or native reconstruction,
+native execution, or a new performance claim.
+
 ## Sparse destination routing trial (2026-09-21)
 
 This bounded continuation starts at merged `3402048f` and asks whether useful
