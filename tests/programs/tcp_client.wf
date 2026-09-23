@@ -203,7 +203,7 @@ fn main(inputs: Inputs) -> status: ExitStatus pure {
     invariant spare_payload: payload.cap - payload.len + position >= 8_u64
   ) {
     let letter = 65_u8;
-    let step = cvt::<u64, u8>(position);
+    let step = cvt.checked::<u64, u8>(position);
     match step {
       Ok(value: offset) => {
         set letter = 65_u8 +wrap offset;

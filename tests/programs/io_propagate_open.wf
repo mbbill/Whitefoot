@@ -16,7 +16,7 @@ fn exercise(args: &Args, cwd: &DirectoryRead, files: &HandleFactory) -> status: 
               let window = &bytes[0_u64..64_u64];
               match read_at(factory: files, file: &file, destination: window, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
                 Ok(value: n) => {
-                  let narrowed = cvt::<u64, u8>(n);
+                  let narrowed = cvt.checked::<u64, u8>(n);
                   match narrowed {
                     Ok(value: code) => {
                       close_read(factory: files, file: move file);

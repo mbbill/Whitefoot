@@ -30,7 +30,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        let [source, destination] = self.numeric_type_arguments(node, function)?;
+        let [source, destination] = self.numeric_type_arguments(node, function, false)?;
         if !source.reinterprets_to(destination) {
             return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
         }

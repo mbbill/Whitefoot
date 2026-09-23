@@ -1,0 +1,10 @@
+fn integer(value: f64) -> result: i32 pure contract {
+  requires fge(value, 0.0_f64);
+  requires flt(value, 4.0_f64);
+} {
+  return cvt::<f64, i32>(value);
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

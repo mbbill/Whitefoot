@@ -1928,7 +1928,7 @@ fn main() -> status: ExitStatus pure {
 #[test]
 fn a_propagate_in_the_body_is_denied_by_condition_four() {
     let source = b"fn narrow(v: u64) -> result: Result<u32, NarrowError> pure {
-  return cvt::<u64, u32>(v);
+  return cvt.checked::<u64, u32>(v);
 }
 
 fn tally(n: u64) -> result: Result<u64, NarrowError> pure {

@@ -1,0 +1,66 @@
+const exact_even: u32 = 16777218_u32;
+const exact_integer: f64 = -128.0_f64;
+
+fn byte(value: u32) -> result: u8 pure contract {
+  requires cvt.defined::<u32, u8>(value);
+} {
+  return cvt::<u32, u8>(value);
+}
+
+fn range_caller(value: u32) -> result: u8 pure contract {
+  requires value <= 255_u32;
+} {
+  return byte(value: value);
+}
+
+fn masked(value: u32) -> result: u8 pure {
+  let low = iand(value, 255_u32);
+  return cvt::<u32, u8>(low);
+}
+
+fn exact_float(value: i32) -> result: f32 pure contract {
+  requires value >= -16777216_i32;
+  requires value <= 16777216_i32;
+} {
+  return cvt::<i32, f32>(value);
+}
+
+fn guarded_float(value: f64) -> result: i32 pure {
+  if cvt.defined::<f64, i32>(value) {
+    return cvt::<f64, i32>(value);
+  } else {
+    return 0_i32;
+  }
+}
+
+fn main() -> status: ExitStatus pure {
+  doc "Whole-type, exact constant, integer range, existing mask image, caller domain normalization, sufficient integer-to-float interval and exact float predicate routes all use the same conversion domain.";
+  let narrow = range_caller(value: 255_u32);
+  let masked_byte = masked(value: 1023_u32);
+  if narrow != masked_byte {
+    return exit_status(code: 1_u8);
+  }
+  let even = cvt::<u32, f32>(exact_even);
+  let even_bits = reinterpret::<f32, u32>(even);
+  if even_bits != 0x4b800001_u32 {
+    return exit_status(code: 2_u8);
+  }
+  let small = cvt::<f64, i8>(exact_integer);
+  if small != -128_i8 {
+    return exit_status(code: 3_u8);
+  }
+  let limit = exact_float(value: 16777216_i32);
+  let limit_bits = reinterpret::<f32, u32>(limit);
+  if limit_bits != 0x4b800000_u32 {
+    return exit_status(code: 4_u8);
+  }
+  let integral = guarded_float(value: 3.0_f64);
+  let fractional = guarded_float(value: 3.5_f64);
+  if integral != 3_i32 {
+    return exit_status(code: 5_u8);
+  }
+  if fractional != 0_i32 {
+    return exit_status(code: 6_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -7,15 +7,15 @@ criterion for deciding whether to pursue it. Entries do not select a design.
 Remove an item when its implementation and checks land, or its validation
 concludes with a recorded disposition; retain any selected follow-up work here.
 
-- **Review and implement the exact conversion proposal.** The
-  [completed design and sequence](../research/investigations/numeric-conversions/DESIGN.md#proposed-rules-for-owner-review)
-  recommend a uniform proved/checked/domain family, same-type copies, integer
-  Result equality and numeric generics, with integer `.wrap` as a separable
-  companion. Implementation awaits the owner's pre-implementation review.
-  Validate all type-pair shapes, direct/named Results, replacement, joins and
-  loops against stale-value controls; exact conversions must emit no validity
-  guard and domain queries must remain total. No timing benefit is established.
-  Remove resolved parts when approved rules and ordinary-path evidence land.
+- **Select the modular conversion companion.** The
+  [conversion comparison](../research/investigations/numeric-conversions/DESIGN.md#companion-operations-and-explicit-deferrals)
+  recommends integer-only `cvt.wrap` for direct low-bit extraction and modular
+  signedness conversion. It is independent of the exact conversion family and
+  awaits a separate scope decision. Validate all integer width/sign classes,
+  especially negative signed inputs widened to unsigned destinations, and
+  ensure changed values publish no exact input equality. Defer until the owner
+  selects this additional result policy; remove after its selected rules and
+  ordinary-path evidence land.
 
 - **Select direct rounded/saturated float conversion policies.** The
   [conversion study](../research/investigations/numeric-conversions/DESIGN.md#companion-operations-and-explicit-deferrals)
@@ -28,8 +28,8 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   float-heavy program or owner selection; compare source and emitted/native
   behavior before choosing spellings or claiming an improvement.
 
-- **Validate float and domain evidence through saved Results.** The exact
-  conversion proposal extends integer value relations only. A checked result
+- **Validate float and domain evidence through saved Results.** Exact
+  conversions extend integer value relations only. A checked result
   with a float endpoint does not transport a domain predicate for its old
   input or a float equality; callers can use the payload or branch on
   `.defined` when the predicate is needed. Extending ENT-5/FN-9 could remove
@@ -42,7 +42,7 @@ concludes with a recorded disposition; retain any selected follow-up work here.
 - **Qualify broader proved-range transport to the backend.** The
   [bounded conversion control](../research/investigations/numeric-conversions/DESIGN.md#optimized-helpers)
   removes a residual check when its already-verified entry range is supplied
-  as an LLVM assumption. Direct lowering under the proposed bare conversion
+  as an LLVM assumption. Direct lowering under the bare conversion
   proof solves that conversion case without a general transport family.
   Broader transport may benefit operations outside that family, but needs a
   concrete consumer and a complete retained-evidence-to-target mapping, with
@@ -51,17 +51,6 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   matched benefit and unchanged acceptance/behavior before choosing a family.
   Defer from the exact-conversion change, and remove after selection and
   qualification or a documented decision that the candidate brings no benefit.
-
-- **Numeric generic conversion remains unimplemented.** The
-  [generic witness](../research/investigations/numeric-conversions/generic-conversion.wf)
-  discards `cvt::<T, f64>` inside an Int-generic function called with u32 and
-  i64, but compilation reports `Unsupported: Generics`; every instantiated
-  pair is distinct and numeric. This is a compiler capability gap, separate
-  from selecting new conversion semantics. Validate symbolic formation and
-  concrete total/checked instances without inferring a uniform return type
-  or misreporting the gap as invalid source. Include it in the proposed exact
-  conversion implementation after owner review, and remove when symbolic and
-  concrete controls pass through the existing compiler path.
 
 - **Validate further sharing of dense Result evidence when larger consumers need it.**
   The [cost comparison](../research/investigations/result-proof-transport/DESIGN.md#selected-cost-result)
@@ -566,6 +555,15 @@ each is resolved by a discussion and a tree change.
   from storing an already-related Result. Reopen it when a library wrapper
   needs the relation, with direct-carrier, nested-field and stale-write controls.
   Conditional fact representation cost is the separate compiler defect above.
+  The conversion tests also retain an affine precision boundary: if `index`
+  has only an affine image `first + second`, its checked integer conversion's
+  saved Result does not preserve that image after `index` is replaced, even
+  when a direct access can prove the bound. Conditional contexts carry L0
+  relations, not affine value images. Validate whether a real saved-result
+  consumer needs that extra relation, using paired direct/saved cases,
+  mutation, joins and independent guards, and measure proof cost before
+  extending the context; the existing numeric closure alone does not select
+  such an extension.
   These language extensions are deferred because the selected ordinary
   local composition rule can be validated without widening the storage or
   predicate vocabulary.

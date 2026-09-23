@@ -33,9 +33,10 @@ use super::target::{
 };
 use crate::{
     IrAddressed, IrAllocationObligations, IrArrayRoot, IrBlock, IrBlockId, IrBooleanOperation,
-    IrConstant, IrDrop, IrDropSubject, IrEnumType, IrFloatOperation, IrFunction, IrGlobalValue,
-    IrInstruction, IrIntegerOperation, IrNominal, IrNominalId, IrNominalKind, IrOperation,
-    IrOverlap, IrProgram, IrTargetDomainObligation, IrTerminator, IrType, IrValueId, IrWindowShape,
+    IrConstant, IrConversionMode, IrDrop, IrDropSubject, IrEnumType, IrFloatOperation, IrFunction,
+    IrGlobalValue, IrInstruction, IrIntegerOperation, IrNominal, IrNominalId, IrNominalKind,
+    IrOperation, IrOverlap, IrProgram, IrTargetDomainObligation, IrTerminator, IrType, IrValueId,
+    IrWindowShape,
 };
 use buffer::{buffer_fill_done_label, buffer_probe_join_label};
 use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_cleanup};
@@ -1724,10 +1725,18 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 arguments,
             } => self.emit_float(result, ty, *operation, *operand_type, arguments),
             IrOperation::NumericConversion {
+                mode,
                 source_type,
                 destination_type,
                 value,
-            } => self.emit_numeric_conversion(result, ty, *source_type, *destination_type, *value),
+            } => self.emit_numeric_conversion(
+                result,
+                ty,
+                *mode,
+                *source_type,
+                *destination_type,
+                *value,
+            ),
             IrOperation::Reinterpret {
                 source_type,
                 destination_type,

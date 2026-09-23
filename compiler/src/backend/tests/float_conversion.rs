@@ -2,6 +2,8 @@ use std::fmt::Write;
 
 use super::{compile, compile_and_run};
 
+mod binary_value;
+
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum NumericKind {
     SignedInteger,
@@ -229,7 +231,7 @@ fn power_f64(exponent: u32) -> result: f64 pure {
 
 fn reject_f32_i32(value: f32) -> result: Bool pure {
   let rejected = False();
-  match cvt::<f32, i32>(value) {
+  match cvt.checked::<f32, i32>(value) {
     Ok(value: converted) => {
     }
     Err(error: narrow) => {
@@ -241,7 +243,7 @@ fn reject_f32_i32(value: f32) -> result: Bool pure {
 
 fn reject_f32_u32(value: f32) -> result: Bool pure {
   let rejected = False();
-  match cvt::<f32, u32>(value) {
+  match cvt.checked::<f32, u32>(value) {
     Ok(value: converted) => {
     }
     Err(error: narrow) => {
@@ -253,7 +255,7 @@ fn reject_f32_u32(value: f32) -> result: Bool pure {
 
 fn reject_f64_i64(value: f64) -> result: Bool pure {
   let rejected = False();
-  match cvt::<f64, i64>(value) {
+  match cvt.checked::<f64, i64>(value) {
     Ok(value: converted) => {
     }
     Err(error: narrow) => {
@@ -265,7 +267,7 @@ fn reject_f64_i64(value: f64) -> result: Bool pure {
 
 fn reject_f64_u64(value: f64) -> result: Bool pure {
   let rejected = False();
-  match cvt::<f64, u64>(value) {
+  match cvt.checked::<f64, u64>(value) {
     Ok(value: converted) => {
     }
     Err(error: narrow) => {
@@ -322,7 +324,7 @@ fn main() -> status: ExitStatus pure {
   let two_to_52 = power_f64(exponent: 52_u32);
   let one_ulp = fdiv.strict(1.0_f64, two_to_52);
   let not_f32 = fadd.strict(1.0_f64, one_ulp);
-  match cvt::<f64, f32>(not_f32) {
+  match cvt.checked::<f64, f32>(not_f32) {
     Ok(value: rounded) => {
       return exit_status(code: 8_u8);
     }
@@ -330,7 +332,7 @@ fn main() -> status: ExitStatus pure {
     }
   }
   let nan_f64 = fnan::<f64>();
-  match cvt::<f64, f32>(nan_f64) {
+  match cvt.checked::<f64, f32>(nan_f64) {
     Ok(value: narrow_nan) => {
       if fne(narrow_nan, narrow_nan) {
       } else {
@@ -342,7 +344,7 @@ fn main() -> status: ExitStatus pure {
     }
   }
   let narrowable_infinity = finf::<f64>();
-  match cvt::<f64, f32>(narrowable_infinity) {
+  match cvt.checked::<f64, f32>(narrowable_infinity) {
     Ok(value: narrow_infinity) => {
       let expected_infinity = finf::<f32>();
       if feq(narrow_infinity, expected_infinity) {
@@ -363,7 +365,10 @@ fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    let llvm = compile(source);
+    let source = binary_value::extend_program(
+        std::str::from_utf8(source).expect("the boundary source is UTF-8"),
+    );
+    let llvm = compile(source.as_bytes());
     assert!(llvm.contains("@llvm.fptosi.sat.i32.f32"));
     assert!(llvm.contains("@llvm.fptoui.sat.i64.f64"));
     assert!(!llvm.contains(" = fptosi "));
@@ -379,6 +384,152 @@ fn main() -> status: ExitStatus pure {
     );
     assert!(output.stdout.is_empty());
     assert!(output.stderr.is_empty());
+}
+
+/// Mode selection must already hold before LLVM optimization. These helper
+/// bodies distinguish a retained exact proof from a runtime domain query;
+/// the existing native matrices exercise their values and boundaries.
+#[test]
+fn exact_conversion_proofs_erase_before_optimization_and_queries_remain_total() {
+    let source = br#"fn exact_byte(value: u32) -> result: u8 pure contract {
+  requires value <= 255_u32;
+} {
+  return cvt::<u32, u8>(value);
+}
+
+fn exact_integer_float(value: u64) -> result: f32 pure contract {
+  requires cvt.defined::<u64, f32>(value);
+} {
+  return cvt::<u64, f32>(value);
+}
+
+fn exact_float_integer(value: f64) -> result: i64 pure contract {
+  requires cvt.defined::<f64, i64>(value);
+} {
+  return cvt::<f64, i64>(value);
+}
+
+fn exact_narrow_float(value: f64) -> result: f32 pure contract {
+  requires cvt.defined::<f64, f32>(value);
+} {
+  return cvt::<f64, f32>(value);
+}
+
+fn same_float(value: f64) -> result: f64 pure {
+  return cvt::<f64, f64>(value);
+}
+
+fn domain_byte(value: u32) -> result: Bool pure {
+  return cvt.defined::<u32, u8>(value);
+}
+
+fn domain_float_integer(value: f64) -> result: Bool pure {
+  return cvt.defined::<f64, i64>(value);
+}
+
+fn domain_integer_float(value: u64) -> result: Bool pure {
+  return cvt.defined::<u64, f32>(value);
+}
+
+fn domain_narrow_float(value: f64) -> result: Bool pure {
+  return cvt.defined::<f64, f32>(value);
+}
+
+fn total_domain_integer(value: i8) -> result: Bool pure {
+  return cvt.defined::<i8, i64>(value);
+}
+
+fn total_domain_integer_float(value: u8) -> result: Bool pure {
+  return cvt.defined::<u8, f32>(value);
+}
+
+fn total_domain_float(value: f32) -> result: Bool pure {
+  return cvt.defined::<f32, f64>(value);
+}
+
+fn total_domain_same(value: f64) -> result: Bool pure {
+  return cvt.defined::<f64, f64>(value);
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let llvm = compile(source);
+    for (symbol, instruction) in [
+        ("exact_byte", " = trunc i32 "),
+        ("exact_integer_float", " = uitofp i64 "),
+        ("exact_float_integer", " = fptosi double "),
+        ("exact_narrow_float", " = fptrunc double "),
+    ] {
+        let body = super::parallel::function_body(&llvm, &format!("@wf_{symbol}"));
+        assert!(body.contains(instruction), "{body}");
+        for residual in [
+            "icmp ",
+            "fcmp oeq",
+            ".sat.",
+            "insertvalue ",
+            "@llvm.assume",
+            "br i1",
+        ] {
+            assert!(!body.contains(residual), "unexpected {residual} in {body}");
+        }
+        if symbol == "exact_narrow_float" {
+            assert!(
+                body.contains("fcmp uno"),
+                "cross-format NaNs are canonicalized"
+            );
+            assert!(
+                !body.contains("fpext"),
+                "an exact proof needs no round trip"
+            );
+        } else {
+            assert!(!body.contains("fcmp "), "{body}");
+        }
+    }
+    let identity = super::parallel::function_body(&llvm, "@wf_same_float");
+    assert!(identity.contains("select i1 true, double"), "{identity}");
+    assert!(!identity.contains("fcmp "), "{identity}");
+    for symbol in [
+        "domain_byte",
+        "domain_float_integer",
+        "domain_integer_float",
+        "domain_narrow_float",
+    ] {
+        let body = super::parallel::function_body(&llvm, &format!("@wf_{symbol}"));
+        assert!(
+            !body.contains("insertvalue "),
+            "a Bool query has no Result payload: {body}"
+        );
+        assert!(!body.contains(" = fptosi "), "{body}");
+        assert!(!body.contains(" = fptoui "), "{body}");
+    }
+    let integer_domain = super::parallel::function_body(&llvm, "@wf_domain_byte");
+    assert!(!integer_domain.contains("trunc "), "{integer_domain}");
+    let float_domain = super::parallel::function_body(&llvm, "@wf_domain_float_integer");
+    assert!(
+        float_domain.contains("@llvm.fptosi.sat.i64.f64"),
+        "{float_domain}"
+    );
+    for symbol in [
+        "total_domain_integer",
+        "total_domain_integer_float",
+        "total_domain_float",
+        "total_domain_same",
+    ] {
+        let body = super::parallel::function_body(&llvm, &format!("@wf_{symbol}"));
+        assert!(body.contains("or i1 true, false"), "{body}");
+        for residual in [
+            "icmp ",
+            "fcmp ",
+            "sitofp ",
+            "uitofp ",
+            "fpext ",
+            "insertvalue ",
+        ] {
+            assert!(!body.contains(residual), "unexpected {residual} in {body}");
+        }
+    }
 }
 
 fn emit_success_case(
@@ -406,11 +557,19 @@ fn emit_success_case(
     };
     writeln!(
         source,
-        "  let success{conversion} = cvt::<{source_type}, {destination}>({source_value});\n  match success{conversion} {{\n    Ok(value: success_value{conversion}) => {{\n      if {equality} {{\n      }} else {{\n        return exit_status(code: 1_u8);\n      }}\n    }}\n    Err(error: success_error{conversion}) => {{\n      return exit_status(code: 1_u8);\n    }}\n  }}",
+        "  let success{conversion} = cvt.checked::<{source_type}, {destination}>({source_value});\n  match success{conversion} {{\n    Ok(value: success_value{conversion}) => {{\n      if {equality} {{\n      }} else {{\n        return exit_status(code: 1_u8);\n      }}\n    }}\n    Err(error: success_error{conversion}) => {{\n      return exit_status(code: 1_u8);\n    }}\n  }}",
         destination = destination_type.spelling,
         source_type = source_type.spelling,
     )
     .expect("write partial success case");
+    let exact_equality = equality.replace("success_value", "exact_value");
+    writeln!(
+        source,
+        "  if cvt.defined::<{source_type}, {destination}>({source_value}) {{\n    let exact_value{conversion} = cvt::<{source_type}, {destination}>({source_value});\n    if {exact_equality} {{\n    }} else {{\n      return exit_status(code: 2_u8);\n    }}\n  }} else {{\n    return exit_status(code: 3_u8);\n  }}",
+        destination = destination_type.spelling,
+        source_type = source_type.spelling,
+    )
+    .expect("write exact and defined success");
 }
 
 fn emit_failure_case(
@@ -442,11 +601,18 @@ fn emit_failure_case(
     };
     writeln!(
         source,
-        "  let failure{conversion} = cvt::<{source_type}, {destination}>({source_value});\n  match failure{conversion} {{\n    Ok(value: failure_value{conversion}) => {{\n      return exit_status(code: 1_u8);\n    }}\n    Err(error: failure_error{conversion}) => {{\n    }}\n  }}",
+        "  let failure{conversion} = cvt.checked::<{source_type}, {destination}>({source_value});\n  match failure{conversion} {{\n    Ok(value: failure_value{conversion}) => {{\n      return exit_status(code: 1_u8);\n    }}\n    Err(error: failure_error{conversion}) => {{\n    }}\n  }}",
         destination = destination_type.spelling,
         source_type = source_type.spelling,
     )
     .expect("write partial failure case");
+    writeln!(
+        source,
+        "  if cvt.defined::<{source_type}, {destination}>({source_value}) {{\n    return exit_status(code: 4_u8);\n  }}",
+        destination = destination_type.spelling,
+        source_type = source_type.spelling,
+    )
+    .expect("write domain failure");
 }
 
 const fn has_float_endpoint(source: NumericType, destination: NumericType) -> bool {

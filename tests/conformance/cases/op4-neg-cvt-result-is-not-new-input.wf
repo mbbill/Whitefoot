@@ -1,0 +1,19 @@
+fn selected(index: u64) -> result: u8 pure contract {
+  requires index < 4_u64;
+} {
+  let values =[10_u8, 20_u8, 30_u8, 40_u8];
+  let pending = cvt.checked::<u64, u8>(index);
+  set index = 1000_u64;
+  match pending {
+    Ok(value: small) => {
+      return values[index];
+    }
+    Err(error: error) => {
+      return 0_u8;
+    }
+  }
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

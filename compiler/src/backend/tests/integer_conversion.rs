@@ -50,10 +50,11 @@ const U64: IntegerType = IntegerType {
     signed: false,
 };
 
-/// One representative per conversion class rather than all 56 ordered pairs.
+/// One representative per conversion class rather than all 64 ordered pairs.
 ///
 /// Both compiler sides are fully parametric in `(width, signedness)` and hold
-/// no per-pair path. The semantic side decides totality with the single
+/// no per-pair path. Identity adds a representation copy for either sign;
+/// the other integer casts follow the width relation. The semantic side decides totality with
 /// comparison `IntegerType::converts_totally_to`, reached from
 /// `semantic/check/expressions/calls/conversions.rs`. The emitter in
 /// `backend/emitter/conversion.rs` picks one of four integer cast arms
@@ -69,7 +70,7 @@ const U64: IntegerType = IntegerType {
 /// the widest rows below cover the constant arithmetic those arms compute.
 ///
 /// ADDING AN EMITTER ARM REQUIRES ADDING A ROW HERE.
-const CONVERSION_CLASSES: [(IntegerType, IntegerType); 15] = [
+const CONVERSION_CLASSES: [(IntegerType, IntegerType); 17] = [
     // Equivalence-class representatives, one per reachable arm combination.
     (I16, I8), // trunc, signed narrowing validity (sge/sle pair)
     (I8, I16), // sext, total
@@ -77,7 +78,7 @@ const CONVERSION_CLASSES: [(IntegerType, IntegerType); 15] = [
     (U8, U16), // zext, total
     (I16, U8), // trunc, signed to unsigned narrowing validity (sge 0 and sle)
     (I8, U8),  // same-width or, signed to unsigned validity (sge 0)
-    (I8, U16), // zext under a checked conversion, validity (sge 0)
+    (I8, U16), // sext under a checked conversion, validity (sge 0)
     (U16, I8), // trunc, unsigned to signed validity (ule)
     (U8, I8),  // same-width or, unsigned to signed validity (ule)
     (U8, I16), // zext, total
@@ -89,6 +90,8 @@ const CONVERSION_CLASSES: [(IntegerType, IntegerType); 15] = [
     (I64, U64), // 64-bit same-width or, signed to unsigned validity
     (U64, I64), // 64-bit same-width or, unsigned to signed maximum
     (I64, U32), // signed to unsigned narrowing maximum at 64-bit width
+    (I64, I64), // signed identity preserves all bits and is total
+    (U64, U64), // unsigned identity preserves the maximum and is total
 ];
 
 #[test]
@@ -106,6 +109,13 @@ fn executes_exact_success_and_failure_edges_for_every_conversion_class() {
                 source_type = source_type.spelling,
             )
             .expect("write total conversion");
+            writeln!(
+                source,
+                "  if cvt.defined::<{source_type}, {destination}>({value}_{source_type}) {{\n  }} else {{\n    return exit_status(code: 2_u8);\n  }}\n  match cvt.checked::<{source_type}, {destination}>({value}_{source_type}) {{\n    Ok(value: checked_total{total_count}) => {{\n      if checked_total{total_count} == total{total_count} {{\n      }} else {{\n        return exit_status(code: 3_u8);\n      }}\n    }}\n    Err(error: refused_total{total_count}) => {{\n      return exit_status(code: 4_u8);\n    }}\n  }}",
+                destination = destination_type.spelling,
+                source_type = source_type.spelling,
+            )
+            .expect("write uniform total interfaces");
             total_count += 1;
             continue;
         }
@@ -113,15 +123,22 @@ fn executes_exact_success_and_failure_edges_for_every_conversion_class() {
         let failure = failing_value(source_type, destination_type);
         writeln!(
             source,
-            "  let success{checked_count} = cvt::<{source_type}, {destination}>(1_{source_type});\n  match success{checked_count} {{\n    Ok(value: success_value{checked_count}) => {{\n      if success_value{checked_count} == 1_{destination} {{\n      }} else {{\n        return exit_status(code: 1_u8);\n      }}\n    }}\n    Err(error: success_error{checked_count}) => {{\n      return exit_status(code: 1_u8);\n    }}\n  }}\n  let failure{checked_count} = cvt::<{source_type}, {destination}>({failure}_{source_type});\n  match failure{checked_count} {{\n    Ok(value: failure_value{checked_count}) => {{\n      return exit_status(code: 1_u8);\n    }}\n    Err(error: failure_error{checked_count}) => {{\n      match failure_error{checked_count} {{\n        NarrowError() => {{\n        }}\n      }}\n    }}\n  }}",
+            "  let success{checked_count} = cvt.checked::<{source_type}, {destination}>(1_{source_type});\n  match success{checked_count} {{\n    Ok(value: success_value{checked_count}) => {{\n      if success_value{checked_count} == 1_{destination} {{\n      }} else {{\n        return exit_status(code: 1_u8);\n      }}\n    }}\n    Err(error: success_error{checked_count}) => {{\n      return exit_status(code: 1_u8);\n    }}\n  }}\n  let failure{checked_count} = cvt.checked::<{source_type}, {destination}>({failure}_{source_type});\n  match failure{checked_count} {{\n    Ok(value: failure_value{checked_count}) => {{\n      return exit_status(code: 1_u8);\n    }}\n    Err(error: failure_error{checked_count}) => {{\n      match failure_error{checked_count} {{\n        NarrowError() => {{\n        }}\n      }}\n    }}\n  }}",
             destination = destination_type.spelling,
             source_type = source_type.spelling,
         )
         .expect("write checked conversion");
+        writeln!(
+            source,
+            "  if cvt.defined::<{source_type}, {destination}>(1_{source_type}) {{\n    let exact{checked_count} = cvt::<{source_type}, {destination}>(1_{source_type});\n    if exact{checked_count} == 1_{destination} {{\n    }} else {{\n      return exit_status(code: 5_u8);\n    }}\n  }} else {{\n    return exit_status(code: 6_u8);\n  }}\n  if cvt.defined::<{source_type}, {destination}>({failure}_{source_type}) {{\n    return exit_status(code: 7_u8);\n  }}",
+            destination = destination_type.spelling,
+            source_type = source_type.spelling,
+        )
+        .expect("write conversion domain agreement");
         checked_count += 1;
     }
     source.push_str("  return exit_status(code: 0_u8);\n}\n");
-    assert_eq!(total_count, 3);
+    assert_eq!(total_count, 5);
     assert_eq!(checked_count, 12);
 
     let llvm = compile(source.as_bytes());
@@ -150,8 +167,9 @@ fn executes_exact_success_and_failure_edges_for_every_conversion_class() {
 }
 
 const fn converts_totally(source: IntegerType, destination: IntegerType) -> bool {
-    source.width < destination.width
-        && (source.signed == destination.signed || (!source.signed && destination.signed))
+    (source.width == destination.width && source.signed == destination.signed)
+        || (source.width < destination.width
+            && (source.signed == destination.signed || (!source.signed && destination.signed)))
 }
 
 fn total_value(source: IntegerType) -> String {

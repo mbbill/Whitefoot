@@ -138,7 +138,7 @@ fn decode_fixed(state: &InflateState, input: &[u8], out: &[u8]) -> result: Resul
     }
     let literal = symbol <= 255_u64;
     if literal {
-      match cvt::<u64, u8>(symbol) {
+      match cvt.checked::<u64, u8>(symbol) {
         Ok(value: byte) => {
           match emit_byte(state: state, out: out, value: byte) {
             Ok(value: emitted) => {

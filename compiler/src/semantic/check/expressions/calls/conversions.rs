@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use crate::syntax::NodeId;
 use crate::{DeclarationId, Production, SemanticCompilerFailure, SemanticIssueKind, SemanticRule};
 
-use super::super::super::super::model::{CheckedExpression, CheckedMode, CheckedType};
+use super::super::super::super::model::{
+    CheckedConversionMode, CheckedExpression, CheckedMode, CheckedType,
+};
 use super::super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PreludeType, TypedExpression,
 };
@@ -12,6 +14,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     pub(super) fn check_conversion(
         &self,
         node: NodeId,
+        mode: CheckedConversionMode,
+        spelling: &str,
         function: &FunctionSignature,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
@@ -25,22 +29,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticRule::Gram11,
                 node,
                 SemanticIssueKind::InvalidNamedArguments {
-                    callee: "cvt".to_owned(),
+                    callee: spelling.to_owned(),
                     declared_parameters: Vec::new(),
                 },
             );
         }
-        let [source, destination] = self.numeric_type_arguments(node, function)?;
-        if source == destination {
-            return self.issue_node(SemanticRule::Op6, node, SemanticIssueKind::InvalidOperation);
-        }
-        let result = if source.converts_totally_to(destination) {
-            destination.ty()
-        } else {
-            let error = CheckedType::Nominal(self.prelude_nominal(PreludeType::NarrowError)?);
-            CheckedType::Nominal(
-                self.prelude_nominal(PreludeType::Result(destination.ty(), error))?,
-            )
+        let [source, destination] = self.numeric_type_arguments(node, function, true)?;
+        let result = match mode {
+            CheckedConversionMode::Exact => destination.ty(),
+            CheckedConversionMode::Defined => CheckedType::Bool,
+            CheckedConversionMode::Checked => {
+                let error = CheckedType::Nominal(self.prelude_nominal(PreludeType::NarrowError)?);
+                CheckedType::Nominal(
+                    self.prelude_nominal(PreludeType::Result(destination.ty(), error))?,
+                )
+            }
         };
         let atom = self
             .operation_atoms(node, 1)?
@@ -61,6 +64,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(TypedExpression::owned(
             CheckedExpression::NumericConversion {
                 carrier: self.tree.path(node)?.clone(),
+                mode,
                 source,
                 destination,
                 value: Box::new(argument.expression),

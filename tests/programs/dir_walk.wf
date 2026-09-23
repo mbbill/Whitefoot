@@ -323,7 +323,7 @@ fn walk(factory: &HandleFactory, dir: &DirectoryRead, prefix: &[u8], prefix_leng
                 } else {
                   give 126_u64;
                 }
-                let narrowed = cvt::<u64, u8>(stored);
+                let narrowed = cvt.checked::<u64, u8>(stored);
                 let byte_length = match narrowed {
                   Ok(value: exact) => {
                     give exact;

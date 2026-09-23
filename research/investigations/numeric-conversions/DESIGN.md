@@ -53,7 +53,7 @@ inputs; any selected implementation extracts necessary regression evidence
 into the maintained compiler/conformance suites. Deferred findings update the
 existing numeric-conversion TODO rather than creating an unrelated work queue.
 
-## Current coverage and observed limits
+## Baseline coverage and observed limits
 
 The 10 numeric primitive types give 90 distinct ordered pairs. OP-6 supplies
 29 total exact conversions and 61 checked exact conversions. These are a
@@ -254,9 +254,11 @@ instruction forms. This run reused the compiler built at `9be78e355`, whose
 compiler and specification trees equal `345e2966a`; its executable SHA-256 is
 `cbffd4dd1ae8641ef03790457181188988bf70cc4af1a53c50c1f406307bb7f9`.
 
-For the retained sources, run from this investigation's checkout root with
-the current compiler. The setup below creates scratch space and builds it
-there. To reuse an existing binary from the same compiler and specification
+The retained sources test the pre-B language. Run them with the compiler and
+specification from `345e2966a`, not a compiler implementing B. The setup below
+runs from this investigation's checkout root, extracts that pinned baseline
+into scratch space and builds it there. To reuse an existing binary from the
+same compiler and specification
 revision instead, skip the build and set `numeric_compiler` to its absolute
 path. The generated-code comparison requires the Clang version recorded above.
 Native construction and execution both run under the repository's shared
@@ -264,8 +266,10 @@ verification guard.
 
 ```sh
 numeric_scratch="$(mktemp -d "${TMPDIR:-/tmp}/wf-numeric-conversions.XXXXXX")"
+mkdir "$numeric_scratch/baseline"
+git archive 345e2966a | tar -x -C "$numeric_scratch/baseline"
 numeric_compiler="$numeric_scratch/target/gate/whitefootc"
-perl .github/run-check.pl numeric-compiler-build cargo build --manifest-path compiler/Cargo.toml --target-dir "$numeric_scratch/target" --profile gate --bin whitefootc --locked --offline
+perl .github/run-check.pl numeric-compiler-build cargo build --manifest-path "$numeric_scratch/baseline/compiler/Cargo.toml" --target-dir "$numeric_scratch/target" --profile gate --bin whitefootc --locked --offline
 "$numeric_compiler" --emit-llvm -o "$numeric_scratch/conversions.ll" research/investigations/numeric-conversions/probes.wf
 clang -O2 -S -emit-llvm -x ir "$numeric_scratch/conversions.ll" -o "$numeric_scratch/conversions-O2.ll"
 clang -O2 -S -x ir "$numeric_scratch/conversions.ll" -o "$numeric_scratch/conversions-O2.s"
@@ -293,13 +297,13 @@ Apply the same optimization command and compare only that function. This is
 a stated hypothetical transport of its existing precondition, not permission
 to insert unchecked assumptions in source or implementation. Generated LLVM,
 assembly and executables are scratch outputs and are not retained in the
-repository. No compiler/specification/conformance file is changed by this
-investigation, and no timing result or accepted new operation is claimed.
+repository. These baseline observations establish neither a timing result
+nor implementation of a new operation.
 
 ## Completion criteria for the B proposal
 
-The next research step completes a proposal and implementation plan, not an
-implementation. Before choosing its detailed rules, use these discriminators:
+The proposal was selected against these discriminators; implementation must
+preserve their distinctions:
 
 - One exact conversion relation must determine bare, checked and domain-query
   behavior for every numeric type pair, including the proposed same-type rows.
@@ -317,7 +321,7 @@ implementation. Before choosing its detailed rules, use these discriminators:
   outcomes separated from what the baseline compiler currently implements.
 - The implementation plan must identify normative changes, frontend and proof
   owners, IR/lowering consumers, migration classes and discriminating checks.
-  Independent review and the owner's review precede implementation.
+  The proposal review and the implementation review have distinct scopes.
 
 The standalone Rust oracle belongs beside this investigation because it checks
 conversion-domain mathematics independently of the WF implementation. Its
@@ -355,12 +359,13 @@ the research oracle alone does not certify their LLVM lowering.
 
 ## Proposed rules for owner review
 
-This section is a complete recommendation for the exact-conversion change,
-not an implemented language revision. Its code uses candidate syntax. The
-recommended implementation scope is B, integer Result evidence and generic
-conversion support. Low-bit wrapping is a separable recommended companion;
+This section records the exact-conversion design. The requested implementation
+scope is B, integer Result evidence and generic conversion support; the active
+specification owns the resulting language rules. Low-bit wrapping is a
+separable recommended companion;
 rounded and saturated float interfaces remain follow-up scope as described
-below. The active specification and compiler stay unchanged in this PR.
+below. Implementation and conformance evidence must satisfy these stated
+boundaries before the proposal can be considered complete.
 
 ### One relation, three interfaces
 
@@ -410,7 +415,11 @@ goal, support, closure and derivation machinery. Use these fixed routes:
 3. A direct typed literal or scalar named const is decided by its already
    decoded exact value. Integer constants use integer arithmetic; floating
    constants use sign/significand/exponent bits, not the host's rounded cast.
-   This adds no conversion syntax to const-expressions.
+   For a symbolic endpoint, retain the same correlated finite type choices:
+   every answer must be true to prove the domain, or false to refute it;
+   mixed answers remain unknown. The existing typed identities `0_T` and
+   `1_T` supply their zero/one value for each choice. This adds no conversion
+   syntax to const-expressions.
 4. Integer-to-integer obligations normalize to the destination's upper and
    lower bounds, in that order, over the operand's current immutable integer
    image, using existing L0 and affine routes and their usual proof certificates.
@@ -451,12 +460,14 @@ An admitted bare integer conversion publishes ordinary mathematical equality
 and preserves its input's existing integer image regardless of width or sign.
 For checked integer-to-integer conversion, its local Result's private success
 payload equals the evaluated input value inside that Result's conditional
-context. Source terms or images already available at evaluation supply their
-relations; an untracked indirect read supplies its evaluated value and type
-bounds, not a newly invented relation to mutable array storage.
+context. Existing S5/S6/S7/S9 evaluated-value sources supply their L0 relations;
+an untracked indirect read supplies its source and destination type bounds,
+not a newly invented relation to mutable array storage. The conditional state
+does not transport the operand's separate affine image.
 
-Capture before subsequent mutation, use the existing pre-kill closure and
-immutable operand/commit identities, and reuse the current Result transport:
+Capture before subsequent mutation, use the existing pre-kill closure,
+immutable operand identities and private Result payload term, and reuse the
+current Result transport:
 direct match, named binding, copy, whole-binding replacement, value delivery,
 propagate and forwarded return. Each outcome keeps an isolated context; joins
 retain common weaker bounds and continuing-backedge kills remain unchanged.
@@ -597,6 +608,15 @@ this is a stronger and more direct criterion than hoping a fallback match is
 optimized away. Predicate lowering still performs real work when the writer
 asks for runtime validation. No timing claim follows from this design.
 
+The domain helper belongs under the existing flow module because both bare
+operations and signed contract queries need the same rules at the same program
+state. Its bound normalization is positive-only: an exact negative fact or
+constant can refute a domain, while failure of a sufficient interval cannot.
+Result production supplies the existing private payload term to the ordinary
+evaluated-value fact sources, avoiding an invented storage-assignment identity.
+These are representation choices within the existing proof walk, not new
+acceptance passes.
+
 ### Companion operations and explicit deferrals
 
 For the original low-bit request, recommend `cvt.wrap::<S,D>` over `itrunc` as
@@ -624,7 +644,8 @@ also deferred; neither is necessary to implement the stated B contract.
 
 ## Implementation sequence after owner review
 
-No step below is executed in this research delivery.
+The sequence below governs the requested implementation; a listed step does
+not assert that its completion criterion has passed.
 
 | Step | Change and affected owners | Completion criterion |
 |---|---|---|

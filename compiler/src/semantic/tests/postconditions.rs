@@ -1908,6 +1908,297 @@ fn main() -> status: ExitStatus pure {
     assert_complete(source);
 }
 
+fn checked_conversion_read_source(
+    parameters: &str,
+    requirements: &str,
+    body: &str,
+    size: usize,
+) -> String {
+    let contract = if requirements.is_empty() {
+        String::new()
+    } else {
+        format!(" contract {{\n{requirements}\n}}")
+    };
+    format!(
+        "const values: Array<u8, {size}> =[{}];\n\nfn read({parameters}) -> result: u8 pure{contract} {{\n{body}\n}}\n\n{ORDINARY_MAIN}",
+        vec!["0_u8"; size].join(", ")
+    )
+}
+
+const CHECKED_CONVERSION_READ: &str = "  match pending {\n    Ok(value: small) => {\n      let restored = cvt::<u8, u64>(small);\n      return values[restored];\n    }\n    Err(error: refused) => {\n      return 0_u8;\n    }\n  }";
+
+#[test]
+fn checked_integer_results_capture_before_input_mutation() {
+    let source = checked_conversion_read_source(
+        "index: u64",
+        "  requires index < 4_u64;",
+        &format!(
+            "  let pending = cvt.checked::<u64, u8>(index);\n  set index = 1000_u64;\n{CHECKED_CONVERSION_READ}"
+        ),
+        4,
+    );
+    assert_complete(source.as_bytes());
+    let stale = source.replace("return values[restored];", "return values[index];");
+    assert_rule_kind(stale.as_bytes(), SemanticRule::Op4, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedBoundsObligation { .. })
+    });
+}
+
+#[test]
+fn checked_integer_results_use_existing_delivery_routes() {
+    // Both integer operands and Result<integer, NarrowError> are copy values;
+    // explicit `move` is rejected by OWN-1 rather than being another route.
+    for setup in [
+        "  let pending = cvt.checked::<u64, u8>(index);",
+        "  let original = cvt.checked::<u64, u8>(index);\n  let pending = original;\n  set original = cvt.checked::<u64, u8>(other);",
+        "  let pending = cvt.checked::<u64, u8>(other);\n  set pending = cvt.checked::<u64, u8>(index);",
+        "  let pending = if choose {\n    give cvt.checked::<u64, u8>(index);\n  } else {\n    give cvt.checked::<u64, u8>(index);\n  }",
+    ] {
+        let source = checked_conversion_read_source(
+            "index: u64, other: u64, choose: Bool",
+            "  requires index < 4_u64;",
+            &format!("{setup}\n{CHECKED_CONVERSION_READ}"),
+            4,
+        );
+        assert_complete(source.as_bytes());
+    }
+    let direct = checked_conversion_read_source(
+        "index: u64",
+        "  requires index < 4_u64;",
+        &CHECKED_CONVERSION_READ.replace("match pending", "match cvt.checked::<u64, u8>(index)"),
+        4,
+    );
+    assert_complete(direct.as_bytes());
+}
+
+#[test]
+fn checked_integer_results_keep_only_the_replacement_context() {
+    let source = checked_conversion_read_source(
+        "index: u64, other: u64",
+        "  requires index < 4_u64;",
+        &format!(
+            "  let pending = cvt.checked::<u64, u8>(index);\n  set pending = cvt.checked::<u64, u8>(other);\n{CHECKED_CONVERSION_READ}"
+        ),
+        4,
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Op4, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedBoundsObligation { .. })
+    });
+}
+
+#[test]
+fn checked_integer_result_joins_retain_the_common_weaker_bound() {
+    let body = format!(
+        "  let pending = cvt.checked::<u64, u8>(first);\n  if choose {{\n    set pending = cvt.checked::<u64, u8>(second);\n  }}\n{CHECKED_CONVERSION_READ}"
+    );
+    for size in [8, 4] {
+        let source = checked_conversion_read_source(
+            "first: u64, second: u64, choose: Bool",
+            "  requires first < 4_u64;\n  requires second < 8_u64;",
+            &body,
+            size,
+        );
+        if size == 8 {
+            assert_complete(source.as_bytes());
+        } else {
+            assert_rule_kind(source.as_bytes(), SemanticRule::Op4, |kind| {
+                matches!(kind, SemanticIssueKind::UndischargedBoundsObligation { .. })
+            });
+        }
+    }
+}
+
+#[test]
+fn checked_integer_results_do_not_combine_unselected_contexts() {
+    let source = checked_conversion_read_source(
+        "",
+        "",
+        &format!(
+            "  let unrelated = cvt.checked::<u64, u8>(0_u64);\n  let pending = cvt.checked::<u64, u8>(4_u64);\n{CHECKED_CONVERSION_READ}"
+        ),
+        4,
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Op4, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedBoundsObligation { .. })
+    });
+}
+
+#[test]
+fn checked_integer_results_reuse_admitted_computed_value_images() {
+    for (requirements, operand) in [
+        ("", "iand(index, 3_u64)"),
+        ("  requires index < 3_u64;", "index + 1_u64"),
+    ] {
+        let source = checked_conversion_read_source(
+            "index: u64",
+            requirements,
+            &format!(
+                "  let input = {operand};\n  let pending = cvt.checked::<u64, u8>(input);\n  set input = 1000_u64;\n  set index = 1000_u64;\n{CHECKED_CONVERSION_READ}"
+            ),
+            4,
+        );
+        assert_complete(source.as_bytes());
+        with_semantics_dark(source.as_bytes(), |outcome| {
+            let SemanticOutcome::Complete(checked) = outcome else {
+                panic!("checked computed image must remain inspectable: {outcome:?}");
+            };
+            for function in &checked.data.functions {
+                super::entailment::validate_derivations(&function.entailment);
+            }
+        });
+    }
+}
+
+#[test]
+fn checked_integer_results_do_not_add_conditional_affine_transport() {
+    let parameters = "first: u64, second: u64";
+    let requirements = "  requires first <= 1_u64;\n  requires second <= 1_u64;";
+    let direct = checked_conversion_read_source(
+        parameters,
+        requirements,
+        "  let index = first + second;\n  return values[index];",
+        4,
+    );
+    assert_complete(direct.as_bytes());
+    let captured = checked_conversion_read_source(
+        parameters,
+        requirements,
+        &format!(
+            "  let index = first + second;\n  let pending = cvt.checked::<u64, u8>(index);\n  set index = 1000_u64;\n{CHECKED_CONVERSION_READ}"
+        ),
+        4,
+    );
+    assert_rule_kind(captured.as_bytes(), SemanticRule::Op4, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedBoundsObligation { .. })
+    });
+}
+
+#[test]
+fn checked_integer_results_capture_measure_and_constant_element_images() {
+    let source = br#"const choices: Array<u64, 2> =[1_u64, 3_u64];
+
+fn measured(values: Slots<u8, 4>) -> result: Result<u8, NarrowError> pure contract {
+  requires values.len < 4_u64;
+  ensures when Ok(value: small): small < 4_u8;
+} {
+  return cvt.checked::<u64, u8>(values.len);
+}
+
+fn indexed(offset: u64) -> result: Result<u8, NarrowError> pure contract {
+  requires offset < 2_u64;
+  ensures when Ok(value: small): small < 4_u8;
+} {
+  return cvt.checked::<u64, u8>(choices[offset]);
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(source);
+}
+
+#[test]
+fn checked_integer_results_survive_propagation_and_forwarded_return() {
+    let source = br#"const values: Array<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
+
+fn narrow(index: u64) -> result: Result<u8, NarrowError> pure contract {
+  requires index < 4_u64;
+  ensures when Ok(value: small): small < 4_u8;
+} {
+  return cvt.checked::<u64, u8>(index);
+}
+
+fn forward(index: u64) -> result: Result<u8, NarrowError> pure contract {
+  requires index < 4_u64;
+  ensures when Ok(value: small): small < 4_u8;
+} {
+  return narrow(index: index);
+}
+
+fn propagated(index: u64) -> result: Result<u8, NarrowError> pure contract {
+  requires index < 4_u64;
+} {
+  let pending = cvt.checked::<u64, u8>(index);
+  set index = 1000_u64;
+  let small = propagate pending;
+  let restored = cvt::<u8, u64>(small);
+  return Ok<u8, NarrowError>(value: values[restored]);
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(source);
+}
+
+#[test]
+fn checked_integer_result_loop_kills_remove_previous_iteration_evidence() {
+    let source = checked_conversion_read_source(
+        "other: u64, stop: Bool",
+        "",
+        &format!(
+            "  let pending = cvt.checked::<u64, u8>(0_u64);\n  loop @again {{\n    if stop {{\n      break @again;\n    }}\n    set pending = cvt.checked::<u64, u8>(other);\n    set stop = True();\n  }}\n{CHECKED_CONVERSION_READ}"
+        ),
+        4,
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Op4, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedBoundsObligation { .. })
+    });
+}
+
+#[test]
+fn checked_integer_indirect_operands_supply_type_bounds_without_storage_equality() {
+    let source =
+        br#"fn captured(values: Array<u8, 1>) -> result: Result<u64, NarrowError> pure contract {
+  ensures when Ok(value: payload): payload <= 255_u64;
+} {
+  let pending = cvt.checked::<u8, u64>(values[0_u64]);
+  set values[0_u64] = 200_u8;
+  return pending;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_complete(source);
+    let unsupported_equality = String::from_utf8(source.to_vec())
+        .expect("UTF-8 source")
+        .replace("payload <= 255_u64", "payload == 200_u64");
+    assert_fn9_unproved(unsupported_equality.as_bytes());
+}
+
+#[test]
+fn checked_float_success_does_not_transport_an_opaque_domain_goal() {
+    let source = br#"fn repeated(value: f64) -> result: i32 pure {
+  match cvt.checked::<f64, i32>(value) {
+    Ok(value: payload) => {
+      return cvt::<f64, i32>(value);
+    }
+    Err(error: refused) => {
+      return 0_i32;
+    }
+  }
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Op6, |kind| {
+        matches!(
+            kind,
+            SemanticIssueKind::UndischargedConversionDomainObligation {
+                residual,
+                disposition: crate::StaticObligationDisposition::Unproved,
+                ..
+            } if residual == "cvt.defined::<f64, i32>(value)"
+        )
+    });
+}
+
 #[test]
 fn relation_length_rejects_a_named_constant_root() {
     let source = br#"const values: Array<i32, 1> =[0_i32];

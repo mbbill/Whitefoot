@@ -22,7 +22,7 @@ fn main() -> status: ExitStatus pure {{
   let total = spine(depth: {depth}_u64, v: 1.0009765625_f64);
   let bits = reinterpret::<f64, u64>(total);
   let low = iand(bits, 1_u64);
-  match cvt::<u64, u8>(low) {{
+  match cvt.checked::<u64, u8>(low) {{
     Ok(value: byte) => {{
       return exit_status(code: byte);
     }}
@@ -67,7 +67,7 @@ fn main(inputs: Inputs) -> status: ExitStatus pure {{
   close_directory(factory: &factory, directory: move cwd);
   let count = 0_u64;
   set count = args_count(args: &args);
-  match cvt::<u64, u8>(count) {{
+  match cvt.checked::<u64, u8>(count) {{
     Ok(value: idx) => {{
       let depth = count *wrap {depth}_u64;
       let r = spine(depth: depth, v: 3_u64, i: idx);

@@ -38,9 +38,9 @@ use super::goal::{
 use super::model::{
     BindingId, CheckedConst, CheckedConstant, CheckedConstantId, CheckedElement, CheckedExpression,
     CheckedFunction, CheckedGenericRequirement, CheckedMode, CheckedNominal, CheckedNominalKind,
-    CheckedParameter, CheckedProgramData, CheckedSetTarget, CheckedStatement, CheckedType,
-    CheckedValue, DerivedConst, DerivedConstId, FunctionId, NominalId, ValueInitializerKind,
-    evaluate_const_operation,
+    CheckedNumericType, CheckedParameter, CheckedProgramData, CheckedSetTarget, CheckedStatement,
+    CheckedType, CheckedValue, DerivedConst, DerivedConstId, FunctionId, NominalId,
+    ValueInitializerKind, evaluate_const_operation,
 };
 use super::permission::{PermissionSignature, analyze_permission, plan_permission_separations};
 use super::permission_ledger::{LedgerSource, render_ledger};
@@ -2126,6 +2126,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     continue;
                 }
                 let context = EntailmentContext {
+                    declarations: self.resolved.declarations(),
                     callees,
                     constants: &self.checked_constants,
                     constant_ids: &self.constants,
@@ -2199,6 +2200,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .filter(|checked| checked.function.id == *function)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                     let context = EntailmentContext {
+                        declarations: self.resolved.declarations(),
                         callees,
                         constants: &self.checked_constants,
                         constant_ids: &self.constants,
@@ -2857,18 +2859,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 operand_type: self.instantiate_goal_type(operand_type, signature, regions)?,
             },
             GoalOperation::NumericConversion {
+                mode,
                 source,
                 destination,
             } => GoalOperation::NumericConversion {
-                source,
-                destination,
+                mode,
+                source: self.instantiate_goal_numeric_type(source, signature, regions)?,
+                destination: self.instantiate_goal_numeric_type(destination, signature, regions)?,
             },
             GoalOperation::Reinterpret {
                 source,
                 destination,
             } => GoalOperation::Reinterpret {
-                source,
-                destination,
+                source: self.instantiate_goal_numeric_type(source, signature, regions)?,
+                destination: self.instantiate_goal_numeric_type(destination, signature, regions)?,
             },
             GoalOperation::Boolean(operation) => GoalOperation::Boolean(operation),
             GoalOperation::EnumEquality {
@@ -2940,6 +2944,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .transpose()?,
             },
         })
+    }
+
+    fn instantiate_goal_numeric_type(
+        &self,
+        ty: CheckedNumericType,
+        signature: &FunctionSignature,
+        regions: &[DeclarationId],
+    ) -> Result<CheckedNumericType, CheckStop> {
+        CheckedNumericType::from_type(self.instantiate_goal_type(ty.ty(), signature, regions)?)
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     fn instantiate_goal_type(
@@ -3230,6 +3244,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     Self::Obligation(outcome) => match outcome.family {
                         super::entailment::ObligationFamily::Bounds => SemanticRule::Op4,
                         super::entailment::ObligationFamily::IntegerDomain => SemanticRule::Op2,
+                        super::entailment::ObligationFamily::ConversionDomain => SemanticRule::Op6,
                         super::entailment::ObligationFamily::AllocationFit => SemanticRule::Op9,
                         super::entailment::ObligationFamily::RangeFormation => SemanticRule::Ref4,
                         super::entailment::ObligationFamily::CallSeparation => SemanticRule::Eff5,
@@ -3548,6 +3563,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             kind: SemanticIssueKind::UndischargedAllocationFitObligation {
                                 residual,
                                 mechanical_fix: "the allocation's own size arithmetic must stay inside u64: bound the count with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when the refusal is intended program behavior; otherwise restructure the allocation",
+                            },
+                        },
+                        super::entailment::ObligationFamily::ConversionDomain => SemanticIssue {
+                            rule: SemanticRule::Op6,
+                            location,
+                            kind: SemanticIssueKind::UndischargedConversionDomainObligation {
+                                residual,
+                                disposition: if outcome.refuted {
+                                    StaticObligationDisposition::Refuted
+                                } else {
+                                    StaticObligationDisposition::Unproved
+                                },
+                                mechanical_fix: "establish this cvt.defined domain with a verified requirement, an integer range invariant, or explicit finite proof steps; use a dominating cvt.defined condition when refusal is intended behavior, or use cvt.checked to return the failed conversion",
                             },
                         },
                         super::entailment::ObligationFamily::CallSeparation

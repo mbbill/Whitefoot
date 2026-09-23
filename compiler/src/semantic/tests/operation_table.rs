@@ -269,7 +269,14 @@ const BOOLEAN_SPELLINGS: [(&str, usize); 4] = [("band", 2), ("bor", 2), ("bxor",
 /// construction functions [OP-13], which are ordinary records and not
 /// operation-table rows, and allocation is total so no source predicate
 /// decides it [STOR-8].
-const UNMODELLED_ROW_SPELLINGS: [&str; 4] = ["eeq", "ene", "cvt", "reinterpret"];
+const UNMODELLED_ROW_SPELLINGS: [&str; 6] = [
+    "eeq",
+    "ene",
+    "cvt",
+    "cvt.checked",
+    "cvt.defined",
+    "reinterpret",
+];
 
 const ALL_INTEGER_TYPES: [IntegerType; 8] = [
     IntegerType::I8,
@@ -288,12 +295,12 @@ const ALL_INTEGER_TYPES: [IntegerType; 8] = [
 fn the_wf_ops_table_and_the_compilers_operations_name_the_same_spellings() {
     let rows = ops_rows();
     let table: Vec<String> = rows.iter().flat_map(|row| row.ops.clone()).collect();
-    // `cvt` owns two rows, so the flattened sequence repeats it exactly once.
+    // Each conversion mode has its own family and uniform result shape.
     let distinct: BTreeSet<&String> = table.iter().collect();
     assert_eq!(
         table.len() - distinct.len(),
-        1,
-        "only `cvt` may name two wf-ops rows"
+        0,
+        "every wf-ops row now has a distinct family spelling"
     );
 
     let mut modelled: BTreeSet<String> = BTreeSet::new();

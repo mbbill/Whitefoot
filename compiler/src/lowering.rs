@@ -6,9 +6,9 @@
 //! judgment.
 
 use crate::semantic::{
-    CheckedBooleanOperation, CheckedElement, CheckedEnumType, CheckedFloatOperation,
-    CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedNumericType,
-    CheckedProgram, CheckedTargetDomainObligation, CheckedType,
+    CheckedBooleanOperation, CheckedConversionMode, CheckedElement, CheckedEnumType,
+    CheckedFloatOperation, CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude,
+    CheckedNumericType, CheckedProgram, CheckedTargetDomainObligation, CheckedType,
 };
 
 mod operands;
@@ -454,8 +454,8 @@ fn lower_type(erasure: TypeLowering<'_>, value: CheckedType) -> Result<IrType, L
     })
 }
 
-const fn lower_numeric_type(value: CheckedNumericType) -> IrType {
-    match value {
+const fn lower_numeric_type(value: CheckedNumericType) -> Result<IrType, LoweringFailure> {
+    Ok(match value {
         CheckedNumericType::Integer(integer) => IrType::Integer {
             width: integer.width(),
             signed: integer.signed(),
@@ -463,7 +463,10 @@ const fn lower_numeric_type(value: CheckedNumericType) -> IrType {
         CheckedNumericType::Float(float) => IrType::Float {
             width: float.width(),
         },
-    }
+        CheckedNumericType::GenericInteger(_) | CheckedNumericType::GenericFloat(_) => {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+    })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -681,6 +684,25 @@ pub enum IrBooleanOperation {
     Or,
     ExclusiveOr,
     Not,
+}
+
+/// The source-selected conversion contract, retained independently of its
+/// concrete endpoints and result representation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IrConversionMode {
+    Exact,
+    Checked,
+    Defined,
+}
+
+impl From<CheckedConversionMode> for IrConversionMode {
+    fn from(value: CheckedConversionMode) -> Self {
+        match value {
+            CheckedConversionMode::Exact => Self::Exact,
+            CheckedConversionMode::Checked => Self::Checked,
+            CheckedConversionMode::Defined => Self::Defined,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1023,6 +1045,7 @@ pub enum IrOperation {
         arguments: Vec<IrValueId>,
     },
     NumericConversion {
+        mode: IrConversionMode,
         source_type: IrType,
         destination_type: IrType,
         value: IrValueId,

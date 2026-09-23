@@ -188,6 +188,44 @@ impl Analyzer<'_, '_> {
                 result.facts = FactState::contradictory(parent);
                 result.definitely_err = true;
             }
+            CheckedExpression::NumericConversion {
+                mode: CheckedConversionMode::Checked,
+                source: CheckedNumericType::Integer(source),
+                destination: CheckedNumericType::Integer(_),
+                value,
+                ..
+            } => {
+                // The conditional payload is exactly this evaluated integer,
+                // even when its input is outside the tracked-place vocabulary.
+                // Existing sources publish only the input's admitted image;
+                // no identity is invented for an indirect mutable read.
+                self.refresh_result(&mut result, &state.facts);
+                let (minimum, maximum) = type_range(*source);
+                let event = self.proof_event(FlowEventKind::S5, Some(statement));
+                for relation in [
+                    Relation::Bound {
+                        left: result.payload,
+                        right: ZERO,
+                        bound: maximum,
+                    },
+                    Relation::Bound {
+                        left: ZERO,
+                        right: result.payload,
+                        bound: -minimum,
+                    },
+                ] {
+                    result
+                        .facts
+                        .establish(&relation, &mut self.derivations, event);
+                }
+                self.establish_value_image(
+                    statement,
+                    ValueImage::ResultPayload(result.payload),
+                    value,
+                    &mut result.facts,
+                    &mut None,
+                );
+            }
             _ => {}
         }
         Some(result)
@@ -439,6 +477,7 @@ mod tests {
         let constant_ids = HashMap::new();
         let const_parameter_types = HashMap::new();
         let context = EntailmentContext {
+            declarations: &[],
             callees: &[],
             constants: &[],
             constant_ids: &constant_ids,

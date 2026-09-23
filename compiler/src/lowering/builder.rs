@@ -1532,6 +1532,7 @@ impl<'program> IrBuilder<'program> {
                 )
             }
             CheckedExpression::NumericConversion {
+                mode,
                 source,
                 destination,
                 value,
@@ -1541,8 +1542,9 @@ impl<'program> IrBuilder<'program> {
                 self.define(
                     lower_type(self.erasure, expression.ty())?,
                     IrOperation::NumericConversion {
-                        source_type: lower_numeric_type(*source),
-                        destination_type: lower_numeric_type(*destination),
+                        mode: (*mode).into(),
+                        source_type: lower_numeric_type(*source)?,
+                        destination_type: lower_numeric_type(*destination)?,
                         value,
                     },
                 )
@@ -1555,10 +1557,10 @@ impl<'program> IrBuilder<'program> {
             } => {
                 let value = self.expression(value)?;
                 self.define(
-                    lower_numeric_type(*destination),
+                    lower_numeric_type(*destination)?,
                     IrOperation::Reinterpret {
-                        source_type: lower_numeric_type(*source),
-                        destination_type: lower_numeric_type(*destination),
+                        source_type: lower_numeric_type(*source)?,
+                        destination_type: lower_numeric_type(*destination)?,
                         value,
                     },
                 )

@@ -1,5 +1,5 @@
 fn widen_bad(x: i8) -> result: u16 pure {
-  return cvt::<i8, u16>(x);
+  return cvt.checked::<i8, u16>(x);
 }
 
 fn main() -> status: ExitStatus pure {

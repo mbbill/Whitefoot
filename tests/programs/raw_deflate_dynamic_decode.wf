@@ -71,7 +71,7 @@ fn read_dynamic_code_lengths(state: &InflateState, input: &[u8], code_lengths: &
           return Err<unit, InflateError>(error: length_error);
         }
       }
-      match cvt::<u64, u8>(length_bits) {
+      match cvt.checked::<u64, u8>(length_bits) {
         Ok(value: length) => {
           let code_room = deref(code_lengths).len;
           let ordered_ok = ordered_symbol < code_room;
@@ -189,7 +189,7 @@ fn decode_dynamic(state: &InflateState, input: &[u8], out: &[u8]) -> result: Res
       }
       let direct_length = length_symbol <= 15_u64;
       if direct_length {
-        match cvt::<u64, u8>(length_symbol) {
+        match cvt.checked::<u64, u8>(length_symbol) {
           Ok(value: length) => {
             let stored = propagate store_dynamic_length(literal_lengths: literal_window, distance_lengths: distance_window, literal_count: literal_count, position: position, value: length);
             set previous_length = length;
@@ -313,7 +313,7 @@ fn decode_dynamic(state: &InflateState, input: &[u8], out: &[u8]) -> result: Res
     }
     let literal = symbol <= 255_u64;
     if literal {
-      match cvt::<u64, u8>(symbol) {
+      match cvt.checked::<u64, u8>(symbol) {
         Ok(value: byte) => {
           match emit_byte(state: state, out: out, value: byte) {
             Ok(value: emitted) => {
