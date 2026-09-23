@@ -1,6 +1,0 @@
-Node: compiler/parallel-lowering
-
-Decision: A permitted run is lowered into contiguous call-rooted groups within one IR block, with a non-call, unavailable call result, or addressed-result promotion ending the current group and later members allowed to start another; already-permitted adjacent pairs may supply a group across a greedy run boundary when neither call is already grouped, because every resulting group retains an existing PAR-1 proof while the leading-prefix-only policy loses the recursive calls after an ordinary scalar statement and the permitted call before an if condition in the maintained parallel programs, instead of bridging a non-call, redoing permission analysis in lowering, enumerating larger candidate windows, or discarding the rest of a permitted run after its first unusable member.
-
-Rejected:
-- Adopting bounded call-group bridges with chain-root tail-first publication from this trial: rejected because recovered overlap and passing correctness leave the added scheduling cost unqualified after the [identical-image cost control](../../research/investigations/compute-model/DESIGN.md#amended-cost-result-identical-image-control-failure) failed before any candidate comparison; defer adoption until a new prospectively qualified cost comparison, without inferring a candidate regression.
