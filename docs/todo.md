@@ -270,22 +270,6 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   same-image null control, establishes its benefit and clears the protected
   records case before selecting the wider policy.
 
-- **First-index search needs a variable-cost expression probe.** The
-  [ordered-batch analysis](../research/investigations/io-model/CONCURRENCY-CATALOG.md#21-parallel-search-with-early-exit-added)
-  avoids mandatory full-input scanning, but its invocation bound does not
-  bound predicate cost. Block helpers that return at local matches remain
-  unqualified. After the current capture, BFS and stencil evidence is complete,
-  make this the next bounded expression probe: preserve the lowest matching
-  index or N on read-only input with a pure, infallible record predicate;
-  compare sequential search, batch folds and local-return helpers with a
-  useful native first-index search. Check all small-input hit positions and
-  absence, then count inspected records and bytes, including work committed
-  in the final wave. A cheap hit followed by a costly record in another helper
-  distinguishes an invocation bound from a cost bound; actual skipped tails
-  and completed helper work distinguish useful early return from a full scan
-  or serial execution. Defer until those active qualifications finish; no
-  executor or new concurrency rule is selected by this follow-up.
-
 - **General DAG scheduling and competitiveness remain unqualified.** The
   [runtime-adjacency probe](../research/investigations/compute-model/DESIGN.md#runtime-adjacency-all-predecessor-probe)
   executes runtime-provided forward graphs with at most two predecessors and
@@ -347,6 +331,27 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   evidence, not proof that no broadly useful strategy exists. Close this item
   when a policy meets explicit representative criteria or its accepted
   tradeoffs are recorded.
+  The [first-index probe](../research/investigations/compute-model/DESIGN.md#native-expression-result)
+  exposes a concrete input missing from current wave prices: data-dependent
+  record lengths and early exit leave the same static estimate for one-byte
+  and 65,536-byte records, and the small permitted waves receive no split
+  budget. The [adjacent-helper result](../research/investigations/compute-model/DESIGN.md#adjacent-helper-pair-native-result)
+  qualifies another source composition: the same two local-return blocks in
+  ordinary calls execute nonempty absent/late-hit predicates on the caller
+  and a helper, with observed overlapping lifetimes and preserved prefixes.
+  The old counted form still has zero budget, and the cheap-first-hit case
+  still pays for the other started block. A native two-block reference
+  confirms the work contract, not pool competitiveness. At fixed offsets and
+  descriptor lengths, payload-dependent early exit still changes actual work;
+  bounds/read-only facts alone do not supply a representative price.
+  Validate profitability on a representative costly search against a fair
+  native reference, charging completed final-wave work, observer perturbation
+  and scheduling/profile costs. The functional participation result selects
+  no loaded-read, PGO or general grain policy.
+  Defer further search pricing work until a concrete consumer requires it;
+  reopen with that workload and a criterion that distinguishes useful overlap
+  from merely higher worker participation. No lower threshold or new
+  cancellation mechanism is selected by the expression result.
 
 - **Array-helper pricing beyond original read-only references remains conservative.**
   The accepted [typed Box-array extent extension](../research/investigations/compute-model/DESIGN.md#read-only-box-array-helper-work-pricing)
