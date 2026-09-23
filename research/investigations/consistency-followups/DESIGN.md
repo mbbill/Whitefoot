@@ -197,6 +197,15 @@ cases cover execution with both spellings, a missing proof name, and an expired
 header proof name. They use the ordinary conformance adapter; existing value/field
 reservation and proof-scope controls remain.
 
-A separate mismatch remains for the counted `for_binding`: OP-1 omits it while
-DIAG-1 and the resolver reserve it. That rule question is retained in the TODO;
-the invariant-domain rationale does not decide runtime binder naming.
+The counted `for_binding` had a separate mismatch: OP-1 omitted it while
+DIAG-1 and the resolver reserved it. The selected rule includes counted binders
+in OP-1's runtime-name reservation, because a counted binder introduces an
+ordinary value binding just as a `let` does. Permitting operation and mode words
+only in counted bindings would make value-name availability depend on the
+binding's syntax. This is a naming policy, not a claim that the loop grammar
+cannot parse those names. The proof-only invariant domain remains separate.
+The specification now lists `for_binding` explicitly; the resolver's existing
+`for-binder` diagnostic mapping needs no behavior change. Conformance controls
+reject `cvt` and `checked`, admit nearby names and a label named `@cvt`, and retain
+the existing proof-name acceptance case. Resolver tests additionally cover all
+five mode words with both labeled and unlabeled loops.

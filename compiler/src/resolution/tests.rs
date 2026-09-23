@@ -1451,27 +1451,27 @@ fn counted_range_label_is_non_enclosing_after_the_loop() {
 
 #[test]
 fn counted_range_binder_uses_the_for_binder_reservation_role() {
-    let source = br#"fn probe(limit: own u64) -> result: own unit pure {
-  for @range (cvt in 0_u64..limit) {
-    break @range;
-  }
-  return unit;
-}
-"#;
-    with_one_resolution(source, |outcome| {
-        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("reserved counted binder must reject: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), ResolutionRule::Form3);
-        assert!(matches!(
-            issue.kind(),
-            ResolutionIssueKind::ReservedName {
-                spelling,
-                declaration_role: ReservedDeclarationRole::ForBinder,
-                ..
-            } if spelling == "cvt"
-        ));
-    });
+    for name in ["cvt", "wrap", "defined", "checked", "sat", "strict"] {
+        for label in ["", " @range"] {
+            let source = format!(
+                "fn probe(limit: own u64) -> result: own unit pure {{\n  for{label} ({name} in 0_u64..limit) {{\n    break{label};\n  }}\n  return unit;\n}}\n"
+            );
+            with_one_resolution(source.as_bytes(), |outcome| {
+                let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
+                    panic!("reserved counted binder {name} must reject: {outcome:?}");
+                };
+                assert_eq!(issue.rule(), ResolutionRule::Form3);
+                assert!(matches!(
+                    issue.kind(),
+                    ResolutionIssueKind::ReservedName {
+                        spelling,
+                        declaration_role: ReservedDeclarationRole::ForBinder,
+                        ..
+                    } if spelling == name
+                ));
+            });
+        }
+    }
 }
 
 #[test]

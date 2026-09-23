@@ -36,17 +36,6 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   reference-summary work provides a discriminating source witness or proves the
   cap redundant; reopen before reusing this resolver for a new proof family.
 
-- **Counted-loop binder reservation has a separate normative mismatch.**
-  OP-1's exhaustive prohibited-role list omits `for_binding`, while DIAG-1's
-  reservation payload inventory includes `for-binder` and the resolver rejects
-  `for (cvt in 0_u64..1_u64)` with FORM-3. The existing resolver case
-  `counted_range_binder_uses_the_for_binder_reservation_role` requires that result.
-  Decide whether runtime loop binders join ordinary value binders in the reserved
-  domain, then align the two rule lists, resolver and positive/negative controls.
-  Invariant names have a separate proof-only lookup domain, so their exemption
-  does not decide this question. Deferred to an explicit runtime-name ruling;
-  reopen before changing reservation or counted-loop declaration inventory.
-
 - **Validate reuse of selected-target element layouts during emission.**
   [Zero-stride addressing](../compiler/src/backend/target.rs) currently queries
   the ordinary layout calculator afresh for each element-address step. Repeated
