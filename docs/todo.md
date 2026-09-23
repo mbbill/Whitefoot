@@ -579,22 +579,24 @@ each is resolved by a discussion and a tree change.
   until the syntax review reaches this group; close it only with an explicit
   disposition supported by these comparisons.
 
-- **Retained membership beyond the single-object composite is unestablished.**
-  The [Slab membership caller](../tests/programs/containers/slab-membership-program.wf)
-  verifies two indexes over one object: deleting one membership preserves the
-  other reader, and the composite refuses object deletion until both retire. Weak
-  indexes instead expire after deletion. The
-  [analysis](../research/investigations/containers-and-resources/X1-LIBRARY.md#slab-reuse-addresses-and-retained-membership)
-  does not establish a multi-object protocol or protection from independently
-  authored bookkeeping mutations; ordinary handles and nodrop tickets do not
-  authenticate a slab or make membership unforgeable. Defer stronger guarantees
-  while callers need only the demonstrated composite or weak-index contract.
-  Reopen for a real multi-index consumer that must retain objects across
-  independent removals. First validate an ordinary composite with multiple
-  objects, wrong-store/stale handles, removal ordering, final cleanup and a
-  matched native retention contract, including its validation/storage cost.
-  Do not infer that failure of an unrestricted static theorem rules out a
-  correct protocol with ordinary checked data.
+- **Independent retention authority remains unestablished; coordinated membership costs remain open.**
+  The [multi-object result](../research/investigations/containers-and-resources/X1-LIBRARY.md#maintained-composite-correctness)
+  establishes a coordinated Slab/HashMap/indexed-heap protocol for both weak
+  expiry and retained deletion after both memberships retire. Its independent
+  dictionary, expiry-order and owner ledgers cover wrong-store/stale handles,
+  both removal orders, reuse and final cleanup; sequential/parallel observed
+  images each release all 129 allocations exactly once. The registered
+  shared/standalone/plain-no-op and matched C comparisons still need to
+  establish validation/storage costs before selecting the heap core or making
+  a native-performance claim. The protocol does not protect bookkeeping from
+  independently authored mutations: ordinary handles and nodrop tickets do
+  not authenticate a Slab or make membership unforgeable, and stable slots do
+  not supply surviving references. Defer stronger authority while consumers
+  need only the demonstrated coordinated or weak-index contract. Reopen when
+  an actual consumer needs independently held tickets or access spanning
+  mutations; validate its complete acquisition/release and invalid-use chain,
+  ownership cleanup and same-contract native costs before choosing any new
+  mechanism.
 - **Deque still lacks zero-copy two-span access over Ring.** REF-4 rejects
   every Ring range, even empty and proved non-wrapping ones. The current
   library's slot visitor is not a substitute for a native consumer accepting

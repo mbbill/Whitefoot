@@ -108,8 +108,13 @@ compiler/target/gate/whitefootc lib/containers/grow-vector.wf tests/programs/con
 
 The callers and shared allocation observer stay in `tests/programs/containers/`.
 The Slab caller also bundles `slab-membership-program.wf`, which exercises weak
-indexes and a composite retained-membership protocol. The ordinary Rust corpus
-tests bundle each library with its caller, execute sequential and parallel
+indexes and a retained-membership protocol over one object. The separate
+`indexed-store.wf` and `indexed-membership-program.wf` bundle composes Slab,
+HashMap and PriorityQueue for multiple live objects under both policies,
+including reverse-position repair, expiry/reuse and complete owning cleanup.
+Its checked handle protocol supplies neither independent retention tickets nor
+unforgeable membership or surviving references. The ordinary Rust corpus tests
+bundle these sources with their callers, execute sequential and parallel
 outputs, and check the exact release ledger. They run
 through canonical `make check`; there is no separate library test stage or
 Makefile. Research experiments remain explicitly invoked outside that gate.

@@ -881,13 +881,15 @@ the candidates here use x1. No upstream application was newly benchmarked.
 
 ### Indexed composite trial
 
-This prospective experiment starts from the ordinary PriorityQueue at
+The registered experiment starts from the ordinary PriorityQueue at
 `c3c2a50fd`. Its maintained caller establishes the non-indexed operation and
 ownership chain described below; it establishes neither arbitrary-position
 updates nor reverse-position repair. Preserve that source and its public
-contracts as the plain-queue comparison baseline. The following criteria are
-recorded before composite implementation or timings and select no new language
-mechanism or adopted heap architecture.
+contracts as the plain-queue comparison baseline. The following criteria were
+recorded before composite implementation or timings. The maintained composite
+now establishes the complete operation and ownership chain below; shared-core
+selection and its matched cost comparison remain open. No new language
+mechanism is selected.
 
 The minimum consumer is a coordinated record store with several simultaneously
 live records. One Slab owns each record and its payload, one HashMap maps IDs
@@ -1119,8 +1121,46 @@ classifier or instance-selection rule is introduced. The focused
 `formal_nominal_inventory_keeps_only_concrete_types_and_result_lists` and
 `nominal_formal_contract_queries_survive_scratch_rollback` regressions cover
 mixed symbolic/concrete raw and named formals, result lists, concrete contract
-queries and both lowering modes. Full consumer execution remains a separate
-check from these reduced compiler cases.
+queries and both lowering modes. These reduced compiler cases do not substitute
+for the full consumer execution recorded next.
+
+#### Maintained composite correctness
+
+The [record-store helper](../../../tests/programs/containers/indexed-store.wf)
+and [maintained caller](../../../tests/programs/containers/indexed-membership-program.wf)
+now execute the complete multi-object protocol with the three current-rule
+compiler repairs above. The five-source bundle combines those two sources
+with Slab, HashMap and PriorityQueue. Using compiler image `c71aaf16`, its
+sequential and CLI-parallel native images pass with ordinary deallocation and
+with dirty allocation plus quarantined release observation. Each observed
+image reports exactly 129 allocations, each released once: 67 container
+backings and 62 payload Boxes. The bundle is registered in the ordinary
+[container corpus](../../../compiler/tests/programs/containers.rs); these
+focused results do not claim a completed canonical gate.
+
+Four traces combine weak and retained policies with droppable Box and wide
+nodrop payloads. Each holds eight simultaneous owners through a colliding ID
+map, checks membership against an independent flat dictionary model, sorts
+the model's due entries independently of the heap comparator, and records
+each returned or consumed payload identity. Coverage includes duplicate
+payload replacement, upward/downward rescheduling, root/middle/last removal,
+both detach orders, busy deletion, refusal/retry, wrong-store and stale handles,
+same-slot/same-ID reuse, malformed reverse positions, generation retirement
+and partial final cleanup. Separate witnesses check all initial heapify
+reports, no report when removing the last entry, a nodrop SlabEdit result,
+and no edit callback after expiry. No fixture workaround replaces these
+ordinary generic callbacks.
+
+This establishes the coordinated protocol's demonstrated correctness and
+ownership boundary. Weak memberships may outlive their object and expire;
+retained deletion stays busy until both memberships retire. It does not make
+bookkeeping unforgeable, authenticate caller-selected store IDs, provide
+independently held retention tickets, or preserve references across mutation.
+The old one-object caller retains its narrower evidence. Native parity,
+validation/storage cost and the shared-core choice still require the registered
+comparisons below.
+
+#### Pending cost comparison
 
 | Candidate or control | Discriminating property |
 | --- | --- |
@@ -1212,10 +1252,12 @@ reclamation remain separate consumers rather than added variants of this trial.
 payload ownership, and ordinary Slab edit addresses a concrete reusable access
 need. The shared notification core is a candidate whose benefit and no-op cost
 must be established against the standalone and preserved plain-queue controls.
-The main uncertainty is the cost of repeated validation and callback boundaries,
-not an established language expressiveness defect. The complete multi-object
-protocol and independent ledgers must precede any broader membership or
-performance claim; the current one-object witness is insufficient for them.
+The complete multi-object protocol and independent identity/allocation ledgers
+now establish the selected correctness boundary. The remaining discriminator
+is the cost of repeated validation and callback boundaries, including the
+plain no-op path. Broader membership authority and surviving references remain
+outside the demonstrated protocol; correctness alone selects no heap core or
+native-performance claim.
 
 ## Findings rechecked against merged PR #70
 
@@ -1270,29 +1312,31 @@ Vector trial below supplies the expanded ownership and current cost evidence.
 
 ## Current completion boundary at v0.68
 
-This assessment starts from main `345e2966a`, kernel v0.68. It supersedes the
-earlier implementation-order recommendation; later sections retain their
-original experimental revisions. The common-container continuation requires
-the missing priority queue, indexed composite and full ordered operation
-chains below. Completing them does not mean closing every performance or
-language question in [the maintained TODO](../../../docs/todo.md).
+This assessment starts from main `345e2966a`, kernel v0.68, and includes the
+subsequent branch evidence recorded below. It supersedes the earlier
+implementation-order recommendation; later sections retain their original
+experimental revisions. The rows distinguish complete operation/ownership
+chains from pending cost choices and the full ordered operation chain.
+Completing a chain does not close every performance or language question in
+[the maintained TODO](../../../docs/todo.md).
 
 | Family or consumer | Established operation chain | Remaining delivery and cost boundary |
 | --- | --- | --- |
 | [Vector](../../../lib/containers/grow-vector.wf) | Reserve/growing append, insert, ordered and swap removal, truncate, ordered drain and release; copy/drop/nodrop callers | Selected library chain complete. Extra drain movement and short-cycle lowering costs remain measured questions. |
 | [Deque](../../../lib/containers/deque.wf) | Both endpoints, wrap, logical visitation, consuming grow/shrink rebase, drain and release | Selected endpoint/rebase chain complete. Automatic reference-based growth and Ring two-span access are separate interfaces; scalar costs remain unresolved. |
-| [Slab](../../../lib/containers/slab.wf) | Lazy bounded slots, handle validation, returned-owner exhaustion, removal, reuse, expiry, generation retirement and consumption | Selected stable-slot chain complete. Aggregate transfers, the extra cell word and membership beyond the one-object caller remain separate questions. |
+| [Slab](../../../lib/containers/slab.wf) | Lazy bounded slots, validated visit/edit with owned results, returned-owner exhaustion, removal, reuse, expiry, generation retirement and consumption | Selected stable-slot chain complete; the indexed composite below exercises multi-object memberships. Aggregate transfers, the extra cell word, independent retention tickets and surviving references remain separate questions. |
 | [HashMap](../../../lib/containers/hash-map.wf) | Generic owning collision/replacement/removal/reuse, lookup/edit, growth/rehash, visitation and consumption | Selected map chain complete. Inactive-storage lowering is the separate PR #101 trial; wide result/migration costs and double-backing peaks remain qualified by its eventual evidence. |
-| PriorityQueue | [Generic comparator/swap witness](../../../tests/conformance/cases/run-generic-priority-behavior.wf), fixed capacity 16, scalar and copy-record instances | Reusable arbitrary-T growth, peek/pop/replace-top, heapify, drain and cleanup with owning instances and a matched cost comparison are the next slice below. |
-| Indexed composite | [Weak/retained membership caller](../../../tests/programs/containers/slab-membership-program.wf) over one object | Still required: multiple records, Slab ownership, HashMap ID lookup, indexed-heap update/removal with reverse-position repair, expiry/reuse and separate weak/retained contracts. |
+| [PriorityQueue](../../../lib/containers/priority-queue.wf) | Arbitrary-T growth, peek/pop/replace-top, heapify, ordered drain and physical cleanup; copy/drop/nodrop callers and exact release ledgers | Plain chain and [matched comparison](../../experiments/container-representation/priority-library/RESULTS.md) complete, with qualified result-boundary and wide-sift costs. The shared no-op path introduced by the indexed candidate still needs comparison with that preserved baseline. |
+| Indexed composite | [Multi-object weak/retained caller](../../../tests/programs/containers/indexed-membership-program.wf): Slab ownership, HashMap ID lookup/replacement, indexed reschedule/removal with reverse-position repair, expiry/reuse and complete owner cleanup | Complete coordinated correctness chain passes both lowering modes and exact 129-allocation ledgers. Shared versus standalone core, plain no-op cost and matched C comparisons remain pending. Independent tickets, unforgeable membership and surviving references are not established. |
 | Ordered container | [One u64 B+ leaf split](../../../tests/programs/containers/ordered.wf) and owned-link traversal | Still required: generic find/insert/replace, split/promotion, delete/borrow/merge/root contraction, ordered/range traversal and complete cleanup, with a same-contract cost comparison. |
 
-The four libraries' maintained callers run through
+The maintained library and composite callers are registered through
 [`compiler/tests/programs/containers.rs`](../../../compiler/tests/programs/containers.rs)
 with sequential/parallel lowering and exact allocation-release ledgers. Those
 checks establish their stated operation/ownership coverage, not native parity.
-The composite's FN-4 read-under-write refinement discrepancy is a compiler
-defect repaired under existing rules, as recorded above. Ring spans, richer
+The composite exposed three compiler defects repaired under existing rules:
+FN-4 read-under-write refinement, transitive nominal allocation layouts and
+symbolic formal nominal inventory, as recorded above. Ring spans, richer
 contract publication and whole-owner swap
 facts are specified limits; the full sparse-map conditional-preservation
 refusal above remains unclassified. Header-plus-tail storage, compact byte
@@ -1317,7 +1361,8 @@ reads(right)`, where the sign selects order. Comparator consistency is needed
 for meaningful heap ordering, not for bounds, ownership or termination of
 the library's loops. All progress claims are conditional on callbacks returning.
 No equal-priority stability, escaping reference or stable slot identity is
-promised. The indexed consumer adds its own identity/position relation later.
+promised. The indexed consumer above supplies its own checked identity/position
+relation; that protocol is separate from this plain-queue contract.
 
 Proposed signatures follow; they are interface sketches with bodies omitted,
 not checked source or a settled library API. `T` has no copy/drop bound.
@@ -1915,8 +1960,11 @@ answers the retained-membership question for a concrete composite: removing
 one index preserves the other reader; weak indexes expire on owner deletion;
 the retained composite refuses deletion with two memberships and still with
 one, then permits it after both retire. Its two index fields cover one central
-object. General multi-object indexing and protection from independently
-authored bookkeeping mutations are not established by this example.
+object. The later [indexed composite](#maintained-composite-correctness)
+establishes the coordinated multi-object operation and ownership chain.
+Neither example protects ordinary bookkeeping from independently authored
+mutations or supplies independently held retention tickets or surviving
+references.
 
 The matched [Slab comparison](../../experiments/container-representation/slab-library/RESULTS.md)
 and [Deque comparison](../../experiments/container-representation/deque-library/RESULTS.md)
