@@ -67,7 +67,7 @@ or self-description merely to satisfy this table.
 | `spec/kernel-spec.md` | Normative syntax, semantics, judgments, boundaries and relevant examples | Compiler convenience presented as law, task status, editing history |
 | `docs/todo.md` | Defects, costs, improvement opportunities and their validation tasks, removed when resolved | Settled decisions, claims of implemented capability, progress logs |
 | `docs/patterns.md` | Writer problems, usable forms, examples, applicability and costs | Additional acceptance rules, unsupported universal performance claims, project administration |
-| `AGENTS.md` / `CLAUDE.md` | Agent entry, project constraints, authority, workflow and pointers to detailed guidance | Research narration, a second detailed checklist or compiler inventory |
+| `AGENTS.md` | Agent entry, project constraints, authority, workflow and pointers to detailed guidance | Research narration, a second detailed checklist or compiler inventory |
 | `docs/practice.md` / this checklist | Engineering methods and decision-update triggers / completion checks and document boundaries | Language semantics, task-specific outcomes, new owner approval requirements |
 | `research/`; `governance/spec-evolution/` | Questions, alternatives, designs, change proposals, reproducible experiments, results and limitations; the research README provides navigation | Task completion as technical evidence, a proposal presented as an implemented rule, daily test implementations or inputs retained in research |
 | `docs/ideas.md`; `docs/why-whitefoot.md` | Candidate mechanisms, open questions and experiment sketches; explanatory essays and dated rationale respectively | A live work queue, invented present-day measurements, contributor process inserted into an essay |
@@ -114,7 +114,8 @@ Source: [repository hygiene](../AGENTS.md#repository-structure-and-hygiene).
 - [ ] **A4 — Artifact hygiene.** No scratch output, personal filesystem path,
   credential, or machine-local setup has leaked into the diff. New/modified
   artifacts use English. Tooling uses the project's native path unless its
-  different role justifies another tool; the two agent entry files agree.
+  different role justifies another tool; `AGENTS.md` remains the single
+  agent-instruction source.
 
 ## D. Documentation — changed prose, comments or examples
 
@@ -175,14 +176,16 @@ Source: [specification and test integrity](../AGENTS.md#specification-and-test-i
 
 - [ ] **T1 — Language evidence.** For a specification amendment, the outgoing
   active bytes are archived unchanged, released archives are untouched, and
-  the active title advances the version. The change declares the [META-5] delta
+  the active title advances the version. The change declares its specification delta
   (rules, tokens, spellings, exceptions) and evidence/minimality selection
   ground. Affected cases/verdicts, generated syntax, compiler and documentation
   follow the amendment. For changed rules or constitutional premises, apply
   R3–R4 below. For conformance changes,
   the PR explains the normative expectation and how the changed evidence tests
-  it. [META-5] is defined in the
-  [active specification](../spec/kernel-spec.md#20-spec-meta-rules-ci-checked).
+  it. The conformance runner checks unique rule IDs and resolving references;
+  inspect semantic duplication, exception clauses, and whether non-authoritative
+  review inventories match their normative definitions.
+  The approval boundary remains [AGENTS.md rule 4](../AGENTS.md#branch-and-main-boundary).
 - [ ] **T2 — Preserved checks.** Every removed, skipped, narrowed, regenerated
   or weakened test/check has a technical reason consistent with the requested
   change. An implementation gap, crash, timeout or unsupported feature has not

@@ -31,7 +31,13 @@
 //! The remaining cases keep their subject and were retargeted onto the [OP-13]
 //! construction functions over the one heap [STOR-8].
 
-use crate::backend::target::{TargetLayout, TargetLayoutFailure, TargetObject, validate_program};
+use crate::backend::emitter::{
+    BackendFailure, WindowAddressFacts, emit_llvm_with_window_address_facts,
+};
+use crate::backend::target::{
+    TargetLayout, TargetLayoutFailure, TargetObject, TargetStorageType, validate_program,
+    validate_static_storage,
+};
 
 use super::system::with_ir;
 use super::*;
@@ -82,7 +88,26 @@ fn slots_addresses_use_proved_offsets_and_ring_addresses_still_wrap() {
             let source = format!(
                 "fn read(values: &{ty}, index: own u64) -> result: own u64 reads(values) contract {{\n  requires index < {window}.len;\n}} {{\n  return {window}[index];\n}}\n\nfn roundtrip(values: &{ty}, value: own u64) -> result: own u64 writes(values) contract {{\n  requires {window}.len < {window}.cap;\n}} {{\n  place_back(window: &{window}, value: value);\n  let result = take_back(window: &{window});\n  return result;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
             );
-            let llvm = compile(source.as_bytes());
+            let (llvm, withheld) = with_ir(source.as_bytes(), |program| {
+                let target = TargetLayout::host().expect("supported target");
+                let emit = |facts| {
+                    emit_llvm_with_window_address_facts(program, target, facts)
+                        .expect("both fact choices use the same qualified program")
+                        .into_string()
+                };
+                (
+                    emit(WindowAddressFacts::Emit),
+                    emit(WindowAddressFacts::Withhold),
+                )
+            });
+            assert!(!withheld.contains("@llvm.assume"));
+            let ordinary_lines = llvm
+                .lines()
+                .filter(|line| {
+                    !line.contains("@llvm.assume") && !line.contains(".nonnegative = icmp sge i64 ")
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(ordinary_lines, withheld.lines().collect::<Vec<_>>());
             let functions = llvm
                 .split("\ndefine ")
                 .filter(|body| {
@@ -97,6 +122,32 @@ fn slots_addresses_use_proved_offsets_and_ring_addresses_still_wrap() {
             for body in functions {
                 assert!(body.contains("getelementptr inbounds"), "{body}");
                 assert_eq!(body.contains("icmp uge i64"), shape == "Ring", "{body}");
+                assert_eq!(body.matches("call void @llvm.assume(").count(), 1, "{body}");
+                let lines = body.lines().collect::<Vec<_>>();
+                let assume = lines
+                    .iter()
+                    .position(|line| line.contains("call void @llvm.assume("))
+                    .expect("one payload fact");
+                let address = lines[assume + 1].trim();
+                let (pointer, _) = address.split_once(" = ").expect("payload pointer");
+                let (_, operand) = address.rsplit_once(", i64 ").expect("actual GEP index");
+                assert_eq!(
+                    lines[assume - 1].trim(),
+                    format!("{pointer}.nonnegative = icmp sge i64 {operand}, 0")
+                );
+                assert_eq!(
+                    lines[assume].trim(),
+                    format!("call void @llvm.assume(i1 {pointer}.nonnegative)")
+                );
+                assert!(address.contains(" = getelementptr inbounds "), "{address}");
+                for line in lines {
+                    if line.contains(" = add ") || line.contains(" = sub ") {
+                        assert!(
+                            !line.contains(" nuw ") && !line.contains(" nsw "),
+                            "window coordinate arithmetic keeps its ordinary form: {line}"
+                        );
+                    }
+                }
             }
         }
     }
@@ -178,14 +229,154 @@ fn zero_sized_takes_update_slots_and_wrapped_ring_boundaries_once() {
   return exit_status(code: 0_u8);
 }
 "#;
-    for overlap in [OverlapLowering::Off, OverlapLowering::On] {
-        let module = super::emit_lowered(source, overlap);
+    for (overlap, facts) in [
+        (OverlapLowering::Off, WindowAddressFacts::Emit),
+        (OverlapLowering::Off, WindowAddressFacts::Withhold),
+        (OverlapLowering::On, WindowAddressFacts::Emit),
+    ] {
+        let module = super::system::with_mutated_ir_lowering(source, overlap, |program| {
+            let target = TargetLayout::host().expect("supported target");
+            let mut module = emit_llvm_with_window_address_facts(program, target, facts)
+                .expect("the zero-stride program qualifies in both fact choices")
+                .into_string();
+            module.push_str(
+                &crate::driver::launcher::render(program, "main").expect("ordinary test launcher"),
+            );
+            module
+        });
+        let assumptions = module
+            .lines()
+            .filter(|line| line.contains(".nonnegative = icmp sge i64 "))
+            .collect::<Vec<_>>();
+        if facts == WindowAddressFacts::Emit {
+            assert!(!assumptions.is_empty(), "observe zero-stride payload facts");
+            assert!(assumptions.iter().all(|line| line.ends_with("i64 0, 0")));
+        } else {
+            assert!(assumptions.is_empty());
+            assert!(!module.contains("@llvm.assume"));
+        }
         let retained = super::owned_places::retain_calls(&module);
         let output = super::compile_and_run(&retained);
         assert_eq!(output.status.code(), Some(0), "{output:?}");
         assert!(output.stdout.is_empty(), "{output:?}");
         assert!(output.stderr.is_empty(), "{output:?}");
     }
+}
+
+/// Zero capacity removes the element's representation, including alignment.
+/// Otherwise an empty high-alignment window silently enlarges its parent and
+/// the emitted runtime allocation beyond the qualified byte ceiling. The
+/// native observer checks the emitted size independently of the Rust layout.
+#[test]
+fn zero_capacity_windows_keep_header_layout_inside_nonempty_storage() {
+    let source = br#"struct EmptyWindows {
+  before: u8;
+  slots: Slots<OutputStream, 0>;
+  ring: Ring<OutputStream, 0>;
+  after: u64;
+}
+
+fn empty_length(values: &[OutputStream]) -> result: own u64 reads(values) {
+  return deref(values).len;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let initial_slots = slots_new::<OutputStream, 0>();
+  let initial_ring = ring_new::<OutputStream, 0>();
+  let value = EmptyWindows(before: 17_u8, slots: move initial_slots, ring: move initial_ring, after: 29_u64);
+  let storage = box_ring_new::<EmptyWindows>(capacity: 1_u64);
+  place_back(window: &storage.inner, value: move value);
+  let recovered = take_front(window: &storage.inner);
+  let EmptyWindows(before: before, slots: slots, ring: ring, after: after) = move recovered;
+  if before != 17_u8 {
+    return exit_status(code: 1_u8);
+  }
+  if after != 29_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if ring.head != 0_u64 {
+    return exit_status(code: 3_u8);
+  }
+  let length = empty_length(values: &slots[0_u64..0_u64]);
+  if length != 0_u64 {
+    return exit_status(code: 4_u8);
+  }
+  let array = slots_into_array::<OutputStream, 0>(values: move slots);
+  let restored = slots_from_array::<OutputStream, 0>(values: move array);
+  if restored.len != 0_u64 {
+    return exit_status(code: 5_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let module = with_ir(source, |program| {
+        let host = TargetLayout::host().expect("supported target");
+        let owner = program
+            .nominals()
+            .iter()
+            .find(|nominal| nominal.name() == "EmptyWindows")
+            .expect("the nested source owner");
+        let owner_layout = validate_static_storage(
+            host,
+            program,
+            &TargetStorageType::source(crate::IrType::Nominal(owner.id())),
+        )
+        .expect("the complete parent fits");
+        assert_eq!((owner_layout.size(), owner_layout.align()), (40, 8));
+        let crate::IrNominalKind::Struct { fields } = owner.kind() else {
+            panic!("the owner is a source struct");
+        };
+        for (field, size) in [(1, 8), (2, 16)] {
+            let layout = validate_static_storage(
+                host,
+                program,
+                &TargetStorageType::source(fields[field].ty()),
+            )
+            .expect("the zero-capacity child fits");
+            assert_eq!((layout.size(), layout.align()), (size, 8));
+        }
+        // One Ring slot is the complete 40-byte parent after a 24-byte
+        // header, with no alignment inherited from the absent handles.
+        let exact = host.with_runtime_allocation_limits_for_test(64, 8);
+        assert_eq!(validate_program(exact, program), Ok(()));
+        let short = host.with_runtime_allocation_limits_for_test(63, 8);
+        assert_eq!(
+            validate_program(short, program),
+            Err(TargetLayoutFailure::Unrepresentable(
+                TargetObject::RuntimeSizedAllocation
+            ))
+        );
+        for facts in [WindowAddressFacts::Emit, WindowAddressFacts::Withhold] {
+            assert_eq!(
+                emit_llvm_with_window_address_facts(program, short, facts),
+                Err(BackendFailure::TargetLayout(
+                    TargetLayoutFailure::Unrepresentable(TargetObject::RuntimeSizedAllocation)
+                ))
+            );
+        }
+        let mut module = crate::backend::emitter::emit_llvm_with_layout(program, exact)
+            .expect("the exact allocation boundary emits")
+            .into_string();
+        module.push_str(
+            &crate::driver::launcher::render(program, "main").expect("ordinary test launcher"),
+        );
+        module
+    });
+    let observed = super::owned_places::retain_calls(&module)
+        .replace("@malloc(", "@wf_observe_window_allocate(");
+    let observer = r#"
+#include <stdint.h>
+#include <stdlib.h>
+
+void *wf_observe_window_allocate(uint64_t size) {
+    if (size != 64) exit(6);
+    return malloc((size_t)size);
+}
+"#;
+    let output = super::compile_link_and_run(&observed, Some(observer), &[]);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
 }
 
 /// OP-9 admits zero even when the mathematical language ceiling exceeds

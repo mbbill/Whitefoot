@@ -1042,3 +1042,209 @@ the constant must remain one identity with its source bounds. It adds no
 automatic proof family. The corresponding compiler choice is recorded in
 checker-facts; domain, insufficient-guard and forwarding regressions
 exercise the existing proof checker.
+
+## Ring payload address qualification
+
+The next lowering experiment starts from merged main `1b916975`. The
+[Deque comparison](../../experiments/container-representation/deque-library/RESULTS.md)
+records a 2.256–2.405x normal-mode scalar forward-churn cost against its C
+control. Its separate, untimed four-GEP probe identifies an unsigned offset
+fact that removes repeated descriptor traffic in one concrete instance.
+That is a reason to investigate the general lowering contract, not evidence
+that adding the flag to every element address is valid or faster.
+
+The question is whether existing source bounds and selected-target layout
+qualification establish the complete LLVM promise for ordinary Slots/Ring
+payload projections. The argument must cover the actual padded header,
+element allocation stride, enclosing object extent, intermediate offsets,
+pointer-index width, zero capacity, zero stride, and any one-past use of the
+shared projection. Logical Ring wrap arithmetic is a separate operation;
+the candidate must not attach an unsigned no-wrap assertion to it merely
+because a final physical element is in bounds. The
+[LLVM instruction contract](https://llvm.org/docs/LangRef.html#getelementptr-instruction)
+is the target obligation; STOR-6 and DIAG-2 remain the language authorities.
+
+Selection criteria, recorded before this experiment's timings:
+
+- Every emitted optional fact has a complete argument from existing checked
+  and selected-target facts. Source acceptance and target-layout qualification
+  agree with this optional fact enabled or withheld. Unsupported assembler spelling
+  retains a correct portable lowering rather than rejecting a WF program.
+- Existing maintained regressions cover relevant ownership, wrap, zero-size,
+  nested-layout and target-domain boundaries. Add only observations absent
+  from those cases. Successful timing runs do not establish allocation-failure
+  behavior: the maintained exhaustion tests own the resource-failure boundary,
+  while the container caller and allocator observer own the exact release ledger.
+- Reuse the existing Deque workload, independent checksums, allocation ledger,
+  scalar and wide-record payloads, normal and retained helpers, C controls and
+  counterbalanced matrix. Compare fresh baseline and candidate emissions and
+  timings on the same toolchain. Withholding this fact is a correctness
+  control, not a substitute for isolating its performance contribution; this
+  experiment does not require a new public facts-mode switch.
+- Select production emission only if the complete target contract holds and
+  the paired results show a repeatable benefit beyond cohort and control
+  variation, without an unexplained material loss elsewhere in the matrix.
+  Attribute any remaining gap rather than claiming universal native parity.
+
+Keep the implementation within ordinary address emission and the existing
+toolchain-capability path where possible. Do not change source syntax,
+container representation, Ring range admission, or host/runtime protocols to
+obtain this result. The material compiler choices were reviewed as amendments
+beside the design tree; the owner approved both revisions after DCR.
+
+### Representation premise and target contract
+
+Inspection found a representation mismatch before extending optional facts.
+The target calculator gives `Slots<T, 0>` its eight-byte descriptor with
+eight-byte alignment. Emission instead retained `{ i64, [0 x T] }`.
+LLVM arrays keep their element's ABI alignment even at length zero
+([DataLayout implementation](https://llvm.org/doxygen/DataLayout_8cpp_source.html)).
+For the ordinary opaque `OutputStream` type, whose emitted representation is
+16-byte aligned, that LLVM aggregate has size and alignment 16. An outer
+runtime Ring of such values is therefore checked with header/stride 24/8
+while its emitted allocation arithmetic uses 32/16. This is a mismatch in
+qualification; the allocator uses the emitted size, so these calculations
+alone do not demonstrate an observed undersized allocation.
+
+OP-9's zero repetitions contain no element layout. Raising the checked size
+and alignment would force the nested allocation to fail the unchanged
+language ceiling. The selected repair instead extends the existing
+`Array<T, 0>` emission convention to the empty payload of constant-capacity
+Slots and Ring: `[0 x i8]`, retaining their length/head words. Nonzero-capacity
+zero-size elements and runtime-capacity typed tails keep their distinct
+representations. A maintained regression must compare the complete nested
+object and actual emitted allocation against the checked byte boundary,
+including Array conversion and cleanup, rather than only repeat the
+checker's preexisting size result.
+
+The maintained backend regression
+`zero_capacity_windows_keep_header_layout_inside_nonempty_storage` embeds
+both empty window shapes between scalar sentinels in one record. The checked
+record is 40 bytes with alignment eight, and its one-slot runtime Ring needs
+64 bytes including the header. A same-source native before/after run with
+retained helpers and an allocation observer measured 96 bytes from the saved
+`1b916975` baseline and 64 from the repair: the independent 64-byte oracle
+exits six before the fix and zero afterward. The test also checks a synthetic
+64-byte allocation limit and the rejection one byte below it, plus empty
+range formation, Array conversion, sentinel preservation and cleanup. These
+observations distinguish actual layout correspondence from an assertion
+about the calculator alone.
+
+Once representation and qualification agree, let `H` be the actual padded
+tail-field offset, `S` the actual allocation stride of that GEP's element,
+`C` the capacity, and `E` the complete window extent. On the currently
+supported targets the pointer index is i64 and qualification establishes
+`E <= M = 2^63 - 1`. For a positive-stride payload and an admissible physical
+offset `p`, including a one-past pointer when permitted:
+
+```text
+0 <= p <= C <= floor((M - H) / S)
+0 <= H <= H + p*S <= E <= M
+```
+
+The GEP's successive offsets are zero, the nonnegative header offset, and
+the nonnegative scaled physical index. Each fits both signed and unsigned
+index arithmetic. For a nested window at parent offset `q`, complete-parent
+qualification also establishes `q + E <= A`, the parent allocation extent.
+Every intermediate pointer remains in that same allocation. LLVM allocations
+cannot cross the unsigned address-space boundary, including their one-past
+pointer ([allocated-object contract](https://llvm.org/docs/LangRef.html#allocated-objects)).
+These facts establish all four `nuw` requirements, not only index scaling.
+For zero stride, ordinary emission already uses physical address operand
+zero; no bound on the potentially huge logical capacity is needed. For an
+erased constant-capacity-zero payload, the actual tail type is i8 and its
+only admissible boundary offset is zero. Ring wrap operations retain their
+own wrapping semantics and receive no new arithmetic assertion from this
+argument.
+
+Two target expressions deserve comparison before selection: direct GEP `nuw`
+with a supported-spelling probe and plain-`inbounds` fallback, or an
+`llvm.assume` that the actual normalized address index is signed nonnegative
+beside the existing `inbounds` projection. The latter states a subset of the
+same proved domain with portable syntax; whether optimization recovers the
+same benefit is an empirical question. GEP `nuw` first appears in
+[LLVM 19](https://releases.llvm.org/19.1.0/docs/ReleaseNotes.html#changes-to-the-llvm-ir);
+[LLVM 18](https://releases.llvm.org/18.1.8/docs/LangRef.html#getelementptr-instruction)
+already defines the nonnegative inbounds implication and the assumption
+intrinsic. Use the existing four-position probe only to discriminate these
+expressions, then validate the selected compiler path and full matrix.
+
+The four-position comparison on Apple Clang 21 admits both expressions and
+passes the same independent oracle. Both reduce the scalar forward loop from
+four loads/four stores to one payload load/one payload store; their hot-loop
+assembly is identical. Their complete scalar functions are not identical,
+so this observation does not establish timing parity elsewhere. The selected
+candidate for the full compiler experiment is the nonnegative-index
+assumption: it recovers the observed local optimization without a new LLVM
+dialect requirement. A build-time syntax probe would inspect the build's
+compiler, while the native builder uses its selected native compiler; those
+need not be the same consumer. The existing [comparison record](../../experiments/container-representation/deque-library/RESULTS.md)
+owns the probe commands, counts and artifacts. After the complete
+normal/retained paired comparison, the owner selected production emission
+provisionally with the tradeoff recorded below.
+
+The implementation stays in the shared run projection and intrinsic registry.
+A test-only withholding choice exercises that same emitter after the same
+target validation; it is not a source mode or a second qualification path.
+The corresponding decision is in `compiler/backend-facts`; the zero-capacity
+representation decision is in `compiler/storage-representation`. This keeps
+the representation repair independent of the optional optimization and needs
+neither a second table of per-address qualification nor a public compiler
+switch. No source rule or container contract changes.
+
+### Retained reverse-path discriminator
+
+The first complete Clang 21 baseline/candidate sweeps show a reproducible
+retained-scalar reverse-churn regression, about seven percent after the
+in-binary C normalization, alongside the large forward-path gain. Independent
+disassembly comparisons find identical reverse-loop and endpoint-helper
+instructions, register dependencies and memory operations. The loop stays at
+the same address, but both endpoint helpers move 32 bytes earlier. This is
+evidence of a code-placement difference, not yet evidence that placement
+causes the timing difference.
+
+Before additional timing, the discriminator is to give both scratch retained
+modules' scalar `pop_back` definition 128-byte alignment. Verify that the
+two endpoint helpers then occupy identical addresses and preserve their
+instructions, and that the calling loop remains unchanged; otherwise the
+experiment does not isolate the proposed cause. Use the existing native
+oracle and counterbalanced retained measurements, with the same source,
+seeds and C controls. If the regression collapses after this normalization,
+report the production-layout cost as placement-sensitive; if it persists,
+keep the regression unexplained. The scratch alignment is an instrument,
+not a proposed production alignment policy or a reason to select facts by
+element identity.
+
+The 128-byte-alignment construction failed that isolation check: it made
+the two endpoint addresses agree, but the linker also moved both complete
+WF text regions by 96 bytes, including the trace and callbacks. No oracle
+or timing was run on those images. The follow-up instrument therefore keeps
+the original section alignment and adds exactly 32 bytes of unreachable
+text padding before the candidate's scalar `pop_back` symbol. Before timing,
+verify against the original binaries that the trace and callbacks retain
+their addresses and instructions and both endpoints recover the original
+baseline addresses and instructions. If this narrower construction also
+fails isolation, do not time it or reinterpret the first experiment as a
+success. This padding is likewise confined to scratch evidence.
+
+The 32-byte padding control met the isolation checks and passed both native
+oracles. Its two measurement orders disagree: the normalized retained scalar
+reverse ratio stays about 1.06–1.08 in the first pair, then approaches one in
+the reversed pair because the last baseline itself slows. The original
+production-layout regression therefore remains unexplained; neither the
+first alignment failure nor the second mixed result establishes a particular
+cache or branch-prediction cause. No padding enters production.
+
+The predeclared selection criterion is **not fully met**. After DCR, the owner
+selected provisional retention of the qualified fact for its reproducible
+inline scalar forward and rebase improvements, explicitly accepting the
+recorded retained-reverse cost and its unresolved cause. The alternative is
+to remove the optional fact and deliver the independently verified
+zero-capacity representation repair alone. No application-frequency
+distribution has been measured, so the results do not establish that every
+Deque consumer benefits from the tradeoff. The owner-approved backend-facts
+decision records the first choice; it does not establish that the original
+criterion passed. Reopen that choice for a consumer
+dominated by retained reverse calls, a changed native toolchain, or a further
+material regression under the same matched-contract comparison. The
+maintained TODO keeps the remaining scalar gap and cost attribution open.

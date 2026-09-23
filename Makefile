@@ -88,7 +88,7 @@ _check-corpus:
 _check-runtime:
 	@$(MAKE) -C compiler completion-test
 
-# Both supported agent entry points carry exactly the same project rules.
+# AGENTS.md is the repository's agent entry point and carries its project rules.
 # The repository-level stages that read the tree without running a compiled
 # program. CI's `static` job runs this instead of restating their names: a
 # second copy of the list is a copy that goes stale, and did — retiring two
@@ -112,8 +112,7 @@ repository-invariants:
 	@$(PY) .github/check-research-inputs.py --self-test
 	@$(PY) .github/check-research-inputs.py
 	@sh .github/test-run-check.sh
-	@test -s AGENTS.md -a -s CLAUDE.md || { echo "AGENTS.md or CLAUDE.md missing" >&2; exit 1; }
-	@cmp -s AGENTS.md CLAUDE.md || { echo "AGENTS.md and CLAUDE.md differ" >&2; exit 1; }
+	@test -s AGENTS.md || { echo "AGENTS.md missing" >&2; exit 1; }
 	@mac_home="$$(printf '/%s/' Users)"; \
 	linux_home="$$(printf '/%s/' home)"; \
 	encoded_home="$$(printf -- '-%s-' Users)"; \
@@ -170,12 +169,12 @@ spec-append-only-staged:
 # negative check keeps them out of the guidance files.
 spec-prose-integrity:
 	@failed=0; \
-	for file in README.md AGENTS.md CLAUDE.md docs/*.md; do \
+	for file in README.md AGENTS.md docs/*.md; do \
 		if grep -nE '(^|[^0-9a-f])[0-9a-f]{64}([^0-9a-f]|$$)' "$$file"; then \
 			echo "spec prose integrity: $$file quotes a specification digest; the identity is derived from the specification's own bytes" >&2; failed=1; \
 		fi; \
 	done; \
-	for file in README.md AGENTS.md CLAUDE.md docs/*.md; do \
+	for file in README.md AGENTS.md docs/*.md; do \
 		if grep -nE 'Kernel specification v[0-9]+\.[0-9]+ is the active|[Aa]ctive language authority(:| is) v[0-9]+\.[0-9]+|active v[0-9]+\.[0-9]+ (guidance|authority)|the exact v[0-9]+\.[0-9]+ bytes' "$$file"; then \
 			echo "spec prose integrity: $$file names a version as the active authority; say 'the active specification at spec/kernel-spec.md' instead" >&2; failed=1; \
 		fi; \
