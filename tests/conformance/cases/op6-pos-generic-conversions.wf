@@ -21,12 +21,12 @@ fn same<T: Float>(value: T) -> result: T pure contract {
   return cvt::<T, T>(value);
 }
 
-fn zero<S: Float, D: Int>() -> result: D pure {
-  return cvt::<S, D>(0_T);
+fn zero<T: Float, D: Int>() -> result: D pure {
+  return cvt::<T, D>(0_T);
 }
 
-fn one<S: Int, D: Float>() -> result: D pure {
-  return cvt::<S, D>(1_T);
+fn one<T: Int, D: Float>() -> result: D pure {
+  return cvt::<T, D>(1_T);
 }
 
 fn small_integer<D: Int>() -> result: D pure {
@@ -41,21 +41,21 @@ fn main() -> status: ExitStatus pure {
     return exit_status(code: 1_u8);
   }
   match attempt::<u8, f32>(value: 7_u8) {
-    Ok(value: value) => {
-      let copy = same::<f32>(value: value);
-      if fne(copy, 7.0_f32) {
+    Ok(value: converted) => {
+      let copied = same::<f32>(value: converted);
+      if fne(copied, 7.0_f32) {
         return exit_status(code: 2_u8);
       }
     }
-    Err(error: error) => {
+    Err(error: refused) => {
       return exit_status(code: 3_u8);
     }
   }
   match attempt::<u32, f32>(value: 16777217_u32) {
-    Ok(value: value) => {
+    Ok(value: converted) => {
       return exit_status(code: 4_u8);
     }
-    Err(error: error) => {
+    Err(error: refused) => {
     }
   }
   let zero_value = zero::<f64, i64>();

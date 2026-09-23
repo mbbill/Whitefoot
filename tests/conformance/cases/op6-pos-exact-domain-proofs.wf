@@ -1,4 +1,5 @@
 const exact_even: u32 = 16777218_u32;
+
 const exact_integer: f64 = -128.0_f64;
 
 fn byte(value: u32) -> result: u8 pure contract {
@@ -42,7 +43,7 @@ fn main() -> status: ExitStatus pure {
   }
   let even = cvt::<u32, f32>(exact_even);
   let even_bits = reinterpret::<f32, u32>(even);
-  if even_bits != 0x4b800001_u32 {
+  if even_bits != 1266679809_u32 {
     return exit_status(code: 2_u8);
   }
   let small = cvt::<f64, i8>(exact_integer);
@@ -51,7 +52,7 @@ fn main() -> status: ExitStatus pure {
   }
   let limit = exact_float(value: 16777216_i32);
   let limit_bits = reinterpret::<f32, u32>(limit);
-  if limit_bits != 0x4b800000_u32 {
+  if limit_bits != 1266679808_u32 {
     return exit_status(code: 4_u8);
   }
   let integral = guarded_float(value: 3.0_f64);

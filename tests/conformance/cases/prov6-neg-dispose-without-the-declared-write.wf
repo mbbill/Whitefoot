@@ -16,7 +16,7 @@ fn main() -> status: ExitStatus pure {
     Ok(value: code) => {
       return exit_status(code: code);
     }
-    Err(error: error) => {
+    Err(error: refused) => {
       return exit_status(code: 1_u8);
     }
   }

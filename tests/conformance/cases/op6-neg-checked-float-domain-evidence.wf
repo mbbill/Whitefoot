@@ -3,7 +3,7 @@ fn integer(value: f64) -> result: i32 pure {
     Ok(value: converted) => {
       return cvt::<f64, i32>(value);
     }
-    Err(error: error) => {
+    Err(error: refused) => {
       return 0_i32;
     }
   }

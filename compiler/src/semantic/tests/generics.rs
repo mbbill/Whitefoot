@@ -327,7 +327,9 @@ fn main() -> status: ExitStatus pure {
 #[test]
 fn generic_conversion_constants_use_exact_values_without_selecting_widths() {
     let source = br#"const small: u32 = 127_u32;
+
 const exact_integer: u32 = 16777218_u32;
+
 const half: f64 = 0.5_f64;
 
 fn integer_identities<T: Int, D: Int>() -> result: D pure {

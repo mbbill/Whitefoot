@@ -371,8 +371,20 @@ fn main() -> status: ExitStatus pure {
     let llvm = compile(source.as_bytes());
     assert!(llvm.contains("@llvm.fptosi.sat.i32.f32"));
     assert!(llvm.contains("@llvm.fptoui.sat.i64.f64"));
-    assert!(!llvm.contains(" = fptosi "));
-    assert!(!llvm.contains(" = fptoui "));
+    // These original checked-only helpers must keep total casts. The oracle
+    // helpers additionally execute raw exact casts only on their proved
+    // `.defined` branch, so those instructions now legitimately occur in the
+    // module; the query-only IR assertions below cover that mode separately.
+    for symbol in [
+        "reject_f32_i32",
+        "reject_f32_u32",
+        "reject_f64_i64",
+        "reject_f64_u64",
+    ] {
+        let body = super::parallel::function_body(&llvm, &format!("@wf_{symbol}"));
+        assert!(!body.contains(" = fptosi "), "{body}");
+        assert!(!body.contains(" = fptoui "), "{body}");
+    }
     assert!(llvm.contains("fcmp uno"));
     assert!(llvm.contains("0x7FF8000000000000"));
 

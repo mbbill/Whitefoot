@@ -1043,7 +1043,7 @@ A shift or rotate amount is `u32`; `ishl.wrap`/`ishr.wrap` mask the amount to `a
 `+sat`/`-sat` are `llvm.sadd.sat`/`uadd.sat` or `ssub.sat`/`usub.sat` clamping to T's range; `*sat` widens, multiplies, and clamps, which avoids the signed-saturation miscompile in `llvm.smul.fix.sat`.
 `imin`/`imax` are `llvm.smin`/`umin` or `smax`/`umax`.
 `iabs.wrap`, exact `iabs`, and `iabs.checked` use `llvm.abs` with is-int-min-poison false; `.wrap` returns `iK::MIN` on that edge, exact `iabs` is emitted only after its domain proof excludes the edge, and `.checked` returns `Err(Overflow())` there.
-Every `.defined` query computes only its total comparison or overflow predicate and never executes the corresponding exact primitive.
+Every arithmetic `.defined` query computes only its total comparison or overflow predicate and never executes the corresponding exact primitive.
 An admitted bare `cvt` lowers without a validity guard; the result transformations required by [OP-6] remain part of its value semantics. A checked conversion and a conversion-domain query may evaluate total conversion primitives while deciding their answer, and may evaluate a partial primitive only on a path where its domain holds.
 `reinterpret` is the LLVM bitcast instruction for cross-domain pairs (int<->float; bit-preserving, all NaN payloads and sign bits preserved) and an identity bit-relabel for same-width int<->int resign (i8<->u8, i16<->u16, i32<->u32, i64<->u64); it is the bit-preserving counterpart of value-preserving `cvt`, giving bit-level resign a home distinct from cvt's value-preserving resign.
 `fneg` is the LLVM fneg instruction (a sign-bit flip, not `fsub(0.0, x)`); `fabs` is `llvm.fabs`; `fcopysign` is `llvm.copysign`.
