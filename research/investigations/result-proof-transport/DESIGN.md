@@ -531,9 +531,12 @@ reduces DEFLATE from 700.756 to 371.629 ms against current unoptimized main
 This supports the attribution but misses the practical target, so it does not
 end the investigation.
 
+### Closure reuse and correspondence
+
 The selected implementation preserves the closed numeric core when starting and
-substituting a conditional context. A fresh context takes the already
-materialized ordinary numeric snapshot, drops writer-origin and opaque-goal
+substituting a conditional context through the existing copy-on-write fact
+stores. A fresh context takes the already materialized ordinary numeric
+snapshot, drops writer-origin and opaque-goal
 metadata, and uses the existing term kill to remove private payload parameters.
 Its numeric bound and disequality candidates, including ordinary fallbacks,
 are exactly the previous filtered import. Removing metadata cannot remove a

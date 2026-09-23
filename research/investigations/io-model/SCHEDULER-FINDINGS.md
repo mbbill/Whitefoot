@@ -282,6 +282,8 @@ form and not about any scheduler. `codex/io-runtime-followup@6de4557c`,
 *Sixteenth experiment: sequential functions on an owner-local event loop*
 (revision `001262a3`).
 
+<a id="tcp-packet-policy-comparison"></a>
+
 **Experiment 17 — is the 41 ms large-payload tail the language or the
 transport?** `WF_TCP_NODELAY=1` set the option once on POSIX listeners and
 outgoing sockets, read back on listener, connected and accepted descriptors
@@ -356,6 +358,8 @@ admission, event service and continuation order, and raising progress counts
 does not imply better tails. `codex/io-runtime-followup@6de4557c`,
 *Twenty-second experiment: completed-I/O service and progress budgets* (revision
 `c35a6ef2`).
+
+<a id="windows-notification-replay"></a>
 
 **Experiment 24 — is the Windows stall a lost IOCP notification?** The stall
 seen when a Windows scheduler job timed out at its 20-minute limit was

@@ -285,6 +285,23 @@ read, against the four-wide program's three plus one. The narrow program still
 emits none. Hand-widening from four to eight is worth 13 percent on macOS
 (629 ms to 546 ms) and 19 percent on Linux (147 ms to 119 ms).
 
+### Open-kind lookup comparison
+
+The implementation record for `f141d1e1` reports an additional comparison on
+this batch's two-CPU Linux container. For the eight-wide many-file workload,
+linking `IORING_OP_STATX` after each open took about 152 ms, against 116 ms for
+the prior bounded adapter and 119 ms with one `fstat` on the reaping thread.
+The four-wide readings were 203, 140 and 141 ms respectively. The selected
+path avoids a second ring round trip while retaining the descriptor-kind
+check; the program-level table below records the final path at about 119 ms.
+
+These are historical observations recovered from the implementation record,
+not fresh measurements. The original per-arm samples and repetition counts
+were not retained with this comparison, so the figures do not establish a
+portable speedup or an exact causal partition of the full program. In
+particular, they do not establish that `fstat` cannot wait on every supported
+filesystem or target.
+
 ### What one file operation costs
 
 Measured directly on the same trees, warm cache, one file open at a time,

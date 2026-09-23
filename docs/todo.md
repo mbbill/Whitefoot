@@ -513,14 +513,17 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   `completion-runtime` and `parallel-runtime` include measured timings,
   sampling inventories and failure replays that belong with the existing I/O
   and compute studies or maintained verification instructions. Keep protocol
-  boundaries and policy-defining limits in the decisions. Research sources
-  for the `fstat` 152/116 ms comparison, `tag-only-lowering`'s 34 percent claim,
-  and `loop-fact-retention`'s 5/29 versus 17 prediction have not been located
-  or independently established in the current research records. Recover their
-  conditions and evidence, or explicitly qualify the claims; neither invent
-  a research citation nor treat a repeated number as independent evidence.
-  Reopen this recovery before condensing those claims and remove this item
-  when the relocated detail and retained limits have verified owners.
+  boundaries and policy-defining limits in the decisions. The
+  [loop-fact comparison](../research/investigations/obligation-discharge/ACCEPTANCE.md#results)
+  records 5/29 actual against 17/30 predicted; use its return-placement control
+  rather than conflating those denominators. The recovered
+  [open-kind comparison](../research/investigations/io-model/RESULTS.md#open-kind-lookup-comparison)
+  lacks original per-arm samples, and the
+  [34 percent tag-width observation](../research/experiments/port-study/wc-chunk-summary/RESULTS.md#scope-of-the-tag-width-evidence)
+  remains unverified independently of the combined lowering experiment.
+  Preserve those limits in research instead of stating either percentage or
+  a universal non-waiting guarantee as established fact. Close this batch
+  after the concise tree revision and its qualified evidence agree.
 
 - **Normalize repeated grounds and repair obsolete node references.**
   Pool/arena grounds repeat in `data-model` and `ownership/pools-and-arenas`;
