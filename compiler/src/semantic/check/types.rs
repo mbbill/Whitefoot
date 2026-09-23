@@ -1258,12 +1258,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticIssueKind::InvalidConstValue,
             );
         }
-        if matches!(expected, CheckedType::Window { .. }) {
-            // Top-level constant runs use dense array storage. A run nested
-            // in another constant needs the same normalization at its field
-            // or element position; that representation path is not wired yet.
-            return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
-        }
         let CheckedType::Array { element, length } = expected else {
             return self.issue_node(
                 SemanticRule::Const2,
@@ -1296,9 +1290,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    /// One construction cvalue [CONST-2 candidate]: `TYPEID(field: cvalue,
-    /// ...)` totally defining a struct-typed constant. The constructor must
-    /// name the expected struct, and the written fields must be the declared
+    /// One construction cvalue [CONST-2] totally defining a struct-typed
+    /// constant. The constructor's complete instance must match the declared
+    /// type, and the written fields must be the declared
     /// fields in exact declared order [GRAM-8], each field value a cvalue of
     /// the declared field type.
     fn parse_const_construction(
@@ -1306,13 +1300,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         expected: CheckedType,
     ) -> Result<CheckedValue, CheckStop> {
-        // Written generic construction arguments in const position are not
-        // implemented yet: valid under the candidate's eligibility relation
-        // only through concrete instances, which this version does not intern
-        // from a cvalue.
-        if self.tree.argument_list(node)?.is_some() {
-            return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
-        }
         let CheckedType::Nominal(id) = expected else {
             return self.issue_node(
                 SemanticRule::Const2,
@@ -1331,10 +1318,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
             (nominal.name.clone(), fields.clone())
         };
-        let expected_template = self
+        let (expected_template, expected_arguments) = self
             .source_nominal_instances
             .get(id.0 as usize)
-            .and_then(|instance| instance.as_ref().map(|(template, _)| *template))
+            .and_then(Option::as_ref)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let usage = self.use_at(node, LexicalUseRole::Construct)?;
         let ResolvedTarget::Source { declaration, .. } = usage.target() else {
@@ -1356,7 +1343,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 );
             }
         };
-        if written_template != expected_template {
+        if written_template != *expected_template {
+            return self.issue_node(
+                SemanticRule::Const2,
+                node,
+                SemanticIssueKind::InvalidConstValue,
+            );
+        }
+        let template = self
+            .nominal_templates
+            .get(written_template)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let written_arguments = self.nominal_generic_substitution(
+            node,
+            &template.generic_parameters,
+            &template.region_parameters,
+            &GenericSubstitution::default(),
+        )?;
+        if &written_arguments != expected_arguments {
             return self.issue_node(
                 SemanticRule::Const2,
                 node,
@@ -1408,32 +1412,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     pub(super) fn parse_const_type(&self, node: NodeId) -> Result<CheckedType, CheckStop> {
         self.reject_ineligible_const_storage(node)?;
         let ty = self.parse_type(node)?;
-        // [CONST-1, CONST-2, S34] a top-level fixed-run constant occupies only
-        // dense element storage. Its four measures are materialized from the
-        // type rather than stored in a window descriptor.
-        if let CheckedType::Window {
-            shape: WindowShape::Slots,
-            element,
-            capacity: Some(length),
-        } = ty
-        {
-            let true = self.is_flat_element(self.element_type(element)?)? else {
-                return self.issue_node(
-                    SemanticRule::Const2,
-                    node,
-                    SemanticIssueKind::InvalidConstValue,
-                );
-            };
-            let storage = CheckedType::Array { element, length };
-            if self.const_eligible_type(storage)? && length.value().is_some() {
-                return Ok(storage);
-            }
-            return self.issue_node(
-                SemanticRule::Const2,
-                node,
-                SemanticIssueKind::InvalidConstValue,
-            );
-        }
         if self.const_eligible_type(ty)? {
             Ok(ty)
         } else {
@@ -1537,27 +1515,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Array { element, .. } => {
                     pending.push(self.element_type(element)?);
                 }
-                CheckedType::Window { element, .. } => {
-                    let element = self.element_type(element)?;
-                    if !self.is_flat_element(element)? {
-                        return Ok(false);
-                    }
-                    pending.push(element);
-                }
                 CheckedType::Nominal(id) => {
                     let CheckedNominalKind::Struct { fields } = &self.nominal(id)?.kind else {
                         return Ok(false);
                     };
                     pending.extend(fields.iter().map(|field| field.ty));
                 }
-                // The top-level FixedVector const form is normalized to dense
-                // element storage by parse_const_type. Other eligible nesting
-                // must be implemented or reported as a capability gap, never
-                // made ineligible merely because its layout is unsupported.
                 CheckedType::Bool
                 | CheckedType::Generic(_)
                 | CheckedType::GenericInt(_)
                 | CheckedType::GenericFloat(_)
+                | CheckedType::Window { .. }
                 | CheckedType::Buffer { .. } => return Ok(false),
             }
         }
@@ -1592,22 +1560,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.elements.borrow_mut().push(ty);
         self.element_ids.borrow_mut().insert(ty, element);
         Ok(element)
-    }
-
-    pub(super) fn is_flat_element(&self, ty: CheckedType) -> Result<bool, CheckStop> {
-        Ok(match ty {
-            CheckedType::Unit
-            | CheckedType::Bool
-            | CheckedType::Integer(_)
-            | CheckedType::Float(_)
-            | CheckedType::GenericInt(_)
-            | CheckedType::GenericFloat(_) => true,
-            CheckedType::Nominal(id) => self.nominal(id)?.is_tag_only_enum(),
-            CheckedType::Generic(_)
-            | CheckedType::Array { .. }
-            | CheckedType::Buffer { .. }
-            | CheckedType::Window { .. } => false,
-        })
     }
 
     pub(super) fn parse_literal(

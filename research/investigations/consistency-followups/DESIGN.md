@@ -307,6 +307,33 @@ must observe the selected fields and array contents through the ordinary path.
 Tests belong in the maintained compiler/conformance suites; this record retains
 the reasoning and observed outcomes rather than supplying daily test inputs.
 
+The repair uses `ensure_nominals_in_node` when collecting a constant, before
+the existing read-only type and value checks. Constructor checking resolves
+the written argument list through `nominal_generic_substitution` and compares
+the complete substitution with the declared instance, including arguments
+absent from its fields. Nested constants retain `CheckedValue::Struct` and
+the ordinary readonly aggregate lowering. This extends the existing collection
+path without another instance inventory or evaluator.
+
+Instantiated field eligibility also exposed obsolete support for treating
+`Slots` constants as dense arrays. CONST-2 excludes `Slots` and `Ring`; both
+are now rejected recursively even when a generic field introduces them. The
+old normalization and flat-element helper are removed. A phantom argument
+alone does not make storage ineligible: an empty `Phantom<Box<u64>>` contains
+no Box, while `Cell<Box<u64>>` does.
+
+The pre-repair compiler stopped with `InvalidResolution` on each new
+conformance source: the nested positive, mismatched phantom arguments, and
+the ineligible generic field. The maintained cases now distinguish those
+obligations: the positive observes type and integer substitutions, nested
+array contents and reference reads in a native program; the two negatives
+require CONST-2 source diagnostics. Compiler tests additionally inspect the
+checked aggregate, compare first-use and pre-established instances, and cover
+argument arity, kinds, bounds, field order/types/counts, hidden ineligible
+storage and interface-bound function arguments. No specification or design
+decision changes are required; the existing generic and constant rules
+select the behavior.
+
 ## Reserved names and declaration roles
 
 OP-1's exhaustive reservation list excludes invariant declarations, but DIAG-1
