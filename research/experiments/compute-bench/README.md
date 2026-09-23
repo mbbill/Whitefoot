@@ -64,6 +64,9 @@ The separate [runtime-DAG fan-in trial](../../investigations/compute-model/DESIG
 uses `dag_fanin_probe.cpp`, its LLVM host adapter and `dag_fanin_trace.awk`.
 These files serve only the explicit targets below and retire with that trial.
 They do not enter the framework scoreboard or daily correctness checks.
+The [retained qualification stream](dag-fanin-2026-09-23.tsv) records artifact
+identities, complete-matrix checks, selected passive observations and separate
+construction/execution phase costs. Those costs are not benchmark intervals.
 The probe compares every task output and exactly-once count with a serial
 Kahn oracle over the original graph edges, and checks input preservation,
 boundary canaries and each notification owner's received source mask/count.
@@ -114,6 +117,16 @@ for engine in wf tbb; do
   done
 done
 ```
+
+The separately selected spine-first comparator uses `DAG_VARIANT=phased`
+with the ordinary `DAG_EMIT_FLAGS=--par`; build it in another dedicated work
+directory. `DAG_ENGINE=wf-phased` selects only the existing 34 spine cases
+(632 task rows), with the same graph oracle and recurrence observer. Run its
+plain and traced images once each at W1/W4. It computes every spine task before
+mapping the original leaf ranges, so the investigation charges those added
+precedences. It introduces neither a worker-count source parameter nor a grain
+override; permission, generated splitting, actual steals and observed overlap
+remain separate facts.
 
 The traced image records one begin/end pair per serial task recurrence and
 checks exact event counts, IDs, inputs, results, native thread identity and

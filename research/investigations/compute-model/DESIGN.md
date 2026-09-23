@@ -16,8 +16,8 @@ compiler. The active specification and executable cases remain authoritative.
 This trial starts at merged `f2140599` and qualifies candidates
 left open by [catalog section 5](../io-model/CONCURRENCY-CATALOG.md#5-task-dag-with-dependencies-static-and-dynamic).
 The source now follows v0.68 at merged `345e2966a`.
-The complete source admits and emits the groups reported below. Native
-correctness and observed overlap remain separate evidence.
+Source acceptance, emitted structure, native correctness and observed overlap
+are reported separately below.
 
 The initial scope is three runtime-selected fixed graph families, not
 arbitrary runtime adjacency:
@@ -169,10 +169,10 @@ fourth B,A,D,C order has the same task/data graph; its emitted joins and any
 added precedences remain to be observed. All four have bounded logical source
 activation depth, not an established native stack or lane-memory peak.
 
-A considered future spine form computes the spine first and then maps all
+A phased spine form computes the spine first and then maps all
 leaves, with span `k + max(T_i)` before overhead. It matches `k+T` on uniform
 leaves, so that family alone cannot distinguish it from nested calls; skew
-can. This alternative is not implemented or selected by the initial trial.
+can. Initially deferred, it was selected as the source-only comparator above.
 
 ### Source admission and emitted structure
 
@@ -206,7 +206,7 @@ Its identities are:
 | Artifact | SHA-256 |
 |---|---|
 | Saved `345e2966a`-equivalent compiler | `cbffd4dd1ae8641ef03790457181188988bf70cc4af1a53c50c1f406307bb7f9` |
-| [Current source](dag-fanin.wf) | `8824d372ce063c5646d2dbaf84a573cbf7f7ea34d117b79e6e7c4b46dd9e3a52` |
+| [Source before the phased comparator](https://github.com/mbbill/Whitefoot/blob/a2f71f379fb7a9d57bcf51f4746695d49b58b885/research/investigations/compute-model/dag-fanin.wf) | `8824d372ce063c5646d2dbaf84a573cbf7f7ea34d117b79e6e7c4b46dd9e3a52` |
 | Active v0.68 specification | `5917e3ee2234300a21affb2663a5d8fa80821257e66d7b759945e4c99d61ca14` |
 | Default emitted LLVM module | `92fdcad44f82524683565ca1983104fe16d5bbef333768029ba7ede216435159` |
 
@@ -226,7 +226,7 @@ admitted associative reduction. The LLVM contains that dependent scalar loop
 and no synthesized loop splitters, so later task overlap cannot be attributed
 to a parallelized recurrence.
 
-The default module contains nine static compute-offer sites. Each two-call
+The pre-comparator default module contains nine static compute-offer sites. Each two-call
 group offers its first call, executes its second on the current stack, then
 joins or executes the refused first call before proceeding. The ledger and
 actual calls agree on the following groups:
@@ -259,8 +259,8 @@ spine execute in the sequential suffix. A length-eight input reaches its
 empty terminal suffix at the cut; length nine includes the first nonempty
 sequential suffix. The native adapter selects the sequential world at W1,
 so the runtime's nominal no-pool budget of six does not make W1 offer tasks.
-The `off` control may isolate this cutoff later; none has been emitted or
-run as part of this source-admission result.
+The separately labelled `off` control below attributes this cutoff without
+changing the default policy.
 
 Emitted captures request 56 bytes for a spine leaf, 80 for a notification
 source, 96 for an owner, and 56 or 72 for the N groups. The runtime reserves
@@ -280,14 +280,278 @@ Neither the ledger nor the reserved lane storage measures physical peak
 memory or the final instrumented image's stack use.
 
 **Design suitability.** The existing checked calls express all three selected
-families. Two concrete improvement opportunities remain unselected: a
-recursive policy that accounts for this unary spine with side leaves could
-preserve offers beyond depth eight, and a lowering that retains permitted A/D
-overlap across the current groups could avoid the diagnostic extra edge.
-Both affect compiler scheduling and require independent work/space and
-performance qualification; removing the depth cut alone leaves the retained
-slot limit. This trial records their structure and defers implementation
-until native evidence qualifies the impact. No specification rule changes.
+families. The admission checkpoint identified two distinct compiler
+opportunities: a recursive policy that accounts for this unary spine with
+side leaves could preserve offers beyond depth eight, and a lowering that
+retains permitted A/D overlap across the current groups could avoid the
+diagnostic extra edge. The native evidence below qualifies their bounded
+impact; any scheduling change still needs its own work/space and performance
+grounds. Removing the depth cut alone leaves the retained-slot limit. The
+source trial changes no specification rule.
+
+### Native qualification and cutoff attribution
+
+The [retained qualification rows](../../experiments/compute-bench/dag-fanin-2026-09-23.tsv)
+record the exact inputs, artifact/log identities, construction stages and
+observations. The default WF matrix passed all 115 cases and 956 task rows in
+each ordinary/traced image at W1/W4, once per configuration. The independent
+oneTBB reference passed 67 cases and 764 rows in each of its four runs: it
+evaluates each original N graph once per weight assignment, rather than
+repeating WF's four source orders. Every run checked values, evaluation
+counts, unchanged input, boundary canaries and receipt masks/counts. Traced
+runs additionally checked exactly two events per task, IDs, inputs, returned
+values, stable native-thread identity and completion of every original
+prerequisite. Deliberate output corruption was rejected in every process;
+traced processes also rejected event deletion.
+
+The host was Darwin 25.6.0 arm64 with Apple clang 21.0.0. Runtime/module and
+probe compilation used ordinary `-O2` flags, without historical alignment or
+grain controls. The existing oneTBB cache was version 2023.1.0 at source pin
+`3046c8b0c29df995980003ea24f4d78c80ec0c8d`; no dependency was rebuilt.
+The observer uses a sequentially consistent event index and distinct native
+thread IDs, with 40 bytes per event, or 80 bytes per task, plus container
+metadata. Linked-code inspection established that begin's returned seed
+feeds the serial recurrence and its result feeds end. These hooks add no
+wait or rendezvous but can change scheduling; no execution time here is a
+performance comparison or a physical peak-memory measurement.
+
+At W4 the default length-16 and length-32 uniform-costly spines each reached
+four simultaneous task threads and recorded seven leaf/later-spine overlap
+pairs. This is a concrete counterexample to mandatory global-level execution
+for this family. In both cases, however, every task with ID at least 16 ran
+on one thread without overlap with another such task, matching the emitted
+budget-eight cut. The full-cost notification mask showed A/B recurrence
+overlap and C/D recurrence overlap in both WF and oneTBB. Owner notice folds
+and final output commits are outside those task intervals; their mutual
+overlap was not measured.
+
+For the N graph, the number of weight assignments, out of sixteen, with
+observed overlap on each incomparable pair was:
+
+| Execution | A/B | A/D | C/D |
+|---|---:|---:|---:|
+| WF mode 0 | 8 | 0 | 7 |
+| WF mode 1 | 0 | 8 | 4 |
+| WF mode 2 | 8 | 8 | 0 |
+| WF diagnostic mode 3 | 8 | 0 | 8 |
+| oneTBB original graph | 8 | 8 | 6 |
+
+In the all-costly assignment the oneTBB trace contains all three pairs; each
+WF order retains its stated extra precedence. The diagnostic A/D absence
+also matches its discarded pair permission. Counts of observed overlaps do
+not prove a permission denial, scheduler fairness or a universal limit on
+source decompositions.
+
+The selected frontier-off control passed the unchanged full WF matrix in
+all four configurations, with the same negative controls. Its module hash is
+`068af960e06a124fbe12bbdd2602e43a540784e908be0127618288c31d1202f9`.
+It removes the budget query, decrement and clone family while retaining all
+pair permissions and the sequential suffix body. Every nonempty suffix can
+now attempt its 56-byte leaf offer before directly recursing. Its optimized
+spine frame is 80 bytes per level and entry frame 16, versus default 96 and
+48; other recorded notification/N frames are unchanged. Deep-task overlap
+on distinct native threads changed as follows, counting only pairs whose two
+IDs are both at least 16:
+
+| Spine profile | Default deep threads / pairs | Frontier-off deep threads / pairs |
+|---|---:|---:|
+| Length 16, all costly leaves | 1 / 0 | 4 / 11 |
+| Length 32, all costly leaves | 1 / 0 | 4 / 57 |
+| Length 16, last leaf costly | 1 / 0 | 2 / 7 |
+| Length 32, last leaf costly | 1 / 0 | 2 / 23 |
+
+Cheap and first-heavy tails still showed no deep overlap. At length nine the
+deep suffix contains only a dependent spine/leaf pair, so its zero is
+expected. For length 32 with costly leaves, the retained witness has task 17
+on thread 3 between events 83 and 90, and task 19 on thread 4 between 87 and
+92. This attributes the default deep-suffix restriction to the existing
+recursive policy in this bounded family. It selects neither unrestricted
+offers nor another policy: the 64-slot retention limit and costs beyond
+length 32 remain unqualified. The runtime's historical `grants` field counts
+successful steals, not offer attempts or acquired slots.
+
+### Phased spine: permission and work price
+
+The comparator adds `phased_leaf` and `dag_spine_phased` plus one source-main
+reachability call. Existing task and graph functions are unchanged. Its
+first check stopped at OP-4 on the doubled cost index; four local endpoint
+invariants now combine `2 times (i+1 <= count)` with the matching input
+capacity requirement. These finite proof steps erase without adding a branch
+or strengthening the input domain. Source SHA-256 is
+`097d4d17b8f4784ea19126393697cfc4ace3af69989129ade015140b167147f1`.
+The same saved compiler admitted and emitted it at 09:37:38 UTC on 2026-09-23,
+taking 0.18 seconds including stack-ledger code generation and 0.20 seconds
+with the guard. Module SHA-256 is
+`4ffd16b064d6bb0c4d4ff1099625f37e0dfe9fc7e897c74f74edbdd98b625dfa`.
+
+The serial spine loop is denied PAR-2, while the leaf loop is permitted and
+emits an independent map with five captured bindings and a 96-byte capture
+frame. Its output is the original `2k` cells; no spine buffer, initialization
+pass or row remapping was introduced. The emitted query is exactly
+`wf__par_split_budget(count, 199)`. The current 150,000 work unit charges
+754 iterations per affordable chunk, so all selected counts through 32
+yield zero split budget regardless of whether each leaf costs 1 or 65,536.
+Even 754 iterations would afford only one chunk and therefore no split;
+this static price first affords two chunks at 1,508 iterations, outside the
+trial. The limitation is price selection after valid source permission.
+No padding, cost annotation or grain override was used to bypass it.
+
+All 34 spine cases and 632 task rows passed once in each ordinary/traced
+image at W1/W4, with the same original-edge oracle, value/count, unchanged
+input and canary checks. Each process rejected output corruption, and each
+traced process also rejected event deletion. At W4 every case recorded zero
+successful steals and zero task-overlap pairs; every nonempty traced case
+used one native thread. This agrees with the emitted zero split budget,
+including the costly leaves. No default, frontier-off or oneTBB case was
+rerun for this comparator.
+
+The phased form therefore preserves results and exposes leaf independence
+with no extra array, but the present price does not offer that work in this
+bounded trial. Its added precedences and span remain charged even if a later
+price exposes overlap. Recursive-depth policy and unavailable loaded-cost
+pricing are separate opportunities; neither these observations nor the
+cutoff control establish a performance improvement or select a replacement
+policy.
+
+## Bounded call-group bridge trial
+
+The selected compiler experiment retains consecutive full call groups while
+bridging their source-adjacent tail/head pair when that exact pair already
+has PAR-1 permission. The diagnostic N order supplies the concrete consumer:
+its B/A and D/C groups discard the permitted A/D pair, and the native W4
+matrix observed no A/D overlap in any of the sixteen assignments. The other
+source orders expose A/D while adding a different precedence; the phased
+spine comparator addresses a separate family and remains unoffered at this
+trial's counts. These observations select a bounded compiler experiment,
+not a general runtime DAG executor or a performance conclusion.
+
+### Selected representation and boundaries
+
+Preserve the original groups and source membership, then select one block
+schedule after scalar-offer policy and complete target frame fitting,
+including a recursive-budget field where applicable. A bridge adds an offer
+of the left group's normally-inline tail. Before the right head's first
+argument instruction, retire every other left-group member, newest first.
+After publishing or executing that head, retire the old tail before the
+right group's second source member begins its arguments. Every call executes
+once. For B,A,D,C the selected events are:
+
+```
+capture B; publish B
+capture A; publish A
+join B; read b; release B
+capture D(b); publish D
+join A; read a; release A
+capture C(a,b); execute C inline
+join D; read d; release D
+```
+
+Publication, selected retirement lists and continuation labels consume the
+same final schedule. Overlapping permission records are evidence for that
+schedule, not independent instructions to drain the emitter's pending calls.
+Record each relevant source statement's beginning before lowering its
+arguments; a call-result ID alone cannot locate an earlier argument read.
+Initially retain the existing single-IR-block and addressed-result boundaries.
+A scalar call omitted from offers still occupies its original source
+position. Pruning must not invent an adjacency, and a newly offered tail
+must itself pass offer policy and the 256-byte frame bound. An unavailable
+bridge retains the original groups and fallback. Unbridged full groups keep
+their source-last inline call and newest-first joins.
+
+### Permission and logical source state
+
+The exact tail/head verdict covers both complete statement footprints,
+including argument reads, by-value consumptions and binding definitions.
+Disjoint callee rows alone are insufficient: a tail write that interferes
+with construction of the head's arguments denies that pair. No SSA-only
+dependency analysis grants a bridge. Optional range questions keep their
+existing source-first statement identity, captured ranges, repeated-visit
+intersection and ordinary derivation roots; this experiment adds no proof
+query, solver, acceptance condition or runtime proof test.
+
+The local preservation argument has two steps. The left full group's
+every-pair permission allows viewing its tail's already-executed prefix
+after the completed earlier members, with the same captured arguments and
+state observations. The head begins its arguments only then, so the exact
+tail/head permission applies in its original logical pre-tail state. Before
+the right group's second member begins, the old tail joins; tail/head
+independence similarly allows viewing the head prefix after that completed
+tail, restoring the right full group's ordinary logical starting state.
+Repeating these steps permits consecutive bridges without treating adjacent
+independence as transitive. D's arguments wait for B, and C's arguments wait
+for A; no claim moves the A/D proof ahead of B or the D/C proof ahead of A.
+Missing evidence, unresolved captures or an unsupported argument region
+retain the existing lowering.
+
+### Runtime limitation and cost obligation
+
+The runtime's newest-first premise changes at a bridge: B may need joining
+while newer A is still pending. Its current join pops local work before
+checking target completion, so even an already-completed B can make the
+owner execute A before returning b. A separate deterministic native probe
+will characterize that protocol through the delivered deque operations.
+Checking DONE before popping is only a possible separately qualified change:
+if B is incomplete at that check and the owner starts A inline, B's later
+completion cannot resume the owner continuation until A returns. The
+experiment retains ordinary stacks and selects no continuation migration,
+arbitrary target removal or ready-task executor.
+
+Each bridge adds at most one tail offer and its capture/join/release work;
+source task work and results do not change. It can retain one more frame
+than the original group, subject to the unchanged slot refusal path. The N
+order can have two pending frames where the old groups had one. These costs
+and the runtime limitation make useful overlap an empirical requirement;
+removing an emitted precedence alone does not establish a useful speedup.
+
+### Prospective qualification
+
+Before results select the disposition, require:
+
+- Ordinary compiler tests preserve exact pair authority and distinguish an
+  adjacent-pair chain from an unproved larger group. Include a write reached
+  by the next statement's argument load, dynamic captured ranges and a
+  rebound endpoint, source-local proof evidence, and a required earlier
+  result. Retirement must precede the first dependent argument instruction.
+- Exercise non-call and control boundaries, addressed-result promotion,
+  cleanup, owned aggregate ABI, phi predecessors, scalar omission, frame
+  refusal including a budget field, and mixed granted/refused calls. Retain
+  exactly-once calls and releases, unchanged unbridged full-group behavior,
+  and the ordinary sequential world's emitted code.
+- Run the existing full 115-case WF matrix once in each ordinary/traced
+  W1/W4 configuration with the fixed inputs, original graph edges, task
+  oracle, passive observer and negative comparator controls. Keep any new
+  phased-spine rows separately identifiable. Inspect the emitted N mode 3
+  publication and retirement order, and require actual distinct-native-thread
+  A/D overlap in its long-A/long-D, short-B/short-C assignment (case 9) in the
+  traced W4 image.
+  No wait, sleep, rendezvous or favourable rerun may manufacture that result.
+- If the overlap criterion fails, record the structural result and leave
+  runtime benefit unqualified; reassess the pending selection before wider
+  adoption. A separately selected runtime control is its own labelled arm,
+  not a replacement for the original result. No timing comparison is part
+  of this qualification. A later speed claim needs prospective paired
+  same-source timing, numerical benefit/regression thresholds, protected
+  wide-group and recursive controls, and a baseline-against-itself control.
+
+The pending [lowering amendment](../../../design/amendments/rolling-call-groups.md)
+replaces the current contiguous-group decision's restriction to unclaimed
+adjacent pairs and adds one owner for the target-selected schedule. The
+[runtime amendment](../../../design/amendments/rolling-group-retirement.md)
+replaces the own-offer-first wording and the whole-group newest-first
+decision: newest-first still holds within each retirement set, but an older
+target can remain below a retained newer offer. No live tree or specification
+rule is changed by this author experiment.
+
+**Design suitability.** This bounded extension serves the missing A/D
+consumer through the existing checked-call path. Its representation cost is
+justified by argument boundaries, target refusal and continuation labels
+that must agree on one schedule. Lowering, scalar selection, imported loop
+CFG metadata, frame fitting, ordinary call emission, labels, clone/frontier
+selection and storage lifetime consumers are affected. Keep their existing
+responsibilities; defer singleton-group bridges, broader pending-call
+scheduling and stronger runtime policy until a concrete remaining consumer
+and qualified evidence justify them. The investigation remains the owner of
+the experiment; pending amendments are removed when ruled on.
 
 ## Sparse destination routing trial (2026-09-21)
 

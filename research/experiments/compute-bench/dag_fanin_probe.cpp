@@ -28,6 +28,8 @@ extern "C" {
 int wf__floor_run(int, char **);
 void dag_probe_spine(std::uint64_t, const std::uint64_t *, std::uint64_t,
                      TaskCell *, std::uint64_t);
+void dag_probe_spine_phased(std::uint64_t, const std::uint64_t *, std::uint64_t,
+                            TaskCell *, std::uint64_t);
 void dag_probe_notify(std::uint64_t, const std::uint64_t *, TaskCell *,
                       std::uint64_t *, std::uint64_t);
 void dag_probe_n(std::uint64_t, const std::uint64_t *, TaskCell *, std::uint64_t);
@@ -41,6 +43,7 @@ constexpr std::uint64_t expensive = 65536;
 constexpr std::uint64_t seed_value = UINT64_C(0xffffffffffffffe7);
 constexpr std::uint64_t guard_value = UINT64_C(0xbadc0ffee0ffee17);
 enum class Family { spine, notify, n };
+enum class Engine { whitefoot, tbb, phased };
 struct Graph {
     Family family;
     std::string name;
@@ -146,7 +149,7 @@ Graph n_graph(unsigned costs, unsigned mode) {
     graph.edges = {{0, 2}, {1, 2}, {1, 3}};
     return graph;
 }
-std::vector<Graph> fixtures(bool native) {
+std::vector<Graph> fixtures(Engine engine) {
     std::vector<Graph> result;
     for (std::uint64_t length : {0, 1, 2, 4, 7, 8, 9, 16, 32}) {
         for (unsigned profile = 0; profile != 4; ++profile) {
@@ -164,6 +167,7 @@ std::vector<Graph> fixtures(bool native) {
             result.push_back(std::move(graph));
         }
     }
+    if (engine == Engine::phased) return result;
     for (unsigned fixture = 0; fixture != 17; ++fixture) {
         const unsigned mask = fixture == 16 ? 15 : fixture;
         Graph graph{Family::notify, "notify-" + std::to_string(mask) +
@@ -177,7 +181,7 @@ std::vector<Graph> fixtures(bool native) {
         result.push_back(std::move(graph));
     }
     for (unsigned costs = 0; costs != 16; ++costs)
-        for (unsigned mode = 0; mode != (native ? 1U : 4U); ++mode)
+        for (unsigned mode = 0; mode != (engine == Engine::tbb ? 1U : 4U); ++mode)
             result.push_back(n_graph(costs, mode));
     return result;
 }
@@ -280,10 +284,12 @@ void print_trace(const Graph &graph, const Trace &trace) {
 void native_graph(const Graph &graph, const std::uint64_t *costs,
                    TaskCell *output, std::uint64_t *receipts,
                    tbb::task_arena &arena, bool traced);
-void whitefoot_graph(const Graph &graph, const std::uint64_t *costs,
+void whitefoot_graph(Engine engine, const Graph &graph, const std::uint64_t *costs,
                       TaskCell *output, std::uint64_t *receipts) {
-    if (graph.family == Family::spine)
-        dag_probe_spine(graph.argument, costs, graph.costs.size(), output, graph.seed);
+    if (graph.family == Family::spine) {
+        const auto entry = engine == Engine::phased ? dag_probe_spine_phased : dag_probe_spine;
+        entry(graph.argument, costs, graph.costs.size(), output, graph.seed);
+    }
     else if (graph.family == Family::notify)
         dag_probe_notify(graph.argument, costs, output, receipts, graph.seed);
     else dag_probe_n(graph.mode, costs, output, graph.seed);
@@ -301,7 +307,8 @@ void oracle_control() {
         reference_task(0, 1, 0, 0) != UINT64_C(1442695040888963407))
         fail("oracle known-result control");
 }
-int run_matrix(bool native, unsigned workers) {
+int run_matrix(Engine engine, unsigned workers) {
+    const bool native = engine == Engine::tbb;
     const bool traced = dag_probe_trace_image() != 0;
     oracle_control();
     // Native mode never enters wf__floor_run, so a second WF pool is absent.
@@ -314,12 +321,13 @@ int run_matrix(bool native, unsigned workers) {
         arena->initialize();
     }
     std::printf("configuration\tengine=%s\timage=%s\ttotal_participants=%u\trepeats=1\n",
-                native ? "tbb" : "wf", traced ? "trace" : "plain", workers);
+                native ? "tbb" : engine == Engine::phased ? "wf-phased" : "wf",
+                traced ? "trace" : "plain", workers);
     std::printf("accounting\ttask_cell_bytes=%zu\tevent_bytes=%zu\tphysical_peak=not-measured\n",
                 sizeof(TaskCell), sizeof(Event));
     bool output_control = false, trace_control = false;
     std::size_t cases = 0, tasks = 0;
-    for (const Graph &graph : fixtures(native)) {
+    for (const Graph &graph : fixtures(engine)) {
         const Expected expected = oracle(graph);
         const std::size_t count = graph.costs.size();
         const TaskCell guard{guard_value, ~guard_value};
@@ -338,7 +346,7 @@ int run_matrix(bool native, unsigned workers) {
         if (native) native_graph(graph, costs.data() + 1, storage.data() + 1,
                                   receipt_storage.data() + 1,
                                   *arena, traced);
-        else whitefoot_graph(graph, costs.data() + 1, storage.data() + 1,
+        else whitefoot_graph(engine, graph, costs.data() + 1, storage.data() + 1,
                                receipt_storage.data() + 1);
         Rows actual(storage.begin() + 1, storage.end() - 1);
         const auto mismatch = compare_rows(actual, expected.rows);
@@ -477,8 +485,11 @@ void native_graph(const Graph &graph, const std::uint64_t *costs,
     });
 }
 } // namespace
-extern "C" int wf__main_body(int, char **) {
-    try { return run_matrix(false, selected_workers()); }
+extern "C" int wf__main_body(int, char **argv) {
+    try {
+        const Engine engine = std::string(argv[1]) == "wf-phased" ? Engine::phased : Engine::whitefoot;
+        return run_matrix(engine, selected_workers());
+    }
     catch (const std::exception &error) {
         std::fprintf(stderr, "dag-fanin: %s\n", error.what());
         return 2;
@@ -486,10 +497,11 @@ extern "C" int wf__main_body(int, char **) {
 }
 int main(int argc, char **argv) {
     try {
-        if (argc != 2) fail("usage: dag_fanin_{plain,trace} wf|tbb");
-        if (std::string(argv[1]) == "tbb") return run_matrix(true, selected_workers());
-        if (std::string(argv[1]) == "wf") return wf__floor_run(argc, argv);
-        fail("engine must be wf or tbb");
+        if (argc != 2) fail("usage: dag_fanin_{plain,trace} wf|tbb|wf-phased");
+        if (std::string(argv[1]) == "tbb") return run_matrix(Engine::tbb, selected_workers());
+        if (std::string(argv[1]) == "wf" || std::string(argv[1]) == "wf-phased")
+            return wf__floor_run(argc, argv);
+        fail("engine must be wf, tbb or wf-phased");
     } catch (const std::exception &error) {
         std::fprintf(stderr, "dag-fanin: %s\n", error.what());
         return 2;

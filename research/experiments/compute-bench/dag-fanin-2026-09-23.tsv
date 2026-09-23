@@ -1,0 +1,449 @@
+variant	record	fields
+context	purpose	runtime-selected-fixed-DAG qualification	timing_comparison=none	home=compute-bench research evidence	retire=when superseded or no investigation consumes it
+context	protocol	base=345e2966a	off_criterion_commit=8311028a5a42e9623f8390821c9fc3ca3ea29e03	phased_criterion_commit=0359cdfaaa327106bb02a4d6cd51f3894b14ed2c	repeats_per_configuration=1	forced_waits=none	host_guard_seconds=30	build_jobs=2
+context	host	system=Darwin 25.6.0	arch=arm64	compiler=Apple clang 21.0.0 (clang-2100.3.34.2)	target=arm64-apple-darwin25.6.0
+context	flags	WF_native=-std=c11 -pthread -O2 -Wno-override-module	probe=-std=c++17 -pthread -O2 -Wall -Wextra -Werror -Wpedantic	link=-pthread -O2 -ltbb -lm	historical_alignment_controls=none
+context	oneTBB	source_pin=3046c8b0c29df995980003ea24f4d78c80ec0c8d	version=2023.1.0	build=shared Release C++17 IPO=OFF hwloc=OFF malloc=OFF upstream_tests=OFF	cached_scalar_flags=-fno-fast-math -ffp-contract=off -fno-vectorize -fno-slp-vectorize -fno-lto	new_dependency_build=false
+context	fixtures	spine_lengths=0,1,2,4,7,8,9,16,32	leaf_profiles=0:uniform1;1:uniform65536;2:first65536;3:last65536	spine_cost=1	seed=ffffffffffffffe7	N_weight_bits=A,B,C,D	N_costs=1,65536
+context	N-modes	0=(A||B);(C||D)	1=B;((A;C)||D)	2=(A||(B;D));C	3=B,A,D,C	original_edges=A-C,B-C,B-D	pair_overlap=distinct threads with intersecting begin/end intervals
+context	observer	bytes_per_event=40	two_events_per_task=true	peak_memory=not_measured	task_cell_bytes=16	notification_events=recurrence only, after notice folding	raw_default_grants_field=actual successful steals, not acquisition or offer count
+context	limits	fixed graph families only	max_spine_length=32	lane_capacity_boundary=not_measured	absent_overlap=not an impossibility result	thread_ids=process-local thread identities
+pre-rebase	construction-failure	attempt=1	reason=host guard busy	exit=75	raw_log=dag-fanin-native-build.log	sha256=d51fd8da397695d910fc8e91b963cf84584949cee281020c712cb111202f0add
+pre-rebase	raw-log	file=dag-fanin-native-build-2.log	sha256=92f65fb3035f3508cd73c588c190599d05fafea73b8c95a8faca47db4d299ce3
+pre-rebase	phase	label=dag-fanin-native-build	stage=native-construction-failed	command_wall_s=0.98	process_user_s=0.87	process_system_s=0.28	guard_wall_s=1.03	exit=2	benchmark_interval=false
+pre-rebase	construction-failure	attempt=2	reason=17-digit canary literal rejected by clang	repair=16-digit badc0ffee0ffee17	program_execution=false
+phased	raw-log	file=dag-fanin-main-345e-phased-emit.log	sha256=600682ef21afb096329435d660a12b57e93a1411bb770a5f3392f4192fe3bfee
+phased	phase	label=dag-fanin-main-345e-phased-emit	stage=source-analysis-rejected	command_wall_s=0.07	process_user_s=0.06	process_system_s=0.00	guard_wall_s=0.11	exit=1	benchmark_interval=false
+phased	source-repair	rule=OP-4	residual=id < deref(costs).len	repair=explicit erased endpoint certificates	program_execution=false
+phased	emission-attempt	reason=host guard busy	exit=75	raw_log=dag-fanin-main-345e-phased-emit-proof.log	sha256=90df65f5ac71b4b062081f6bc431f47e12a3f5f03db7917f6828074815e8e63b
+default	emission-flags	--par --par-ledger --stack-ledger --emit-llvm
+default	artifact	file=whitefootc	sha256=cbffd4dd1ae8641ef03790457181188988bf70cc4af1a53c50c1f406307bb7f9
+default	artifact	file=dag-fanin.wf	sha256=8824d372ce063c5646d2dbaf84a573cbf7f7ea34d117b79e6e7c4b46dd9e3a52
+default	artifact	file=dag_fanin_host.ll	sha256=2612dcf89e12b4c3505b56aec94f44af443f349b749c9fcb803a30874a17d9c0
+default	artifact	file=dag_fanin_trace.awk	sha256=95740fb87edcd550940cae3951b0b73b000453e9cc6022616135fea169df77bd
+default	artifact	file=dag-fanin-main-345e-default-emit.log	sha256=4ef8329618a6815f2c309366bbc3319d949b4793b2fa10e732214f1db236e9e0
+default	artifact	file=dag_fanin_default.raw.ll	sha256=92fdcad44f82524683565ca1983104fe16d5bbef333768029ba7ede216435159
+default	artifact	file=dag_fanin_default_plain.ll	sha256=27b16fdb2b56d8f50f2b127f9fc76d613fb630e9b126489b59d25a858e5c3d11
+default	artifact	file=dag_fanin_default_trace.ll	sha256=8a6847f45abd29002a4056d3586a1f6d0f2819b59f2bb8482720ba0dc63c6ca2
+default	artifact	file=dag_fanin_probe.cpp	sha256=7e779cbd81fcfa24584ceb96bb535992080a6fb282fe15bca47405af9087ec90
+default	artifact	file=libtbb.dylib	sha256=61fec48dc42829dc97943d72051ab2ca00786f97d198c412db1042b2b08e3188
+default	artifact	file=metadata.txt	sha256=bb1ed8f84e8d4a817f7a63c93ca22ec529aec47615ff4b38fa6118718e19f470
+default	artifact	file=dag_fanin_default_probe.o	sha256=f37ca1795b65557f1926a295bfcacf600310feaae2d5ba3b7fd19da21555f50a
+default	artifact	file=dag_fanin_default_plain.o	sha256=9f2389c07d4b7890f09674c6c129f0e9c09bdfaa61a092feab9d2a91d2d4b9a1
+default	artifact	file=dag_fanin_default_trace.o	sha256=c563db8ac0d5c6c85feb0328c3ea9a3ef098d9d7a8509e556bd8746931ab0eb3
+default	artifact	file=floor.o	sha256=8342e7ea0b8d6a0817d543e8c05e807c96527393945e95597718ba9a27ce722d
+default	artifact	file=sched_core.o	sha256=0655633c69666fcce21bf67258101aedb49c914fc50a6cc8edbfe22a8315e645
+default	artifact	file=sched_prim_host.o	sha256=c3a5140b8221a57d27a510995ae37c7b33a64ebc87ec9f9286b99ece649bce45
+default	artifact	file=sched_entry.o	sha256=e04734d7a1ddbe9083b47570ca2854963803b88a7197628bed2ca66cb4924d5c
+default	artifact	file=completion_runtime.o	sha256=75cb971977625c9b05adcf74b14989544ccbf61b0a81fe4843ec72226eb36c61
+default	artifact	file=completion_wait_host.o	sha256=d95b24c2367aa6dcf60a9d9e4e36acf79fa502d4ded856f244c6f4afcf28aa10
+default	artifact	file=completion_file_adapter.o	sha256=fb4ee3f397da5bcee9188332d56fb3c854b931b4c1f07b4c8350a9c941891937
+default	artifact	file=completion_file_posix.o	sha256=1d1fe1c3033038fc69cd031e32b5eff6e85571da89176f85e442f52f0fb1b940
+default	artifact	file=completion_bridge.o	sha256=af91032f29dc1b1c22dcf43099d933303ff3b1e4741a93122f987bdbdb70c4ec
+default	artifact	file=completion_linux_io_uring.o	sha256=e389769ac8c9f38af9cd00e5bc5d56d3c180dff5985fb81ddfff63dfa89eb453
+default	artifact	file=ordinary_values_c.o	sha256=685d56fcf6c89bbddf8d1921b44952bb909dd0362715817babbacd64da8898c3
+default	artifact	file=ordinary_values_ll.o	sha256=d578790251750de1a10ef95e1265d028184cc1d18f0c40d78e88c5ee8f1fcd80
+default	artifact	file=dag_fanin_default_plain	sha256=304a8511e448e1a3684796366507445f6093f82d28e94c922c504f9e024ba111
+default	artifact	file=dag_fanin_default_trace	sha256=39eb4adf99c6bed70e5b2af893f2931e1c48e33a60c85b22207f397243f88b46
+default	raw-log	file=dag-fanin-main-345e-default-emit.log	sha256=4ef8329618a6815f2c309366bbc3319d949b4793b2fa10e732214f1db236e9e0
+default	phase	label=dag-fanin-main-345e-emit	stage=source-analysis-and-emission	command_wall_s=0.62	process_user_s=0.16	process_system_s=0.02	guard_wall_s=0.62	exit=0	benchmark_interval=false
+default	raw-log	file=dag-fanin-main-345e-native-build.log	sha256=786f39446b9b6254216379aead98a8447e5bf626f29817247c0e3e1ab8731870
+default	phase	label=dag-fanin-main-345e-native-build	stage=native-construction	command_wall_s=2.05	process_user_s=1.80	process_system_s=0.52	guard_wall_s=2.08	exit=0	benchmark_interval=false
+default	optimized-bracketing	image_disassembly_sha256=452a65917fbbbb82c10b213487cc78b05f94519b764520ef8cabd9aec0a7af89	WF=begin return feeds scalar recurrence; recurrence result feeds end	native=begin volatile readback feeds scalar recurrence; recurrence result feeds end
+default	raw-log	file=dag-fanin-main-345e-wf-plain-W1.log	sha256=e8e27723af5cb929e27c5f233c93397840730734e4b3783ef56e0c0d77c2c651
+default	phase	label=dag-fanin-main-345e-wf-plain-W1	stage=complete-matrix-execution	command_wall_s=0.49	process_user_s=0.09	process_system_s=0.02	guard_wall_s=0.52	exit=0	benchmark_interval=false
+default	matrix	engine=wf	image=plain	workers=1	PASS	cases=115	task_rows=956	trace=0	events=0	checks=all_values,exactly_once,input_unchanged,canaries,receipts
+default	negative-control	engine=wf	image=plain	workers=1	output-corruption	rejected=task value mismatch at 0
+default	raw-log	file=dag-fanin-main-345e-wf-plain-W4.log	sha256=6b44db3bde50f755d1723c8461156e191a958ea4044d7b645fb1490f4629ab4e
+default	phase	label=dag-fanin-main-345e-wf-plain-W4	stage=complete-matrix-execution	command_wall_s=0.08	process_user_s=0.06	process_system_s=0.01	guard_wall_s=0.10	exit=0	benchmark_interval=false
+default	matrix	engine=wf	image=plain	workers=4	PASS	cases=115	task_rows=956	trace=0	events=0	checks=all_values,exactly_once,input_unchanged,canaries,receipts
+default	negative-control	engine=wf	image=plain	workers=4	output-corruption	rejected=task value mismatch at 0
+default	raw-log	file=dag-fanin-main-345e-wf-trace-W1.log	sha256=a0bf313e3aaaec632250a9066400547bd464c96d9e37972e4728277f83213ecb
+default	phase	label=dag-fanin-main-345e-wf-trace-W1	stage=complete-matrix-execution	command_wall_s=0.36	process_user_s=0.07	process_system_s=0.01	guard_wall_s=0.41	exit=0	benchmark_interval=false
+default	matrix	engine=wf	image=trace	workers=1	PASS	cases=115	task_rows=956	trace=1	events=1912	checks=all_values,exactly_once,input_unchanged,canaries,receipts,event_ids_inputs_values,exact_events,original_edge_order,stable_thread
+default	negative-control	engine=wf	image=trace	workers=1	output-corruption	rejected=task value mismatch at 0
+default	negative-control	engine=wf	image=trace	workers=1	trace-corruption	rejected=trace event count mismatch
+default	raw-log	file=dag-fanin-main-345e-wf-trace-W4.log	sha256=d387740448b40e9f25ad7876122494b2c4740ce2c0495dc1afbdbecd3992acd0
+default	phase	label=dag-fanin-main-345e-wf-trace-W4	stage=complete-matrix-execution	command_wall_s=0.09	process_user_s=0.06	process_system_s=0.02	guard_wall_s=0.11	exit=0	benchmark_interval=false
+default	matrix	engine=wf	image=trace	workers=4	PASS	cases=115	task_rows=956	trace=1	events=1912	checks=all_values,exactly_once,input_unchanged,canaries,receipts,event_ids_inputs_values,exact_events,original_edge_order,stable_thread
+default	negative-control	engine=wf	image=trace	workers=4	output-corruption	rejected=task value mismatch at 0
+default	negative-control	engine=wf	image=trace	workers=4	trace-corruption	rejected=trace event count mismatch
+default	spine-W4	case=spine-0-0	actual_steals=0	observed_threads=0	peak_active_threads=0	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+default	spine-W4	case=spine-0-1	actual_steals=0	observed_threads=0	peak_active_threads=0	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+default	spine-W4	case=spine-1-0	actual_steals=1	observed_threads=2	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+default	spine-W4	case=spine-1-1	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+default	spine-W4	case=spine-1-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+default	spine-W4	case=spine-1-3	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+default	spine-W4	case=spine-2-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+default	spine-W4	case=spine-2-1	actual_steals=1	observed_threads=2	peak_active_threads=2	deep_threads=0	deep_overlap_pairs=0	pairs=1	spine_progress=0
+default	spine-W4	case=spine-2-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+default	spine-W4	case=spine-2-3	actual_steals=1	observed_threads=2	peak_active_threads=2	deep_threads=0	deep_overlap_pairs=0	pairs=1	spine_progress=0
+default	spine-W4	case=spine-4-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+default	spine-W4	case=spine-4-1	actual_steals=3	observed_threads=4	peak_active_threads=4	deep_threads=0	deep_overlap_pairs=0	pairs=6	spine_progress=0
+default	spine-W4	case=spine-4-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+default	spine-W4	case=spine-4-3	actual_steals=3	observed_threads=2	peak_active_threads=2	deep_threads=0	deep_overlap_pairs=0	pairs=3	spine_progress=0
+default	spine-W4	case=spine-7-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+default	spine-W4	case=spine-7-1	actual_steals=5	observed_threads=4	peak_active_threads=4	deep_threads=0	deep_overlap_pairs=0	pairs=14	spine_progress=0
+default	spine-W4	case=spine-7-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+default	spine-W4	case=spine-7-3	actual_steals=6	observed_threads=2	peak_active_threads=2	deep_threads=0	deep_overlap_pairs=0	pairs=6	spine_progress=0
+default	spine-W4	case=spine-8-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+default	spine-W4	case=spine-8-1	actual_steals=6	observed_threads=4	peak_active_threads=4	deep_threads=0	deep_overlap_pairs=0	pairs=18	spine_progress=0
+default	spine-W4	case=spine-8-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+default	spine-W4	case=spine-8-3	actual_steals=7	observed_threads=2	peak_active_threads=2	deep_threads=0	deep_overlap_pairs=0	pairs=7	spine_progress=0
+default	spine-W4	case=spine-9-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+default	spine-W4	case=spine-9-1	actual_steals=6	observed_threads=4	peak_active_threads=4	deep_threads=1	deep_overlap_pairs=0	pairs=21	spine_progress=0
+default	spine-W4	case=spine-9-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+default	spine-W4	case=spine-9-3	actual_steals=8	observed_threads=2	peak_active_threads=2	deep_threads=1	deep_overlap_pairs=0	pairs=8	spine_progress=0
+default	spine-W4	case=spine-16-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+default	spine-W4	case=spine-16-1	actual_steals=8	observed_threads=4	peak_active_threads=4	deep_threads=1	deep_overlap_pairs=0	pairs=35	spine_progress=7
+default	spine-W4	case=spine-16-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+default	spine-W4	case=spine-16-3	actual_steals=8	observed_threads=2	peak_active_threads=2	deep_threads=1	deep_overlap_pairs=0	pairs=8	spine_progress=0
+default	spine-W4	case=spine-32-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+default	spine-W4	case=spine-32-1	actual_steals=8	observed_threads=4	peak_active_threads=4	deep_threads=1	deep_overlap_pairs=0	pairs=35	spine_progress=7
+default	spine-W4	case=spine-32-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+default	spine-W4	case=spine-32-3	actual_steals=8	observed_threads=2	peak_active_threads=2	deep_threads=1	deep_overlap_pairs=0	pairs=8	spine_progress=0
+default	notification-W4	engine=wf	case=notify-0-cheap	PASS	C_mask=0	C_count=0	D_mask=0	D_count=0	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=wf	case=notify-1-cheap	PASS	C_mask=1	C_count=1	D_mask=0	D_count=0	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=wf	case=notify-2-cheap	PASS	C_mask=0	C_count=0	D_mask=1	D_count=1	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=wf	case=notify-3-cheap	PASS	C_mask=1	C_count=1	D_mask=1	D_count=1	pairs=1	spine_progress=0	sources=1	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=wf	case=notify-4-cheap	PASS	C_mask=2	C_count=1	D_mask=0	D_count=0	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=wf	case=notify-5-cheap	PASS	C_mask=3	C_count=2	D_mask=0	D_count=0	pairs=1	spine_progress=0	sources=0	owners=1	d_while_a=0	c_while_d=1
+default	notification-W4	engine=wf	case=notify-6-cheap	PASS	C_mask=2	C_count=1	D_mask=1	D_count=1	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=wf	case=notify-7-cheap	PASS	C_mask=3	C_count=2	D_mask=1	D_count=1	pairs=1	spine_progress=0	sources=0	owners=1	d_while_a=0	c_while_d=1
+default	notification-W4	engine=wf	case=notify-8-cheap	PASS	C_mask=0	C_count=0	D_mask=2	D_count=1	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=wf	case=notify-9-cheap	PASS	C_mask=1	C_count=1	D_mask=2	D_count=1	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=wf	case=notify-10-cheap	PASS	C_mask=0	C_count=0	D_mask=3	D_count=2	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=wf	case=notify-11-cheap	PASS	C_mask=1	C_count=1	D_mask=3	D_count=2	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=wf	case=notify-12-cheap	PASS	C_mask=2	C_count=1	D_mask=2	D_count=1	pairs=1	spine_progress=0	sources=0	owners=1	d_while_a=0	c_while_d=1
+default	notification-W4	engine=wf	case=notify-13-cheap	PASS	C_mask=3	C_count=2	D_mask=2	D_count=1	pairs=1	spine_progress=0	sources=0	owners=1	d_while_a=0	c_while_d=1
+default	notification-W4	engine=wf	case=notify-14-cheap	PASS	C_mask=2	C_count=1	D_mask=3	D_count=2	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=wf	case=notify-15-cheap	PASS	C_mask=3	C_count=2	D_mask=3	D_count=2	pairs=1	spine_progress=0	sources=0	owners=1	d_while_a=0	c_while_d=1
+default	notification-W4	engine=wf	case=notify-15-costly	PASS	C_mask=3	C_count=2	D_mask=3	D_count=2	pairs=2	spine_progress=0	sources=1	owners=1	d_while_a=0	c_while_d=1
+default	N-pair-W4	engine=wf	case=n-0-0	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-0-1	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-0-2	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-0-3	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-1-0	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-1-1	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-1-2	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-1-3	AB=1	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-2-0	AB=1	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-2-1	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-2-2	AB=1	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-2-3	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-3-0	AB=1	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-3-1	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-3-2	AB=1	AD=1	CD=0
+default	N-pair-W4	engine=wf	case=n-3-3	AB=1	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-4-0	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-4-1	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-4-2	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-4-3	AB=0	AD=0	CD=1
+default	N-pair-W4	engine=wf	case=n-5-0	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-5-1	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-5-2	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-5-3	AB=1	AD=0	CD=1
+default	N-pair-W4	engine=wf	case=n-6-0	AB=1	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-6-1	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-6-2	AB=1	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-6-3	AB=0	AD=0	CD=1
+default	N-pair-W4	engine=wf	case=n-7-0	AB=1	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-7-1	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-7-2	AB=1	AD=1	CD=0
+default	N-pair-W4	engine=wf	case=n-7-3	AB=1	AD=0	CD=1
+default	N-pair-W4	engine=wf	case=n-8-0	AB=0	AD=0	CD=1
+default	N-pair-W4	engine=wf	case=n-8-1	AB=0	AD=1	CD=1
+default	N-pair-W4	engine=wf	case=n-8-2	AB=0	AD=1	CD=0
+default	N-pair-W4	engine=wf	case=n-8-3	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-9-0	AB=0	AD=0	CD=1
+default	N-pair-W4	engine=wf	case=n-9-1	AB=0	AD=1	CD=0
+default	N-pair-W4	engine=wf	case=n-9-2	AB=0	AD=1	CD=0
+default	N-pair-W4	engine=wf	case=n-9-3	AB=1	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-10-0	AB=1	AD=0	CD=1
+default	N-pair-W4	engine=wf	case=n-10-1	AB=0	AD=1	CD=1
+default	N-pair-W4	engine=wf	case=n-10-2	AB=1	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-10-3	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-11-0	AB=1	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-11-1	AB=0	AD=1	CD=0
+default	N-pair-W4	engine=wf	case=n-11-2	AB=1	AD=1	CD=0
+default	N-pair-W4	engine=wf	case=n-11-3	AB=1	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-12-0	AB=0	AD=0	CD=1
+default	N-pair-W4	engine=wf	case=n-12-1	AB=0	AD=1	CD=1
+default	N-pair-W4	engine=wf	case=n-12-2	AB=0	AD=1	CD=0
+default	N-pair-W4	engine=wf	case=n-12-3	AB=0	AD=0	CD=1
+default	N-pair-W4	engine=wf	case=n-13-0	AB=0	AD=0	CD=1
+default	N-pair-W4	engine=wf	case=n-13-1	AB=0	AD=1	CD=0
+default	N-pair-W4	engine=wf	case=n-13-2	AB=0	AD=1	CD=0
+default	N-pair-W4	engine=wf	case=n-13-3	AB=1	AD=0	CD=1
+default	N-pair-W4	engine=wf	case=n-14-0	AB=1	AD=0	CD=1
+default	N-pair-W4	engine=wf	case=n-14-1	AB=0	AD=1	CD=1
+default	N-pair-W4	engine=wf	case=n-14-2	AB=1	AD=0	CD=0
+default	N-pair-W4	engine=wf	case=n-14-3	AB=0	AD=0	CD=1
+default	N-pair-W4	engine=wf	case=n-15-0	AB=1	AD=0	CD=1
+default	N-pair-W4	engine=wf	case=n-15-1	AB=0	AD=1	CD=0
+default	N-pair-W4	engine=wf	case=n-15-2	AB=1	AD=1	CD=0
+default	N-pair-W4	engine=wf	case=n-15-3	AB=1	AD=0	CD=1
+default	event-witness	engine=wf	spine-32-1	19	1	begin	thread=2	value=ffffffffffffffe7	steps=65536
+default	event-witness	engine=wf	spine-32-1	23	18	begin	thread=1	value=ffffffffffffffe7	steps=1
+default	event-witness	engine=wf	spine-32-1	24	18	end	thread=1	value=744246106994bf39	steps=0
+default	event-witness	engine=wf	spine-32-1	26	1	end	thread=2	value=be4bb84c1dbde977	steps=0
+default	event-witness	engine=wf	notify-15-costly	0	1	begin	thread=1	value=ffffffffffffffe7	steps=65536
+default	event-witness	engine=wf	notify-15-costly	1	0	begin	thread=4	value=ffffffffffffffe7	steps=65536
+default	event-witness	engine=wf	notify-15-costly	2	1	end	thread=1	value=10db33e104638b76	steps=0
+default	event-witness	engine=wf	notify-15-costly	3	0	end	thread=4	value=929b63f1ad8f38e0	steps=0
+default	event-witness	engine=wf	notify-15-costly	4	3	begin	thread=1	value=ffffffffffffffe7	steps=65536
+default	event-witness	engine=wf	notify-15-costly	5	2	begin	thread=3	value=ffffffffffffffe7	steps=65536
+default	event-witness	engine=wf	notify-15-costly	6	3	end	thread=1	value=d7a839a4d024b20a	steps=0
+default	event-witness	engine=wf	notify-15-costly	7	2	end	thread=3	value=1d2651c8d7453c0a	steps=0
+default	raw-log	file=dag-fanin-main-345e-tbb-plain-W1.log	sha256=5016931af8da936152b6c5dad3cb739879e5d1229f491649ee4ffee676645742
+default	phase	label=dag-fanin-main-345e-tbb-plain-W1	stage=complete-matrix-execution	command_wall_s=0.06	process_user_s=0.04	process_system_s=0.01	guard_wall_s=0.11	exit=0	benchmark_interval=false
+default	matrix	engine=tbb	image=plain	workers=1	PASS	cases=67	task_rows=764	trace=0	events=0	checks=all_values,exactly_once,input_unchanged,canaries,receipts
+default	negative-control	engine=tbb	image=plain	workers=1	output-corruption	rejected=task value mismatch at 0
+default	raw-log	file=dag-fanin-main-345e-tbb-plain-W4.log	sha256=b8672f99125857720cb3021ebea9edc5b55c987f587640e57cb14cba7904a0c2
+default	phase	label=dag-fanin-main-345e-tbb-plain-W4	stage=complete-matrix-execution	command_wall_s=0.05	process_user_s=0.05	process_system_s=0.01	guard_wall_s=0.10	exit=0	benchmark_interval=false
+default	matrix	engine=tbb	image=plain	workers=4	PASS	cases=67	task_rows=764	trace=0	events=0	checks=all_values,exactly_once,input_unchanged,canaries,receipts
+default	negative-control	engine=tbb	image=plain	workers=4	output-corruption	rejected=task value mismatch at 0
+default	raw-log	file=dag-fanin-main-345e-tbb-trace-W1.log	sha256=c77083da566fb085c82939a8c01c095bddda8a5ec84f22e4c9eece7d850113b9
+default	phase	label=dag-fanin-main-345e-tbb-trace-W1	stage=complete-matrix-execution	command_wall_s=0.06	process_user_s=0.04	process_system_s=0.01	guard_wall_s=0.10	exit=0	benchmark_interval=false
+default	matrix	engine=tbb	image=trace	workers=1	PASS	cases=67	task_rows=764	trace=1	events=1528	checks=all_values,exactly_once,input_unchanged,canaries,receipts,event_ids_inputs_values,exact_events,original_edge_order,stable_thread
+default	negative-control	engine=tbb	image=trace	workers=1	output-corruption	rejected=task value mismatch at 0
+default	negative-control	engine=tbb	image=trace	workers=1	trace-corruption	rejected=trace event count mismatch
+default	raw-log	file=dag-fanin-main-345e-tbb-trace-W4.log	sha256=29532bb7584a51864101f74b7a36ead7b728a402e01839fba0d02fdf214b7329
+default	phase	label=dag-fanin-main-345e-tbb-trace-W4	stage=complete-matrix-execution	command_wall_s=0.05	process_user_s=0.05	process_system_s=0.01	guard_wall_s=0.10	exit=0	benchmark_interval=false
+default	matrix	engine=tbb	image=trace	workers=4	PASS	cases=67	task_rows=764	trace=1	events=1528	checks=all_values,exactly_once,input_unchanged,canaries,receipts,event_ids_inputs_values,exact_events,original_edge_order,stable_thread
+default	negative-control	engine=tbb	image=trace	workers=4	output-corruption	rejected=task value mismatch at 0
+default	negative-control	engine=tbb	image=trace	workers=4	trace-corruption	rejected=trace event count mismatch
+default	notification-W4	engine=tbb	case=notify-0-cheap	PASS	C_mask=0	C_count=0	D_mask=0	D_count=0	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=tbb	case=notify-1-cheap	PASS	C_mask=1	C_count=1	D_mask=0	D_count=0	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=tbb	case=notify-2-cheap	PASS	C_mask=0	C_count=0	D_mask=1	D_count=1	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=tbb	case=notify-3-cheap	PASS	C_mask=1	C_count=1	D_mask=1	D_count=1	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=tbb	case=notify-4-cheap	PASS	C_mask=2	C_count=1	D_mask=0	D_count=0	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=tbb	case=notify-5-cheap	PASS	C_mask=3	C_count=2	D_mask=0	D_count=0	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=tbb	case=notify-6-cheap	PASS	C_mask=2	C_count=1	D_mask=1	D_count=1	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=tbb	case=notify-7-cheap	PASS	C_mask=3	C_count=2	D_mask=1	D_count=1	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=tbb	case=notify-8-cheap	PASS	C_mask=0	C_count=0	D_mask=2	D_count=1	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=tbb	case=notify-9-cheap	PASS	C_mask=1	C_count=1	D_mask=2	D_count=1	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=tbb	case=notify-10-cheap	PASS	C_mask=0	C_count=0	D_mask=3	D_count=2	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=tbb	case=notify-11-cheap	PASS	C_mask=1	C_count=1	D_mask=3	D_count=2	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=tbb	case=notify-12-cheap	PASS	C_mask=2	C_count=1	D_mask=2	D_count=1	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=tbb	case=notify-13-cheap	PASS	C_mask=3	C_count=2	D_mask=2	D_count=1	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=tbb	case=notify-14-cheap	PASS	C_mask=2	C_count=1	D_mask=3	D_count=2	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=tbb	case=notify-15-cheap	PASS	C_mask=3	C_count=2	D_mask=3	D_count=2	pairs=1	spine_progress=0	sources=1	owners=0	d_while_a=0	c_while_d=0
+default	notification-W4	engine=tbb	case=notify-15-costly	PASS	C_mask=3	C_count=2	D_mask=3	D_count=2	pairs=2	spine_progress=0	sources=1	owners=1	d_while_a=0	c_while_d=1
+default	N-pair-W4	engine=tbb	case=n-0-0	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=tbb	case=n-1-0	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=tbb	case=n-2-0	AB=1	AD=0	CD=0
+default	N-pair-W4	engine=tbb	case=n-3-0	AB=1	AD=1	CD=0
+default	N-pair-W4	engine=tbb	case=n-4-0	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=tbb	case=n-5-0	AB=0	AD=0	CD=0
+default	N-pair-W4	engine=tbb	case=n-6-0	AB=1	AD=0	CD=0
+default	N-pair-W4	engine=tbb	case=n-7-0	AB=1	AD=1	CD=0
+default	N-pair-W4	engine=tbb	case=n-8-0	AB=0	AD=1	CD=1
+default	N-pair-W4	engine=tbb	case=n-9-0	AB=0	AD=1	CD=0
+default	N-pair-W4	engine=tbb	case=n-10-0	AB=1	AD=0	CD=1
+default	N-pair-W4	engine=tbb	case=n-11-0	AB=1	AD=1	CD=1
+default	N-pair-W4	engine=tbb	case=n-12-0	AB=0	AD=1	CD=1
+default	N-pair-W4	engine=tbb	case=n-13-0	AB=0	AD=1	CD=0
+default	N-pair-W4	engine=tbb	case=n-14-0	AB=1	AD=0	CD=1
+default	N-pair-W4	engine=tbb	case=n-15-0	AB=1	AD=1	CD=1
+default	event-witness	engine=tbb	n-15-0	0	1	begin	thread=1	value=ffffffffffffffe7	steps=65536
+default	event-witness	engine=tbb	n-15-0	1	0	begin	thread=4	value=ffffffffffffffe7	steps=65536
+default	event-witness	engine=tbb	n-15-0	2	1	end	thread=1	value=10db33e104638b76	steps=0
+default	event-witness	engine=tbb	n-15-0	3	3	begin	thread=1	value=ffffffffffffffe7	steps=65536
+default	event-witness	engine=tbb	n-15-0	4	0	end	thread=4	value=929b63f1ad8f38e0	steps=0
+default	event-witness	engine=tbb	n-15-0	5	2	begin	thread=4	value=ffffffffffffffe7	steps=65536
+default	event-witness	engine=tbb	n-15-0	6	3	end	thread=1	value=eafacc1555080352	steps=0
+default	event-witness	engine=tbb	n-15-0	7	2	end	thread=4	value=1d2651c8d7453c0a	steps=0
+frontier-off	emission-flags	--par --par-recursive-frontier off --stack-ledger --par-ledger --emit-llvm
+frontier-off	artifact	file=whitefootc	sha256=cbffd4dd1ae8641ef03790457181188988bf70cc4af1a53c50c1f406307bb7f9
+frontier-off	artifact	file=dag-fanin.wf	sha256=8824d372ce063c5646d2dbaf84a573cbf7f7ea34d117b79e6e7c4b46dd9e3a52
+frontier-off	artifact	file=dag_fanin_host.ll	sha256=2612dcf89e12b4c3505b56aec94f44af443f349b749c9fcb803a30874a17d9c0
+frontier-off	artifact	file=dag_fanin_trace.awk	sha256=95740fb87edcd550940cae3951b0b73b000453e9cc6022616135fea169df77bd
+frontier-off	artifact	file=dag_fanin_frontier-off.raw.ll	sha256=068af960e06a124fbe12bbdd2602e43a540784e908be0127618288c31d1202f9
+frontier-off	artifact	file=dag_fanin_frontier-off.ledger	sha256=3ada5d41fb01ec9d1cd55a4976904a024027534cc1f2b235f3d7260a06e2415d
+frontier-off	artifact	file=dag_fanin_frontier-off_plain.ll	sha256=484a3faa1e5b11427ea3224b8b436e0856f47c4afc2bb7b8e9ecdaa088be98b4
+frontier-off	artifact	file=dag_fanin_frontier-off_trace.ll	sha256=2a1a32c99035469999e492e09bab39f3ae951a0d64095861cc58d16ae2183389
+frontier-off	artifact	file=dag_fanin_probe.cpp	sha256=3ca803c7ed485132c4a96f4ef3bf895dea90098884a8d9b109bdf64461d1cd0a
+frontier-off	artifact	file=libtbb.dylib	sha256=61fec48dc42829dc97943d72051ab2ca00786f97d198c412db1042b2b08e3188
+frontier-off	artifact	file=metadata.txt	sha256=bb1ed8f84e8d4a817f7a63c93ca22ec529aec47615ff4b38fa6118718e19f470
+frontier-off	artifact	file=dag_fanin_frontier-off_probe.o	sha256=5ec86ac4a0e35dbd86138d03ef586efcbdbaa16aa204729007a7118a9b6a41fd
+frontier-off	artifact	file=dag_fanin_frontier-off_plain.o	sha256=7f238d7a1d5312a18f0f31178807fcc5233199c01a076a5b476d5232384de045
+frontier-off	artifact	file=dag_fanin_frontier-off_trace.o	sha256=2af03a39d61d6fac51cb089d3e3e4ce4ac15f0012a96a3af2b54f05a6dc1cd6b
+frontier-off	artifact	file=floor.o	sha256=8342e7ea0b8d6a0817d543e8c05e807c96527393945e95597718ba9a27ce722d
+frontier-off	artifact	file=sched_core.o	sha256=0655633c69666fcce21bf67258101aedb49c914fc50a6cc8edbfe22a8315e645
+frontier-off	artifact	file=sched_prim_host.o	sha256=c3a5140b8221a57d27a510995ae37c7b33a64ebc87ec9f9286b99ece649bce45
+frontier-off	artifact	file=sched_entry.o	sha256=e04734d7a1ddbe9083b47570ca2854963803b88a7197628bed2ca66cb4924d5c
+frontier-off	artifact	file=completion_runtime.o	sha256=75cb971977625c9b05adcf74b14989544ccbf61b0a81fe4843ec72226eb36c61
+frontier-off	artifact	file=completion_wait_host.o	sha256=d95b24c2367aa6dcf60a9d9e4e36acf79fa502d4ded856f244c6f4afcf28aa10
+frontier-off	artifact	file=completion_file_adapter.o	sha256=fb4ee3f397da5bcee9188332d56fb3c854b931b4c1f07b4c8350a9c941891937
+frontier-off	artifact	file=completion_file_posix.o	sha256=1d1fe1c3033038fc69cd031e32b5eff6e85571da89176f85e442f52f0fb1b940
+frontier-off	artifact	file=completion_bridge.o	sha256=af91032f29dc1b1c22dcf43099d933303ff3b1e4741a93122f987bdbdb70c4ec
+frontier-off	artifact	file=completion_linux_io_uring.o	sha256=e389769ac8c9f38af9cd00e5bc5d56d3c180dff5985fb81ddfff63dfa89eb453
+frontier-off	artifact	file=ordinary_values_c.o	sha256=685d56fcf6c89bbddf8d1921b44952bb909dd0362715817babbacd64da8898c3
+frontier-off	artifact	file=ordinary_values_ll.o	sha256=d578790251750de1a10ef95e1265d028184cc1d18f0c40d78e88c5ee8f1fcd80
+frontier-off	artifact	file=dag_fanin_frontier-off_plain	sha256=e7d9af63251453e165d64fa54b71aa9bf05133eea74996c101b8f9abd4502b11
+frontier-off	artifact	file=dag_fanin_frontier-off_trace	sha256=f82ed2cd0c10746d9c4bd898f155ca6907aa269f286f9aeb4e960ea94eba80f6
+frontier-off	raw-log	file=dag-fanin-main-345e-frontier-off-emit.log	sha256=7362643be5ed704930c94676096a02c6f08b1b4e35c66531b2859a943299f896
+frontier-off	phase	label=dag-fanin-main-345e-frontier-off-emit	stage=source-analysis-and-emission	command_wall_s=0.27	process_user_s=0.19	process_system_s=0.05	guard_wall_s=0.32	exit=0	benchmark_interval=false
+frontier-off	raw-log	file=dag-fanin-main-345e-frontier-off-native-build.log	sha256=8ee629226d7c321e894dceb9daf1d8fe74bd6152d1d6219bdc13dd3c266e64dd
+frontier-off	phase	label=dag-fanin-main-345e-frontier-off-native-build	stage=native-construction	command_wall_s=1.95	process_user_s=1.75	process_system_s=0.48	guard_wall_s=2.03	exit=0	benchmark_interval=false
+frontier-off	optimized-bracketing	image_disassembly_sha256=c54bc07e7531cd8377852da31abf28d0f10937b2522e0486ef2ed988f5ac057c	WF=begin return feeds scalar recurrence; recurrence result feeds end	native=not executed by this WF-only control
+frontier-off	raw-log	file=dag-fanin-main-345e-frontier-off-wf-plain-W1.log	sha256=10aff2079030d1fad188aca3d63708ec8c7c5f0c680eb7e63b03dacfcb80cc72
+frontier-off	phase	label=dag-fanin-main-345e-frontier-off-wf-plain-W1	stage=complete-matrix-execution	command_wall_s=0.54	process_user_s=0.10	process_system_s=0.02	guard_wall_s=0.64	exit=0	benchmark_interval=false
+frontier-off	matrix	engine=wf	image=plain	workers=1	PASS	cases=115	task_rows=956	trace=0	events=0	checks=all_values,exactly_once,input_unchanged,canaries,receipts
+frontier-off	negative-control	engine=wf	image=plain	workers=1	output-corruption	rejected=task value mismatch at 0
+frontier-off	raw-log	file=dag-fanin-main-345e-frontier-off-wf-plain-W4.log	sha256=7212d9f9cc2c93b5cb253eaec05232631e3bb167c4bc541380cc4157ee95341f
+frontier-off	phase	label=dag-fanin-main-345e-frontier-off-wf-plain-W4	stage=complete-matrix-execution	command_wall_s=0.08	process_user_s=0.06	process_system_s=0.01	guard_wall_s=0.10	exit=0	benchmark_interval=false
+frontier-off	matrix	engine=wf	image=plain	workers=4	PASS	cases=115	task_rows=956	trace=0	events=0	checks=all_values,exactly_once,input_unchanged,canaries,receipts
+frontier-off	negative-control	engine=wf	image=plain	workers=4	output-corruption	rejected=task value mismatch at 0
+frontier-off	raw-log	file=dag-fanin-main-345e-frontier-off-wf-trace-W1.log	sha256=44befe531547a6315d47aef153b2b4e161ec2aa800bee2b93af82c67f4394fa7
+frontier-off	phase	label=dag-fanin-main-345e-frontier-off-wf-trace-W1	stage=complete-matrix-execution	command_wall_s=0.36	process_user_s=0.07	process_system_s=0.01	guard_wall_s=0.45	exit=0	benchmark_interval=false
+frontier-off	matrix	engine=wf	image=trace	workers=1	PASS	cases=115	task_rows=956	trace=1	events=1912	checks=all_values,exactly_once,input_unchanged,canaries,receipts,event_ids_inputs_values,exact_events,original_edge_order,stable_thread
+frontier-off	negative-control	engine=wf	image=trace	workers=1	output-corruption	rejected=task value mismatch at 0
+frontier-off	negative-control	engine=wf	image=trace	workers=1	trace-corruption	rejected=trace event count mismatch
+frontier-off	raw-log	file=dag-fanin-main-345e-frontier-off-wf-trace-W4.log	sha256=6cfe16a301781fd18ba8152ae13fb73faf1e0adc0035f5b5c820fb9012d5e747
+frontier-off	phase	label=dag-fanin-main-345e-frontier-off-wf-trace-W4	stage=complete-matrix-execution	command_wall_s=0.08	process_user_s=0.06	process_system_s=0.01	guard_wall_s=0.11	exit=0	benchmark_interval=false
+frontier-off	matrix	engine=wf	image=trace	workers=4	PASS	cases=115	task_rows=956	trace=1	events=1912	checks=all_values,exactly_once,input_unchanged,canaries,receipts,event_ids_inputs_values,exact_events,original_edge_order,stable_thread
+frontier-off	negative-control	engine=wf	image=trace	workers=4	output-corruption	rejected=task value mismatch at 0
+frontier-off	negative-control	engine=wf	image=trace	workers=4	trace-corruption	rejected=trace event count mismatch
+frontier-off	spine-W4	case=spine-0-0	actual_steals=0	observed_threads=0	peak_active_threads=0	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+frontier-off	spine-W4	case=spine-0-1	actual_steals=0	observed_threads=0	peak_active_threads=0	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+frontier-off	spine-W4	case=spine-1-0	actual_steals=1	observed_threads=2	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+frontier-off	spine-W4	case=spine-1-1	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+frontier-off	spine-W4	case=spine-1-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+frontier-off	spine-W4	case=spine-1-3	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+frontier-off	spine-W4	case=spine-2-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+frontier-off	spine-W4	case=spine-2-1	actual_steals=1	observed_threads=2	peak_active_threads=2	deep_threads=0	deep_overlap_pairs=0	pairs=1	spine_progress=0
+frontier-off	spine-W4	case=spine-2-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+frontier-off	spine-W4	case=spine-2-3	actual_steals=1	observed_threads=2	peak_active_threads=2	deep_threads=0	deep_overlap_pairs=0	pairs=1	spine_progress=0
+frontier-off	spine-W4	case=spine-4-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+frontier-off	spine-W4	case=spine-4-1	actual_steals=3	observed_threads=4	peak_active_threads=4	deep_threads=0	deep_overlap_pairs=0	pairs=6	spine_progress=0
+frontier-off	spine-W4	case=spine-4-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+frontier-off	spine-W4	case=spine-4-3	actual_steals=3	observed_threads=2	peak_active_threads=2	deep_threads=0	deep_overlap_pairs=0	pairs=3	spine_progress=0
+frontier-off	spine-W4	case=spine-7-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+frontier-off	spine-W4	case=spine-7-1	actual_steals=5	observed_threads=4	peak_active_threads=4	deep_threads=0	deep_overlap_pairs=0	pairs=15	spine_progress=0
+frontier-off	spine-W4	case=spine-7-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+frontier-off	spine-W4	case=spine-7-3	actual_steals=6	observed_threads=2	peak_active_threads=2	deep_threads=0	deep_overlap_pairs=0	pairs=6	spine_progress=0
+frontier-off	spine-W4	case=spine-8-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+frontier-off	spine-W4	case=spine-8-1	actual_steals=6	observed_threads=4	peak_active_threads=4	deep_threads=0	deep_overlap_pairs=0	pairs=18	spine_progress=0
+frontier-off	spine-W4	case=spine-8-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+frontier-off	spine-W4	case=spine-8-3	actual_steals=7	observed_threads=2	peak_active_threads=2	deep_threads=0	deep_overlap_pairs=0	pairs=7	spine_progress=0
+frontier-off	spine-W4	case=spine-9-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+frontier-off	spine-W4	case=spine-9-1	actual_steals=7	observed_threads=4	peak_active_threads=4	deep_threads=1	deep_overlap_pairs=0	pairs=22	spine_progress=2
+frontier-off	spine-W4	case=spine-9-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+frontier-off	spine-W4	case=spine-9-3	actual_steals=8	observed_threads=2	peak_active_threads=2	deep_threads=1	deep_overlap_pairs=0	pairs=8	spine_progress=0
+frontier-off	spine-W4	case=spine-16-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+frontier-off	spine-W4	case=spine-16-1	actual_steals=12	observed_threads=4	peak_active_threads=4	deep_threads=4	deep_overlap_pairs=11	pairs=42	spine_progress=0
+frontier-off	spine-W4	case=spine-16-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+frontier-off	spine-W4	case=spine-16-3	actual_steals=15	observed_threads=2	peak_active_threads=2	deep_threads=2	deep_overlap_pairs=7	pairs=15	spine_progress=0
+frontier-off	spine-W4	case=spine-32-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+frontier-off	spine-W4	case=spine-32-1	actual_steals=24	observed_threads=4	peak_active_threads=4	deep_threads=4	deep_overlap_pairs=57	pairs=89	spine_progress=0
+frontier-off	spine-W4	case=spine-32-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+frontier-off	spine-W4	case=spine-32-3	actual_steals=31	observed_threads=2	peak_active_threads=2	deep_threads=2	deep_overlap_pairs=23	pairs=31	spine_progress=0
+frontier-off	notification-W4	engine=wf	case=notify-0-cheap	PASS	C_mask=0	C_count=0	D_mask=0	D_count=0	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+frontier-off	notification-W4	engine=wf	case=notify-1-cheap	PASS	C_mask=1	C_count=1	D_mask=0	D_count=0	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+frontier-off	notification-W4	engine=wf	case=notify-2-cheap	PASS	C_mask=0	C_count=0	D_mask=1	D_count=1	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+frontier-off	notification-W4	engine=wf	case=notify-3-cheap	PASS	C_mask=1	C_count=1	D_mask=1	D_count=1	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+frontier-off	notification-W4	engine=wf	case=notify-4-cheap	PASS	C_mask=2	C_count=1	D_mask=0	D_count=0	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+frontier-off	notification-W4	engine=wf	case=notify-5-cheap	PASS	C_mask=3	C_count=2	D_mask=0	D_count=0	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+frontier-off	notification-W4	engine=wf	case=notify-6-cheap	PASS	C_mask=2	C_count=1	D_mask=1	D_count=1	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+frontier-off	notification-W4	engine=wf	case=notify-7-cheap	PASS	C_mask=3	C_count=2	D_mask=1	D_count=1	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+frontier-off	notification-W4	engine=wf	case=notify-8-cheap	PASS	C_mask=0	C_count=0	D_mask=2	D_count=1	pairs=2	spine_progress=0	sources=1	owners=1	d_while_a=0	c_while_d=1
+frontier-off	notification-W4	engine=wf	case=notify-9-cheap	PASS	C_mask=1	C_count=1	D_mask=2	D_count=1	pairs=1	spine_progress=0	sources=1	owners=0	d_while_a=0	c_while_d=0
+frontier-off	notification-W4	engine=wf	case=notify-10-cheap	PASS	C_mask=0	C_count=0	D_mask=3	D_count=2	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+frontier-off	notification-W4	engine=wf	case=notify-11-cheap	PASS	C_mask=1	C_count=1	D_mask=3	D_count=2	pairs=1	spine_progress=0	sources=1	owners=0	d_while_a=0	c_while_d=0
+frontier-off	notification-W4	engine=wf	case=notify-12-cheap	PASS	C_mask=2	C_count=1	D_mask=2	D_count=1	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+frontier-off	notification-W4	engine=wf	case=notify-13-cheap	PASS	C_mask=3	C_count=2	D_mask=2	D_count=1	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+frontier-off	notification-W4	engine=wf	case=notify-14-cheap	PASS	C_mask=2	C_count=1	D_mask=3	D_count=2	pairs=1	spine_progress=0	sources=0	owners=1	d_while_a=0	c_while_d=1
+frontier-off	notification-W4	engine=wf	case=notify-15-cheap	PASS	C_mask=3	C_count=2	D_mask=3	D_count=2	pairs=0	spine_progress=0	sources=0	owners=0	d_while_a=0	c_while_d=0
+frontier-off	notification-W4	engine=wf	case=notify-15-costly	PASS	C_mask=3	C_count=2	D_mask=3	D_count=2	pairs=2	spine_progress=0	sources=1	owners=1	d_while_a=0	c_while_d=1
+frontier-off	event-witness	engine=wf	spine-32-1	83	17	begin	thread=3	value=ffffffffffffffe7	steps=65536
+frontier-off	event-witness	engine=wf	spine-32-1	87	19	begin	thread=4	value=ffffffffffffffe7	steps=65536
+frontier-off	event-witness	engine=wf	spine-32-1	90	17	end	thread=3	value=cdfaca10bed40f62	steps=0
+frontier-off	event-witness	engine=wf	spine-32-1	92	19	end	thread=4	value=89762241857f14f0	steps=0
+phased	emission-flags	--par --par-ledger --stack-ledger --emit-llvm
+phased	artifact	file=whitefootc	sha256=cbffd4dd1ae8641ef03790457181188988bf70cc4af1a53c50c1f406307bb7f9
+phased	artifact	file=dag-fanin.wf	sha256=097d4d17b8f4784ea19126393697cfc4ace3af69989129ade015140b167147f1
+phased	artifact	file=dag_fanin_host.ll	sha256=0a648587b17ddd969a4f8e50dcefc421eb332b34817325124cc1a86ea606f5a0
+phased	artifact	file=dag_fanin_trace.awk	sha256=95740fb87edcd550940cae3951b0b73b000453e9cc6022616135fea169df77bd
+phased	artifact	file=dag-fanin-main-345e-phased-emit-2.log	sha256=5d20eafe378aec646eeb61691a41410032c4083da593d5ce7ab94e955e243a89
+phased	artifact	file=dag_fanin_phased.raw.ll	sha256=4ffd16b064d6bb0c4d4ff1099625f37e0dfe9fc7e897c74f74edbdd98b625dfa
+phased	artifact	file=dag_fanin_phased_plain.ll	sha256=a3602f49e5cc55c022d62d926d5f9b29506a66a24191a5216aa5331d591fec6d
+phased	artifact	file=dag_fanin_phased_trace.ll	sha256=62b1e285fb9236efdb26552d4798d342d6087cc404a8e36821f0b0ff9056735e
+phased	artifact	file=dag_fanin_probe.cpp	sha256=f27318a3c8c930696f09d175a81f0cd6b2b6e09c4dead0747821b684ba262d01
+phased	artifact	file=libtbb.dylib	sha256=61fec48dc42829dc97943d72051ab2ca00786f97d198c412db1042b2b08e3188
+phased	artifact	file=metadata.txt	sha256=bb1ed8f84e8d4a817f7a63c93ca22ec529aec47615ff4b38fa6118718e19f470
+phased	artifact	file=dag_fanin_phased_probe.o	sha256=7a4215e2cef438c9aa188ff175ec8253a61d0ec6198bcee751845844e5575091
+phased	artifact	file=dag_fanin_phased_plain.o	sha256=94e80f89bb70b734295b6372e1ae91b4301ddc84e1f187ef57b94a4993967f42
+phased	artifact	file=dag_fanin_phased_trace.o	sha256=dad1644135fce7452818ef199b360b261dfbb495895f33445e21b2d13bebd796
+phased	artifact	file=floor.o	sha256=8342e7ea0b8d6a0817d543e8c05e807c96527393945e95597718ba9a27ce722d
+phased	artifact	file=sched_core.o	sha256=0655633c69666fcce21bf67258101aedb49c914fc50a6cc8edbfe22a8315e645
+phased	artifact	file=sched_prim_host.o	sha256=c3a5140b8221a57d27a510995ae37c7b33a64ebc87ec9f9286b99ece649bce45
+phased	artifact	file=sched_entry.o	sha256=e04734d7a1ddbe9083b47570ca2854963803b88a7197628bed2ca66cb4924d5c
+phased	artifact	file=completion_runtime.o	sha256=75cb971977625c9b05adcf74b14989544ccbf61b0a81fe4843ec72226eb36c61
+phased	artifact	file=completion_wait_host.o	sha256=d95b24c2367aa6dcf60a9d9e4e36acf79fa502d4ded856f244c6f4afcf28aa10
+phased	artifact	file=completion_file_adapter.o	sha256=fb4ee3f397da5bcee9188332d56fb3c854b931b4c1f07b4c8350a9c941891937
+phased	artifact	file=completion_file_posix.o	sha256=1d1fe1c3033038fc69cd031e32b5eff6e85571da89176f85e442f52f0fb1b940
+phased	artifact	file=completion_bridge.o	sha256=af91032f29dc1b1c22dcf43099d933303ff3b1e4741a93122f987bdbdb70c4ec
+phased	artifact	file=completion_linux_io_uring.o	sha256=e389769ac8c9f38af9cd00e5bc5d56d3c180dff5985fb81ddfff63dfa89eb453
+phased	artifact	file=ordinary_values_c.o	sha256=685d56fcf6c89bbddf8d1921b44952bb909dd0362715817babbacd64da8898c3
+phased	artifact	file=ordinary_values_ll.o	sha256=d578790251750de1a10ef95e1265d028184cc1d18f0c40d78e88c5ee8f1fcd80
+phased	artifact	file=dag_fanin_phased_plain	sha256=dd5827259eea33d754bd855f4c8714cc3cc316138bb2d863dda7eb6768d98311
+phased	artifact	file=dag_fanin_phased_trace	sha256=04d947a2b20690226da0ebec244740e836f62abddaf8410da0beb5a2d1798776
+phased	raw-log	file=dag-fanin-main-345e-phased-emit-2.log	sha256=5d20eafe378aec646eeb61691a41410032c4083da593d5ce7ab94e955e243a89
+phased	phase	label=dag-fanin-main-345e-phased-emit	stage=source-analysis-and-emission	command_wall_s=0.18	process_user_s=0.15	process_system_s=0.02	guard_wall_s=0.20	exit=0	benchmark_interval=false
+phased	raw-log	file=dag-fanin-main-345e-phased-native-build.log	sha256=dc5226da39dd514274459d783de5d9c174eb1cacd7f4c5fd81523f4243e555ad
+phased	phase	label=dag-fanin-main-345e-phased-native-build	stage=native-construction	command_wall_s=2.13	process_user_s=1.89	process_system_s=0.52	guard_wall_s=2.23	exit=0	benchmark_interval=false
+phased	optimized-bracketing	image_disassembly_sha256=526c9c7bcf76a05f47ee4c3cb43a47ad3a8208c96a963c0c04e4b8a3842d5ced	WF=begin return feeds scalar recurrence; recurrence result feeds end	native=not executed by this WF-only control
+phased	raw-log	file=dag-fanin-main-345e-phased-wf-phased-plain-W1.log	sha256=e8b93b571e03c9a0f128beb47ac19ba22de3cfb0d29ff154b91cd6587c745e6f
+phased	phase	label=dag-fanin-main-345e-phased-wf-phased-plain-W1	stage=complete-matrix-execution	command_wall_s=0.43	process_user_s=0.05	process_system_s=0.02	guard_wall_s=0.54	exit=0	benchmark_interval=false
+phased	matrix	engine=wf-phased	image=plain	workers=1	PASS	cases=34	task_rows=632	trace=0	events=0	checks=all_values,exactly_once,input_unchanged,canaries,receipts
+phased	negative-control	engine=wf-phased	image=plain	workers=1	output-corruption	rejected=task value mismatch at 0
+phased	raw-log	file=dag-fanin-main-345e-phased-wf-phased-plain-W4.log	sha256=9b6996a9e0e0368aedc43b1f1fa0a43214c73181580e3dba9acc3d59d589c29c
+phased	phase	label=dag-fanin-main-345e-phased-wf-phased-plain-W4	stage=complete-matrix-execution	command_wall_s=0.05	process_user_s=0.03	process_system_s=0.01	guard_wall_s=0.11	exit=0	benchmark_interval=false
+phased	matrix	engine=wf-phased	image=plain	workers=4	PASS	cases=34	task_rows=632	trace=0	events=0	checks=all_values,exactly_once,input_unchanged,canaries,receipts
+phased	negative-control	engine=wf-phased	image=plain	workers=4	output-corruption	rejected=task value mismatch at 0
+phased	raw-log	file=dag-fanin-main-345e-phased-wf-phased-trace-W1.log	sha256=909217c2b4aa0cdf91757b3c8a87b3b536a2ab989a1f0fc63fa6661074a01975
+phased	phase	label=dag-fanin-main-345e-phased-wf-phased-trace-W1	stage=complete-matrix-execution	command_wall_s=0.33	process_user_s=0.04	process_system_s=0.01	guard_wall_s=0.43	exit=0	benchmark_interval=false
+phased	matrix	engine=wf-phased	image=trace	workers=1	PASS	cases=34	task_rows=632	trace=1	events=1264	checks=all_values,exactly_once,input_unchanged,canaries,receipts,event_ids_inputs_values,exact_events,original_edge_order,stable_thread
+phased	negative-control	engine=wf-phased	image=trace	workers=1	output-corruption	rejected=task value mismatch at 0
+phased	negative-control	engine=wf-phased	image=trace	workers=1	trace-corruption	rejected=trace event count mismatch
+phased	raw-log	file=dag-fanin-main-345e-phased-wf-phased-trace-W4.log	sha256=5adc54bb4be8c8389e49849b992df084a4751361568069154ef6adb57d53fe35
+phased	phase	label=dag-fanin-main-345e-phased-wf-phased-trace-W4	stage=complete-matrix-execution	command_wall_s=0.05	process_user_s=0.03	process_system_s=0.01	guard_wall_s=0.11	exit=0	benchmark_interval=false
+phased	matrix	engine=wf-phased	image=trace	workers=4	PASS	cases=34	task_rows=632	trace=1	events=1264	checks=all_values,exactly_once,input_unchanged,canaries,receipts,event_ids_inputs_values,exact_events,original_edge_order,stable_thread
+phased	negative-control	engine=wf-phased	image=trace	workers=4	output-corruption	rejected=task value mismatch at 0
+phased	negative-control	engine=wf-phased	image=trace	workers=4	trace-corruption	rejected=trace event count mismatch
+phased	spine-W4	case=spine-0-0	actual_steals=0	observed_threads=0	peak_active_threads=0	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-0-1	actual_steals=0	observed_threads=0	peak_active_threads=0	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-1-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-1-1	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-1-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-1-3	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-2-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-2-1	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-2-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-2-3	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-4-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-4-1	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-4-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-4-3	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-7-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-7-1	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-7-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-7-3	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-8-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-8-1	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-8-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-8-3	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-9-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-9-1	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-9-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-9-3	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-16-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-16-1	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-16-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-16-3	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-32-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-32-1	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-32-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+phased	spine-W4	case=spine-32-3	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0

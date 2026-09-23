@@ -817,6 +817,14 @@ separate competing updates, as the
 [sparse-routing investigation](../compute-model/DESIGN.md#private-outboxes-without-frontier-compaction)
 explores. Routing, joins, initialization and owner imbalance still require
 accounting; that investigation does not establish a general DAG executor.
+The later [DAG source trial](../compute-model/DESIGN.md#runtime-dag-fan-in-source-trial-2026-09-23)
+admits two sources writing four private notices and two destination owners
+reading their own notices. All 16 edge masks pass the native oracle; the
+full-cost mask observes overlapping source recurrence work and overlapping
+owner recurrence work. Notice folding precedes the observed task intervals,
+so overlap of notice folding or complete owner retirement was not measured. Four
+notices are initialized and inspected even when edges are absent; a dense
+generalization must charge its whole matrix.
 
 ### (c) What changes structurally
 
@@ -857,12 +865,28 @@ illustration, not a bound on the level penalty.
 A discriminating analytical family has k unit-cost spine tasks in a chain,
 each enabling one independent leaf of cost T, with T >= 1. Level execution
 has span `1 + k*T`, whereas the weighted critical path is `k + T`. Their
-ratio grows without bound as k grows with T much larger than k. Nested calls
-to a leaf and the remaining spine are an alternative decomposition to test
-for this family; no source proof, permission result or native execution for
-that witness is established here, and it does not settle arbitrary fan-in.
+ratio grows without bound as k grows with T much larger than k. The
+[bounded native qualification](../compute-model/DESIGN.md#native-qualification-and-cutoff-attribution)
+now admits nested leaf/suffix calls and observes leaf/later-spine overlap in
+the ordinary default image. At W4 the recursive budget suppresses offers
+beyond depth eight; a separately labelled frontier-off control restores deep
+overlap at lengths 16 and 32, without qualifying longer spines or the retained
+64-slot-per-lane limit. A source-only spine-then-leaf-map comparator preserves
+the original outputs without another array, but its static price 199 leaves
+all selected lengths through 32 unsplit despite PAR-2 permission. These are
+source, lowering and overlap results, with no timing comparison or general
+fan-in result.
 
-This is a span comparison, not an unbounded elapsed-time ratio at fixed
+For edges A-to-C, B-to-C and B-to-D, the same trial qualifies three source
+decompositions with respective extra edges A-to-D, B-to-A and D-to-C. A
+fourth diagnostic order permits B/A, A/D and D/C separately, yet the current
+greedy grouping emits B/A joined before D/C and loses the middle pair. The
+useful oneTBB reference observes all three incomparable pairs on the
+all-costly input. This identifies a concrete lowering opportunity, not a
+universal impossibility result for other source forms or scheduling schemes.
+
+The analytical level/critical-path ratio is a span comparison, not an
+unbounded elapsed-time ratio at fixed
 worker count P. For the same task work W, ignoring scheduling and
 representation overhead, a non-idling level schedule takes at most W time
 and any P-worker execution takes at least W/P. The elapsed-time ratio is then
@@ -878,8 +902,10 @@ not establish lower peak memory.
 
 Displayed static diamond: **direct form, cost unmeasured here.** Runtime-input
 DAG: **restructure; costs depend on the formulation.** The examined level
-form adds barriers and sequential retirement. Their cost is not established
-as unavoidable for every representation, and efficient general fan-in remains
+form adds barriers and sequential retirement. The admitted spine and private
+notification witnesses establish useful overlap beyond that level form;
+recursive cutoff, work-price and call-group limitations remain distinct.
+Elapsed costs, arbitrary adjacency and efficient general fan-in remain
 unqualified.
 
 ---
@@ -2700,7 +2726,7 @@ only.
 | 3 | Pipeline with stages + queues, stateful stage | restructure, bounded loss | — | queues → N+1 batch buffers; stage count written in source; per-item → per-batch latency | throughput within 10–20% when stages regular (hot rounds at 11.6 ns); **1.3–2x worse** with a high-variance stage; latency = batch size | E |
 | 4 | Producer–consumer, bounded queue | restructure, bounded loss | — | backpressure → batch size constant; no continuous rate adaptation | throughput ±10% or better (mutex per item deleted); latency +1 batch; **1.5–2x worse** under bursty arrivals | E |
 | 5 | Task DAG, static | direct for the displayed diamond | — | precise effects and a call decomposition exposing dependencies | parity is conditional and unmeasured here; sibling-pair measurements do not establish general DAG parity | R/E |
-| 5′ | Task DAG, dynamic | restructure; formulation-dependent costs | — | examined level form has barriers and sequential retirement; destination ownership is a separate candidate | ~15% wide/shallow and 2–5x skew estimates unmeasured; level/critical-path span ratio unbounded, distinct from fixed-P elapsed costs; general fan-in unqualified | R/E |
+| 5′ | Task DAG, dynamic | restructure; formulation-dependent costs | — | bounded spine and private-owner witnesses admit native overlap; recursive cutoff, loaded-work pricing and call groups limit the examined forms | ~15% wide/shallow and 2–5x skew estimates unmeasured; no DAG timing comparison; level/critical-path span ratio unbounded, distinct from fixed-P elapsed costs; general fan-in unqualified | R/E |
 | 6 | Game job system | restructure, bounded loss | — | one extra phase per spawn depth; sequential merge per phase; no grain control | ~1% of a 60 Hz frame for merges (hot rounds); **1.2–1.5x worse** on fine-grained frames (grain hazard measured at 1.40x on `wfgrep`) | M/E |
 | 7 | Concurrent hash map | **not expressible** (concurrent insert+lookup); **`[R]` restructure, no loss** (build-then-freeze) | restructure, bounded loss — W a source constant | no cross-shard probing; insert latency = batch period | build 0.6–0.9 of native; **frozen lookup 1.2–1.5x faster** | R/E |
 | 8 | Read-mostly RwLock / RCU | **restructure, no loss** (structural win) | — | publish latency bounded by read-phase length | reader path **1.5–3x faster** than RwLock, parity with RCU; memory strictly lower | R/E |

@@ -266,21 +266,36 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   or serial execution. Defer until those active qualifications finish; no
   executor or new concurrency rule is selected by this follow-up.
 
-- **Runtime DAG fan-in costs remain unqualified.** The
-  [catalog's level decomposition](../research/investigations/io-model/CONCURRENCY-CATALOG.md#5-task-dag-with-dependencies-static-and-dynamic)
-  can add large span, but a denied shared-counter scatter does not establish
-  mandatory global barriers or retirement passes for every representation.
-  Test a runtime-length spine with independent long leaves, two sources
-  notifying two destination owners, and fan-in edges A-to-C, B-to-C, B-to-D.
-  Preserve every task's output and exactly one evaluation per task against
-  an independent topological oracle; compare with a useful edge-triggered
-  native executor and charge routing, initialization, work, span and peak
-  workspace. Overlap along the spine or destination-owned retirement would
-  falsify the corresponding universal level/serial-pass claim, not establish
-  an efficient general DAG solution. Defer while capture, BFS and stencil
-  evidence is qualified. Reopen after that work when a concrete runtime-DAG
-  consumer requires the fan-in contract; begin with bounded source witnesses,
-  not a new executor project.
+- **General runtime DAG fan-in costs remain unqualified.** The
+  [bounded source trial](../research/investigations/compute-model/DESIGN.md#native-qualification-and-cutoff-attribution)
+  qualifies a runtime-length spine, private notifications to two owners and
+  four decompositions of one N graph against an independent oracle and oneTBB.
+  Default native spine/leaf overlap refutes mandatory global-level execution
+  for that family; independent owner calls and overlapping owner recurrence
+  work do not measure simultaneous notice folding. The trial does not cover
+  arbitrary runtime adjacency, efficient general fan-in, elapsed performance
+  or physical peak workspace. Defer a general executor investigation until a
+  concrete consumer needs that wider contract. Reopen with its original graph,
+  every result and exactly-once counts, charging graph construction, routing,
+  initialization, added precedences, work, span and peak space against a useful
+  native readiness executor. The bounded witnesses are now evidence, not
+  outstanding admission work.
+
+- **Recursive frontier policy suppresses deep work on a spine with side leaves.**
+  The [cutoff-attribution control](../research/investigations/compute-model/DESIGN.md#native-qualification-and-cutoff-attribution)
+  shows default W4 budget eight serializing task IDs 16 onward; the existing
+  frontier-off mode restores deep overlap at lengths 16 and 32 on costly and
+  last-heavy leaves. Preserving those offers may expose useful work, but its
+  elapsed benefit, cheap/skew overhead and longer-spine space costs are unknown.
+  Disabling the budget retains the runtime's 64 capture slots per lane, held
+  until their enclosing joins. The stable-scatter result below also retains
+  a 30–37 percent regression when that budget is disabled, so this observation
+  does not select a global off policy. Defer policy changes until a concrete
+  recursive consumer or a selected scheduling study makes the cutoff material.
+  Reopen with unchanged task values, counts and edges; separate offered work
+  from successful steals, account for live frames/slots, and qualify cheap,
+  costly and skewed inputs across widths with prospective wall/CPU and W1
+  criteria before adopting a replacement.
 
 - **Parallel grain policy needs a dedicated study.** Captured extents are a
   provisional scheduling input, not an established broadly suitable policy.
@@ -312,6 +327,26 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   every split site, including zero-trip loops. Defer broader transport until
   that case supplies both the benefit and the availability evidence; pricing
   must not infer a separate source lifetime.
+
+- **Per-task loaded costs remain unavailable to loop work pricing.** The
+  [phased spine](../research/investigations/compute-model/DESIGN.md#phased-spine-permission-and-work-price)
+  has PAR-2 permission but emits the same static price 199 for cheap and costly
+  leaves. At the current work unit, 754 iterations afford one chunk and 1,508
+  first afford a positive split budget; all selected lengths through 32 remain
+  unsplit, matching zero observed W4 overlap. Useful independent work may be
+  withheld because a recurrence bound loaded inside a chunk is unavailable
+  at its split site, even when the source input is read-only. Extent transport
+  alone does not provide a representative task price for mixed loads. A first
+  discriminating control would use the same uniform task recurrence with its
+  actual bound passed as a captured scalar, then compare emitted prices and
+  offered work with the array-loaded form. Preserve IDs, values, exactly-once
+  counts, original edges and cheap/zero-trip controls; do not add padding or
+  manual grain. Any later aggregation or observation policy must charge its
+  extra reads, work and storage and establish validity at every split site.
+  Defer implementation until this availability control or a concrete loaded-
+  cost consumer establishes the missing mechanism; reopen with a prospective
+  qualification of scheduling benefit and cheap/W1 overhead. This is separate
+  from read-only header extent transport and selects no pricing policy.
 
 - **Zero-budget dispatch needs caller and placement attribution before adoption.** The
   [query-retained one-site control](../research/investigations/compute-model/DESIGN.md#query-retained-control-result)

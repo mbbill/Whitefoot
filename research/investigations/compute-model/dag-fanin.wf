@@ -207,6 +207,58 @@ fn dag_n(mode: u64, costs: &[u64], output: &[TaskCell], seed: u64) -> result: un
   return unit;
 }
 
+fn phased_leaf(pair: &[TaskCell], id: u64, steps: u64, seed: u64) -> result: unit writes(pair) contract {
+  requires 2_u64 <= deref(pair).len;
+} {
+  doc "A leaf reads its completed spine value and writes its own cell within one iteration's two-cell range.";
+  let predecessor_mix = deref(pair)[0_u64].value;
+  let output = &deref(pair)[1_u64..2_u64];
+  let value = evaluate(output: output, id: id, steps: steps, seed: seed, predecessor_mix: predecessor_mix);
+  return unit;
+}
+
+fn dag_spine_phased(count: u64, costs: &[u64], output: &[TaskCell], seed: u64) -> result: unit reads(costs), writes(output) contract {
+  requires count <= 9223372036854775807_u64;
+  requires 2_u64 * count <= deref(costs).len;
+  requires 2_u64 * count <= deref(output).len;
+} {
+  doc "Completes the serial spine before mapping leaves. Each leaf receives its full adjacent spine-and-leaf pair, preserving canonical interleaved task IDs without a copied spine buffer.";
+  let predecessor_mix = 0_u64;
+  for (i in 0_u64..count) {
+    let id = i * 2_u64;
+    let end = id + 1_u64;
+    invariant cost_room: end <= deref(costs).len {
+      use 2 times (i + 1_u64 <= count);
+      use (2_u64 * count <= deref(costs).len);
+    }
+    invariant output_room: end <= deref(output).len {
+      use 2 times (i + 1_u64 <= count);
+      use (2_u64 * count <= deref(output).len);
+    }
+    let steps = deref(costs)[id];
+    let spine_output = &deref(output)[id..end];
+    let value = evaluate(output: spine_output, id: id, steps: steps, seed: seed, predecessor_mix: predecessor_mix);
+    set predecessor_mix = value;
+  }
+  for (i in 0_u64..count) {
+    let start = i * 2_u64;
+    let end = start + 2_u64;
+    let id = start + 1_u64;
+    invariant cost_room: end <= deref(costs).len {
+      use 2 times (i + 1_u64 <= count);
+      use (2_u64 * count <= deref(costs).len);
+    }
+    invariant output_room: end <= deref(output).len {
+      use 2 times (i + 1_u64 <= count);
+      use (2_u64 * count <= deref(output).len);
+    }
+    let steps = deref(costs)[id];
+    let pair = &deref(output)[start..end];
+    let leaf = phased_leaf(pair: pair, id: id, steps: steps, seed: seed);
+  }
+  return unit;
+}
+
 fn main() -> status: ExitStatus pure {
   let empty = TaskCell(value: 0_u64, evaluations: 0_u64);
   let costs = array_filled::<u64, 4>(value: 1_u64);
@@ -217,5 +269,6 @@ fn main() -> status: ExitStatus pure {
   let spine = dag_spine(count: 2_u64, costs: &costs[0_u64..4_u64], output: &spine_output[0_u64..4_u64], seed: 17_u64);
   let notifications = dag_notify(mask: 15_u64, costs: &costs[0_u64..4_u64], output: &notice_output[0_u64..4_u64], receipts: &receipts[0_u64..4_u64], seed: 17_u64);
   let n = dag_n(mode: 0_u64, costs: &costs[0_u64..4_u64], output: &n_output[0_u64..4_u64], seed: 17_u64);
+  let phased = dag_spine_phased(count: 2_u64, costs: &costs[0_u64..4_u64], output: &spine_output[0_u64..4_u64], seed: 17_u64);
   return exit_status(code: 0_u8);
 }
