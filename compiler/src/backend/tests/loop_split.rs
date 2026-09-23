@@ -742,9 +742,9 @@ fn synthesized_symbols(module: &str, prefix: &str) -> Vec<String> {
 
 /// Observe the selected outer call without changing any inner query or worker
 /// protocol. The same image exercises a zero answer and the real runtime's
-/// answer; function-entry observations distinguish bypassing the
-/// splitter from entering it and immediately taking its leaf.
-fn observe_outer_dispatch(module: &str, caller: &str, splitter: &str, chunk: &str) -> String {
+/// answer. A zero allowance enters the splitter once and reaches one chunk;
+/// that chunk retains its nested queries and publication opportunities.
+fn observe_outer_loop_budget(module: &str, caller: &str, splitter: &str, chunk: &str) -> String {
     let body = function_body(module, caller);
     assert_eq!(body.matches("call i64 @wf__par_split_budget(").count(), 1);
     let changed = body.replace(
@@ -771,7 +771,7 @@ fn observe_outer_dispatch(module: &str, caller: &str, splitter: &str, chunk: &st
 // runs share one construction and retain the real publication/join protocol.
 // WF_TEST_NESTED distinguishes a map with no inner offers from the nested
 // reduction, whose zero-budget outer chunk must still publish inner work.
-const OUTER_DISPATCH_OBSERVER: &str = r#"
+const OUTER_LOOP_BUDGET_OBSERVER: &str = r#"
 extern uint64_t wf__par_split_budget(uint64_t, uint64_t);
 extern unsigned long wf__par_grants(void);
 static _Atomic unsigned outer_queries, outer_splitters, outer_chunks;
@@ -784,7 +784,7 @@ uint64_t wf_test_outer_budget(uint64_t span, uint64_t weight) {
 }
 void wf_test_outer_splitter(void) { atomic_fetch_add(&outer_splitters, 1); }
 void wf_test_outer_chunk(void) { atomic_fetch_add(&outer_chunks, 1); }
-static void report_outer_dispatch(void) {
+static void report_outer_budget(void) {
     unsigned queries = atomic_load(&outer_queries);
     unsigned splitters = atomic_load(&outer_splitters);
     unsigned chunks = atomic_load(&outer_chunks);
@@ -792,18 +792,18 @@ static void report_outer_dispatch(void) {
     unsigned long grants = wf__par_grants();
     int zero = getenv("WF_TEST_ZERO_BUDGET") != NULL;
     if (queries != 1 || !chunks ||
-        (!allowance && (splitters || chunks != 1)) ||
+        (!allowance && (splitters != 1 || chunks != 1)) ||
         (allowance && !splitters) ||
         (!WF_TEST_NESTED && !zero && !allowance) ||
         ((WF_TEST_NESTED || !zero) &&
             (!grants || !atomic_load(&schedule_entered)))) {
-        fprintf(stderr, "outer dispatch: zero=%d queries=%u splitters=%u chunks=%u grants=%lu\n",
+        fprintf(stderr, "outer loop budget: zero=%d queries=%u splitters=%u chunks=%u grants=%lu\n",
                 zero, queries, splitters, chunks, grants);
         _Exit(116);
     }
 }
-__attribute__((constructor)) static void register_outer_dispatch(void) {
-    atexit(report_outer_dispatch);
+__attribute__((constructor)) static void register_outer_budget(void) {
+    atexit(report_outer_budget);
 }
 "#;
 
@@ -1164,9 +1164,10 @@ fn nested_boxed_array_payload_reductions_preserve_the_unsplit_result() {
             function_body(&split, outer_splitter).contains(&format!("call i64 {symbol}("))
         })
         .expect("the outer splitter has one chunk");
-    let observed = observe_outer_dispatch(&split, "@wf_nested", outer_splitter, outer_chunk_symbol);
+    let observed =
+        observe_outer_loop_budget(&split, "@wf_nested", outer_splitter, outer_chunk_symbol);
     let observer = format!(
-        "#define WF_TEST_NESTED 1\n{}\n{OUTER_DISPATCH_OBSERVER}",
+        "#define WF_TEST_NESTED 1\n{}\n{OUTER_LOOP_BUDGET_OBSERVER}",
         super::parallel::WORKER_SCHEDULE,
     );
     let executable = super::build_linked_executable(&observed, Some(&observer), &[], &directory);
@@ -1179,7 +1180,7 @@ fn nested_boxed_array_payload_reductions_preserve_the_unsplit_result() {
         if zero {
             command.env("WF_TEST_ZERO_BUDGET", "1");
         }
-        let output = command.output().expect("run observed nested dispatch");
+        let output = command.output().expect("run observed nested loop budget");
         assert_eq!(output.status.code(), Some(0), "zero={zero}: {output:?}");
         assert_eq!(output.stdout, reference.stdout);
     }
@@ -1281,9 +1282,9 @@ fn an_independent_map_joins_and_preserves_its_outer_buffer() {
     }
     identical(&runs).expect("splitting an independent map must not move one output byte");
 
-    let observed = observe_outer_dispatch(&split, "@wf_mapped", &splitter_symbol, &chunk_symbol);
+    let observed = observe_outer_loop_budget(&split, "@wf_mapped", &splitter_symbol, &chunk_symbol);
     let observer = format!(
-        "#define WF_TEST_NESTED 0\n{}\n{OUTER_DISPATCH_OBSERVER}",
+        "#define WF_TEST_NESTED 0\n{}\n{OUTER_LOOP_BUDGET_OBSERVER}",
         super::parallel::WORKER_SCHEDULE,
     );
     let executable = super::build_linked_executable(&observed, Some(&observer), &[], &directory);
@@ -1296,7 +1297,7 @@ fn an_independent_map_joins_and_preserves_its_outer_buffer() {
         if zero {
             command.env("WF_TEST_ZERO_BUDGET", "1");
         }
-        let output = command.output().expect("run observed Unit-map dispatch");
+        let output = command.output().expect("run observed Unit-map loop budget");
         assert_eq!(output.status.code(), Some(0), "zero={zero}: {output:?}");
         assert_eq!(output.stdout, runs[0].1);
     }
@@ -1880,11 +1881,11 @@ fn assert_combine_rows(reference: &[u8], published: &[u8], setting: &str) {
     }
 }
 
-/// Two dispatches surround an ordinary call join and precede a loop-header
+/// Two split loops surround an ordinary call join and precede a loop-header
 /// phi. One image checks both allowance answers and the sequential world;
 /// native construction also verifies every emitted phi predecessor.
 #[test]
-fn multiple_split_dispatches_and_an_ordinary_join_keep_phi_predecessors() {
+fn multiple_split_loops_and_an_ordinary_join_keep_phi_predecessors() {
     let source = br#"fn choose(value: own u64) -> result: own u64 pure {
   return imax(value, value);
 }
@@ -1969,8 +1970,8 @@ static void report(void) {
     int sequential = strcmp(getenv("WF_WORKERS"), "1") == 0;
     int positive = getenv("WF_TEST_POSITIVE_BUDGET") != NULL;
     if (queried != (sequential ? 0 : 2) ||
-        ((sequential || !positive) ? entered != 0 : entered == 0)) {
-        fprintf(stderr, "composed dispatch: queries=%u splitters=%u\n", queried, entered);
+        (sequential ? entered != 0 : (positive ? entered <= 2 : entered != 2))) {
+        fprintf(stderr, "composed loops: queries=%u splitters=%u\n", queried, entered);
         _Exit(118);
     }
 }
@@ -1986,7 +1987,7 @@ __attribute__((constructor)) static void register_report(void) { atexit(report);
         if positive {
             command.env("WF_TEST_POSITIVE_BUDGET", "1");
         }
-        let output = command.output().expect("run composed split dispatches");
+        let output = command.output().expect("run composed split loops");
         assert_eq!(
             output.status.code(),
             Some(0),

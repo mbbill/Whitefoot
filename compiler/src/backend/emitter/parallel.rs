@@ -538,9 +538,8 @@ impl FunctionEmitter<'_, '_> {
     /// accumulator's incoming value — and is therefore the code the loop always
     /// had, behind one call its only caller inlines back. The overlapped world
     /// asks the runtime once, at loop entry, how far a split of this span may
-    /// descend. A zero allowance enters the overlapping chunk directly; a
-    /// positive allowance enters the splitter. Nothing is asked per iteration,
-    /// and the sequential world adds neither the query nor the dispatch.
+    /// descend, and calls the splitter with that allowance. Nothing is asked
+    /// per iteration, and neither world tests anything the other does.
     pub(super) fn emit_loop_split(
         &mut self,
         result: IrValueId,
@@ -605,26 +604,8 @@ impl FunctionEmitter<'_, '_> {
 
         let callee = self.callee_symbol(target, function.name());
         if self.sequential_clones.is_some() {
-            self.emit_split_call(
-                result,
-                abi.result(),
-                &value_name(result),
-                &callee,
-                arguments,
-            )?;
-            return self.emit_split_snapshot(result, abi.result());
+            return self.emit_split_call(result, abi.result(), &callee, arguments);
         }
-
-        let chunk = self
-            .program
-            .functions()
-            .get(split.chunk as usize)
-            .ok_or(BackendFailure::InvalidIr)?;
-        let chunk_abi = FunctionAbi::build(self.program, chunk)?;
-        if chunk_abi.parameters() != &declared[..expected] || chunk_abi.result() != abi.result() {
-            return Err(BackendFailure::InvalidIr);
-        }
-        let chunk_callee = self.callee_symbol(split.chunk, chunk.name());
 
         // The span, computed so an inverted range asks for nothing rather than
         // for a bogus 2^63 one. The splitter guards the same way; this keeps a
@@ -649,45 +630,8 @@ impl FunctionEmitter<'_, '_> {
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         self.parallel.queries_split_budget = true;
-
-        // For a nonempty range, a zero allowance already selects this chunk
-        // in the splitter; its own bound test returns the seed for an empty
-        // range. Keep the overlapping world so descendant loops retain their
-        // own queries and publication opportunities.
-        let zero = format!("%{}", self.next_temporary()?);
-        let chunk_label = format!("loop_split.chunk.v{}", result.ordinal());
-        let split_label = format!("loop_split.split.v{}", result.ordinal());
-        let done = loop_split_done_label(result);
-        let chunk_result = format!("%loop_split.chunk_result.v{}", result.ordinal());
-        let split_result = format!("%loop_split.split_result.v{}", result.ordinal());
-        writeln!(
-            self.output,
-            "  {zero} = icmp eq i64 {budget}, 0\n  \
-             br i1 {zero}, label %{chunk_label}, label %{split_label}\n{chunk_label}:"
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        self.emit_split_call(
-            result,
-            abi.result(),
-            &chunk_result,
-            &chunk_callee,
-            arguments.clone(),
-        )?;
-        writeln!(self.output, "  br label %{done}\n{split_label}:")
-            .map_err(|_| BackendFailure::TextEmission)?;
         arguments.push(format!("i64 {budget}"));
-        self.emit_split_call(result, abi.result(), &split_result, &callee, arguments)?;
-        writeln!(self.output, "  br label %{done}\n{done}:")
-            .map_err(|_| BackendFailure::TextEmission)?;
-        if !abi.result().uses_destination() {
-            writeln!(
-                self.output,
-                "  {} = phi {result_type} [ {chunk_result}, %{chunk_label} ], [ {split_result}, %{split_label} ]",
-                value_name(result)
-            )
-            .map_err(|_| BackendFailure::TextEmission)?;
-        }
-        self.emit_split_snapshot(result, abi.result())
+        self.emit_split_call(result, abi.result(), &callee, arguments)
     }
 
     /// Scheduling arithmetic is total even when the priced source branch
@@ -825,7 +769,6 @@ impl FunctionEmitter<'_, '_> {
         &mut self,
         result: IrValueId,
         result_abi: ResultAbi,
-        scalar_result: &str,
         callee: &str,
         mut arguments: Vec<String>,
     ) -> Result<(), BackendFailure> {
@@ -833,39 +776,23 @@ impl FunctionEmitter<'_, '_> {
         if result_abi.uses_destination() {
             let destination = self.value_place(result)?;
             arguments.insert(0, format!("ptr {destination}"));
+            // LoopSplit uses the value-definition bridge, whose ordinary
+            // result save reads this snapshot of the completed destination.
             return writeln!(
                 self.output,
-                "  call void @{callee}({})",
-                arguments.join(", ")
+                "  call void @{callee}({})\n  {} = load {result_type}, ptr {destination}",
+                arguments.join(", "),
+                value_name(result)
             )
             .map_err(|_| BackendFailure::TextEmission);
         }
         writeln!(
             self.output,
-            "  {scalar_result} = call {result_type} @{callee}({})",
+            "  {} = call {result_type} @{callee}({})",
+            value_name(result),
             arguments.join(", ")
         )
         .map_err(|_| BackendFailure::TextEmission)
-    }
-
-    fn emit_split_snapshot(
-        &mut self,
-        result: IrValueId,
-        result_abi: ResultAbi,
-    ) -> Result<(), BackendFailure> {
-        if result_abi.uses_destination() {
-            let destination = self.value_place(result)?;
-            let result_type = llvm_type(self.program, result_abi.ty())?;
-            // Both dispatch edges write the same planned destination. The
-            // value-definition bridge reads it once after the selected call.
-            writeln!(
-                self.output,
-                "  {} = load {result_type}, ptr {destination}",
-                value_name(result)
-            )
-            .map_err(|_| BackendFailure::TextEmission)?;
-        }
-        Ok(())
     }
 
     /// Completes every hand-out of the group whose last member just ran.
@@ -1029,11 +956,6 @@ fn par_inline_label(value: IrValueId) -> String {
 /// The label a granted lane is waited for in.
 fn par_wait_label(value: IrValueId) -> String {
     format!("par.wait.v{}", value.ordinal())
-}
-
-/// The continuation after either overlapping-world LoopSplit dispatch edge.
-pub(super) fn loop_split_done_label(value: IrValueId) -> String {
-    format!("loop_split.done.v{}", value.ordinal())
 }
 
 /// The label the joined value is read in. It is the block a later phi names as
