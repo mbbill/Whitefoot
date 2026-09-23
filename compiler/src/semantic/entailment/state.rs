@@ -2441,6 +2441,14 @@ impl BoundStore {
         candidates
     }
 
+    fn contains_candidate(&self, pair: (TermId, TermId), candidate: (i128, DerivationId)) -> bool {
+        self.get(pair.0, pair.1) == Some(candidate)
+            || self
+                .extra
+                .get(&pair)
+                .is_some_and(|extra| extra.contains(&candidate))
+    }
+
     /// Adds one candidate. The selection is the least candidate by bound and
     /// then proof, so only the new candidate and the current selection
     /// compete; the loser is kept among the other candidates.
@@ -2454,12 +2462,7 @@ impl BoundStore {
             self.store_single(pair.0, pair.1, candidate.0, candidate.1);
             return;
         };
-        if selected == candidate
-            || self
-                .extra
-                .get(&pair)
-                .is_some_and(|extra| extra.contains(&candidate))
-        {
+        if self.contains_candidate(pair, candidate) {
             return;
         }
         let preferred = candidate.0 < selected.0
@@ -2828,6 +2831,36 @@ impl FactState {
         }
     }
 
+    /// The numeric part of a materialized snapshot, retaining its completed
+    /// closure and shared stores. Opaque goals and writer-origin metadata do
+    /// not travel with a Result. Their numeric consequences have already been
+    /// materialized by the caller, so removing that metadata does not make
+    /// the retained numeric core incomplete.
+    pub(crate) fn numeric_snapshot(&self) -> Self {
+        Self {
+            closure: self.closure.clone(),
+            ordinary_closure: self.ordinary_closure.clone(),
+            postcondition_candidates: self.postcondition_candidates,
+            all_derivable: self.all_derivable,
+            contradiction: self.contradiction,
+            bounds: Rc::clone(&self.bounds),
+            distinct: Rc::clone(&self.distinct),
+            distinct_proofs: Rc::clone(&self.distinct_proofs),
+            distinct_candidates: Rc::clone(&self.distinct_candidates),
+            ..Self::new()
+        }
+    }
+
+    /// Size of the recorded numeric core, before its fresh and weakened
+    /// cells are closed again. This selects a reuse opportunity, not a fact
+    /// or a bound on the amount of closure work that remains.
+    pub(crate) fn numeric_core_terms(&self) -> u32 {
+        match self.closure {
+            ClosureRecord::Unknown => 0,
+            ClosureRecord::Closed { terms } | ClosureRecord::Core { terms, .. } => terms,
+        }
+    }
+
     /// Deterministic normalized live L0 facts and their canonical proofs.
     /// This excludes opaque goals and origin metadata.
     pub(crate) fn live_l0_relations(&self) -> Vec<(Relation, DerivationId)> {
@@ -2947,12 +2980,29 @@ impl FactState {
         proof: DerivationId,
         ledger: &DerivationLedger,
     ) {
+        let pair = (left, right);
+        if self.bounds.contains_candidate(pair, (bound, proof)) {
+            return;
+        }
         self.closed_view.take();
-        self.closure.mark_fresh_cell((left, right));
+        // A new proof candidate must remain available to later support kills,
+        // but only a stronger numeric bound changes this layer's closure.
+        // Result transport routinely imports already-known ordinary bounds.
+        if self
+            .bounds
+            .get(left, right)
+            .is_none_or(|(old, _)| bound < old)
+        {
+            self.closure.mark_fresh_cell(pair);
+        }
         if ledger.depends_on_postcondition_call(proof) {
             self.postcondition_candidates = true;
-        } else {
-            self.ordinary_closure.mark_fresh_cell((left, right));
+        } else if self
+            .bounds
+            .candidate_minimum(pair, |parent| !ledger.depends_on_postcondition_call(parent))
+            .is_none_or(|old| bound < old)
+        {
+            self.ordinary_closure.mark_fresh_cell(pair);
         }
         Rc::make_mut(&mut self.bounds).add_candidate((left, right), (bound, proof), ledger);
     }
@@ -2963,12 +3013,29 @@ impl FactState {
         proof: DerivationId,
         ledger: &DerivationLedger,
     ) {
+        if self
+            .distinct_candidates
+            .get(&pair)
+            .is_some_and(|candidates| candidates.contains(&proof))
+        {
+            return;
+        }
         self.closed_view.take();
-        self.closure.mark_fresh_cell(pair);
-        self.closure.mark_fresh_cell((pair.1, pair.0));
+        if !self.distinct.contains(&pair) {
+            self.closure.mark_fresh_cell(pair);
+            self.closure.mark_fresh_cell((pair.1, pair.0));
+        }
         if ledger.depends_on_postcondition_call(proof) {
             self.postcondition_candidates = true;
-        } else {
+        } else if !self
+            .distinct_candidates
+            .get(&pair)
+            .is_some_and(|candidates| {
+                candidates
+                    .iter()
+                    .any(|parent| !ledger.depends_on_postcondition_call(*parent))
+            })
+        {
             self.ordinary_closure.mark_fresh_cell(pair);
             self.ordinary_closure.mark_fresh_cell((pair.1, pair.0));
         }
@@ -6045,13 +6112,28 @@ pub(crate) mod tests {
     /// flow walk reaches its kill, join, strengthening and term-growth paths.
     #[test]
     fn seeded_closures_match_complete_closures_on_real_programs() {
-        // The smallest real program keeps this gate test cheap; the generated
-        // flows below cover postcondition candidates, holder kills, joins and
-        // new terms. Larger programs were verified by temporary inclusion.
-        let bundles: [&[(&str, &[u8])]; 1] = [&[(
-            "utf8parse.wf",
-            include_bytes!("../../../../tests/programs/utf8parse.wf"),
-        )]];
+        // The small real program and existing Result cases exercise closure
+        // records through the ordinary walk. The additional observation here
+        // is agreement with an eager closure at every intermediate proof point;
+        // the corpus's ordinary verdict checks do not inspect those states.
+        let bundles: [&[(&str, &[u8])]; 3] = [
+            &[(
+                "utf8parse.wf",
+                include_bytes!("../../../../tests/programs/utf8parse.wf"),
+            )],
+            &[(
+                "result-value-transport.wf",
+                include_bytes!(
+                    "../../../../tests/conformance/cases/fn9-pos-result-value-transport.wf"
+                ),
+            )],
+            &[(
+                "result-conditional-joins.wf",
+                include_bytes!(
+                    "../../../../tests/conformance/cases/fn9-pos-result-conditional-joins.wf"
+                ),
+            )],
+        ];
         VERIFY_SEEDED_CLOSURE.with(|verify| verify.set(true));
         VERIFIED_CLOSURES.with(|count| count.set(0));
         for bundle in bundles {
@@ -7006,6 +7088,134 @@ pub(crate) mod tests {
         }
         assert!(contradiction_without_proofs(&state, &terms, &goals));
         assert!(close(&state, &terms, &goals, &mut ledger).contradictory());
+    }
+
+    /// Reimporting a numeric snapshot must not schedule its complete matrix
+    /// for closure again. Additional candidates still matter after a call's
+    /// authority is removed, even when they do not improve the full layer.
+    #[test]
+    fn repeated_snapshot_imports_preserve_closure_and_ordinary_fallbacks() {
+        let mut terms = TermTable::new();
+        let [left, middle, right] = [0, 1, 2].map(|binding| {
+            terms.intern(TermKind::Place(
+                super::super::term::ResolvedPlace::binding(BindingId(binding)),
+                IntegerType::U8,
+            ))
+        });
+        let goals = GoalTable::default();
+        let mut ledger = DerivationLedger::default();
+        let event = ledger.event(FlowEventKind::S1, None);
+        let mut state = FactState::new();
+        for (left, right, bound) in [(left, middle, 10), (middle, right, 4)] {
+            state.establish(&Relation::Bound { left, right, bound }, &mut ledger, event);
+        }
+        for relation in [
+            Relation::Bound {
+                left,
+                right: middle,
+                bound: 0,
+            },
+            Relation::Distinct {
+                left: middle,
+                right,
+                difference: 0,
+            },
+        ] {
+            let proof = postcondition_call_proof(&mut ledger, relation.clone());
+            state.establish_from_proof(&relation, proof, &ledger);
+        }
+        materialize_closure_before_kill(&mut state, &terms, &goals, &mut ledger);
+        // Equal-value witness replacement must refresh the proof-bearing
+        // view even though no numeric closure work is needed. Removing the
+        // new witnesses must reveal the original still-live candidates.
+        let mut swapped = state.clone();
+        let old_bound = swapped.bounds.get(left, middle).unwrap();
+        let pair = ordered(middle, right);
+        let old_distinct = swapped.distinct_proofs[&pair];
+        let cached = close(&swapped, &terms, &goals, &mut ledger);
+        swapped.establish(
+            &Relation::Bound {
+                left,
+                right: middle,
+                bound: 0,
+            },
+            &mut ledger,
+            event,
+        );
+        swapped.establish(
+            &Relation::Distinct {
+                left: middle,
+                right,
+                difference: 0,
+            },
+            &mut ledger,
+            event,
+        );
+        let new_bound = swapped.bounds.get(left, middle).unwrap();
+        let new_distinct = swapped.distinct_proofs[&pair];
+        assert_ne!(old_bound.1, new_bound.1);
+        assert_ne!(old_distinct, new_distinct);
+        assert!(!ledger.depends_on_postcondition_call(new_bound.1));
+        assert!(!ledger.depends_on_postcondition_call(new_distinct));
+        assert!(swapped.closure.is_closed_over(terms.ids().count()));
+        assert!(!Rc::ptr_eq(
+            &cached,
+            &close(&swapped, &terms, &goals, &mut ledger)
+        ));
+        swapped.kill_proof_candidates(&ledger, |_, _, proof| {
+            proof == new_bound.1 || proof == new_distinct
+        });
+        assert_eq!(swapped.bounds.get(left, middle), Some(old_bound));
+        assert_eq!(swapped.distinct_proofs[&pair], old_distinct);
+        let restored = close(&swapped, &terms, &goals, &mut ledger);
+        assert_seeded_closure_matches_complete(&swapped, &terms, &goals, &ledger, &restored);
+
+        for (relation, proof) in state.l0_candidates() {
+            state.establish_from_proof(&relation, proof, &ledger);
+        }
+        let weaker = Relation::Bound {
+            left,
+            right: middle,
+            bound: 20,
+        };
+        state.establish(&weaker, &mut ledger, event);
+        assert!(state.closure.is_closed_over(terms.ids().count()));
+        assert!(state.ordinary_closure.is_closed_over(terms.ids().count()));
+        assert!(
+            state
+                .bounds
+                .candidates((left, middle))
+                .iter()
+                .any(|(bound, _)| *bound == 20)
+        );
+
+        // These ordinary facts change only the fallback layer: the full
+        // layer already knows the stronger bound and the same disequality.
+        state.establish(
+            &Relation::Bound {
+                left,
+                right: middle,
+                bound: 5,
+            },
+            &mut ledger,
+            event,
+        );
+        state.establish(
+            &Relation::Distinct {
+                left: middle,
+                right,
+                difference: 0,
+            },
+            &mut ledger,
+            event,
+        );
+        assert!(state.closure.is_closed_over(terms.ids().count()));
+        state.retain_non_postcondition_candidates(&ledger);
+        let closed = close(&state, &terms, &goals, &mut ledger);
+        assert!(closed.derives_bound(left, right, 9));
+        assert!(!closed.derives_bound(left, right, 8));
+        assert!(closed.distinct.contains(&ordered(middle, right)));
+        assert_seeded_closure_matches_complete(&state, &terms, &goals, &ledger, &closed);
     }
 
     fn bound_store_proof(

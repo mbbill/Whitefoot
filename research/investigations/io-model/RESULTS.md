@@ -285,6 +285,23 @@ read, against the four-wide program's three plus one. The narrow program still
 emits none. Hand-widening from four to eight is worth 13 percent on macOS
 (629 ms to 546 ms) and 19 percent on Linux (147 ms to 119 ms).
 
+### Open-kind lookup comparison
+
+The implementation record for `f141d1e1` reports an additional comparison on
+this batch's two-CPU Linux container. For the eight-wide many-file workload,
+linking `IORING_OP_STATX` after each open took about 152 ms, against 116 ms for
+the prior bounded adapter and 119 ms with one `fstat` on the reaping thread.
+The four-wide readings were 203, 140 and 141 ms respectively. The selected
+path avoids a second ring round trip while retaining the descriptor-kind
+check; the program-level table below records the final path at about 119 ms.
+
+These are historical observations recovered from the implementation record,
+not fresh measurements. The original per-arm samples and repetition counts
+were not retained with this comparison, so the figures do not establish a
+portable speedup or an exact causal partition of the full program. In
+particular, they do not establish that `fstat` cannot wait on every supported
+filesystem or target.
+
 ### What one file operation costs
 
 Measured directly on the same trees, warm cache, one file open at a time,
@@ -2406,6 +2423,22 @@ record for the engine. A send on a loopback whose window has room is always
 that first case, so the send half of every round trip stopped parking. The
 Windows leaf answers that the host would wait for every transfer, so nothing
 moves there.
+
+### Grounds for the retained tuning constants
+
+The comparison above supports the reap budget of 64; it does not measure all
+completion-runtime constants together. The 10-microsecond join spin trades a
+bounded amount of idle CPU for avoiding a sleep/wake pair, as explained beside
+`WF_BRIDGE_JOIN_SPIN_NS` in
+[bridge.c](../../../compiler/src/backend/completion/bridge.c). The submission
+depth of 64 is inherited from the former slot count, not selected by a new
+measurement. The 2,048-entry completion queue accommodates the network
+control's in-flight requests; overflow still requires correct flushing, as
+the 129-connection/128-entry control in [NETWORK.md](NETWORK.md) demonstrates.
+Both ring constants and their distinct grounds are recorded in
+[linux_io_uring.h](../../../compiler/src/backend/completion/linux_io_uring.h).
+These are selected defaults with separate grounds, not a jointly optimized
+configuration or a claim of universally optimal sizes.
 
 ### The second series: where the remaining margin is
 

@@ -186,6 +186,26 @@ exploratory runs moved wfgrep through 4.87, 4.34, 3.42, 3.29 and 1.68 s.
 The remembered view came from samples showing the same unchanged state closed
 by contradiction promotion and then by materialization or a join.
 
+### Earlier reuse alternatives
+
+The [flow comparison](CHECKING-COST.md#flow-selection-2026-09-16) rejected
+sharing only the contradiction-promotion closure with its following
+materialization: the measured gain was 1.04x and did not justify a special
+path for that check. Remembering every unchanged state's closed view later
+provided that reuse without the special path. Sharing each predecessor's
+closure with its join had also conflicted with retaining the eager traversal's
+ledger order. The selected witness policy instead permits different valid
+equal-bound witnesses under the retained-proof conditions below.
+
+The closure record tracks term kills, removed candidates and joins, replacing
+the reason earlier query and row-dominance designs refused cross-flow reuse.
+Query preparation still preserves candidate and diagnostic-parent traversal
+within a prepared view. Unseeded row pruning preserves the unpruned traversal's
+selected witnesses; seeded closure need only preserve derivability under the
+selected witness policy. These are distinct guarantees.
+
+### Retained derivations
+
 **Consumers of retained derivations.** Three consumers read a retained
 proof's ancestry rather than its value.
 

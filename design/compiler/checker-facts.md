@@ -30,6 +30,8 @@ Decision: The ordinary entailment walk associates each live local Result with an
 
 Decision: Result evidence construction and transport belong to a private child of the existing flow module while the walker retains event order, because the mechanism has one coherent representation and the shared flow already owns the call authority and invalidation consumers it needs, instead of adding another analysis pass or extending the large statement walker with all conditional-state operations inline.
 
+Decision: Result transport [reuses completed numeric closure](https://github.com/mbbill/Whitefoot/blob/b3341e32ab8d69e2974227aee7146ac16eb2fe00/research/investigations/result-proof-transport/DESIGN.md#closure-reuse-and-correspondence) through the existing copy-on-write fact stores, preserving isolated contexts, complete candidate sets and ordinary fallbacks, because the [cost investigation](https://github.com/mbbill/Whitefoot/blob/b3341e32ab8d69e2974227aee7146ac16eb2fe00/research/investigations/result-proof-transport/DESIGN.md#selected-cost-result) shows that avoiding repeated closure and snapshot work meets the measured targets, instead of rebuilding numeric states or narrowing transported facts. Writer origins and opaque goals remain excluded; existing insertion and kill records track affected cells. Core size selects reuse, never derivability or a work limit, and equal-bound witnesses follow the incremental-closure policy.
+
 Rejected:
 - Reducing a joined reference to its first target or treating a containing prefix as the exact selected target: rejected because safety checks must cover every possible member and overlap does not establish target equality; a per-root cover is allowed only as a may-alias description.
 - Reusing a function-wide separation result: rejected because a proof about immutable captures is available only in the flow context that established it; a sibling arm or a zero-trip loop cannot inherit it.
@@ -39,3 +41,4 @@ Rejected:
 - Proving preservation at the reference use: rejected because a later guard or postcondition cannot restore a validity fact removed by an earlier write.
 - Re-instantiating a saved call's contract when its outcome is matched: rejected because mutable arguments may denote different values by then and a dead support cannot be revived.
 - Combining the conditional states of different live outcomes before either success is selected: rejected because each state assumes a different guard and their conjunction is unavailable on an ordinary continuation.
+- Projecting to selected payload bounds or guessing last use: rejected because either needs a broader precision or lifetime argument, while closure reuse already meets the measured target.
