@@ -1,0 +1,79 @@
+Baseline image identities:
+881f6c8889ff25dcbf80e079e43a730c4031830c
+ M docs/todo.md
+ M lib/containers/README.md
+ M research/experiments/container-representation/ordered-library/Makefile
+ M research/experiments/container-representation/ordered-library/ordered-costs.c
+ M research/experiments/container-representation/ordered-library/ordered-library.wf
+?? design/amendments/
+?? research/experiments/container-representation/ordered-library/insertion-candidate.patch
+Darwin 25.6.0 arm64
+Apple clang version 21.0.0 (clang-2100.3.34.2)
+Target: arm64-apple-darwin25.6.0
+Thread model: posix
+39a4103c54db0a0d1464bc23d52342c059d997190611b1fd93855c07b3d90fb6  Makefile
+cd3c8cca4d1332360f4df4cee8f07df43cea030144d683b8044a51d7479be71b  ordered-costs.c
+779ffc6065c0c1b46cb0906ae1c14c167e32d385f37b4569ba35603710d90f4d  ordered-library.wf
+affaee669a09320aafc9ec5badbea6c11fd95623e1ea8987ad9811742c4b70bb  insertion-baseline-source.wf
+cbffd4dd1ae8641ef03790457181188988bf70cc4af1a53c50c1f406307bb7f9  frozen-v0.68-whitefootc
+12c058670b1b67d88676394397cf74ec6b5a976c6838ff979bba9ade84dd251c  build/ordered-library-normal.ll
+949db7727aea9d0e3d801d30307849871bceb4850087a43bec0e5d1544072832  build/ordered-library-normal.opt.ll
+bcaee8f10c61ac124b0f56fb3a7f2001fe08638bdacd5e6df0c78971b817d07e  build/ordered-library-retained.ll
+ca5f4e328afe156d18247455f0ddff79c83e91e1e95bb044256090b33feb61eb  build/ordered-library-retained.opt.ll
+f1c5935fc2606355aa8504365bf2e49663fa97ab3d9221fff5defadd0d4a62c9  build/ordered-library.raw.ll
+fde2cb78fbf1bc08685d3704ae818db63b68aa7af28bef8d58a85c7df54d0913  build/control-record-avl-normal.ll
+ebcece4ffc70d87c426b3c64fab8c66f647bcb0cf874c1f74e1e61fefdff1be3  build/control-record-avl-retained.ll
+3365eef39f853a02cb85b41ced208d9eefb3043bc808a33094ad0b201e0274d6  build/control-record-direct-normal.ll
+eb48f4ef48a186736e4e4167ea6518b8c05cbcbaf897d71316994b98b610c189  build/control-record-direct-retained.ll
+12491bd6cb5d2b9764e15f9cc61a2e3e3663053f0a23b682657c5a6e8a407654  build/control-record-source-normal.ll
+dffb094ad450f2f3b80a888d73f99aec7068bb88bc5b0e908552dcc0ac23e2a8  build/control-record-source-retained.ll
+eb5803276c3cbdf814136418e1f8f01c2ce90a53e42a67268a3cde54903a0ab5  build/control-word-avl-normal.ll
+7d154345b76f03419a6645af98b9ee63da6b1bf83113b7ae020d45ea81bc8eb9  build/control-word-avl-retained.ll
+154fc437f0c92ffdae980d1f8cca5ae18c934542fc84ac4f218b52799cf5dc72  build/control-word-direct-normal.ll
+007127bc0dfb4d60d66e3eec5a559b728eb1914f123012ba56e636970db0d754  build/control-word-direct-retained.ll
+3ae4bb70cde4d652baef6682f86fd2f1e6463c0c9979167adc8f01fb41d28951  build/control-word-source-audit.ll
+9f17037e8a828e6708c3052ee4e95a8ec817d9cb13948704b0fcb3a7ad0e82ef  build/control-word-source-normal.ll
+fcbcd34076d14030ea04026b5e8d0439e286890f19a79e56b1af07c5f79747d2  build/control-word-source-retained.ll
+df32e5649630848535bf970462aa4d3d8b48b1d727e55508a3ba965e9cacdd3b  build/ordered-costs-normal
+048a32103187e5109fccf9a44195d4568d9776b54ead26707ddf2203f0fb25cb  build/ordered-costs-retained
+Candidate image identities:
+881f6c8889ff25dcbf80e079e43a730c4031830c
+ M docs/todo.md
+ M lib/containers/README.md
+ M research/experiments/container-representation/ordered-library/Makefile
+ M research/experiments/container-representation/ordered-library/ordered-costs.c
+ M research/experiments/container-representation/ordered-library/ordered-library.wf
+?? design/amendments/
+?? research/experiments/container-representation/ordered-library/insertion-candidate.patch
+Darwin 25.6.0 arm64
+Apple clang version 21.0.0 (clang-2100.3.34.2)
+Target: arm64-apple-darwin25.6.0
+Thread model: posix
+39a4103c54db0a0d1464bc23d52342c059d997190611b1fd93855c07b3d90fb6  Makefile
+cd3c8cca4d1332360f4df4cee8f07df43cea030144d683b8044a51d7479be71b  ordered-costs.c
+779ffc6065c0c1b46cb0906ae1c14c167e32d385f37b4569ba35603710d90f4d  ordered-library.wf
+ddc53f3bd12e3682c26ea72f33d94da5da787371afb7461fd7d69d1798aca4ec  insertion-candidate-source.wf
+cbffd4dd1ae8641ef03790457181188988bf70cc4af1a53c50c1f406307bb7f9  frozen-v0.68-whitefootc
+cbcf568889e345663545d9b325ec48a6df0a67bb98a468ef06284265c0f442e9  build/ordered-library-normal.ll
+7521d6e4876df1e11877662d01217ec4a632597c96001dc90c040024c3c95a13  build/ordered-library-normal.opt.ll
+c0f7e5bdbd07c0d14797c6b9aeb0659c326368e04ca6133fe89fbec5c1d3abde  build/ordered-library-retained.ll
+a11bb1f75c14e85d493f6dcd94eee1ea21da5fc589858472fa86a7705dbc85bd  build/ordered-library-retained.opt.ll
+ab705e30b7ad72d887c99654ee084d972466983e744626242bb9a6568944f95b  build/ordered-library.raw.ll
+fde2cb78fbf1bc08685d3704ae818db63b68aa7af28bef8d58a85c7df54d0913  build/control-record-avl-normal.ll
+ebcece4ffc70d87c426b3c64fab8c66f647bcb0cf874c1f74e1e61fefdff1be3  build/control-record-avl-retained.ll
+3365eef39f853a02cb85b41ced208d9eefb3043bc808a33094ad0b201e0274d6  build/control-record-direct-normal.ll
+eb48f4ef48a186736e4e4167ea6518b8c05cbcbaf897d71316994b98b610c189  build/control-record-direct-retained.ll
+12491bd6cb5d2b9764e15f9cc61a2e3e3663053f0a23b682657c5a6e8a407654  build/control-record-source-normal.ll
+dffb094ad450f2f3b80a888d73f99aec7068bb88bc5b0e908552dcc0ac23e2a8  build/control-record-source-retained.ll
+eb5803276c3cbdf814136418e1f8f01c2ce90a53e42a67268a3cde54903a0ab5  build/control-word-avl-normal.ll
+7d154345b76f03419a6645af98b9ee63da6b1bf83113b7ae020d45ea81bc8eb9  build/control-word-avl-retained.ll
+154fc437f0c92ffdae980d1f8cca5ae18c934542fc84ac4f218b52799cf5dc72  build/control-word-direct-normal.ll
+007127bc0dfb4d60d66e3eec5a559b728eb1914f123012ba56e636970db0d754  build/control-word-direct-retained.ll
+3ae4bb70cde4d652baef6682f86fd2f1e6463c0c9979167adc8f01fb41d28951  build/control-word-source-audit.ll
+9f17037e8a828e6708c3052ee4e95a8ec817d9cb13948704b0fcb3a7ad0e82ef  build/control-word-source-normal.ll
+fcbcd34076d14030ea04026b5e8d0439e286890f19a79e56b1af07c5f79747d2  build/control-word-source-retained.ll
+ceee439fcf49aafff16201a632d2f6135b3a2093175c43df61a132f473874f3e  build/ordered-costs-normal
+ad1a972c1ec04deb201ff7de316e9e927d74859726231130405348facb5f3008  build/ordered-costs-retained
+90c71e4bf9043c7217be3143921e90efc34e254ab4615ef377c4b7f1ca4c0ccc  insertion-candidate.patch
+5ce79688b0c462426e4e504a9dbf711d9e4758c1addc34ab30829b4606b79032  insertion-clock.csv
+0b2c38fd34fb9fc2267501500ff7776edc1a1295b882a3dd59282c09500398fe  insertion-initial.csv

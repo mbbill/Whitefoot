@@ -257,6 +257,14 @@ fn ordered_cost_trace<interface OrderedCostElement<T>>(count: u64, rounds: u64, 
         } else if path == 3_u64 {
           let upper = doubled +wrap 32_u64;
           ordered_map_range::<OrderedCostKey, T, OrderedCostDigest, fn OrderedCostElement<T>::visit, 8192>(map: &map, lower: &doubled, upper: &upper, key_env: &key_env, visit_env: &digest);
+        } else if path == 4_u64 {
+          let round_offset = round *wrap count;
+          let offset = round_offset +wrap index;
+          let base = seed +wrap count;
+          let next = base +wrap offset;
+          let value = OrderedCostElement<T>::make(seed: next);
+          let replaced = ordered_map_put::<OrderedCostKey, T, 8192>(map: &map, key: key, value: move value, env: &key_env);
+          ordered_cost_put_result::<OrderedCostElement<T>>(offered: move replaced, digest: &digest);
         }
       }
     }

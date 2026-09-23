@@ -206,6 +206,22 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   [transfer evidence](../research/experiments/container-representation/vector-library/RESULTS.md#v061-copy-and-consumption-trial)
   separates this opportunity from the library's remaining element relocation.
 
+- **Ordered node construction and cleanup retain wide transfers.** The
+  [ordered-map attribution](../research/experiments/container-representation/ordered-library/RESULTS.md#transfer-and-generated-code-attribution)
+  shows field-expanded node-to-Box construction and a 504/4224-byte copy of
+  each exhausted node before only its leading link is consumed. Reducing that
+  work could improve split/build and final cleanup without changing the tree.
+  Static transfer counts do not isolate its timing contribution. Validate a
+  bounded construction/consumption improvement with unchanged ownership
+  outcomes, node allocation counts, dirty/quarantined release checks and
+  normal/retained scalar and wide comparisons; inspect optimized code to
+  establish which transfers disappear. Keep aggregate-result ABI and general
+  argument forwarding under the existing Slab and consumed-argument items;
+  this task isolates fixed-node construction and consumed-field selection.
+  Defer a lowering change until this node-specific
+  cause is isolated; reopen when the transfers materially affect a measured
+  consumer or lowering work reaches those paths.
+
 - **Parallel footprints omit ordinary result-list bindings.** The
   [sparse-routing trial](../research/investigations/compute-model/DESIGN.md#sparse-destination-routing-trial-2026-09-21)
   exposes a receiver map denied solely because one statement binds two local
@@ -730,6 +746,39 @@ condition under which it is taken up.
   the earlier [native hash-slot study](https://github.com/mbbill/Whitefoot/blob/38c28403a2defd0b65b8a2ab2b5e4794315e9940/research/experiments/hash-slot-occupancy/RESULTS.md)
   did not establish a recurring tag-check tax. A working library does not
   close either question or imply a universal native-performance ceiling.
+
+- **Ordered insertion needs a replacement-preserving result path.** The
+  [single-descent comparison](../research/experiments/container-representation/ordered-library/RESULTS.md#single-descent-insertion-candidate)
+  rejects the borrowed-carrier implementation because below-ceiling wide
+  replacements regress despite insertion gains. Its optional promotion result
+  travels through replacement recursion; optimized code clears that aggregate
+  on a match and on each empty-result return. This is a concrete source/ABI
+  concern, not a complete timing attribution. A different return protocol could
+  remove the baseline's duplicate miss search and recursive Pair transport
+  while preserving replacement cost. Defer another source variant until an
+  ordinary protocol avoids the promotion result on replacements, or an ABI
+  improvement supplies that distinction. Reopen with that concrete candidate;
+  first establish admission without assumed recursive postconditions, then
+  repeat owner-identity/release checks and the registered normal/retained
+  comparison including replacement cells. Keep general aggregate-result ABI
+  work under the existing compiler item.
+
+- **Ordered-map occupancy and tree choice remain workload-dependent.** The
+  [reserved-storage comparison](../research/experiments/container-representation/ordered-library/RESULTS.md#allocations-and-reserved-storage)
+  records 48.6% peak reserved-slot utilization during 4096-pair bundled-tree
+  churn, versus 74.6% for direct C; wide peak storage is about 2.37 MB versus
+  1.50 MB and native AVL's 1.18 MB. A different repair policy or tree shape
+  could reduce vacant wide storage and churn cost. This is one deterministic
+  stream, not an occupancy histogram or a measured WF AVL. First attribute
+  node growth to split/merge and reinsertion with per-node occupancy evidence;
+  then compare one justified alternative under the complete arbitrary-owner
+  map contract, including replacement/refusal, range visits, exact cleanup,
+  requested/peak bytes and normal/retained timings. Scalar and range tradeoffs
+  must remain visible. Defer a second
+  maintained representation until a concrete index supplies its governing
+  workload; reopen before choosing a default ordered representation or when
+  an index is dominated by wide reserved storage or churn.
+
 - **Channel primitive.** An ownership-transfer queue in the trusted base for
   producer/consumer pipelines and work stealing; lock-free rings are not
   expressible without it and batched fork-join is the available form. Research

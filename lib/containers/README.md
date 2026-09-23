@@ -53,9 +53,14 @@ visits every pair in order; `ordered_map_range` visits the half-open interval
 `[lower, upper)`. `ordered_map_remove` returns the owned pair. Supply a consuming
 callback to `ordered_map_free` for all remaining keys and values, including
 `nodrop` owners. Comparison consistency determines sorted semantics; progress
-and ownership do not depend on it. The candidate uses fanout 16 and bundles
-each separator with its right child link; its representation and native cost
-comparison remain part of the [ordered-map trial](../../research/investigations/containers-and-resources/X1-LIBRARY.md#ordered-map-trial-at-v068).
+and ownership do not depend on it. The implementation uses fanout 16 and
+bundles each separator with its right child link. The
+[matched comparison](../../research/experiments/container-representation/ordered-library/RESULTS.md)
+includes C matching the original source, a direct C B-tree and native AVL;
+wide-pair transfers and reserved storage costs remain. This is a reusable
+measured baseline, with no default representation or native parity claim. The
+[ordered-map trial](../../research/investigations/containers-and-resources/X1-LIBRARY.md#ordered-map-trial-at-v068)
+records the source and representation choices.
 
 From the repository root, after building `whitefootc`:
 

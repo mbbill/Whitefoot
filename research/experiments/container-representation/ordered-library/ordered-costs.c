@@ -759,6 +759,9 @@ NOINLINE uint64_t FN(_trace)(uint64_t count, uint64_t rounds, uint64_t seed, uin
             } else if (path == 3) {
                 uint64_t lower = rank * 2, upper = lower + 32;
                 FN(_range)(&map, KEY_ARGUMENT(lower), KEY_ARGUMENT(upper), &digest);
+            } else if (path == 4) {
+                uint64_t next = seed + count + round * count + i;
+                FN(_put_result)(FN(_put)(&map, key, FN(_make)(next)), &digest);
             }
         }
     }
@@ -1016,6 +1019,9 @@ static uint64_t oracle(bool wide, uint64_t count, uint64_t rounds, uint64_t seed
                 uint64_t lower = key - 1, upper = lower + 32;
                 for (size_t p = oracle_position(pairs, length, lower); p < length && pairs[p].key < upper; ++p)
                     ordered(&digest, oracle_content(pairs[p], words));
+            } else if (path == 4) {
+                uint64_t next = seed + count + round * count + i;
+                oracle_put(pairs, &length, (OraclePair){key, next}, &digest, words);
             }
         }
     }
@@ -1034,11 +1040,34 @@ static uint64_t nanos(void) {
     return (uint64_t)value.tv_sec * UINT64_C(1000000000) + value.tv_nsec;
 #endif
 }
+static void clock_resolution(void) {
+#if defined(_WIN32)
+    LARGE_INTEGER frequency;
+    require(QueryPerformanceFrequency(&frequency) != 0 && frequency.QuadPart > 0, "clock resolution");
+    uint64_t reported = (UINT64_C(1000000000) + (uint64_t)frequency.QuadPart - 1) / (uint64_t)frequency.QuadPart;
+#else
+    struct timespec resolution;
+    require(clock_getres(CLOCK_MONOTONIC, &resolution) == 0, "clock resolution");
+    uint64_t reported = (uint64_t)resolution.tv_sec * UINT64_C(1000000000) + resolution.tv_nsec;
+#endif
+    uint64_t previous = nanos(), grid = 0, minimum = UINT64_MAX;
+    for (unsigned read = 0; read < 4096; ++read) {
+        uint64_t now = nanos(), delta = now - previous; previous = now;
+        if (delta == 0) continue;
+        if (delta < minimum) minimum = delta;
+        uint64_t left = grid, right = delta;
+        while (right != 0) { uint64_t next = left % right; left = right; right = next; }
+        grid = left;
+    }
+    require(grid != 0, "clock advances during resolution observation");
+    puts("reported_ns,observed_grid_ns,minimum_delta_ns,quantum_ns");
+    printf("%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 "\n", reported, grid, minimum, reported > grid ? reported : grid);
+}
 static void check(bool native_only) {
     const uint64_t counts[] = {0, 1, 2, 7, 8, 15, 16, 31, 63, 256, 4096};
     const uint64_t seeds[] = {0, 17, UINT64_MAX}; size_t configurations = 0;
     for (unsigned wide = 0; wide < 2; ++wide)
-        for (unsigned path = 0; path < 4; ++path)
+        for (unsigned path = 0; path < 5; ++path)
             for (size_t n = 0; n < sizeof counts / sizeof counts[0]; ++n)
                 for (size_t s = 0; s < sizeof seeds / sizeof seeds[0]; ++s) {
                     uint64_t rounds = path == 0 ? 0 : 2;
@@ -1066,13 +1095,13 @@ static void check(bool native_only) {
         }
     printf("ordered library costs: %zu configurations, %zu executions and 6 complete native structural audits passed (%s)\n", configurations, configurations * (native_only ? 3 : 4), CONTRACT);
 }
-static void measure(void) {
+static void measure(bool reverse) {
     const uint64_t counts[] = {8, 256, 4096};
-    const char *paths[] = {"build-cleanup", "hit-miss", "replace-edit-remove-insert", "range-16"};
+    const char *paths[] = {"build-cleanup", "hit-miss", "replace-edit-remove-insert", "range-16", "replace-only"};
     const char *variants[] = {"whitefoot", "source-c", "direct-c", "avl-c"};
     puts("contract,pair_bytes,path,count,variant,sample,rounds,traces,elapsed_ns,checksum,requests,requested_bytes,peak_nodes,peak_bytes");
     for (unsigned wide = 0; wide < 2; ++wide)
-        for (unsigned path = 0; path < 4; ++path)
+        for (unsigned path = 0; path < 5; ++path)
             for (size_t n = 0; n < sizeof counts / sizeof counts[0]; ++n)
                 for (unsigned sample = 0; sample < 6; ++sample) {
                     uint64_t count = counts[n], seed = 101 + sample;
@@ -1082,7 +1111,7 @@ static void measure(void) {
                         expected = expected * UINT64_C(257) + oracle(wide, count, rounds, seed + trace, path);
                     Accounting measured[4];
                     for (unsigned offset = 0; offset < 4; ++offset) {
-                        unsigned variant = sample % 2 ? 3 - offset : offset;
+                        unsigned variant = ((sample % 2) != reverse) ? 3 - offset : offset;
                         reset_accounting(variant, wide); uint64_t before = nanos(), checksum = 0;
                         for (uint64_t trace = 0; trace < traces; ++trace)
                             checksum = checksum * UINT64_C(257) + run(variant, wide, count, rounds, seed + trace, path);
@@ -1094,7 +1123,7 @@ static void measure(void) {
                 }
 }
 int main(int argc, char **argv) {
-    require(argc == 2, "usage: ordered-costs check|native-check|measure");
+    require(argc == 2, "usage: ordered-costs check|native-check|measure|measure-reversed|clock-resolution");
 #if defined(STRUCTURAL_DRIVER)
     if (strcmp(argv[1], "structure") == 0) {
         reset_accounting(1, false); word_source_structural();
@@ -1106,7 +1135,12 @@ int main(int argc, char **argv) {
 #endif
     if (strcmp(argv[1], "check") == 0) check(false);
     else if (strcmp(argv[1], "native-check") == 0) check(true);
-    else { require(strcmp(argv[1], "measure") == 0, "usage: ordered-costs check|native-check|measure"); measure(); }
+    else if (strcmp(argv[1], "clock-resolution") == 0) clock_resolution();
+    else {
+        bool reverse = strcmp(argv[1], "measure-reversed") == 0;
+        require(reverse || strcmp(argv[1], "measure") == 0, "usage: ordered-costs check|native-check|measure|measure-reversed|clock-resolution");
+        measure(reverse);
+    }
     return 0;
 }
 #endif
