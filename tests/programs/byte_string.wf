@@ -18,7 +18,7 @@ const line_end: Array<u8, 1> =[10_u8];
 
 const digit_glyphs: Array<u8, 10> =[48_u8, 49_u8, 50_u8, 51_u8, 52_u8, 53_u8, 54_u8, 55_u8, 56_u8, 57_u8];
 
-fn bs_reserve(s: &Box<Slots<u8>>, total: own u64) -> result: own unit writes(s) contract {
+fn bs_reserve(s: &Box<Slots<u8>>, total: u64) -> result: unit writes(s) contract {
   requires total >= deref(s).inner.cap;
   requires total <= 9223372036854775791_u64;
   ensures deref(s).inner.cap == total;
@@ -29,12 +29,12 @@ fn bs_reserve(s: &Box<Slots<u8>>, total: own u64) -> result: own unit writes(s) 
   return unit;
 }
 
-fn bs_len(s: &Box<Slots<u8>>) -> result: own u64 reads(s) {
+fn bs_len(s: &Box<Slots<u8>>) -> result: u64 reads(s) {
   doc "Reports how many bytes the string holds; a measure read is a place form, not a call [OP-15].";
   return deref(s).inner.len;
 }
 
-fn bs_byte(s: &Box<Slots<u8>>, index: own u64) -> result: own Option<u8> reads(s) {
+fn bs_byte(s: &Box<Slots<u8>>, index: u64) -> result: Option<u8> reads(s) {
   doc "Reads one stored byte, delivering None for a position the string does not hold.";
   let stored = deref(s).inner.len;
   let within = index < stored;
@@ -45,7 +45,7 @@ fn bs_byte(s: &Box<Slots<u8>>, index: own u64) -> result: own Option<u8> reads(s
   return None<u8>();
 }
 
-fn bs_append_range(s: &Box<Slots<u8>>, capacity: own u64, text: &[u8], total: own u64) -> result: own unit reads(text), writes(s) contract {
+fn bs_append_range(s: &Box<Slots<u8>>, capacity: u64, text: &[u8], total: u64) -> result: unit reads(text), writes(s) contract {
   requires deref(s).inner.cap == capacity;
   requires deref(s).inner.len + deref(text).len <= total;
   requires deref(s).inner.len + deref(text).len >= total;
@@ -74,7 +74,7 @@ fn bs_append_range(s: &Box<Slots<u8>>, capacity: own u64, text: &[u8], total: ow
   return unit;
 }
 
-fn bs_from(text: &[u8]) -> made: own Box<Slots<u8>> reads(text) contract {
+fn bs_from(text: &[u8]) -> made: Box<Slots<u8>> reads(text) contract {
   requires deref(text).len <= 9223372036854775791_u64;
   ensures made.inner.cap == deref(text).len;
   ensures made.inner.len == deref(text).len;
@@ -86,7 +86,7 @@ fn bs_from(text: &[u8]) -> made: own Box<Slots<u8>> reads(text) contract {
   return move made;
 }
 
-fn bs_concat(destination: &Box<Slots<u8>>, capacity: own u64, source: &Box<Slots<u8>>, total: own u64) -> result: own unit reads(source), writes(destination) contract {
+fn bs_concat(destination: &Box<Slots<u8>>, capacity: u64, source: &Box<Slots<u8>>, total: u64) -> result: unit reads(source), writes(destination) contract {
   requires deref(destination).inner.cap == capacity;
   requires deref(destination).inner.len + deref(source).inner.len <= total;
   requires deref(destination).inner.len + deref(source).inner.len >= total;
@@ -115,7 +115,7 @@ fn bs_concat(destination: &Box<Slots<u8>>, capacity: own u64, source: &Box<Slots
   return unit;
 }
 
-fn bs_find(haystack: &Box<Slots<u8>>, needle: &Box<Slots<u8>>) -> result: own Option<u64> reads(haystack), reads(needle) {
+fn bs_find(haystack: &Box<Slots<u8>>, needle: &Box<Slots<u8>>) -> result: Option<u64> reads(haystack), reads(needle) {
   doc "Reports the first position where the needle bytes occur, by the naive left-to-right scan. A position found by a search is returned as an index, never as a reference [REF-3].";
   let hay_length = deref(haystack).inner.len;
   let needle_length = deref(needle).inner.len;
@@ -167,7 +167,7 @@ fn bs_find(haystack: &Box<Slots<u8>>, needle: &Box<Slots<u8>>) -> result: own Op
   return None<u64>();
 }
 
-fn bs_push_decimal(s: &Box<Slots<u8>>, capacity: own u64, value: own u64, digits: own u64, total: own u64) -> result: own unit writes(s) contract {
+fn bs_push_decimal(s: &Box<Slots<u8>>, capacity: u64, value: u64, digits: u64, total: u64) -> result: unit writes(s) contract {
   requires digits >= 1_u64;
   requires digits <= 20_u64;
   requires deref(s).inner.cap == capacity;
@@ -209,7 +209,7 @@ fn bs_push_decimal(s: &Box<Slots<u8>>, capacity: own u64, value: own u64, digits
   return unit;
 }
 
-fn publish_all(factory: &HandleFactory, output: &OutputStream, source: &[u8], length: own u64) -> result: own Result<unit, IoError> reads(source), writes(factory), writes(output) contract {
+fn publish_all(factory: &HandleFactory, output: &OutputStream, source: &[u8], length: u64) -> result: Result<unit, IoError> reads(source), writes(factory), writes(output) contract {
   define source_length = deref(source).len;
   requires length <= source_length;
 } {
@@ -233,7 +233,7 @@ fn publish_all(factory: &HandleFactory, output: &OutputStream, source: &[u8], le
   return Ok<unit, IoError>(value: unit);
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "Builds one byte string from const runs, grows its backing cell, concatenates, searches it, and publishes the measured report.";
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
   close_directory(factory: &entry_factory, directory: move unused_cwd);

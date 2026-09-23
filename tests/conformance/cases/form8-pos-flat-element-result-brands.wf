@@ -2,7 +2,7 @@ struct Entry<T> {
   payload: Box<T>;
 }
 
-fn build<T>(first: own Box<T>, replacement: own Box<T>) -> (slots: own Slots<Option<Entry<T>>, 1>, returned: own Box<T>) pure contract {
+fn build<T>(first: Box<T>, replacement: Box<T>) -> (slots: Slots<Option<Entry<T>>, 1>, returned: Box<T>) pure contract {
   ensures slots.len == 1_u64;
 } {
   doc "Two owned results carry written type arguments inside a run's element type, and the run's length is published for the element exchange below.";
@@ -13,7 +13,7 @@ fn build<T>(first: own Box<T>, replacement: own Box<T>) -> (slots: own Slots<Opt
   return move slots, move replacement;
 }
 
-fn exchange_one<T>(slots: &Slots<Option<Entry<T>>, 1>, spare: &Option<Entry<T>>) -> result: own unit writes(slots), writes(spare) contract {
+fn exchange_one<T>(slots: &Slots<Option<Entry<T>>, 1>, spare: &Option<Entry<T>>) -> result: unit writes(slots), writes(spare) contract {
   requires 1_u64 <= deref(slots).len;
 } {
   doc "One commit per statement and no hole: `swap` exchanges the stored element with the caller's spare, consumes neither root, and leaves each root the sole owner of what the other held [OP-11, SET-1].";
@@ -21,7 +21,7 @@ fn exchange_one<T>(slots: &Slots<Option<Entry<T>>, 1>, spare: &Option<Entry<T>>)
   return unit;
 }
 
-fn compose<T>(first: own Box<T>, replacement: own Box<T>) -> (updated: own Slots<Option<Entry<T>>, 1>, previous: own Option<Entry<T>>) pure {
+fn compose<T>(first: Box<T>, replacement: Box<T>) -> (updated: Slots<Option<Entry<T>>, 1>, previous: Option<Entry<T>>) pure {
   let (slots, returned) = build::<T>(first: move first, replacement: move replacement);
   let stored_entry = Entry<T>(payload: move returned);
   let spare = Some<Entry<T>>(value: move stored_entry);
@@ -29,6 +29,6 @@ fn compose<T>(first: own Box<T>, replacement: own Box<T>) -> (updated: own Slots
   return move slots, move spare;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

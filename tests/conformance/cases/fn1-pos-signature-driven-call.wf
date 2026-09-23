@@ -1,9 +1,9 @@
-fn add(x: own i32, y: own i32) -> result: own i32 pure {
+fn add(x: i32, y: i32) -> result: i32 pure {
   doc "A full signature states param modes/types and return mode/type [FN-1].";
   return x +wrap y;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Caller relies only on add's signature [FN-1].";
   let s = add(x: 40_i32, y: 2_i32);
   if s == 42_i32 {

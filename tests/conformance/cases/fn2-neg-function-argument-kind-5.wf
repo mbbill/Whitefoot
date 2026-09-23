@@ -1,8 +1,8 @@
 interface Inspect<T> {
-  fn inspect(value: &T) -> result: own unit pure;
+  fn inspect(value: &T) -> result: unit pure;
 }
 
-fn ignore(value: &Box<u64>) -> result: own unit pure {
+fn ignore(value: &Box<u64>) -> result: unit pure {
   return unit;
 }
 
@@ -10,7 +10,7 @@ binding Bound : Inspect<Box<u64>> {
   inspect = ignore;
 }
 
-fn spare() -> result: own unit pure {
+fn spare() -> result: unit pure {
   return unit;
 }
 
@@ -18,11 +18,11 @@ struct Holder<interface Inspect<T>> {
   value: T;
 }
 
-fn inspect(value: &Holder<Bound<fn spare>>) -> result: own unit pure {
+fn inspect(value: &Holder<Bound<fn spare>>) -> result: unit pure {
   doc "A written function actual occupies its own explicit argument-list position [FN-3] and cannot stand in a type-argument position of a nominal. FN-2 refuses the written argument independently of any stored-field analysis.";
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

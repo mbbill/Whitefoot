@@ -1,4 +1,4 @@
-fn head_value(values: &[u64]) -> result: own u64 reads(values) contract {
+fn head_value(values: &[u64]) -> result: u64 reads(values) contract {
   requires deref(values).len > 0_u64;
 } {
   doc "REF-3: a function that finds something returns owned data, with its bounds relation in the contract, and never hands a reference back.";
@@ -6,7 +6,7 @@ fn head_value(values: &[u64]) -> result: own u64 reads(values) contract {
   return first;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "REF-3: a reference may be passed as a call argument and used within the function that received it; the callee returns owned data and the caller forms the reference itself.";
   let a = array_filled::<u64, 4>(value: 6_u64);
   let part = &a[0_u64..4_u64];

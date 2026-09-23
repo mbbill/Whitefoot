@@ -119,7 +119,7 @@ impl IrBuilder<'_> {
 
     // ---- [OP-13] construction ------------------------------------------
 
-    /// `box_new<T>(value: own T) -> own Box<T>`: one cell holding the value.
+    /// `box_new<T>(value: T) -> Box<T>`: one cell holding the value.
     fn row_box_new(&mut self) -> Result<(), LoweringFailure> {
         let [value] = self.row_parameters()?;
         let IrType::Nominal(nominal) = self.result else {
@@ -129,7 +129,7 @@ impl IrBuilder<'_> {
         self.return_value(cell)
     }
 
-    /// `array_filled<T, n>(value: own T) -> own Array<T, n>`: every slot
+    /// `array_filled<T, n>(value: T) -> Array<T, n>`: every slot
     /// holds the supplied value, which [OP-13] requires to be copy.
     fn row_array_filled(&mut self) -> Result<(), LoweringFailure> {
         let [value] = self.row_parameters()?;
@@ -159,7 +159,7 @@ impl IrBuilder<'_> {
         self.return_value(converted)
     }
 
-    /// `box_array_filled<T>(count, value) -> own Box<Array<T>>`: one heap
+    /// `box_array_filled<T>(count, value) -> Box<Array<T>>`: one heap
     /// block `[len | elements]`, filled, which is the cell itself
     /// (compiler/storage-representation).
     ///
@@ -475,7 +475,7 @@ impl IrBuilder<'_> {
         self.return_unit()
     }
 
-    /// `free_empty(window: own W)`: the storage of a window proved empty is
+    /// `free_empty(window: W)`: the storage of a window proved empty is
     /// consumed [OP-14].
     ///
     /// The window holds no element, so nothing is released inside it; what

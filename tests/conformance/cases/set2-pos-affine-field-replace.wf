@@ -6,7 +6,7 @@ struct Slot {
   item: Item;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "swap exchanges the affine values at two writable places and consumes neither root: both bindings stay live and each root becomes the sole owner of the value the other held. The previous field value is read back from the second place after the commit, and the field is read again through its live root.";
   let first = Item(value: 1_u64);
   let slot = Slot(item: move first);

@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let outer = 0_i32;
   loop @outer_loop {
     set outer = outer +wrap 1_i32;

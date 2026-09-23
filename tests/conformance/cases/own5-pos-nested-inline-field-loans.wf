@@ -7,7 +7,7 @@ struct Table {
   rows: Array<Row, 1>;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A field-index-field path distinguishes disjoint scalar siblings inside one element, so the write to the sibling leaves the reference to the first field valid.";
   let row0 = Row(left: 3_u64, right: 4_u64);
   let slots = slots_new::<Row, 1>();

@@ -1,4 +1,4 @@
-fn pair() -> result: own Ring<u8, 4> pure contract {
+fn pair() -> result: Ring<u8, 4> pure contract {
   ensures result.len >= 2_u64;
   ensures result.len <= 2_u64;
   ensures result.head <= 0_u64;
@@ -12,7 +12,7 @@ fn pair() -> result: own Ring<u8, 4> pure contract {
   return move two;
 }
 
-fn enqueue(vector: &Ring<u8, 4>, value: own u8) -> result: own unit writes(vector) contract {
+fn enqueue(vector: &Ring<u8, 4>, value: u8) -> result: unit writes(vector) contract {
   requires deref(vector).len < deref(vector).cap;
   ensures deref(vector).len >= deref(entry(vector)).len + 1_u64;
 } {
@@ -21,14 +21,14 @@ fn enqueue(vector: &Ring<u8, 4>, value: own u8) -> result: own unit writes(vecto
   return unit;
 }
 
-fn pass_window(values: own Ring<u8, 4>) -> result: own Ring<u8, 4> pure contract {
+fn pass_window(values: Ring<u8, 4>) -> result: Ring<u8, 4> pure contract {
   ensures result.len == values.len;
   ensures result.head == values.head;
 } {
   return move values;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Runs a queue over one four-slot Ring: the window wraps, and every element comes back in the order it went in.";
   let built = pair();
   let first_of_two = built[0_u64];

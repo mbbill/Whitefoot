@@ -40,7 +40,6 @@ const ENUM_ORDER: &[&str] = &[
     "param",
     "type",
     "rtype",
-    "mode",
     "targs",
     "targ",
     "stmt",

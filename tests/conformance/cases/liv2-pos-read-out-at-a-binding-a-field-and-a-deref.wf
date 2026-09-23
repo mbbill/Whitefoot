@@ -2,14 +2,14 @@ struct Holder {
   run: Slots<u8, 4>;
 }
 
-fn regrow(old: own Slots<u8, 4>) -> bigger: own Slots<u8, 4> pure contract {
+fn regrow(old: Slots<u8, 4>) -> bigger: Slots<u8, 4> pure contract {
   ensures bigger.len == old.len;
 } {
   doc "Consumes the window it is handed and hands one of the same shape back.";
   return move old;
 }
 
-fn bump(cell: own u64) -> back: own u64 pure contract {
+fn bump(cell: u64) -> back: u64 pure contract {
   requires cell +defined 1_u64;
   ensures back == cell + 1_u64;
 } {
@@ -18,7 +18,7 @@ fn bump(cell: own u64) -> back: own u64 pure contract {
   return raised;
 }
 
-fn refill(out: &Box<u64>) -> done: own unit writes(out) contract {
+fn refill(out: &Box<u64>) -> done: unit writes(out) contract {
   requires deref(out).inner +defined 1_u64;
 } {
   doc "The atomic update at a cell's content reached through a reference parameter: the old value enters the callee by value and the result is committed with no program point between.";
@@ -26,7 +26,7 @@ fn refill(out: &Box<u64>) -> done: own unit writes(out) contract {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "OP-12: the atomic in-place update at each of the three place shapes a commit reinitializes - a bare binding, a field of a struct, and Box content reached through a reference parameter whose row writes that path. The old value enters the callee by value and the callee's result is committed, so the place owns exactly one valid value at every program point and none of the three needs a hole.";
   let values = array_filled::<u8, 4>(value: 0_u8);
   let bare = slots_from_array::<u8, 4>(values: values);

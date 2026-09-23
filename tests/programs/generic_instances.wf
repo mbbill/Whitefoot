@@ -1,18 +1,18 @@
-fn maximum<T: Int>(left: own T, right: own T) -> result: own T pure {
+fn maximum<T: Int>(left: T, right: T) -> result: T pure {
   return imax(left, right);
 }
 
-fn preserve<const n: u64>(value: own Slots<u8, n>) -> result: own Slots<u8, n> pure {
+fn preserve<const n: u64>(value: Slots<u8, n>) -> result: Slots<u8, n> pure {
   doc "A by-value parameter has no effect entry at all, so a function that only measures and hands back its operand has the empty row [EFF-1].";
   let size = value.len;
   return move value;
 }
 
-fn forward<const n: u64>(value: own Slots<u8, n>) -> result: own Slots<u8, n> pure {
+fn forward<const n: u64>(value: Slots<u8, n>) -> result: Slots<u8, n> pure {
   return preserve::<n>(value: move value);
 }
 
-fn filled_array<T: Int, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
+fn filled_array<T: Int, const n: u64>(value: T) -> result: Slots<T, n> pure contract {
   ensures result.len >= n;
 } {
   doc "One constant-capacity window whose every slot holds a copy of value.";
@@ -28,7 +28,7 @@ fn filled_array<T: Int, const n: u64>(value: own T) -> result: own Slots<T, n> p
   return move built;
 }
 
-fn filled_buffer<T: Int>(length: own u64, value: own T) -> result: own Box<Slots<T>> pure contract {
+fn filled_buffer<T: Int>(length: u64, value: T) -> result: Box<Slots<T>> pure contract {
   requires length <= 1152921504606846975_u64;
   ensures result.inner.len >= length;
 } {
@@ -45,7 +45,7 @@ fn filled_buffer<T: Int>(length: own u64, value: own T) -> result: own Box<Slots
   return move built;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Two concrete instances of each generic: two element types, two written capacities, and one runtime-capacity cell.";
   let small_maximum = maximum::<u8>(left: 4_u8, right: 9_u8);
   let signed_maximum = maximum::<i64>(left: -7_i64, right: -2_i64);

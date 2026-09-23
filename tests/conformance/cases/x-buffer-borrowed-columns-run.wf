@@ -3,7 +3,7 @@ struct Columns {
   right: Box<Slots<u64>>;
 }
 
-fn fill(left: &[u64], right: &[u64], length: own u64) -> function_result: own unit writes(left), writes(right) contract {
+fn fill(left: &[u64], right: &[u64], length: u64) -> function_result: unit writes(left), writes(right) contract {
   define left_length = deref(left).len;
   define right_length = deref(right).len;
   requires length <= left_length;
@@ -18,7 +18,7 @@ fn fill(left: &[u64], right: &[u64], length: own u64) -> function_result: own un
   return unit;
 }
 
-fn fold(left: &[u64], right: &[u64], length: own u64) -> function_result: own u64 reads(left), reads(right) contract {
+fn fold(left: &[u64], right: &[u64], length: u64) -> function_result: u64 reads(left), reads(right) contract {
   define left_length = deref(left).len;
   define right_length = deref(right).len;
   requires length <= left_length;
@@ -35,7 +35,7 @@ fn fold(left: &[u64], right: &[u64], length: own u64) -> function_result: own u6
   return total;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Two heap-resident runs held in one struct are written and read through range references over their fields. Two field selections of different fields never overlap [OWN-7], so both calls are admitted, and the caller keeps both window lengths across these element-only calls.";
   let length = 4_u64;
   let left = box_slots_new::<u64>(capacity: 4_u64);

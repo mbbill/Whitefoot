@@ -5,7 +5,7 @@ use crate::backend::target::{
 
 use super::system::with_ir;
 
-const FRAME_CONTEXT: &[u8] = br#"fn main() -> status: own ExitStatus pure {
+const FRAME_CONTEXT: &[u8] = br#"fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;

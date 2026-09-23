@@ -1,4 +1,4 @@
-fn stencil_row(top: &[f64], middle: &[f64], bottom: &[f64], output: &[f64]) -> result: own u64 reads(top), reads(middle), reads(bottom), writes(output) contract {
+fn stencil_row(top: &[f64], middle: &[f64], bottom: &[f64], output: &[f64]) -> result: u64 reads(top), reads(middle), reads(bottom), writes(output) contract {
   define width = deref(output).len;
   requires 3_u64 <= width;
   requires width <= deref(top).len;
@@ -18,7 +18,7 @@ fn stencil_row(top: &[f64], middle: &[f64], bottom: &[f64], output: &[f64]) -> r
   return width;
 }
 
-fn stencil(width: own u64, height: own u64, steps: own u64) -> result: own Box<Array<f64>> pure contract {
+fn stencil(width: u64, height: u64, steps: u64) -> result: Box<Array<f64>> pure contract {
   requires 3_u64 <= width;
   requires width <= 4096_u64;
   requires 3_u64 <= height;
@@ -87,11 +87,11 @@ fn stencil(width: own u64, height: own u64, steps: own u64) -> result: own Box<A
   }
 }
 
-fn release_stencil(output: own Box<Array<f64>>) -> result: own u64 pure {
+fn release_stencil(output: Box<Array<f64>>) -> result: u64 pure {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let output = stencil(width: 5_u64, height: 5_u64, steps: 2_u64);
   let count = output.inner.len;
   if count != 25_u64 {

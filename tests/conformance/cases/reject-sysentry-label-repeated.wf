@@ -1,4 +1,4 @@
-fn main(args: own Args, again: own Args) -> status: own ExitStatus pure {
+fn main(args: Args, again: Args) -> status: ExitStatus pure {
   doc "FN-7: two ordinary parameters may have the same nominal type. They are separate owned values with distinct binder names.";
   return exit_status(code: 0_u8);
 }

@@ -1,4 +1,4 @@
-fn touched_byte(limit: own u64, xs: &[u8]) -> value: own u8 reads(xs) contract {
+fn touched_byte(limit: u64, xs: &[u8]) -> value: u8 reads(xs) contract {
   define count = deref(xs).len;
   requires limit <= count;
   requires limit >= 1_u64;
@@ -16,6 +16,6 @@ fn touched_byte(limit: own u64, xs: &[u8]) -> value: own u8 reads(xs) contract {
   return deref(xs)[last];
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

@@ -1,4 +1,4 @@
-fn count_by_two(limit: own u64) -> reached: own u64 pure {
+fn count_by_two(limit: u64) -> reached: u64 pure {
   let cursor = 0_u64;
   loop (
     invariant bounded: cursor <= limit
@@ -13,6 +13,6 @@ fn count_by_two(limit: own u64) -> reached: own u64 pure {
   return cursor;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

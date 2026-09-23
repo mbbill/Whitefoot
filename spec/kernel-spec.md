@@ -1,4 +1,4 @@
-# Kernel Specification v0.67
+# Kernel Specification v0.68
 
 Rule IDs are stable; diagnostics cite rule IDs.
 
@@ -69,7 +69,7 @@ An `invariant_stmt` carrying a proof block renders its introducer through `{` on
 
 A `for_stmt` renders `for`, its optional label, exactly one space, and `(`; this stated space overrides the generic right attachment of `(`.
 A `proof_use` whose `use_premise` is a delimited relation renders exactly one space before that premise's `(`, `use (a <= b);` and `use 3 times (a <= b);`; this stated space likewise overrides the generic right attachment of `(`, exactly as the `for_stmt` space above does, while the relation's own affine parentheses keep the generic attachment.
-A `fn_decl` result list renders exactly one space between `->` and its `(`, and a destructuring `let_stmt` exactly one space between `let` and its `(`; each of these two stated spaces overrides the generic right attachment of `(` exactly as the `for` header's does, so the canonical spellings are `-> (kept: own u64, spare: own u64)` and `let (kept, spare) = split(taken: move run);` [GRAM-2, GRAM-4].
+A `fn_decl` result list renders exactly one space between `->` and its `(`, and a destructuring `let_stmt` exactly one space between `let` and its `(`; each of these two stated spaces overrides the generic right attachment of `(` exactly as the `for` header's does, so the canonical spellings are `-> (kept: u64, spare: u64)` and `let (kept, spare) = split(taken: move run);` [GRAM-2, GRAM-4].
 A destructuring consume's rest marker renders exactly one space between its preceding `,` and `..`, overriding the generic right attachment of `..` exactly as the `for` header's stated space overrides that of `(`, so the canonical spellings are `let Conn(f: fh, ..) = move c;` and, with no bound field, `let Conn(..) = move c;` [GRAM-4].
 A `for_stmt` with no `header_invariant` renders its whole header, from `for` through `) {`, on one line; a counted loop with no invariant therefore has the one-line header `for (i in 0_u64..count) {`.
 A `for_stmt` with at least one `header_invariant` breaks after `(` instead: its `for_binding` and every `header_invariant` each render on a separate following line at depth plus one, with a comma after every item except the last; and `) {` renders on one line at the original depth.
@@ -200,7 +200,7 @@ gparam       := TYPEID (":" (TYPEID | capability_bound))?
               | "const" IDENT ":" type | fn_sig | "interface" pack_use
 capability_bound:= "copy" | "drop"
 param_list   := param ("," param)*
-param        := IDENT ":" (mode type | "&" "[" type "]")
+param        := IDENT ":" (type | "&" (type | "[" type "]"))
 ```
 
 A `heap_decl` is admitted at most once in a compilation unit and only as the first `item` of the first source record [PROG-2]; a second `heap_decl`, or one at any later item position, is a hard error citing GRAM-2 at that `heap_decl` node.
@@ -212,11 +212,13 @@ What the declaration means is [STOR-8]'s.
 ```wf-ebnf GRAM-3
 type   := "i8"|"i16"|"i32"|"i64"|"u8"|"u16"|"u32"|"u64"|"f32"|"f64"|"unit"
         | TYPEID targs?
-rtype  := "own" type
-mode   := "own" | "&"
+rtype  := type
 targs  := "<" targ ("," targ)* ">"
 targ   := type | const | function_arg
 ```
+
+A parameter written `name: T` has value mode; `name: &T` and `name: &[T]` have the reference and range-reference kinds respectively [REF-1, REF-4].
+Results follow [FN-1]'s value-only rule. In these rules, `own T` denotes a semantic mode/type pair, not a source annotation; `own` is an ordinary IDENT under [FORM-3].
 
 [GRAM-4] Statements:
 
@@ -380,7 +382,7 @@ A `struct` or `enum` declaration may carry one capability modifier [GRAM-2]: `no
 A `struct` declaration may carry the `opaque` modifier [GRAM-2], written before a capability modifier when both are present: an opaque struct has fields and no usable constructor. Its constructor entry [TYPE-6] exists to be refused: a constructor `call` whose leading TYPEID names an opaque struct is a hard error citing TYPE-2 at the complete `call`, and a destructuring `let_stmt` whose TYPEID names one is a hard error citing TYPE-2 at the complete `let_stmt`, each with the restructuring `build it with a construction function [OP-13, PRE-1]`. Its fields obey the ordinary field, ownership, and release rules [OWN-1, PROV-6, STOR-3], and a `move` out of one of its fields is the ordinary [WIN-3] consume. No source-declared opaque struct has a construction function, so a value of one is never formed; the prelude declares the three storage shapes, `Box<T>`, and every host handle as opaque structs and supplies their construction rows [PRE-1].
 A `field` may carry the `readonly` modifier [GRAM-2], in any struct. A path that ends at or passes through a readonly field is never a write target: a `set` whose target is such a path [SET-1], and an argument naming such a path at a reference parameter whose callee row writes that parameter [EFF-5], are each a hard error citing TYPE-2 at the complete target `place` or argument `atom`, with the restructuring `use the operation that changes it, or replace the whole value`. Construction gives a readonly field its value like any other field [GRAM-8], and a whole-value assignment replaces it together with its owner. Its value otherwise changes only through a compiler-owned [PRE-1] operation whose row declares `writes` of it [OP-10]; a declared row may name a readonly field in `writes`, because a row reports every change its callees make [EFF-2]. `readonly` states that the field is not assignable, not that its value is constant.
 
-[TYPE-3] Nameability: every constructible type/mode/effect has a canonical, finite, writable name requiring no compiler execution.
+[TYPE-3] Nameability: every constructible type, parameter kind and effect has a canonical, finite source spelling requiring no compiler execution [GRAM-3, EFF-1].
 A capability modifier and a generic parameter's capability bound are properties of a declaration and not components of a type name: two instances of one nominal have one name whether or not its declaration is marked, and no name spells a capability [PROV-6].
 
 [TYPE-4] There are no implicit conversions.
@@ -390,7 +392,7 @@ The exact partition and per-value semantics are [OP-6].
 
 [TYPE-5] Statement-local typing; boundary-explicit facts.
 The factored `call` grammar denotes a construction exactly when its callee is an unqualified TYPEID application. A constructor writes any nominal arguments directly after that TYPEID, never with the function-call `::` introducer; writing the latter is a TYPE-5 error at the complete call. Its operands are named fields under GRAM-8, so a positional operand list is a GRAM-8 error there. Construction is an ordinary expression, not the callable occurrence required by an expression statement or a destructuring result-list let; either statement position rejects it under TYPE-5. These judgments preserve the constructor forms while sharing the strong-LL(2) prefix with qualified member calls.
-A `let` binder's mode and type are derived, never written: exactly the mode and type its selected right-hand side produces — an `ordinary_let_rhs` from its expression, which is always self-typed (operands are typed atoms, calls are typed by their [FN-1]/[OP-1] signatures, literals carry mandatory suffixes [FORM-5], constructions name their nominal and, when that nominal is generic, write its arguments); a `propagate_let_rhs` from the propagated Ok payload [ERR-3]; a `value_match` or `value_if` from the derived common delivery type [GIVE-1], whose delivering `give`s are inside the same `let_stmt`, so the derivation stays statement-local; and a parenthesized binder list from its `call`'s declared result ordinals, binder i at result ordinal i's written mode and type [GRAM-4, FN-1, CALL-4].
+A `let` binder's mode and type are derived, never written: exactly the mode and type its selected right-hand side produces — an `ordinary_let_rhs` from its expression, which is always self-typed (operands are typed atoms, calls are typed by their [FN-1]/[OP-1] signatures, literals carry mandatory suffixes [FORM-5], constructions name their nominal and, when that nominal is generic, write its arguments); a `propagate_let_rhs` from the propagated Ok payload [ERR-3]; a `value_match` or `value_if` from the derived common delivery type [GIVE-1], whose delivering `give`s are inside the same `let_stmt`, so the derivation stays statement-local; and a parenthesized binder list from its `call`'s declared result ordinals, binder i at the mode and type determined by result ordinal i's declared `rtype` [GRAM-4, FN-1, CALL-4].
 A binder whose selected right-hand side is a reference instead takes that reference kind, by the same derivation and on the same statement-local ground [REF-1].
 This is unique reconstruction, not inference: no binder's type depends on a later statement, an expected type, or any use site, and no two derivations can disagree [FORM-1].
 Call sites state explicitly exactly what their callee class requires: type, const, and function arguments for user generics [FN-2], including group abbreviations; and, for exactly the retained-argument table operations — `cvt` and `reinterpret` (type pairs [OP-6, OP-8]) and `finf`/`fnan` (result type) — the written arguments their rows fix, because no operand can supply them.
@@ -402,7 +404,7 @@ Argument types match declared parameter types exactly.
 After [SET-1] derives a writable value target place of type T, the right-hand side of `set p = e;` must produce exactly `own T`; there is no mode coercion, type conversion, or target-selected operation overload.
 After the TYPE-7 implicit-read exclusivity below, a different right-hand-side mode or type is a hard error citing TYPE-5 at the complete `expr` child of the `set_stmt`, carrying expected `own T` and the actual mode and type.
 A binder list whose written count differs from its `call`'s declared result count, or whose callee declares a single result, is a hard error citing TYPE-5 at the complete `call` child of the statement, carrying the written count and the actual result.
-Redundant-explicit facts remain mandatory at every trust boundary — signatures with full modes, types, and effect rows [FN-1], construction field names [GRAM-8], match binders [GRAM-10], call argument names [GRAM-11] — and are deleted exactly where reconstruction is unique and no transposition risk exists.
+Explicit boundary information remains mandatory — signatures with parameter kinds determined by [GRAM-3], full types and effect rows [FN-1], construction field names [GRAM-8], match binders [GRAM-10], call argument names [GRAM-11] — while body binder annotations are absent under the reconstruction rule above.
 
 Every result ordinal of a `fn_decl` or `fn_sig` has one mandatory `result_binding` whose written `rtype` fixes that callable result's mode and type.
 The result name is a proof-only boundary spelling: it denotes no runtime slot, does not enter callable signature equality, and is unavailable in a function body.
@@ -997,8 +999,8 @@ This judgment alone creates no runtime check or effect.
 [OP-6] cvt partition and semantics (cross-reference TYPE-4).
 `cvt<Src, Dst>` is defined for every ordered pair of distinct numeric primitives; `cvt<T, T>` is not an operation. cvt is EXACT: it yields `Ok(y)` when the Src value is exactly representable in Dst (y the unique such Dst value) and `Err(NarrowError())` otherwise, and it never rounds, truncates, or saturates.
 A non-integral float-to-int, an out-of-range value, a value not exactly representable in a narrower float, and any NaN or infinity targeting an integer all yield `Err`; for float-to-float, an infinity maps to the same infinity and NaN maps to the target canonical quiet NaN (value-preserving).
-A pair is TOTAL — signature `(Src) -> own Dst`, no Result — where every Src value is exactly representable in Dst; the total pairs are exactly these 29: `iN->iM` and `uN->uM` for N<M; `uN->iM` for N<M; `{i8,i16,u8,u16}->f32`; `{i8,i16,i32,u8,u16,u32}->f64`; `f32->f64`.
-Every other distinct numeric pair returns `(Src) -> own Result<Dst, NarrowError>`.
+A pair is TOTAL — signature `(Src) -> Dst`, no Result — where every Src value is exactly representable in Dst; the total pairs are exactly these 29: `iN->iM` and `uN->uM` for N<M; `uN->iM` for N<M; `{i8,i16,u8,u16}->f32`; `{i8,i16,i32,u8,u16,u32}->f64`; `f32->f64`.
+Every other distinct numeric pair returns `(Src) -> Result<Dst, NarrowError>`.
 
 [OP-7] Operation-name convention.
 An arithmetic, logic, bit, or compare op carries a domain prefix — `i` (integer), `f` (float), `b` (Bool logic), or `e` (tag-only enum comparison, including `Bool`) — whether or not a cross-domain twin exists; the structural ops (`cvt`, `reinterpret`) carry no prefix.
@@ -1478,7 +1480,7 @@ Bool exhaustiveness is carried by `if`: an else-free `if` is the empty-alternati
 The asymmetry is deliberate and content-driven: the empty then-block is admitted while the empty else is not, because the else-free form is the one spelling of the empty alternative.
 Variant addition surfaces site-enumerated edit lists (toolchain contract).
 
-[ERR-3] Propagation: `let x = propagate e;` requires `e : own Result<T, E>` and the enclosing function's return type `own Result<U, E>` (same E — no conversions, TYPE-4); x's derived mode and type are `own T` [TYPE-5].
+[ERR-3] Propagation: `let x = propagate e;` requires `e : Result<T, E>` and the enclosing function's return type `own Result<U, E>` (same E — no conversions, TYPE-4); x's derived mode and type are `own T` [TYPE-5].
 The propagation operand is a consuming context.
 A non-place Result expression is its owned temporary.
 When `e` is a direct bare place of affine `Result<T, E>` type rooted in a live own-mode binding, propagation consumes that place exactly once under [OWN-1] without requiring a written `move`; a partial place consumes its whole root and retains the ordinary residual cleanup.
@@ -2183,164 +2185,164 @@ The two built-in numeric bounds `Int` and `Float` admit exactly OP-1's integer a
 The complete function declarations are the following records, each written as the head of a GRAM-2 `fn_decl` — `"fn" IDENT generics? "(" param_list? ")"` and the rest of `fn_sig` from `->` on — so a record carries `fn_decl`'s `generics?` where a function-kind parameter's `fn_sig` [FN-3] carries none. A record's final semicolon is table punctuation, not a new top-level source production. Each signature uses ordinary parameter paths under EFF-1 and the same requirement and postcondition templates as any FN-8/FN-9 contract. The type parameters `W` and `X` of the window operations are the compiler-owned window type parameter OP-10 fixes, and the `W` of `free_empty` is the wider shape parameter OP-14 fixes. No proposition is available merely from a function's name, implementation, result constructor, or prelude origin.
 
 ```
-fn args_count(args: &Args) -> result: own u64 reads(args);
-fn arg_get(args: &Args, position: own u64) -> result: own Result<HostString, ArgError> reads(args);
-fn host_bytes_len(value: &HostString) -> result: own u64 reads(value);
-fn host_copy_bytes(value: &HostString, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value), writes(destination) contract {
+fn args_count(args: &Args) -> result: u64 reads(args);
+fn arg_get(args: &Args, position: u64) -> result: Result<HostString, ArgError> reads(args);
+fn host_bytes_len(value: &HostString) -> result: u64 reads(value);
+fn host_copy_bytes(value: &HostString, destination: &[u8], start: u64, end: u64) -> result: Result<u64, CopyError> reads(value), writes(destination) contract {
   requires start <= end;
   requires end <= deref(destination).len;
   ensures when Ok(value: next): start <= next;
   ensures when Ok(value: next): next <= end;
 };
-fn host_utf8_len(value: &HostString) -> result: own Result<u64, Utf8Error> reads(value);
-fn host_copy_utf8(value: &HostString, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, Utf8CopyError> reads(value), writes(destination) contract {
+fn host_utf8_len(value: &HostString) -> result: Result<u64, Utf8Error> reads(value);
+fn host_copy_utf8(value: &HostString, destination: &[u8], start: u64, end: u64) -> result: Result<u64, Utf8CopyError> reads(value), writes(destination) contract {
   requires start <= end;
   requires end <= deref(destination).len;
   ensures when Ok(value: next): start <= next;
   ensures when Ok(value: next): next <= end;
 };
-fn relative_path(value: own HostString) -> result: own Result<RelativePath, PathError> pure;
-fn open_read(factory: &HandleFactory, root: &DirectoryRead, path: &RelativePath) -> result: own Result<ReadFile, IoError> reads(root), reads(path), writes(factory);
-fn read_at(factory: &HandleFactory, file: &ReadFile, destination: &[u8], file_offset: own u64, start: own u64, end: own u64) -> result: own Result<u64, ReadStop> writes(factory), writes(file), writes(destination) contract {
+fn relative_path(value: HostString) -> result: Result<RelativePath, PathError> pure;
+fn open_read(factory: &HandleFactory, root: &DirectoryRead, path: &RelativePath) -> result: Result<ReadFile, IoError> reads(root), reads(path), writes(factory);
+fn read_at(factory: &HandleFactory, file: &ReadFile, destination: &[u8], file_offset: u64, start: u64, end: u64) -> result: Result<u64, ReadStop> writes(factory), writes(file), writes(destination) contract {
   requires start <= end;
   requires end <= deref(destination).len;
   ensures when Ok(value: next): start <= next;
   ensures when Ok(value: next): next <= end;
 };
-fn write_once(factory: &HandleFactory, output: &OutputStream, source: &[u8], start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(source), writes(factory), writes(output) contract {
+fn write_once(factory: &HandleFactory, output: &OutputStream, source: &[u8], start: u64, end: u64) -> result: Result<u64, IoError> reads(source), writes(factory), writes(output) contract {
   requires start <= end;
   requires end <= deref(source).len;
   ensures when Ok(value: next): start <= next;
   ensures when Ok(value: next): next <= end;
 };
-fn exit_status(code: own u8) -> result: own ExitStatus pure;
-fn open_directory(factory: &HandleFactory, root: &DirectoryRead, name: &[u8], start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(root), reads(name), writes(factory) contract {
+fn exit_status(code: u8) -> result: ExitStatus pure;
+fn open_directory(factory: &HandleFactory, root: &DirectoryRead, name: &[u8], start: u64, end: u64) -> result: Result<DirectoryRead, IoError> reads(root), reads(name), writes(factory) contract {
   requires start <= end;
   requires end <= deref(name).len;
 };
-fn open_directory_source(factory: &HandleFactory, directory: &DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(directory), writes(factory);
-fn directory_next(source: &DirectorySource, destination: &[u8], start: own u64, end: own u64) -> (result: own Result<unit, ListStop>, next: own u64, entries: own u64) writes(source), writes(destination) contract {
+fn open_directory_source(factory: &HandleFactory, directory: &DirectoryRead) -> result: Result<DirectorySource, IoError> reads(directory), writes(factory);
+fn directory_next(source: &DirectorySource, destination: &[u8], start: u64, end: u64) -> (result: Result<unit, ListStop>, next: u64, entries: u64) writes(source), writes(destination) contract {
   requires start <= end;
   requires end <= deref(destination).len;
   ensures start <= next;
   ensures next <= end;
 };
-fn open_file(factory: &HandleFactory, root: &DirectoryRead, name: &[u8], start: own u64, end: own u64) -> result: own Result<ReadFile, IoError> reads(root), reads(name), writes(factory) contract {
+fn open_file(factory: &HandleFactory, root: &DirectoryRead, name: &[u8], start: u64, end: u64) -> result: Result<ReadFile, IoError> reads(root), reads(name), writes(factory) contract {
   requires start <= end;
   requires end <= deref(name).len;
 };
-fn close_read(factory: &HandleFactory, file: own ReadFile) -> result: own Result<unit, IoError> writes(factory);
-fn close_directory(factory: &HandleFactory, directory: own DirectoryRead) -> result: own Result<unit, IoError> writes(factory);
-fn close_directory_source(factory: &HandleFactory, source: own DirectorySource) -> result: own Result<unit, IoError> writes(factory);
-fn read_next(factory: &HandleFactory, input: &InputStream, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, ReadStop> writes(factory), writes(input), writes(destination) contract {
+fn close_read(factory: &HandleFactory, file: ReadFile) -> result: Result<unit, IoError> writes(factory);
+fn close_directory(factory: &HandleFactory, directory: DirectoryRead) -> result: Result<unit, IoError> writes(factory);
+fn close_directory_source(factory: &HandleFactory, source: DirectorySource) -> result: Result<unit, IoError> writes(factory);
+fn read_next(factory: &HandleFactory, input: &InputStream, destination: &[u8], start: u64, end: u64) -> result: Result<u64, ReadStop> writes(factory), writes(input), writes(destination) contract {
   requires start <= end;
   requires end <= deref(destination).len;
   ensures when Ok(value: next): start <= next;
   ensures when Ok(value: next): next <= end;
 };
-fn socket_address_v4(a: own u8, b: own u8, c: own u8, d: own u8, port: own u16) -> result: own SocketAddress pure;
-fn socket_address_v6(a: own u16, b: own u16, c: own u16, d: own u16, e: own u16, f: own u16, g: own u16, h: own u16, port: own u16) -> result: own SocketAddress pure;
-fn tcp_listen(factory: &HandleFactory, address: &SocketAddress) -> result: own Result<TcpListener, IoError> reads(address), writes(factory);
-fn tcp_accept(factory: &HandleFactory, listener: &TcpListener) -> result: own Result<AcceptedConnection, IoError> writes(factory), writes(listener);
-fn tcp_connect(factory: &HandleFactory, address: &SocketAddress) -> result: own Result<TcpConnection, IoError> reads(address), writes(factory);
-fn receive_next(receive: &TcpReceive, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, ReadStop> writes(receive), writes(destination) contract {
+fn socket_address_v4(a: u8, b: u8, c: u8, d: u8, port: u16) -> result: SocketAddress pure;
+fn socket_address_v6(a: u16, b: u16, c: u16, d: u16, e: u16, f: u16, g: u16, h: u16, port: u16) -> result: SocketAddress pure;
+fn tcp_listen(factory: &HandleFactory, address: &SocketAddress) -> result: Result<TcpListener, IoError> reads(address), writes(factory);
+fn tcp_accept(factory: &HandleFactory, listener: &TcpListener) -> result: Result<AcceptedConnection, IoError> writes(factory), writes(listener);
+fn tcp_connect(factory: &HandleFactory, address: &SocketAddress) -> result: Result<TcpConnection, IoError> reads(address), writes(factory);
+fn receive_next(receive: &TcpReceive, destination: &[u8], start: u64, end: u64) -> result: Result<u64, ReadStop> writes(receive), writes(destination) contract {
   requires start <= end;
   requires end <= deref(destination).len;
   ensures when Ok(value: next): start <= next;
   ensures when Ok(value: next): next <= end;
 };
-fn send_once(send: &TcpSend, source: &[u8], start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(source), writes(send) contract {
+fn send_once(send: &TcpSend, source: &[u8], start: u64, end: u64) -> result: Result<u64, IoError> reads(source), writes(send) contract {
   requires start <= end;
   requires end <= deref(source).len;
   ensures when Ok(value: next): start <= next;
   ensures when Ok(value: next): next <= end;
 };
-fn close_listener(factory: &HandleFactory, listener: own TcpListener) -> result: own Result<unit, IoError> writes(factory);
-fn close_receive(factory: &HandleFactory, receive: own TcpReceive) -> result: own Result<unit, IoError> writes(factory);
-fn close_send(factory: &HandleFactory, send: own TcpSend) -> result: own Result<unit, IoError> writes(factory);
-fn box_new<T>(value: own T) -> result: own Box<T> pure;
-fn array_filled<T: copy, const n: u64>(value: own T) -> result: own Array<T, n> pure contract {
+fn close_listener(factory: &HandleFactory, listener: TcpListener) -> result: Result<unit, IoError> writes(factory);
+fn close_receive(factory: &HandleFactory, receive: TcpReceive) -> result: Result<unit, IoError> writes(factory);
+fn close_send(factory: &HandleFactory, send: TcpSend) -> result: Result<unit, IoError> writes(factory);
+fn box_new<T>(value: T) -> result: Box<T> pure;
+fn array_filled<T: copy, const n: u64>(value: T) -> result: Array<T, n> pure contract {
   ensures result.len == n;
 };
-fn slots_new<T, const n: u64>() -> result: own Slots<T, n> pure contract {
+fn slots_new<T, const n: u64>() -> result: Slots<T, n> pure contract {
   ensures result.len == 0_u64;
   ensures result.cap == n;
 };
-fn ring_new<T, const n: u64>() -> result: own Ring<T, n> pure contract {
+fn ring_new<T, const n: u64>() -> result: Ring<T, n> pure contract {
   ensures result.len == 0_u64;
   ensures result.cap == n;
   ensures result.head == 0_u64;
 };
-fn box_array_filled<T: copy>(count: own u64, value: own T) -> result: own Box<Array<T>> pure contract {
+fn box_array_filled<T: copy>(count: u64, value: T) -> result: Box<Array<T>> pure contract {
   ensures result.inner.len == count;
 };
-fn box_slots_new<T>(capacity: own u64) -> result: own Box<Slots<T>> pure contract {
+fn box_slots_new<T>(capacity: u64) -> result: Box<Slots<T>> pure contract {
   ensures result.inner.len == 0_u64;
   ensures result.inner.cap == capacity;
 };
-fn box_ring_new<T>(capacity: own u64) -> result: own Box<Ring<T>> pure contract {
+fn box_ring_new<T>(capacity: u64) -> result: Box<Ring<T>> pure contract {
   ensures result.inner.len == 0_u64;
   ensures result.inner.cap == capacity;
   ensures result.inner.head == 0_u64;
 };
-fn slots_from_array<T, const n: u64>(values: own Array<T, n>) -> result: own Slots<T, n> pure contract {
+fn slots_from_array<T, const n: u64>(values: Array<T, n>) -> result: Slots<T, n> pure contract {
   ensures result.len == n;
   ensures result.cap == n;
 };
-fn slots_into_array<T, const n: u64>(values: own Slots<T, n>) -> result: own Array<T, n> pure contract {
+fn slots_into_array<T, const n: u64>(values: Slots<T, n>) -> result: Array<T, n> pure contract {
   requires values.len == n;
   ensures result.len == n;
 };
-fn place_back<W, T>(window: &W, value: own T) -> result: own unit writes(window.next), writes(window.len) contract {
+fn place_back<W, T>(window: &W, value: T) -> result: unit writes(window.next), writes(window.len) contract {
   requires deref(window).len < deref(window).cap;
   ensures deref(window).len == deref(entry(window)).len + 1_u64;
 };
-fn take_back<W, T>(window: &W) -> value: own T writes(window.last), writes(window.len) contract {
+fn take_back<W, T>(window: &W) -> value: T writes(window.last), writes(window.len) contract {
   requires deref(window).len > 0_u64;
   ensures deref(window).len + 1_u64 == deref(entry(window)).len;
 };
-fn insert_at<W, T>(window: &W, index: own u64, value: own T) -> result: own unit writes(window.filled), writes(window.next), writes(window.len) contract {
+fn insert_at<W, T>(window: &W, index: u64, value: T) -> result: unit writes(window.filled), writes(window.next), writes(window.len) contract {
   requires index <= deref(window).len;
   requires deref(window).len < deref(window).cap;
   ensures deref(window).len == deref(entry(window)).len + 1_u64;
 };
-fn remove_at<W, T>(window: &W, index: own u64) -> value: own T writes(window.filled), writes(window.len) contract {
+fn remove_at<W, T>(window: &W, index: u64) -> value: T writes(window.filled), writes(window.len) contract {
   requires index < deref(window).len;
   ensures deref(window).len + 1_u64 == deref(entry(window)).len;
 };
-fn append<W, X>(destination: &W, source: &X) -> result: own unit writes(destination.free), writes(destination.len), writes(source.filled), writes(source.len) contract {
+fn append<W, X>(destination: &W, source: &X) -> result: unit writes(destination.free), writes(destination.len), writes(source.filled), writes(source.len) contract {
   requires deref(source).len <= deref(destination).cap - deref(destination).len;
   ensures deref(destination).len >= deref(entry(destination)).len;
   ensures deref(destination).len >= deref(entry(source)).len;
   ensures deref(source).len == 0_u64;
 };
-fn split_off<W, X>(source: &W, index: own u64, destination: &X) -> result: own unit writes(source.filled), writes(source.len), writes(destination.free), writes(destination.len) contract {
+fn split_off<W, X>(source: &W, index: u64, destination: &X) -> result: unit writes(source.filled), writes(source.len), writes(destination.free), writes(destination.len) contract {
   requires index <= deref(source).len;
   requires deref(source).len - index <= deref(destination).cap - deref(destination).len;
   ensures deref(source).len == index;
   ensures deref(destination).len >= deref(entry(destination)).len;
 };
-fn grow<T>(cell: &Box<Slots<T>>, capacity: own u64) -> result: own unit writes(cell) contract {
+fn grow<T>(cell: &Box<Slots<T>>, capacity: u64) -> result: unit writes(cell) contract {
   requires capacity >= deref(cell).inner.cap;
   ensures deref(cell).inner.cap == capacity;
   ensures deref(cell).inner.len == deref(entry(cell)).inner.len;
 };
-fn place_front<W, T>(window: &W, value: own T) -> result: own unit writes(window) contract {
+fn place_front<W, T>(window: &W, value: T) -> result: unit writes(window) contract {
   requires deref(window).len < deref(window).cap;
   ensures deref(window).len == deref(entry(window)).len + 1_u64;
   ensures deref(window).cap == deref(entry(window)).cap;
   ensures deref(window).head >= 0_u64;
   ensures deref(window).head <= deref(window).cap;
 };
-fn take_front<W, T>(window: &W) -> value: own T writes(window) contract {
+fn take_front<W, T>(window: &W) -> value: T writes(window) contract {
   requires deref(window).len > 0_u64;
   ensures deref(window).len + 1_u64 == deref(entry(window)).len;
   ensures deref(window).cap == deref(entry(window)).cap;
   ensures deref(window).head >= 0_u64;
   ensures deref(window).head <= deref(window).cap;
 };
-fn swap<T>(first: &T, second: &T) -> result: own unit writes(first), writes(second);
-fn free_empty<W>(window: own W) -> result: own unit pure contract {
+fn swap<T>(first: &T, second: &T) -> result: unit writes(first), writes(second);
+fn free_empty<W>(window: W) -> result: unit pure contract {
   requires window.len == 0_u64;
 };
 ```
@@ -3212,7 +3214,7 @@ enum Sign {
   Pos();
 }
 
-fn sign_of(x: own i32) -> result: own Sign pure {
+fn sign_of(x: i32) -> result: Sign pure {
   doc "Conditional value produced by returning from branches (canonical for return position).";
   if x < 0_i32 {
     return Neg();
@@ -3223,7 +3225,7 @@ fn sign_of(x: own i32) -> result: own Sign pure {
   }
 }
 
-fn fill_eight() -> total: own u64 pure {
+fn fill_eight() -> total: u64 pure {
   doc "A Slots window appended by place_back under a counted header invariant, then measured.";
   let r = slots_new::<u64, 8>();
   for (
@@ -3236,7 +3238,7 @@ fn fill_eight() -> total: own u64 pure {
   return n;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "let-initializer match with give and a reference read through deref.";
   let a = 40_i32;
   let p = &a;

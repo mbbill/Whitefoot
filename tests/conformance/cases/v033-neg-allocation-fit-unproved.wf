@@ -1,9 +1,9 @@
-fn make(length: own u64) -> values: own Box<Slots<i64>> pure {
+fn make(length: u64) -> values: Box<Slots<i64>> pure {
   doc "A runtime capacity with no established relation leaves OP-9's allocation-size obligation unproved. The construction is rejected at its source node before lowering and creates no runtime size check.";
   let block = box_slots_new::<i64>(capacity: length);
   return move block;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

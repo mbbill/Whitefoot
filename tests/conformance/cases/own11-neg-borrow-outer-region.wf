@@ -2,7 +2,7 @@ nocopy struct Item {
   weight: u64;
 }
 
-fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: ExitStatus pure {
   doc "A loop body that consumes a binding declared outside it and never reinitializes it leaves the backedge in a state the entering edge did not have, so one iteration would start where the previous one did not end.";
   let item = Item(weight: 0_u64);
   loop @l {

@@ -86,7 +86,7 @@ fn fold_module(parallel: bool) -> String {
 /// The exit status carries the comparison, so a splitter that computed a width
 /// before testing the endpoints — which wraps an inverted range to something
 /// near 2^64 — fails here rather than hanging somewhere later.
-const EDGE_RANGES: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure {
+const EDGE_RANGES: &[u8] = br#"fn mix(seed: u64) -> result: u64 pure {
   let state = seed;
   let round = 0_u64;
   loop @rounds {
@@ -103,7 +103,7 @@ const EDGE_RANGES: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure {
   return state;
 }
 
-fn folded(lo: own u64, hi: own u64) -> result: own u64 pure {
+fn folded(lo: u64, hi: u64) -> result: u64 pure {
   let total = 7_u64;
   for @points (i in lo..hi) {
     let mixed = mix(seed: i);
@@ -112,7 +112,7 @@ fn folded(lo: own u64, hi: own u64) -> result: own u64 pure {
   return total;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Every degenerate range folds to the accumulator it arrived with, and one wide range folds to the same value split or not.";
   let empty = folded(lo: 5_u64, hi: 5_u64);
   if empty == 7_u64 {
@@ -142,7 +142,7 @@ fn main() -> status: own ExitStatus pure {
 /// would have every lane acquisition refused forever: the program would pay for the
 /// splitter and never overlap. So the bound is applied at compile time and the
 /// loop declines with a line naming the width.
-const WIDE_FRAME: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure {
+const WIDE_FRAME: &[u8] = br#"fn mix(seed: u64) -> result: u64 pure {
   let state = seed;
   let round = 0_u64;
   loop @rounds {
@@ -159,7 +159,7 @@ const WIDE_FRAME: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure {
   return state;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Thirty-two live scalars stand between the loop and a frame that fits.";
   let a0 = 0_u64;
   let a1 = 1_u64;
@@ -249,7 +249,7 @@ fn main() -> status: own ExitStatus pure {
 /// published bytes. **A second combine**: both `ixor` and `+wrap` have identity zero, but the incoming nonzero seed
 /// must reach the left half rather than seeding that half
 /// where the right should be, changes the answer here and not there.
-const CAPTURED_XOR_FOLD: &[u8] = br#"fn mix(seed: own u64, salt: own u64, rounds: own u64) -> result: own u64 pure {
+const CAPTURED_XOR_FOLD: &[u8] = br#"fn mix(seed: u64, salt: u64, rounds: u64) -> result: u64 pure {
   let state = ixor(seed, salt);
   let round = 0_u64;
   loop @rounds {
@@ -266,7 +266,7 @@ const CAPTURED_XOR_FOLD: &[u8] = br#"fn mix(seed: own u64, salt: own u64, rounds
   return state;
 }
 
-fn low_byte(v: own u64) -> result: own u8 pure {
+fn low_byte(v: u64) -> result: u8 pure {
   let low = iand(v, 255_u64);
   match cvt::<u64, u8>(low) {
     Ok(value: byte) => {
@@ -278,7 +278,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell(destination: &[u8], at: own u64, value: own u64) -> result: own u64 writes(destination) {
+fn spell(destination: &[u8], at: u64, value: u64) -> result: u64 writes(destination) {
   let cursor = at;
   let rest = value;
   loop @octets {
@@ -299,7 +299,7 @@ fn spell(destination: &[u8], at: own u64, value: own u64) -> result: own u64 wri
   return at +wrap 8_u64;
 }
 
-fn folded(salt: own u64, rounds: own u64, stride: own u64) -> result: own u64 pure {
+fn folded(salt: u64, rounds: u64, stride: u64) -> result: u64 pure {
   doc "Three captured values, each used differently, folded under ixor.";
   let total = 12345678901234567890_u64;
   for @points (i in 0_u64..400000_u64) {
@@ -310,7 +310,7 @@ fn folded(salt: own u64, rounds: own u64, stride: own u64) -> result: own u64 pu
   return total;
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
   close_directory(factory: &entry_factory, directory: move unused_cwd);
   let value = folded(salt: 9876543210_u64, rounds: 24_u64, stride: 7_u64);
@@ -332,7 +332,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
 /// copied and affinely transformed counted binder. The mapped buffer is returned, borrowed by
 /// `write_once`, and then dropped by its one outer owner, so the observable
 /// bytes cover capture, store, join, post-loop use, and cleanup together.
-const INDEPENDENT_MAP: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure {
+const INDEPENDENT_MAP: &[u8] = br#"fn mix(seed: u64) -> result: u64 pure {
   let state = seed;
   let round = 0_u64;
   loop @rounds {
@@ -349,7 +349,7 @@ const INDEPENDENT_MAP: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure
   return state;
 }
 
-fn low_byte(v: own u64) -> result: own u8 pure {
+fn low_byte(v: u64) -> result: u8 pure {
   let low = iand(v, 255_u64);
   match cvt::<u64, u8>(low) {
     Ok(value: byte) => {
@@ -361,7 +361,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn mapped() -> result: own Box<Array<u8>> pure {
+fn mapped() -> result: Box<Array<u8>> pure {
   let out = box_array_filled::<u8>(count: 400000_u64, value: 0_u8);
   for @fill (i in 0_u64..400000_u64) {
     let copied = i;
@@ -373,7 +373,7 @@ fn mapped() -> result: own Box<Array<u8>> pure {
   return move out;
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
   close_directory(factory: &entry_factory, directory: move unused_cwd);
   let report = mapped();
@@ -406,11 +406,11 @@ const ALIGNED_PAYLOAD_MAP: &[u8] = br#"struct Aligned {
   word: u64;
 }
 
-fn discard(value: own Box<Array<Aligned>>) -> result: own unit pure {
+fn discard(value: Box<Array<Aligned>>) -> result: unit pure {
   return unit;
 }
 
-fn mix(seed: own u64) -> result: own u64 pure {
+fn mix(seed: u64) -> result: u64 pure {
   let state = seed;
   let round = 0_u64;
   loop @rounds {
@@ -427,13 +427,13 @@ fn mix(seed: own u64) -> result: own u64 pure {
   return state;
 }
 
-fn marked(seed: own u64) -> result: own Aligned pure {
+fn marked(seed: u64) -> result: Aligned pure {
   let mixed = mix(seed: seed);
   let result = Aligned(tag: 7_u8, word: mixed);
   return result;
 }
 
-fn aligned_array(count: own u64, tag: own u8, word: own u64) -> result: own Box<Array<Aligned>> pure contract {
+fn aligned_array(count: u64, tag: u8, word: u64) -> result: Box<Array<Aligned>> pure contract {
   requires count <= 400000_u64;
   ensures result.inner.len == count;
 } {
@@ -442,7 +442,7 @@ fn aligned_array(count: own u64, tag: own u8, word: own u64) -> result: own Box<
   return move result;
 }
 
-fn mapped(count: own u64) -> result: own Box<Array<Aligned>> pure contract {
+fn mapped(count: u64) -> result: Box<Array<Aligned>> pure contract {
   requires count <= 400000_u64;
   ensures result.inner.len == count;
 } {
@@ -463,7 +463,7 @@ fn mapped(count: own u64) -> result: own Box<Array<Aligned>> pure contract {
   return move output;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let empty = mapped(count: 0_u64);
   if empty.inner.len != 0_u64 {
     return exit_status(code: 1_u8);
@@ -495,7 +495,7 @@ fn main() -> status: own ExitStatus pure {
 /// Two lexically nested split reductions share one locally owned boxed Array.
 /// The owner is projected into the outer split, reconstructed in its chunk,
 /// and projected again into the inner split reached from that chunk.
-const NESTED_PAYLOAD_REDUCTIONS: &[u8] = br#"fn nested() -> result: own u64 pure {
+const NESTED_PAYLOAD_REDUCTIONS: &[u8] = br#"fn nested() -> result: u64 pure {
   let source = box_array_filled::<u64>(count: 65536_u64, value: 3_u64);
   let total = 0_u64;
   for @batches (i in 0_u64..8_u64) {
@@ -511,7 +511,7 @@ const NESTED_PAYLOAD_REDUCTIONS: &[u8] = br#"fn nested() -> result: own u64 pure
   return total;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let observed = nested();
   if observed != 3407872_u64 {
     return exit_status(code: 1_u8);
@@ -547,8 +547,8 @@ fn borrowed_read_modify_map_source() -> Vec<u8> {
     let source = std::str::from_utf8(INDEPENDENT_MAP).expect("the fixture is UTF-8");
     source
         .replacen(
-            "fn mapped() -> result: own Box<Array<u8>> pure {\n  let out = box_array_filled::<u8>(count: 400000_u64, value: 0_u8);\n",
-            "fn mapped(out: &Box<Array<u8>>) -> result: own unit writes(out.inner) contract {\n  define spare = deref(out).inner.len;\n  requires 400000_u64 <= spare;\n} {\n",
+            "fn mapped() -> result: Box<Array<u8>> pure {\n  let out = box_array_filled::<u8>(count: 400000_u64, value: 0_u8);\n",
+            "fn mapped(out: &Box<Array<u8>>) -> result: unit writes(out.inner) contract {\n  define spare = deref(out).inner.len;\n  requires 400000_u64 <= spare;\n} {\n",
             1,
         )
         .replacen(
@@ -1622,7 +1622,7 @@ const COMBINE_SPAN: u64 = 257;
 /// The helpers every row's fold shares: the per-iteration mix that gives the
 /// body enough weight to be worth splitting, the narrowing to a byte, and the
 /// eight-byte spelling each row publishes through.
-const COMBINE_PRELUDE: &str = r#"fn mix(seed: own u64) -> result: own u64 pure {
+const COMBINE_PRELUDE: &str = r#"fn mix(seed: u64) -> result: u64 pure {
   doc "A pure mix with enough arithmetic that splitting the range around it pays.";
   let state = seed;
   let round = 0_u64;
@@ -1640,7 +1640,7 @@ const COMBINE_PRELUDE: &str = r#"fn mix(seed: own u64) -> result: own u64 pure {
   return state;
 }
 
-fn low_byte(v: own u64) -> result: own u8 pure {
+fn low_byte(v: u64) -> result: u8 pure {
   let low = iand(v, 255_u64);
   match cvt::<u64, u8>(low) {
     Ok(value: byte) => {
@@ -1652,7 +1652,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell(destination: &[u8], at: own u64, value: own u64) -> result: own u64 writes(destination) {
+fn spell(destination: &[u8], at: u64, value: u64) -> result: u64 writes(destination) {
   let cursor = at;
   let rest = value;
   loop @octets {
@@ -1689,7 +1689,7 @@ fn admitted_combine_source() -> Vec<u8> {
             ..
         } = combine;
         source.push_str(&format!(
-            "\nfn fold_{name}(lo: own u64, hi: own u64) -> result: own {ty} pure {{\n  \
+            "\nfn fold_{name}(lo: u64, hi: u64) -> result: {ty} pure {{\n  \
              let total = {seed};\n  for @points (i in lo..hi) {{\n    \
              let mixed = mix(seed: i);\n"
         ));
@@ -1704,14 +1704,14 @@ fn admitted_combine_source() -> Vec<u8> {
         // assertion below has to be about.
         source.push_str(&format!(
             "    set total = {fold};\n  }}\n  return total;\n}}\n\n\
-             fn value_{name}(after: own u64) -> result: own u64 pure {{\n  \
+             fn value_{name}(after: u64) -> result: u64 pure {{\n  \
              let lo = imin(after, 0_u64);\n  \
              let total = fold_{name}(lo: lo, hi: {COMBINE_SPAN}_u64);\n{publish}}}\n"
         ));
     }
     let width = 8 * ADMITTED_COMBINES.len();
     source.push_str(&format!(
-        "\nfn main(inputs: own Inputs) -> status: own ExitStatus pure {{\n  \
+        "\nfn main(inputs: Inputs) -> status: ExitStatus pure {{\n  \
          let Inputs(args: unused_args, cwd: cwd, stdout: out, stderr: unused_stderr, handles: factory, stdin: unused_stdin) = move inputs;\n  \
          close_directory(factory: &factory, directory: move cwd);\n  \
          let report = box_array_filled::<u8>(count: {width}_u64, value: 0_u8);\n  \
@@ -1886,11 +1886,11 @@ fn assert_combine_rows(reference: &[u8], published: &[u8], setting: &str) {
 /// native construction also verifies every emitted phi predecessor.
 #[test]
 fn multiple_split_loops_and_an_ordinary_join_keep_phi_predecessors() {
-    let source = br#"fn choose(value: own u64) -> result: own u64 pure {
+    let source = br#"fn choose(value: u64) -> result: u64 pure {
   return imax(value, value);
 }
 
-fn composed(limit: own u64) -> result: own u64 pure {
+fn composed(limit: u64) -> result: u64 pure {
   let total = 5_u64;
   for (i in 0_u64..limit) {
     set total = total +wrap i;
@@ -1916,7 +1916,7 @@ fn composed(limit: own u64) -> result: own u64 pure {
   return acc;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let result = composed(limit: 4_u64);
   if result != 97_u64 {
     return exit_status(code: 1_u8);

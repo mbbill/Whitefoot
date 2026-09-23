@@ -7,7 +7,7 @@ nocopy struct Holder {
   state: State;
 }
 
-fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: ExitStatus pure {
   doc "OWN-1: projected copy reads do not consume their affine struct or window owner.";
   let state = Ready();
   let holder = Holder(state: state);

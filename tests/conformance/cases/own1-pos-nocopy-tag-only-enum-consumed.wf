@@ -3,7 +3,7 @@ nocopy enum Signal {
   Waiting();
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A nocopy tag-only enum is affine: the written move into a whole-value match is its one consuming use, while drop remains available on every other leaving edge.";
   let signal = Ready();
   match move signal {

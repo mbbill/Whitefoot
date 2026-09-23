@@ -2,14 +2,14 @@ struct Holder<T: drop> {
   data: Box<T>;
 }
 
-fn spare() -> result: own unit pure {
+fn spare() -> result: unit pure {
   return unit;
 }
 
-fn inspect(value: &Slots<fn spare, 4>) -> result: own unit pure {
+fn inspect(value: &Slots<fn spare, 4>) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

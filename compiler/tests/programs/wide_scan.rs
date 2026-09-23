@@ -47,14 +47,14 @@
 
 use super::support::{build_program, compile_sources, fixture_directory};
 
-const ORACLE: &[u8] = br#"fn opaque_length(n: own u64) -> result: own u64 pure contract {
+const ORACLE: &[u8] = br#"fn opaque_length(n: u64) -> result: u64 pure contract {
   requires n <= 0_u64;
   ensures result <= 0_u64;
 } {
   return n;
 }
 
-fn publish_all(factory: &HandleFactory, output: &OutputStream, source: &[u8], length: own u64) -> result: own Result<unit, IoError> reads(source), writes(factory), writes(output) contract {
+fn publish_all(factory: &HandleFactory, output: &OutputStream, source: &[u8], length: u64) -> result: Result<unit, IoError> reads(source), writes(factory), writes(output) contract {
   define source_length = deref(source).len;
   requires length <= source_length;
 } {
@@ -78,7 +78,7 @@ fn publish_all(factory: &HandleFactory, output: &OutputStream, source: &[u8], le
   return Ok<unit, IoError>(value: unit);
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "Runs three equivalence byte walks, publishes their recorded positions, then runs one argument-selected boundary walk with a typed exhaustion status.";
   let Inputs(args: args, cwd: unused_cwd, stdout: out, stderr: unused_err, handles: factory, stdin: unused_in) = move inputs;
   close_directory(factory: &factory, directory: move unused_cwd);

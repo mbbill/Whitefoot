@@ -1,4 +1,4 @@
-fn take_block(free: &Slots<Box<Slots<u8>>, 2>) -> block: own Box<Slots<u8>> writes(free) contract {
+fn take_block(free: &Slots<Box<Slots<u8>>, 2>) -> block: Box<Slots<u8>> writes(free) contract {
   requires deref(free).len > 0_u64;
   ensures deref(free).len + 1_u64 == deref(entry(free)).len;
 } {
@@ -7,7 +7,7 @@ fn take_block(free: &Slots<Box<Slots<u8>>, 2>) -> block: own Box<Slots<u8>> writ
   return move block;
 }
 
-fn return_block(free: &Slots<Box<Slots<u8>>, 2>, block: own Box<Slots<u8>>) -> result: own unit writes(free) contract {
+fn return_block(free: &Slots<Box<Slots<u8>>, 2>, block: Box<Slots<u8>>) -> result: unit writes(free) contract {
   requires deref(free).len < deref(free).cap;
   ensures deref(free).len == deref(entry(free)).len + 1_u64;
 } {
@@ -16,7 +16,7 @@ fn return_block(free: &Slots<Box<Slots<u8>>, 2>, block: own Box<Slots<u8>>) -> r
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "INV-1: a verified helper exports changes to the pool but no capacity relation for the runtime-capacity window it hands back. Its caller cannot invent a four-slot capacity from the value it originally stored in that slot, so the invariant over the returned cell is the ordinary unproved target.";
   let block = box_slots_new::<u8>(capacity: 4_u64);
   let free = slots_new::<Box<Slots<u8>>, 2>();

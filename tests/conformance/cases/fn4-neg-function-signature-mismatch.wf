@@ -1,8 +1,8 @@
 interface Select {
-  fn select(value: own u64) -> result: own u64 pure;
+  fn select(value: u64) -> result: u64 pure;
 }
 
-fn choose(value: own Bool) -> result: own Bool pure {
+fn choose(value: Bool) -> result: Bool pure {
   return value;
 }
 
@@ -10,6 +10,6 @@ binding Wrong : Select {
   select = choose;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

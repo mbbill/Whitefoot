@@ -3,10 +3,10 @@ struct Item {
 }
 
 interface Inspect<T> {
-  fn inspect(value: &T) -> result: own unit pure;
+  fn inspect(value: &T) -> result: unit pure;
 }
 
-fn ignore(value: &Box<Item>) -> result: own unit pure {
+fn ignore(value: &Box<Item>) -> result: unit pure {
   doc "The group's captured type argument is substituted into the member signature before FN-4 compares it with this actual; the reference itself carries no qualifier to compare [REF-1].";
   return unit;
 }
@@ -15,6 +15,6 @@ binding ItemInspect : Inspect<Box<Item>> {
   inspect = ignore;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

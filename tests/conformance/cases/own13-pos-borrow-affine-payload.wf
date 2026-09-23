@@ -8,7 +8,7 @@ enum Packet {
   Empty();
 }
 
-fn inspect(packet: &Packet) -> return_value: own i32 reads(packet) {
+fn inspect(packet: &Packet) -> return_value: i32 reads(packet) {
   doc "OWN-13: matching through a reference derives a Pair payload binder naming that path, and a field of it is read without transferring ownership.";
   match deref(packet) {
     Data(item: payload) => {
@@ -20,6 +20,6 @@ fn inspect(packet: &Packet) -> return_value: own i32 reads(packet) {
   }
 }
 
-fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

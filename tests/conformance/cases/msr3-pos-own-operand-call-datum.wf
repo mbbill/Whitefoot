@@ -1,4 +1,4 @@
-fn filled<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
+fn filled<T: copy, const n: u64>(value: T) -> result: Slots<T, n> pure contract {
   ensures result.len >= n;
   ensures result.cap <= result.len;
 } {
@@ -14,7 +14,7 @@ fn filled<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure c
   return move built;
 }
 
-fn size_of(taken: own Slots<u8, 8>) -> measured: own u64 pure contract {
+fn size_of(taken: Slots<u8, 8>) -> measured: u64 pure contract {
   ensures measured == taken.len;
 } {
   doc "Consumes the window and hands its length back.";
@@ -22,14 +22,14 @@ fn size_of(taken: own Slots<u8, 8>) -> measured: own u64 pure contract {
   return held;
 }
 
-fn needs_eight(bound: own u64) -> ok: own unit pure contract {
+fn needs_eight(bound: u64) -> ok: unit pure contract {
   requires 8_u64 <= bound;
 } {
   doc "Needs a caller proof about its argument.";
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "MSR-3: the own operand of a published relation denotes this call's call datum, a compiler-owned term with empty support, so the relation survives the consume the same statement performs and the caller discharges a later requirement from it.";
   let run = filled::<u8, 8>(value: 0_u8);
   let measured = size_of(taken: move run);

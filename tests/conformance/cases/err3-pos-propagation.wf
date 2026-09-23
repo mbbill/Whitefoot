@@ -1,11 +1,11 @@
-fn half_checked(x: own i64) -> result: own Result<i64, Overflow> pure {
+fn half_checked(x: i64) -> result: Result<i64, Overflow> pure {
   let d = x +checked x;
   let v = propagate d;
   let r = v +checked 1_i64;
   return r;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let big = 4611686018427387904_i64;
   let a = half_checked(x: 20_i64);
   match a {

@@ -6,21 +6,21 @@ struct Counter {
   total: u64;
 }
 
-fn exchange(target: &Holder, incoming: own Box<u64>) -> previous: own u64 writes(target.value) {
+fn exchange(target: &Holder, incoming: Box<u64>) -> previous: u64 writes(target.value) {
   doc "The old content is read out, then one commit installs the incoming cell and releases the old one.";
   let previous = deref(target).value.inner;
   set deref(target).value = move incoming;
   return previous;
 }
 
-fn observe(owner: &Holder, incoming: own Box<u64>) -> (old: own u64, current: own u64) writes(owner.value) {
+fn observe(owner: &Holder, incoming: Box<u64>) -> (old: u64, current: u64) writes(owner.value) {
   doc "A by-value parameter contributes no effect entry, so the row states only the write of the referenced field.";
   let old = exchange(target: owner, incoming: move incoming);
   let current = deref(owner).value.inner;
   return old, current;
 }
 
-fn tick(counter: &Counter) -> result: own unit writes(counter.total) {
+fn tick(counter: &Counter) -> result: unit writes(counter.total) {
   doc "One declared write of the referenced field.";
   let seen = deref(counter).total;
   let raised = seen +wrap 1_u64;
@@ -28,7 +28,7 @@ fn tick(counter: &Counter) -> result: own unit writes(counter.total) {
   return unit;
 }
 
-fn repeat(counter: &Counter) -> result: own unit writes(counter.total) {
+fn repeat(counter: &Counter) -> result: unit writes(counter.total) {
   doc "Sequential statements each form their own access to the same referenced field.";
   let index = 0_u64;
   loop @again {
@@ -45,7 +45,7 @@ fn repeat(counter: &Counter) -> result: own unit writes(counter.total) {
   return unit;
 }
 
-fn acquire_twice() -> result: own u64 pure {
+fn acquire_twice() -> result: u64 pure {
   doc "Allocation carries no effect entry, so two sequential cells leave the row empty and both results stay alive to the sum.";
   let first = box_new::<u64>(value: 31_u64);
   let second = box_new::<u64>(value: 47_u64);
@@ -55,7 +55,7 @@ fn acquire_twice() -> result: own u64 pure {
   return sum;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "An argument reference lasts exactly through its call, statement-end retirement permits sequential calls, and owned results stay alive.";
   let cell = box_new::<u64>(value: 17_u64);
   let owner = Holder(value: move cell);

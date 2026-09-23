@@ -1,4 +1,4 @@
-fn unproved(value: own i32, choose: own Bool) -> result: own i32 pure contract {
+fn unproved(value: i32, choose: Bool) -> result: i32 pure contract {
   ensures result == value;
 } {
   if choose {
@@ -8,6 +8,6 @@ fn unproved(value: own i32, choose: own Bool) -> result: own i32 pure contract {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

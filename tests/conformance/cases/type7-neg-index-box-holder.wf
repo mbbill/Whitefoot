@@ -1,8 +1,8 @@
-fn read(holder: own Box<Slots<u8, 4>>) -> function_result: own u8 pure {
+fn read(holder: Box<Slots<u8, 4>>) -> function_result: u8 pure {
   doc "OP-4: a subscript base must be an indexable type, and a Box holder is not one; the Box content is its field inner, so the run is written holder.inner[offset] [TYPE-9].";
   return holder[0_u64];
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

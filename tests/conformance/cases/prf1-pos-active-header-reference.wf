@@ -1,4 +1,4 @@
-fn scaled_bound(limit: own u64) -> total: own u64 pure {
+fn scaled_bound(limit: u64) -> total: u64 pure {
   let sum = 0_u64;
   for (
     i in 0_u64..limit,
@@ -12,7 +12,7 @@ fn scaled_bound(limit: own u64) -> total: own u64 pure {
   return sum;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let total = scaled_bound(limit: 5_u64);
   if total == 5_u64 {
   } else {

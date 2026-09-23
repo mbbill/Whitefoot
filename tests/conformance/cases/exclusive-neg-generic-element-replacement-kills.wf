@@ -1,4 +1,4 @@
-fn replace_at<T: drop>(values: &Slots<T, 2>, at: own u64, incoming: &T) -> result: own unit writes(values[at]), writes(incoming) contract {
+fn replace_at<T: drop>(values: &Slots<T, 2>, at: u64, incoming: &T) -> result: unit writes(values[at]), writes(incoming) contract {
   requires at < deref(values).len;
 } {
   doc "A generic helper preserving the outer window's boundary while exchanging one of its elements [OP-11].";
@@ -6,7 +6,7 @@ fn replace_at<T: drop>(values: &Slots<T, 2>, at: own u64, incoming: &T) -> resul
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The helper leaves the outer run's length alone but replaces its element. The exact projected write kills the caller fact about that element's own measures [ENT-5, MSR-2], so the subsequent inner subscript is unproved [OP-4].";
   let child = slots_new::<u64, 2>();
   place_back(window: &child, value: 7_u64);

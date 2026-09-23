@@ -1,10 +1,10 @@
-fn dbl(x: own i32) -> result: own i32 pure {
+fn dbl(x: i32) -> result: i32 pure {
   doc "A genuinely `pure` body: total `.wrap` addition and no reads, writes, or allocation [EFF-3].";
   let r = x +wrap x;
   return r;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let a = dbl(x: 21_i32);
   if a == 42_i32 {
   } else {

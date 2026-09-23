@@ -1,4 +1,4 @@
-fn window_last<const n: u64>(buf: own Slots<u8, n>, start: own u64, end: own u64) -> value: own u8 pure contract {
+fn window_last<const n: u64>(buf: Slots<u8, n>, start: u64, end: u64) -> value: u8 pure contract {
   define spare = buf.len;
   requires start < end;
   requires end <= spare;
@@ -8,7 +8,7 @@ fn window_last<const n: u64>(buf: own Slots<u8, n>, start: own u64, end: own u64
   return value;
 }
 
-fn ring_slot<const n: u64>(buf: own Slots<u8, n>, front: own u64, used: own u64) -> value: own u8 pure contract {
+fn ring_slot<const n: u64>(buf: Slots<u8, n>, front: u64, used: u64) -> value: u8 pure contract {
   define capacity = buf.len;
   requires capacity > 0_u64;
 } {
@@ -19,7 +19,7 @@ fn ring_slot<const n: u64>(buf: own Slots<u8, n>, front: own u64, used: own u64)
   return value;
 }
 
-fn ring_slot_sub<const n: u64>(buf: own Slots<u8, n>, front: own u64, used: own u64) -> value: own u8 pure contract {
+fn ring_slot_sub<const n: u64>(buf: Slots<u8, n>, front: u64, used: u64) -> value: u8 pure contract {
   define capacity = buf.len;
   requires front < capacity;
   requires used < capacity;
@@ -41,7 +41,7 @@ fn ring_slot_sub<const n: u64>(buf: own Slots<u8, n>, front: own u64, used: own 
   return value;
 }
 
-fn sum_chunks<const n: u64>(buf: own Slots<u8, n>, chunk_size: own u64) -> total: own u64 pure contract {
+fn sum_chunks<const n: u64>(buf: Slots<u8, n>, chunk_size: u64) -> total: u64 pure contract {
   define spare = buf.len;
   requires chunk_size > 0_u64;
   requires chunk_size <= 2147483648_u64;
@@ -67,7 +67,7 @@ fn sum_chunks<const n: u64>(buf: own Slots<u8, n>, chunk_size: own u64) -> total
   return total;
 }
 
-fn shifted_read<const n: u64>(buf: own Slots<u8, n>, base: own u64, delta: own u64) -> value: own u8 pure contract {
+fn shifted_read<const n: u64>(buf: Slots<u8, n>, base: u64, delta: u64) -> value: u8 pure contract {
   define spare = buf.len;
   requires spare <= 4294967296_u64;
   requires base < spare;
@@ -85,7 +85,7 @@ fn shifted_read<const n: u64>(buf: own Slots<u8, n>, base: own u64, delta: own u
   }
 }
 
-fn block_checksum<const n: u64>(data: own Slots<u8, n>, block_size: own u64) -> total: own u32 pure contract {
+fn block_checksum<const n: u64>(data: Slots<u8, n>, block_size: u64) -> total: u32 pure contract {
   requires block_size > 0_u64;
 } {
   let capacity = data.len;
@@ -132,6 +132,6 @@ fn block_checksum<const n: u64>(data: own Slots<u8, n>, block_size: own u64) -> 
   return sum;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

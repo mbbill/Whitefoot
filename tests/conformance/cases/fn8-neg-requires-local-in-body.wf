@@ -1,4 +1,4 @@
-fn hidden_local(x: own i32) -> result: own Bool pure contract {
+fn hidden_local(x: i32) -> result: Bool pure contract {
   define permitted = x >= 0_i32;
   requires permitted;
 } {
@@ -6,6 +6,6 @@ fn hidden_local(x: own i32) -> result: own Bool pure contract {
   return permitted;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

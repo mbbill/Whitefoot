@@ -13,12 +13,12 @@ use super::{assert_rule, assert_rule_at, assert_rule_kind, with_semantics};
 #[test]
 fn a_derived_binding_still_faces_its_consumer_s_exactness_rule() {
     assert_rule(
-        br#"fn answer() -> result: own i32 pure {
+        br#"fn answer() -> result: i32 pure {
   let value = 40_i64;
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -32,7 +32,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_second_give_of_another_type_rejects_at_that_give() {
     assert_rule_kind(
-        br#"fn choose(flag: own Option<i32>) -> result: own unit pure {
+        br#"fn choose(flag: Option<i32>) -> result: unit pure {
   let picked = match flag {
     Some(value: inner) => {
       give inner;
@@ -44,7 +44,7 @@ fn a_second_give_of_another_type_rejects_at_that_give() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -60,7 +60,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn an_empty_delivery_set_rejects_at_the_let_statement() {
     assert_rule(
-        br#"fn choose(flag: own Option<i32>) -> result: own i32 pure {
+        br#"fn choose(flag: Option<i32>) -> result: i32 pure {
   let picked = match flag {
     Some(value: inner) => {
       return inner;
@@ -72,7 +72,7 @@ fn an_empty_delivery_set_rejects_at_the_let_statement() {
   return picked;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -86,7 +86,7 @@ fn main() -> status: own ExitStatus pure {
 /// is; [TYPE-5] therefore makes them mandatory in every position.
 #[test]
 fn a_nullary_prelude_construction_types_itself_from_written_arguments() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let absent = None<Array<u8, 2>>();
   let present = Some<i32>(value: 7_i32);
   return exit_status(code: 0_u8);
@@ -114,7 +114,7 @@ fn a_nullary_prelude_construction_types_itself_from_written_arguments() {
 #[test]
 fn a_prelude_construction_without_its_arguments_rejects_at_the_construct() {
     assert_rule_kind(
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   let absent = None();
   return exit_status(code: 0_u8);
 }
@@ -126,7 +126,7 @@ fn a_prelude_construction_without_its_arguments_rejects_at_the_construct() {
 
 #[test]
 fn a_result_construction_writes_both_of_its_arguments() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let good = Ok<i32, Overflow>(value: 1_i32);
   let flag = Overflow();
   let bad = Err<i32, Overflow>(error: flag);
@@ -157,11 +157,11 @@ fn a_written_type_argument_on_a_derived_operation_rejects() {
     assert_rule(
         // The written argument is the violation, so deleting it — which is
         // what A1 does to a legal call — leaves nothing to cite.
-        br#"fn smaller(x: own i32, y: own i32) -> result: own i32 pure {
+        br#"fn smaller(x: i32, y: i32) -> result: i32 pure {
   return imin::<i32>(x, y);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -176,11 +176,11 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn disagreeing_operands_cite_type5_at_the_second_operand_atom() {
     assert_rule_at(
-        br#"fn smaller(x: own i32, y: own i64) -> result: own i32 pure {
+        br#"fn smaller(x: i32, y: i64) -> result: i32 pure {
   return imin(x, y);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -195,11 +195,11 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_first_operand_outside_the_closed_set_cites_op1() {
     assert_rule(
-        br#"fn smaller(x: own Bool, y: own Bool) -> result: own Bool pure {
+        br#"fn smaller(x: Bool, y: Bool) -> result: Bool pure {
   return imin(x, y);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,

@@ -1,4 +1,4 @@
-fn append_one<T: drop, const n: u64>(values: &Slots<T, n>, value: own T) -> result: own unit writes(values) contract {
+fn append_one<T: drop, const n: u64>(values: &Slots<T, n>, value: T) -> result: unit writes(values) contract {
   requires deref(values).len < deref(values).cap;
   ensures deref(values).len == deref(entry(values)).len + 1_u64;
   ensures deref(values).cap == deref(entry(values)).cap;
@@ -8,7 +8,7 @@ fn append_one<T: drop, const n: u64>(values: &Slots<T, n>, value: own T) -> resu
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A generic exclusive append proves two-state length and capacity relations and is instantiated at both scalar and owning window elements.";
   let scalar = slots_new::<u64, 2>();
   let nested = slots_new::<Slots<u64, 2>, 2>();

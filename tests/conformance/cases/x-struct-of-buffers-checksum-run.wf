@@ -3,7 +3,7 @@ struct Columns {
   right: Box<Slots<u64>>;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Parallel runtime-capacity columns are filled, folded, and released through one struct owner; counted-loop range facts discharge the indexing and normal owner exit releases the fields in reverse declaration order.";
   let left = box_slots_new::<u64>(capacity: 6_u64);
   for @build_left (

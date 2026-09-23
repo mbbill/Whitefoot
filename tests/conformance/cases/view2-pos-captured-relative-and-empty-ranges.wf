@@ -1,4 +1,4 @@
-fn first(start: own u64, end: own u64) -> result: own u64 pure contract {
+fn first(start: u64, end: u64) -> result: u64 pure contract {
   requires start <= end;
   requires end <= 8_u64;
 } {
@@ -21,7 +21,7 @@ fn first(start: own u64, end: own u64) -> result: own u64 pure contract {
   return deref(view)[0_u64];
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A middle range and an end-anchored empty range are both formed and measured; the middle range selects the value its captured start names.";
   let middle = first(start: 2_u64, end: 5_u64);
   let tail = first(start: 8_u64, end: 8_u64);

@@ -1,4 +1,4 @@
-fn get(b: &[u8], j: own u64) -> result: own u8 reads(b) {
+fn get(b: &[u8], j: u64) -> result: u8 reads(b) {
   doc "This case admits the subscript only on ordinary executed control that establishes its real bound. A written proof conclusion creates a fact only after its premises are checked, so it cannot manufacture an unreachable state or use explosion to admit a partial operation [ENT-3, OP-4].";
   let spare = deref(b).len;
   let inside = j < spare;
@@ -8,7 +8,7 @@ fn get(b: &[u8], j: own u64) -> result: own u8 reads(b) {
   return 0_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "No construction is needed to exercise the branch fact.";
   return exit_status(code: 0_u8);
 }

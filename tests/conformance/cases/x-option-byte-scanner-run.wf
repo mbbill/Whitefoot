@@ -1,4 +1,4 @@
-fn find_byte(input: &[u8], needle: own u8) -> function_result: own Option<u64> reads(input) {
+fn find_byte(input: &[u8], needle: u8) -> function_result: Option<u64> reads(input) {
   doc "Scans a range reference and returns an owned index, never a reference [REF-3].";
   let length = deref(input).len;
   for (offset in 0_u64..length) {
@@ -11,7 +11,7 @@ fn find_byte(input: &[u8], needle: own u8) -> function_result: own Option<u64> r
   return None<u64>();
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A range-reference byte scanner uses a counted range to prove every read in bounds. Ordinary controls observe Some(3), the expected None result, and every wrong variant or offset through distinct nonzero statuses.";
   let bytes = array_filled::<u8, 6>(value: 0_u8);
   set bytes[0_u64] = 10_u8;

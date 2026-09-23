@@ -2,7 +2,7 @@ struct Frame {
   count: u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A projected set target selects one component of a binding that must already exist. The absent base therefore fails TYPE-5 name resolution before SET-1 can type or commit the target; no set target declares a binding.";
   set absent.count = 4_u64;
   return exit_status(code: 0_u8);

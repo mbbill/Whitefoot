@@ -1,4 +1,4 @@
-fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+fn factory_refusal(error: &IoError) -> result: Bool reads(error) {
   match deref(error) {
     NotFound(code: native_code, origin: native_origin) => {
       return False();
@@ -87,7 +87,7 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
   }
 }
 
-fn byte_at(store: &[u8], index: own u64) -> result: own u8 reads(store) {
+fn byte_at(store: &[u8], index: u64) -> result: u8 reads(store) {
   doc "Reads one stored byte, delivering zero for a position the range reference does not hold.";
   let room = deref(store).len;
   let inside = index < room;
@@ -98,7 +98,7 @@ fn byte_at(store: &[u8], index: own u64) -> result: own u8 reads(store) {
   return 0_u8;
 }
 
-fn parse_port(digits: &[u8], length: own u64) -> result: own u16 reads(digits) {
+fn parse_port(digits: &[u8], length: u64) -> result: u16 reads(digits) {
   doc "Reads one decimal port out of the argument bytes the invocation supplied; a byte that is not a digit ends the number.";
   let port = 0_u16;
   let ended = 0_u8;
@@ -130,7 +130,7 @@ fn parse_port(digits: &[u8], length: own u64) -> result: own u16 reads(digits) {
   return port;
 }
 
-fn send_all(send: &TcpSend, source: &[u8], length: own u64) -> result: own Result<unit, IoError> reads(source), writes(send) contract {
+fn send_all(send: &TcpSend, source: &[u8], length: u64) -> result: Result<unit, IoError> reads(source), writes(send) contract {
   define source_length = deref(source).len;
   requires length <= source_length;
 } {
@@ -154,7 +154,7 @@ fn send_all(send: &TcpSend, source: &[u8], length: own u64) -> result: own Resul
   return Ok<unit, IoError>(value: unit);
 }
 
-fn zero_fill(vector: &Slots<u8, 256>) -> result: own unit writes(vector) contract {
+fn zero_fill(vector: &Slots<u8, 256>) -> result: unit writes(vector) contract {
   define spare = deref(vector).cap - deref(vector).len;
   requires 256_u64 <= spare;
   ensures deref(vector).len >= 256_u64;
@@ -170,7 +170,7 @@ fn zero_fill(vector: &Slots<u8, 256>) -> result: own unit writes(vector) contrac
   return unit;
 }
 
-fn serve_one(listener: &TcpListener, handles: &HandleFactory) -> result: own u8 writes(listener), writes(handles) {
+fn serve_one(listener: &TcpListener, handles: &HandleFactory) -> result: u8 writes(listener), writes(handles) {
   doc "Accepts one peer through two reference parameters whose declared rows the call site proves disjoint, echoes its first chunk, and explicitly closes both halves. Its scratch is one inline Slots window of this call's own frame [EFF-5, TYPE-9].";
   let outcome = 0_u8;
   let scratch = slots_new::<u8, 256>();
@@ -221,7 +221,7 @@ fn serve_one(listener: &TcpListener, handles: &HandleFactory) -> result: own u8 
   return outcome;
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "Listens on the invocation port and serves four peers in order. Each ordinary call takes the same listener and factory as two reference parameters until return.";
   let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: handles, stdin: unused_stdin) = move inputs;
   close_directory(factory: &handles, directory: move unused_cwd);

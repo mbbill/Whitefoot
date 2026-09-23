@@ -7,12 +7,12 @@ struct Carrier {
   returned: Box<Slots<u8>>;
 }
 
-fn take_returned(carrier: own Carrier) -> result: own Box<Slots<u8>> pure {
+fn take_returned(carrier: Carrier) -> result: Box<Slots<u8>> pure {
   doc "PROV-6: the same partial-consume refusal at a concrete member the linear modifier makes linear. Moving a different field cannot make the residual Token releasable; the restructuring is to destructure the whole value.";
   return move carrier.returned;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The rejection is in the helper above; this entry point does nothing.";
   return exit_status(code: 0_u8);
 }

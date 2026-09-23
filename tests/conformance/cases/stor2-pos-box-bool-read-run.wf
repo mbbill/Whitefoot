@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A cell constructed from Bool yields the original value through its field inner. Normal exit is observed; this case does not count deallocations.";
   let flag = True();
   let owner = box_new::<Bool>(value: flag);

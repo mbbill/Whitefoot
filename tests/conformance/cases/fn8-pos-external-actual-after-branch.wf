@@ -1,11 +1,11 @@
-fn read_at_index(bytes: &Slots<u8, 4>, index: own u64) -> result: own u8 reads(bytes) contract {
+fn read_at_index(bytes: &Slots<u8, 4>, index: u64) -> result: u8 reads(bytes) contract {
   define spare = deref(bytes).len;
   requires index < spare;
 } {
   return deref(bytes)[index];
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "A real caller branch proves the instantiated requirement for an ordinary call-produced index. The verified requirement then enters the callee body and discharges its subscript, with no provenance side channel and no runtime fallback.";
   let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
   let closed = close_directory(factory: &entry_factory, directory: move unused_cwd);

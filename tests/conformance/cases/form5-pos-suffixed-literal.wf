@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "An integer literal carries its mandatory type suffix [FORM-5].";
   let a = 42_i32;
   return exit_status(code: 0_u8);

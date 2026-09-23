@@ -3,12 +3,12 @@ struct Row {
   right: u64;
 }
 
-fn bump(row: &Row) -> result: own u64 reads(row.left) {
+fn bump(row: &Row) -> result: u64 reads(row.left) {
   doc "Write authority through a reference parameter is exactly what the declared row carries; this row observes the field and declares no write of it, so the assignment has no writable target.";
   set deref(row).left = 9_u64;
   return deref(row).left;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

@@ -3,7 +3,7 @@ nodrop enum Ticket {
   Closed();
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A nodrop modifier removes both capabilities from a tag-only enum. Moving the value into a whole-value match consumes it exactly once and discharges the obligation.";
   let ticket = Open();
   match move ticket {

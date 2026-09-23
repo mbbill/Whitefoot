@@ -1,6 +1,6 @@
 const pixel_input: Array<u8, 24> =[0_u8, 0_u8, 0_u8, 255_u8, 255_u8, 255_u8, 255_u8, 0_u8, 0_u8, 0_u8, 255_u8, 0_u8, 0_u8, 0_u8, 255_u8, 255_u8, 255_u8, 0_u8, 1_u8, 2_u8, 3_u8, 254_u8, 253_u8, 252_u8];
 
-fn grayscale_value(red: own u8, green: own u8, blue: own u8) -> result: own Result<u8, NarrowError> pure {
+fn grayscale_value(red: u8, green: u8, blue: u8) -> result: Result<u8, NarrowError> pure {
   doc "One pixel averaged in binary32 and converted back by the value-preserving cvt, which reports a non-representable result rather than rounding it [OP-6].";
   let red_float = cvt::<u8, f32>(red);
   let green_float = cvt::<u8, f32>(green);
@@ -12,7 +12,7 @@ fn grayscale_value(red: own u8, green: own u8, blue: own u8) -> result: own Resu
   return cvt::<f32, u8>(rounded);
 }
 
-fn grayscale(input: &[u8], output: &[u8]) -> result: own Result<unit, NarrowError> reads(input), writes(output) contract {
+fn grayscale(input: &[u8], output: &[u8]) -> result: Result<unit, NarrowError> reads(input), writes(output) contract {
   define input_length = deref(input).len;
   define output_length = deref(output).len;
   requires input_length >= 24_u64;
@@ -64,7 +64,7 @@ fn grayscale(input: &[u8], output: &[u8]) -> result: own Result<unit, NarrowErro
   return Ok<unit, NarrowError>(value: unit);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Eight pixels are read from a const run and written into a frame-resident array, both reached by the caller-formed range references the callee's row governs.";
   let output = array_filled::<u8, 8>(value: 0_u8);
   let window = &output[0_u64..8_u64];

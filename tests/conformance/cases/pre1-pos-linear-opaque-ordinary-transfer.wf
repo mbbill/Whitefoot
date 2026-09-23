@@ -1,24 +1,24 @@
-fn relay(value: own ReadFile) -> result: own ReadFile pure {
+fn relay(value: ReadFile) -> result: ReadFile pure {
   doc "A linear opaque owner crosses a local binding and a function result.";
   let local = move value;
   return move local;
 }
 
-fn exchange(slot: &ReadFile, incoming: own ReadFile) -> previous: own ReadFile writes(slot) {
+fn exchange(slot: &ReadFile, incoming: ReadFile) -> previous: ReadFile writes(slot) {
   doc "swap exchanges the values at two owned places without a hole; neither root is consumed and each keeps exactly one owner.";
   let previous = move incoming;
   swap(first: slot, second: &previous);
   return move previous;
 }
 
-fn transfer(first: own ReadFile, second: own ReadFile) -> (old: own ReadFile, current: own ReadFile) pure {
+fn transfer(first: ReadFile, second: ReadFile) -> (old: ReadFile, current: ReadFile) pure {
   doc "Both linear owners are handed back exactly once.";
   let value = relay(value: move first);
   let previous = exchange(slot: &value, incoming: move second);
   return move previous, move value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Source acceptance only; no linked operation is invoked.";
   return exit_status(code: 0_u8);
 }

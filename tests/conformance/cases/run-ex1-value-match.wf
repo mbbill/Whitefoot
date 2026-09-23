@@ -4,7 +4,7 @@ enum Sign {
   Pos();
 }
 
-fn sign_of(x: own i32) -> function_result: own Sign pure {
+fn sign_of(x: i32) -> function_result: Sign pure {
   doc "Conditional value produced by returning from branches (canonical for return position).";
   if x < 0_i32 {
     return Neg();
@@ -15,7 +15,7 @@ fn sign_of(x: own i32) -> function_result: own Sign pure {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "let-initializer match with give, a reference read through deref, named binders, a named user-fn call, and checked arithmetic.";
   let a = 40_i32;
   let p = &a;

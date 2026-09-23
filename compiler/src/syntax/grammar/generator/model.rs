@@ -101,7 +101,6 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("f32", "F32"),
         ("f64", "F64"),
         ("unit", "Unit"),
-        ("own", "Own"),
         ("&", "Ampersand"),
         ("let", "Let"),
         ("propagate", "Propagate"),

@@ -1,4 +1,4 @@
-fn take_wrong(free: &Slots<Box<Slots<u8>>, 2>) -> block: own Box<Slots<u8>> writes(free.last), writes(free.len) contract {
+fn take_wrong(free: &Slots<Box<Slots<u8>>, 2>) -> block: Box<Slots<u8>> writes(free.last), writes(free.len) contract {
   requires deref(free).len > 0_u64;
   ensures deref(free).len == deref(entry(free)).len;
 } {
@@ -6,6 +6,6 @@ fn take_wrong(free: &Slots<Box<Slots<u8>>, 2>) -> block: own Box<Slots<u8>> writ
   return take_back(window: free);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

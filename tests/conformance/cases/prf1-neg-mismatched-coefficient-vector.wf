@@ -1,4 +1,4 @@
-fn mismatched(first: own u8, first_limit: own u8, second: own u8, second_limit: own u8, third: own u8, third_limit: own u8) -> result: own unit pure contract {
+fn mismatched(first: u8, first_limit: u8, second: u8, second_limit: u8, third: u8, third_limit: u8) -> result: unit pure contract {
   requires first <= first_limit;
   requires second <= second_limit;
   requires third <= third_limit;
@@ -17,6 +17,6 @@ fn mismatched(first: own u8, first_limit: own u8, second: own u8, second_limit: 
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

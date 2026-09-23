@@ -11,12 +11,12 @@ struct Wrapped<A, B> {
   pair: Pair<A, B>;
 }
 
-fn second_value(wrapped: &Wrapped<Slots<u8, 1>, Slots<u8, 2>>) -> value: own u64 reads(wrapped.pair.second.value) {
+fn second_value(wrapped: &Wrapped<Slots<u8, 1>, Slots<u8, 2>>) -> value: u64 reads(wrapped.pair.second.value) {
   doc "The reader's parameter type writes both arguments and the place reaches the field through `deref` and ordinary field steps [GRAM-5, REF-1].";
   return deref(wrapped).pair.second.value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "FN-2 and TYPE-5: every instantiation argument is written at every nesting depth; there is no position at which an operand supplies one silently.";
   let first = Marker<Slots<u8, 1>>(value: 7_u64);
   let second = Marker<Slots<u8, 2>>(value: 9_u64);

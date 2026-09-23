@@ -1,7 +1,7 @@
-fn compare(left: own u32, right: own u32) -> return_value: own Bool pure {
+fn compare(left: u32, right: u32) -> return_value: Bool pure {
   return ene(left, right);
 }
 
-fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

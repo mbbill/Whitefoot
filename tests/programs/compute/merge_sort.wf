@@ -1,4 +1,4 @@
-fn search_step(input: &[u64], lower: own u64, upper: own u64, key: own u64) -> (next_lower: own u64, next_upper: own u64) reads(input) contract {
+fn search_step(input: &[u64], lower: u64, upper: u64, key: u64) -> (next_lower: u64, next_upper: u64) reads(input) contract {
   requires deref(input).len <= 16777216_u64;
   requires lower < upper;
   requires upper <= deref(input).len;
@@ -17,7 +17,7 @@ fn search_step(input: &[u64], lower: own u64, upper: own u64, key: own u64) -> (
   return lower, middle;
 }
 
-fn lower_bound(input: &[u64], key: own u64) -> result: own u64 reads(input) contract {
+fn lower_bound(input: &[u64], key: u64) -> result: u64 reads(input) contract {
   requires deref(input).len <= 16777216_u64;
   ensures result <= deref(input).len;
 } {
@@ -38,7 +38,7 @@ fn lower_bound(input: &[u64], key: own u64) -> result: own u64 reads(input) cont
   return count;
 }
 
-fn copy_values(input: &[u64], output: &[u64]) -> result: own u64 reads(input), writes(output) contract {
+fn copy_values(input: &[u64], output: &[u64]) -> result: u64 reads(input), writes(output) contract {
   requires deref(input).len <= deref(output).len;
 } {
   let count = deref(input).len;
@@ -48,7 +48,7 @@ fn copy_values(input: &[u64], output: &[u64]) -> result: own u64 reads(input), w
   return count;
 }
 
-fn merge_values(first: &[u64], second: &[u64], output: &[u64]) -> result: own u64 reads(first), reads(second), writes(output) contract {
+fn merge_values(first: &[u64], second: &[u64], output: &[u64]) -> result: u64 reads(first), reads(second), writes(output) contract {
   requires deref(first).len <= 16777216_u64;
   requires deref(second).len <= 16777216_u64;
   requires deref(first).len <= deref(output).len;
@@ -113,7 +113,7 @@ fn merge_values(first: &[u64], second: &[u64], output: &[u64]) -> result: own u6
   return total;
 }
 
-fn sort_values(input: &[u64], output: &[u64]) -> result: own u64 writes(input), writes(output) contract {
+fn sort_values(input: &[u64], output: &[u64]) -> result: u64 writes(input), writes(output) contract {
   requires deref(input).len <= 16777216_u64;
   requires deref(output).len <= deref(input).len;
   requires deref(input).len <= deref(output).len;
@@ -139,7 +139,7 @@ fn sort_values(input: &[u64], output: &[u64]) -> result: own u64 writes(input), 
   return count;
 }
 
-fn merge_sort(input: &[u64]) -> result: own Box<Array<u64>> reads(input) contract {
+fn merge_sort(input: &[u64]) -> result: Box<Array<u64>> reads(input) contract {
   requires deref(input).len <= 16777216_u64;
 } {
   doc "Out-of-place comparison sort with two reusable cells and parallel recursive merges. It preserves every unsigned key; stability is not part of the result contract.";
@@ -156,11 +156,11 @@ fn merge_sort(input: &[u64]) -> result: own Box<Array<u64>> reads(input) contrac
   return move output;
 }
 
-fn release_merge_sort(output: own Box<Array<u64>>) -> result: own u64 pure {
+fn release_merge_sort(output: Box<Array<u64>>) -> result: u64 pure {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let input = array_filled::<u64, 257>(value: 0_u64);
   for (i in 0_u64..257_u64) {
     set input[i] = 256_u64 - i;

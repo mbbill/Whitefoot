@@ -1,11 +1,11 @@
-fn second_of(run: own Slots<u8, 4>) -> got: own u8 pure contract {
+fn second_of(run: Slots<u8, 4>) -> got: u8 pure contract {
   requires run.len >= 2_u64;
 } {
   doc "Reads the element at logical offset one.";
   return run[1_u64];
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "MSR-2: a write at an element position overlaps the descriptor storage of that element and none of the window's own, so it kills every measure of the element and no measure of the window; the window's length bound survives the store and discharges the callee's requirement. The granularity is stated over storage, and a window is the case where the window itself has measures to lose.";
   let two = slots_new::<u8, 4>();
   place_back(window: &two, value: 1_u8);

@@ -1,10 +1,10 @@
-fn selected(value: own i32) -> result: own Result<i32, Overflow> pure contract {
+fn selected(value: i32) -> result: Result<i32, Overflow> pure contract {
   ensures when Ok(value: result): result == value;
 } {
   return Ok<i32, Overflow>(value: value);
 }
 
-fn relay(outer: own i32, replacement: own i32) -> result: own i32 pure contract {
+fn relay(outer: i32, replacement: i32) -> result: i32 pure contract {
   ensures result == replacement;
 } {
   match selected(value: replacement) {
@@ -18,7 +18,7 @@ fn relay(outer: own i32, replacement: own i32) -> result: own i32 pure contract 
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let observed = relay(outer: 0_i32, replacement: 7_i32);
   if observed == 7_i32 {
   } else {

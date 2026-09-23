@@ -2,7 +2,7 @@ struct Chunk<T> {
   page: T;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "FN-2: instantiation arguments are always explicit, so a construct writes its type argument even where the field's own operand already fixes it; there is no elision and no region axis left to elide. The measure is then read through the field as an ordinary place [MSR-1, OP-15].";
   let page = box_slots_new::<u8>(capacity: 256_u64);
   let held = Chunk<Box<Slots<u8>>>(page: move page);

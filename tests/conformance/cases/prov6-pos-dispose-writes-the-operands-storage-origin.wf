@@ -1,20 +1,20 @@
-fn sink(cell: own Box<Slots<u8>>) -> result: own unit pure {
+fn sink(cell: Box<Slots<u8>>) -> result: unit pure {
   doc "Consumes the cell and ends, which is how an affine value is released early.";
   return unit;
 }
 
-fn drain(cell: own Box<Slots<u8>>) -> code: own u8 pure {
+fn drain(cell: Box<Slots<u8>>) -> code: u8 pure {
   doc "The early release: the cell is handed to a function that consumes it and ends. Allocation and release carry no effect entry, so the row stays empty although the reclamation happens here.";
   sink(cell: move cell);
   return 4_u8;
 }
 
-fn keep(cell: own Box<Slots<u8>>) -> code: own u8 pure {
+fn keep(cell: Box<Slots<u8>>) -> code: u8 pure {
   doc "The control: the same cell reaches this scope's exit and takes the compiler-derived release there. That release likewise contributes no path, so the two rows agree although their reclamation points differ.";
   return 5_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The caller runs both and reports the sum of what they returned. A by-value parameter has no effect entry at all and a release contributes none, so the early and the derived reclamation are both invisible in the signature.";
   let first = box_slots_new::<u8>(capacity: 4_u64);
   let second = box_slots_new::<u8>(capacity: 4_u64);

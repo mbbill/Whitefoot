@@ -60,7 +60,7 @@ const CANONICAL_LIMITS: CanonicalLimits = CanonicalLimits {
 
 /// An ordinary function selected by executable fixtures.
 const PLAIN_ENTRY: &str =
-    "fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    "fn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
 #[test]
 fn a_split_captures_an_array_payload_but_keeps_owner_and_inline_storage_addressed() {
@@ -68,13 +68,13 @@ fn a_split_captures_an_array_payload_but_keeps_owner_and_inline_storage_addresse
   values: Array<u8, 16>;
 }
 
-fn make_inline() -> result: own Inline pure {
+fn make_inline() -> result: Inline pure {
   let values = array_filled::<u8, 16>(value: 0_u8);
   let result = Inline(values: values);
   return move result;
 }
 
-fn mapped() -> result: own Box<Array<u8>> pure {
+fn mapped() -> result: Box<Array<u8>> pure {
   let output = box_array_filled::<u8>(count: 16_u64, value: 0_u8);
   let inline = make_inline();
   for @fill (i in 0_u64..16_u64) {
@@ -84,7 +84,7 @@ fn mapped() -> result: own Box<Array<u8>> pure {
   return move output;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let output = mapped();
   return exit_status(code: 0_u8);
 }
@@ -225,7 +225,7 @@ fn with_ir<ResultValue>(
 
 #[test]
 fn runtime_work_keeps_data_dependent_inner_extents_static() {
-    let source = br#"fn count_work(upper: own u64) -> result: own u64 pure {
+    let source = br#"fn count_work(upper: u64) -> result: u64 pure {
   let total = 0_u64;
   for (i in 0_u64..upper) {
     set total = total +wrap i;
@@ -233,7 +233,7 @@ fn runtime_work_keeps_data_dependent_inner_extents_static() {
   return total;
 }
 
-fn write_work(input: &[u64], output: &[u64]) -> result: own unit reads(input), writes(output) contract {
+fn write_work(input: &[u64], output: &[u64]) -> result: unit reads(input), writes(output) contract {
   requires deref(input).len <= 1024_u64;
   requires deref(output).len >= deref(input).len;
 } {
@@ -245,7 +245,7 @@ fn write_work(input: &[u64], output: &[u64]) -> result: own unit reads(input), w
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -353,11 +353,11 @@ fn nested_wide_frame_source(depth: usize) -> String {
     use std::fmt::Write;
 
     let parameters = (0..32)
-        .map(|index| format!("a{index}: own u64"))
+        .map(|index| format!("a{index}: u64"))
         .collect::<Vec<_>>()
         .join(", ");
     let mut source = format!(
-        "fn folded(source: &Box<Array<u64>>, {parameters}) -> result: own u64 reads(source) {{\n"
+        "fn folded(source: &Box<Array<u64>>, {parameters}) -> result: u64 reads(source) {{\n"
     );
     for level in 0..depth {
         let indent = "  ".repeat(level + 1);
@@ -394,7 +394,7 @@ fn nested_wide_frame_source(depth: usize) -> String {
         .expect("write fixture");
         writeln!(source, "{indent}}}").expect("write fixture");
     }
-    source.push_str("  return total0;\n}\n\nfn main() -> status: own ExitStatus pure {\n");
+    source.push_str("  return total0;\n}\n\nfn main() -> status: ExitStatus pure {\n");
     source.push_str("  let input = box_array_filled::<u64>(count: 1_u64, value: 0_u64);\n");
     let arguments = (0..32)
         .map(|index| format!("a{index}: {index}_u64"))
@@ -459,7 +459,7 @@ fn nested_frame_refusals_lower_each_candidate_once() {
 fn a_fitting_loop_retains_its_interface_and_one_extra_field_triggers_rescue() {
     for (capture_count, retained) in [(27, 27), (28, 1)] {
         let parameters = (0..capture_count)
-            .map(|index| format!("a{index}: own u64"))
+            .map(|index| format!("a{index}: u64"))
             .collect::<Vec<_>>()
             .join(", ");
         let arguments = (0..capture_count)
@@ -467,7 +467,7 @@ fn a_fitting_loop_retains_its_interface_and_one_extra_field_triggers_rescue() {
             .collect::<Vec<_>>()
             .join(", ");
         let source = format!(
-            "fn folded({parameters}) -> result: own u64 pure {{\n  let total = 0_u64;\n  for @items (i in 0_u64..2_u64) {{\n    set total = total +wrap a0;\n  }}\n  return total;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  let total = folded({arguments});\n  return exit_status(code: 0_u8);\n}}\n"
+            "fn folded({parameters}) -> result: u64 pure {{\n  let total = 0_u64;\n  for @items (i in 0_u64..2_u64) {{\n    set total = total +wrap a0;\n  }}\n  return total;\n}}\n\nfn main() -> status: ExitStatus pure {{\n  let total = folded({arguments});\n  return exit_status(code: 0_u8);\n}}\n"
         );
         with_ir_mode(source.as_bytes(), OverlapLowering::On, |program| {
             assert_eq!(program.loop_candidate_constructions, 1);
@@ -612,19 +612,19 @@ fn call_definition(function: &IrFunction, result: IrValueId) -> (u32, &[IrValueI
 /// the calls of each variant closed inside the inventory.
 #[test]
 fn physical_call_inventory_gives_one_variant_per_function_under_one_heap() {
-    let source = br#"fn pass<T>(value: own T) -> result: own T pure {
+    let source = br#"fn pass<T>(value: T) -> result: T pure {
   return move value;
 }
 
-fn observe(cell: &Box<u64>, witness: &Box<u64>) -> result: own unit pure {
+fn observe(cell: &Box<u64>, witness: &Box<u64>) -> result: unit pure {
   return unit;
 }
 
-fn relay(cell: own Box<u64>) -> result: own Box<u64> pure {
+fn relay(cell: Box<u64>) -> result: Box<u64> pure {
   return pass::<Box<u64>>(value: move cell);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let first = box_new::<u64>(value: 1_u64);
   let second = box_new::<u64>(value: 2_u64);
   let ready = relay(cell: move first);
@@ -676,7 +676,7 @@ fn main() -> status: own ExitStatus pure {
 /// left for a second environment to vary.
 #[test]
 fn physical_call_inventory_closes_a_recursive_edge_on_its_own_variant() {
-    let source = br#"fn descend(cell: &Box<u64>, again: own Bool) -> result: own unit reads(cell) {
+    let source = br#"fn descend(cell: &Box<u64>, again: Bool) -> result: unit reads(cell) {
   if again {
     let stop = False();
     descend(cell: cell, again: stop);
@@ -684,7 +684,7 @@ fn physical_call_inventory_closes_a_recursive_edge_on_its_own_variant() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let held = box_new::<u64>(value: 1_u64);
   let start = True();
   descend(cell: &held, again: start);
@@ -777,7 +777,7 @@ fn return_drops(function: &IrFunction) -> &[IrDrop] {
 #[test]
 fn source_signature_modes_distinguish_the_three_parameter_modes() {
     let source = format!(
-        "fn owned(value: own Box<u64>) -> result: own unit pure {{\n  return unit;\n}}\n\nfn referenced(value: &Box<u64>) -> result: own unit pure {{\n  return unit;\n}}\n\nfn ranged(value: &[u8]) -> result: own unit pure {{\n  return unit;\n}}\n\n{PLAIN_ENTRY}"
+        "fn owned(value: Box<u64>) -> result: unit pure {{\n  return unit;\n}}\n\nfn referenced(value: &Box<u64>) -> result: unit pure {{\n  return unit;\n}}\n\nfn ranged(value: &[u8]) -> result: unit pure {{\n  return unit;\n}}\n\n{PLAIN_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
         for (name, mode) in [
@@ -807,7 +807,7 @@ fn source_signature_modes_distinguish_the_three_parameter_modes() {
 #[test]
 fn source_signature_results_are_owned_because_no_reference_escapes() {
     let source = format!(
-        "fn owned(value: own u64) -> result: own u64 pure {{\n  return value;\n}}\n\nfn read(value: &u64) -> result: own u64 reads(value) {{\n  return deref(value);\n}}\n\n{PLAIN_ENTRY}"
+        "fn owned(value: u64) -> result: u64 pure {{\n  return value;\n}}\n\nfn read(value: &u64) -> result: u64 reads(value) {{\n  return deref(value);\n}}\n\n{PLAIN_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
         for (name, mode) in [
@@ -829,7 +829,7 @@ fn source_signature_results_are_owned_because_no_reference_escapes() {
 #[test]
 fn source_signature_modes_are_not_invented_for_synthesized_functions() {
     let source = format!(
-        "fn folded(lo: own u64, hi: own u64) -> result: own u64 pure {{\n  let total = 0_u64;\n  for @points (i in lo..hi) {{\n    set total = total +wrap i;\n  }}\n  return total;\n}}\n\n{PLAIN_ENTRY}"
+        "fn folded(lo: u64, hi: u64) -> result: u64 pure {{\n  let total = 0_u64;\n  for @points (i in lo..hi) {{\n    set total = total +wrap i;\n  }}\n  return total;\n}}\n\n{PLAIN_ENTRY}"
     );
     with_ir_mode(source.as_bytes(), OverlapLowering::On, |program| {
         let generated = program
@@ -867,7 +867,7 @@ fn source_signature_modes_are_not_invented_for_synthesized_functions() {
 #[test]
 fn source_call_uses_distinguish_borrow_and_consume_of_one_binding() {
     let source = format!(
-        "fn inspect(value: &Box<Array<u8>>) -> result: own u64 reads(value) {{\n  return deref(value).inner.len;\n}}\n\nfn consume(value: own Box<Array<u8>>) -> result: own u64 pure {{\n  return value.inner.len;\n}}\n\nfn run() -> result: own u64 pure {{\n  let data = box_array_filled::<u8>(count: 2_u64, value: 7_u8);\n  let before = inspect(value: &data);\n  let after = consume(value: move data);\n  return after;\n}}\n\n{PLAIN_ENTRY}"
+        "fn inspect(value: &Box<Array<u8>>) -> result: u64 reads(value) {{\n  return deref(value).inner.len;\n}}\n\nfn consume(value: Box<Array<u8>>) -> result: u64 pure {{\n  return value.inner.len;\n}}\n\nfn run() -> result: u64 pure {{\n  let data = box_array_filled::<u8>(count: 2_u64, value: 7_u8);\n  let before = inspect(value: &data);\n  let after = consume(value: move data);\n  return after;\n}}\n\n{PLAIN_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
         let (borrow, _borrowed_values) = source_call(program, "run", "inspect");
@@ -889,7 +889,7 @@ fn source_call_uses_distinguish_borrow_and_consume_of_one_binding() {
 #[test]
 fn source_call_uses_retain_projected_root_consumption() {
     let source = format!(
-        "struct Packet {{\n  first: Box<u64>;\n  second: Box<u64>;\n}}\n\nfn consume(value: own Box<u64>) -> result: own unit pure {{\n  return unit;\n}}\n\nfn run() -> result: own unit pure {{\n  let first = box_new::<u64>(value: 3_u64);\n  let second = box_new::<u64>(value: 5_u64);\n  let packet = Packet(first: move first, second: move second);\n  return consume(value: move packet.first);\n}}\n\n{PLAIN_ENTRY}"
+        "struct Packet {{\n  first: Box<u64>;\n  second: Box<u64>;\n}}\n\nfn consume(value: Box<u64>) -> result: unit pure {{\n  return unit;\n}}\n\nfn run() -> result: unit pure {{\n  let first = box_new::<u64>(value: 3_u64);\n  let second = box_new::<u64>(value: 5_u64);\n  let packet = Packet(first: move first, second: move second);\n  return consume(value: move packet.first);\n}}\n\n{PLAIN_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
         let (call, _) = source_call(program, "run", "consume");
@@ -910,11 +910,11 @@ fn source_call_uses_retain_the_actual_indexed_borrow_candidate() {
   value: u64;
 }
 
-fn select(stamp: own u64, value: &Row) -> result: own u64 reads(value) {
+fn select(stamp: u64, value: &Row) -> result: u64 reads(value) {
   return deref(value).value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let rows = slots_new::<Row, 2>();
   let first = Row(value: 3_u64);
   place_back(window: &rows, value: first);
@@ -953,7 +953,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn counted_range_cfg_emits_with_distinct_header_update_and_exit_interfaces() {
-    let source = br#"fn count() -> result: own u64 pure {
+    let source = br#"fn count() -> result: u64 pure {
   let total = 0_u64;
   for @items (i in 18446744073709551614_u64..18446744073709551615_u64) {
     set total = i;
@@ -961,7 +961,7 @@ fn counted_range_cfg_emits_with_distinct_header_update_and_exit_interfaces() {
   return total;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1010,7 +1010,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn counted_break_and_return_edges_do_not_enter_the_hidden_update() {
-    let source = br#"fn leave_by_break(stop: own Bool) -> result: own u64 pure {
+    let source = br#"fn leave_by_break(stop: Bool) -> result: u64 pure {
   for @scan (i in 0_u64..2_u64) {
     if stop {
       break @scan;
@@ -1019,7 +1019,7 @@ fn counted_break_and_return_edges_do_not_enter_the_hidden_update() {
   return 7_u64;
 }
 
-fn leave_by_return(stop: own Bool) -> result: own u64 pure {
+fn leave_by_return(stop: Bool) -> result: u64 pure {
   for @scan (i in 0_u64..2_u64) {
     if stop {
       return 9_u64;
@@ -1028,7 +1028,7 @@ fn leave_by_return(stop: own Bool) -> result: own u64 pure {
   return 7_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1112,7 +1112,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn counted_range_carries_one_stable_binder_address_for_body_local_shared_borrows() {
-    let source = br#"fn count() -> result: own u64 pure {
+    let source = br#"fn count() -> result: u64 pure {
   let total = 0_u64;
   let upper = 2_u64;
   for @items (i in 0_u64..upper) {
@@ -1124,7 +1124,7 @@ fn counted_range_carries_one_stable_binder_address_for_body_local_shared_borrows
   return total;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1153,7 +1153,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn nested_counted_breaks_keep_each_exit_interface_local_to_its_range() {
-    let source = br#"fn count() -> result: own u64 pure {
+    let source = br#"fn count() -> result: u64 pure {
   let total = 0_u64;
   for @outer (i in 0_u64..4_u64) {
     for @inner (j in 0_u64..4_u64) {
@@ -1167,7 +1167,7 @@ fn nested_counted_breaks_keep_each_exit_interface_local_to_its_range() {
   return total;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1192,12 +1192,12 @@ fn addressed_cleanup_keeps_places_instead_of_whole_owner_snapshots() {
   stamp: u64;
 }}
 
-fn touch(value: &Holder) -> result: own unit writes(value.stamp) {{
+fn touch(value: &Holder) -> result: unit writes(value.stamp) {{
   set deref(value).stamp = 41_u64;
   return unit;
 }}
 
-fn release_holder(value: own Holder) -> result: own unit pure {{
+fn release_holder(value: Holder) -> result: unit pure {{
   touch(value: &value);
   return unit;
 }}
@@ -1259,9 +1259,9 @@ fn release_holder(value: own Holder) -> result: own unit pure {{
 fn an_unused_state_writing_call_reaches_ir() {
     let source = format!(
         "struct Pair {{\n  left: u64;\n}}\n\n\
-         fn mutate(pair: &Pair) -> result: own unit writes(pair.left) {{\n  \
+         fn mutate(pair: &Pair) -> result: unit writes(pair.left) {{\n  \
          set deref(pair).left = 1_u64;\n  return unit;\n}}\n\n\
-         fn wrapper(pair: &Pair) -> result: own unit writes(pair.left) {{\n  \
+         fn wrapper(pair: &Pair) -> result: unit writes(pair.left) {{\n  \
          mutate(pair: pair);\n  return unit;\n}}\n\n\
          {PLAIN_ENTRY}"
     );
@@ -1283,13 +1283,13 @@ fn an_unused_state_writing_call_reaches_ir() {
 
 #[test]
 fn ordinary_requires_is_not_lowered_as_a_callee_prologue() {
-    let source = br#"fn bounded(value: own u64) -> result: own u64 pure contract {
+    let source = br#"fn bounded(value: u64) -> result: u64 pure contract {
   requires value < 8_u64;
 } {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let value = 4_u64;
   let result = bounded(value: value);
   return exit_status(code: 0_u8);
@@ -1311,7 +1311,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn source_proof_is_erased_before_typed_ir() {
-    let source = br#"fn plain(left: own u64, left_limit: own u64, middle: own u64, middle_limit: own u64, right: own u64, right_limit: own u64) -> result: own unit pure contract {
+    let source = br#"fn plain(left: u64, left_limit: u64, middle: u64, middle_limit: u64, right: u64, right_limit: u64) -> result: unit pure contract {
   requires left <= left_limit;
   requires middle <= middle_limit;
   requires right <= right_limit;
@@ -1319,7 +1319,7 @@ fn source_proof_is_erased_before_typed_ir() {
   return unit;
 }
 
-fn prove_only(left: own u64, left_limit: own u64, middle: own u64, middle_limit: own u64, right: own u64, right_limit: own u64) -> result: own unit pure contract {
+fn prove_only(left: u64, left_limit: u64, middle: u64, middle_limit: u64, right: u64, right_limit: u64) -> result: unit pure contract {
   requires left <= left_limit;
   requires middle <= middle_limit;
   requires right <= right_limit;
@@ -1332,7 +1332,7 @@ fn prove_only(left: own u64, left_limit: own u64, middle: own u64, middle_limit:
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1379,7 +1379,7 @@ fn stored_layout_ceilings_agree_across_lowering() {
         ("Layer66", 8, 8),
     ] {
         let source = format!(
-            "{declarations}fn main() -> status: own ExitStatus pure {{\n  let cells = box_slots_new::<{stored}>(capacity: 0_u64);\n  free_empty(window: move cells);\n  return exit_status(code: 0_u8);\n}}\n"
+            "{declarations}fn main() -> status: ExitStatus pure {{\n  let cells = box_slots_new::<{stored}>(capacity: 0_u64);\n  free_empty(window: move cells);\n  return exit_status(code: 0_u8);\n}}\n"
         );
         with_ir(source.as_bytes(), |program| {
             let expected = super::IrLayoutCeiling {
@@ -1431,7 +1431,7 @@ fn stored_layout_ceilings_agree_across_lowering() {
 /// in, so the failure says where the bound actually landed.
 #[test]
 fn buffer_allocations_lower_the_source_proved_length_ceiling_into_target_obligations() {
-    let source = br#"fn allocate(n: own u64) -> result: own unit pure contract {
+    let source = br#"fn allocate(n: u64) -> result: unit pure contract {
   requires n <= 1000_u64;
 } {
   let packed = box_array_filled::<u16>(count: n, value: 7_u16);
@@ -1439,7 +1439,7 @@ fn buffer_allocations_lower_the_source_proved_length_ceiling_into_target_obligat
   return unit;
 }
 
-fn small(n: own u64) -> result: own unit pure contract {
+fn small(n: u64) -> result: unit pure contract {
   requires n <= 7_u64;
 } {
   let packed = box_array_filled::<u16>(count: n, value: 7_u16);
@@ -1447,7 +1447,7 @@ fn small(n: own u64) -> result: own unit pure contract {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   allocate(n: 4_u64);
   small(n: 3_u64);
   return exit_status(code: 0_u8);
@@ -1545,14 +1545,14 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_uninhabited_function_keeps_its_abi_and_lowers_to_one_unreachable_block() {
-    let source = br#"fn impossible(value: own i32) -> out: own i32 pure contract {
+    let source = br#"fn impossible(value: i32) -> out: i32 pure contract {
   requires value == 0_i32;
   requires value != 0_i32;
 } {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1576,11 +1576,11 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn physical_call_inventory_omits_proof_closed_body_edges() {
-    let source = br#"fn child() -> result: own unit pure {
+    let source = br#"fn child() -> result: unit pure {
   return unit;
 }
 
-fn impossible(value: own i32) -> result: own unit pure contract {
+fn impossible(value: i32) -> result: unit pure contract {
   requires value == 0_i32;
   requires value != 0_i32;
 } {
@@ -1588,7 +1588,7 @@ fn impossible(value: own i32) -> result: own unit pure contract {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1630,7 +1630,7 @@ fn a_buffer_release_retains_its_owned_storage_type() {
     // A runtime-capacity `Array<u8>` exists only as `Box` content [TYPE-9],
     // so the owner released here is the cell.
     with_ir(
-        b"fn drop_buffer(values: own Box<Array<u8>>) -> result: own unit pure {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn drop_buffer(values: Box<Array<u8>>) -> result: unit pure {\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         |program| {
             let [drop] = return_drops(function(program, "drop_buffer")) else {
                 panic!("the buffer owner must be released once");
@@ -1652,7 +1652,7 @@ fn a_buffer_release_retains_its_owned_storage_type() {
 /// and `{STEP}` varied per case.
 fn byte_walk_source(middle: &str, step: &str) -> Vec<u8> {
     format!(
-        "fn main() -> status: own ExitStatus pure {{\n  let data = box_array_filled::<u8>(count: 64_u64, value: 97_u8);\n  let mark = 88_u8;\n  let seen = 0_u64;\n  let stop = data.inner.len;\n  let cursor = 0_u64;\n  loop @walk {{\n    let done = cursor >= stop;\n    if done {{\n      break @walk;\n    }}\n    let byte = data.inner[cursor];\n{middle}    set cursor = cursor +wrap {step};\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+        "fn main() -> status: ExitStatus pure {{\n  let data = box_array_filled::<u8>(count: 64_u64, value: 97_u8);\n  let mark = 88_u8;\n  let seen = 0_u64;\n  let stop = data.inner.len;\n  let cursor = 0_u64;\n  loop @walk {{\n    let done = cursor >= stop;\n    if done {{\n      break @walk;\n    }}\n    let byte = data.inner[cursor];\n{middle}    set cursor = cursor +wrap {step};\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
     )
     .into_bytes()
 }

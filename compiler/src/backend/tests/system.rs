@@ -86,7 +86,7 @@ pub(super) fn corpus_source(name: &str) -> Vec<u8> {
 #[test]
 fn ordinary_declarations_have_no_frame_and_share_the_call_abi() {
     with_ir(
-        br#"fn relay(code: own u8) -> result: own ExitStatus pure {
+        br#"fn relay(code: u8) -> result: ExitStatus pure {
   return exit_status(code: code);
 }
 "#,
@@ -119,7 +119,7 @@ fn ordinary_declarations_have_no_frame_and_share_the_call_abi() {
 /// The writer-side clauses use the local binder `copied` where the prelude
 /// record uses `next`. Both spellings are ordinary identifiers; renaming the
 /// binder changes neither the declared relation nor the ABI being compared.
-const COPY_BYTES_WRAPPER: &str = r#"fn copy_bytes(value: &HostString, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value), writes(destination) contract {
+const COPY_BYTES_WRAPPER: &str = r#"fn copy_bytes(value: &HostString, destination: &[u8], start: u64, end: u64) -> result: Result<u64, CopyError> reads(value), writes(destination) contract {
   requires start <= end;
   requires end <= deref(destination).len;
   ensures when Ok(value: copied): start <= copied;
@@ -183,7 +183,7 @@ fn behavior_actuals_preserve_ordinary_range_reference_calls_rows_and_contracts()
     // The interface uses the same locally renamed clause binder as the
     // ordinary wrapper; the relation and callable boundary stay identical.
     let formal = r#"interface Copier {
-  fn transfer(value: &HostString, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value), writes(destination) contract {
+  fn transfer(value: &HostString, destination: &[u8], start: u64, end: u64) -> result: Result<u64, CopyError> reads(value), writes(destination) contract {
     requires start <= end;
     requires end <= deref(destination).len;
     ensures when Ok(value: copied): start <= copied;
@@ -260,7 +260,7 @@ fn behavior_actuals_preserve_ordinary_range_reference_calls_rows_and_contracts()
 #[test]
 fn an_entry_selecting_no_input_starts_and_returns_its_status() {
     let llvm = compile(
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   return exit_status(code: 37_u8);
 }
 "#,
@@ -274,7 +274,7 @@ fn an_entry_selecting_no_input_starts_and_returns_its_status() {
 #[test]
 fn opaque_drop_has_no_implicit_native_close() {
     let llvm = compile(
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   let unused = exit_status(code: 9_u8);
   return exit_status(code: 0_u8);
 }

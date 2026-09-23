@@ -1,10 +1,10 @@
 interface SourceBound {
 }
 
-fn identity<T: SourceBound>(value: own T) -> result: own T pure {
+fn identity<T: SourceBound>(value: T) -> result: T pure {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

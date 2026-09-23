@@ -1,4 +1,4 @@
-fn probe(taken: own Slots<u8, 8>) -> (outcome: own Result<u64, Overflow>, other: own Result<u64, Overflow>) pure contract {
+fn probe(taken: Slots<u8, 8>) -> (outcome: Result<u64, Overflow>, other: Result<u64, Overflow>) pure contract {
   ensures when Ok(value: reported): reported == taken.len;
 } {
   doc "Two ordinals have the route's enum type, so an omitted ordinal binder leaves the route ambiguous.";
@@ -6,7 +6,7 @@ fn probe(taken: own Slots<u8, 8>) -> (outcome: own Result<u64, Overflow>, other:
   return Ok<u64, Overflow>(value: measured), Ok<u64, Overflow>(value: measured);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Two declared result ordinals have the route's enum type and the route omits its ordinal binder. The route is one no reader can attribute to one ordinal, and the ordinal set is fixed at the declaration, so the declaration is refused there rather than at a caller.";
   return exit_status(code: 0_u8);
 }

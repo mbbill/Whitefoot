@@ -12,7 +12,7 @@ nodrop struct DequeTicket {
   payload: Box<DequeItem>;
 }
 
-fn deque_observe(env: &DequeObservation, value: own u64) -> result: own unit writes(env) {
+fn deque_observe(env: &DequeObservation, value: u64) -> result: unit writes(env) {
   set deref(env).total = deref(env).total +wrap value;
   let prefix = deref(env).sequence *wrap 257_u64;
   set deref(env).sequence = prefix +wrap value;
@@ -20,7 +20,7 @@ fn deque_observe(env: &DequeObservation, value: own u64) -> result: own unit wri
   return unit;
 }
 
-fn deque_scalar_visit(env: &DequeObservation, value: &u64) -> result: own unit reads(value), writes(env) {
+fn deque_scalar_visit(env: &DequeObservation, value: &u64) -> result: unit reads(value), writes(env) {
   deque_observe(env: env, value: deref(value));
   return unit;
 }
@@ -33,12 +33,12 @@ binding DequeScalarDrain : DequeDrain<u64, DequeObservation> {
   accept = deque_observe;
 }
 
-fn deque_owned_visit(env: &DequeObservation, value: &Box<DequeItem>) -> result: own unit reads(value), writes(env) {
+fn deque_owned_visit(env: &DequeObservation, value: &Box<DequeItem>) -> result: unit reads(value), writes(env) {
   deque_observe(env: env, value: deref(value).inner.id);
   return unit;
 }
 
-fn deque_owned_consume(env: &DequeObservation, value: own Box<DequeItem>) -> result: own unit writes(env) {
+fn deque_owned_consume(env: &DequeObservation, value: Box<DequeItem>) -> result: unit writes(env) {
   deque_observe(env: env, value: value.inner.id);
   return unit;
 }
@@ -51,18 +51,18 @@ binding DequeOwnedDrain : DequeDrain<Box<DequeItem>, DequeObservation> {
   accept = deque_owned_consume;
 }
 
-fn deque_ticket_new(id: own u64) -> result: own DequeTicket pure {
+fn deque_ticket_new(id: u64) -> result: DequeTicket pure {
   let value = DequeItem(id: id);
   let payload = box_new::<DequeItem>(value: value);
   return DequeTicket(payload: move payload);
 }
 
-fn deque_ticket_visit(env: &DequeObservation, value: &DequeTicket) -> result: own unit reads(value), writes(env) {
+fn deque_ticket_visit(env: &DequeObservation, value: &DequeTicket) -> result: unit reads(value), writes(env) {
   deque_observe(env: env, value: deref(value).payload.inner.id);
   return unit;
 }
 
-fn deque_ticket_consume(env: &DequeObservation, value: own DequeTicket) -> result: own unit writes(env) {
+fn deque_ticket_consume(env: &DequeObservation, value: DequeTicket) -> result: unit writes(env) {
   let DequeTicket(payload: payload) = move value;
   deque_owned_consume(env: env, value: move payload);
   return unit;
@@ -76,7 +76,7 @@ binding DequeTicketDrain : DequeDrain<DequeTicket, DequeObservation> {
   accept = deque_ticket_consume;
 }
 
-fn deque_unit_consume(env: &DequeObservation, value: own unit) -> result: own unit writes(env) {
+fn deque_unit_consume(env: &DequeObservation, value: unit) -> result: unit writes(env) {
   deque_observe(env: env, value: 1_u64);
   return unit;
 }
@@ -85,7 +85,7 @@ binding DequeUnitDrain : DequeDrain<unit, DequeObservation> {
   accept = deque_unit_consume;
 }
 
-fn deque_scalar_chain() -> code: own u64 pure {
+fn deque_scalar_chain() -> code: u64 pure {
   let seen = DequeObservation(total: 0_u64, sequence: 0_u64, count: 0_u64);
   let zero = deque_new::<u64, 0>(capacity: 0_u64);
   deque_visit::<DequeScalarVisit>(values: &zero, env: &seen);
@@ -196,7 +196,7 @@ fn deque_scalar_chain() -> code: own u64 pure {
   return 0_u64;
 }
 
-fn deque_owned_chain() -> code: own u64 pure {
+fn deque_owned_chain() -> code: u64 pure {
   let seen = DequeObservation(total: 0_u64, sequence: 0_u64, count: 0_u64);
   let values = deque_new::<Box<DequeItem>, 5>(capacity: 2_u64);
   let first_item = DequeItem(id: 11_u64);
@@ -230,7 +230,7 @@ fn deque_owned_chain() -> code: own u64 pure {
   return 0_u64;
 }
 
-fn deque_ticket_chain() -> code: own u64 pure {
+fn deque_ticket_chain() -> code: u64 pure {
   let failures = 0_u64;
   let seen = DequeObservation(total: 0_u64, sequence: 0_u64, count: 0_u64);
   let values = deque_new::<DequeTicket, 5>(capacity: 3_u64);
@@ -276,7 +276,7 @@ fn deque_ticket_chain() -> code: own u64 pure {
   return failures;
 }
 
-fn deque_zero_size_chain() -> code: own u64 pure {
+fn deque_zero_size_chain() -> code: u64 pure {
   let values = deque_new::<unit, 3>(capacity: 2_u64);
   let one = deque_push_back::<unit>(values: &values, value: unit);
   let two = deque_push_front::<unit>(values: &values, value: unit);
@@ -292,7 +292,7 @@ fn deque_zero_size_chain() -> code: own u64 pure {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Complete direct-Box deque chains cover zero and full capacity, singleton endpoints, wrap in both directions, a filled-slot reference surviving push_back, logical index visitation, borrowed whole-window visitation, wrapped consuming growth and shrink, original-order drain, reuse and explicit empty release. Scalar, droppable owning, must-consume owning and zero-sized elements share the generic implementation. Rebase immediately drains a freshly published backing while its old source had a nonzero wrapped head. The native observer checks every backing and payload allocation identity; allocation is total under STOR-8, so there is no allocation-refusal arm.";
   let scalar = deque_scalar_chain();
   if scalar != 0_u64 {

@@ -3,7 +3,7 @@ struct Holder {
   count: u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "An established member length qualifies the indexed write while no commit has killed that fact.";
   let first = slots_new::<u8, 4>();
   for @fill_first (

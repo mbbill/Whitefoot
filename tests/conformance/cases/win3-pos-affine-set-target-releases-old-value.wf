@@ -2,7 +2,7 @@ nocopy struct Cell {
   value: i32;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let left = Cell(value: 1_i32);
   let right = Cell(value: 2_i32);
   set left = move right;

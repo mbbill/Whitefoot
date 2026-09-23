@@ -1,4 +1,4 @@
-fn bounded(x: own i32) -> result: own i32 pure contract {
+fn bounded(x: i32) -> result: i32 pure contract {
   define permitted = x >= 0_i32;
   requires permitted;
 } {
@@ -6,7 +6,7 @@ fn bounded(x: own i32) -> result: own i32 pure contract {
   return x;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let value = bounded(x: 7_i32);
   if value == 7_i32 {
   } else {

@@ -2,7 +2,7 @@ struct Ticket<T> {
   count: u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "FN-2: the other half. No field of `Ticket` mentions its type parameter, so nothing about the operands could have supplied it, and the construct writes it in its own type-argument list exactly as every other instantiation argument is written.";
   let one = Ticket<Slots<u8, 4>>(count: 7_u64);
   if one.count == 7_u64 {

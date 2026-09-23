@@ -1,8 +1,8 @@
-fn consume(buf: own Slots<u8, 1>) -> return_value: own unit pure {
+fn consume(buf: Slots<u8, 1>) -> return_value: unit pure {
   return unit;
 }
 
-fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: ExitStatus pure {
   let b = slots_new::<u8, 1>();
   place_back(window: &b, value: 0_u8);
   consume(buf: b);

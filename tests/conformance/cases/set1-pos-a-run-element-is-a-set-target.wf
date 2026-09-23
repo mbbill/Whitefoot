@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A subscript of a run is an ordinary set target, and the slot it commits to is the window's and not the array's.";
   let run = ring_new::<u8, 4>();
   place_back(window: &run, value: 1_u8);

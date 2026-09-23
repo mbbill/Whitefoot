@@ -1,4 +1,4 @@
-fn room(values: own Slots<u64, 16>, extra: own u64, limit: own u64) -> result: own u64 pure contract {
+fn room(values: Slots<u64, 16>, extra: u64, limit: u64) -> result: u64 pure contract {
   requires values.len <= 16_u64;
   requires extra <= 16_u64;
   requires values.len + extra <= limit;
@@ -13,7 +13,7 @@ fn room(values: own Slots<u64, 16>, extra: own u64, limit: own u64) -> result: o
   return remaining;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The function body itself contains the satisfiable counterexample: empty input, zero extra and zero limit, followed by the one-element replacement.";
   return exit_status(code: 0_u8);
 }

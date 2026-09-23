@@ -8,7 +8,7 @@ enum Packet {
   Empty();
 }
 
-fn inspect(packet: &Packet) -> result: own i32 reads(packet) {
+fn inspect(packet: &Packet) -> result: i32 reads(packet) {
   doc "Matching through a reference binds the affine struct payload as a reference naming the scrutinee path extended by its payload step, so a field of it is read without consuming the enum.";
   match deref(packet) {
     Data(item: payload) => {
@@ -20,7 +20,7 @@ fn inspect(packet: &Packet) -> result: own i32 reads(packet) {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let pair = Pair(left: 41_i32, right: 1_i32);
   let packet = Data(item: move pair);
   let fallback = Empty();

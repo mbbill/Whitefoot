@@ -6,7 +6,7 @@ struct Slot {
   stored_entry: Option<Entry>;
 }
 
-fn view(stored_entry: &Option<Entry>) -> result: own u64 reads(stored_entry) {
+fn view(stored_entry: &Option<Entry>) -> result: u64 reads(stored_entry) {
   match deref(stored_entry) {
     Some(value: present) => {
       return deref(present).value;
@@ -17,14 +17,14 @@ fn view(stored_entry: &Option<Entry>) -> result: own u64 reads(stored_entry) {
   }
 }
 
-fn lookup(slots: &Slots<Slot, 1>) -> result: own u64 reads(slots) contract {
+fn lookup(slots: &Slots<Slot, 1>) -> result: u64 reads(slots) contract {
   requires 1_u64 <= deref(slots).len;
 } {
   let found = view(stored_entry: &deref(slots)[0_u64].stored_entry);
   return found;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Exercise a shared enum view without copying its payload. Entry is explicitly affine under OWN-1; a scalar-only struct would otherwise be copy in this version.";
   let present = Entry(value: 37_u64);
   let some = Some<Entry>(value: move present);

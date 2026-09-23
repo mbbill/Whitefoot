@@ -1,4 +1,4 @@
-fn filled<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
+fn filled<T: copy, const n: u64>(value: T) -> result: Slots<T, n> pure contract {
   ensures result.len == n;
 } {
   doc "Builds a run of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
@@ -7,13 +7,13 @@ fn filled<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure c
   return move built;
 }
 
-fn doubled<const n: u64>(value: own u64) -> result: own Slots<u64, n * 2> pure {
+fn doubled<const n: u64>(value: u64) -> result: Slots<u64, n * 2> pure {
   doc "One-operation const arithmetic: a const-expression is at most one operation over two terms, exactly the shape GRAM-6 fixes for expressions. n * 2 is usable as a Slots<T, n> capacity and forwardable as a const targ, and each concrete instantiation evaluates it to one u64 value at monomorphization.";
   let built = filled::<u64, n * 2>(value: value);
   return move built;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The forwarded const-expression reaches a concrete capacity of six, which the caller reads back and then subscripts against.";
   let cells = doubled::<3>(value: 7_u64);
   let count = cells.len;

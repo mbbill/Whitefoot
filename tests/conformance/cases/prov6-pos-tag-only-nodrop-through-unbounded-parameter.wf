@@ -3,11 +3,11 @@ nodrop enum Flag {
   Off();
 }
 
-fn pass<T>(value: own T) -> back: own T pure {
+fn pass<T>(value: T) -> back: T pure {
   return move value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A tag-only nodrop enum satisfies an unbounded parameter and remains linear after substitution. The generic body transfers it whole, and the caller consumes the returned value exactly once.";
   let flag = On();
   let returned = pass::<Flag>(value: move flag);

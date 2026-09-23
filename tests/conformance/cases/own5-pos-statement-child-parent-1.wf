@@ -7,13 +7,13 @@ struct Pair {
   right: Cell;
 }
 
-fn change(cell: &Cell) -> result: own u64 writes(cell.value) {
+fn change(cell: &Cell) -> result: u64 writes(cell.value) {
   doc "Writes the cell it was handed and returns an unrelated number.";
   set deref(cell).value = 9_u64;
   return 7_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Two calls reaching disjoint fields through one reference each write their own path, and the whole value is written again after both have ended.";
   let l = Cell(value: 3_u64);
   let r = Cell(value: 5_u64);

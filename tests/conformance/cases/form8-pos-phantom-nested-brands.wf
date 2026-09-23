@@ -6,12 +6,12 @@ struct Wrapped<A, B> {
   value: Phantom<A, B>;
 }
 
-fn read(value: &Wrapped<Slots<u8, 1>, Slots<u8, 2>>) -> result: own u64 reads(value.value.tag) {
+fn read(value: &Wrapped<Slots<u8, 1>, Slots<u8, 2>>) -> result: u64 reads(value.value.tag) {
   doc "Type parameters no field mentions still take part in the ordinary explicit substitution [FN-2].";
   return deref(value).value.tag;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let value = Phantom<Slots<u8, 1>, Slots<u8, 2>>(tag: 17_u64);
   let wrapped = Wrapped<Slots<u8, 1>, Slots<u8, 2>>(value: value);
   let observed = read(value: &wrapped);

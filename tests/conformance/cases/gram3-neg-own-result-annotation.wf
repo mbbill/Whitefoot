@@ -1,0 +1,3 @@
+fn identity(value: u64) -> result: own u64 pure {
+  return value;
+}

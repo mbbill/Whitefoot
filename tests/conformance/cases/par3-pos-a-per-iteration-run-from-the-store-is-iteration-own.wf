@@ -1,4 +1,4 @@
-fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+fn factory_refusal(error: &IoError) -> result: Bool reads(error) {
   doc "Matching through a reference leaves the scrutinee live and binds each payload as a reference naming the scrutinee path.";
   match deref(error) {
     NotFound(code: native_code, origin: native_origin) => {
@@ -88,7 +88,7 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
   }
 }
 
-fn component() -> made: own Slots<u8, 16> pure contract {
+fn component() -> made: Slots<u8, 16> pure contract {
   ensures made.len == 16_u64;
 } {
   doc "One fixed name the loop opens by, built once outside it.";
@@ -97,7 +97,7 @@ fn component() -> made: own Slots<u8, 16> pure contract {
   return move built;
 }
 
-fn exercise(cwd: &DirectoryRead, files: &HandleFactory) -> status: own ExitStatus reads(cwd), writes(files) {
+fn exercise(cwd: &DirectoryRead, files: &HandleFactory) -> status: ExitStatus reads(cwd), writes(files) {
   doc "The per-iteration cell is declared inside the counted body, so it is owned by its iteration and takes its compiler-derived release on that iteration's own leaving edge. The failed-open loop and the exit-zero observation remain an ordinary executable program.";
   let name = component();
   let total = 0_u64;
@@ -134,7 +134,7 @@ fn exercise(cwd: &DirectoryRead, files: &HandleFactory) -> status: own ExitStatu
   return exit_status(code: 0_u8);
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "PRE-1 ordinary Inputs are destructured once, the rest covered by the rest marker; the referenced operation chain returns before the initial directory is explicitly closed.";
   let Inputs(cwd: root, handles: files, ..) = move inputs;
   let outcome = exercise(cwd: &root, files: &files);

@@ -1,4 +1,4 @@
-fn window_sum<const n: u64>(buf: own Slots<u8, n>, offset: own u64, length: own u64) -> total: own u64 pure {
+fn window_sum<const n: u64>(buf: Slots<u8, n>, offset: u64, length: u64) -> total: u64 pure {
   let spare = buf.len;
   let end = offset +wrap length;
   let fits = end <= spare;
@@ -16,7 +16,7 @@ fn window_sum<const n: u64>(buf: own Slots<u8, n>, offset: own u64, length: own 
   return sum;
 }
 
-fn copy_window(src: &[u8], dst: &[u8], start: own u64, end: own u64) -> result: own unit reads(src), writes(dst) contract {
+fn copy_window(src: &[u8], dst: &[u8], start: u64, end: u64) -> result: unit reads(src), writes(dst) contract {
   define spare = deref(src).len;
   define out_room = deref(dst).len;
   requires start < end;
@@ -30,7 +30,7 @@ fn copy_window(src: &[u8], dst: &[u8], start: own u64, end: own u64) -> result: 
   return unit;
 }
 
-fn reverse_bytes<const n: u64>(buf: own Slots<u8, n>) -> out: own Slots<u8, n> pure {
+fn reverse_bytes<const n: u64>(buf: Slots<u8, n>) -> out: Slots<u8, n> pure {
   let work = move buf;
   let capacity = work.len;
   let lo = 0_u64;
@@ -55,7 +55,7 @@ fn reverse_bytes<const n: u64>(buf: own Slots<u8, n>) -> out: own Slots<u8, n> p
   return move work;
 }
 
-fn copy_checked_window(src: &[u8], start: own u64, width: own u64, dst: &[u8]) -> written: own u64 reads(src), writes(dst) {
+fn copy_checked_window(src: &[u8], start: u64, width: u64, dst: &[u8]) -> written: u64 reads(src), writes(dst) {
   let capacity = deref(src).len;
   let spare = deref(dst).len;
   let count = 0_u64;
@@ -91,6 +91,6 @@ fn copy_checked_window(src: &[u8], start: own u64, width: own u64, dst: &[u8]) -
   return count;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

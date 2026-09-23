@@ -1,18 +1,18 @@
-fn scale(x: own u8) -> result: own u8 pure contract {
+fn scale(x: u8) -> result: u8 pure contract {
   requires x <= 25_u8;
 } {
   let y = x * 10_u8;
   return y;
 }
 
-fn widen_add(a: own i8, b: own i8) -> result: own i32 pure {
+fn widen_add(a: i8, b: i8) -> result: i32 pure {
   let wa = cvt::<i8, i32>(a);
   let wb = cvt::<i8, i32>(b);
   let sum = wa + wb;
   return sum;
 }
 
-fn nonnegative_gap(x: own i32, y: own i32) -> result: own i32 pure contract {
+fn nonnegative_gap(x: i32, y: i32) -> result: i32 pure contract {
   requires x >= 0_i32;
   requires y >= 0_i32;
   requires x >= y;
@@ -21,7 +21,7 @@ fn nonnegative_gap(x: own i32, y: own i32) -> result: own i32 pure contract {
   return difference;
 }
 
-fn signed_gap(high: own i32, low: own i32) -> result: own i32 pure contract {
+fn signed_gap(high: i32, low: i32) -> result: i32 pure contract {
   requires high <= 1000_i32;
   requires low >= -1000_i32;
 } {
@@ -32,7 +32,7 @@ fn signed_gap(high: own i32, low: own i32) -> result: own i32 pure contract {
   return 0_i32;
 }
 
-fn offset_from_floor(value: own i32) -> result: own i32 pure contract {
+fn offset_from_floor(value: i32) -> result: i32 pure contract {
   requires value >= -1000_i32;
   requires value <= 1000_i32;
 } {
@@ -40,7 +40,7 @@ fn offset_from_floor(value: own i32) -> result: own i32 pure contract {
   return offset;
 }
 
-fn widen_and_scale(a: own i16, factor: own i32) -> result: own i32 pure contract {
+fn widen_and_scale(a: i16, factor: i32) -> result: i32 pure contract {
   requires factor <= 100_i32;
   requires factor >= 0_i32;
 } {
@@ -49,7 +49,7 @@ fn widen_and_scale(a: own i16, factor: own i32) -> result: own i32 pure contract
   return scaled;
 }
 
-fn magnitude(value: own i32) -> result: own i32 pure {
+fn magnitude(value: i32) -> result: i32 pure {
   if value > -2147483648_i32 {
     let m = iabs(value);
     return m;
@@ -57,7 +57,7 @@ fn magnitude(value: own i32) -> result: own i32 pure {
   return 2147483647_i32;
 }
 
-fn safe_remainder(value: own i32, divisor: own i32) -> result: own i32 pure {
+fn safe_remainder(value: i32, divisor: i32) -> result: i32 pure {
   let is_defined = value %defined divisor;
   if is_defined {
     let remainder = value % divisor;
@@ -67,7 +67,7 @@ fn safe_remainder(value: own i32, divisor: own i32) -> result: own i32 pure {
   }
 }
 
-fn offset_from_origin(step: own i32) -> result: own i32 pure contract {
+fn offset_from_origin(step: i32) -> result: i32 pure contract {
   requires step <= 1000_i32;
   requires step >= -1000_i32;
 } {
@@ -77,14 +77,14 @@ fn offset_from_origin(step: own i32) -> result: own i32 pure contract {
   return position;
 }
 
-fn average_step(total: own i32, steps: own i32) -> result: own i32 pure contract {
+fn average_step(total: i32, steps: i32) -> result: i32 pure contract {
   requires total /defined steps;
 } {
   let quotient = total / steps;
   return quotient;
 }
 
-fn distance_to_end(index: own u64, length: own u64) -> result: own u64 pure contract {
+fn distance_to_end(index: u64, length: u64) -> result: u64 pure contract {
   requires index <= length;
   ensures result <= length;
 } {
@@ -92,6 +92,6 @@ fn distance_to_end(index: own u64, length: own u64) -> result: own u64 pure cont
   return remaining;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

@@ -2,12 +2,12 @@ struct Wrapped<T> {
   value: T;
 }
 
-fn duplicate_wrapped<T: copy>(value: own Wrapped<T>) -> (first: own Wrapped<T>, second: own Wrapped<T>) pure {
+fn duplicate_wrapped<T: copy>(value: Wrapped<T>) -> (first: Wrapped<T>, second: Wrapped<T>) pure {
   doc "A copy bound supplies copy for the generic field, so the enclosing structural nominal is copy at the symbolic instance.";
   return value, value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Substituting a copy argument gives the generic struct both copy and drop, and the ordinary generic body may duplicate that instance.";
   let wrapped = Wrapped<u8>(value: 13_u8);
   let (first, second) = duplicate_wrapped::<u8>(value: wrapped);

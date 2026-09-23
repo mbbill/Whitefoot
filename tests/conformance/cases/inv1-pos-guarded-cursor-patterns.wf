@@ -1,4 +1,4 @@
-fn count_equal_prefix(left: &[u64], right: &[u64]) -> matched: own u64 reads(left), reads(right) {
+fn count_equal_prefix(left: &[u64], right: &[u64]) -> matched: u64 reads(left), reads(right) {
   doc "Paired cursors kept equal by two orderings, walked under a shared bound.";
   let left_len = deref(left).len;
   let right_len = deref(right).len;
@@ -35,7 +35,7 @@ fn count_equal_prefix(left: &[u64], right: &[u64]) -> matched: own u64 reads(lef
   return matched;
 }
 
-fn fill_ring(capacity: own u64, steps: own u64) -> last_cursor: own u64 pure {
+fn fill_ring(capacity: u64, steps: u64) -> last_cursor: u64 pure {
   doc "A cursor reset to zero on wrap, under its own bound.";
   let cursor = 0_u64;
   let taken = 0_u64;
@@ -61,7 +61,7 @@ fn fill_ring(capacity: own u64, steps: own u64) -> last_cursor: own u64 pure {
   return cursor;
 }
 
-fn text_length<const n: u64>(text: own Slots<u8, n>) -> length: own u64 pure {
+fn text_length<const n: u64>(text: Slots<u8, n>) -> length: u64 pure {
   doc "A scan until a sentinel byte, bounded by the window's own length.";
   let capacity = text.len;
   let cursor = 0_u64;
@@ -84,7 +84,7 @@ fn text_length<const n: u64>(text: own Slots<u8, n>) -> length: own u64 pure {
   return cursor;
 }
 
-fn merge_total<const left_cap: u64, const right_cap: u64>(left: own Slots<u64, left_cap>, right: own Slots<u64, right_cap>) -> total: own u64 pure {
+fn merge_total<const left_cap: u64, const right_cap: u64>(left: Slots<u64, left_cap>, right: Slots<u64, right_cap>) -> total: u64 pure {
   doc "Two independently bounded cursors merged, then each tail drained.";
   let left_len = left.len;
   let right_len = right.len;
@@ -139,7 +139,7 @@ fn merge_total<const left_cap: u64, const right_cap: u64>(left: own Slots<u64, l
   return total;
 }
 
-fn countdown_sum(start: own u64) -> total: own u64 pure {
+fn countdown_sum(start: u64) -> total: u64 pure {
   doc "A downward cursor bounded above by its starting value.";
   let cursor = start;
   let total = 0_u64;
@@ -157,6 +157,6 @@ fn countdown_sum(start: own u64) -> total: own u64 pure {
   return total;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

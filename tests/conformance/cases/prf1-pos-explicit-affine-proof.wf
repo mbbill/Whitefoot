@@ -1,4 +1,4 @@
-fn bounded_sum(first: own u8, first_limit: own u8, second: own u8, second_limit: own u8, third: own u8, third_limit: own u8, marker: own u8, replacement: own u8) -> result: own u8 pure contract {
+fn bounded_sum(first: u8, first_limit: u8, second: u8, second_limit: u8, third: u8, third_limit: u8, marker: u8, replacement: u8) -> result: u8 pure contract {
   requires first <= first_limit;
   requires second <= second_limit;
   requires third <= third_limit;
@@ -20,7 +20,7 @@ fn bounded_sum(first: own u8, first_limit: own u8, second: own u8, second_limit:
   return result;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let result = bounded_sum(first: 1_u8, first_limit: 8_u8, second: 2_u8, second_limit: 8_u8, third: 3_u8, third_limit: 8_u8, marker: 9_u8, replacement: 10_u8);
   let incremented = result + 1_u8;
   let code = incremented -wrap 7_u8;

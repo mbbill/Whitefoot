@@ -10,7 +10,7 @@ fn destructuring_a_boxed_window_preserves_its_empty_measure() {
   storage: Box<Slots<T>>;
 }
 
-fn release<T>(values: own GrowVector<T>) -> result: own unit pure contract {
+fn release<T>(values: GrowVector<T>) -> result: unit pure contract {
   requires values.storage.inner.len <= 0_u64;
 } {
   let GrowVector(storage: storage) = move values;
@@ -28,7 +28,7 @@ fn boxed_window_measures_cross_rebinding_construction_and_payload_selection() {
   stamp: u64;
 }
 
-fn carry(window: own Box<Ring<u8>>) -> result: own unit pure contract {
+fn carry(window: Box<Ring<u8>>) -> result: unit pure contract {
   requires window.inner.len == 0_u64;
   requires window.inner.cap == 4_u64;
   requires window.inner.head == 2_u64;
@@ -64,7 +64,7 @@ fn a_projected_box_move_preserves_the_selected_fields_measures() {
   storage: Box<Slots<u8>>;
 }
 
-fn carry(wrapper: own Wrapper) -> result: own unit pure contract {
+fn carry(wrapper: Wrapper) -> result: unit pure contract {
   requires wrapper.storage.inner.len <= 0_u64;
 } {
   let storage = move wrapper.storage;
@@ -72,7 +72,7 @@ fn carry(wrapper: own Wrapper) -> result: own unit pure contract {
   return unit;
 }
 
-fn replace(target: own Wrapper, source: own Wrapper) -> result: own unit pure contract {
+fn replace(target: Wrapper, source: Wrapper) -> result: unit pure contract {
   requires source.storage.inner.len <= 0_u64;
 } {
   set target.storage = move source.storage;
@@ -89,7 +89,7 @@ fn taking_nested_box_content_preserves_its_measures() {
   storage: Box<Slots<u8>>;
 }
 
-fn unbox(outer: own Box<Box<Slots<u8>>>) -> result: own unit pure contract {
+fn unbox(outer: Box<Box<Slots<u8>>>) -> result: unit pure contract {
   requires outer.inner.inner.len <= 0_u64;
 } {
   let storage = move outer.inner;
@@ -97,7 +97,7 @@ fn unbox(outer: own Box<Box<Slots<u8>>>) -> result: own unit pure contract {
   return unit;
 }
 
-fn destructure(outer: own Box<Wrapper>) -> result: own unit pure contract {
+fn destructure(outer: Box<Wrapper>) -> result: unit pure contract {
   requires outer.inner.storage.inner.len <= 0_u64;
 } {
   let Wrapper(storage: storage) = move outer.inner;
@@ -105,7 +105,7 @@ fn destructure(outer: own Box<Wrapper>) -> result: own unit pure contract {
   return unit;
 }
 
-fn take_inline(outer: own Box<Slots<u8, 4>>) -> result: own unit pure contract {
+fn take_inline(outer: Box<Slots<u8, 4>>) -> result: unit pure contract {
   requires outer.inner.len <= 0_u64;
 } {
   let storage = move outer.inner;
@@ -113,7 +113,7 @@ fn take_inline(outer: own Box<Slots<u8, 4>>) -> result: own unit pure contract {
   return unit;
 }
 
-fn construct_inside(outer: own Box<Wrapper>, empty: own Box<Slots<u8>>) -> result: own unit pure contract {
+fn construct_inside(outer: Box<Wrapper>, empty: Box<Slots<u8>>) -> result: unit pure contract {
   requires empty.inner.len <= 0_u64;
 } {
   set outer.inner = Wrapper(storage: move empty);
@@ -132,7 +132,7 @@ fn a_written_element_placement_preserves_box_content_measures() {
   storage: Box<Slots<u8>>;
 }
 
-fn carry() -> result: own unit pure {
+fn carry() -> result: unit pure {
   let initial = box_slots_new::<u8>(capacity: 1_u64);
   let table = slots_new::<Box<Slots<u8>>, 1>();
   place_back(window: &table, value: move initial);
@@ -143,7 +143,7 @@ fn carry() -> result: own unit pure {
   return unit;
 }
 
-fn construct_element() -> result: own unit pure {
+fn construct_element() -> result: unit pure {
   let initial = box_slots_new::<u8>(capacity: 1_u64);
   let wrapper = Wrapper(storage: move initial);
   let table = slots_new::<Wrapper, 1>();
@@ -165,7 +165,7 @@ fn an_overwrite_before_or_after_box_placement_kills_the_old_measure() {
         "let renamed = move original;\n  set renamed = move replacement;",
     ] {
         let source = format!(
-            r#"fn release(original: own Box<Slots<u8>>, replacement: own Box<Slots<u8>>) -> result: own unit pure contract {{
+            r#"fn release(original: Box<Slots<u8>>, replacement: Box<Slots<u8>>) -> result: unit pure contract {{
   requires original.inner.len <= 0_u64;
 }} {{
   {statements}
@@ -185,14 +185,14 @@ fn a_declared_write_before_or_after_box_placement_kills_the_old_measure() {
         "let renamed = move original;\n  fill(window: &renamed);",
     ] {
         let source = format!(
-            r#"fn fill(window: &Box<Slots<u8>>) -> result: own unit writes(window) {{
+            r#"fn fill(window: &Box<Slots<u8>>) -> result: unit writes(window) {{
   let filled = box_slots_new::<u8>(capacity: 1_u64);
   place_back(window: &filled.inner, value: 7_u8);
   set deref(window) = move filled;
   return unit;
 }}
 
-fn release(original: own Box<Slots<u8>>) -> result: own unit pure contract {{
+fn release(original: Box<Slots<u8>>) -> result: unit pure contract {{
   requires original.inner.len <= 0_u64;
 }} {{
   {statements}
@@ -214,7 +214,7 @@ const RECURSIVE_BOX_MEASURES: &str = r#"enum Chain {
   Next(window: Box<Ring<u8>>, tail: Box<Chain>);
 }
 
-fn carry(third_window: own Box<Ring<u8>>) -> result: own unit pure contract {
+fn carry(third_window: Box<Ring<u8>>) -> result: unit pure contract {
   requires third_window.inner.len == 2_u64;
   requires third_window.inner.cap == 8_u64;
   requires third_window.inner.head == 3_u64;
@@ -298,7 +298,7 @@ fn a_recursive_descendant_cursors_fact_is_not_the_owners_fact() {
   next: Option<Box<Node>>;
 }
 
-fn examine(root: own Node) -> result: own unit pure {
+fn examine(root: Node) -> result: unit pure {
   let cursor = &root;
   for (i in 0_u64..2_u64) {
     match deref(cursor).next {
@@ -323,12 +323,12 @@ fn examine(root: own Node) -> result: own unit pure {
 
 #[test]
 fn a_call_through_a_joined_reference_kills_every_possible_targets_fact() {
-    let source = br#"fn write(target: &u64) -> result: own unit writes(target) {
+    let source = br#"fn write(target: &u64) -> result: unit writes(target) {
   set deref(target) = 1_u64;
   return unit;
 }
 
-fn examine(flag: own u64) -> result: own unit pure {
+fn examine(flag: u64) -> result: unit pure {
   let a = 0_u64;
   let b = 0_u64;
   let p = if flag == 1_u64 {
@@ -343,7 +343,7 @@ fn examine(flag: own u64) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   examine(flag: 0_u64);
   return exit_status(code: 0_u8);
 }
@@ -353,12 +353,12 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_joined_reference_write_cannot_preserve_a_nonzero_divisor_proof() {
-    let source = br#"fn zero(target: &u64) -> result: own unit writes(target) {
+    let source = br#"fn zero(target: &u64) -> result: unit writes(target) {
   set deref(target) = 0_u64;
   return unit;
 }
 
-fn examine(flag: own u64) -> result: own u64 pure {
+fn examine(flag: u64) -> result: u64 pure {
   let a = 1_u64;
   let b = 1_u64;
   let p = if flag == 1_u64 {
@@ -373,7 +373,7 @@ fn examine(flag: own u64) -> result: own u64 pure {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let quotient = examine(flag: 0_u64);
   return exit_status(code: 0_u8);
 }
@@ -383,7 +383,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn replacing_an_indexed_window_kills_its_old_length() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let row = slots_new::<u8, 4>();
   place_back(window: &row, value: 7_u8);
   let table = slots_new::<Slots<u8, 4>, 2>();
@@ -403,7 +403,7 @@ fn replacing_an_indexed_window_kills_its_old_length() {
 
 #[test]
 fn a_written_proof_cannot_reuse_a_replaced_elements_length() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let row = slots_new::<u8, 4>();
   place_back(window: &row, value: 7_u8);
   let table = slots_new::<Slots<u8, 4>, 2>();
@@ -422,7 +422,7 @@ fn a_written_proof_cannot_reuse_a_replaced_elements_length() {
 
 #[test]
 fn replacing_a_distinct_element_preserves_the_measured_element() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let row = slots_new::<u8, 4>();
   place_back(window: &row, value: 7_u8);
   let other = slots_new::<u8, 4>();
@@ -444,13 +444,13 @@ fn replacing_a_distinct_element_preserves_the_measured_element() {
 
 #[test]
 fn changing_length_preserves_a_runtime_capacity_fact() {
-    let source = br#"fn check_capacity(value: own u64) -> result: own unit pure contract {
+    let source = br#"fn check_capacity(value: u64) -> result: unit pure contract {
   requires value == 4_u64;
 } {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let window = box_slots_new::<u8>(capacity: 4_u64);
   place_back(window: &window.inner, value: 7_u8);
   check_capacity(value: window.inner.cap);

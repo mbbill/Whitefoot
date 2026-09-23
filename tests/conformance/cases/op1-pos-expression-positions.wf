@@ -1,37 +1,37 @@
-fn expression_position_0() -> status: own ExitStatus pure {
+fn expression_position_0() -> status: ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   let c = a +wrap b;
   return exit_status(code: 0_u8);
 }
 
-fn step(a: own u64) -> result: own Result<u64, Overflow> pure {
+fn step(a: u64) -> result: Result<u64, Overflow> pure {
   let b = 7_u64;
   let c = propagate a +checked b;
   return Ok<u64, Overflow>(value: c);
 }
 
-fn expression_position_1() -> status: own ExitStatus pure {
+fn expression_position_1() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 
-fn expression_position_2() -> status: own ExitStatus pure {
+fn expression_position_2() -> status: ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   set a = a +wrap b;
   return exit_status(code: 0_u8);
 }
 
-fn add(a: own u64) -> result: own u64 pure {
+fn add(a: u64) -> result: u64 pure {
   let b = 7_u64;
   return a +wrap b;
 }
 
-fn expression_position_3() -> status: own ExitStatus pure {
+fn expression_position_3() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 
-fn expression_position_4() -> status: own ExitStatus pure {
+fn expression_position_4() -> status: ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   let f = True();
@@ -43,7 +43,7 @@ fn expression_position_4() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 
-fn expression_position_5() -> status: own ExitStatus pure {
+fn expression_position_5() -> status: ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   match a +checked b {
@@ -56,7 +56,7 @@ fn expression_position_5() -> status: own ExitStatus pure {
   }
 }
 
-fn expression_position_6() -> status: own ExitStatus pure {
+fn expression_position_6() -> status: ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   let c = match a +checked b {
@@ -70,7 +70,7 @@ fn expression_position_6() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 
-fn expression_position_7() -> status: own ExitStatus pure {
+fn expression_position_7() -> status: ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   if a +defined b {
@@ -79,7 +79,7 @@ fn expression_position_7() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 
-fn expression_position_8() -> status: own ExitStatus pure {
+fn expression_position_8() -> status: ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   let c = if a +defined b {

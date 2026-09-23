@@ -1,4 +1,4 @@
-fn stamp_head(run: &Box<Slots<u8>>) -> value: own u8 writes(run) contract {
+fn stamp_head(run: &Box<Slots<u8>>) -> value: u8 writes(run) contract {
   requires deref(run).inner.len > 0_u64;
 } {
   doc "A reference parameter reaching a heap-resident run. Whether the callee may write through it is stated by the row alone, there being no permission marker on the reference; the element write below is exactly that declared effect, reported at its nearest statically nameable enclosing path.";
@@ -6,7 +6,7 @@ fn stamp_head(run: &Box<Slots<u8>>) -> value: own u8 writes(run) contract {
   return 7_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Declares the writing helper above and returns.";
   return exit_status(code: 0_u8);
 }

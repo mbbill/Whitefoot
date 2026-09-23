@@ -5,6 +5,20 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-23 Remove written ownership qualifiers from callable signatures
+
+Nodes: language/surface-form
+
+Owner-approved: After reviewing PR #98 and the three proposed node replacements, the owner selected only the first proposal and instructed implementation: remove signature `own`, retaining result names and named operands.
+
+Summary: Apply the reviewed surface-form replacement unchanged. Value parameters write their type, reference parameters retain `&T` or `&[T]`, and result types remain explicitly owned without a written qualifier. Keep result names beside their types and keep ownership transfer, capabilities, effects and proofs unchanged. The [boundary study](../research/investigations/contract-surface/CALL-BOUNDARY.md) records the comparisons and the rejected result-alias alternative. This ruling does not authorize a merge.
+
+## 2026-09-23 Retain result names in signatures and leave operand rules unchanged
+
+Nodes: language/checks-and-proofs/requires-entry-contract, language/surface-form/construction-form
+
+Summary: Do not adopt the contract-local `results(...)` replacement: it separates result types and names into two ordered lists that must be maintained together, while the existing named result binding keeps name, type and ordinal in one declaration. The owner selected only removal of `own`; the separate construction-ground editorial replacement is outside that ruling and is not applied. Remove both unadopted amendments. The DCR formatting finding concerned only the discarded result-name declaration, so that new production and its proposed formatting are not introduced.
+
 ## 2026-09-23 Adopt the owning HashMap storage and result protocol
 
 Nodes: language/data-model/hash-map-storage

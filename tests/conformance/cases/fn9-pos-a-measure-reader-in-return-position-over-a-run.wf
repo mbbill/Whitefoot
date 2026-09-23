@@ -1,11 +1,11 @@
-fn size_of(taken: own Slots<u8, 8>) -> measured: own u64 pure contract {
+fn size_of(taken: Slots<u8, 8>) -> measured: u64 pure contract {
   ensures measured == taken.len;
 } {
   doc "A measure read in return position is a place form, not a call [OP-15]: the returned value is that measure of that place, so the declared relation is verified over it directly [FN-9, MSR-1]. A by-value parameter carries no effect entry, so the row is `pure` [EFF-1].";
   return taken.len;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let run = slots_new::<u8, 8>();
   place_back(window: &run, value: 3_u8);
   place_back(window: &run, value: 4_u8);

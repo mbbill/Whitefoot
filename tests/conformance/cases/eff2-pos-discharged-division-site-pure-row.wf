@@ -1,4 +1,4 @@
-fn divide(n: own u64, d: own u64) -> result: own u64 pure {
+fn divide(n: u64, d: u64) -> result: u64 pure {
   doc "The exact division domain is discharged statically [EFF-2, OP-2, ENT-6], so the operation has no runtime fallback and `pure` is the exact row.";
   if d > 0_u64 {
     let q = n / d;
@@ -7,7 +7,7 @@ fn divide(n: own u64, d: own u64) -> result: own u64 pure {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let v = divide(n: 84_u64, d: 2_u64);
   if v == 42_u64 {
   } else {

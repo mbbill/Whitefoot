@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A range reference must prove its end no greater than the source length [REF-4]; a written end past the array length is unproved and the formation is refused.";
   let values = array_filled::<u64, 4>(value: 0_u64);
   let view = &values[0_u64..5_u64];
