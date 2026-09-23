@@ -9,6 +9,9 @@
 //! exit edge. A selected bridge additionally offers that last member and
 //! retires only the calls required before the next source argument boundary;
 //! the target-fitted schedule below owns those publication and join events.
+//! At a selected chain root, every operand is prepared in source order before
+//! the tail is published first, leaving earlier results at the owner's newest
+//! end. Groups with incoming bridges retain their source publication points.
 //!
 //! By default both edges call the same monomorphized function on the same
 //! arguments. The opt-in sequential-refusal experiment instead calls its
@@ -76,6 +79,7 @@ use crate::{
 #[derive(Default)]
 pub(super) struct OverlapSchedule {
     pub(super) frames: HashMap<IrValueId, TargetAggregateLayout>,
+    pub(super) publications: HashMap<IrValueId, Vec<IrValueId>>,
     pub(super) before: HashMap<(IrBlockId, usize), Vec<IrValueId>>,
     pub(super) after: HashMap<IrValueId, Vec<IrValueId>>,
 }
@@ -104,8 +108,11 @@ impl OverlapSchedule {
                 if schedule.frames.insert(result, layout).is_some() {
                     return Err(BackendFailure::InvalidIr);
                 }
+                schedule.publications.insert(result, vec![result]);
             }
         }
+        let mut outgoing = HashSet::new();
+        let mut incoming = HashSet::new();
         for bridge in function.overlap_bridges() {
             // Both original groups must survive policy and complete target
             // fitting. Declining a bridge leaves their schedule untouched.
@@ -151,6 +158,32 @@ impl OverlapSchedule {
             if schedule.frames.insert(bridge.tail, layout).is_some() {
                 return Err(BackendFailure::InvalidIr);
             }
+            schedule.publications.insert(bridge.tail, vec![bridge.tail]);
+            outgoing.insert(bridge.tail);
+            incoming.insert(bridge.right_join);
+        }
+        for group in function.overlaps() {
+            let tail = group.join_site().ok_or(BackendFailure::InvalidIr)?;
+            if !outgoing.contains(&tail) || incoming.contains(&tail) {
+                continue;
+            }
+            // Only a selected chain root can prepare the complete group
+            // before publishing. An incoming retained call may supply later
+            // arguments, so incoming groups keep their source publication
+            // boundaries. Fitting above, not candidate metadata, selects roots.
+            let mut publications = Vec::with_capacity(group.handed_out().len() + 1);
+            publications.push(tail);
+            for result in group.handed_out() {
+                schedule
+                    .publications
+                    .remove(result)
+                    .ok_or(BackendFailure::InvalidIr)?;
+                publications.push(*result);
+            }
+            // The retained tail sits at the steal end, leaving earlier
+            // results at the owner's newest end. Their existing reverse
+            // retirement order remains the reverse of their publication.
+            schedule.publications.insert(tail, publications);
         }
         Ok(schedule)
     }
@@ -488,14 +521,29 @@ pub(crate) struct ComputeHandedOut {
 /// One ordinary call awaiting the overlap join.
 pub(crate) type HandedOut = ComputeHandedOut;
 
+/// Source-point operand snapshots awaiting the selected publication boundary.
+/// Aggregate refusal pointers retain independent immutable backing: parallel
+/// storage planning excludes overlap functions from slot and field reuse.
+pub(super) struct PreparedHandedOut {
+    result_abi: ResultAbi,
+    frame_type: String,
+    frame_layout: TargetAggregateLayout,
+    result_field: usize,
+    operands: Vec<String>,
+    budget: Option<String>,
+    budget_field: Option<usize>,
+    thunk: String,
+    callee: String,
+    arguments: String,
+}
+
 impl FunctionEmitter<'_, '_> {
-    /// Hands one member of an overlap group to a worker lane.
+    /// Captures one offered call's operands at its original source point.
     ///
-    /// Acquires a lane first and builds the frame only inside the granted edge,
-    /// so a refused hand-out leaves nothing behind but a null pointer. Defines
-    /// nothing: the call's value comes into existence at the join, which is
-    /// the only place it is known to have been computed.
-    pub(super) fn emit_handed_out_call(
+    /// Preparation neither acquires a lane nor defines the call's result.
+    /// Publication consumes these snapshots without rereading source places;
+    /// the value comes into existence only at the selected retirement boundary.
+    pub(super) fn prepare_handed_out_call(
         &mut self,
         result: IrValueId,
         ty: IrType,
@@ -566,6 +614,56 @@ impl FunctionEmitter<'_, '_> {
             )
         })?;
 
+        // The refused edge runs the same call on this thread. The opt-in
+        // refusal control may send it to the clone instead, which is the
+        // source ABI and carries no budget.
+        let refused_to_clone = self.refusal_clones.contains(&function);
+        if let (false, Some(budget)) = (refused_to_clone, budget.as_ref()) {
+            call_arguments.push(format!("i64 {budget}"));
+        }
+        let prepared = PreparedHandedOut {
+            result_abi: abi.result(),
+            frame_type,
+            frame_layout,
+            result_field,
+            operands,
+            budget,
+            budget_field,
+            thunk,
+            callee: if refused_to_clone {
+                sequential_clone_symbol(target.name())
+            } else {
+                callee
+            },
+            arguments: call_arguments.join(", "),
+        };
+        if self.prepared_hand_outs.insert(result, prepared).is_some() {
+            return Err(BackendFailure::InvalidIr);
+        }
+        Ok(())
+    }
+
+    /// Acquires and publishes a prepared call. Frame stores remain confined
+    /// to the granted edge; refusal keeps the same captured call until join.
+    pub(super) fn publish_handed_out_call(
+        &mut self,
+        result: IrValueId,
+    ) -> Result<(), BackendFailure> {
+        let PreparedHandedOut {
+            result_abi,
+            frame_type,
+            frame_layout,
+            result_field,
+            operands,
+            budget,
+            budget_field,
+            thunk,
+            callee,
+            arguments,
+        } = self
+            .prepared_hand_outs
+            .remove(&result)
+            .ok_or(BackendFailure::InvalidIr)?;
         // Target layout already computed the exact complete aggregate before
         // this function emitted any text. Passing that proved constant avoids
         // forming an address from `null` merely to ask LLVM for the same size.
@@ -600,25 +698,14 @@ impl FunctionEmitter<'_, '_> {
             "  call void @wf__par_publish(ptr {frame}, ptr {thunk})\n  br label %{offered}\n{offered}:"
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-        // The refused edge runs the same call on this thread. The opt-in
-        // refusal control may send it to the clone instead, which is the
-        // source ABI and carries no budget.
-        let refused_to_clone = self.refusal_clones.contains(&function);
-        if let (false, Some(budget)) = (refused_to_clone, budget.as_ref()) {
-            call_arguments.push(format!("i64 {budget}"));
-        }
         self.handed_out.push(ComputeHandedOut {
             result,
-            result_abi: abi.result(),
+            result_abi,
             frame_type,
             frame,
             result_field,
-            callee: if refused_to_clone {
-                sequential_clone_symbol(target.name())
-            } else {
-                callee
-            },
-            arguments: call_arguments.join(", "),
+            callee,
+            arguments,
         });
         Ok(())
     }

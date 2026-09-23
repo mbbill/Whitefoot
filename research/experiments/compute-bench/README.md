@@ -137,6 +137,46 @@ not passed to WF; `input` rows report these payloads separately. Use a separate
 work directory and run plain/traced W1/W4 once each. The task contract,
 spine-first phase order and observer are unchanged, with no grain hint.
 
+The [runtime-adjacency probe](../../investigations/compute-model/DESIGN.md#runtime-adjacency-all-predecessor-probe)
+uses `DAG_ENGINE=wf-runtime-loop`, `wf-runtime-tree` or `tbb-runtime` in a
+separate `DAG_VARIANT=runtime` work directory. Its source baseline uses the
+frozen main compiler and main C runtime, independently of the rolling-call
+compiler/runtime trials. Keep the runtime inputs frozen through `ROOT` when
+building from an isolated input tree; `DAG_SOURCE` and `WFC` can be supplied
+explicitly. Qualify source admission and both forms' permission/emission
+ledgers before native construction or execution. Run each selected engine's
+plain/traced W1/W4 matrix once under its own guard after that qualification.
+
+Both WF forms run 1,471 valid cases and 7,167 task rows: every forward graph
+through five vertices with indegree/outdegree at most two, expanded over
+`C=1,2,4` where valid (`C=0` for empty input), followed by the reverse-arrival
+and unit/costly progress witnesses. Empty, singleton, triangle and disconnected
+controls are labelled within the exhaustive set. The oneTBB matrix runs the
+495 distinct graph/work assignments once each, for 2,399 task rows; owner
+counts and WF forms do not duplicate its cases. WF also runs 13 malformed
+input/configuration controls, checking `{status, rounds, notices}={1,0,0}`,
+unchanged input/output bytes and no task events.
+
+The ordinary Kahn oracle still owns every expected task value and count.
+A separate calculation over the original edges checks the exact number of
+cross-owner notices and `1 + maximum cross-owner edges on a path` processing
+rounds, with zero rounds for empty input and `R <= C`. Valid WF calls start
+with nonzero task cells and an extra in-slice sentinel, checking initialization
+of exactly `N` cells. `routing` rows contain checked returned counters;
+`routing-model` rows charge source initialization, routing and head/report
+operations, excluding headers, stack frames and allocator metadata. They are
+source operation counts rather than physical memory measurements. Progress
+rows report actual task-0/task-3 overlap and retain any owner-round delay.
+The new engines reuse the existing recurrence, observer and corruption controls.
+
+The [retained qualification](dag-fanin-2026-09-23.tsv) passed all twelve
+configurations and rejected all malformed-input and corruption controls. In
+the traced W4 costly witness, the recursive source mapping overlapped tasks
+2 and 3, while task 0/task 3 overlap remained absent across its owner rounds.
+The direct native graph overlapped tasks 0 and 3 in its single retained run.
+These observations establish functionality and expose the source ordering
+cost; they do not measure a performance benefit.
+
 The traced image records one begin/end pair per serial task recurrence and
 checks exact event counts, IDs, inputs, results, native thread identity and
 completion of every original prerequisite before its consumer begins.

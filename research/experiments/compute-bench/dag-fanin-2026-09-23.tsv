@@ -755,3 +755,326 @@ rolling-done-first-runtime	event-witness	engine=wf	n-9-3	4	2	begin	thread=1	valu
 rolling-done-first-runtime	event-witness	engine=wf	n-9-3	5	2	end	thread=1	value=a1be00e2137b2022	steps=0
 rolling-done-first-runtime	event-witness	engine=wf	n-9-3	6	3	begin	thread=1	value=ffffffffffffffe7	steps=65536
 rolling-done-first-runtime	event-witness	engine=wf	n-9-3	7	3	end	thread=1	value=5bf64eff47a0b251	steps=0
+tail-first-done-first-runtime	protocol	criterion_commit=808057cd4	source_and_probe=frozen c5b550472 inputs	comparison=rolling-done-first-runtime plus only tail-first compiler	runtime=DONE-before-pop C	engine=wf	cases_per_configuration=115	rows_per_configuration=956	repeats_per_configuration=1	forced_waits=none	timing_comparison=none
+tail-first-done-first-runtime	artifact	role=candidate-compiler	file=whitefootc	sha256=6f61f0e27f8e162c50f1cb7c0391f6b4a2ac77c78806f79741134599f6a1bd58
+tail-first-done-first-runtime	artifact	role=candidate-production-diff	file=production.patch	sha256=120cd57d3244bb513cfebf6345b9725cc5a97626ed1476cf2a59099c5d6c0af7
+tail-first-done-first-runtime	artifact	role=candidate-production-inputs	file=production.sha256	sha256=8745e25e35087deac5e6e73d14417243f8447ffba05d5dba8095fa910967c431
+tail-first-done-first-runtime	artifact	role=frozen-input-manifest	file=inputs.sha256	sha256=6e5f7b083ae42bde2559a6657a95ced3960b0a5b6bc0f9692c184d3ef62ea766
+tail-first-done-first-runtime	artifact	role=frozen-source	file=dag-fanin.wf	sha256=5b66aa892b7da036c24b1aa3e8972ac5e0d1e808c0c419944216803ec3c09152
+tail-first-done-first-runtime	artifact	role=DONE-first-C-core	file=core.c	sha256=79aefbd14afd647ed22ae5806e57785aee23d3f8136fb003507b5f2fa4d6f625
+tail-first-done-first-runtime	artifact	role=LLVM	file=dag_fanin_tail-first.raw.ll	sha256=7bd6e6469cd5d93c5821add8a6c4f4009298d81d39f30ffb9b1e00ac0e52bf85
+tail-first-done-first-runtime	artifact	role=plain-image	file=dag_fanin_tail-first_plain	sha256=8157f7e84e08a73746d6a68de8a3eff78f5c2565ab55585310890e1ffbcec441
+tail-first-done-first-runtime	artifact	role=trace-image	file=dag_fanin_tail-first_trace	sha256=7f6de6f858d844a276f92027389af87bd165a368b9b57bed4704d220f65a7e6f
+tail-first-done-first-runtime	artifact	role=function-comparison	file=tail-first-function-comparison.tsv	sha256=076c5fe85d4a9c9227a6b0c3876b825b5423ef2036cb55ec8378b129faf150e9
+tail-first-done-first-runtime	artifact	role=runtime-object-comparison	file=tail-first-runtime-object-comparison.tsv	sha256=151c4a34c711c9ae20c4b697a91999a0edb69317d436dafd302e21cac4c35551
+tail-first-done-first-runtime	artifact	role=mode3-LLVM	file=tail-first-mode3-LLVM.txt	sha256=ba305f9e1884bbd22527f7e98144c4356b737bfe719cc61db34e57efaad362d2
+tail-first-done-first-runtime	artifact	role=linked-observer-disassembly	file=tail-first-wf-observer-disassembly.txt	sha256=cac79063bf056f1d57e43eb3df6688ac3d499c05f6616e23439d6ce6dc41500b
+tail-first-done-first-runtime	artifact	role=case9-witness	file=tail-first-case9-witness.tsv	sha256=e60e32d238e9670d684b16def8e056519868a32d7deeb1dbea01ad6b99f39adc
+tail-first-done-first-runtime	artifact	role=qualification-manifest	file=tail-first-qualification.sha256	sha256=33931606400216c3972fadfe9f82e43ca2242e70859677cde9d19f4387d06b20
+tail-first-done-first-runtime	emission	flags=--par --stack-ledger --par-ledger --emit-llvm	mode3=prepare B/A operands;offer A(v94);offer B(v91);retire B;offer D(v96);retire A;call C(v97);retire D	acquisition=at publication	task_values_and_original_edges=unchanged
+tail-first-done-first-runtime	static-control	vs_prior_rolling=every function except wf_dag_n byte-identical	vs_main=all9 sequential clone bodies byte-identical	unbridged_notify_and_spine=byte-identical to main	runtime_objects=all12 byte-identical to DONE-first arm	probe_object=byte-identical	observer_bracketing=linked optimized recurrence verified
+tail-first-done-first-runtime	raw-log	file=dag-fanin-tail-first-done-first-runtime-emit.log	sha256=b9cd0f8bc17d8a650b85e6fd8ed55b44c2ed733dc0eea5d765e31cd7092cfc3e
+tail-first-done-first-runtime	phase	label=dag-fanin-tail-first-done-first-runtime-emit	stage=source-emission	command_wall_s=0.83	process_user_s=0.24	process_system_s=0.05	guard_wall_s=0.87	exit=0	benchmark_interval=false
+tail-first-done-first-runtime	raw-log	file=dag-fanin-tail-first-done-first-runtime-build.log	sha256=b44be5fee6a874cbc5df68fa41c37376a4e0d5942838efbe048ee20384a15994
+tail-first-done-first-runtime	phase	label=dag-fanin-tail-first-done-first-runtime-build	stage=native-construction	command_wall_s=2.03	process_user_s=1.83	process_system_s=0.48	guard_wall_s=2.11	exit=0	benchmark_interval=false
+tail-first-done-first-runtime	raw-log	file=dag-fanin-tail-first-done-first-runtime-wf-plain-W1.log	sha256=a00dc978739eda5a1df1b44ab3ab4b7e5e9a392b954a80633c542303a5cc7e28
+tail-first-done-first-runtime	phase	label=dag-fanin-tail-first-done-first-runtime-wf-plain-W1	stage=complete-matrix-execution	command_wall_s=0.48	process_user_s=0.08	process_system_s=0.02	guard_wall_s=0.55	exit=0	benchmark_interval=false
+tail-first-done-first-runtime	matrix	engine=wf	image=plain	workers=1	PASS	cases=115	task_rows=956	trace=0	events=0	checks=all_values,exactly_once,input_costs,output_canaries,notification_receipts
+tail-first-done-first-runtime	negative-control	engine=wf	image=plain	workers=1	output-corruption	rejected=task value mismatch at 0
+tail-first-done-first-runtime	raw-log	file=dag-fanin-tail-first-done-first-runtime-wf-plain-W4.log	sha256=4b7ea792debeed63a8c49f3d5b2ec9dcc31cf332c626b23995fbbbcd283dfb39
+tail-first-done-first-runtime	phase	label=dag-fanin-tail-first-done-first-runtime-wf-plain-W4	stage=complete-matrix-execution	command_wall_s=0.08	process_user_s=0.06	process_system_s=0.01	guard_wall_s=0.11	exit=0	benchmark_interval=false
+tail-first-done-first-runtime	matrix	engine=wf	image=plain	workers=4	PASS	cases=115	task_rows=956	trace=0	events=0	checks=all_values,exactly_once,input_costs,output_canaries,notification_receipts
+tail-first-done-first-runtime	negative-control	engine=wf	image=plain	workers=4	output-corruption	rejected=task value mismatch at 0
+tail-first-done-first-runtime	raw-log	file=dag-fanin-tail-first-done-first-runtime-wf-trace-W1.log	sha256=612353ddf4ec610ec2625a7ea3119789c578b297005bcb4562a1bc8283d379c0
+tail-first-done-first-runtime	phase	label=dag-fanin-tail-first-done-first-runtime-wf-trace-W1	stage=complete-matrix-execution	command_wall_s=0.38	process_user_s=0.08	process_system_s=0.01	guard_wall_s=0.42	exit=0	benchmark_interval=false
+tail-first-done-first-runtime	matrix	engine=wf	image=trace	workers=1	PASS	cases=115	task_rows=956	trace=1	events=1912	checks=all_values,exactly_once,input_costs,output_canaries,notification_receipts,event_ids_inputs_values,exact_events,original_edge_order,stable_thread
+tail-first-done-first-runtime	negative-control	engine=wf	image=trace	workers=1	output-corruption	rejected=task value mismatch at 0
+tail-first-done-first-runtime	negative-control	engine=wf	image=trace	workers=1	trace-corruption	rejected=trace event count mismatch
+tail-first-done-first-runtime	raw-log	file=dag-fanin-tail-first-done-first-runtime-wf-trace-W4.log	sha256=a0b81ceba568a282c2cb91a453f53ae096217a842645496d3aafafdb8157bfb4
+tail-first-done-first-runtime	phase	label=dag-fanin-tail-first-done-first-runtime-wf-trace-W4	stage=complete-matrix-execution	command_wall_s=0.07	process_user_s=0.06	process_system_s=0.01	guard_wall_s=0.11	exit=0	benchmark_interval=false
+tail-first-done-first-runtime	matrix	engine=wf	image=trace	workers=4	PASS	cases=115	task_rows=956	trace=1	events=1912	checks=all_values,exactly_once,input_costs,output_canaries,notification_receipts,event_ids_inputs_values,exact_events,original_edge_order,stable_thread
+tail-first-done-first-runtime	negative-control	engine=wf	image=trace	workers=4	output-corruption	rejected=task value mismatch at 0
+tail-first-done-first-runtime	negative-control	engine=wf	image=trace	workers=4	trace-corruption	rejected=trace event count mismatch
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-0-0	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-0-1	AB=0	AD=0	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-0-2	AB=0	AD=1	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-0-3	AB=1	AD=0	CD=0	actual_steals=2	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-1-0	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-1-1	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-1-2	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-1-3	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-2-0	AB=1	AD=0	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-2-1	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-2-2	AB=1	AD=0	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-2-3	AB=1	AD=0	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-3-0	AB=1	AD=0	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-3-1	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-3-2	AB=1	AD=1	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-3-3	AB=1	AD=1	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-4-0	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-4-1	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-4-2	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-4-3	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-5-0	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-5-1	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-5-2	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-5-3	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-6-0	AB=1	AD=0	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-6-1	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-6-2	AB=1	AD=0	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-6-3	AB=1	AD=0	CD=1	actual_steals=2	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-7-0	AB=1	AD=0	CD=1	actual_steals=2	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-7-1	AB=0	AD=0	CD=0	actual_steals=0	observed_threads=1
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-7-2	AB=1	AD=1	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-7-3	AB=1	AD=1	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-8-0	AB=0	AD=0	CD=1	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-8-1	AB=0	AD=1	CD=1	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-8-2	AB=0	AD=1	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-8-3	AB=0	AD=1	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-9-0	AB=0	AD=0	CD=1	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-9-1	AB=0	AD=1	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-9-2	AB=0	AD=1	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-9-3	AB=0	AD=1	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-10-0	AB=1	AD=0	CD=1	actual_steals=2	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-10-1	AB=0	AD=1	CD=1	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-10-2	AB=1	AD=0	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-10-3	AB=1	AD=0	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-11-0	AB=1	AD=0	CD=1	actual_steals=2	observed_threads=3
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-11-1	AB=0	AD=1	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-11-2	AB=1	AD=1	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-11-3	AB=1	AD=1	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-12-0	AB=0	AD=0	CD=1	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-12-1	AB=0	AD=1	CD=1	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-12-2	AB=0	AD=1	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-12-3	AB=0	AD=1	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-13-0	AB=0	AD=0	CD=1	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-13-1	AB=0	AD=1	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-13-2	AB=0	AD=1	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-13-3	AB=0	AD=1	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-14-0	AB=1	AD=0	CD=1	actual_steals=2	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-14-1	AB=0	AD=1	CD=1	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-14-2	AB=1	AD=0	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-14-3	AB=1	AD=0	CD=1	actual_steals=2	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-15-0	AB=1	AD=0	CD=1	actual_steals=2	observed_threads=3
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-15-1	AB=0	AD=1	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-15-2	AB=1	AD=1	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	N-pairs-W4	engine=wf	case=n-15-3	AB=1	AD=1	CD=0	actual_steals=1	observed_threads=2
+tail-first-done-first-runtime	criterion	case=n-9-3	required=distinct-thread A/D overlap in traced W4	observed=true	disposition=selected task-overlap criterion passed	A=begin3,end5,thread2	D=begin2,end4,thread1	actual_steals_plain_W4=1	actual_steals_trace_W4=1	directional_d_while_a=0 because D began first	performance_benefit=unqualified	rerun=false
+tail-first-done-first-runtime	limits	W4_mode3_weights=16	W4_mode3_AB_cases=9	W4_mode3_AD_cases=8	W4_mode3_CD_cases=2	previous_DONE_first_mode3_CD_cases=8	schedule_observations=single pass	timing_benefit=not measured	broad_critical_path_preservation=not established
+tail-first-done-first-runtime	event-witness	engine=wf	n-9-3	0	1	begin	thread=1	value=ffffffffffffffe7	steps=1
+tail-first-done-first-runtime	event-witness	engine=wf	n-9-3	1	1	end	thread=1	value=1db14b23dd30a222	steps=0
+tail-first-done-first-runtime	event-witness	engine=wf	n-9-3	2	3	begin	thread=1	value=ffffffffffffffe7	steps=65536
+tail-first-done-first-runtime	event-witness	engine=wf	n-9-3	3	0	begin	thread=2	value=ffffffffffffffe7	steps=65536
+tail-first-done-first-runtime	event-witness	engine=wf	n-9-3	4	3	end	thread=1	value=5bf64eff47a0b251	steps=0
+tail-first-done-first-runtime	event-witness	engine=wf	n-9-3	5	0	end	thread=2	value=929b63f1ad8f38e0	steps=0
+tail-first-done-first-runtime	event-witness	engine=wf	n-9-3	6	2	begin	thread=1	value=ffffffffffffffe7	steps=1
+tail-first-done-first-runtime	event-witness	engine=wf	n-9-3	7	2	end	thread=1	value=a1be00e2137b2022	steps=0
+runtime-adjacency-main	protocol	criterion_commit=629c53574	source_checkpoint=19	compiler=frozen main-345e	runtime=original main-345e C	engines=wf-runtime-loop,wf-runtime-tree,tbb-runtime	images=plain,trace	workers=1,4	repeats_per_configuration=1	forced_waits=none	timing_comparison=none	historical_matrices_repeated=false
+runtime-adjacency-main	fixtures	forward_graph_sizes=0..5	graphs_by_size=1,1,2,8,50,430	degree_bound=in<=2,out<=2	unit_cost=1	owners=1,2,4 when C<=N; empty C0	distinct_graph_work_assignments=495	WF_cases=1471	WF_task_rows=7167	native_cases=495	native_task_rows=2399	special_costs=tasks0,3 at65536 in six-node costly witness
+runtime-adjacency-main	ABI	entry=void wf_dag_runtime(ptr result,i64 form,i64 owners,slice costs,slice successors,slice output,i64 seed)	result_bytes=24	result_field_offsets=0,8,16	task_cell_bytes=16	valid_output=exactly N initialized; extra in-slice and exterior cells unchanged	malformed_output=all supplied bytes unchanged
+runtime-adjacency-main	emission	flags=--par --par-ledger --stack-ledger --emit-llvm	source_emission=reused accepted checkpoint19	loop_permission=PAR-2	loop_captures=14	loop_offer_bytes=232	loop_price=4*C+17097	selected_loop_split_budget=0	tree_permission=PAR-1	tree_offer_bytes=224	tree_budget_W1=6	tree_budget_W4=8	W1_acquisition=refused	output_init_frame_charge=312 conservative type estimate; declined before frame emission
+runtime-adjacency-main	static-control	frozen_manifest_files=34	changes_vs_c5=WF,probe,host adapter,Makefile,README	all12_runtime_objects=byte-identical to rolling-main-runtime original main C	observer=optimized WF and native callbacks verified: begin-return seed dependency; end consumes result	TBB=existing pinned cache; no dependency rebuild
+runtime-adjacency-main	artifact	role=compiler	file=whitefootc	sha256=cbffd4dd1ae8641ef03790457181188988bf70cc4af1a53c50c1f406307bb7f9
+runtime-adjacency-main	artifact	role=frozen-source	file=dag-fanin-main-345e-runtime-19.wf	sha256=1d536089caa1204af95569817760471fd0006613b6c7c6c08ea95a29d1304ffe
+runtime-adjacency-main	artifact	role=LLVM	file=dag_fanin_runtime.raw.ll	sha256=a827b4910130f153f885cf86d4844c94059c7d04c0507fe92de13a7ec126094c
+runtime-adjacency-main	artifact	role=frozen-input-manifest	file=inputs.sha256	sha256=9420ff059164dc57cf4e5850e38729a419eb98bcf0168f86a933edd000702455
+runtime-adjacency-main	artifact	role=frozen-input-description	file=FROZEN-INPUTS.txt	sha256=a4e22db75bc6adee10f1a0b6557383b21e6b9aec5274dfa53941dc80f8aa96ab
+runtime-adjacency-main	artifact	role=input-comparison	file=runtime-adjacency-main-input-comparison.txt	sha256=5e068c45c212bb5690c115712900e6e3ace3886906de69bc5ab90e7ca9441c45
+runtime-adjacency-main	artifact	role=baseline-C-core	file=core.c	sha256=48f0080fd5c43e9e07691a05936c36e232b76d1bde309b6f53bc912176ac3285
+runtime-adjacency-main	artifact	role=probe	file=dag_fanin_probe.cpp	sha256=748d882424a19db8abf7489340a727eb4ed11927b76a4c674e30ae92f58ea3c2
+runtime-adjacency-main	artifact	role=host-adapter	file=dag_fanin_host.ll	sha256=5b5846b15f94156cecbfa126fde44183b3b471ad0ebcfe29f2d72ebb9a332059
+runtime-adjacency-main	artifact	role=observer-transform	file=dag_fanin_trace.awk	sha256=95740fb87edcd550940cae3951b0b73b000453e9cc6022616135fea169df77bd
+runtime-adjacency-main	artifact	role=Makefile	file=Makefile	sha256=5af07cd9f96773beefd03c9b2470a75d8d14d6ad78276ba85acc5ef8197d333d
+runtime-adjacency-main	artifact	role=plain-LLVM	file=dag_fanin_runtime_plain.ll	sha256=11973d45f9cf95ff152fddb8bcb20e68c7c1e720367d63258136c95405ab3a98
+runtime-adjacency-main	artifact	role=trace-LLVM	file=dag_fanin_runtime_trace.ll	sha256=43b307ec31b7cbdec03f20e446f8e132fab13e6aab9d2d364f7aebf9b8866e09
+runtime-adjacency-main	artifact	role=plain-image	file=dag_fanin_runtime_plain	sha256=268cc7980b4232ce5d4d6bc871594bee38d3f1658a9bb03a6602acce97d71832
+runtime-adjacency-main	artifact	role=trace-image	file=dag_fanin_runtime_trace	sha256=d11f3e03d24d371b3f054759dfec577a489c242b417710bc1fcd8d9356bfb7b2
+runtime-adjacency-main	artifact	role=native-manifest	file=dag_fanin_runtime.native.sha256	sha256=7f3ba86d26e206a33f355e52bcad1728d1224a9074f24acfb75606f87c90b814
+runtime-adjacency-main	artifact	role=linked-WF-observer	file=runtime-adjacency-main-observer.txt	sha256=792d8840d14d1f39c65d215dd652b35b307f63e4b7d9a5dac23a99384eff8300
+runtime-adjacency-main	artifact	role=linked-native-observer	file=runtime-adjacency-main-native-observer.txt	sha256=ceb90ddede9f729b5f1446598a36351429cbaac03631e37189aff9aa3cb5c510
+runtime-adjacency-main	source-construction-attempt	attempt=1	command_started=false	reason=shared guard owned by another command	program_execution=false	benchmark_interval=false	raw_log=dag-fanin-main-345e-runtime-emit-1.log	sha256=fff743df9435ce472984ce736fc6a4fb7027de9847723b1f0d867afd8544f166
+runtime-adjacency-main	source-construction-attempt	attempt=2	command_wall_s=0.05	guard_wall_s=0.10	exit=1	source_diagnostic=GRAM-6	program_execution=false	benchmark_interval=false	raw_log=dag-fanin-main-345e-runtime-emit-2.log	sha256=b3d2073e10c1ff3d2243e8f23a7de17cba7799e0c12fd2b3868a932516cf31bd
+runtime-adjacency-main	source-construction-attempt	attempt=3	command_started=false	reason=shared guard owned by another command	program_execution=false	benchmark_interval=false	raw_log=dag-fanin-main-345e-runtime-emit-3.log	sha256=366af22ba17aa4dc7f9d669efa1a780a84495ae9afaafc57ff6b4cff4c8b6ffd
+runtime-adjacency-main	source-construction-attempt	attempt=4	command_wall_s=0.05	guard_wall_s=0.11	exit=1	source_diagnostic=PRF-1	program_execution=false	benchmark_interval=false	raw_log=dag-fanin-main-345e-runtime-emit-4.log	sha256=692a7d53a8d5cf9ac72dbbdd290bc6cdc1e5e3381329db6ba760f67f2a9c4ff4
+runtime-adjacency-main	source-construction-attempt	attempt=5	command_wall_s=0.05	guard_wall_s=0.11	exit=1	source_diagnostic=PRF-1	program_execution=false	benchmark_interval=false	raw_log=dag-fanin-main-345e-runtime-emit-5.log	sha256=2d43560d24da00136aa186b639fc2253c4587afa2bd0d2233f33d022462a75e6
+runtime-adjacency-main	source-construction-attempt	attempt=6	command_wall_s=3.63	guard_wall_s=3.67	exit=1	source_diagnostic=PRF-1	program_execution=false	benchmark_interval=false	raw_log=dag-fanin-main-345e-runtime-emit-6.log	sha256=3d95ea1b4d6a07e8724f049ff6614b62d59484b31613ff2fa895aeb8eab2f43d
+runtime-adjacency-main	source-construction-attempt	attempt=7	command_wall_s=3.58	guard_wall_s=3.67	exit=1	source_diagnostic=FN-8	program_execution=false	benchmark_interval=false	raw_log=dag-fanin-main-345e-runtime-emit-7.log	sha256=7bf34c08af88e64a9077f092feaf0746bfab10544f6aae3995495565afbdb63f
+runtime-adjacency-main	source-construction-attempt	attempt=8	command_wall_s=3.94	guard_wall_s=3.97	exit=1	source_diagnostic=FN-8	program_execution=false	benchmark_interval=false	raw_log=dag-fanin-main-345e-runtime-emit-8.log	sha256=a8ddd15e020d639fe8c8eb602a6717667adc3addad5c0606bcde725d582ffeed
+runtime-adjacency-main	source-construction-attempt	attempt=9	command_wall_s=0.93	guard_wall_s=0.98	exit=1	source_diagnostic=FN-8	program_execution=false	benchmark_interval=false	raw_log=dag-fanin-main-345e-runtime-emit-9.log	sha256=60f787d8eb6191dfb0cb17344c518330521e32665560ace941d595e34522bebe
+runtime-adjacency-main	source-construction-attempt	attempt=10	command_started=false	reason=shared guard owned by another command	program_execution=false	benchmark_interval=false	raw_log=dag-fanin-main-345e-runtime-emit-10.log	sha256=bb7fa3cfef33443bb4c546f241b0424145f898eb8d7d2f04df7d0f15d3d41368
+runtime-adjacency-main	source-construction-attempt	attempt=11	command_wall_s=0.95	guard_wall_s=0.97	exit=1	source_diagnostic=FN-8	program_execution=false	benchmark_interval=false	raw_log=dag-fanin-main-345e-runtime-emit-11.log	sha256=6512c976a62006216ce6ff1dcd7ee1039c77dbceec3e3bc8e4579874adbdaffe
+runtime-adjacency-main	source-construction-attempt	attempt=12	command_wall_s=0.93	guard_wall_s=0.97	exit=1	source_diagnostic=PRF-1	program_execution=false	benchmark_interval=false	raw_log=dag-fanin-main-345e-runtime-emit-12.log	sha256=f493dea6b8b01a8b813c21a00ead715c7c3f6c2087c019838fc38c5eb93446cc
+runtime-adjacency-main	source-construction-attempt	attempt=13	command_wall_s=0.70	guard_wall_s=0.74	exit=1	source_diagnostic=PRF-1	program_execution=false	benchmark_interval=false	raw_log=dag-fanin-main-345e-runtime-emit-13.log	sha256=8e870e9dbfa019299d36c1ca2346a2a776e05585593d17e77e6b6e1ff4a1a09f
+runtime-adjacency-main	source-construction-attempt	attempt=14	command_started=false	reason=shared guard owned by another command	program_execution=false	benchmark_interval=false	raw_log=dag-fanin-main-345e-runtime-emit-14.log	sha256=88530c90def685282e28a0428e48fb6b84d1441bbc70f6dd4a4511b26ecb9afc
+runtime-adjacency-main	source-construction-attempt	attempt=15	command_wall_s=0.40	guard_wall_s=0.42	exit=1	source_diagnostic=FN-8	program_execution=false	benchmark_interval=false	raw_log=dag-fanin-main-345e-runtime-emit-15.log	sha256=c86a2d4105fb576a1def10ef47dbdc823f0d3e873fcced1c75752d1693b7184e
+runtime-adjacency-main	source-construction-attempt	attempt=16	command_wall_s=0.30	guard_wall_s=0.32	exit=1	source_diagnostic=PRF-1	program_execution=false	benchmark_interval=false	raw_log=dag-fanin-main-345e-runtime-emit-16.log	sha256=a37f23e92d6d0713860e82ce52b9d6bca382d845277897dc78828590b9fed228
+runtime-adjacency-main	source-construction-attempt	attempt=17	command_started=false	reason=shared guard owned by another command	program_execution=false	benchmark_interval=false	raw_log=dag-fanin-main-345e-runtime-emit-17.log	sha256=49085ff74381e9cdec573c716ffadb2118f8928effeabec262d6462641c66839
+runtime-adjacency-main	source-construction-attempt	attempt=18	command_wall_s=0.51	guard_wall_s=0.54	exit=0	admission=accepted before erased cleanup	program_execution=false	benchmark_interval=false	raw_log=dag-fanin-main-345e-runtime-emit-18.log	sha256=5c6547bc2887310d04ac5c199bc479e00f8b9fc2d6cc0c998f73f10010aee72b
+runtime-adjacency-main	raw-log	file=dag-fanin-main-345e-runtime-emit-19.log	sha256=c2766f4d91da76afd27cd7805f5a09a7593eb4caad437d118890265282257026
+runtime-adjacency-main	phase	label=dag-fanin-main-345e-runtime-emit-19	stage=source-emission	command_wall_s=0.53	process_user_s=0.49	process_system_s=0.02	guard_wall_s=0.55	exit=0	benchmark_interval=false
+runtime-adjacency-main	raw-log	file=dag-fanin-runtime-adjacency-main-build.log	sha256=e7a121f51a5a9b7edfde0c969adbf4700c29a3fd752523807faa1f93917c3a09
+runtime-adjacency-main	phase	label=dag-fanin-runtime-adjacency-main-build	stage=native-construction	command_wall_s=2.44	process_user_s=2.27	process_system_s=0.48	guard_wall_s=2.50	exit=0	benchmark_interval=false
+runtime-adjacency-main	raw-log	file=dag-fanin-runtime-adjacency-main-wf-runtime-loop-plain-W1.log	sha256=51b09c3b6f836d1321b2645bd0fca7ee823560a6ca763cb7c8985302818d4b15
+runtime-adjacency-main	phase	label=dag-fanin-runtime-adjacency-main-wf-runtime-loop-plain-W1	stage=complete-matrix-execution	command_wall_s=0.44	process_user_s=0.02	process_system_s=0.01	guard_wall_s=0.53	exit=0	benchmark_interval=false
+runtime-adjacency-main	matrix	engine=wf-runtime-loop	image=plain	workers=1	PASS	cases=1471	task_rows=7167	events=0	invalid_cases=13	checks=all_values,exactly_once,unchanged_costs_successors,output_boundaries	routing_checks=exact_status_rounds_notices,result_canaries,initialization_exact_N	trace_checks=plain
+runtime-adjacency-main	negative-control	engine=wf-runtime-loop	image=plain	workers=1	output-corruption	rejected=task value mismatch at 0
+runtime-adjacency-main	observation-summary	engine=wf-runtime-loop	image=plain	workers=1	actual_steals_sum=0	actual_steals_max=0	task_overlap=not_observed
+runtime-adjacency-main	raw-log	file=dag-fanin-runtime-adjacency-main-wf-runtime-loop-plain-W4.log	sha256=e2f40de65cc82d0c63c6f674a689cd6bd871947eae41a6257680466c5591c017
+runtime-adjacency-main	phase	label=dag-fanin-runtime-adjacency-main-wf-runtime-loop-plain-W4	stage=complete-matrix-execution	command_wall_s=0.04	process_user_s=0.02	process_system_s=0.01	guard_wall_s=0.10	exit=0	benchmark_interval=false
+runtime-adjacency-main	matrix	engine=wf-runtime-loop	image=plain	workers=4	PASS	cases=1471	task_rows=7167	events=0	invalid_cases=13	checks=all_values,exactly_once,unchanged_costs_successors,output_boundaries	routing_checks=exact_status_rounds_notices,result_canaries,initialization_exact_N	trace_checks=plain
+runtime-adjacency-main	negative-control	engine=wf-runtime-loop	image=plain	workers=4	output-corruption	rejected=task value mismatch at 0
+runtime-adjacency-main	observation-summary	engine=wf-runtime-loop	image=plain	workers=4	actual_steals_sum=0	actual_steals_max=0	task_overlap=not_observed
+runtime-adjacency-main	raw-log	file=dag-fanin-runtime-adjacency-main-wf-runtime-loop-trace-W1.log	sha256=601b3a47c84ce558954fccd4a1cc4f4a24f5a594c762976957be24c4a66a6ba4
+runtime-adjacency-main	phase	label=dag-fanin-runtime-adjacency-main-wf-runtime-loop-trace-W1	stage=complete-matrix-execution	command_wall_s=0.34	process_user_s=0.03	process_system_s=0.02	guard_wall_s=0.43	exit=0	benchmark_interval=false
+runtime-adjacency-main	matrix	engine=wf-runtime-loop	image=trace	workers=1	PASS	cases=1471	task_rows=7167	events=14334	invalid_cases=13	checks=all_values,exactly_once,unchanged_costs_successors,output_boundaries	routing_checks=exact_status_rounds_notices,result_canaries,initialization_exact_N	trace_checks=exact_events,inputs_values,original_edge_order,stable_thread
+runtime-adjacency-main	negative-control	engine=wf-runtime-loop	image=trace	workers=1	output-corruption	rejected=task value mismatch at 0
+runtime-adjacency-main	negative-control	engine=wf-runtime-loop	image=trace	workers=1	trace-corruption	rejected=trace event count mismatch
+runtime-adjacency-main	observation-summary	engine=wf-runtime-loop	image=trace	workers=1	actual_steals_sum=0	actual_steals_max=0	cases_with_overlap=0	distinct_thread_pairs=0	max_observed_threads=1
+runtime-adjacency-main	raw-log	file=dag-fanin-runtime-adjacency-main-wf-runtime-loop-trace-W4.log	sha256=7956a94cfa7070a38f1d32aa19f3f188d33f97cd66b640c46e05a9562bece3a9
+runtime-adjacency-main	phase	label=dag-fanin-runtime-adjacency-main-wf-runtime-loop-trace-W4	stage=complete-matrix-execution	command_wall_s=0.05	process_user_s=0.02	process_system_s=0.02	guard_wall_s=0.11	exit=0	benchmark_interval=false
+runtime-adjacency-main	matrix	engine=wf-runtime-loop	image=trace	workers=4	PASS	cases=1471	task_rows=7167	events=14334	invalid_cases=13	checks=all_values,exactly_once,unchanged_costs_successors,output_boundaries	routing_checks=exact_status_rounds_notices,result_canaries,initialization_exact_N	trace_checks=exact_events,inputs_values,original_edge_order,stable_thread
+runtime-adjacency-main	negative-control	engine=wf-runtime-loop	image=trace	workers=4	output-corruption	rejected=task value mismatch at 0
+runtime-adjacency-main	negative-control	engine=wf-runtime-loop	image=trace	workers=4	trace-corruption	rejected=trace event count mismatch
+runtime-adjacency-main	observation-summary	engine=wf-runtime-loop	image=trace	workers=4	actual_steals_sum=0	actual_steals_max=0	cases_with_overlap=0	distinct_thread_pairs=0	max_observed_threads=1
+runtime-adjacency-main	raw-log	file=dag-fanin-runtime-adjacency-main-wf-runtime-tree-plain-W1.log	sha256=e8d4524f5192e4ecead1001cffbab48550cf125a365f6d99b56dc553cc5a9c7e
+runtime-adjacency-main	phase	label=dag-fanin-runtime-adjacency-main-wf-runtime-tree-plain-W1	stage=complete-matrix-execution	command_wall_s=0.04	process_user_s=0.02	process_system_s=0.01	guard_wall_s=0.10	exit=0	benchmark_interval=false
+runtime-adjacency-main	matrix	engine=wf-runtime-tree	image=plain	workers=1	PASS	cases=1471	task_rows=7167	events=0	invalid_cases=13	checks=all_values,exactly_once,unchanged_costs_successors,output_boundaries	routing_checks=exact_status_rounds_notices,result_canaries,initialization_exact_N	trace_checks=plain
+runtime-adjacency-main	negative-control	engine=wf-runtime-tree	image=plain	workers=1	output-corruption	rejected=task value mismatch at 0
+runtime-adjacency-main	observation-summary	engine=wf-runtime-tree	image=plain	workers=1	actual_steals_sum=0	actual_steals_max=0	task_overlap=not_observed
+runtime-adjacency-main	raw-log	file=dag-fanin-runtime-adjacency-main-wf-runtime-tree-plain-W4.log	sha256=2c8a2fbadb7a50f2bbba66830eed81c7d677e2e42748e6c8032a6291a247b50a
+runtime-adjacency-main	phase	label=dag-fanin-runtime-adjacency-main-wf-runtime-tree-plain-W4	stage=complete-matrix-execution	command_wall_s=0.05	process_user_s=0.04	process_system_s=0.02	guard_wall_s=0.11	exit=0	benchmark_interval=false
+runtime-adjacency-main	matrix	engine=wf-runtime-tree	image=plain	workers=4	PASS	cases=1471	task_rows=7167	events=0	invalid_cases=13	checks=all_values,exactly_once,unchanged_costs_successors,output_boundaries	routing_checks=exact_status_rounds_notices,result_canaries,initialization_exact_N	trace_checks=plain
+runtime-adjacency-main	negative-control	engine=wf-runtime-tree	image=plain	workers=4	output-corruption	rejected=task value mismatch at 0
+runtime-adjacency-main	observation-summary	engine=wf-runtime-tree	image=plain	workers=4	actual_steals_sum=3891	actual_steals_max=12	task_overlap=not_observed
+runtime-adjacency-main	raw-log	file=dag-fanin-runtime-adjacency-main-wf-runtime-tree-trace-W1.log	sha256=2fe223b4bcfc1a475027f41755f58518ea96bfb2a1345face69a8bace5607a10
+runtime-adjacency-main	phase	label=dag-fanin-runtime-adjacency-main-wf-runtime-tree-trace-W1	stage=complete-matrix-execution	command_wall_s=0.05	process_user_s=0.02	process_system_s=0.01	guard_wall_s=0.10	exit=0	benchmark_interval=false
+runtime-adjacency-main	matrix	engine=wf-runtime-tree	image=trace	workers=1	PASS	cases=1471	task_rows=7167	events=14334	invalid_cases=13	checks=all_values,exactly_once,unchanged_costs_successors,output_boundaries	routing_checks=exact_status_rounds_notices,result_canaries,initialization_exact_N	trace_checks=exact_events,inputs_values,original_edge_order,stable_thread
+runtime-adjacency-main	negative-control	engine=wf-runtime-tree	image=trace	workers=1	output-corruption	rejected=task value mismatch at 0
+runtime-adjacency-main	negative-control	engine=wf-runtime-tree	image=trace	workers=1	trace-corruption	rejected=trace event count mismatch
+runtime-adjacency-main	observation-summary	engine=wf-runtime-tree	image=trace	workers=1	actual_steals_sum=0	actual_steals_max=0	cases_with_overlap=0	distinct_thread_pairs=0	max_observed_threads=1
+runtime-adjacency-main	raw-log	file=dag-fanin-runtime-adjacency-main-wf-runtime-tree-trace-W4.log	sha256=45f1f2f16cd35d69297c620ecafa0b0ea77f4efc74f315e11e0c61316e3b9ab5
+runtime-adjacency-main	phase	label=dag-fanin-runtime-adjacency-main-wf-runtime-tree-trace-W4	stage=complete-matrix-execution	command_wall_s=0.05	process_user_s=0.05	process_system_s=0.02	guard_wall_s=0.11	exit=0	benchmark_interval=false
+runtime-adjacency-main	matrix	engine=wf-runtime-tree	image=trace	workers=4	PASS	cases=1471	task_rows=7167	events=14334	invalid_cases=13	checks=all_values,exactly_once,unchanged_costs_successors,output_boundaries	routing_checks=exact_status_rounds_notices,result_canaries,initialization_exact_N	trace_checks=exact_events,inputs_values,original_edge_order,stable_thread
+runtime-adjacency-main	negative-control	engine=wf-runtime-tree	image=trace	workers=4	output-corruption	rejected=task value mismatch at 0
+runtime-adjacency-main	negative-control	engine=wf-runtime-tree	image=trace	workers=4	trace-corruption	rejected=trace event count mismatch
+runtime-adjacency-main	observation-summary	engine=wf-runtime-tree	image=trace	workers=4	actual_steals_sum=3202	actual_steals_max=12	cases_with_overlap=128	distinct_thread_pairs=146	max_observed_threads=4
+runtime-adjacency-main	raw-log	file=dag-fanin-runtime-adjacency-main-tbb-runtime-plain-W1.log	sha256=52da5542e5dab3f12e7d64f9aca5aba669eed3d56f5f204c4cb0dc953e3f06dd
+runtime-adjacency-main	phase	label=dag-fanin-runtime-adjacency-main-tbb-runtime-plain-W1	stage=complete-matrix-execution	command_wall_s=0.03	process_user_s=0.01	process_system_s=0.01	guard_wall_s=0.11	exit=0	benchmark_interval=false
+runtime-adjacency-main	matrix	engine=tbb-runtime	image=plain	workers=1	PASS	cases=495	task_rows=2399	events=0	invalid_cases=0	checks=all_values,exactly_once,unchanged_costs_successors,output_boundaries	routing_checks=not_applicable	trace_checks=plain
+runtime-adjacency-main	negative-control	engine=tbb-runtime	image=plain	workers=1	output-corruption	rejected=task value mismatch at 0
+runtime-adjacency-main	observation-summary	engine=tbb-runtime	image=plain	workers=1	actual_steals_sum=not_instrumented	actual_steals_max=not_instrumented	task_overlap=not_observed
+runtime-adjacency-main	raw-log	file=dag-fanin-runtime-adjacency-main-tbb-runtime-plain-W4.log	sha256=4c5e944045e82fa84728809a13a5250b9df54e26729a5715382cb3f944ff30ee
+runtime-adjacency-main	phase	label=dag-fanin-runtime-adjacency-main-tbb-runtime-plain-W4	stage=complete-matrix-execution	command_wall_s=0.04	process_user_s=0.02	process_system_s=0.01	guard_wall_s=0.11	exit=0	benchmark_interval=false
+runtime-adjacency-main	matrix	engine=tbb-runtime	image=plain	workers=4	PASS	cases=495	task_rows=2399	events=0	invalid_cases=0	checks=all_values,exactly_once,unchanged_costs_successors,output_boundaries	routing_checks=not_applicable	trace_checks=plain
+runtime-adjacency-main	negative-control	engine=tbb-runtime	image=plain	workers=4	output-corruption	rejected=task value mismatch at 0
+runtime-adjacency-main	observation-summary	engine=tbb-runtime	image=plain	workers=4	actual_steals_sum=not_instrumented	actual_steals_max=not_instrumented	task_overlap=not_observed
+runtime-adjacency-main	raw-log	file=dag-fanin-runtime-adjacency-main-tbb-runtime-trace-W1.log	sha256=25317962aebae98d227ef8aae0601e12533fbed8f324a92efade2ecee8e7b31c
+runtime-adjacency-main	phase	label=dag-fanin-runtime-adjacency-main-tbb-runtime-trace-W1	stage=complete-matrix-execution	command_wall_s=0.04	process_user_s=0.01	process_system_s=0.01	guard_wall_s=0.11	exit=0	benchmark_interval=false
+runtime-adjacency-main	matrix	engine=tbb-runtime	image=trace	workers=1	PASS	cases=495	task_rows=2399	events=4798	invalid_cases=0	checks=all_values,exactly_once,unchanged_costs_successors,output_boundaries	routing_checks=not_applicable	trace_checks=exact_events,inputs_values,original_edge_order,stable_thread
+runtime-adjacency-main	negative-control	engine=tbb-runtime	image=trace	workers=1	output-corruption	rejected=task value mismatch at 0
+runtime-adjacency-main	negative-control	engine=tbb-runtime	image=trace	workers=1	trace-corruption	rejected=trace event count mismatch
+runtime-adjacency-main	observation-summary	engine=tbb-runtime	image=trace	workers=1	actual_steals_sum=not_instrumented	actual_steals_max=not_instrumented	cases_with_overlap=0	distinct_thread_pairs=0	max_observed_threads=1
+runtime-adjacency-main	raw-log	file=dag-fanin-runtime-adjacency-main-tbb-runtime-trace-W4.log	sha256=7e7f484d87037a9bced348e0e736a15f58d8d5dd6f455c0fbb9e730b7d30801e
+runtime-adjacency-main	phase	label=dag-fanin-runtime-adjacency-main-tbb-runtime-trace-W4	stage=complete-matrix-execution	command_wall_s=0.04	process_user_s=0.02	process_system_s=0.01	guard_wall_s=0.10	exit=0	benchmark_interval=false
+runtime-adjacency-main	matrix	engine=tbb-runtime	image=trace	workers=4	PASS	cases=495	task_rows=2399	events=4798	invalid_cases=0	checks=all_values,exactly_once,unchanged_costs_successors,output_boundaries	routing_checks=not_applicable	trace_checks=exact_events,inputs_values,original_edge_order,stable_thread
+runtime-adjacency-main	negative-control	engine=tbb-runtime	image=trace	workers=4	output-corruption	rejected=task value mismatch at 0
+runtime-adjacency-main	negative-control	engine=tbb-runtime	image=trace	workers=4	trace-corruption	rejected=trace event count mismatch
+runtime-adjacency-main	observation-summary	engine=tbb-runtime	image=trace	workers=4	actual_steals_sum=not_instrumented	actual_steals_max=not_instrumented	cases_with_overlap=5	distinct_thread_pairs=6	max_observed_threads=2
+runtime-adjacency-main	malformed-control	short-successors	status=1	rounds=0	notices=0	output_unchanged=1	inputs_unchanged=1	events=0	configurations_checked=8	forms=loop,tree	images=plain,trace	workers=1,4
+runtime-adjacency-main	malformed-control	long-successors	status=1	rounds=0	notices=0	output_unchanged=1	inputs_unchanged=1	events=0	configurations_checked=8	forms=loop,tree	images=plain,trace	workers=1,4
+runtime-adjacency-main	malformed-control	out-of-range	status=1	rounds=0	notices=0	output_unchanged=1	inputs_unchanged=1	events=0	configurations_checked=8	forms=loop,tree	images=plain,trace	workers=1,4
+runtime-adjacency-main	malformed-control	self-edge	status=1	rounds=0	notices=0	output_unchanged=1	inputs_unchanged=1	events=0	configurations_checked=8	forms=loop,tree	images=plain,trace	workers=1,4
+runtime-adjacency-main	malformed-control	backward-edge	status=1	rounds=0	notices=0	output_unchanged=1	inputs_unchanged=1	events=0	configurations_checked=8	forms=loop,tree	images=plain,trace	workers=1,4
+runtime-adjacency-main	malformed-control	duplicate-edge	status=1	rounds=0	notices=0	output_unchanged=1	inputs_unchanged=1	events=0	configurations_checked=8	forms=loop,tree	images=plain,trace	workers=1,4
+runtime-adjacency-main	malformed-control	excess-indegree	status=1	rounds=0	notices=0	output_unchanged=1	inputs_unchanged=1	events=0	configurations_checked=8	forms=loop,tree	images=plain,trace	workers=1,4
+runtime-adjacency-main	malformed-control	invalid-form	status=1	rounds=0	notices=0	output_unchanged=1	inputs_unchanged=1	events=0	configurations_checked=8	forms=loop,tree	images=plain,trace	workers=1,4
+runtime-adjacency-main	malformed-control	zero-owners	status=1	rounds=0	notices=0	output_unchanged=1	inputs_unchanged=1	events=0	configurations_checked=8	forms=loop,tree	images=plain,trace	workers=1,4
+runtime-adjacency-main	malformed-control	excess-owners	status=1	rounds=0	notices=0	output_unchanged=1	inputs_unchanged=1	events=0	configurations_checked=8	forms=loop,tree	images=plain,trace	workers=1,4
+runtime-adjacency-main	malformed-control	unrepresentable-owner-matrix	status=1	rounds=0	notices=0	output_unchanged=1	inputs_unchanged=1	events=0	configurations_checked=8	forms=loop,tree	images=plain,trace	workers=1,4
+runtime-adjacency-main	malformed-control	empty-with-owner	status=1	rounds=0	notices=0	output_unchanged=1	inputs_unchanged=1	events=0	configurations_checked=8	forms=loop,tree	images=plain,trace	workers=1,4
+runtime-adjacency-main	malformed-control	empty-with-successor	status=1	rounds=0	notices=0	output_unchanged=1	inputs_unchanged=1	events=0	configurations_checked=8	forms=loop,tree	images=plain,trace	workers=1,4
+runtime-adjacency-main	source-accounting	basis=written source operations; not physical load counts or peak storage	aux_words=12N+2C^2+2C	allocations=7 for nonempty	array_header_bytes=7*16	state_rows_init=N	notice_rows_init=4N	head_cells_init=2C^2	ready_heads_init=C	reports_init=C	output_rows_init=N	successor_reads_validation=4N	successor_reads_tasks=2N	successor_reads_notices=Ec	ready_task_visits=N	drain_calls=C*R+Ec	head_resets=C^2*R	head_inspections=C^2*R	notice_writes=Ec	notice_visits=Ec	report_reads=C*R	report_writes=C*R	frames_headers_allocator_native_graph=separate charges
+runtime-adjacency-main	routing-example	case=runtime-progress-costly-c1	owners=1	stride=6	last_owner_size=6	status=0	rounds=1	notices=0	aux_words=76	separate_allocations=7
+runtime-adjacency-main	source-operation-example	case=runtime-progress-costly-c1	cost_reads=6	drain_calls=1	head_cells_initialized=2	head_inspections=1	head_resets=1	notice_rows_initialized=24	notice_successor_reads=0	notice_visits=0	notice_writes=0	output_cells_initialized=6	ready_heads_initialized=1	report_reads=1	report_writes=1	reports_initialized=1	root_state_visits=6	state_rows_initialized=6	task_ready_visits=6	task_successor_reads=12	validation_successor_reads=24
+runtime-adjacency-main	routing-example	case=runtime-progress-costly-c2	owners=2	stride=3	last_owner_size=3	status=0	rounds=2	notices=3	aux_words=84	separate_allocations=7
+runtime-adjacency-main	source-operation-example	case=runtime-progress-costly-c2	cost_reads=6	drain_calls=7	head_cells_initialized=8	head_inspections=8	head_resets=8	notice_rows_initialized=24	notice_successor_reads=3	notice_visits=3	notice_writes=3	output_cells_initialized=6	ready_heads_initialized=2	report_reads=4	report_writes=4	reports_initialized=2	root_state_visits=6	state_rows_initialized=6	task_ready_visits=6	task_successor_reads=12	validation_successor_reads=24
+runtime-adjacency-main	routing-example	case=runtime-progress-costly-c4	owners=4	stride=1	last_owner_size=3	status=0	rounds=3	notices=4	aux_words=112	separate_allocations=7
+runtime-adjacency-main	source-operation-example	case=runtime-progress-costly-c4	cost_reads=6	drain_calls=16	head_cells_initialized=32	head_inspections=48	head_resets=48	notice_rows_initialized=24	notice_successor_reads=4	notice_visits=4	notice_writes=4	output_cells_initialized=6	ready_heads_initialized=4	report_reads=12	report_writes=12	reports_initialized=4	root_state_visits=6	state_rows_initialized=6	task_ready_visits=6	task_successor_reads=12	validation_successor_reads=24
+runtime-adjacency-main	routing-example	case=runtime-reverse-arrival-c4	owners=4	stride=2	last_owner_size=2	status=0	rounds=3	notices=3	aux_words=136	separate_allocations=7
+runtime-adjacency-main	source-operation-example	case=runtime-reverse-arrival-c4	cost_reads=8	drain_calls=15	head_cells_initialized=32	head_inspections=48	head_resets=48	notice_rows_initialized=32	notice_successor_reads=3	notice_visits=3	notice_writes=3	output_cells_initialized=8	ready_heads_initialized=4	report_reads=12	report_writes=12	reports_initialized=4	root_state_visits=8	state_rows_initialized=8	task_ready_visits=8	task_successor_reads=16	validation_successor_reads=32
+runtime-adjacency-main	progress-W4	engine=wf-runtime-loop	case=runtime-progress-costly-c1	owners=1	rounds=1	notices=0	pairs=0	task0_task3=0	task3_while_task0=0	observed_threads=1	actual_steals_plain=0	actual_steals_trace=0	task0=begin4,end5,thread1	task3=begin2,end3,thread1
+runtime-adjacency-main	progress-W4	engine=wf-runtime-loop	case=runtime-progress-costly-c2	owners=2	rounds=2	notices=3	pairs=0	task0_task3=0	task3_while_task0=0	observed_threads=1	actual_steals_plain=0	actual_steals_trace=0	task0=begin2,end3,thread1	task3=begin8,end9,thread1
+runtime-adjacency-main	progress-W4	engine=wf-runtime-loop	case=runtime-progress-costly-c4	owners=4	rounds=3	notices=4	pairs=0	task0_task3=0	task3_while_task0=0	observed_threads=1	actual_steals_plain=0	actual_steals_trace=0	task0=begin0,end1,thread1	task3=begin6,end7,thread1
+runtime-adjacency-main	progress-W4	engine=wf-runtime-loop	case=runtime-progress-unit-c1	owners=1	rounds=1	notices=0	pairs=0	task0_task3=0	task3_while_task0=0	observed_threads=1	actual_steals_plain=0	actual_steals_trace=0	task0=begin4,end5,thread1	task3=begin2,end3,thread1
+runtime-adjacency-main	progress-W4	engine=wf-runtime-loop	case=runtime-progress-unit-c2	owners=2	rounds=2	notices=3	pairs=0	task0_task3=0	task3_while_task0=0	observed_threads=1	actual_steals_plain=0	actual_steals_trace=0	task0=begin2,end3,thread1	task3=begin8,end9,thread1
+runtime-adjacency-main	progress-W4	engine=wf-runtime-loop	case=runtime-progress-unit-c4	owners=4	rounds=3	notices=4	pairs=0	task0_task3=0	task3_while_task0=0	observed_threads=1	actual_steals_plain=0	actual_steals_trace=0	task0=begin0,end1,thread1	task3=begin6,end7,thread1
+runtime-adjacency-main	progress-W4	engine=wf-runtime-loop	case=runtime-reverse-arrival-c1	owners=1	rounds=1	notices=0	pairs=0	task4_before_task2=1	observed_threads=1	actual_steals_plain=0	actual_steals_trace=0	task2=begin12,end13,thread1	task4=begin4,end5,thread1	task6=begin14,end15,thread1
+runtime-adjacency-main	progress-W4	engine=wf-runtime-loop	case=runtime-reverse-arrival-c2	owners=2	rounds=2	notices=1	pairs=0	task4_before_task2=0	observed_threads=1	actual_steals_plain=0	actual_steals_trace=0	task2=begin6,end7,thread1	task4=begin12,end13,thread1	task6=begin14,end15,thread1
+runtime-adjacency-main	progress-W4	engine=wf-runtime-loop	case=runtime-reverse-arrival-c4	owners=4	rounds=3	notices=3	pairs=0	task4_before_task2=1	observed_threads=1	actual_steals_plain=0	actual_steals_trace=0	task2=begin12,end13,thread1	task4=begin8,end9,thread1	task6=begin14,end15,thread1
+runtime-adjacency-main	progress-W4	engine=wf-runtime-tree	case=runtime-progress-costly-c1	owners=1	rounds=1	notices=0	pairs=0	task0_task3=0	task3_while_task0=0	observed_threads=1	actual_steals_plain=0	actual_steals_trace=0	task0=begin4,end5,thread1	task3=begin2,end3,thread1
+runtime-adjacency-main	progress-W4	engine=wf-runtime-tree	case=runtime-progress-costly-c2	owners=2	rounds=2	notices=3	pairs=0	task0_task3=0	task3_while_task0=0	observed_threads=1	actual_steals_plain=1	actual_steals_trace=1	task0=begin2,end3,thread1	task3=begin8,end9,thread1
+runtime-adjacency-main	progress-W4	engine=wf-runtime-tree	case=runtime-progress-costly-c4	owners=4	rounds=3	notices=4	pairs=1	task0_task3=0	task3_while_task0=0	observed_threads=2	actual_steals_plain=2	actual_steals_trace=2	task0=begin2,end3,thread1	task3=begin4,end7,thread1
+runtime-adjacency-main	progress-W4	engine=wf-runtime-tree	case=runtime-progress-unit-c1	owners=1	rounds=1	notices=0	pairs=0	task0_task3=0	task3_while_task0=0	observed_threads=1	actual_steals_plain=0	actual_steals_trace=0	task0=begin4,end5,thread1	task3=begin2,end3,thread1
+runtime-adjacency-main	progress-W4	engine=wf-runtime-tree	case=runtime-progress-unit-c2	owners=2	rounds=2	notices=3	pairs=0	task0_task3=0	task3_while_task0=0	observed_threads=1	actual_steals_plain=2	actual_steals_trace=0	task0=begin2,end3,thread1	task3=begin8,end9,thread1
+runtime-adjacency-main	progress-W4	engine=wf-runtime-tree	case=runtime-progress-unit-c4	owners=4	rounds=3	notices=4	pairs=0	task0_task3=0	task3_while_task0=0	observed_threads=1	actual_steals_plain=6	actual_steals_trace=0	task0=begin2,end3,thread1	task3=begin4,end5,thread1
+runtime-adjacency-main	progress-W4	engine=wf-runtime-tree	case=runtime-reverse-arrival-c1	owners=1	rounds=1	notices=0	pairs=0	task4_before_task2=1	observed_threads=1	actual_steals_plain=0	actual_steals_trace=0	task2=begin12,end13,thread1	task4=begin4,end5,thread1	task6=begin14,end15,thread1
+runtime-adjacency-main	progress-W4	engine=wf-runtime-tree	case=runtime-reverse-arrival-c2	owners=2	rounds=2	notices=1	pairs=0	task4_before_task2=0	observed_threads=2	actual_steals_plain=2	actual_steals_trace=2	task2=begin6,end7,thread4	task4=begin12,end13,thread1	task6=begin14,end15,thread1
+runtime-adjacency-main	progress-W4	engine=wf-runtime-tree	case=runtime-reverse-arrival-c4	owners=4	rounds=3	notices=3	pairs=0	task4_before_task2=1	observed_threads=2	actual_steals_plain=4	actual_steals_trace=5	task2=begin12,end13,thread3	task4=begin4,end5,thread1	task6=begin14,end15,thread1
+runtime-adjacency-main	progress-W4	engine=tbb-runtime	case=runtime-progress-costly	pairs=1	task0_task3=1	task3_while_task0=0	observed_threads=2	actual_steals_plain=not_instrumented	actual_steals_trace=not_instrumented	task0=begin3,end5,thread4	task3=begin2,end4,thread1
+runtime-adjacency-main	progress-W4	engine=tbb-runtime	case=runtime-progress-unit	pairs=0	task0_task3=0	task3_while_task0=0	observed_threads=1	actual_steals_plain=not_instrumented	actual_steals_trace=not_instrumented	task0=begin4,end5,thread1	task3=begin2,end3,thread1
+runtime-adjacency-main	progress-W4	engine=tbb-runtime	case=runtime-reverse-arrival	pairs=0	task4_before_task2=1	observed_threads=1	actual_steals_plain=not_instrumented	actual_steals_trace=not_instrumented	task2=begin12,end13,thread1	task4=begin4,end5,thread1	task6=begin14,end15,thread1
+runtime-adjacency-main	event-witness	engine=wf-runtime-loop	runtime-progress-costly-c4	0	0	begin	thread=1	value=ffffffffffffffe7	steps=65536
+runtime-adjacency-main	event-witness	engine=wf-runtime-loop	runtime-progress-costly-c4	1	0	end	thread=1	value=929b63f1ad8f38e0	steps=0
+runtime-adjacency-main	event-witness	engine=wf-runtime-loop	runtime-progress-costly-c4	2	1	begin	thread=1	value=ffffffffffffffe7	steps=1
+runtime-adjacency-main	event-witness	engine=wf-runtime-loop	runtime-progress-costly-c4	3	1	end	thread=1	value=1db14b23dd30a222	steps=0
+runtime-adjacency-main	event-witness	engine=wf-runtime-loop	runtime-progress-costly-c4	4	2	begin	thread=1	value=ffffffffffffffe7	steps=1
+runtime-adjacency-main	event-witness	engine=wf-runtime-loop	runtime-progress-costly-c4	5	2	end	thread=1	value=e693156bb1c0dc8b	steps=0
+runtime-adjacency-main	event-witness	engine=wf-runtime-loop	runtime-progress-costly-c4	6	3	begin	thread=1	value=ffffffffffffffe7	steps=65536
+runtime-adjacency-main	event-witness	engine=wf-runtime-loop	runtime-progress-costly-c4	7	3	end	thread=1	value=5bf64eff47a0b251	steps=0
+runtime-adjacency-main	event-witness	engine=wf-runtime-loop	runtime-progress-costly-c4	8	4	begin	thread=1	value=ffffffffffffffe7	steps=1
+runtime-adjacency-main	event-witness	engine=wf-runtime-loop	runtime-progress-costly-c4	9	4	end	thread=1	value=a91664903687ca54	steps=0
+runtime-adjacency-main	event-witness	engine=wf-runtime-loop	runtime-progress-costly-c4	10	5	begin	thread=1	value=ffffffffffffffe7	steps=1
+runtime-adjacency-main	event-witness	engine=wf-runtime-loop	runtime-progress-costly-c4	11	5	end	thread=1	value=8204c7b2a3d539d4	steps=0
+runtime-adjacency-main	event-witness	engine=wf-runtime-loop	runtime-reverse-arrival-c4	8	4	begin	thread=1	value=ffffffffffffffe7	steps=1
+runtime-adjacency-main	event-witness	engine=wf-runtime-loop	runtime-reverse-arrival-c4	9	4	end	thread=1	value=d94247dbece18222	steps=0
+runtime-adjacency-main	event-witness	engine=wf-runtime-loop	runtime-reverse-arrival-c4	12	2	begin	thread=1	value=ffffffffffffffe7	steps=1
+runtime-adjacency-main	event-witness	engine=wf-runtime-loop	runtime-reverse-arrival-c4	13	2	end	thread=1	value=f5953726fec8ffe1	steps=0
+runtime-adjacency-main	event-witness	engine=wf-runtime-loop	runtime-reverse-arrival-c4	14	6	begin	thread=1	value=ffffffffffffffe7	steps=1
+runtime-adjacency-main	event-witness	engine=wf-runtime-loop	runtime-reverse-arrival-c4	15	6	end	thread=1	value=bfdaae28e78f4d83	steps=0
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-progress-costly-c4	0	1	begin	thread=1	value=ffffffffffffffe7	steps=1
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-progress-costly-c4	1	1	end	thread=1	value=1db14b23dd30a222	steps=0
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-progress-costly-c4	2	0	begin	thread=1	value=ffffffffffffffe7	steps=65536
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-progress-costly-c4	3	0	end	thread=1	value=929b63f1ad8f38e0	steps=0
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-progress-costly-c4	4	3	begin	thread=1	value=ffffffffffffffe7	steps=65536
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-progress-costly-c4	5	2	begin	thread=3	value=ffffffffffffffe7	steps=1
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-progress-costly-c4	6	2	end	thread=3	value=e693156bb1c0dc8b	steps=0
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-progress-costly-c4	7	3	end	thread=1	value=5bf64eff47a0b251	steps=0
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-progress-costly-c4	8	4	begin	thread=1	value=ffffffffffffffe7	steps=1
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-progress-costly-c4	9	4	end	thread=1	value=a91664903687ca54	steps=0
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-progress-costly-c4	10	5	begin	thread=1	value=ffffffffffffffe7	steps=1
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-progress-costly-c4	11	5	end	thread=1	value=8204c7b2a3d539d4	steps=0
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-reverse-arrival-c4	4	4	begin	thread=1	value=ffffffffffffffe7	steps=1
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-reverse-arrival-c4	5	4	end	thread=1	value=d94247dbece18222	steps=0
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-reverse-arrival-c4	12	2	begin	thread=3	value=ffffffffffffffe7	steps=1
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-reverse-arrival-c4	13	2	end	thread=3	value=f5953726fec8ffe1	steps=0
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-reverse-arrival-c4	14	6	begin	thread=1	value=ffffffffffffffe7	steps=1
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-reverse-arrival-c4	15	6	end	thread=1	value=bfdaae28e78f4d83	steps=0
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-triangle-c2	0	0	begin	thread=4	value=ffffffffffffffe7	steps=1
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-triangle-c2	1	0	end	thread=4	value=df2ba1912d4b0222	steps=0
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-triangle-c2	2	1	begin	thread=1	value=ffffffffffffffe7	steps=1
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-triangle-c2	3	1	end	thread=1	value=b70f8d944ee35fe1	steps=0
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-triangle-c2	4	2	begin	thread=1	value=ffffffffffffffe7	steps=1
+runtime-adjacency-main	event-witness	engine=wf-runtime-tree	runtime-triangle-c2	5	2	end	thread=1	value=002f458d749a1923	steps=0
+runtime-adjacency-main	event-witness	engine=tbb-runtime	runtime-progress-costly	0	1	begin	thread=1	value=ffffffffffffffe7	steps=1
+runtime-adjacency-main	event-witness	engine=tbb-runtime	runtime-progress-costly	1	1	end	thread=1	value=1db14b23dd30a222	steps=0
+runtime-adjacency-main	event-witness	engine=tbb-runtime	runtime-progress-costly	2	3	begin	thread=1	value=ffffffffffffffe7	steps=65536
+runtime-adjacency-main	event-witness	engine=tbb-runtime	runtime-progress-costly	3	0	begin	thread=4	value=ffffffffffffffe7	steps=65536
+runtime-adjacency-main	event-witness	engine=tbb-runtime	runtime-progress-costly	4	3	end	thread=1	value=5bf64eff47a0b251	steps=0
+runtime-adjacency-main	event-witness	engine=tbb-runtime	runtime-progress-costly	5	0	end	thread=4	value=929b63f1ad8f38e0	steps=0
+runtime-adjacency-main	event-witness	engine=tbb-runtime	runtime-progress-costly	6	2	begin	thread=4	value=ffffffffffffffe7	steps=1
+runtime-adjacency-main	event-witness	engine=tbb-runtime	runtime-progress-costly	7	2	end	thread=4	value=e693156bb1c0dc8b	steps=0
+runtime-adjacency-main	event-witness	engine=tbb-runtime	runtime-progress-costly	8	4	begin	thread=4	value=ffffffffffffffe7	steps=1
+runtime-adjacency-main	event-witness	engine=tbb-runtime	runtime-progress-costly	9	4	end	thread=4	value=a91664903687ca54	steps=0
+runtime-adjacency-main	event-witness	engine=tbb-runtime	runtime-progress-costly	10	5	begin	thread=4	value=ffffffffffffffe7	steps=1
+runtime-adjacency-main	event-witness	engine=tbb-runtime	runtime-progress-costly	11	5	end	thread=4	value=8204c7b2a3d539d4	steps=0
+runtime-adjacency-main	conclusion	functional_qualification=12 configurations passed	valid_case_executions=13748	task_row_executions=66932	malformed_case_executions=104	negative_comparators=18 rejected	costly_C4_task0_task3_overlap=loop0,tree0,native1	tree_other_overlap=tasks2 and3	cross_owner_rounds=added ordering retained	absent_overlap=limitation of this formulation and observation, not all ordinary source formulations	actual_steals=successful steals only, not grants or offers	performance_benefit=not measured

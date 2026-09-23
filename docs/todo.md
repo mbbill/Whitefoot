@@ -238,6 +238,22 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   validate smaller emitted frames on the same source without changing calls,
   cleanup or results before selecting that wider scope.
 
+- **Aggregate-size estimates can refuse fitting loop captures.** The
+  [runtime-adjacency output initialization](../research/investigations/compute-model/DESIGN.md#source-construction-and-admission)
+  has PAR-2 permission and only two used captures after pruning, but split
+  admission charges its 16-byte `TaskCell` nominal 256 bytes. The resulting
+  312-byte estimate refuses a frame whose target field layout would be 72
+  bytes; that smaller frame was not emitted or qualified. This is distinct
+  from unused-capture analysis and from allocation primitives' serial fills.
+  Exact aggregate sizing could admit useful maps, but this tiny qualification
+  matrix is below the ordinary grain threshold and establishes no speed gain.
+  Defer repair until an ordinary map's useful offers are blocked by this
+  estimate. Reopen with selected-target size/alignment and address-domain
+  checks, small and genuinely oversized aggregate controls, native payload
+  snapshot/copy checks and unchanged results/fitting-frame behavior. Preserve
+  complete aggregate transport and the fixed 256-byte slot bound; no wider
+  dead-computation analysis is implied.
+
 - **Pruning already-fitting loop frames needs a qualified benefit.** The
   [capture investigation](../research/investigations/compute-model/DESIGN.md#needed-loop-captures)
   now selects capture pruning only to rescue an originally oversized frame.
@@ -266,20 +282,24 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   or serial execution. Defer until those active qualifications finish; no
   executor or new concurrency rule is selected by this follow-up.
 
-- **General runtime DAG fan-in costs remain unqualified.** The
-  [bounded source trial](../research/investigations/compute-model/DESIGN.md#native-qualification-and-cutoff-attribution)
-  qualifies a runtime-length spine, private notifications to two owners and
-  four decompositions of one N graph against an independent oracle and oneTBB.
-  Default native spine/leaf overlap refutes mandatory global-level execution
-  for that family; independent owner calls and overlapping owner recurrence
-  work do not measure simultaneous notice folding. The trial does not cover
-  arbitrary runtime adjacency, efficient general fan-in, elapsed performance
-  or physical peak workspace. Defer a general executor investigation until a
-  concrete consumer needs that wider contract. Reopen with its original graph,
-  every result and exactly-once counts, charging graph construction, routing,
-  initialization, added precedences, work, span and peak space against a useful
-  native readiness executor. The bounded witnesses are now evidence, not
-  outstanding admission work.
+- **General runtime DAG competitiveness remains unqualified.** The
+  [runtime-adjacency probe](../research/investigations/compute-model/DESIGN.md#runtime-adjacency-all-predecessor-probe)
+  executes runtime-provided forward graphs with at most two predecessors and
+  successors per vertex through ordinary WF source. Both owner mappings pass
+  the original-edge oracle, including all such graphs through five vertices.
+  Recursive owners overlap, but their joined rounds delay a ready task that
+  the native readiness executor overlaps with another long task. The loop
+  mapping retains zero split budget at the selected owner counts. Under
+  topological numbering and contiguous ownership, rounds are bounded by C;
+  routing adds O(C*C*R) work and two C*C head matrices. These results qualify
+  the bounded expression, not arbitrary labeling/degree, general efficiency,
+  elapsed competitiveness or physical peak workspace. Defer a general executor
+  until a concrete consumer makes those remaining costs material. Reopen with
+  its unchanged original graph, every result and exactly-once counts, charging
+  sorting/remapping if needed, construction, initialization, routing, added
+  precedences, wall/CPU and peak space against a useful native readiness
+  executor. An owner-round limitation does not establish that every ordinary
+  source formulation needs the same barrier.
 
 - **Recursive frontier policy suppresses deep work on a spine with side leaves.**
   The [cutoff-attribution control](../research/investigations/compute-model/DESIGN.md#native-qualification-and-cutoff-attribution)

@@ -290,6 +290,522 @@ fn dag_spine_phased_scalar(count: u64, leaf_steps: u64, output: &[TaskCell], see
   return unit;
 }
 
+struct DagRunResult {
+  status: u64;
+  rounds: u64;
+  notices: u64;
+}
+
+struct RuntimeDagState {
+  remaining: u64;
+  first_source: u64;
+  mixed: u64;
+  next_ready: u64;
+}
+
+struct RoutedNotice {
+  next: u64;
+  value: u64;
+}
+
+fn runtime_bucket(vertex: u64, stride: u64, owners: u64) -> (owner: u64, origin: u64) pure contract {
+  requires vertex <= 1073741823_u64;
+  requires 1_u64 <= stride;
+  requires stride <= 1073741823_u64;
+  requires 1_u64 <= owners;
+  requires owners <= 1073741823_u64;
+  ensures owner < owners;
+  ensures origin <= vertex;
+} {
+  let raw = vertex / stride;
+  let raw_origin = raw * stride;
+  let last = owners - 1_u64;
+  if raw < last {
+    return raw, raw_origin;
+  }
+  let owner_span = owners * stride;
+  invariant last_stride: stride <= owner_span {
+    use stride times (1_u64 <= owners);
+  }
+  let last_origin = owner_span - stride;
+  invariant last_origin_bound: last_origin <= vertex {
+    use stride times (last <= raw);
+    use (raw_origin <= vertex);
+  }
+  return last, last_origin;
+}
+
+fn runtime_arrive(state: &[RuntimeDagState], local: u64, source: u64, value: u64, head: u64, absent: u64) -> result: u64 writes(state) contract {
+  requires local < deref(state).len;
+} {
+  let pending = deref(state)[local].remaining;
+  if pending == 0_u64 {
+    return head;
+  }
+  let first = deref(state)[local].first_source;
+  let previous = deref(state)[local].mixed;
+  if first == absent {
+    set deref(state)[local].first_source = source;
+    set deref(state)[local].mixed = value;
+  } else if source < first {
+    let shifted = irotl(value, 7_u32);
+    set deref(state)[local].mixed = ixor(shifted, previous);
+  } else {
+    let shifted = irotl(previous, 7_u32);
+    set deref(state)[local].mixed = ixor(shifted, value);
+  }
+  let following = pending - 1_u64;
+  set deref(state)[local].remaining = following;
+  if following == 0_u64 {
+    set deref(state)[local].next_ready = head;
+    return local;
+  }
+  return head;
+}
+
+fn runtime_drain(costs: &[u64], successors: &[u64], state: &[RuntimeDagState], output: &[TaskCell], messages: &[RoutedNotice], heads: &[u64], origin: u64, stride: u64, first: u64, seed: u64) -> result: u64 reads(costs), reads(successors), writes(state), writes(output), writes(messages), writes(heads) contract {
+  requires deref(costs).len <= 1073741823_u64;
+  requires 2_u64 * deref(costs).len <= deref(successors).len;
+  requires deref(state).len <= deref(costs).len;
+  requires deref(state).len <= deref(output).len;
+  requires 2_u64 * deref(state).len <= deref(messages).len;
+  requires origin <= deref(costs).len;
+  requires origin + deref(state).len <= deref(costs).len;
+  requires 1_u64 <= stride;
+  requires stride <= 1073741823_u64;
+  requires 1_u64 <= deref(heads).len;
+  requires deref(heads).len <= 1073741823_u64;
+} {
+  doc "Drain an owner's local ready stack completely. Local successors update the same private state immediately; cross-owner successors use their immutable original edge-slot IDs.";
+  let count = deref(costs).len;
+  let width = deref(state).len;
+  let head = first;
+  let sent = 0_u64;
+  loop {
+    if head >= width {
+      break;
+    }
+    let local = head;
+    set head = deref(state)[local].next_ready;
+    let id = origin + local;
+    invariant task_bound: id < count;
+    let output_end = local + 1_u64;
+    let task_output = &deref(output)[local..output_end];
+    let steps = deref(costs)[id];
+    let mixed = deref(state)[local].mixed;
+    let value = evaluate(output: task_output, id: id, steps: steps, seed: seed, predecessor_mix: mixed);
+    let start = id * 2_u64;
+    let end = start + 2_u64;
+    invariant edge_room: end <= deref(successors).len {
+      use 2 times (id + 1_u64 <= count);
+      use (2_u64 * count <= deref(successors).len);
+    }
+    let local_start = local * 2_u64;
+    let local_end = local_start + 2_u64;
+    invariant message_room: local_end <= deref(messages).len {
+      use 2 times (local + 1_u64 <= width);
+      use (2_u64 * width <= deref(messages).len);
+    }
+    for (slot in start..end) {
+      let destination = deref(successors)[slot];
+      if destination < count {
+        let offset = destination -wrap origin;
+        if offset < width {
+          set head = runtime_arrive(state: state, local: offset, source: id, value: value, head: head, absent: count);
+        } else {
+          let (owner, destination_origin) = runtime_bucket(vertex: destination, stride: stride, owners: deref(heads).len);
+          let previous = deref(heads)[owner];
+          let in_row = slot - start;
+          let local_slot = local_start + in_row;
+          set deref(messages)[local_slot] = RoutedNotice(next: previous, value: value);
+          set deref(heads)[owner] = slot;
+          set sent = sent +wrap 1_u64;
+        }
+      }
+    }
+  }
+  return sent;
+}
+
+fn runtime_owner(costs: &[u64], successors: &[u64], previous_messages: &[RoutedNotice], previous_heads: &[u64], initial: &[u64], state: &[RuntimeDagState], output: &[TaskCell], messages: &[RoutedNotice], heads: &[u64], owner: u64, origin: u64, stride: u64, round: u64, seed: u64) -> result: u64 reads(costs), reads(successors), reads(previous_messages), reads(previous_heads), reads(initial), writes(state), writes(output), writes(messages), writes(heads) contract {
+  requires deref(costs).len <= 1073741823_u64;
+  requires 2_u64 * deref(costs).len <= deref(successors).len;
+  requires deref(successors).len <= 2_u64 * deref(costs).len;
+  requires deref(previous_messages).len == deref(successors).len;
+  requires deref(state).len <= deref(costs).len;
+  requires deref(state).len <= deref(output).len;
+  requires 2_u64 * deref(state).len <= deref(messages).len;
+  requires origin <= deref(costs).len;
+  requires origin + deref(state).len <= deref(costs).len;
+  requires 1_u64 <= stride;
+  requires stride <= 1073741823_u64;
+  requires 1_u64 <= deref(heads).len;
+  requires deref(heads).len <= 1073741823_u64;
+  requires owner < deref(initial).len;
+  requires owner < deref(previous_heads).len;
+  requires deref(previous_heads).len <= 1152921502459363329_u64;
+} {
+  doc "Reset one outgoing row, drain initial roots, then drain newly ready local work after each incoming notice. Previous-round storage stays read-only.";
+  let count = deref(costs).len;
+  let width = deref(state).len;
+  let slots = deref(successors).len;
+  let owners = deref(heads).len;
+  for (column in 0_u64..owners) {
+    set deref(heads)[column] = slots;
+  }
+  if width == 0_u64 {
+    return 0_u64;
+  }
+  let first = count;
+  if round == 0_u64 {
+    set first = deref(initial)[owner];
+  }
+  let sent = runtime_drain(costs: costs, successors: successors, state: state, output: output, messages: messages, heads: heads, origin: origin, stride: stride, first: first, seed: seed);
+  let cells = deref(previous_heads).len;
+  let at = owner;
+  loop (
+    invariant current_head: at < cells
+  ) {
+    let cursor = deref(previous_heads)[at];
+    loop {
+      if cursor >= slots {
+        break;
+      }
+      let destination = deref(successors)[cursor];
+      let notice = deref(previous_messages)[cursor];
+      let source = cursor / 2_u64;
+      let offset = destination -wrap origin;
+      if offset < width {
+        let ready = runtime_arrive(state: state, local: offset, source: source, value: notice.value, head: count, absent: count);
+        let emitted = runtime_drain(costs: costs, successors: successors, state: state, output: output, messages: messages, heads: heads, origin: origin, stride: stride, first: ready, seed: seed);
+        set sent = sent +wrap emitted;
+      }
+      set cursor = notice.next;
+    }
+    let remaining = cells - at;
+    if owners >= remaining {
+      return sent;
+    }
+    let following = at + owners;
+    invariant following_head: following < cells;
+    set at = following;
+  }
+  return sent;
+}
+
+fn runtime_tree(costs: &[u64], successors: &[u64], previous_messages: &[RoutedNotice], previous_heads: &[u64], initial: &[u64], state: &[RuntimeDagState], output: &[TaskCell], messages: &[RoutedNotice], heads: &[u64], reports: &[u64], first_owner: u64, owner_count: u64, origin: u64, stride: u64, round: u64, seed: u64) -> result: unit reads(costs), reads(successors), reads(previous_messages), reads(previous_heads), reads(initial), writes(state), writes(output), writes(messages), writes(heads), writes(reports) contract {
+  requires deref(costs).len <= 1073741823_u64;
+  requires 2_u64 * deref(costs).len <= deref(successors).len;
+  requires deref(successors).len <= 2_u64 * deref(costs).len;
+  requires deref(previous_messages).len == deref(successors).len;
+  requires deref(state).len <= deref(costs).len;
+  requires deref(state).len <= deref(output).len;
+  requires deref(output).len <= deref(state).len;
+  requires 2_u64 * deref(state).len <= deref(messages).len;
+  requires deref(messages).len <= 2_u64 * deref(state).len;
+  requires 1_u64 <= deref(initial).len;
+  requires deref(initial).len <= deref(costs).len;
+  requires deref(initial).len <= deref(previous_heads).len;
+  requires deref(previous_heads).len <= 1152921502459363329_u64;
+  requires 1_u64 <= owner_count;
+  requires owner_count <= deref(initial).len;
+  requires first_owner < deref(initial).len;
+  requires first_owner + owner_count <= deref(initial).len;
+  requires owner_count <= deref(reports).len;
+  requires origin <= deref(costs).len;
+  requires origin + deref(state).len <= deref(costs).len;
+  requires 1_u64 <= stride;
+  requires stride <= deref(costs).len;
+} {
+  let owners = deref(initial).len;
+  let width = deref(state).len;
+  let covered = owner_count * stride;
+  if covered > width {
+    return unit;
+  }
+  let cells = owner_count * owners;
+  if cells != deref(heads).len {
+    return unit;
+  }
+  if owner_count == 1_u64 {
+    invariant leaf_row_upper: cells <= owners {
+      use owners times (owner_count <= 1_u64);
+    }
+    invariant leaf_row_lower: owners <= cells {
+      use owners times (1_u64 <= owner_count);
+    }
+    let sent = runtime_owner(costs: costs, successors: successors, previous_messages: previous_messages, previous_heads: previous_heads, initial: initial, state: state, output: output, messages: messages, heads: heads, owner: first_owner, origin: origin, stride: stride, round: round, seed: seed);
+    set deref(reports)[0_u64] = sent;
+    return unit;
+  }
+  let left_count = owner_count / 2_u64;
+  if left_count == 0_u64 {
+    return unit;
+  }
+  let right_count = owner_count - left_count;
+  invariant right_positive: 1_u64 <= right_count;
+  let middle = left_count * stride;
+  invariant left_room: middle <= width {
+    use stride times (left_count <= owner_count);
+    use (covered <= width);
+  }
+  let edge_middle = middle * 2_u64;
+  invariant edge_room: edge_middle <= deref(messages).len {
+    use 2 times (middle <= width);
+    use (2_u64 * width <= deref(messages).len);
+  }
+  let head_middle = left_count * owners;
+  invariant head_room: head_middle <= deref(heads).len {
+    use owners times (left_count <= owner_count);
+    use (cells <= deref(heads).len);
+  }
+  let right_origin = origin + middle;
+  let right_owner = first_owner + left_count;
+  let left_state = &deref(state)[0_u64..middle];
+  let right_state = &deref(state)[middle..width];
+  let left_output = &deref(output)[0_u64..middle];
+  let right_output = &deref(output)[middle..width];
+  let left_messages = &deref(messages)[0_u64..edge_middle];
+  let right_messages = &deref(messages)[edge_middle..deref(messages).len];
+  let left_heads = &deref(heads)[0_u64..head_middle];
+  let right_heads = &deref(heads)[head_middle..deref(heads).len];
+  let left_reports = &deref(reports)[0_u64..left_count];
+  let right_reports = &deref(reports)[left_count..owner_count];
+  invariant right_output_length: deref(right_state).len == deref(right_output).len;
+  let left = runtime_tree(costs: costs, successors: successors, previous_messages: previous_messages, previous_heads: previous_heads, initial: initial, state: left_state, output: left_output, messages: left_messages, heads: left_heads, reports: left_reports, first_owner: first_owner, owner_count: left_count, origin: origin, stride: stride, round: round, seed: seed);
+  let right = runtime_tree(costs: costs, successors: successors, previous_messages: previous_messages, previous_heads: previous_heads, initial: initial, state: right_state, output: right_output, messages: right_messages, heads: right_heads, reports: right_reports, first_owner: right_owner, owner_count: right_count, origin: right_origin, stride: stride, round: round, seed: seed);
+  return unit;
+}
+
+fn runtime_round(form: u64, costs: &[u64], successors: &[u64], previous_messages: &[RoutedNotice], previous_heads: &[u64], initial: &[u64], state: &[RuntimeDagState], output: &[TaskCell], messages: &[RoutedNotice], heads: &[u64], reports: &[u64], stride: u64, round: u64, seed: u64) -> result: u64 reads(costs), reads(successors), reads(previous_messages), reads(previous_heads), reads(initial), writes(state), writes(output), writes(messages), writes(heads), writes(reports) contract {
+  requires deref(costs).len <= 1073741823_u64;
+  requires 2_u64 * deref(costs).len <= deref(successors).len;
+  requires deref(successors).len <= 2_u64 * deref(costs).len;
+  requires deref(previous_messages).len == deref(successors).len;
+  requires deref(state).len == deref(costs).len;
+  requires deref(output).len == deref(costs).len;
+  requires deref(messages).len == deref(successors).len;
+  requires 1_u64 <= deref(initial).len;
+  requires deref(initial).len <= deref(costs).len;
+  requires deref(initial).len <= deref(previous_heads).len;
+  requires deref(previous_heads).len <= 1152921502459363329_u64;
+  requires deref(initial).len <= deref(reports).len;
+  requires 1_u64 <= stride;
+  requires stride <= deref(costs).len;
+} {
+  let count = deref(costs).len;
+  let owners = deref(initial).len;
+  let full_span = owners * stride;
+  if full_span > count {
+    return 0_u64;
+  }
+  let matrix_size = owners * owners;
+  if matrix_size != deref(heads).len {
+    return 0_u64;
+  }
+  if form == 0_u64 {
+    let full = owners - 1_u64;
+    invariant last_stride: stride <= full_span {
+      use stride times (1_u64 <= owners);
+    }
+    let covered = full_span - stride;
+    invariant covered_room: covered <= count;
+    for (owner in 0_u64..full) {
+      let start = owner * stride;
+      let end = start + stride;
+      invariant task_room: end <= covered {
+        use stride times (owner + 1_u64 <= full);
+      }
+      let edge_start = start * 2_u64;
+      let edge_end = end * 2_u64;
+      invariant edge_room: edge_end <= deref(messages).len {
+        use 2 times (end <= count);
+        use (2_u64 * count <= deref(messages).len);
+      }
+      let head_start = owner * owners;
+      let head_end = head_start + owners;
+      invariant head_room: head_end <= deref(heads).len {
+        use owners times (owner + 1_u64 <= owners);
+        use (matrix_size <= deref(heads).len);
+      }
+      let owned_state = &deref(state)[start..end];
+      let owned_output = &deref(output)[start..end];
+      let owned_messages = &deref(messages)[edge_start..edge_end];
+      let owned_heads = &deref(heads)[head_start..head_end];
+      let sent = runtime_owner(costs: costs, successors: successors, previous_messages: previous_messages, previous_heads: previous_heads, initial: initial, state: owned_state, output: owned_output, messages: owned_messages, heads: owned_heads, owner: owner, origin: start, stride: stride, round: round, seed: seed);
+      set deref(reports)[owner] = sent;
+    }
+    let edge_covered = covered * 2_u64;
+    invariant edge_tail: edge_covered <= deref(messages).len {
+      use 2 times (covered <= count);
+      use (2_u64 * count <= deref(messages).len);
+    }
+    invariant last_row: owners <= matrix_size {
+      use owners times (1_u64 <= owners);
+    }
+    let head_covered = matrix_size - owners;
+    invariant head_tail: head_covered <= deref(heads).len;
+    let tail_state = &deref(state)[covered..count];
+    let tail_output = &deref(output)[covered..count];
+    let tail_messages = &deref(messages)[edge_covered..deref(messages).len];
+    let tail_heads = &deref(heads)[head_covered..deref(heads).len];
+    let sent = runtime_owner(costs: costs, successors: successors, previous_messages: previous_messages, previous_heads: previous_heads, initial: initial, state: tail_state, output: tail_output, messages: tail_messages, heads: tail_heads, owner: full, origin: covered, stride: stride, round: round, seed: seed);
+    set deref(reports)[full] = sent;
+  } else {
+    invariant message_lower: 2_u64 * deref(state).len <= deref(messages).len {
+      use 2 times (deref(state).len <= deref(costs).len);
+      use (2_u64 * deref(costs).len <= deref(successors).len);
+      use (deref(successors).len <= deref(messages).len);
+    }
+    invariant message_upper: deref(messages).len <= 2_u64 * deref(state).len {
+      use (deref(messages).len <= deref(successors).len);
+      use (deref(successors).len <= 2_u64 * deref(costs).len);
+      use 2 times (deref(costs).len <= deref(state).len);
+    }
+    let mapped = runtime_tree(costs: costs, successors: successors, previous_messages: previous_messages, previous_heads: previous_heads, initial: initial, state: state, output: output, messages: messages, heads: heads, reports: reports, first_owner: 0_u64, owner_count: owners, origin: 0_u64, stride: stride, round: round, seed: seed);
+  }
+  let sent = 0_u64;
+  for (owner in 0_u64..owners) {
+    set sent = sent +wrap deref(reports)[owner];
+  }
+  return sent;
+}
+
+fn runtime_validate(successors: &[u64], state: &[RuntimeDagState]) -> result: u64 reads(successors), writes(state) contract {
+  requires deref(state).len <= 1073741823_u64;
+  requires 2_u64 * deref(state).len <= deref(successors).len;
+  requires deref(successors).len <= 2_u64 * deref(state).len;
+} {
+  let count = deref(state).len;
+  for (source in 0_u64..count) {
+    let start = source * 2_u64;
+    let end = start + 2_u64;
+    invariant edge_room: end <= deref(successors).len {
+      use 2 times (source + 1_u64 <= count);
+      use (2_u64 * count <= deref(successors).len);
+    }
+    let second_at = start + 1_u64;
+    let first = deref(successors)[start];
+    let second = deref(successors)[second_at];
+    if first < count {
+      if second == first {
+        return 1_u64;
+      }
+    }
+    for (slot in start..end) {
+      let destination = deref(successors)[slot];
+      if destination > count {
+        return 1_u64;
+      }
+      if destination < count {
+        if destination <= source {
+          return 1_u64;
+        }
+        let pending = deref(state)[destination].remaining;
+        if pending >= 2_u64 {
+          return 1_u64;
+        }
+        set deref(state)[destination].remaining = pending + 1_u64;
+      }
+    }
+  }
+  return 0_u64;
+}
+
+fn dag_runtime(form: u64, owners: u64, costs: &[u64], successors: &[u64], output: &[TaskCell], seed: u64) -> result: DagRunResult reads(costs), reads(successors), writes(output) contract {
+  requires deref(costs).len <= deref(output).len;
+} {
+  doc "Runtime topologically numbered adjacency, maximum in/outdegree two. Validation precedes output initialization and every task. Both mappings use the same owner and immediate local-drain helpers.";
+  let invalid = DagRunResult(status: 1_u64, rounds: 0_u64, notices: 0_u64);
+  if form > 1_u64 {
+    return invalid;
+  }
+  let count = deref(costs).len;
+  if count > 1073741823_u64 {
+    return invalid;
+  }
+  let slots = count * 2_u64;
+  if deref(successors).len != slots {
+    return invalid;
+  }
+  if count == 0_u64 {
+    if owners == 0_u64 {
+      return DagRunResult(status: 0_u64, rounds: 0_u64, notices: 0_u64);
+    }
+    return invalid;
+  }
+  if owners == 0_u64 {
+    return invalid;
+  }
+  if owners > count {
+    return invalid;
+  }
+  let stride = count / owners;
+  if stride == 0_u64 {
+    return invalid;
+  }
+  let matrix_size = owners * owners;
+  invariant matrix_bound: matrix_size <= 1152921502459363329_u64;
+  invariant matrix_rows: owners <= matrix_size {
+    use owners times (1_u64 <= owners);
+  }
+  let empty_state = RuntimeDagState(remaining: 0_u64, first_source: count, mixed: 0_u64, next_ready: count);
+  let state = box_array_filled::<RuntimeDagState>(count: count, value: empty_state);
+  let state_range = &state.inner[0_u64..count];
+  let validation = runtime_validate(successors: successors, state: state_range);
+  if validation != 0_u64 {
+    return invalid;
+  }
+  let empty_task = TaskCell(value: 0_u64, evaluations: 0_u64);
+  for (task in 0_u64..count) {
+    set deref(output)[task] = empty_task;
+  }
+  let empty_notice = RoutedNotice(next: slots, value: 0_u64);
+  let even_messages = box_array_filled::<RoutedNotice>(count: slots, value: empty_notice);
+  let odd_messages = box_array_filled::<RoutedNotice>(count: slots, value: empty_notice);
+  let even_heads = box_array_filled::<u64>(count: matrix_size, value: slots);
+  let odd_heads = box_array_filled::<u64>(count: matrix_size, value: slots);
+  let initial = box_array_filled::<u64>(count: owners, value: count);
+  let reports = box_array_filled::<u64>(count: owners, value: 0_u64);
+  for (task in 0_u64..count) {
+    if state.inner[task].remaining == 0_u64 {
+      let (owner, origin) = runtime_bucket(vertex: task, stride: stride, owners: owners);
+      let local = task - origin;
+      let previous = initial.inner[owner];
+      set state.inner[task].next_ready = previous;
+      set initial.inner[owner] = local;
+    }
+  }
+  let output_range = &deref(output)[0_u64..count];
+  let roots = &initial.inner[0_u64..owners];
+  let notices = 0_u64;
+  for (round in 0_u64..owners) {
+    let current_state = &state.inner[0_u64..count];
+    let counters = &reports.inner[0_u64..owners];
+    let parity = round % 2_u64;
+    let sent = 0_u64;
+    if parity == 0_u64 {
+      let previous_messages = &even_messages.inner[0_u64..slots];
+      let previous_heads = &even_heads.inner[0_u64..matrix_size];
+      let messages = &odd_messages.inner[0_u64..slots];
+      let heads = &odd_heads.inner[0_u64..matrix_size];
+      set sent = runtime_round(form: form, costs: costs, successors: successors, previous_messages: previous_messages, previous_heads: previous_heads, initial: roots, state: current_state, output: output_range, messages: messages, heads: heads, reports: counters, stride: stride, round: round, seed: seed);
+    } else {
+      let previous_messages = &odd_messages.inner[0_u64..slots];
+      let previous_heads = &odd_heads.inner[0_u64..matrix_size];
+      let messages = &even_messages.inner[0_u64..slots];
+      let heads = &even_heads.inner[0_u64..matrix_size];
+      set sent = runtime_round(form: form, costs: costs, successors: successors, previous_messages: previous_messages, previous_heads: previous_heads, initial: roots, state: current_state, output: output_range, messages: messages, heads: heads, reports: counters, stride: stride, round: round, seed: seed);
+    }
+    set notices = notices +wrap sent;
+    if sent == 0_u64 {
+      let rounds = round + 1_u64;
+      return DagRunResult(status: 0_u64, rounds: rounds, notices: notices);
+    }
+  }
+  return DagRunResult(status: 0_u64, rounds: owners, notices: notices);
+}
+
 fn main() -> status: ExitStatus pure {
   let empty = TaskCell(value: 0_u64, evaluations: 0_u64);
   let costs = array_filled::<u64, 4>(value: 1_u64);
@@ -302,5 +818,7 @@ fn main() -> status: ExitStatus pure {
   let n = dag_n(mode: 0_u64, costs: &costs[0_u64..4_u64], output: &n_output[0_u64..4_u64], seed: 17_u64);
   let phased = dag_spine_phased(count: 2_u64, costs: &costs[0_u64..4_u64], output: &spine_output[0_u64..4_u64], seed: 17_u64);
   let scalar = dag_spine_phased_scalar(count: 2_u64, leaf_steps: 1_u64, output: &spine_output[0_u64..4_u64], seed: 17_u64);
+  let successors = array_filled::<u64, 8>(value: 4_u64);
+  let runtime = dag_runtime(form: 0_u64, owners: 2_u64, costs: &costs[0_u64..4_u64], successors: &successors[0_u64..8_u64], output: &spine_output[0_u64..4_u64], seed: 17_u64);
   return exit_status(code: 0_u8);
 }

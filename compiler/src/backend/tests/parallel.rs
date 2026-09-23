@@ -619,13 +619,13 @@ fn main() -> status: ExitStatus pure {
 }
 "#;
 
-/// A group's compute members are joined newest first, and the block continues
+/// An unbridged group's compute members are joined newest first, and the block continues
 /// at the *first* published member's `par.done`.
 ///
 /// This is design §4's order: the compute deque is Chase-Lev, so the owner can
 /// only pop the newest end, and joining the newest hand-out first is what keeps
 /// every join's target either at that end or already stolen. The order lives in
-/// `compute_join_order`, and this pins what the emitter does with it — both the
+/// the target-selected call schedule, and this pins what the emitter does with it — both the
 /// sequence of joins and the label the two sites that predict it agree on. The
 /// prediction is not cosmetic: a phi naming a block its predecessor does not
 /// end at is a module `clang` rejects, so linking is part of the assertion.
@@ -1505,9 +1505,23 @@ fn main() -> status: ExitStatus pure {
 }
 "#;
 
+fn call_schedule_events(body: &str) -> Vec<(&'static str, u32)> {
+    body.lines()
+        .filter_map(|line| {
+            [("offer", "par.offer.v"), ("wait", "par.wait.v")]
+                .into_iter()
+                .find_map(|(event, prefix)| {
+                    line.strip_prefix(prefix)
+                        .and_then(|value| value.strip_suffix(':'))
+                        .map(|value| (event, value.parse().expect("call result ordinal")))
+                })
+        })
+        .collect()
+}
+
 #[test]
 fn call_group_bridge_retires_dependencies_before_argument_reads() {
-    with_parallel_ir(CALL_GROUP_BRIDGE, |program| {
+    let (first, tail, head) = with_parallel_ir(CALL_GROUP_BRIDGE, |program| {
         let function = program
             .functions()
             .iter()
@@ -1527,11 +1541,28 @@ fn call_group_bridge_retires_dependencies_before_argument_reads() {
                 ..
             }
         ));
+        (
+            function.overlaps()[0].handed_out()[0].ordinal(),
+            bridge.tail.ordinal(),
+            bridge.head.ordinal(),
+        )
     });
     let module = emit_with_overlap(CALL_GROUP_BRIDGE);
     let body = function_body(&module, "@wf_bridge");
     assert_eq!(body.matches("call void @wf__par_publish(").count(), 3);
     assert_eq!(body.matches("call void @wf__par_join(").count(), 3);
+    assert_eq!(
+        call_schedule_events(body),
+        [
+            ("offer", tail),
+            ("offer", first),
+            ("wait", first),
+            ("offer", head),
+            ("wait", tail),
+            ("wait", head),
+        ],
+        "the chain root leaves the soon-retired result at the owner's newest end"
+    );
     let sequential = emit(CALL_GROUP_BRIDGE);
     assert_eq!(
         function_body(&module, "@wf__par_seq_bridge").replace("@wf__par_seq_", "@wf_"),
@@ -1558,7 +1589,7 @@ fn call_group_bridge_requires_the_complete_adjacent_statement_permission() {
     );
     let control_boundary = original.replace(
         "let d = choose(value: deref(first));",
-        "if true { let marker = 0_u64; }\n  let d = choose(value: deref(first));",
+        "if b == 11_u64 {\n    let marker = 0_u64;\n  }\n  let d = choose(value: deref(first));",
     );
     for source in [
         argument_conflict,
@@ -1592,7 +1623,7 @@ fn call_group_bridge_preserves_owned_results_and_exit_cleanup() {
         .unwrap()
         .replace(
             "fn stamp(slot: &u64, value: u64) -> result: u64 writes(slot)",
-            "struct Pair { value: u64; checksum: u64; owner: Box<u64>; }\n\nfn stamp(slot: &u64, value: u64) -> result: Pair writes(slot)",
+            "struct Pair {\n  value: u64;\n  checksum: u64;\n  owner: Box<u64>;\n}\n\nfn stamp(slot: &u64, value: u64) -> result: Pair writes(slot)",
         )
         .replace(
             "  return result;\n}",
@@ -1600,7 +1631,7 @@ fn call_group_bridge_preserves_owned_results_and_exit_cleanup() {
         )
         .replace(
             "  let ab = b +wrap a;",
-            "  if b.checksum != 111_u64 { return 0_u64; }\n  if a.checksum != 122_u64 { return 0_u64; }\n  if b.owner.inner != b.value { return 0_u64; }\n  if a.owner.inner != a.value { return 0_u64; }\n  let ab = b.value +wrap a.value;",
+            "  let Pair(value: b_value, checksum: b_checksum, owner: b_owner) = move b;\n  let Pair(value: a_value, checksum: a_checksum, owner: a_owner) = move a;\n  if b_checksum != 111_u64 {\n    return 0_u64;\n  }\n  if a_checksum != 122_u64 {\n    return 0_u64;\n  }\n  if b_owner.inner != b_value {\n    return 0_u64;\n  }\n  if a_owner.inner != a_value {\n    return 0_u64;\n  }\n  let ab = b_value +wrap a_value;",
         );
     let module = emit_with_overlap(source.as_bytes());
     assert_eq!(
@@ -1610,6 +1641,70 @@ fn call_group_bridge_preserves_owned_results_and_exit_cleanup() {
         3
     );
     assert!(function_body(&module, "@wf_stamp").starts_with("define void @wf_stamp(ptr "));
+    run_owned_lane_cases(source.as_bytes(), &module, 0, 3, 2, 0, 2);
+}
+
+#[test]
+fn call_group_bridge_keeps_prepared_owned_argument_storage_private() {
+    // Both consumed inputs and results have the same representation. A
+    // synchronous call can reuse this input's backing, but its refused edge
+    // still needs the original payload after all root operands are prepared.
+    let source = std::str::from_utf8(CALL_GROUP_BRIDGE)
+        .unwrap()
+        .replace(
+            "fn stamp(slot: &u64, value: u64) -> result: u64 writes(slot) {\n  let result = deref(slot) +wrap value;\n  set deref(slot) = result;\n  return result;\n}",
+            "struct Payload {\n  value: u64;\n  owner: Box<u64>;\n}\n\nfn stamp(slot: &u64, value: Payload) -> result: Payload writes(slot) {\n  let result = deref(slot) +wrap value.value;\n  set deref(slot) = result;\n  set value.value = result;\n  return move value;\n}",
+        )
+        .replace(
+            "  let b = stamp(slot: first, value: 11_u64);\n  let a = stamp(slot: second, value: 22_u64);",
+            "  let first_owner = box_new::<u64>(value: 111_u64);\n  let setup_boundary = 0_u64;\n  let second_owner = box_new::<u64>(value: 122_u64);\n  let first_payload = Payload(value: 11_u64, owner: move first_owner);\n  let second_payload = Payload(value: 22_u64, owner: move second_owner);\n  let b = stamp(slot: first, value: move first_payload);\n  let a = stamp(slot: second, value: move second_payload);",
+        )
+        .replace(
+            "  let ab = b +wrap a;",
+            "  let Payload(value: b_value, owner: b_owner) = move b;\n  let Payload(value: a_value, owner: a_owner) = move a;\n  if b_owner.inner != 111_u64 {\n    return 0_u64;\n  }\n  if a_owner.inner != 122_u64 {\n    return 0_u64;\n  }\n  let ab = b_value +wrap a_value;",
+        );
+    with_parallel_ir(source.as_bytes(), |program| {
+        let function = program
+            .functions()
+            .iter()
+            .find(|function| function.name() == "bridge")
+            .unwrap();
+        assert_eq!(function.overlap_bridges().len(), 1);
+        let storage = super::super::storage::FunctionStoragePlan::build(program, function)
+            .expect("parallel input storage");
+        let mut owned_slots = std::collections::BTreeSet::new();
+        for instruction in function
+            .blocks()
+            .iter()
+            .flat_map(|block| block.instructions())
+        {
+            if let crate::IrInstruction::Define {
+                result,
+                operation: crate::IrOperation::Call { arguments, .. },
+                ..
+            } = instruction
+                && let Some(result_slot) = storage.slot(*result)
+            {
+                let argument_slot = storage.slot(arguments[1]).expect("owned payload input");
+                assert!(owned_slots.insert(result_slot));
+                assert!(owned_slots.insert(argument_slot));
+                assert!(storage.destination(argument_slot).is_none());
+                assert!(storage.field_destination(argument_slot).is_none());
+            }
+        }
+        assert_eq!(
+            owned_slots.len(),
+            4,
+            "two private inputs and two private results"
+        );
+    });
+    let module = emit_with_overlap(source.as_bytes());
+    assert_eq!(
+        function_body(&module, "@wf_bridge")
+            .matches("call void @wf__par_publish(")
+            .count(),
+        3
+    );
     run_owned_lane_cases(source.as_bytes(), &module, 0, 3, 2, 0, 2);
 }
 
@@ -1671,7 +1766,7 @@ fn call_group_bridge_obeys_scalar_pruning_before_selection() {
 fn call_group_bridge_fits_the_new_tail_frame_and_recursive_budget() {
     for (padding, recursive, offers) in [(232, false, 3), (233, false, 2), (232, true, 2)] {
         let recursion = if recursive {
-            "  if value == 0_u64 {\n    let first = 0_u64;\n    let second = 0_u64;\n    return bridge(first: &first, second: &second);\n  }\n"
+            "  if value == 0_u64 {\n    let first = 0_u64;\n    let second = 0_u64;\n    return bridge(first: &first, second: &second, pad: pad);\n  }\n"
         } else {
             ""
         };
@@ -1682,14 +1777,66 @@ fn call_group_bridge_fits_the_new_tail_frame_and_recursive_budget() {
             + &std::str::from_utf8(CALL_GROUP_BRIDGE)
                 .unwrap()
                 .replace(
-                    "  let b = stamp(slot: first, value: 11_u64);",
-                    &format!("  let pad = array_filled::<u8, {padding}>(value: 0_u8);\n  let b = stamp(slot: first, value: 11_u64);"),
+                    "fn bridge(first: &u64, second: &u64)",
+                    &format!("fn bridge(first: &u64, second: &u64, pad: Array<u8, {padding}>)"),
+                )
+                .replace(
+                    "  let result = bridge(first: &first, second: &second);",
+                    &format!("  let pad = array_filled::<u8, {padding}>(value: 0_u8);\n  let result = bridge(first: &first, second: &second, pad: pad);"),
                 )
                 .replace(
                     "let a = stamp(slot: second, value: 22_u64);",
                     "let a = wide_stamp(slot: second, pad: pad, value: 22_u64);",
                 );
         with_parallel_ir(source.as_bytes(), |program| {
+            let function = program
+                .functions()
+                .iter()
+                .find(|function| function.name() == "bridge")
+                .unwrap();
+            assert_eq!(
+                function.overlaps().len(),
+                2,
+                "padding {padding}, recursion {recursive}"
+            );
+            assert_eq!(
+                function.overlap_bridges().len(),
+                1,
+                "padding {padding}, recursion {recursive}"
+            );
+            let callees = function
+                .overlaps()
+                .iter()
+                .map(|group| {
+                    group
+                        .handed_out()
+                        .iter()
+                        .copied()
+                        .chain(group.join_site())
+                        .map(|call| {
+                            function
+                                .blocks()
+                                .iter()
+                                .flat_map(|block| block.instructions())
+                                .find_map(|instruction| match instruction {
+                                    crate::IrInstruction::Define {
+                                        result,
+                                        operation: crate::IrOperation::Call { function, .. },
+                                        ..
+                                    } if *result == call => Some(
+                                        program.functions()[*function as usize].name().to_owned(),
+                                    ),
+                                    _ => None,
+                                })
+                                .expect("ordinary group member")
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                callees,
+                [vec!["stamp", "wide_stamp"], vec!["choose", "choose"]]
+            );
             let host = TargetLayout::host().unwrap();
             let tail = program
                 .functions()
@@ -1714,8 +1861,45 @@ fn call_group_bridge_fits_the_new_tail_frame_and_recursive_budget() {
                 .matches("call void @wf__par_publish(")
                 .count(),
             offers,
-            "declining only the bridge must preserve both original groups"
+            "declining only the bridge must preserve both original groups: padding {padding}, recursion {recursive}"
         );
+        if padding == 233 && !recursive {
+            let chain = source.replace(
+                "  let ab = b +wrap a;",
+                "  let f = choose(value: d);\n  let e = choose(value: c);\n  let ab = b +wrap a;",
+            );
+            let (first, middle_head, middle_tail, last_head) =
+                with_parallel_ir(chain.as_bytes(), |program| {
+                    let function = program
+                        .functions()
+                        .iter()
+                        .find(|function| function.name() == "bridge")
+                        .unwrap();
+                    assert_eq!(function.overlap_bridges().len(), 2);
+                    let groups = function.overlaps();
+                    (
+                        groups[0].handed_out()[0].ordinal(),
+                        groups[1].handed_out()[0].ordinal(),
+                        groups[1].join_site().unwrap().ordinal(),
+                        groups[2].handed_out()[0].ordinal(),
+                    )
+                });
+            let module = emit_with_overlap(chain.as_bytes());
+            assert_eq!(
+                call_schedule_events(function_body(&module, "@wf_bridge")),
+                [
+                    ("offer", first),
+                    ("wait", first),
+                    ("offer", middle_tail),
+                    ("offer", middle_head),
+                    ("wait", middle_head),
+                    ("offer", last_head),
+                    ("wait", middle_tail),
+                    ("wait", last_head),
+                ],
+                "a declined incoming bridge makes the next retained group a chain root"
+            );
+        }
     }
 }
 
@@ -1749,7 +1933,7 @@ fn call_group_bridges_preserve_wide_groups_and_consecutive_boundaries() {
     for (source, widths, bridges, pending) in
         [(wide, vec![3, 3], 1, 3), (chain, vec![2, 2, 2], 2, 2)]
     {
-        with_parallel_ir(source.as_bytes(), |program| {
+        let groups = with_parallel_ir(source.as_bytes(), |program| {
             let function = program
                 .functions()
                 .iter()
@@ -1764,6 +1948,18 @@ fn call_group_bridges_preserve_wide_groups_and_consecutive_boundaries() {
                 widths
             );
             assert_eq!(function.overlap_bridges().len(), bridges);
+            function
+                .overlaps()
+                .iter()
+                .map(|group| {
+                    group
+                        .handed_out()
+                        .iter()
+                        .chain(group.join_site().as_ref())
+                        .map(|value| value.ordinal())
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
         });
         let module = emit_with_overlap(source.as_bytes());
         assert_eq!(
@@ -1771,6 +1967,40 @@ fn call_group_bridges_preserve_wide_groups_and_consecutive_boundaries() {
                 .matches("call void @wf__par_publish(")
                 .count(),
             5
+        );
+        let expected = if bridges == 1 {
+            let (left, right) = (&groups[0], &groups[1]);
+            vec![
+                ("offer", left[2]),
+                ("offer", left[0]),
+                ("offer", left[1]),
+                ("wait", left[1]),
+                ("wait", left[0]),
+                ("offer", right[0]),
+                ("wait", left[2]),
+                ("offer", right[1]),
+                ("wait", right[1]),
+                ("wait", right[0]),
+            ]
+        } else {
+            let (left, middle, right) = (&groups[0], &groups[1], &groups[2]);
+            vec![
+                ("offer", left[1]),
+                ("offer", left[0]),
+                ("wait", left[0]),
+                ("offer", middle[0]),
+                ("wait", left[1]),
+                ("offer", middle[1]),
+                ("wait", middle[0]),
+                ("offer", right[0]),
+                ("wait", middle[1]),
+                ("wait", right[0]),
+            ]
+        };
+        assert_eq!(
+            call_schedule_events(function_body(&module, "@wf_bridge")),
+            expected,
+            "wide roots rotate only their tail; incoming groups keep source publication boundaries"
         );
         run_owned_lane_cases(source.as_bytes(), &module, 0, 5, 0, 0, pending);
     }
@@ -1783,17 +2013,17 @@ fn call_group_bridge_uses_the_original_dynamic_range_captures() {
     let ranged = helpers
         .replace(
             "fn stamp(slot: &u64, value: u64) -> result: u64 writes(slot) {",
-            "fn stamp(slot: &[u64], value: u64) -> result: u64 writes(slot) contract { requires 1_u64 <= deref(slot).len; } {",
+            "fn stamp(slot: &[u64], value: u64) -> result: u64 writes(slot) contract {\n  requires 1_u64 <= deref(slot).len;\n} {",
         )
         .replace("deref(slot)", "deref(slot)[0_u64]")
         .replace("deref(slot)[0_u64].len", "deref(slot).len")
         .replace(
             "fn bridge(first: &u64, second: &u64) -> result: u64 writes(first), writes(second) {",
-            "fn bridge(values: &Array<u64, 4>, split: u64) -> result: u64 writes(values) contract { requires 1_u64 <= split; requires split < 4_u64; } {\n  let first = &deref(values)[0_u64..split];\n  let second = &deref(values)[split..4_u64];",
+            "fn bridge(values: &Array<u64, 4>, split: u64) -> result: u64 writes(values) contract {\n  requires 1_u64 <= split;\n  requires split < 4_u64;\n} {\n  let first = &deref(values)[0_u64..split];\n  let second = &deref(values)[split..4_u64];",
         )
         .replace("deref(first)", "deref(first)[0_u64]")
         .replace("deref(second)", "deref(second)[0_u64]");
-    let main = "fn main() -> status: ExitStatus pure {\n  let values = array_filled::<u64, 4>(value: 0_u64);\n  let result = bridge(values: &values, split: 2_u64);\n  if result != 66_u64 { return exit_status(code: 1_u8); }\n  if values[0_u64] != 11_u64 { return exit_status(code: 2_u8); }\n  if values[2_u64] != 22_u64 { return exit_status(code: 3_u8); }\n  return exit_status(code: 0_u8);\n}\n";
+    let main = "fn main() -> status: ExitStatus pure {\n  let values = array_filled::<u64, 4>(value: 0_u64);\n  let result = bridge(values: &values, split: 2_u64);\n  if result != 66_u64 {\n    return exit_status(code: 1_u8);\n  }\n  if values[0_u64] != 11_u64 {\n    return exit_status(code: 2_u8);\n  }\n  if values[2_u64] != 22_u64 {\n    return exit_status(code: 3_u8);\n  }\n  return exit_status(code: 0_u8);\n}\n";
     let source = ranged.clone() + main;
     let module = emit_with_overlap(source.as_bytes());
     assert_eq!(
@@ -1866,7 +2096,9 @@ fn call_group_bridge_survives_loop_capture_pruning_and_frame_refusal() {
 
 fn main() -> status: ExitStatus pure {{
   let result = folded({arguments});
-  if result != {expected}_u64 {{ return exit_status(code: 1_u8); }}
+  if result != {expected}_u64 {{
+    return exit_status(code: 1_u8);
+  }}
   return exit_status(code: 0_u8);
 }}
 ",

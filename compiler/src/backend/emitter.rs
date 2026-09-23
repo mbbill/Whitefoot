@@ -50,7 +50,8 @@ use parallel::{
     PARALLEL_POOL_QUERY_FALLBACK, PARALLEL_RECURSION_BUDGET_DECLARATION,
     PARALLEL_RECURSION_BUDGET_FALLBACK, PARALLEL_RUNTIME_DECLARATIONS, PARALLEL_RUNTIME_FALLBACK,
     PARALLEL_SPLIT_BUDGET_DECLARATION, PARALLEL_SPLIT_BUDGET_FALLBACK, ParallelThunks,
-    par_done_label, par_offered_label, sequential_clone_set, sequential_clone_symbol,
+    PreparedHandedOut, par_done_label, par_offered_label, sequential_clone_set,
+    sequential_clone_symbol,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1043,6 +1044,8 @@ struct FunctionEmitter<'program, 'state> {
     /// fitted frames. Emission and phi labels consume the same schedule; the
     /// sequential world has an empty one.
     overlap_schedule: OverlapSchedule,
+    /// Original source-point snapshots not yet acquired or published.
+    prepared_hand_outs: HashMap<IrValueId, PreparedHandedOut>,
     /// Ordinary calls awaiting the group's join.
     handed_out: Vec<HandedOut>,
     /// The functions that have a sequential clone, when this emitter is
@@ -1139,6 +1142,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             temporary: 0,
             parallel,
             overlap_schedule,
+            prepared_hand_outs: HashMap::new(),
             handed_out: Vec::new(),
             sequential_clones,
             refusal_clones,
@@ -1386,7 +1390,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             for (instruction_index, instruction) in block.instructions().iter().enumerate() {
                 self.emit_instruction(block_id, instruction_index, instruction)?;
             }
-            if !self.handed_out.is_empty() {
+            if !self.prepared_hand_outs.is_empty() || !self.handed_out.is_empty() {
                 return Err(BackendFailure::InvalidIr);
             }
             self.emit_terminator(block_id, block.terminator())?;
@@ -1555,6 +1559,15 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
         self.emit_instruction_body(block, index, instruction)?;
         if let IrInstruction::Define { result, .. } = instruction {
+            let publications = self
+                .overlap_schedule
+                .publications
+                .get(result)
+                .cloned()
+                .unwrap_or_default();
+            for published in publications {
+                self.publish_handed_out_call(published)?;
+            }
             let after = self
                 .overlap_schedule
                 .after
@@ -1639,7 +1652,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 arguments,
             } => {
                 if self.overlap_schedule.frames.contains_key(&result) {
-                    self.emit_handed_out_call(result, ty, *function, arguments)
+                    self.prepare_handed_out_call(result, ty, *function, arguments)
                 } else {
                     self.emit_call(result, ty, *function, arguments)
                 }
@@ -2379,8 +2392,12 @@ fn block_exit_label(block_id: IrBlockId, block: &IrBlock, schedule: &OverlapSche
         }
         definition_exit_label(block_id, index, instruction, &mut label);
         if let IrInstruction::Define { result, .. } = instruction {
-            if schedule.frames.contains_key(result) {
-                label = par_offered_label(*result);
+            if let Some(last) = schedule
+                .publications
+                .get(result)
+                .and_then(|results| results.last())
+            {
+                label = par_offered_label(*last);
             }
             if let Some(last) = schedule
                 .after
