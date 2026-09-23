@@ -363,6 +363,48 @@ solver policy. [LLVM's function attributes](https://llvm.org/docs/LangRef.html#f
 define `noinline` as an inliner restriction, not a cost theorem; that is why
 target correspondence remains an explicit compiler responsibility.
 
+## Retained design drafts
+
+These three texts were withdrawn from active amendment consideration at the
+owner's explicit request when the topic was deferred. They are retained here
+as research drafts, with their technical wording, reasons and alternatives;
+the draft labels below do not record adopted decisions or owner refusals.
+No active fixed-resource amendment remains. The live design nodes, language
+rules and compiler behavior are unchanged. On resumption, reassess these drafts
+against the then-current owners and evidence; any selected tree revision must
+be proposed anew through the ordinary amendment procedure.
+
+### Proof boundary
+
+Former target node: language/checks-and-proofs
+
+Draft decision: Required partial-operation domains are established only by the specification's deterministic proof system, whose facts come from admitted types and declarations, selected control-flow edges, verified contracts, and checked invariants, and whole-invocation completion requires separate checked progress for loops and callees rather than following from an in-place update callable's ordinary no-failure-exit signature, because the [bounded-execution proposal](DESIGN.md) needs completion evidence without changing the existing sources of arithmetic facts or the atomic update contract, instead of writer assertions or deriving termination from a result type.
+
+Draft rejected alternatives:
+- The replaced decision's statement that termination remains unchecked for every function: rejected because optional checked progress is necessary for the fixed-resource invocation objective, while ordinary unannotated functions still receive no termination promise.
+
+### Progress and storage
+
+Former target node: language/checks-and-proofs/resource-bounds
+
+Draft decision: A written scalar affine rank denotes an erased immutable value captured at function entry or the current loop header, with its range and every recursive actual or continuing backedge proved through the ordinary fact context, because the [rank probes and implementation contract](DESIGN.md) distinguish entry-relative progress from resetting a mutable counter before decrementing it, instead of trusting a declared depth, inferring a rank by search, or comparing only with the value immediately before a recursive call.
+
+Draft decision: Completion and the path/depth bounds needed for peak storage compose over the complete concrete call and loop closure, with ranked direct recursion admitted when its byte bound fits and linked definitions requiring their own progress evidence, because a bounded outer loop or small stack does not make an unknown callee finish and proving completion requires no aggregate execution-cost report, instead of equating no-heap, tail transfer or a runtime exhaustion limit with completion.
+
+Draft rejected alternatives:
+- Banning all recursion in the fixed-resource domain: rejected because a checked finite activation bound can fit the same supplied stack budget as an iterative algorithm.
+- Runtime fuel as authority for normal completion: rejected because exhaustion stops an execution without proving that it reaches its declared result.
+
+### Compiler resource consumer
+
+Former target node: compiler/resource-bounds
+
+Draft decision: The existing program-point ProofContext produces rank snapshots, inequalities and numeric maxima in its ordinary derivation ledger, while a focused consumer of the checked program owns cycle coverage and peak-storage composition, because the [implementation contract](DESIGN.md#compiler-responsibilities-and-interfaces) needs the existing effects and value identities without placing a second solver or graph engine inside each proof query, instead of a resource-only source checker or reconstructing proofs from rendered diagnostics.
+
+Draft decision: Peak-storage composition uses checked arithmetic and distinguishes unavailable evidence from an upper bound that cannot certify the supplied byte capacity, while aggregate execution-cost estimation remains deferred until a concrete budget needs it, because the [stack objective](STACK.md) needs neither numeric-depth unrolling nor a total-work report to establish storage fit, instead of unchecked or silently saturated arithmetic, a compiler timeout selecting qualification or making whole-program work estimation a prerequisite.
+
+Draft decision: Target qualification proves peak stack bytes fit the capacity supplied in advance, using the analyzed objects actually linked, their complete call/frame and storage inventory, and an established mapping when source bounds are used for machine paths, with frame evidence accounting for below-SP accesses and every admitted entry alignment, because the [stack probes](STACK.md) exhibit undercounts even in static frame reports and helpers outside the module's measured graph, instead of imposing an independent depth cap, treating a static qualifier or diagnostic ledger as a certificate, assigning zero cost to unknown callees or treating a hash as a resource proof.
+
 This document retains the proposed implementation contract during deferral,
 until the selected rules and compiler decisions supersede it. Replace its proposals with links
 to their owners as they land; retain only useful design evidence and rejected

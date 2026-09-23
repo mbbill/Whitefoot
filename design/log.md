@@ -5,6 +5,12 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-22 Withdraw fixed-resource amendments into deferred research
+
+Nodes: language/checks-and-proofs, language/checks-and-proofs/resource-bounds, compiler/resource-bounds
+
+Summary: The owner explicitly directed moving all three fixed-resource amendments into research and making the research PR ready for review so its evidence and TODO entry can be merged without keeping an active work branch. Withdraw these proposals from active consideration and retain their technical text, reasons and alternatives as [research drafts](../research/investigations/fixed-resource-execution/DESIGN.md#retained-design-drafts). This disposition adopts no proposed decision and rejects no technical alternative on the owner's behalf; the live nodes, language rules and compiler behavior remain unchanged. Reassess the drafts when the topic resumes and propose any selected tree changes anew. Remove the former amendment files and their empty directory; the single TODO topic remains the resumption entry. This instruction does not authorize a merge by the agent.
+
 ## 2026-09-22 Carry Result evidence through ordinary local value flow
 
 Nodes: language/checks-and-proofs/automatic-facts, compiler/checker-facts

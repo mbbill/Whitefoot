@@ -11,7 +11,8 @@ an internal proof consumer; the latest completed study covers [stack bytes](STAC
 The whole topic is deferred. The checkpoint below preserves where to resume;
 whole-program work estimation additionally needs a concrete cost-budget consumer.
 The active specification and compiler are unchanged by this investigation;
-three pending design amendments keep those choices outside the live tree.
+the former amendments are retained as [research drafts](DESIGN.md#retained-design-drafts),
+outside the live tree and the active amendment process.
 
 ## Deferred work and resumption
 
@@ -53,13 +54,15 @@ When this topic is explicitly resumed:
    missing-backedge and nonterminating-callee controls. Stack fit, termination
    and full deployment qualification remain separate claims.
 
-Three unchanged proposals remain unresolved in the sole amendment directory:
-the [proof-boundary replacement](../../../design/amendments/resource-proof-boundary.md)
-for `language/checks-and-proofs`, the [progress proposal](../../../design/amendments/resource-progress.md)
+Three former amendments are retained as research drafts:
+the [proof-boundary replacement](DESIGN.md#proof-boundary)
+for `language/checks-and-proofs`, the [progress proposal](DESIGN.md#progress-and-storage)
 for `language/checks-and-proofs/resource-bounds`, and the
-[compiler consumer proposal](../../../design/amendments/resource-consumer.md)
-for `compiler/resource-bounds`. Deferral neither approves nor rejects them;
-reassess their grounds when resuming before requesting a tree ruling.
+[compiler consumer proposal](DESIGN.md#compiler-resource-consumer)
+for `compiler/resource-bounds`. The owner withdrew them from active amendment
+consideration so this research can be preserved on main. Their technical
+content is not adopted or rejected. Reassess their grounds on resumption;
+any selected tree revision needs a fresh amendment and owner ruling.
 
 Related work stays with this topic. [Recursive cleanup](../access-effects/cleanup-continuations/README.md)
 still has no general constant-stack lowering; its continuation-layout study
@@ -602,7 +605,7 @@ in the [stack study](STACK.md). The later source rank/coverage consumer and stor
 composition are specified in [DESIGN.md](DESIGN.md).
 An acyclic stack calculation can be implemented independently of rank syntax;
 recursive path bounds and progress coverage follow as separate proof inputs.
-The three amendments remain unresolved; deferral schedules no tree ruling.
+The former amendments remain research drafts; no tree revision is pending.
 The first complete target milestone takes
 the supplied byte budget as an input and must distinguish one oversized frame
 from many small frames that fit, as well as the exact budget boundary. It also
