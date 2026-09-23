@@ -868,15 +868,20 @@ ranges and consumes the remainder. The existing scalar
 [leaf split](../../../tests/programs/containers/ordered.wf) is only one component.
 This trial selects boxed nodes before the family sketch's pool candidate to
 avoid whole-pool relocation and a new node-ID protocol; measurements may reject
-that choice. No implementation or new compiler run supports this section yet.
+that choice. The initial ownership probe below supports only its bounded
+transfer and cleanup protocol, not yet the complete map.
 
 Use one common pair region, fixed fanout, and an explicit root vacancy:
 
 ```wf
 struct OrderedPair<K, V> { key: K; value: V; }
+struct OrderedEntry<K, V> {
+  pair: OrderedPair<K, V>;
+  after: Slots<Box<OrderedNode<K, V>>, 1>;
+}
 struct OrderedNode<K, V> {
-  entries: Slots<OrderedPair<K, V>, 15>;
-  children: Slots<Box<OrderedNode<K, V>>, 16>;
+  leading: Slots<Box<OrderedNode<K, V>>, 1>;
+  entries: Slots<OrderedEntry<K, V>, 15>;
 }
 struct OrderedMap<K, V, const ceiling: u64> {
   root: Slots<Box<OrderedNode<K, V>>, 1>;
@@ -892,7 +897,7 @@ interface OrderedKey<K, E> {
 }
 ```
 
-These are proposed shapes, not a checked source bundle. K/V have no copy/drop
+These are proposed shapes, not a checked complete source bundle. K/V have no copy/drop
 bound. The ceiling limits logical entries; nodes grow by fixed-size Box
 allocation, with no allocation-failure result. Replacement remains available
 at the ceiling. A consistent comparator and environment determine map order;
@@ -929,18 +934,23 @@ is unspecified; the ordered visitor is a separate operation.
 The complete mutation chain is part of the experiment, including deletion:
 
 - B-tree promotion moves a complete median pair, so it needs no cloned key.
-  `split_off` transfers the upper entries/children; parent insertion shifts
-  its filled prefixes. Re-form child selections after those shifts.
+  Each entry owns the subtree following its pair; the node's one leading link
+  owns the preceding subtree. Upper entries move together with their links.
+  Parent insertion shifts its filled prefix; re-form child selections afterward.
 - Borrow exchanges the parent separator with a sibling boundary pair and
-  transfers the corresponding child when internal. Prove distinct child
-  indexes below one captured parent, rather than trusting independent cursors.
-- Merge first extracts the right child Box, then reads its local measures and
-  appends its entries/children into the left child. Append empties the local
-  source; subsequent Box consumption/destructuring can carry those empty facts
-  to `free_empty`. Extracting only after emptying in-place loses that evidence.
+  swaps the carried entry's following link with the receiving or donating
+  node's leading link. Prove distinct entry indexes below one captured parent,
+  rather than trusting independent cursors.
+- Merge first extracts the right child Box, then reads its local entry count,
+  places the separator with that node's leading link and appends its entries
+  into the left child. Append empties the local source; subsequent Box
+  consumption/destructuring carries the empty fact to `free_empty`. Capacity
+  depends on entry counts alone, without a separate child-count relation.
 - Internal deletion replaces by a predecessor/successor pair or merges and
-  descends; root contraction extracts the root before inspecting and removing
-  its sole child. Every detached owner is reinstalled, returned or consumed.
+  descends; root contraction extracts the root before inspecting its entry
+  count. For an empty root, move its zero-or-one leading link into the now-empty
+  root window and consume the emptied locals. Every detached owner is
+  reinstalled, returned or consumed.
 - Range traversal visits internal pairs as well as leaves, with O(h+k) node
   work for k results at height h under lawful order. Full visitation/cleanup
   is O(n); recursively consuming suffixes needs no stored reference stack.
@@ -957,6 +967,27 @@ an impossible Some cleanup arm, silently drop an owner, or call an internal
 shape refusal Full. If these API outcomes cannot express an actual required
 path, report its exact source/rule boundary before altering the contract.
 
+The original two-window candidate had `entries: Slots<Pair,15>` and
+`children: Slots<Box<Node>,16>`. A generic nodrop probe of split, merge, root
+contraction and complete cleanup admits and executes with counted
+take/place/reverse transfers: LLVM admission 0.08 seconds, native construction
+0.62 seconds, all 15 pairs consumed. Replacing its counted split with
+`split_off(source: &deref(left).entries, index: 8_u64, destination: &deref(right).entries)`
+rejects the written `ensures deref(right).entries.len == 7_u64` at FN-9
+(0.03 seconds), since PRE-1 publishes no corresponding destination relation.
+This is a contract limit, not a compiler defect. The counted version costs
+additional movement, which the matched source control must retain.
+
+Deletion also needs the bound on the separate child window after extracting
+a node. A bound on its entry count alone supplies no relation to that other
+window. The bundled candidate above removes this particular capacity premise
+by attaching each following edge to its separator entry. Its zero-or-one
+links are ordinary data, not stored references or a new proof mechanism.
+The complete split/borrow/merge chain for this changed representation remains
+to be compiled and measured. A two-window implementation with a genuine
+checked operation protocol remains an alternative; an impossible failure arm
+added only to discharge its missing relation does not establish that protocol.
+
 | Alternative | Ground for retaining it, and present scope |
 | --- | --- |
 | Boxed AVL | Complete find/edit/replace/remove and range visitation via two one-slot links and a balance enum; rotations transfer Box owners. Per-entry allocation and dependent loads may lose to B-tree fanout, while wide payload occupancy may win. Include a bounded native comparison before claiming a default winner; no second WF library is budgeted initially. |
@@ -967,9 +998,12 @@ Current [target layout](../../../compiler/src/backend/target.rs) gives both
 `Option<Box<Node>>` and `Slots<Box<Node>,1>` 16 bytes; a native nullable pointer
 is 8. Do not charge an extra word to Slots relative to WF Option. Repeated Pair
 fields in Leaf/Branch variants duplicate storage under the current product
-enum layout. For eight-byte-aligned pair size P, the proposed node is `15P+144`
-bytes: 384 for P=16 and 4,104 for P=264, before allocation overhead. At 7--15
-entries per non-root node this is about 55--26 or 586--274 bytes per live pair.
+enum layout. For eight-byte-aligned pair size P, the bundled node is `15P+264`
+bytes: 504 for P=16 and 4,224 for P=264, before allocation overhead. It spends
+120 bytes more than the initial two-window node (`15P+144`). At 7--15 entries
+per non-root node the new shape reserves about 72--34 or 604--282 bytes per live
+pair. The lower-space two-window/direct C controls must not be relabelled as
+layout-matched to this candidate.
 A WF binary node with two links and a three-state balance enum is about P+40.
 These are layout deductions; occupancy and timings remain measurements.
 
@@ -1014,9 +1048,10 @@ cleanup. Hostile comparisons check bounded progress and ownership, not sorted
 semantics. The owning/nodrop chain must cover every operation above.
 
 **Design suitability.** Packed boxed nodes trade more balancing source for
-fewer allocations and avoid pool-wide movement; this fits the performance-first
-objective without selecting new machinery. Wide-value occupancy remains the
-main representation risk and AVL its meaningful alternative. Indexed composite
+fewer allocations and avoid pool-wide movement. Bundling edges with separator
+ownership removes a cross-window capacity premise at an explicit space cost;
+the measurements must decide whether that tradeoff is useful. Wide-value
+occupancy remains a representation risk and AVL a meaningful alternative. Indexed composite
 work and prior container/lowering cost questions retain their own scope; this
 trial does not close them or amend the language.
 
