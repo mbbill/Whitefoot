@@ -198,8 +198,8 @@ full. The edit scenarios below describe the desired finer reuse.
 ## The proof and execution story
 
 The following is the **intended argument**, not a compiler verification result.
-The logical getter notation and its missing judgments are described in the
-next section.
+The selected logical getter and footprint judgments are described in the
+next section; their compiler implementation remains outstanding.
 
 | Point in either entry | Queue length known from the public contracts | Why the next operation is permitted |
 |---|---|---|
@@ -267,54 +267,32 @@ demonstrate a linker or backend achieving it.
 
 ## Proposed notation used here
 
-The graph, module and alias direction comes from the investigation. To make
-the unresolved abstract API readable as complete files, this specimen also
-uses the following **provisional notation**, without selecting final grammar
-or claiming a new proof mechanism is implemented.
+These sources follow the selected [boundary rules](../LANGUAGE.md) and
+[qualified syntax](../SYNTAX.md). The grammar qualification does not execute
+the specimen or establish a compiler implementation.
 
-| Form in these files | Intended reading | Qualification still required |
-|---|---|---|
-| `pkg::`, ordered module rows and `target` in `.wfg` | Implicit primary root at the graph directory, exact earlier dependencies, selected entry and optional heap prohibition | Full graph grammar, owning-package identity, external dependency bindings and target/source/execution closure judgments |
-| `directory/module.wfm` | The only interface location for the module named by that directory | Canonical path and direct-file ownership checks, including root modules and namespace-only prefixes |
-| `public` on a declaration or struct field in `.wfm` | Explicit publication; unmarked declarations/fields are private, and `.wf` cannot use the modifier | Complete modifier grammar, effective parent/member visibility, private type support and access diagnostics |
-| Function header ending in `;` in `.wfm` | A complete declaration with no executable body; publication is separate from the repeated implementation header | Interface grammar and normalized implementation correspondence |
-| `alias short = pkg::path;` and qualified names | A file-local binding to a canonical module or declaration | Complete strong-LL(2) grammar, lookup domains and collision checks |
-| `public nocopy struct Queue { storage: Ring<Job, capacity>; }` | One complete public type definition with a private field; copy forbidden and drop derived from components | Imported capability derivation, private source access and layout/release dependencies; conditional generic summaries remain unqualified |
-| `observe fn len(...)` | One callable with an ordinary runtime implementation and an admissible total logical observation | Explicit admission, typed interpretation, deterministic finite realization checking and termination grounds; `observe` is only a spelling under evaluation |
-| `len(...)` as a contract relation term | The scalar observation at that argument's specified state, with no runtime call | New FN-8/FN-9/ENT term formation and state/support rules; arbitrary function calls remain outside this illustration |
-| `len(queue: &made)` in the constructor's `ensures` | Observation of the returned `Queue`, with a proof-only view of that result | Aggregate-result observation, result-binder scope, proof-only borrowing and fact transport through construction, return and binding |
-| `len(queue: entry(queue))` | The written reference formal's entry-state observation, used only in `ensures` | Snapshot identity and checked substitution at direct and function-kind calls |
+| Form | Meaning |
+|---|---|
+| `pkg::`, ordered graph rows and named targets | One implicit source root, exact earlier dependencies and target requirements |
+| `directory/module.wfm` | Complete declarations, one complete public representation, explicit `public`, no executable function bodies |
+| File-local `alias` headers | Abbreviations with the original identities and direct-edge checks |
+| `public footprint state = storage;` | Effect-only name for the private storage path; no storage or private field access is added |
+| `public footprint length = storage.len;` | Precise support of the public length observation |
+| `observe fn len(...)` | One executable getter in `.wf`, admitted as a finite scalar view and erased when used in a contract |
+| `len(queue: entry(queue))` | Frozen mathematical entry observation, independent of later mutation |
+| `len(queue: &made)` | Proof view of an aggregate result, transported through construction, return and caller binding |
 
-The explicit `observe` marker makes the promised logical use visible in the
-self-contained interface. This avoids relying on hidden body discovery or
-assuming that every `pure`/read-only function terminates. It supplies no trust:
-before any observation is usable, the compiler must check the realization
-without that getter's own asserted summary. Here the candidate realization is
-one total projection of a built-in ring measure. The eventual language needs
-specified admissible derivations, including their interaction with recursive
-proof publication; the marker alone does not define them.
+The getter's body is a single checked measure projection. Implementations can
+normalize it to the Ring length while callers use the opaque public observation
+and checked operation summaries. `reads(queue.length)` records exact support;
+`writes(queue.state)` invalidates that live observation while preserving its
+entry image. Different footprint spellings do not prove disjointness: expanded
+paths do. No interface body, trusted axiom, runtime snapshot or box is needed.
 
-For reading this example, observations of the same getter, referent and state
-are the same typed scalar term. A write overlapping `queue` invalidates its
-live observations; immutable entry observations remain. Construction and
-value transfer must preserve the corresponding result observations. A
-checked getter call must connect its returned integer to the current
-observation. These are obligations for the proposed design, not consequences
-of the active specification's existing field rules.
-
-The current FN-8 forbids ordinary calls and borrows in contracts; FN-9 also
-does not admit this observation of an arbitrary aggregate result. Naming
-these forms explicitly is essential: merely allowing calls to a getter would
-not make `new` or its clients well-formed. Likewise `writes(queue)` is a
-deliberate whole-object boundary for this tiny FIFO, supported by actual
-descendant accesses under EFF-2. It does not settle the more demanding public
-effect vocabulary for independent parts of a hidden container.
-
-This is a small client/wrapper/function-kind witness for the desired source
-experience. It does not close the investigation's outstanding logical-getter
-issue, replace the required GrowVector witness, or prove an incremental
-compiler. General capability formulas, precise abstract effects, proof-cache
-soundness and backend/runtime qualification remain open.
+Implementing these rules must make both entries check and execute, qualify the
+rejection probes below, and include the larger GrowVector wrapper/function-kind
+witness from LANGUAGE.md. The FIFO alone is not evidence for all containers,
+precise effect combinations or incremental performance.
 
 ## Edits to try while reading
 

@@ -7,164 +7,46 @@ criterion for deciding whether to pursue it. Entries do not select a design.
 Remove an item when its implementation and checks land, or its validation
 concludes with a recorded disposition; retain any selected follow-up work here.
 
-- **Modular incremental checking and optimized code generation.** The compiler
-  currently rechecks one source bundle and emits one LLVM module. The proposed
-  [architecture](../research/investigations/modular-compilation/DESIGN.md)
-  targets self-contained public `.wfm` interfaces, reusable source proofs and
-  generic instances, dependency-tracked cross-module optimization and ordinary
-  full final linking. Complete public declarations are checked against ordinary
-  implementations; direct `.wf` files share one local namespace and each
-  directory's fixed `module.wfm` owns its path-derived module. One project-root graph file is the
-  proposed sole dependency authority, with ordered module rows listing exact
-  earlier targets; `.wfm` and `.wf` do not duplicate dependency lists.
-  File-local alias headers may abbreviate canonical module or declaration names
-  without granting graph edges, creating new identities or exporting aliases;
-  `.wfm` carries all aliases needed to read its own API. This remains an
-  amendment, not implemented capability. Specify the complete `modules.wfg`,
-  interface/source and alias grammars with qualified-name factoring; naive
-  segmented paths make value/call alternatives share `IDENT ::` prefixes.
-  Validate the implicit primary root at the sole graph's directory and the
-  fixed `pkg::` qualifier in graph/interface/implementation contexts. A
-  library's internal qualifier must bind to its selected owning root, not the
-  consuming application's root; it must not require a user-chosen app/lib name
-  or activate the library's own graph. Qualify explicit external names such
-  as std independently from the compiler-owned prelude. Complete the external
-  binding format and dependency-name environments before claiming reusable
-  cross-package source: test import-name changes, multiple selected versions,
-  references to the primary root from another root and cache separation when
-  equal textual paths resolve to distinct source identities. These are open
-  design/validation tasks, deferred because the current demo has one source
-  package; reopen when external-library composition is explicitly selected.
-  External-library binding and library-to-library dependencies are deferred
-  beyond the next single-package implementation; no binding syntax, version
-  resolver or graph-import tooling is selected. Do not infer edges from
-  dependency-name bindings or imported graph files.
-  Validate canonical roots, row uniqueness, earlier-target
-  checks, graph closure and public/implementation lookup against the same row.
-  Reject undeclared references even to earlier or transitively reachable
-  modules. Qualify parent/child edges in either permitted order and acyclic
-  cross-branch interleaving without namespace moves. Check graph-only edits,
-  used-edge deletion and order-only changes without global-position churn or a
-  whole-file digest in every body key. Count moved graph rows and concurrent
-  editing conflicts separately from source changes required by actual API use;
-  one file does not promise one-line repairs or conflict-free collaboration.
-  These costs remain unmeasured; compare matched dependency edits before
-  claiming an advantage over distributed ranks or subtree ordering.
-  Validate one graph with multiple named entry targets and target-scoped
-  no-heap requirements. Separate architecture formation, declared module
-  composition and conservative concrete execution closure; preserve normal
-  checks for unused definitions in selected modules. Build a no-heap kernel
-  and a heap-using tool sharing a library, including a module with an unused
-  allocating helper. Qualify entry arguments, generic actuals, private layouts,
-  derived release and required native/runtime supplies; optimizer removal
-  cannot excuse a reachable heap requirement. Ensure object selection does not
-  require heap infrastructure solely for unused helpers. This revises STOR-8's
-  unit-wide spelling ban and needs a complete deterministic closure judgment.
-  Exercise check-only/all-module checking, stable namespace permissions across
-  targets, working-directory independence and distinct target/entry/requirement
-  invalidation without duplicating shared source proofs. Keep unused implicit
-  prelude availability under its existing rules. Exercise
-  alias file isolation, domain/case/collision checks,
-  wrong targets, private access, chains and attempted re-export. Compare
-  same-target renaming with retargeting and body moves into a different alias
-  environment; retain ordinary scope invalidation when an unused alias collides.
-  Validate complete interface/qualified grammars, normalized declaration
-  correspondence, public semantic closure, order-independent top-level
-  formation and imported nominal capability/release facts. Qualify
-  the sole directory/module.wfm layout, rejection of the old sibling and
-  repeated-name layouts as interface lookup alternatives, direct directory
-  membership without child collection, optional registered root modules, path/case/alias
-  ambiguity, graph-registered namespace/declaration collisions, exclusion of
-  unregistered modules and cross-file private calls. Reject executable function
-  bodies in .wfm, including getter bodies, and reject public in .wf. Qualify
-  default-private declarations/struct fields, explicit public only in .wfm,
-  one complete definition per public struct, and private supporting types and
-  constants in that interface. Reject split/extended definitions, private
-  support found only in .wf, public aliases and private types/paths in usable
-  public fields, signatures or contracts. Cover effective visibility through
-  the enclosing type, fully public records, mixed fields and all-private fields.
-  Retain existing opaque/readonly rules, reject private field access and do not
-  invent reference-returning getters under REF-3. Compare private-layout,
-  capability and public-schema invalidation, and prove useful by-value no-heap
-  use without forced handles. Modifier grammar, imported generic capabilities
-  and logical getter admission remain unqualified. Assume one agent per module;
-  coordination inside it is outside this discussion. The
-  [remaining representation questions](../research/investigations/modular-compilation/DESIGN.md#questions-for-a-mixed-public-and-private-representation)
-  require useful direct access, complete ownership/initialization, derived
-  capability dependencies and justified invariant/effect handling. Use both
-  independent public data and a visible length tied to private storage;
-  distinguish inspection from mutation. One definition avoids correspondence
-  between split field lists, but interface size and reading cost remain
-  unmeasured because private representation/support now live in .wfm.
-  Qualify the selected [field-operation rules](../research/investigations/modular-compilation/DESIGN.md#field-visibility-and-structural-operations):
-  ordinary public-field extraction requires legal residual release, including
-  private fields omitted with ..; only accessible fields can be bound. Validate
-  a public affine queue plus a private u64 tag, then replace that tag with a
-  linear private resource and require rejection of the same extraction.
-  Preserve reference invalidation/use, opaque, copy-field spelling and effect checks.
-  Construction requires every field accessible, so private-field construction
-  outside the module goes through declared functions; nothing is defaulted.
-  Preserve current readonly/opaque meanings. Remove this follow-up when the
-  selected publication and operation rules have executable qualification.
-  The [capability discussion](../research/investigations/modular-compilation/DESIGN.md#public-capabilities-discussion-baseline)
-  recommends reusing component/modifier derivation without a second handwritten
-  public pair. Qualify private versus public copy components, nocopy/nodrop,
-  conditional Holder<T> instances, symbolic bounds versus concrete properties,
-  and a private component changing exported capabilities or residual release.
-  Distinguish nodrop's explicit-consumption requirement from a designated
-  finalization protocol; lawful structural consumption is not forbidden by
-  that modifier. Benefit: one capability authority; interface readability and
-  cross-module invalidation remain unmeasured. Revisit during imported-type
-  checking, before adding annotations, and remove when the existing derivation
-  and derived API display are qualified or an alternative is selected with
-  evidence. No additional protocol mechanism is selected here.
-  A resolved public-surface comparison could focus CI review on visibility,
-  signature, field, contract, constant, dependency-identity and derived-capability
-  changes. A keyword diff is only a hint. Validate edits outside public-bearing
-  lines, identity-preserving alias renames, alias retargeting and private edits
-  that do or do not affect public capabilities or backend consumers. Benefit:
-  review actual API changes without treating every body edit as one; comparison
-  cost and completeness are unmeasured. Defer CI wiring until module metadata
-  exists, revisit during frontend implementation, and remove this item when
-  the comparison is validated or declined with evidence. No new approval gate
-  or script is introduced by the proposal.
-  Public declaration duplication and useful module sizes remain unmeasured.
-  Preserve ordinary privacy without transitive access or parent/child
-  privileges. Subtree-private separately compiled modules remain unselected:
-  reopen for a concrete consumer that cannot use one module's private files.
-  The prior private-contract composition gap is unresolved:
-  accessor facts in a body cannot express a private requirement in a wrapper
-  or function-kind formal while FN-8 forbids ordinary calls in contracts.
-  The declared-getter direction keeps the public callable in .wfm and its body
-  in .wf, with proposed logical use of the same callable rather than a parallel
-  getter API. It still needs a typed total logical interpretation, finite
-  checking, state/support/write-kill rules, precise public effect correspondence
-  and independently checked realization; EFF-3 pure or read-only alone does
-  not supply these. Validate a GrowVector wrapper and function-kind formal
-  preserving requirements, runtime/logical getter agreement and useful
-  footprints without runtime proof work; name aliases do not supply that mechanism.
-  Copying hidden paths into a public interface does not satisfy self-containment.
-  The [complete queue demo](../research/investigations/modular-compilation/demo/README.md)
-  provides a smaller source witness with provisional notation, not validation.
-  Its constructor also requires abstract aggregate-result observations,
-  proof-only result views and transport through construction/return/binding;
-  merely admitting getter calls does not supply those FN-8/FN-9 extensions.
-  Qualify both entries and the documented rejection/edit probes through the
-  real module compiler when available, including getter realization and
-  runtime-result agreement. Retain the broader GrowVector and precise-effect
-  criteria; the small FIFO does not resolve them.
-  Establish component-proof composition, exercise graph-edge deletion and
-  SCC changes despite acyclic module imports, and qualify complete LLVM
-  planning/cache dependencies. Compare one indivisible LLVM unit per module
-  with file-independent backend partitions, separating frontend/proof reuse from
-  LLVM/object rebuild cost, runtime quality, peak memory and final linking.
-  Require cold/incremental agreement, no unchanged-body proof work on a no-op
-  build, precise isolated-edit invalidation, and causal investigation of every
-  repeatable runtime loss against matched optimized baselines. Fragment sizes,
-  persistence cost and optimizer integration remain unmeasured. Implementation
-  is deferred because this work delivers the design; reopen when the owner
-  selects its revision for implementation, and remove this entry when the
-  stated end-to-end evidence lands or the direction is explicitly superseded.
+- **Implement and qualify the modular incremental design.** The selected
+  [architecture](../research/investigations/modular-compilation/DESIGN.md),
+  [source rules](../research/investigations/modular-compilation/LANGUAGE.md),
+  [syntax candidate](../research/investigations/modular-compilation/SYNTAX.md)
+  and [complete specimen](../research/investigations/modular-compilation/demo/README.md)
+  are research proposals, not compiler capability. The native grammar probe
+  checks source/graph strong-LL(2) decisions; it does not implement formation,
+  proof or execution. Follow the design's ordered implementation slices and
+  discriminating acceptance matrix: graph/alias/privacy and correspondence;
+  complete representations and imported capability/release; checked affine
+  observations, frozen entry/result views and precise footprint expansion;
+  query/receipt persistence and deletion-sensitive proof SCCs; shared generic
+  instances and target no-heap closure; incremental optimized LLVM plans and
+  native objects. Extract useful cases into formal test ownership as each
+  mechanism lands; no daily gate depends on the research probe or specimen.
+  Compare clean/warm verdicts and executables across edits, including changed
+  summary availability with unchanged headers, observation-body versus public
+  boundary changes, hidden layout/heap changes, killed versus transported value
+  views, rejected import candidates becoming profitable, and failed builds.
+  Measure input-validation I/O, source/proof/planning/backend/link work, runtime
+  quality and peak memory separately on the queue, GrowVector, wfgrep, SHA-256,
+  a generic-heavy consumer and controlled dependency scaling. A source module
+  is not a compulsory body/proof/object unit. Benefit: independent verified
+  modules without losing runtime optimization; persistence correctness, LLVM
+  integration cost and real build/runtime gains remain unverified. Reopen
+  structural choices when a discriminating control or matched workload fails;
+  remove this entry when the complete implementation evidence lands.
+  Defer resolved-public-surface CI reporting until interface query values exist;
+  its benefit is detecting capability/contract changes that a `public` keyword
+  diff misses. Validate same-identity alias renames, retargeting and private
+  representation edits before wiring a report, with no additional approval
+  gate. General recursive/non-affine logical functions remain a separate
+  opportunity: they could express algorithmic models but require a finite
+  termination/proof design beyond scalar views. Reopen for a concrete contract
+  not expressible by the selected view/operation interface; require deterministic
+  polynomial checking and no runtime proof work. External-package resolution
+  and library composition remain deferred by scope; reopen only when selected
+  by the owner, with package identity/version/renaming cases. Subtree-private
+  independently compiled modules remain unselected; reconsider for a concrete
+  privacy consumer that cannot use one module's private implementation files.
 
 - **Ordered Vector consumption still makes avoidable transfers.** The ordinary
   prefix-window library reverses a removed suffix before consuming it in

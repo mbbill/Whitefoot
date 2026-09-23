@@ -2,10 +2,10 @@ alias fifo = pkg::runtime::queue;
 alias Job = pkg::data::Job;
 alias Report = pkg::data::Report;
 
-fn run_two<fn take(queue: &fifo::Queue) -> job: own Job writes(queue) contract {
+fn run_two<fn take(queue: &fifo::Queue) -> job: own Job writes(queue.state) contract {
   requires fifo::len(queue: queue) > 0_u64;
   ensures fifo::len(queue: queue) + 1_u64 == fifo::len(queue: entry(queue));
-}>(queue: &fifo::Queue) -> report: own Report writes(queue) contract {
+}>(queue: &fifo::Queue) -> report: own Report writes(queue.state) contract {
   requires fifo::len(queue: queue) >= 2_u64;
   ensures fifo::len(queue: queue) + 2_u64 == fifo::len(queue: entry(queue));
 } {

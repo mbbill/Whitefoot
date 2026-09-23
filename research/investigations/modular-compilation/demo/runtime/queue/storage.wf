@@ -10,9 +10,9 @@ fn new_storage() -> storage: own Ring<Task, capacity> pure contract {
   return move built;
 }
 
-observe fn len(queue: &Queue) -> result: own u64 reads(queue) contract {
+observe fn len(queue: &Queue) -> result: own u64 reads(queue.length) contract {
   ensures result <= capacity;
 } {
-  doc "The executable getter reads one built-in Ring measure. Its proposed logical realization must be checked from this projection, without assuming its own contract.";
+  doc "The executable getter reads one built-in Ring measure. Its finite scalar-view realization is checked from this projection, without assuming its own contract.";
   return deref(queue).storage.len;
 }

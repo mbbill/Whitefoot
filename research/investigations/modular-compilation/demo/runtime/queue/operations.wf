@@ -8,7 +8,7 @@ fn new() -> made: own Queue pure contract {
   return move built;
 }
 
-fn push(queue: &Queue, job: own Work) -> result: own unit writes(queue) contract {
+fn push(queue: &Queue, job: own Work) -> result: own unit writes(queue.state) contract {
   requires len(queue: queue) < capacity;
   ensures len(queue: queue) == len(queue: entry(queue)) + 1_u64;
 } {
@@ -16,7 +16,7 @@ fn push(queue: &Queue, job: own Work) -> result: own unit writes(queue) contract
   return unit;
 }
 
-fn pop(queue: &Queue) -> job: own Work writes(queue) contract {
+fn pop(queue: &Queue) -> job: own Work writes(queue.state) contract {
   requires len(queue: queue) > 0_u64;
   ensures len(queue: queue) + 1_u64 == len(queue: entry(queue));
 } {
