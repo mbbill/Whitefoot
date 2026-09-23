@@ -141,6 +141,10 @@ declaration in that file belongs to the public API; there is no separate
 export list or implementation-side `pub` switch. Public function declarations
 include generic parameters and bounds, parameter/result labels and modes,
 types, capabilities, effects, and complete `requires`/`ensures` clauses.
+No executable function body belongs in `.wfm`, including a getter used by a
+public contract. Its public declaration is here and its checked body is in
+`.wf`. A record's public field schema is a data declaration, not an executable
+body; the representation choices below determine whether that schema is public.
 Public constants and interface/binding groups include their public definitions.
 Public concrete records and enums declare their externally visible schema
 there. No interface fragment, textual include, wildcard export or forwarding
@@ -264,14 +268,12 @@ do not gain dependency lookup. Existing `::` generic-call syntax requires
 factoring with qualified names in the strong-LL(2) grammar; this document does
 not claim that the complete productions have been checked.
 
-The root graph owns the optional module-qualified entry and graph-wide
-`program no_heap;` declaration. A module interface no longer owns this
-program-wide choice. The constraint covers the complete selected graph,
-including dependencies used only by implementation and concrete instances,
-under STOR-8's ordinary type and call restrictions. Source uses of prelude
-declarations obey those restrictions; the implicit presence of an allocating
-prelude declaration is not itself a call. Moving an allocation into a private
-dependency cannot hide it.
+The root graph has one architecture and may declare multiple build targets.
+Each executable target pairs an entry with its environment requirements,
+including an optional no-heap requirement. Neither a reusable module interface
+nor the whole architecture graph owns that requirement. The target-selection
+and checked heap-closure rules below separate source correctness from whether
+one particular executable requires the heap.
 
 ### File-local name aliases
 
@@ -389,10 +391,10 @@ conflicting root bindings and ambiguous canonical source paths. Reserve a
 child namespace component against a top-level declaration with the same name
 in its parent module: `vector/other.wfm` can coexist on disk with an exported
 function called `other` in `vector.wfm`, but that conflicting namespace is not
-accepted when both modules are selected. The namespace inventory records path
-components and negative lookups for selected module rows and their namespace
-prefixes; unselected modules do not enter that inventory merely because their
-files exist. The inventory does not infer access privileges from a component's
+accepted when both modules are registered in the architecture graph. The
+namespace inventory records its module rows and namespace prefixes independently
+of which build target is selected; modules absent from that graph do not enter
+the inventory merely because their files exist. The inventory does not infer access privileges from a component's
 existence. Canonical path/case/alias rules must yield the same names on
 supported hosts, with ambiguity diagnosed rather than resolved by filesystem
 iteration order. Their
@@ -426,31 +428,40 @@ root app = ".";
 app::shared::memory: [];
 app::vector::other: [app::shared::memory];
 app::vector: [app::shared::memory, app::vector::other];
-app::main: [app::vector];
+app::kernel: [app::shared::memory];
+app::tools::image: [app::shared::memory, app::vector];
 
-entry app::main::run;
+target kernel {
+  entry app::kernel::start;
+  no_heap;
+}
+
+target image_tool {
+  entry app::tools::image::run;
+}
 ```
 
-The schema is an optional graph-wide `program no_heap;`, one or more root
-bindings, one or more module rows, and an optional entry declaration, in that
-order. Root paths are explicit strings relative to the graph's project root,
+The proposed schema is one or more root bindings, one or more module rows,
+and zero or more named target declarations, in that order. A target contains
+one entry and optionally `no_heap;`; it cannot change module edges or roots.
+Target names are unique IDENT labels for build selection, not source aliases.
+Root paths are explicit strings relative to the graph's project root,
 not the process working directory or an environment search path. A root name
 and every module-path component use WF's IDENT spelling; implementation
 filenames do not become identifiers. Selected roots and paths must have one
 unambiguous canonical interpretation on supported hosts; multiple names for
 one canonical module cannot evade row uniqueness or change nominal identity.
 
-All rows belong to the selected graph, including disconnected modules; entry
-reachability does not remove their required source checking. Checking a library
-graph needs no entry. Executable construction requires exactly one public
-ordinary function entry in a listed module, with the existing PROG-3 argument
-and contract obligations. The graph names the function; ordinary generic and
-runtime argument binding and result interpretation still belong to the build
-invocation under FN-7/PROG-3, without a new entry-signature restriction. The
-entry is not an alias from some source file.
-The no-heap declaration constrains the whole selected graph, not just entry-
-reachable functions. PRE-1 remains the compiler-owned implicit inventory under
-its existing rules; it is not a hidden writer-selectable source module.
+All rows belong to one architecture graph, including disconnected modules.
+Its canonical identities, namespace inventory, exact permissions and order
+certificate do not vary by target. Checking a library graph needs no target
+or entry. Building an executable selects exactly one declared target; its
+entry is a public ordinary function in a registered module. Ordinary generic
+and runtime argument binding and result interpretation still belong to the
+build invocation under FN-7/PROG-3, with the ordinary startup obligations and
+no new entry-signature restriction. The entry is not a source-file alias.
+PRE-1 remains the compiler-owned implicit inventory under its existing rules;
+it is not a hidden writer-selectable source module.
 
 Each row supplies two distinct pieces of information: its listed edges are
 the declared graph, and its position certifies those edges' direction.
@@ -463,10 +474,73 @@ permission. Source files contain qualified references or file-local aliases,
 not additional imports that create or repeat graph edges. There are no
 wildcard edges, automatic transitive imports, per-directory dependency files,
 includes, conditional edge expressions or dependency-generating scripts in this graph
-format. The build selects the graph; that graph declares any executable entry.
+format. The build selects one target from the graph, or checks selected modules
+without constructing an executable; neither action rewrites the architecture.
 The build cannot add hidden source edges through another channel. These
 restrictions concern the source graph, not the compiler's separate
 semantic/optimization queries.
+
+### Build targets and the no-heap boundary
+
+One graph serves the kernel and the heap-using image tool in the example.
+Separate graph files per executable would duplicate architecture and could
+make individually acyclic permissions cyclic in their union. Separate
+independent projects may have separate graphs; several outputs of this project
+do not require that split. A target declaration in the same file makes the
+entry/requirement pairing inspectable without creating another dependency
+authority. Its complete syntax remains a proposal to qualify.
+
+Distinguish three sets. The architecture graph contains every registered
+module and is always validated structurally. A target's source composition
+contains its entry module and the transitive closure of declared direct
+dependencies, including dependencies used only by implementation. Every
+definition in those modules receives the ordinary required source judgments,
+including unused nongeneric functions and symbolic generic schemas. A
+check-only invocation selects module roots and their dependency closure;
+checking all registered modules includes disconnected components as well.
+Finally, the target's execution closure follows concrete callable instances
+from its bound entry and startup, with function-kind actuals, ordinary call
+edges, compiler-derived releases and required native/runtime implementations.
+Source correctness is not reduced to that last set.
+
+The no-heap requirement is checked against that conservative execution closure
+and its required value/layout descriptions before optimization. It withdraws
+the heap capability: heap-bearing values and allocating operations cannot be
+introduced by an entry argument, private representation, callee, concrete
+generic binding, release path or required native/runtime implementation.
+The physical descriptions behind an abstract public type participate in this
+check. Inlining, LLVM dead-code elimination or a guessed runtime branch cannot
+select whether the requirement passes. The finite closure and summary rules
+must be specified, deterministic and complete for their admitted family;
+selected compiler-owned native/runtime supplies must account for their heap
+requirements under the existing SCOPE-3 trust boundary. A writer's `pure`
+annotation or an absent body does not establish those requirements.
+
+This intentionally revises STOR-8's compilation-unit-wide spelling ban into
+a target requirement over checked composition; it is not merely relocating
+the old declaration. A heap-using helper outside the selected execution
+closure does not by its presence reject a heap-free entry, even if the two
+share a source module. The helper still receives every ordinary safety and
+formation check. A syntactic call in the selected conservative closure cannot
+be excused because a later optimizer might remove it. Implicit availability
+of an allocating prelude declaration is not a call either.
+Object and runtime selection must also avoid requiring heap infrastructure
+solely for unselected helpers. Merely checking source reachability and then
+linking an indivisible object that requires an allocator is not sufficient
+for the kernel consumer; qualify emission/section selection and runtime supply
+alongside the semantic check.
+
+Heap capability is a compiler-computed, dependency-tracked summary, not a
+target-dependent meaning for an ordinary function. A reusable module has one
+interface and one set of checked source facts. A heap-enabled tool can reuse
+heap-free code; selecting its target does not grant heap access to the kernel
+target. Changing only a target requirement rechecks composition against current
+summaries instead of redoing every source proof. Reuse still requires the same
+relevant specification, compiler, machine and layout inputs; removing an entry
+label from a key does not erase an actual target-dependent domain fact.
+Exact startup, layout,
+native-supply and release coverage remains specification/implementation work;
+this design does not claim an already implemented no-allocation verifier.
 
 ### Local validation and the DAG argument
 
@@ -608,13 +682,48 @@ constant, group or private representation path. This is stronger than making
 a generated interface carry private field identities behind a reader's back.
 Private implementation contracts may still use private projections normally.
 
-Public concrete records expose their declared schema; construction,
-destructuring, `readonly`, ownership and release retain their ordinary rules.
-Public enums expose all variants and payloads needed for exhaustive matching.
-An abstract public nominal can hide representation only after its caller-
-visible capabilities and any usable logical observations have been declared
-and checked against that representation. Declaring an abstract name alone
-does not grant layout, copying, dropping or proof capabilities.
+Every nominal that a caller must name belongs in `.wfm`, even when its fields
+are private. Type publication and field publication are separate choices:
+
+| Record form | Public declaration in `.wfm` | Implementation and caller access |
+|---|---|---|
+| Module-private struct | None | Defined and used through the module's shared private inventory |
+| Abstract public struct | Name, generic parameters/bounds and complete public capability contract, with no fields | Exactly one private representation in `.wf` binds to that nominal identity; callers use its declared operations |
+| Public data record | Complete field schema, generic parameters and capability information | The schema is authoritative in `.wfm`; callers may construct, project, borrow, move or update fields under ordinary rules |
+
+Illustratively, `struct Point { x: i64; y: i64; }` publishes a data schema;
+`struct Vector<T>;` indicates only the field-hiding distinction and is not a
+complete capability declaration or accepted new grammar. Representation-hiding
+types need explicit, checked copy/drop behavior, including dependence on
+generic arguments. A type name by itself grants no copying, dropping or
+proof facts. Compiler-available private layouts and release descriptions make
+by-value use possible without exposing the fields or requiring a heap handle.
+
+Prefer abstract public structs for resources and representations whose
+invariants are maintained through operations. Prefer public records for
+compositional data whose fields are deliberately part of the contract, such
+as a pair of coordinates. The proposal selects whole-record visibility rather
+than field-by-field publication flags: writing the full schema publishes it;
+the abstract form publishes no fields. Existing `readonly` and `opaque` retain
+their meanings; neither becomes an outside-the-module privacy modifier.
+Public enums retain their complete public variants for exhaustive matching.
+
+Universal getter/setter mediation is not selected. A setter for each private
+field does not by itself preserve a multi-field invariant; operations such as
+append or reserve can preserve it as one checked change. For public records,
+ordinary projections also express component ownership and disjoint borrows
+directly. Under REF-3 a getter cannot return a reference, so an all-accessors
+policy would need different consuming/callback APIs, not a mechanical rewrite
+of field access. Hiding representation still needs useful precise public
+effects; treating every operation as touching the whole object can lose
+independence. No new type-invariant assumption follows merely from privacy.
+
+Field publication is a compatibility and incremental-dependency choice:
+changing a public schema can affect caller source proofs and ABI consumers;
+changing a private layout with unchanged checked public capabilities/contracts
+can preserve source proofs while invalidating layout, release and codegen
+consumers. Hidden fields do not guarantee an unchanged ABI or that every
+accessor call will inline. These effects need the consumer evidence below.
 
 The earlier independent review identified a contract-composition gap: under
 FN-8, a client cannot call an ordinary accessor inside `requires`/`ensures`,
@@ -622,9 +731,10 @@ and source privacy prevents restating a private-field condition. Complete
 public declarations make this gap explicit; copying the old private path into
 `.wfm` would not satisfy semantic closure. The current GrowVector contracts
 therefore still need a public representation or a separately designed checked
-logical vocabulary before serving as an abstract module API. Public proof
-projections/contract abbreviations remain an unresolved owner-direction
-question. This revision does not select a remedy or claim the P2 is closed.
+logical vocabulary before serving as an abstract module API. The public getter
+direction below puts all callable declarations in `.wfm` and bodies in `.wf`;
+its checked logical-use judgments remain unresolved. This revision does not
+claim the P2 is closed.
 
 Self-containment concerns the source API, not all compiler information.
 Compiler-owned artifacts retain checked implementation evidence, generic
@@ -766,17 +876,18 @@ These families name responsibilities, not a proposed public Rust API:
 |---|---|---|
 | Source formation | Interface/source bytes, selected canonical roots, direct directory inventory, grammar/spec identity | Tokens, canonical trees, source maps |
 | Module surface / lookup | Canonical path components, public/private inventories, relevant file aliases, direct dependency paths, lookup role and spelling | Stable declaration or diagnostic |
-| Graph formation / edge validation | Root graph bytes, canonical module inventory, exact adjacency rows and earlier-target relations | Resolved roots, stable per-module dependency sets, entry, program policy and valid order certificate, or located graph diagnostic |
+| Graph formation / edge validation | Root graph bytes, canonical module inventory, exact adjacency rows and earlier-target relations | Resolved roots, stable per-module dependency sets, target declarations and valid order certificate, or located graph diagnostic |
+| Target composition / heap requirement | Selected target, bound entry, declared module closure, concrete call/layout/release/native summaries and target requirement | Checked source composition, current execution closure and satisfied environment requirement, or diagnostic |
 | Module dependency permission | Canonical source/target identities and membership in the source's normalized adjacency row | Allowed direct dependency or missing-edge diagnostic |
 | Interface correspondence | Resolved public declaration and selected implementation declaration | Matching identity and checked normalized declaration, or diagnostic |
-| Contract / type shape | Resolved declaration, arguments, capabilities, projections and applicable program policy | Normalized semantic boundary |
-| Template check | Symbolic body, bounds, callee boundaries, summary availability and applicable program policy | Symbolic checked body |
+| Contract / type shape | Resolved declaration, arguments, capabilities and projections | Normalized semantic boundary |
+| Template check | Symbolic body, bounds, callee boundaries and summary availability | Symbolic checked body |
 | Concrete body check | Body, complete substitution and semantic query results | Typed body, ownership/effects and obligations |
 | Proof component | Current component membership, obligations and predecessor summaries | Verified clauses and derivations |
 | Allocation / call summary | Current local seeds and call edges | Specified fixed-point summaries |
-| Layout / lower | Checked body, target, relevant layouts and release descriptions | Target-qualified IR |
+| Layout / lower | Checked body, machine target, relevant layouts and release descriptions | Target-qualified IR |
 | Optimization plan | Summaries, visibility, prevailing definitions, profiles and policy | Imports and per-partition decisions |
-| LLVM backend | Own/imported IR, decisions, toolchain and target settings | Optimized object and remarks |
+| LLVM backend | Own/imported IR, decisions, toolchain and machine-target settings | Optimized object and remarks |
 | Final link action | Selected objects, runtime, linker/options and entry | Executable; ordinary full link when inputs change |
 
 Module is the source/distribution boundary; a function or concrete instance is
@@ -786,12 +897,14 @@ edited file can be reparsed while unchanged item values stop downstream
 invalidation. Token-level editor parsing is not necessary to avoid checking
 untouched files and bodies.
 
-Graph parsing projects roots, per-module edges, entry and program policy
-separately. Source type/call checks read the no-heap policy where required;
-startup checking reads the selected entry, its signature and the invocation's
-bound arguments. Changing only the entry does not change every module's
-source judgments, while changing the no-heap policy must revalidate all of
-its affected uses, including disconnected selected definitions.
+Graph parsing projects roots, per-module edges and individual target records
+separately. Source checking produces reusable declarations, proofs and heap
+requirements; target checking reads those results and the selected entry's
+ordinary argument binding. A target name or no-heap flag is not a blanket
+body-proof key. Changing an entry changes its selected composition and closure;
+changing a requirement revalidates the affected target against current
+summaries. An edit to a private representation or a previously heap-free
+callee can invalidate that result even when the target's text is unchanged.
 
 Re-evaluate affected queries and compare their result values before invalidating
 consumers. A changed body with the same verified callable boundary does not
@@ -848,8 +961,10 @@ it cannot manufacture a different proposition.
 The assembled program receipt identifies selected modules, interfaces,
 instances and their checked components. All included bodies required by the
 language must be checked, including unused nongeneric definitions and symbolic
-generic templates. Checking only entry-reachable bodies would weaken present
-acceptance. Required concrete instances are checked separately. No final
+generic templates throughout the selected module composition. Checking source
+correctness only for entry-reachable bodies would weaken present acceptance;
+the separate target heap requirement does not grant that exemption. Required
+concrete instances are checked separately. No final
 program or executable is published with a selected obligation pending or failed.
 
 Atomic valid cache entries survive an unrelated failed build. A failed
@@ -1099,7 +1214,8 @@ widely imported implementation changes.
 
 Ordinary full native linking is permitted. The final link consumes current
 cached or rebuilt native objects and runtime objects, together with an exact
-composition receipt. Its inputs include the selected entry, target, libraries,
+composition receipt and satisfied target environment requirements. Its inputs
+include the selected entry, build target, machine target, libraries,
 linker version/options, export set, layout/profile controls and platform
 metadata. An unchanged complete input selection can reuse an already produced
 executable; otherwise invoke the normal optimizing native link.
@@ -1163,14 +1279,16 @@ must update the affected rules together, not merely remove PROG-1's prohibition.
 
 | Owner | Before | Proposed change |
 |---|---|---|
-| PROG-1/2/3, FN-7 | One ordered bundle, no modules, build-selected unqualified entry | One project-root ordered adjacency file owns roots, optional entry and no-heap declaration; earlier-target checks certify acyclicity independently of path-derived names and direct .wf ownership; checked composition and ordinary startup obligations remain required |
+| PROG-1/2/3, FN-7 | One ordered bundle, no modules, build-selected unqualified entry | One project-root ordered adjacency file owns roots and multiple named targets; each target pairs an ordinary entry with its environment requirements; source composition follows declared module closure while ordinary startup obligations remain required |
 | FORM-2/3, GRAM-1/2/3/4/5, DIAG-1 | One root and unqualified name roles | Complete interface/source and root-graph forms, file alias headers, qualified names and diagnostics joining graph rows, aliases, declarations and definitions |
 | TYPE-6, CONST-2, FN-3 | Whole-unit identity; non-function top-level visibility follows source order | Path-qualified modules with shared local names; only structurally permitted direct interfaces are visible; ordinary privacy, order-independent top-level names, dependency validity and lexical local scope retained |
-| Public declaration correspondence / type representation | No separate interface or public/private source boundary | Self-contained public semantic declarations, exact normalized callable correspondence, one nominal identity, and checked abstract representation/capability correspondence |
+| Public declaration correspondence / type representation | No separate interface or public/private source boundary | Function declarations without executable bodies in .wfm; exact normalized callable correspondence; either complete public record schemas or abstract public structs with checked private representation/capability correspondence and one nominal identity |
 | Type/ownership/release consumers | Descriptions in one inventory | Same judgments over imported descriptions; privacy grants no storage or release exemption |
 | FN-2/4/6/9, ENT-3.S12 | Whole-unit instances and summary identities | Same instance and SCC rules across modules, with current cached claims and availability |
 | DIAG-2 | One exact-program value owns/discards all evidence | Checked component fragments and assembled receipt; failed composition grants no authority, unrelated valid entries survive |
-| STOR-6/8, EFF-3, PAR-1/2 | Whole-program target/allocation/parallel metadata | Same rules over complete tracked layout, allocation and call-summary dependencies |
+| STOR-8 | A no-heap unit rejects forbidden type/call spellings throughout its source | An entry target withdraws heap capability from its conservative concrete call/value/layout/release/native closure; ordinary checking still covers every definition in selected modules |
+| STOR-6, EFF-3, PAR-1/2 | Whole-program target/allocation/parallel metadata | Same rules over complete tracked layout, allocation and call-summary dependencies |
+| FN-8/9, ENT-2/3, EFF-1/3 | Ordinary function calls are excluded from contracts; pure is not a termination guarantee | Public getters remain ordinary declared callables with private bodies; their proposed logical use requires separately specified total interpretation, state identity, support and checked realization, not unrestricted calls or trust in a pure annotation |
 | PRE-1 / native binding | Compiler-owned declarations and linked bodies | Bind selected prelude, runtime and target identity into composition/codegen inputs |
 
 The candidate uses the .wfm path as the module declaration and puts complete
@@ -1179,8 +1297,8 @@ aliases in that file.
 There is no second module-name declaration, source import list,
 implementation-side `pub` or namespace block. Direct directory membership
 determines implementation records. One project-root graph file binds source
-roots and lists ordered modules with their exact direct dependencies. Its
-proposed name is `modules.wfg`; exact graph/alias syntax, declaration terminators,
+roots and lists ordered modules with their exact direct dependencies and named
+entry targets. Its proposed name is `modules.wfg`; exact graph/target/alias syntax, declaration terminators,
 canonical path/collision rules, abstract nominal/capability syntax and
 normalized correspondence remain to be specified. META-5 deltas require the
 complete grammars and judgments with strong-LL(2) checks; no count is invented
@@ -1277,11 +1395,11 @@ The remaining responsibilities are concrete:
 
 | Area | Required behavior and evidence |
 |---|---|
-| Graph and source formation | `modules.wfg` owns roots, ordered exact edges, the optional entry and the whole-graph no-heap declaration. `.wfm` and `.wf` have alias headers followed by their own item forms. Verify all three complete grammars and canonical renderings with the ordinary generator/parser checks. |
+| Graph and source formation | `modules.wfg` owns roots, ordered exact edges and named targets that pair an entry with optional no-heap. Architecture, source-module composition and concrete execution closure remain distinct. `.wfm` contains declarations and no executable bodies. Verify complete graph/target/interface/source grammars and canonical renderings with ordinary generator/parser checks. |
 | Identity and lookup | Root identity and canonical module/declaration identity are separate from source revision, physical file placement, row position and aliases. Equal spellings in different modules are distinct; moving a body between files requires equivalent resolved aliases for reuse. |
 | Public correspondence | Form interfaces without reading implementation bodies; compare implementation headers by resolved type/const/function identities and normalized contracts. A matching declaration still needs its checked body and current composition evidence. |
 | Proof composition | Keep FN-6/FN-9 template, instance and recursive-component rules separate from the source DAG. Callers may reuse an unchanged claim only with current availability/evidence; deletion must retract dependencies and rebuild affected fixed points. |
-| Representation and abstract contracts | Concrete public types have complete public definitions in `.wfm`; private implementation types stay local. General representation-hiding public nominals additionally need checked capabilities, abstract logical vocabulary and effect/ownership correspondence. The existing gap below is not closed by aliases. |
+| Representation and abstract contracts | Public records declare their complete field schema in `.wfm`; abstract public structs declare their name/generics/capabilities there and bind to one private representation. Public getter declarations belong in the interface, their bodies in implementation. Logical getter use and precise public effects need the checked judgments below. |
 | Optimization and caching | Use the same query/checker path for cold and warm builds, retain checked generic bodies and physical layouts where needed, and track optimizer dependencies separately. Source module boundaries must not require runtime indirection or prevent cross-module specialization. |
 
 There is a specific syntax obstacle to resolve, rather than an invitation to
@@ -1300,24 +1418,34 @@ passing prototype are claimed by this design.
 The private-contract gap is more than a syntax question. The existing
 GrowVector preconditions use `storage.inner.len`, while FN-8 excludes ordinary
 accessor calls from contracts. Hiding that field prevents a wrapper or
-function-kind formal from stating the same requirement. A recommended research
-route is a public logical observation declared in `.wfm`, with a private,
-checked, pure total interpretation. Clients could name a length observation
-in requirements and invariants without naming a representation field. This
-would be proof syntax, not a name alias or an executable getter.
+function-kind formal from stating the same requirement. Public getters needed
+by those contracts must have their complete declarations in `.wfm`; their
+executable bodies stay in `.wf`. The recommended research direction lets the
+same public callable provide a runtime query and a checked logical observation,
+instead of requiring a second parallel getter API or exposing its field path.
 
-Before selecting that mechanism, establish its typed interpretation, finite
-formation/expansion rules, value-state identity, entry snapshots, support and
-invalidation on writes. Also define abstract effect/region correspondence:
-replacing every precise footprint with `writes(values)` can lose independence
-that the current source can prove. Public guarantees need checked realization,
-not assumed axioms, hidden ordinary calls or new runtime checks. A concrete
-witness must carry GrowVector through an external wrapper and a function-kind
-formal, retain its preconditions and useful effect precision, and demonstrate
-that a state-changing operation kills the right facts. A by-value abstract
-type must still have compiler-available checked layout and capability/release
-facts. No observer/region syntax or new automatic proof family is selected
-here, and the existing P2 remains open until those judgments are specified.
+A use in proof syntax denotes the getter's value at a particular state and
+is erased; an ordinary source call still executes under its normal signature.
+The checker must establish the correspondence with the private implementation.
+A declaration cannot prove its own realization by assuming the getter's own
+postcondition. Existing EFF-3 `pure` excludes state reads but does not prove
+termination; a getter over mutable referenced state commonly needs a `reads`
+row, and being read-only alone is not sufficient for logical admission.
+
+Before selecting acceptance rules, establish a typed total logical
+interpretation, finite formation/checking, value-state identity, entry
+snapshots, support and invalidation on writes. Getter identity plus an object
+name cannot denote one timeless value across mutation. Public read/write
+footprints must be expressible without private field paths and retain useful
+precision: replacing every footprint with `writes(values)` can lose existing
+independence. Public guarantees need checked realization, not assumed axioms,
+arbitrary function unfolding or new runtime checks. A concrete witness must
+carry GrowVector through an external wrapper and function-kind formal, relate
+runtime getter results to logical observations, preserve its requirements and
+useful effects, and demonstrate correct fact invalidation after mutation.
+A by-value abstract type still needs checked private layout/capability/release
+facts. No getter-admission syntax, effect abstraction or automatic proof family
+is selected here; the existing P2 remains open until those judgments are specified.
 
 The first implementation should connect graph formation, qualified/alias
 resolution, complete interface correspondence and checked composition to the
@@ -1367,6 +1495,17 @@ wrong-case/domain aliases, private targets, shadowing and attempted re-export.
 An alias in `.wfm` must not become a public member or silently enter a `.wf`.
 Owner-dependent field/argument/payload labels must keep their declared spelling.
 
+Reject executable bodies in `.wfm`, including getter bodies. Exercise a public
+record with direct component moves and disjoint field borrows, and an abstract
+public struct whose type/generics/capabilities are usable without naming its
+fields. Reject private field projection and construction from outside the
+module, mismatched capabilities and duplicate/missing private representations.
+Retain ordinary `opaque`/`readonly` behavior and REF-3 rather than synthesizing
+reference-returning getters. Compare private layout changes against public
+field-schema changes for semantic, layout, release and codegen invalidation.
+Qualify by-value allocation-free use instead of forcing handles or claiming
+unmeasured accessor inlining. The getter/contract witness below remains required.
+
 Permute directory enumeration and top-level item order; preserve local lexical scope
 and reject constant/group cycles and invalid recursive layouts by their actual
 rules. Move a function between files, add a private file, and change one public
@@ -1394,8 +1533,8 @@ collect child implementation files; an unmatched implementation directory must
 not acquire an ancestor owner. Check that canonical directory enumeration,
 member addition/removal, duplicate declarations, namespace/declaration clashes
 and ambiguous root/path bindings have deterministic results across supported
-hosts. Only selected modules and their prefixes enter namespace lookup;
-adding an unselected module on disk must not silently add a declaration or
+hosts. All graph-registered modules and their prefixes enter namespace lookup,
+independently of the selected target; adding an unregistered module on disk must not silently add a declaration or
 name collision. No implementation filename introduces another namespace.
 
 Require a declared direct grandchild dependency and a cross-subtree
@@ -1423,14 +1562,25 @@ queries separately. A single-file declaration does not imply a one-line diff,
 no merge conflicts or a solution for truly cyclic requirements. Consumer-scale
 coordination costs remain unmeasured.
 
-Exercise check-only graphs without an entry, executable entry resolution and
-no-heap enforcement over disconnected selected modules as well as the entry's
-dependency closure. Ordinary allocating-prelude calls still reject under
-no-heap, while unused implicit prelude availability does not. Working-directory
-changes must not change root binding.
-Canonical path aliases must not let one module appear twice in the graph.
-An entry-only edit preserves unrelated source judgments; a no-heap policy edit
-revalidates its affected type/call uses throughout the selected graph.
+Exercise check-only module selection and all-module checking, graphs with no
+targets, and multiple targets sharing one graph. Build a no-heap kernel and a
+heap-using tool over the same heap-free library without duplicate APIs or
+dependency maps. Target selection must not change module identity, namespace
+collisions or permissions. Each selected source module's unused definitions
+still receive normal safety checks; disconnected unselected target modules
+are not silently folded into that executable's source composition.
+
+Check that a heap-using helper outside the selected conservative execution
+closure does not reject a no-heap entry, but a reachable private call, generic
+actual, heap-bearing representation, entry argument or derived release does.
+Include required native/runtime supplies and confirm that a source-only
+summary cannot hide their heap requirement. A potentially executable call
+cannot pass just because LLVM later deletes it. Unused implicit prelude
+availability alone is not a call. Entry/target/heap-policy edits must reuse
+unaffected ordinary proofs while validating the newly selected composition;
+changing a callee's heap requirement must invalidate the relevant target check.
+Working-directory changes must not change root binding, and canonical path
+aliases must not let one module appear twice in the graph.
 
 Check incremental invalidation for graph edges, graph row ordering, root
 bindings, directory inventory, interface/body edits and path renames. A valid
@@ -1542,7 +1692,11 @@ Four uncertainties are implementation acceptance work, not weaker endpoints:
   matching, order-independent formation and exact specification deltas. Qualify
   canonical root/path rules, direct directory membership and namespace/declaration collisions. Specify
   the root graph's complete ordered adjacency format, one canonical row per
-  selected module, earlier-target checks and sole dependency authority.
+  registered module, earlier-target checks and sole dependency authority.
+  Qualify named entry targets, selected source composition, conservative
+  execution closure and target-specific no-heap checks against shared modules,
+  private layout/release and native/runtime requirements. Distinguish this
+  proposed STOR-8 change from merely moving the old unit-wide declaration.
   Qualify deep, parent/child and interleaved dependencies with ordinary privacy,
   complete interface-local alias qualification and no duplicate import lists.
   A separately compiled module private to a parent subtree remains a possible capability
@@ -1566,5 +1720,5 @@ The maintained TODO links these unresolved capabilities and criteria. This
 design review can judge the architecture and its stated limits; it cannot
 certify an unimplemented incremental checker or claim unmeasured performance.
 The prior review's private-contract composition finding remains unresolved;
-the complete-interface refinement neither supplies a logical-view mechanism nor
-treats that finding as closed.
+the public getter declaration/body split does not yet supply the required
+logical-use judgments or treat that finding as closed.

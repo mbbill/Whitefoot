@@ -34,10 +34,20 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   one file does not promise one-line repairs or conflict-free collaboration.
   These costs remain unmeasured; compare matched dependency edits before
   claiming an advantage over distributed ranks or subtree ordering.
-  Validate the graph-owned optional entry/no-heap declaration, check-only
-  library graphs, disconnected selected definitions and working-directory
-  independence, including distinct entry-only and program-policy invalidation.
-  Keep unused implicit prelude availability under its existing rules. Exercise
+  Validate one graph with multiple named entry targets and target-scoped
+  no-heap requirements. Separate architecture formation, declared module
+  composition and conservative concrete execution closure; preserve normal
+  checks for unused definitions in selected modules. Build a no-heap kernel
+  and a heap-using tool sharing a library, including a module with an unused
+  allocating helper. Qualify entry arguments, generic actuals, private layouts,
+  derived release and required native/runtime supplies; optimizer removal
+  cannot excuse a reachable heap requirement. Ensure object selection does not
+  require heap infrastructure solely for unused helpers. This revises STOR-8's
+  unit-wide spelling ban and needs a complete deterministic closure judgment.
+  Exercise check-only/all-module checking, stable namespace permissions across
+  targets, working-directory independence and distinct target/entry/requirement
+  invalidation without duplicating shared source proofs. Keep unused implicit
+  prelude availability under its existing rules. Exercise
   alias file isolation, domain/case/collision checks,
   wrong targets, private access, chains and attempted re-export. Compare
   same-target renaming with retargeting and body moves into a different alias
@@ -46,21 +56,30 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   correspondence, public semantic closure, order-independent top-level
   formation and checked abstract nominal capabilities/representation. Qualify
   direct directory membership without child collection, path/case/alias
-  ambiguity, selected-namespace/declaration collisions, exclusion of unselected
-  modules and cross-file private calls.
+  ambiguity, graph-registered namespace/declaration collisions, exclusion of
+  unregistered modules and cross-file private calls. Reject executable function
+  bodies in .wfm, including getter bodies. Qualify public records with direct
+  component moves/borrows and abstract public structs with complete declared
+  capabilities and one private representation; retain existing opaque/readonly
+  rules, reject private field access and do not invent reference-returning
+  getters under REF-3. Compare private-layout and public-schema invalidation
+  and prove useful by-value no-heap use without forced handles. Exact abstract
+  capability syntax and logical getter admission remain unqualified.
   Public declaration duplication and useful module sizes remain unmeasured.
   Preserve ordinary privacy without transitive access or parent/child
   privileges. Subtree-private separately compiled modules remain unselected:
   reopen for a concrete consumer that cannot use one module's private files.
   The prior private-contract composition gap is unresolved:
   accessor facts in a body cannot express a private requirement in a wrapper
-  or function-kind formal while FN-8 forbids ordinary calls in contracts; await
-  owner direction on the proposed checked proof-expression/abbreviation route.
-  Public logical observations need a typed, pure total checked interpretation,
-  finite formation, state/support/write-kill rules and precise abstract effect
-  correspondence before selection. Validate a GrowVector wrapper and function-
-  kind formal preserving requirements and useful footprints without runtime
-  proof work; ordinary name aliases do not supply that mechanism.
+  or function-kind formal while FN-8 forbids ordinary calls in contracts.
+  The declared-getter direction keeps the public callable in .wfm and its body
+  in .wf, with proposed logical use of the same callable rather than a parallel
+  getter API. It still needs a typed total logical interpretation, finite
+  checking, state/support/write-kill rules, precise public effect correspondence
+  and independently checked realization; EFF-3 pure or read-only alone does
+  not supply these. Validate a GrowVector wrapper and function-kind formal
+  preserving requirements, runtime/logical getter agreement and useful
+  footprints without runtime proof work; name aliases do not supply that mechanism.
   Copying hidden paths into a public interface does not satisfy self-containment.
   Establish component-proof composition, exercise graph-edge deletion and
   SCC changes despite acyclic module imports, and qualify complete LLVM
