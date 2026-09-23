@@ -32,6 +32,10 @@ arbitrary runtime adjacency:
   `(A || B); (C || D)`, `B; ((A; C) || D)` and `(A || (B; D)); C`, each with
   all 16 assignments of task cost `1` or `65536`. Charge their respective
   added edges A-to-D, B-to-A and D-to-C; these are not exact readiness graphs.
+  Also inspect the diagnostic source order `B; A; D(B); C(A,B)` on the same
+  graph, oracle and 16 cost assignments. It distinguishes pair permission
+  from the joins emitted around overlapping call groups; no new executor or
+  changed source rule is selected by this fourth order.
 
 Before results select a conclusion, require the following evidence:
 
@@ -44,6 +48,8 @@ Before results select a conclusion, require the following evidence:
   Grants alone are insufficient; no forced wait, sleep or rendezvous may
   manufacture overlap. Plain and diagnostic images run every costly case;
   one intentional comparator corruption must be rejected.
+- Run the full selected native matrix once in ordinary and traced images at
+  W1 and W4. Do not rerun to obtain a favourable schedule.
 - Report acceptance, static permission, emitted calls/joins and ordinary
   default execution separately. Retain any recursive-budget cutoff. A
   separately labelled existing `--par-recursive-frontier off` control may
@@ -81,6 +87,59 @@ Keep the few source, probe and adapter files here and in
 wired only to explicit experiment targets; remove them when superseded or no
 longer supporting this question. Update the catalog and TODO as conclusions
 settle; research stays outside daily CI. This protocol needs no tree amendment.
+
+### Analytical source costs before execution
+
+These are counts and bounds for [the written source](dag-fanin.wf), not
+emission, execution or physical-memory measurements. Every task runs the same
+`dag_task` recurrence once through `evaluate`, retains its value, and increments
+its own cell's evaluation count. A cell contains two u64 fields. Input costs
+and output cells are supplied by the host; their construction and initialization
+must still be charged. The native observer and oneTBB graph have additional
+storage that is not included in these source counts.
+
+For a spine of length k, there are `2k` task evaluations and
+`k + sum(T_i)` recurrence rounds in the selected inputs, where spine costs
+are one and T_i is leaf i's cost. The source retains `2k` output cells and
+reads `2k` cost words. Range formation and call bookkeeping cost O(k), with
+`k+1` suffix invocations and k leaf/suffix pair sites; the final pair contains
+an empty suffix. For nonempty k, ignoring this bookkeeping, nested-call span
+is `max_i(i+1+T_i)`, versus `1 + sum(T_i)` for a level decomposition when every
+T_i is at least one. Uniform T gives `k+T` versus `1+kT`. Initialization and
+final output inspection each add O(k) work and their actual span is separate.
+Nested suffixes and outstanding leaf calls have O(k) logical source
+activations; this is neither an optimized stack-frame count nor physical peak
+memory. Lane capacity, captured frames and recursive-budget effects await
+emission and observation.
+
+The notification witness has four task evaluations and the sum of its four
+costs in recurrence rounds. It retains four output cells and four receipt
+words and reads four cost words plus the edge mask. Its four local notices
+are initialized once, overwritten once by their source, and inspected once
+by their destination, including absent edges. Exactly E present notices
+contribute to predecessor folds and receipt-mask/count updates; there is no
+scan proportional only to E. Each notice has two u64 fields and one Bool;
+its native size, padding and physical allocation remain unmeasured. The two
+source calls precede the two owner calls, so ideal phase span is
+`max(a,b) + max(c,d)` plus routing/folding and joins. C/D task traces start
+after their receipt folds: task-work overlap does not measure simultaneous
+notice processing. Permission and emitted owner calls separately determine
+whether retirement may proceed independently.
+
+Every N order performs four task evaluations, `a+b+c+d` recurrence rounds,
+and retains four output cells against four cost words. Its three graph edges
+need no notice matrix. The first three decompositions have ideal spans
+`max(a,b)+max(c,d)`, `b+max(a+c,d)` and `max(a,b+d)+c`, respectively, excluding
+constant call/mix work. Compare these with the original weighted critical
+path `max(max(a,b)+c,b+d)` and charge their stated extra precedences. The
+fourth B,A,D,C order has the same task/data graph; its emitted joins and any
+added precedences remain to be observed. All four have bounded logical source
+activation depth, not an established native stack or lane-memory peak.
+
+A considered future spine form computes the spine first and then maps all
+leaves, with span `k + max(T_i)` before overhead. It matches `k+T` on uniform
+leaves, so that family alone cannot distinguish it from nested calls; skew
+can. This alternative is not implemented or selected by the initial trial.
 
 ## Sparse destination routing trial (2026-09-21)
 
