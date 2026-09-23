@@ -999,8 +999,8 @@ This judgment alone creates no runtime check or effect.
 [OP-6] cvt partition and semantics (cross-reference TYPE-4).
 `cvt<Src, Dst>` is defined for every ordered pair of distinct numeric primitives; `cvt<T, T>` is not an operation. cvt is EXACT: it yields `Ok(y)` when the Src value is exactly representable in Dst (y the unique such Dst value) and `Err(NarrowError())` otherwise, and it never rounds, truncates, or saturates.
 A non-integral float-to-int, an out-of-range value, a value not exactly representable in a narrower float, and any NaN or infinity targeting an integer all yield `Err`; for float-to-float, an infinity maps to the same infinity and NaN maps to the target canonical quiet NaN (value-preserving).
-A pair is TOTAL — signature `(Src) -> Dst`, no Result — where every Src value is exactly representable in Dst; the total pairs are exactly these 29: `iN->iM` and `uN->uM` for N<M; `uN->iM` for N<M; `{i8,i16,u8,u16}->f32`; `{i8,i16,i32,u8,u16,u32}->f64`; `f32->f64`.
-Every other distinct numeric pair returns `(Src) -> Result<Dst, NarrowError>`.
+A pair is TOTAL — signature `(Src) -> own Dst`, no Result — where every Src value is exactly representable in Dst; the total pairs are exactly these 29: `iN->iM` and `uN->uM` for N<M; `uN->iM` for N<M; `{i8,i16,u8,u16}->f32`; `{i8,i16,i32,u8,u16,u32}->f64`; `f32->f64`.
+Every other distinct numeric pair returns `(Src) -> own Result<Dst, NarrowError>`.
 
 [OP-7] Operation-name convention.
 An arithmetic, logic, bit, or compare op carries a domain prefix — `i` (integer), `f` (float), `b` (Bool logic), or `e` (tag-only enum comparison, including `Bool`) — whether or not a cross-domain twin exists; the structural ops (`cvt`, `reinterpret`) carry no prefix.
@@ -1301,7 +1301,7 @@ No contract definition or clause contributes an effect, executable epilogue, run
 Every declared result ordinal is a datum of every clause, written as that ordinal's `result_binding` spelling [CALL-4].
 An unrouted clause is admitted only when every result ordinal it names is `own T` with T one [ENT-2] fragment integer after concrete [FN-2] substitution, or is `own T` with T a measured type [MSR-1] named as a measure member and nowhere else [CALL-4].
 Its symbolic result datums are those ordinals' `result_binding`s.
-A routed clause is admitted only as exact `when Ok(value: r):` or `when b is Ok(value: r):` for a result ordinal whose written type is `own Result<T,E>` with T a fragment integer, where `b` names that ordinal, r is that clause's fresh symbolic payload datum, and `Ok` and `value` retain their PRE-1 identities.
+A routed clause is admitted only as exact `when Ok(value: r):` or `when b is Ok(value: r):` for a result ordinal whose mode and type are `own Result<T,E>` with T a fragment integer, where `b` names that ordinal, r is that clause's fresh symbolic payload datum, and `Ok` and `value` retain their PRE-1 identities.
 The ordinal binder may be omitted exactly when one declared ordinal has that enum type; two or more leave the route ambiguous and are refused at the declaration [CALL-4].
 Route owner, ordinal, variant, field, and freshness admission precedes resolution of that clause expression [GRAM-10, TYPE-6].
 The routed ordinal's whole-Result binder is unavailable in that clause; every other ordinal's binder remains a datum of it.
@@ -1480,7 +1480,7 @@ Bool exhaustiveness is carried by `if`: an else-free `if` is the empty-alternati
 The asymmetry is deliberate and content-driven: the empty then-block is admitted while the empty else is not, because the else-free form is the one spelling of the empty alternative.
 Variant addition surfaces site-enumerated edit lists (toolchain contract).
 
-[ERR-3] Propagation: `let x = propagate e;` requires `e : Result<T, E>` and the enclosing function's return type `own Result<U, E>` (same E — no conversions, TYPE-4); x's derived mode and type are `own T` [TYPE-5].
+[ERR-3] Propagation: `let x = propagate e;` requires `e : own Result<T, E>` and the enclosing function's return type `own Result<U, E>` (same E — no conversions, TYPE-4); x's derived mode and type are `own T` [TYPE-5].
 The propagation operand is a consuming context.
 A non-place Result expression is its owned temporary.
 When `e` is a direct bare place of affine `Result<T, E>` type rooted in a live own-mode binding, propagation consumes that place exactly once under [OWN-1] without requiring a written `move`; a partial place consumes its whole root and retains the ordinary residual cleanup.
@@ -1820,8 +1820,8 @@ This rejection is never replaced with a runtime fallback or reported at the call
 
 An [FN-9] result-datum admission subjudgment begins only after [FN-8] contract admission, FORM-3 result reservation, the route's ordinary leading-variant lookup when present, and concrete [FN-2] signature substitution.
 Admission through freshness precedes lexical resolution or semantic checking of the owning `ensures_clause` expression; the remaining clause, selected-return, and proof judgments begin only after that expression resolves and the surrounding function's ordinary semantic judgments required by the failed premise succeed.
-For an unrouted clause, test in this fixed order: written result mode/type and fragment class; header result-candidate freshness against every declaration live in the clause.
-For a routed clause, test in this fixed order: written whole-result mode/type and `Result` class; resolved variant owner and exact `Ok` identity; the written field against the variant's sole declaration-order field; route-candidate freshness against that field, the header result candidate, and every declaration live in the clause.
+For an unrouted clause, test in this fixed order: result mode/type determined by its declared `rtype` and fragment class; header result-candidate freshness against every declaration live in the clause.
+For a routed clause, test in this fixed order: whole-result mode/type determined by its declared `rtype` and `Result` class; resolved variant owner and exact `Ok` identity; the written field against the variant's sole declaration-order field; route-candidate freshness against that field, the header result candidate, and every declaration live in the clause.
 A result, class, owner, variant, or missing-field failure uses `SourceNode` at the complete `ensures_clause` or its `result_route` when present.
 An extra, misspelled, or out-of-order field uses `SourceNode` at the complete `fieldbind`.
 A candidate equal to its paired field or another live candidate or declaration uses `SourceNode` at its owning `result_binding` or `fieldbind`, with coordinate equal to the candidate IDENT token.

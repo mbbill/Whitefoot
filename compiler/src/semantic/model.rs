@@ -12,11 +12,11 @@ pub(crate) struct BindingId(pub(crate) u32);
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct ContractQueryId(pub(crate) u32);
 
-/// The three kinds a parameter, a binder, or a result may have [GRAM-3].
+/// The three checked value and reference kinds [GRAM-3].
 ///
-/// `mode := "own" | "&"`, plus the `&[T]` range-reference kind, which
-/// `param` writes without a `mode` node at all [GRAM-2, REF-4]. There is no
-/// permission marker and no region on a reference [REF-1], so the three
+/// A parameter's `T`, `&T`, or `&[T]` spelling determines its kind before
+/// substitution; a result always has value mode [GRAM-2, FN-1]. There is no
+/// permission marker and no region on a reference [REF-1], so these three
 /// kinds carry nothing: a reference is a local name for a path and the path
 /// is carried beside the binding, not inside its kind.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
