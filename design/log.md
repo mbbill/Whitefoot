@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-22 Keep design decisions concise and link their supporting detail
+
+Nodes: compiler/checker-facts, compiler/closure-row-dominance, compiler/completion-runtime, compiler/incremental-closure, compiler/parallel-lowering/parallel-runtime, compiler/parallel-lowering/two-worlds, compiler/parallel-lowering, compiler/proof-query-context, compiler/tag-only-lowering, language/checks-and-proofs/obligation-discharge/loop-fact-retention, language/checks-and-proofs, language/contracts, language/data-model/kernel-minimality, language/data-model/storage-shapes, language/data-model, language/effects/call-site-check, language/effects, language/generics, language/ownership/no-stored-references, language/ownership/reference-rebinding, language/ownership, language/parallelism/loop-permission, language/parallelism/permission-judgment, language/parallelism, language/system-interface/declaration-home, language/system-interface/directory-enumeration, language/system-interface/handle-factory, language/system-interface
+
+Owner-approved: The owner explicitly approved applying all 28 complete replacements in PR #92 at revision 4c6f91c50d7c2bbc9f9bc2c70c24ed5e50435166 unchanged and removing the four resolved design-clarity TODO groups.
+
+Summary: Apply the reviewed editorial replacements unchanged: remove settled-proposal narration, keep shared grounds at their conceptual owner, and move experimental and mechanism detail behind precise research links. Preserve the selected designs, correctness qualifications, meaningful alternatives and policy constants, including the limits of historical evidence. Remove the accepted amendments and their directory and the four resolved TODO groups. The specification and implementation are unchanged by this ruling; it does not authorize a merge.
+
 ## 2026-09-22 Reuse the structural checker's resolved reference origins
 
 Nodes: compiler/checker-facts

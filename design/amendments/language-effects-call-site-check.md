@@ -1,5 +1,0 @@
-Node: language/effects/call-site-check
-
-Decision: A call substitutes actual argument paths into the callee's declared row and rejects any pair with a write unless the [shared path judgment](https://github.com/mbbill/Whitefoot/blob/main/design/language/ownership.md) proves the paths disjoint; read/read overlap is allowed, because signatures and caller facts then determine interference without reading the body, instead of whole-argument exclusivity, callee-body alias analysis or runtime recovery of unproved separation.
-
-Decision: A by-value argument contributes the consumption of its place for a `move` and a read of its place for a copy to that same pairwise comparison, because an argument moved out of a place a second argument also reaches is the same interference as two writes even though a by-value parameter carries no row entry, instead of exempting by-value arguments from the comparison because nothing about them appears in the row.

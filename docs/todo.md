@@ -480,64 +480,6 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   need the lowering to join the hand-out before the `Err` return; a future
   investigation, taken up when a real program shows the gap.
 
-## Design record clarity
-
-- **Separate settled language decisions from x1 migration prose.** Several
-  language nodes still say `pending ruling`, `proposed here`, or
-  `if the owner approves`, and repeat the old decision before explaining its
-  replacement. Start with `data-model`, `checks-and-proofs`, `parallelism`
-  and their affected children. Use the existing
-  [x1 proposal](../research/investigations/access-effects/CANDIDATE-X1.md),
-  [migration map](../research/investigations/access-effects/SPEC-AMENDMENT-MAP.md)
-  and recorded rulings to distinguish history from the current choice.
-  Prepare a concise revision preserving each choice, decisive reason,
-  refused alternative and correctness qualification; validate removed
-  proposal wording against the actual ruling. Defer tree edits until the
-  owner explicitly approves the exact proposed revision. Remove this item
-  when the affected standing text no longer presents settled choices as proposals.
-
-- **Keep compiler decisions separate from their experimental detail.**
-  `incremental-closure`, `parallel-lowering`, `parallel-runtime`, `two-worlds`
-  and the Result entry in `checker-facts` carry numeric comparisons or long
-  mechanism and experiment narratives. Their detailed evidence already has
-  homes in the closure, compute-runtime, compute-model and Result
-  investigations. Replace that detail with precise citations while keeping
-  the selected representation, meaningful alternatives and necessary proof
-  boundaries. Preserve candidate/fallback completeness, witness qualifications,
-  acceptance-independent reuse, recursion-budget rules and constants that
-  define the chosen strategy. Validate each shorter decision against its
-  original meaning and cited section; close this batch only after the
-  owner-approved wording and references agree.
-
-- **Separate runtime policy from tuning and reproduction records.**
-  `completion-runtime` and `parallel-runtime` include measured timings,
-  sampling inventories and failure replays that belong with the existing I/O
-  and compute studies or maintained verification instructions. Keep protocol
-  boundaries and policy-defining limits in the decisions. The
-  [loop-fact comparison](../research/investigations/obligation-discharge/ACCEPTANCE.md#results)
-  records 5/29 actual against 17/30 predicted; use its return-placement control
-  rather than conflating those denominators. The recovered
-  [open-kind comparison](../research/investigations/io-model/RESULTS.md#open-kind-lookup-comparison)
-  lacks original per-arm samples, and the
-  [34 percent tag-width observation](../research/experiments/port-study/wc-chunk-summary/RESULTS.md#scope-of-the-tag-width-evidence)
-  remains unverified independently of the combined lowering experiment.
-  Preserve those limits in research instead of stating either percentage or
-  a universal non-waiting guarantee as established fact. Close this batch
-  after the concise tree revision and its qualified evidence agree.
-
-- **Normalize repeated grounds and repair obsolete node references.**
-  Pool/arena grounds repeat in `data-model` and `ownership/pools-and-arenas`;
-  overlap judgments repeat across ownership, effects and parallel permission;
-  closure nodes repeat the withdrawal of earlier cache/witness refusals.
-  Select one conceptual owner for each shared reason and retain each
-  consumer's distinct conditions before replacing duplicates with references.
-  `design/language/ownership.md` also names the retired
-  `language/ownership/multi-target-commit` path where the current node is
-  `language/ownership/exchange`. Validate reference targets and before/after
-  scope, including pre-state substitution and equal-witness boundaries.
-  Defer consolidation to the owner-approved editorial revision; close this
-  batch when the shared grounds and live paths have one clear home.
-
 ## Open language questions
 
 Questions the owner has left open on purpose. None of them is a decision;
