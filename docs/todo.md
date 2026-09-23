@@ -288,7 +288,7 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   that case supplies both the benefit and the availability evidence; pricing
   must not infer a separate source lifetime.
 
-- **Zero-budget dispatch retains code-growth and W1 uncertainty.** The
+- **Zero-budget dispatch needs caller and placement attribution before adoption.** The
   [query-retained one-site control](../research/investigations/compute-model/DESIGN.md#query-retained-control-result)
   meets its W4 criterion, but grows module text by 2,400 bytes and measures a
   2.97 percent W1 paired-median regression despite identical normalized W1
@@ -296,14 +296,20 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   it establishes neither standalone entry cost nor the benefit of applying
   the branch at every site. The general cdac candidate grows text by 3,920
   bytes (44.50 percent), including additional top-level inlining, with no new
-  local timing. Keep that candidate's optimized text and
-  unchanged-query/W1 evidence distinct from that timing result. Defer another
-  local attribution trial while canonical correctness and the maintained
-  hosted comparison qualify the candidate. Reopen if those controls retain a
-  regression or code growth affects a representative workload; then compare
-  a bounded direct-branch/wrapper or layout control with identical-image
-  drift, full output checks, CPU and first-call costs. Close when those costs
-  are attributed or their measured tradeoff is explicitly accepted.
+  local timing. The subsequent
+  [null-qualified Intel comparison](../research/investigations/compute-model/DESIGN.md#general-dispatch-reassessment)
+  regresses records by 30.72 percent at W1 and 4.01 percent at W2. W1 never
+  executes the added dispatch: its unchanged sequential chunk has different
+  placement and a differently optimized caller. Neither cause is isolated.
+  Withdraw the all-site optimization while retaining the existing query and
+  splitter entry; a wrapper, noinline boundary or alignment policy needs its
+  own grounds. Defer that broader optimizer/layout investigation behind the
+  remaining compute-expression questions. Reopen with a comparable Intel host
+  and a bounded control separating caller/stack changes from placement, with
+  an identical-image control and full outputs, before selecting a general
+  replacement. Require a demonstrated candidate benefit and qualification of
+  the affected W1/parallel paths; a passing ARM or different-host run alone
+  cannot clear the retained counterexample.
 
 - **Stable scatter retains construction and packing costs.** The dated merged-model
   [joined-phase result](../research/investigations/compute-model/DESIGN.md#joined-phase-result-2026-09-21)

@@ -2751,6 +2751,11 @@ compiler, specification or correctness-CI change follows from this inspection.
 
 ## Query-retained zero-budget dispatch control
 
+The one-site experiment and general implementation below retain their original
+revisions. The [subsequent reassessment](#general-dispatch-reassessment)
+withdraws the general compiler change after a qualified hosted regression;
+the positive one-site result is not a speedup claim for that implementation.
+
 ### Prospective protocol, published at c4e96d64
 
 This prospective development control starts from main
@@ -3041,3 +3046,87 @@ through PR88, which changes storage/lowering and the active specification.
 All candidate binaries and evidence above retain their cdac/main-95 identity.
 Further builds and reruns were held for composition assessment; no evidence
 here qualifies or measures the newer compiler.
+
+### General dispatch reassessment
+
+The general candidate at `0fe62339`, against `8d6da723`, passed correctness but
+failed the maintained comparison on an Intel Xeon Platinum 8573C in
+[run 35801623482](https://github.com/mbbill/Whitefoot/actions/runs/35801623482).
+Its synthetic checkout `46534248` has exactly the published tree `151878b0`.
+The identical-image null has zero suspects; null and comparison each retain
+the complete 900-row matrix. Ratios below are baseline/candidate, so values
+below one mean the candidate takes longer.
+
+| Workload | Wall ratio | Candidate elapsed-time change | Adverse pairs |
+| --- | ---: | ---: | ---: |
+| Records W1 | 0.764973 | +30.72% | 5/5 |
+| Records W2 | 0.961469 | +4.01% | 5/5 |
+| Stencil W2 | 0.955501 | +4.66% | 4/5 |
+
+Records fails at two widths; stencil W2 remains a suspect. Records W1 process
+medians are 20.811--20.996 ms for baseline and 27.205--27.409 ms for candidate.
+CPU, warmups and both execution orders agree; every measured candidate sample
+is slower than every baseline sample. The candidate's null timings agree with
+its comparison timings. The
+[earlier AMD EPYC 9V45 run](https://github.com/mbbill/Whitefoot/actions/runs/35800610607)
+passes the rule, but its records W1 ratio is already 0.971251 with five adverse
+pairs. All 34 baseline files and all 34 candidate files respectively match
+byte-for-byte between those sessions, including LLVM, objects and executables.
+The different verdicts therefore do not describe a compiler repair. Keep both
+outcomes, including the earlier null's stencil W1 suspect.
+
+Static inspection of those saved x86 artifacts finds only
+`wf_summarize_records` changed among 29 raw LLVM definitions. Its query and
+work price 814 remain. Crucially, W1 selects the inactive-pool sequential
+world and executes neither that query nor the new zero-budget branch. Its
+440-byte sequential chunk is byte-identical but moves from `0x32f0` to
+`0x32d0`. LLVM also changes the shared `wf_bench_records` adapter: baseline
+inlines both summary arms, while candidate keeps the overlapping summary as
+a call and inlines only the sequential arm. W1 register setup and stack depth
+change, the latter by 32 bytes. This identifies changed optimization context
+and placement, not their causal contributions. No hardware counters or new
+native timing were collected. The
+[Intel artifact](https://github.com/mbbill/Whitefoot/actions/runs/35801623482/artifacts/10726315723)
+and [AMD artifact](https://github.com/mbbill/Whitefoot/actions/runs/35800610607/artifacts/10726116067)
+retain the exact code and samples; inspect `records.ll`, `records.o` and the
+linked `records` in each `performance-baseline`/`performance-candidate`
+directory with `llvm-nm --print-size --numeric-sort` and
+`llvm-objdump -dr --no-show-raw-insn` without rerunning either image.
+
+This meets the prior TODO's reopening condition. The selected response is to
+withdraw the all-site compiler optimization, preserving main's existing query,
+splitter and chunk behavior. A wrapper that inlines recreates the exposure;
+one that stays outlined retains an entry boundary. A noinline restriction
+removes part of the mechanism behind the only measured stencil gain.
+Alignment or ordering changes do not isolate the changed caller. None has
+enough evidence for a replacement implementation, and an ARM timing trial
+would not resolve the Intel result. No replacement benchmark campaign or
+runner infrastructure is selected.
+
+A future bounded discriminator could place the same 32 padding bytes before
+versus after the unchanged sequential chunk in each original arm, requiring
+each pair to preserve caller instructions, stack depth and subsequent symbol
+addresses before any timing. One predetermined comparable Intel session with
+qualified null and full outputs could then test a placement contribution;
+it would not by itself establish an adoption-worthy dispatch policy. This
+control has not been constructed or run. Defer it until a concrete compiler
+consumer and suitable native host justify the separate attribution study.
+
+The affected set is the emitter's dispatch and continuation handling, its
+dispatch-specific tests, this investigation, the TODO and the
+[replacement pending amendment](../../../design/amendments/zero-budget-loop-dispatch.md).
+The branch restores production compiler code to main `3d7fa496`, retaining
+useful zero-budget output/cleanup, nested-publication and ordinary continuation
+coverage. The synthetic addressed-result case is retired with the removed
+two-edge destination join it protected; it does not qualify an admitted
+aggregate reduction. Existing degenerate ranges and pricing cases remain.
+The live tree has not changed and the new proposal awaits the owner's ruling.
+No specification, conformance verdict, runtime policy or performance threshold
+changes follow from this reassessment.
+
+**Design suitability.** Restoring the existing path avoids selecting another
+optimizer boundary without evidence. The single-site opportunity remains
+useful research, while broad caller and placement control is a separate,
+unqualified optimization problem. Keep its cost, uncertainty, validation and
+reopening condition in the maintained TODO; do not expand this change into
+world separation or host-specific tuning.
