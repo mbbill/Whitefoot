@@ -912,6 +912,17 @@ C-control optimized modules were unchanged. The same integration records
 give this compiler identity and the bounded re-emission commands. The earlier
 native, assembly and timing evidence retains its original scope and identity.
 
+Main `e8e1c411`, integrated at `ce9a3870`, subsequently changed Ring front
+predecessor lowering and the resource-record writer. Slab's raw module changed,
+but both complete optimized modules remained byte-identical, so its earlier
+timing evidence was retained with that qualification. Deque's reverse-churn
+path changed and was measured again with the unchanged full matrix and C
+controls: 2,592 correctness executions passed and 6,336 fresh samples are in
+[`measurements-v0.64.csv`](../../experiments/container-representation/deque-library/measurements-v0.64.csv).
+The RESULTS records separate this new measurement from the preserved baseline
+and identify the changed helper instructions; no Slab timing or optional GEP
+probe was rerun.
+
 ### Exact unavailable source forms
 
 These are the rejected additions or functions in the linked library's type

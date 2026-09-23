@@ -344,3 +344,118 @@ native checks, assembly comparison and optional-probe evidence are reused
 because their inputs are unchanged. No native relink, execution, probe or
 timing was repeated. The original CSV remains historical timing evidence,
 with no fresh performance or wider toolchain claim.
+
+#### v0.64 predecessor-lowering comparison
+
+Main PR #88, merged as `ce9a3870` from `e8e1c411`, releases v0.64 and changes
+`place_front`'s predecessor calculation to `(head == 0 ? capacity : head) - 1`.
+This avoids an overflowing intermediate for large header-only capacities,
+but also changes positive-stride scalar and record endpoint code. Unlike the
+earlier integrations, this requires a fresh timing comparison. The library,
+workload, C driver and controls have not changed. The old
+[`measurements.csv`](measurements.csv) remains the pre-v0.64 baseline.
+
+The gate compiler SHA-256 is
+`b68db16443f0606ef5d3217014fbdb1bdae0ea01bc23452eff27e2626bbc24ff`;
+the active specification is
+`bc4d465d698a63518d4c768bfa0b4147afa15e328e32f8adac3f27980c7a21ed`.
+The current Makefile is
+`1facd9eafce1baabac65e456df6ba962b46abd45a944af4eeeaf5f0afbd4e020`:
+its difference from the original measured Makefile is the optional probe,
+not the check or measurement matrix.
+
+| v0.64 artifact | SHA-256 |
+| --- | --- |
+| Raw compiler LLVM | `a32c7d14640f6f855f67149281fa839c65d3d30597c96bc50d8de8e012fa32b6` |
+| Normal optimized LLVM | `e36eeb449413e522d28c2faeccb5fedf5e0f28e98de76888a826cda25e08727e` |
+| Retained optimized LLVM | `42db1665f36ee102687df07507c7278a51d07af906a08d1357a36d482e5301dd` |
+| Normal current assembly | `ab1f40e2a8871e2377b2999d330d9bf910663cda828ac0f30a8c47ed3bc06040` |
+| Retained current assembly | `bf028f3e74c9f816827456d4fa6e04f8de5a5ab2671930e3804d8bab65cfe08b` |
+
+Comparison with the saved `dcbfdc0f` optimized modules isolates retained
+changes to `wf_deque_push_front$instance$47` (scalar),
+`wf_deque_push_front$instance$56` (record), and their primitive bodies
+`wf_place_front$instance$63` and `$68`. Their predecessor arithmetic and
+address scheduling differ in generated assembly; normal mode contains the
+corresponding inlined reverse-churn change. The retained record-copy counts
+above are unchanged. The new raw module also contains the POSIX resource
+writer's EINTR retry helper, which is removed by optimization under the
+accounting allocator's nonnull contract; it is not a timed-path difference.
+Both C-control optimized modules and the linked runtime's C/header/LLVM
+sources and `compiler/runtime.mk` are unchanged. The assembly comparison
+uses the same optimized-IR-to-arm64 command as above and concerns the emitted
+WF module, not the complete linked image.
+
+The current scalar forward hot block still has four i64 loads and four stores.
+The maintained probe still structurally selects exactly four positive-stride
+u64 Ring payload GEPs. The historical `dcbfdc0f` probe result is reused, not
+rerun or relabelled as a v0.64 execution: the changed predecessor is in the
+other endpoint path and does not supply the missing unsigned address fact.
+No production GEP flag or container API change is part of this comparison.
+
+Compiler construction with `make -C compiler build` took 46.94 seconds;
+Deque emission/optimization took 0.28 seconds. The complete guarded
+Slab/Deque build, emission and conditional assembly comparison took
+48.38 seconds. These construction figures are separate from the native
+check and timing run below.
+
+The new [`measurements-v0.64.csv`](measurements-v0.64.csv), collected on
+2026-09-22 on the same host/toolchain, contains all 6,336 samples from the
+unchanged matrix. Its SHA-256 is
+`e297a90a7ce0f56f116c9697aece4f10dcf0a4d6c855e97e0a7b1cb89db26638`.
+Reproduce through the existing target, then preserve its output separately:
+
+```sh
+perl .github/run-check.pl deque-v64-measure \
+  make -C research/experiments/container-representation/deque-library measure
+cp research/experiments/container-representation/deque-library/.build/measurements.csv \
+  research/experiments/container-representation/deque-library/measurements-v0.64.csv
+```
+
+Both modes again passed 2,592 correctness executions in total, and retained
+IR still has 20 WF and 40 C helper call sites. Every timing row passed the
+same checksum and allocation ledger checks. Incremental native construction
+took 0.58 seconds. Observing the existing `make measure` output boundary
+after its retained-call check separates 0.790 seconds for correctness from
+5.740 seconds for the timing matrix, including each phase's Make/output
+overhead; total check plus measurement was 6.529 seconds. The whole guarded
+construction/check/measurement/copy interval took 7.14 seconds.
+
+The following table uses the same units and per-run/cohort median method as
+the original table. It is a new complete cohort, not a replacement of the
+historical values or an isolated instruction-latency comparison.
+
+| Mode | Payload bytes | Trace | WF ns/step, n=4096 | WF / loop C | WF / bulk C |
+| --- | ---: | --- | ---: | ---: | ---: |
+| normal | 8 | forward churn | 3.204 | 2.256–2.405 | 2.283–2.349 |
+| normal | 8 | reverse churn | 3.601–3.754 | 1.196–1.230 | 1.194–1.240 |
+| normal | 8 | wrapped rebase | 4.883–5.066 | 1.648–1.909 | 1.648–2.683 |
+| retained | 8 | forward churn | 4.791–5.127 | 0.994–1.035 | 1.000–1.028 |
+| retained | 8 | reverse churn | 5.157–5.554 | 1.032–1.158 | 1.013–1.158 |
+| retained | 8 | wrapped rebase | 8.240–8.392 | 1.028–1.098 | 1.089–1.201 |
+| normal | 256 | forward churn | 34.363–34.637 | 0.978–1.026 | 0.987–1.014 |
+| normal | 256 | reverse churn | 34.424–34.821 | 0.986–1.008 | 0.977–1.006 |
+| normal | 256 | wrapped rebase | 46.997–48.676 | 0.976–1.025 | 0.993–1.108 |
+| retained | 256 | forward churn | 38.086–39.795 | 0.948–0.991 | 0.952–0.992 |
+| retained | 256 | reverse churn | 37.994–38.422 | 0.932–0.973 | 0.937–0.979 |
+| retained | 256 | wrapped rebase | 57.159–58.472 | 0.919–0.989 | 0.977–1.041 |
+
+The zero-round setup/cleanup cohort is preserved too; times are microseconds
+per complete trace, with no subtraction from the operation traces:
+
+| Mode | Payload bytes | n=16, us/trace | n=256, us/trace | n=4096, us/trace | WF / loop C |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| normal | 8 | 0.047–0.048 | 0.539 | 8.500 | 1.690–1.971 |
+| retained | 8 | 0.067–0.069 | 1.211–1.273 | 19.625–21.250 | 0.959–1.024 |
+| normal | 256 | 0.546–0.565 | 8.625–8.695 | 142.250–143.875 | 0.942–0.996 |
+| retained | 256 | 0.689–0.711 | 10.852–10.906 | 175.875–181.500 | 0.948–0.970 |
+
+The changed reverse path still has a scalar normal-mode gap (1.196–1.230
+against loop C, previously 1.175–1.220), while record traces remain
+competitive in this matrix. The unchanged scalar forward code still costs
+2.256–2.405 times loop C. These ranges do not isolate a causal percentage
+for the predecessor rewrite: the old and new cohorts ran at different times,
+retained scalar reverse results vary more in the new cohort, and the samples
+still have one-microsecond granularity. The evidence supports retaining the
+same lowering-improvement questions, not asserting a speedup, regression
+threshold or general native parity from small ratio differences.

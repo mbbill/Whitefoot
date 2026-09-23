@@ -90,8 +90,8 @@ concludes with a recorded disposition; retain any selected follow-up work here.
 
 - **Ring payload addressing withholds a useful unsigned offset fact.** The
   [Deque comparison](../research/experiments/container-representation/deque-library/RESULTS.md)
-  observes a 2.28–2.34x scalar forward-churn cost against C with ordinary
-  inlining. A bounded IR-only probe adding `nuw` to four positive-stride
+  observes a 2.256–2.405x scalar forward-churn cost against C with ordinary
+  inlining at v0.64. A bounded IR-only probe adding `nuw` to four positive-stride
   payload GEPs lets Clang keep the descriptor in registers; merely splitting
   the address calculation does not. No timing recovery or general validity
   claim follows from that probe. Qualify the effective byte offset against
@@ -102,8 +102,9 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   fact on and off, retain the independent oracle, and measure the full
   normal/retained matrix before selecting production emission. Defer that
   backend change while completing the library baseline; reopen for the next
-  container lowering experiment. This also depends on the zero-size address
-  qualification question above.
+  container lowering experiment. Zero-stride address steps now use the
+  selected-target zero displacement; that repair does not qualify an unsigned
+  flag for positive-stride payload steps.
 
 - **Slab aggregate results retain extra transfers and layout overhead.**
   The [Slab comparison](../research/experiments/container-representation/slab-library/RESULTS.md)

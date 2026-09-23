@@ -280,3 +280,32 @@ This byte-identity check reuses the earlier assembly comparison and native
 checks. No native relink, execution, probe or timing was repeated, and the
 original CSV remains the historical baseline rather than a new PR #80
 performance result.
+
+Requalification after main PR #88 used merge `ce9a3870` (main `e8e1c411`),
+which releases v0.64. The gate compiler SHA-256 is
+`b68db16443f0606ef5d3217014fbdb1bdae0ea01bc23452eff27e2626bbc24ff`;
+the active specification is
+`bc4d465d698a63518d4c768bfa0b4147afa15e328e32f8adac3f27980c7a21ed`.
+The library, workload, C driver, Makefile and original CSV retain their
+previously recorded identities. Fresh raw LLVM changed to
+`97818ef7d593144335b0a6980fb079689549ad1b57e6f2b9767acb3ed653998f`:
+the emitted module now includes the POSIX resource-record EINTR retry helper.
+This is not raw-module identity with the earlier revision.
+
+Both complete optimized WF modules are nevertheless byte-identical to the
+`dcbfdc0f` entries above, without normalization; the two C-control optimized
+modules are unchanged too. The reporting helper is removed by optimization
+under the accounting allocator's nonnull return contract. The zero-stride
+addressing changes do not change these positive-stride Slab instantiations.
+This reuses the earlier emitted-module assembly correspondence, without a
+claim of a newly linked image or new timings. Native runtime C/header/LLVM
+sources and `compiler/runtime.mk` are unchanged across the integration.
+
+The guarded `slab-deque-v64-build-emission` interval built the compiler using
+`make -C compiler build` (gate profile), then requested the same four Slab
+Make targets shown above. Compiler construction took 46.94 seconds and Slab
+emission/optimization took 0.76 seconds. The complete interval, also including
+Deque emission and its changed-code assembly comparison, took 48.38 seconds.
+No Slab relink, correctness execution or measurement was repeated; the
+original CSV remains historical evidence qualified by this exact
+optimized-module comparison on Apple Clang 21 / arm64.
