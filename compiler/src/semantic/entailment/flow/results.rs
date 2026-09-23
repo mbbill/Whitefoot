@@ -40,6 +40,11 @@ impl Analyzer<'_, '_> {
     /// Merge ordinary facts into exactly one conditional context. A guard's
     /// contradiction remains local until that value's success is selected.
     pub(super) fn refresh_result(&mut self, result: &mut ResultEvidence, ordinary: &FactState) {
+        let ordinary = self.result_ordinary_snapshot(ordinary);
+        self.refresh_result_from_snapshot(result, &ordinary);
+    }
+
+    fn result_ordinary_snapshot(&mut self, ordinary: &FactState) -> FactState {
         let mut ordinary = ordinary.clone();
         materialize_closure_before_kill(
             &mut ordinary,
@@ -47,10 +52,35 @@ impl Analyzer<'_, '_> {
             &self.goals,
             &mut self.derivations,
         );
+        ordinary
+    }
+
+    /// Every Result at one flow point reads the same completed ordinary
+    /// snapshot. Sharing its preparation does not combine their guards.
+    fn refresh_result_from_snapshot(&self, result: &mut ResultEvidence, ordinary: &FactState) {
         if ordinary.all_derivable {
             result
                 .facts
                 .promote_to_contradiction(ordinary.contradiction);
+        }
+        if !result.facts.all_derivable
+            && ((result.facts.bounds.is_empty() && result.facts.distinct.is_empty())
+                || (!closure_is_seeded(&result.facts) && closure_is_seeded(ordinary)))
+        {
+            // Reuse the ordinary core when this context has none. Importing
+            // every existing conditional candidate into that core gives the
+            // same union as importing ordinary facts into the old context.
+            let conditional = result.facts.l0_candidates();
+            result.facts = ordinary.numeric_snapshot();
+            result
+                .facts
+                .kill(|term| matches!(self.terms.kind(term), TermKind::ResultPayload(_)));
+            for (relation, parent) in conditional {
+                result
+                    .facts
+                    .establish_from_proof(&relation, parent, &self.derivations);
+            }
+            return;
         }
         for (relation, parent) in ordinary.l0_candidates() {
             if relation
@@ -83,20 +113,20 @@ impl Analyzer<'_, '_> {
         if closed.all_derivable {
             return FactState::contradictory(closed.contradiction.expect("closed contradiction"));
         }
-        let mut target = FactState::new();
+        let mut target = closed.numeric_snapshot();
+        target.kill(|term| term == from);
         for (relation, parent) in closed.l0_candidates() {
+            if !relation.terms().contains(&from) {
+                continue;
+            }
             let substituted = Self::replace_relation_term(&relation, from, to);
-            let parent = if relation.terms().contains(&from) {
-                self.derivations.intern(DerivationNode::ResultTransport {
-                    statement: statement.clone(),
-                    from,
-                    to,
-                    relation: Box::new(substituted.clone()),
-                    parent,
-                })
-            } else {
-                parent
-            };
+            let parent = self.derivations.intern(DerivationNode::ResultTransport {
+                statement: statement.clone(),
+                from,
+                to,
+                relation: Box::new(substituted.clone()),
+                parent,
+            });
             target.establish_from_proof(&substituted, parent, &self.derivations);
         }
         target
@@ -278,7 +308,7 @@ impl Analyzer<'_, '_> {
             return;
         }
         let mut held = std::mem::take(&mut state.results);
-        held.retain(|binding, result| {
+        held.retain(|binding, _| {
             let place = self.bound_place(*binding);
             if events.iter().any(|event| match event {
                 KillEvent::Consume {
@@ -294,10 +324,15 @@ impl Analyzer<'_, '_> {
             }) {
                 return false;
             }
-            self.refresh_result(result, &state.facts);
-            self.apply_kills_one(&state.separations, &mut result.facts, events);
             true
         });
+        if !held.is_empty() {
+            let ordinary = self.result_ordinary_snapshot(&state.facts);
+            for result in held.values_mut() {
+                self.refresh_result_from_snapshot(result, &ordinary);
+                self.apply_kills_one(&state.separations, &mut result.facts, events);
+            }
+        }
         state.results = held;
     }
 
@@ -310,20 +345,20 @@ impl Analyzer<'_, '_> {
             .copied()
             .collect::<HashSet<_>>();
         let mut held = std::mem::take(&mut state.results);
-        held.retain(|binding, result| {
-            if exited.contains(binding) {
-                return false;
+        held.retain(|binding, _| !exited.contains(binding));
+        if !held.is_empty() {
+            let ordinary = self.result_ordinary_snapshot(&state.facts);
+            for result in held.values_mut() {
+                self.refresh_result_from_snapshot(result, &ordinary);
+                materialize_closure_before_kill(
+                    &mut result.facts,
+                    &self.terms,
+                    &self.goals,
+                    &mut self.derivations,
+                );
+                self.exit_scopes_to_one(&mut result.facts, depth);
             }
-            self.refresh_result(result, &state.facts);
-            materialize_closure_before_kill(
-                &mut result.facts,
-                &self.terms,
-                &self.goals,
-                &mut self.derivations,
-            );
-            self.exit_scopes_to_one(&mut result.facts, depth);
-            true
-        });
+        }
         state.results = held;
     }
 
@@ -338,9 +373,16 @@ impl Analyzer<'_, '_> {
             }
         }
         let mut results = BTreeMap::new();
+        if bindings.is_empty() {
+            return results;
+        }
+        let ordinary = states
+            .iter()
+            .map(|state| self.result_ordinary_snapshot(&state.facts))
+            .collect::<Vec<_>>();
         for (binding, payload) in bindings {
             let mut images = Vec::new();
-            for state in states {
+            for (state, ordinary) in states.iter().zip(&ordinary) {
                 let mut result = state
                     .results
                     .get(&binding)
@@ -350,7 +392,7 @@ impl Analyzer<'_, '_> {
                         facts: FactState::new(),
                         definitely_err: false,
                     });
-                self.refresh_result(&mut result, &state.facts);
+                self.refresh_result_from_snapshot(&mut result, ordinary);
                 images.push(result.facts);
             }
             let event = self.derivations.event(FlowEventKind::Join, None);
@@ -377,5 +419,274 @@ impl Analyzer<'_, '_> {
             );
         }
         results
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::semantic::entailment::state::PostconditionCallDetail;
+    use crate::semantic::entailment::{
+        RelationProvenance, VerifiedPostconditionSummary, VerifiedPostconditionSummaryRef,
+    };
+    use crate::semantic::model::FunctionId;
+
+    /// Compare independently live proofs, not only selected bounds, through
+    /// destination collisions, refresh imports and later S12 removal.
+    #[test]
+    fn numeric_result_transport_preserves_the_complete_candidate_set() {
+        let constant_ids = HashMap::new();
+        let const_parameter_types = HashMap::new();
+        let context = EntailmentContext {
+            callees: &[],
+            constants: &[],
+            constant_ids: &constant_ids,
+            const_parameter_types: &const_parameter_types,
+            nominals: &[],
+            elements: &[],
+            contract_queries: &[],
+            verified_postconditions: &[],
+            verified_postcondition_proofs: &[],
+            binding_names: &[],
+        };
+        let function = CheckedFunction {
+            formal_hypothesis: false,
+            id: FunctionId(0),
+            declaration: crate::DeclarationId::from_index(0).unwrap(),
+            name: String::new(),
+            symbol: String::new(),
+            region_parameters: Vec::new(),
+            parameters: Vec::new(),
+            result_mode: CheckedMode::Own,
+            result: CheckedType::Unit,
+            declared_state_writes: Vec::new(),
+            requirements: Vec::new(),
+            postconditions: Vec::new(),
+            body: None,
+            body_disposition: Default::default(),
+            allocates: false,
+            call_separations: Vec::new(),
+            permission_separation_queries: Vec::new(),
+            entailment: FunctionEntailment::default(),
+        };
+        let mut analyzer = Analyzer::new(&context, &function);
+        let from = analyzer
+            .terms
+            .intern(TermKind::ResultPayload(IntegerType::I32));
+        let foreign = analyzer
+            .terms
+            .intern(TermKind::ResultPayload(IntegerType::U8));
+        let [middle, to] = [0, 1].map(|binding| {
+            analyzer.terms.intern(TermKind::Place(
+                ResolvedPlace::binding(BindingId(binding)),
+                IntegerType::I32,
+            ))
+        });
+        let statement = crate::NodePath {
+            components: vec![0],
+        };
+        let event = analyzer.derivations.event(FlowEventKind::S1, None);
+        let mut source = FactState::new();
+        for (left, right, bound) in [(from, middle, 5), (to, middle, 10)] {
+            source.establish(
+                &Relation::Bound { left, right, bound },
+                &mut analyzer.derivations,
+                event,
+            );
+        }
+        let distinct = Relation::Distinct {
+            left: from,
+            right: middle,
+            difference: 0,
+        };
+        source.establish(&distinct, &mut analyzer.derivations, event);
+        for relation in [
+            Relation::Bound {
+                left: from,
+                right: middle,
+                bound: 0,
+            },
+            distinct,
+        ] {
+            let proof = analyzer
+                .derivations
+                .intern(DerivationNode::PostconditionCall {
+                    detail: Box::new(PostconditionCallDetail {
+                        call: statement.clone(),
+                        relation: relation.clone(),
+                        summary: VerifiedPostconditionSummaryRef {
+                            summary: RelationProvenance::Verified(VerifiedPostconditionSummary {
+                                function: FunctionId(0),
+                                block: statement.clone(),
+                                relation_ordinal: 0,
+                                component: 0,
+                            }),
+                        },
+                        substitutions: Vec::new(),
+                        transfer_events: Vec::new(),
+                        parents: Vec::new(),
+                    }),
+                });
+            source.establish_from_proof(&relation, proof, &analyzer.derivations);
+        }
+        let unseeded = source.clone();
+        materialize_closure_before_kill(
+            &mut source,
+            &analyzer.terms,
+            &analyzer.goals,
+            &mut analyzer.derivations,
+        );
+        // Retain alternate witnesses as well as the materialized selection,
+        // so both transport paths must keep every distinct proof candidate.
+        for (relation, proof) in unseeded.l0_candidates() {
+            source.establish_from_proof(&relation, proof, &analyzer.derivations);
+        }
+        let candidates =
+            |state: &FactState| state.l0_candidates().into_iter().collect::<HashSet<_>>();
+        assert_eq!(candidates(&source), candidates(&source.numeric_snapshot()));
+        let mut transported = analyzer.substitute_result_facts(&statement, &source, from, to);
+        // Reference the previous full import, independent of closed-core reuse.
+        let mut rebuilt = FactState::new();
+        for (relation, parent) in source.l0_candidates() {
+            let substituted = Analyzer::replace_relation_term(&relation, from, to);
+            let parent = if relation.terms().contains(&from) {
+                analyzer
+                    .derivations
+                    .intern(DerivationNode::ResultTransport {
+                        statement: statement.clone(),
+                        from,
+                        to,
+                        relation: Box::new(substituted.clone()),
+                        parent,
+                    })
+            } else {
+                parent
+            };
+            rebuilt.establish_from_proof(&substituted, parent, &analyzer.derivations);
+        }
+        for remove_calls in [false, true] {
+            if remove_calls {
+                transported.retain_non_postcondition_candidates(&analyzer.derivations);
+                rebuilt.retain_non_postcondition_candidates(&analyzer.derivations);
+            }
+            assert_eq!(candidates(&transported), candidates(&rebuilt));
+            let actual = close(
+                &transported,
+                &analyzer.terms,
+                &analyzer.goals,
+                &mut analyzer.derivations,
+            );
+            let expected = close(
+                &rebuilt,
+                &analyzer.terms,
+                &analyzer.goals,
+                &mut analyzer.derivations,
+            );
+            assert!(!actual.contradictory());
+            assert_eq!(actual.contradictory(), expected.contradictory());
+            for left in analyzer.terms.ids() {
+                for right in analyzer.terms.ids() {
+                    assert_eq!(
+                        actual.tight_bound(left, right),
+                        expected.tight_bound(left, right)
+                    );
+                    let distinct = Relation::Distinct {
+                        left,
+                        right,
+                        difference: 0,
+                    };
+                    assert_eq!(actual.derives(&distinct), expected.derives(&distinct));
+                }
+            }
+            assert!(actual.derives_bound(to, middle, if remove_calls { 5 } else { -1 }));
+        }
+
+        let mut ordinary = FactState::new();
+        ordinary.establish(
+            &Relation::Bound {
+                left: to,
+                right: middle,
+                bound: 8,
+            },
+            &mut analyzer.derivations,
+            event,
+        );
+        let ordinary = analyzer.result_ordinary_snapshot(&ordinary);
+        let mut refreshed = ResultEvidence {
+            payload: from,
+            facts: unseeded.clone(),
+            definitely_err: false,
+        };
+        assert!(!closure_is_seeded(&refreshed.facts));
+        let mut imported = unseeded;
+        // The former refresh loop is an independent reference for the union.
+        for (relation, parent) in ordinary.l0_candidates() {
+            if !relation
+                .terms()
+                .iter()
+                .any(|term| matches!(analyzer.terms.kind(*term), TermKind::ResultPayload(_)))
+            {
+                imported.establish_from_proof(&relation, parent, &analyzer.derivations);
+            }
+        }
+        analyzer.refresh_result_from_snapshot(&mut refreshed, &ordinary);
+        assert!(closure_is_seeded(&refreshed.facts));
+        assert!(
+            refreshed
+                .facts
+                .l0_candidates()
+                .iter()
+                .all(|(relation, _)| { !relation.terms().contains(&foreign) })
+        );
+        for remove_calls in [false, true] {
+            if remove_calls {
+                refreshed
+                    .facts
+                    .retain_non_postcondition_candidates(&analyzer.derivations);
+                imported.retain_non_postcondition_candidates(&analyzer.derivations);
+            }
+            assert_eq!(candidates(&refreshed.facts), candidates(&imported));
+            let actual = close(
+                &refreshed.facts,
+                &analyzer.terms,
+                &analyzer.goals,
+                &mut analyzer.derivations,
+            );
+            let expected = close(
+                &imported,
+                &analyzer.terms,
+                &analyzer.goals,
+                &mut analyzer.derivations,
+            );
+            assert!(!actual.contradictory());
+            for left in analyzer.terms.ids() {
+                for right in analyzer.terms.ids() {
+                    assert_eq!(
+                        actual.tight_bound(left, right),
+                        expected.tight_bound(left, right)
+                    );
+                    let distinct = Relation::Distinct {
+                        left,
+                        right,
+                        difference: 0,
+                    };
+                    assert_eq!(actual.derives(&distinct), expected.derives(&distinct));
+                }
+            }
+            assert_eq!(actual.tight_bound(to, middle), Some(8));
+            assert_eq!(
+                actual.tight_bound(from, middle),
+                Some(if remove_calls { 5 } else { -1 })
+            );
+        }
+        let contradiction = analyzer
+            .derivations
+            .intern(DerivationNode::ResultErr { statement });
+        refreshed.facts = FactState::contradictory(contradiction);
+        refreshed.definitely_err = true;
+        analyzer.refresh_result_from_snapshot(&mut refreshed, &ordinary);
+        assert!(refreshed.facts.all_derivable);
+        assert_eq!(refreshed.facts.contradiction, Some(contradiction));
+        assert!(refreshed.definitely_err);
     }
 }

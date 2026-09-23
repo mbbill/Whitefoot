@@ -525,6 +525,63 @@ it does not select a different witness or numeric fact family. The matched
 timing comparison tests whether these unnecessary fresh marks explain the
 observed regression before changing conditional-state representation.
 
+That isolated change (`b9e11c81`, with test/research additions at `f2c22f52`)
+reduces DEFLATE from 700.756 to 371.629 ms against current unoptimized main
+`1b916975`; its five-sample ranges are 692.687-710.006 and 368.197-373.060 ms.
+This supports the attribution but misses the practical target, so it does not
+end the investigation.
+
+The next experiment preserves the closed numeric core when starting and
+substituting a conditional context. A fresh context takes the already
+materialized ordinary numeric snapshot, drops writer-origin and opaque-goal
+metadata, and uses the existing term kill to remove private payload parameters.
+Its numeric bound and disequality candidates, including ordinary fallbacks,
+are exactly the previous filtered import. Removing metadata cannot remove a
+numeric consequence because materialization precedes that projection; opaque
+goals themselves have never been part of Result transport.
+
+Substitution similarly starts with the materialized numeric snapshot, kills
+the substituted source term, and reinstalls the mapped incident candidates
+with their ResultTransport parents. Nonincident candidates are unchanged. This
+produces exactly the old candidate substitution set while preserving the closed
+core among unaffected terms. A destination already present may introduce new
+paths; the existing insertion and kill records require those paths to close
+normally. No claim that arbitrary substitution preserves a complete closure is
+needed. Both layers retain their separate candidates and closure records.
+
+The initial snapshot-reuse comparison reaches 295.320 ms for DEFLATE and
+380.188/330.218 ms for the 32-outcome/join cases. It still misses the first two
+criteria, and join peak RSS increases from 215.20 to 260.56 MiB. The next
+experiment prepares one ordinary snapshot per predecessor at a join, kill or
+scope exit, then imports that same snapshot into each independent Result.
+Previously each import rematerialized an unchanged ordinary state with a new
+snapshot event. The facts and support are identical at this shared flow point;
+only the valid witness identity is shared. No conditional context is shared
+between distinct guards. This tests whether repeated preparation explains the
+remaining time and ledger allocation before considering a wider representation
+change.
+
+Sharing ordinary preparation brings the 32-join case to 261.976 ms and
+105.36 MiB peak RSS (734.556 ms and 214.72 MiB before); DEFLATE and the
+independent-outcome axis barely change. A native sample of the snapshot-only
+32-outcome case places 167 of 192 driver-thread samples in closure while
+materializing each conditional context at scope exit. A context captured from
+an empty ordinary state has no closed core, even after later importing a
+completed ordinary matrix. The next union experiment reverses that import
+when only the ordinary side has a closed core: filter its private parameters,
+then add every original conditional candidate. This is the same candidate
+union, with existing insertion records for conditional edges, but permits
+the already completed ordinary core to seed closure. Contradictory conditional
+states retain their existing absorbing handling.
+
+This private representation change stays inside FactState and the Result flow
+child. The walker still owns event order, and no additional solver, acceptance
+budget or lifetime analysis is introduced. The proposed supplement is kept in
+`design/amendments/result-closure-reuse.md` pending the owner's ruling. Smaller
+predicate sets and last-use tracking are declined for this change because they
+need broader correspondence arguments; the measured question is whether reuse
+of already completed numeric work suffices.
+
 ## Candidate evidence and remaining validation
 
 With the candidate compiler, the same current runner accepts `--candidate`
