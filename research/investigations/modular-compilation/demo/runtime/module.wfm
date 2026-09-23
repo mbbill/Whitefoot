@@ -3,7 +3,7 @@ alias len = pkg::runtime::queue::len;
 alias Job = pkg::data::Job;
 alias Report = pkg::data::Report;
 
-fn run_two<fn take(queue: &Queue) -> job: own Job writes(queue) contract {
+public fn run_two<fn take(queue: &Queue) -> job: own Job writes(queue) contract {
   requires len(queue: queue) > 0_u64;
   ensures len(queue: queue) + 1_u64 == len(queue: entry(queue));
 }>(queue: &Queue) -> report: own Report writes(queue) contract {

@@ -70,43 +70,51 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   environment; retain ordinary scope invalidation when an unused alias collides.
   Validate complete interface/qualified grammars, normalized declaration
   correspondence, public semantic closure, order-independent top-level
-  formation and checked abstract nominal capabilities/representation. Qualify
+  formation and imported nominal capability/release facts. Qualify
   the sole directory/module.wfm layout, rejection of the old sibling and
   repeated-name layouts as interface lookup alternatives, direct directory
   membership without child collection, optional registered root modules, path/case/alias
   ambiguity, graph-registered namespace/declaration collisions, exclusion of
   unregistered modules and cross-file private calls. Reject executable function
-  bodies in .wfm, including getter bodies. Qualify public records with direct
-  component moves/borrows and abstract public structs with complete declared
-  capabilities and one private representation; retain existing opaque/readonly
-  rules, reject private field access and do not invent reference-returning
-  getters under REF-3. Compare private-layout and public-schema invalidation
-  and prove useful by-value no-heap use without forced handles. Exact abstract
-  capability syntax and logical getter admission remain unqualified.
-  A type with both public fields and private representation reopens the
-  whole-record visibility question; assume one agent per module and leave
-  coordination inside the module outside this discussion. The current
-  candidate still selects only
-  full public schemas or fully hidden fields. Evaluate the
-  [mixed-representation questions](../research/investigations/modular-compilation/DESIGN.md#questions-for-a-mixed-public-and-private-representation)
-  before selecting field visibility: compare a checked partial interface with
-  one complete representation against composition with an abstract member.
-  Require useful direct access where needed, complete hidden-field ownership
-  and initialization, explicit capability correspondence and justified
-  invariant/effect handling. Use both independent public data and a visible
-  length tied to hidden storage; distinguish inspection from mutation. The
-  expected benefit is direct public data access without exposing the complete
-  representation, but declaration complexity and performance remain unverified.
+  bodies in .wfm, including getter bodies, and reject public in .wf. Qualify
+  default-private declarations/struct fields, explicit public only in .wfm,
+  one complete definition per public struct, and private supporting types and
+  constants in that interface. Reject split/extended definitions, private
+  support found only in .wf, public aliases and private types/paths in usable
+  public fields, signatures or contracts. Cover effective visibility through
+  the enclosing type, fully public records, mixed fields and all-private fields.
+  Retain existing opaque/readonly rules, reject private field access and do not
+  invent reference-returning getters under REF-3. Compare private-layout,
+  capability and public-schema invalidation, and prove useful by-value no-heap
+  use without forced handles. Modifier grammar, imported generic capabilities
+  and logical getter admission remain unqualified. Assume one agent per module;
+  coordination inside it is outside this discussion. The
+  [remaining representation questions](../research/investigations/modular-compilation/DESIGN.md#questions-for-a-mixed-public-and-private-representation)
+  require useful direct access, complete ownership/initialization, derived
+  capability dependencies and justified invariant/effect handling. Use both
+  independent public data and a visible length tied to private storage;
+  distinguish inspection from mutation. One definition avoids correspondence
+  between split field lists, but interface size and reading cost remain
+  unmeasured because private representation/support now live in .wfm.
   The [field-operation candidate](../research/investigations/modular-compilation/DESIGN.md#field-visibility-and-structural-operations-discussion-candidate)
-  proposes an explicit complete/hidden schema distinction, one complete private
-  definition, ordinary visible-field access and function-mediated construction
-  and destructive extraction for hidden representations. These are unselected
-  options, not admitted syntax. Compare against explicit residual-ownership
-  permissions and composition with an abstract member; an unchanged interface
-  must not acquire different extraction rights solely from hidden linear fields.
-  Preserve current readonly and opaque meanings. This design
-  and validation work precedes adopting a mixed form; remove it when the
-  comparison selects or declines that extension with its required evidence.
+  now reconsiders ordinary public-field extraction with checked residual
+  release: all private fields are declared in .wfm, so the earlier blanket
+  restriction cannot rest on missing interface information. Validate droppable
+  versus linear private remainders and corresponding invalidation before
+  selecting consuming access rules. Construction with private fields goes
+  through declared functions in the candidate; no hidden field is defaulted.
+  Preserve current readonly/opaque meanings. Remove this follow-up when the
+  selected publication and operation rules have executable qualification.
+  A resolved public-surface comparison could focus CI review on visibility,
+  signature, field, contract, constant, dependency-identity and derived-capability
+  changes. A keyword diff is only a hint. Validate edits outside public-bearing
+  lines, identity-preserving alias renames, alias retargeting and private edits
+  that do or do not affect public capabilities or backend consumers. Benefit:
+  review actual API changes without treating every body edit as one; comparison
+  cost and completeness are unmeasured. Defer CI wiring until module metadata
+  exists, revisit during frontend implementation, and remove this item when
+  the comparison is validated or declined with evidence. No new approval gate
+  or script is introduced by the proposal.
   Public declaration duplication and useful module sizes remain unmeasured.
   Preserve ordinary privacy without transitive access or parent/child
   privileges. Subtree-private separately compiled modules remain unselected:

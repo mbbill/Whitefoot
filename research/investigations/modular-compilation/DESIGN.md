@@ -25,7 +25,7 @@ The [complete source specimen](demo/README.md) makes this direction concrete:
 five modules form a fixed-capacity job queue, a function-kind batch consumer,
 an allocation-free entry and a heap-using tool. It includes every interface
 and body, the root graph, a reading order, expected behavior and predicted
-edit effects. Its provisional abstract-capability and logical-getter notation
+edit effects. Its provisional explicit-public and logical-getter notation
 is identified explicitly; it is not an executable project or validation of
 the still-missing judgments.
 
@@ -117,12 +117,14 @@ concern.
 This requirement selects full public declarations over the earlier thin
 export-list candidate. Checked repetition of a function declaration is an
 acceptable cost of an independently readable contract; minimizing repeated
-text does not meet the requirement by itself. Ordinary private implementation
-edits must not change the public interface file. Module size still does not
-select incremental checking or LLVM partition size.
+text does not meet the requirement by itself. Ordinary function-body and
+implementation-only helper edits need not change the interface file. A public
+struct's private representation does live in that file under the single-definition
+choice below; changing it can edit `.wfm` without publishing a field. Module size
+still does not select incremental checking or LLVM partition size.
 
 Retain a declaration-only `.wfm` so that public-contract reading and review
-remain separate from ordinary implementation edits. Putting public function
+remain separate from executable body edits. Putting public function
 bodies there would remove header duplication but mix those changes in the same
 file. For the current discussion, assume one agent implements each module;
 coordination among that module's `.wf` authors is outside scope and supplies no
@@ -154,18 +156,25 @@ selected requirement that the handwritten public contract stand on its own.
 Each source module has exactly one `module.wfm` inside its owning directory.
 The directory's root-relative path owns the module name; the interface owns
 complete public declarations and any file-local
-aliases needed to read their external references. Every ordinary top-level
-declaration in that file belongs to the public API; there is no separate
-export list or implementation-side `pub` switch. Public function declarations
+aliases needed to read their external references. Top-level declarations and
+struct fields default to module-private. Only `.wfm` permits the `public`
+modifier, on declarations and struct fields at their publication sites;
+`.wf` cannot publish anything independently. There is no `private` modifier,
+separate export list or implementation-side publication switch. An alias is
+still only a file-local abbreviation and cannot carry `public`.
+Public function declarations
 include generic parameters and bounds, parameter/result labels and modes,
 types, capabilities, effects, and complete `requires`/`ensures` clauses.
 No executable function body belongs in `.wfm`, including a getter used by a
 public contract. Its public declaration is here and its checked body is in
-`.wf`. A record's public field schema is a data declaration, not an executable
-body; the representation choices below determine whether that schema is public.
+`.wf`, without repeating `public`. Every public source-defined struct has its
+one complete definition here, including unmarked private fields; its field
+schema is a data declaration, not an executable body.
 Public constants and interface/binding groups include their public definitions.
-Public concrete records and enums declare their externally visible schema
-there. No interface fragment, textual include, wildcard export or forwarding
+Private supporting types and constants needed by those definitions also live
+here, without `public`. Enum and group publication need their own complete
+qualification; partial variant publication is not selected by the struct rule.
+No interface fragment, textual include, wildcard export or forwarding
 alias can fill in an omitted part from an implementation file. Alias headers
 are local name bindings rather than public declaration items; placing one in
 `.wfm` does not publish a second name for its target.
@@ -193,15 +202,16 @@ Illustrative contents of `counters/module.wfm`, not an accepted grammar. The pat
 already declares the module, so no second written module name is needed:
 
 ```text
-fn advance(value: own u64) -> next: own u64 pure contract {
+public fn advance(value: own u64) -> next: own u64 pure contract {
   requires value < 18446744073709551615_u64;
   ensures next == value + 1_u64;
 };
 ```
 
 An ordinary implementation in one selected `.wf` repeats that function's
-declaration and supplies its body. Other selected files may define private
-helpers without mentioning them in `.wfm`. There are no per-file module,
+declaration without the publication modifier and supplies its body. Other
+selected files may define private helpers without mentioning them in `.wfm`.
+There are no per-file module,
 import, export or namespace declarations.
 
 Interface formation can check names, types and contract well-formedness
@@ -212,10 +222,11 @@ An interface file is neither a theorem assumption nor an object-code promise.
 
 ### Checked interface and implementation correspondence
 
-Resolve the public declarations first, then collect the complete local
-implementation inventory. A public function definition binds to the
+Resolve `.wfm` declarations first, including private type support, then collect
+the complete local implementation inventory. A function definition matching
+a callable declared in `.wfm`, whether public or private, binds to the
 interface's stable identity; it does not introduce a second function or
-overload. Exactly one selected definition must implement each required public
+overload. Exactly one selected definition must implement each required declared
 callable, subject to the existing compiler-owned native binding rules. Missing,
 duplicate and mismatched implementations reject at the related declarations.
 An unlisted ordinary function is private even when another source file uses it.
@@ -231,13 +242,13 @@ postcondition; a different public contract requires an explicit interface edit.
 Internal calls to a public function use the matched contract and normal
 summary availability, not a second private strengthening.
 
-Public concrete type, constant and group definitions in `.wfm` are directly
-available to implementations. They need not be redeclared in every `.wf`,
-and must not acquire a fresh nominal identity there. Representation-hiding
-nominal interfaces require an explicit public capability description and a
-checked match to the implementation representation. The exact nominal
-correspondence judgment and its logical vocabulary remain required language
-design work; the existing `opaque` modifier is not repurposed, since it
+Type, constant and group definitions in `.wfm`, including private support, are
+directly available to the owning implementation inventory. A struct is defined
+once, never redeclared or extended in `.wf`; its complete field list and
+capability modifier determine the ordinary component capability obligations.
+Generic capability derivation and imported summaries still need qualification,
+but there is no split source representation to match. Function correspondence
+remains necessary. The existing `opaque` modifier is not repurposed, since it
 already restricts construction even in its declaring scope.
 
 ### One module namespace and declaration formation
@@ -764,37 +775,59 @@ grammar/resolver and edit-locality qualification.
 ### Public semantic closure, representation and proof paths
 
 A public declaration must be understandable using its interface, explicit
-dependency interfaces and the ordinary language/prelude rules. Its type,
-effect and proof expressions cannot name an implementation-only helper,
-constant, group or private representation path. This is stronger than making
-a generated interface carry private field identities behind a reader's back.
-Private implementation contracts may still use private projections normally.
+dependency interfaces and the ordinary language/prelude rules. Publicly usable
+signatures, fields, bounds, effects and proof expressions cannot require a
+caller to name a private type, helper, constant, group or representation path.
+Private field declarations in `.wfm` may use private support declared in that
+same interface. Private implementation contracts may use private paths normally;
+their presence as text in `.wfm` does not make those paths legal public contract
+vocabulary.
 
 Every nominal that a caller must name belongs in `.wfm`, even when its fields
 are private. Type publication and field publication are separate choices:
 
-| Record form | Public declaration in `.wfm` | Implementation and caller access |
+| Record form | Definition location | Implementation and caller access |
 |---|---|---|
-| Module-private struct | None | Defined and used through the module's shared private inventory |
-| Abstract public struct | Name, generic parameters/bounds and complete public capability contract, with no fields | Exactly one private representation in `.wf` binds to that nominal identity; callers use its declared operations |
-| Public data record | Complete field schema, generic parameters and capability information | The schema is authoritative in `.wfm`; callers may construct, project, borrow, move or update fields under ordinary rules |
+| Module-private implementation struct | One complete definition in `.wf`, without a visibility modifier | Available to the module's shared private inventory; cannot supply missing type information to `.wfm` |
+| Private supporting struct needed by an interface field | One complete unmarked definition in `.wfm` | Available throughout the owning module, inaccessible to external source |
+| Public struct with private fields | One complete `public struct` definition in `.wfm`, with only externally accessible fields marked `public` | The owning module sees all fields; external source sees only explicitly public fields |
+| Fully public data record | One complete `public struct` definition in `.wfm`, with every field marked `public` | Ordinary field operations and construction remain subject to existing rules |
 
-Illustratively, `struct Point { x: i64; y: i64; }` publishes a data schema;
-`struct Vector<T>;` indicates only the field-hiding distinction and is not a
-complete capability declaration or accepted new grammar. Representation-hiding
-types need explicit, checked copy/drop behavior, including dependence on
-generic arguments. A type name by itself grants no copying, dropping or
-proof facts. Compiler-available private layouts and release descriptions make
-by-value use possible without exposing the fields or requiring a heap handle.
+The type itself being public is enough to require its full source definition
+in `.wfm`, even if every field is private. A public name-only declaration with
+a separate `.wf` representation is no longer selected. Every field and its
+order occur once; no public-field repetition, private field extension or
+complete-versus-projected-schema marker is needed. Existing fieldless native
+and prelude opaque types retain their own rules, not a new source construction
+route.
 
-Prefer abstract public structs for resources and representations whose
-invariants are maintained through operations. Prefer public records for
-compositional data whose fields are deliberately part of the contract, such
-as a pair of coordinates. The proposal selects whole-record visibility rather
-than field-by-field publication flags: writing the full schema publishes it;
-the abstract form publishes no fields. Existing `readonly` and `opaque` retain
-their meanings; neither becomes an outside-the-module privacy modifier.
-Public enums retain their complete public variants for exhaustive matching.
+For example, a public buffer may declare a public caller-controlled `tag` and
+unmarked private storage in the same definition. A private storage helper used
+by that field also needs its complete definition in `.wfm`, without `public`,
+with any private supporting constants. Resolve this closure from the same
+interface, the ordinary prelude and permitted public dependency interfaces,
+never from `.wf` or another module's private names. A public field or callable
+signature cannot expose that private helper type. Marking a field `public`
+inside a private type does not publish the enclosing type or create an external
+access route; effective access also requires an accessible enclosing type.
+
+Use private fields for state maintained through operations and public fields
+for independently usable data. A struct with all fields private provides the
+abstract API without a second representation definition. Existing `readonly`
+and `opaque` retain their meanings; neither is an access-visibility modifier.
+Public enum/group and payload rules remain separate qualification work.
+
+One authoritative type definition with explicit publication replaces both the
+whole-record-only choice and the split public-projection candidate. A public
+projection plus full `.wf` definition duplicated fields and required a
+correspondence rule; private-only extensions required a merge/layout rule.
+Both are superseded. Default-private also makes adding representation detail
+and expanding the public API distinct edits; default-public with `private`
+would publish an unmarked addition. The cost is more markers on public data,
+and private representation edits now change `.wfm`; private support can make
+that file larger. Privacy restricts source access, not whether a reader sees
+representation text. Reading and incremental costs remain unmeasured; one
+agent per module remains the authoring assumption.
 
 Universal getter/setter mediation is not selected. A setter for each private
 field does not by itself preserve a multi-field invariant; operations such as
@@ -808,10 +841,13 @@ independence. No new type-invariant assumption follows merely from privacy.
 
 Field publication is a compatibility and incremental-dependency choice:
 changing a public schema can affect caller source proofs and ABI consumers;
-changing a private layout with unchanged checked public capabilities/contracts
-can preserve source proofs while invalidating layout, release and codegen
-consumers. Hidden fields do not guarantee an unchanged ABI or that every
-accessor call will inline. These effects need the consumer evidence below.
+changing a private field in `.wfm` with unchanged consumed capability, ownership
+and contract facts can preserve source proofs while invalidating layout,
+release and codegen consumers. A private-field edit may also change capabilities
+or residual-release eligibility and then must recheck those source consumers.
+Do not key every client by the whole `.wfm` digest. Private access does not
+guarantee an unchanged ABI or that every accessor call will inline. These
+effects need the consumer evidence below.
 
 The earlier independent review identified a contract-composition gap: under
 FN-8, a client cannot call an ordinary accessor inside `requires`/`ensures`,
@@ -830,27 +866,24 @@ bodies and private layout/release descriptions for specialization, by-value
 representation and optimization. A client author need not read those bodies.
 Source privacy creates no mandatory boxing, dynamic dispatch, runtime checks
 or destructor escape. A layout change may invalidate code generation even
-when the written interface is unchanged; dependency interface changes can
+when the publicly usable API is unchanged; dependency interface changes can
 also alter resolved API meaning without editing this module's `.wfm`.
 Composition validates those actual identities and inputs.
 
 ### Questions for a mixed public and private representation
 
-The current candidate offers complete public records or abstract public types.
-A type with some publicly accessible fields and some hidden representation is
-a concrete reason to reconsider that whole-record choice. It is a discussion
-question, not an admitted third form or permission to add field modifiers.
-One nominal identity and one complete physical representation do not require
-every public declaration and representation fact to occupy the same file.
-Any split must give each fact an authority and a checked correspondence.
+The selected direction is one complete struct definition in `.wfm` when its
+type is public, with declarations and fields private unless explicitly public.
+That resolves definition placement and publication defaults; it does not by
+itself settle every structural operation, capability or contract rule below.
 
-The following questions organize that discussion without selecting new syntax:
+The following questions organize the remaining qualification:
 
 | Topic | Question and discriminating case |
 |---|---|
-| Type and representation correspondence | If `.wfm` declares selected public fields, does `.wf` supply a complete representation with checked repetition, or only private additions? Compare both with a public record composed with a fully abstract member. Require one type identity, complete initialization and unambiguous layout ownership. |
+| Type definition and publication | Qualify one complete definition in `.wfm`, explicit public declarations/fields, private support closure and effective access through a public enclosing type. Reject a duplicate or partial `.wf` representation and publication from implementation files. |
 | Field operations and construction | Does exposing a field permit reading, writing, borrowing and component moves equally? A public `length` tied to hidden storage tests whether external updates can invalidate a relation. Construction, replacement, destructuring and partial moves must account for every hidden field and its release obligations. |
-| Public capabilities | Which copy/drop properties and generic conditions must be written in `.wfm`, and how does private representation establish them? Hiding a field must not hide an ownership obligation or imply a heap handle. |
+| Public capabilities | Qualify ordinary capability derivation from the full field list, generic arguments and modifiers, including imported private support. Which derived facts are public semantic dependencies? Private access must not hide an ownership obligation or imply a heap handle. |
 | Public contract vocabulary | How can a caller or wrapper state a requirement about hidden state? Compare direct public data with a declared getter's checked logical meaning; no private path or unproved observation may enter the public contract. |
 | State, results and invariants | What do entry observations and observations of an owned result denote, and how do writes and moves affect them? If an object invariant is proposed, identify who establishes it, when it may be assumed and when it must be restored, including external field access and callbacks. Privacy alone establishes none of these facts. |
 | Read/write effects | Can the interface describe independently usable parts without naming private fields? Check that the implementation's concrete accesses justify the public effects and that the abstraction preserves the required independence. |
@@ -859,38 +892,19 @@ The following questions organize that discussion without selecting new syntax:
 
 Begin with the field-operation case: external inspection of a length is a
 different requirement from external mutation of that length. Establish the
-needed operations before choosing a partial-record spelling. Exercise one
+needed operations independently of the publication modifier. Exercise one
 mixed record with independent public data and one whose visible value is
 related to hidden storage; preserve proof, ownership and effect obligations
 when comparing representations. Runtime layout and accessor costs need a
 matched implementation comparison before selecting on performance grounds.
 Getter realization and precise-effect qualification remain the obligations
-below, regardless of the eventual field-visibility choice.
+below, regardless of the eventual field-operation choice.
 
 ### Field visibility and structural operations: discussion candidate
 
-The following is an unselected extension to the current whole-record choice,
-for comparing the first two questions above. It does not change the demo or
-introduce field modifiers, a new `readonly` meaning or an object-invariant rule.
-
-One candidate gives the public interface a field projection and gives exactly
-one `.wf` the complete representation. Every projected field must match the
-same nominal field by name, resolved type and applicable modifiers; the full
-definition also owns all hidden fields and their physical declaration order.
-An alternative `.wf` definition containing only private additions saves
-repetition of public fields but needs an explicit merge and layout-order rule.
-Favor the complete definition for discussion because it retains ordinary
-struct formation and places all representation fields and their order in one
-definition; check repeated public fields mechanically. Fully public records
-can retain their complete definition in `.wfm` without a redundant
-implementation definition.
-
-The public declaration must distinguish a complete schema from a projection
-that hides representation. Merely finding extra fields later in `.wf` cannot
-select the caller's construction or decomposition rights: that would make
-those rights unknowable from `.wfm`. No spelling for this distinction is
-selected. Public capability and generic correspondence remain separate
-qualification obligations rather than being inferred away by a field list.
+The publication and single-definition choices above supersede the earlier
+split-definition discussion. The following operation policy remains a candidate;
+it introduces no new `readonly` meaning or object-invariant assumption.
 
 For this candidate, direct public fields have the existing field semantics for
 copy reads, references, writes and in-place operations, with ordinary
@@ -902,34 +916,33 @@ Existing TYPE-2 `readonly` forbids ordinary source writes inside the module
 as well as outside it, so it cannot quietly become an external-only access
 restriction. A public writable field does not establish a private invariant.
 
-For a complete public schema, ordinary construction and destructuring retain
-their existing rules. For a projected or fully hidden representation, the
-candidate permits external construction through declared ordinary functions,
-not aggregate construction with guessed or defaulted hidden fields. Inside
-the defining module, the complete representation remains available for normal
-construction. This does not repurpose TYPE-2 `opaque`, whose constructor
-restriction also applies in the defining scope.
+For a struct with every field public, ordinary construction retains its existing
+rules. If any field is private, the candidate permits external construction
+through declared ordinary functions, not aggregate construction with guessed
+or defaulted private fields. Inside the defining module the complete definition
+permits normal construction. This does not repurpose TYPE-2 `opaque`, whose
+constructor restriction also applies in the defining scope.
 
 Destructive field extraction needs an explicit choice. Under OWN-1/WIN-3, a
 field move consumes its whole owner, releases the other affine parts and
 rejects if a remaining linear part cannot be consumed. The whole type's
 copy/drop pair alone does not describe the remainder: a non-droppable type
 could owe that property to the extracted public field, a hidden field, or an
-explicit modifier. Consulting hidden fields to silently vary external
-extraction permission would violate the self-contained public boundary.
+explicit modifier. Previously, a private definition outside `.wfm` could change
+that remainder without a readable interface change. That ground for banning
+every external extraction no longer holds: all fields and their type support
+are now declared in `.wfm`, even though external code cannot name private paths.
 
-The recommended candidate for discussion is to keep direct external field
-moves and consuming destructuring unavailable for a representation-hiding
-type, while ordinary whole-value moves and permitted release remain governed
-by its public capabilities. Public consuming functions can expose selected
-parts and check all hidden obligations in their implementations. In-place
-updates and swaps do not consume the enclosing owner and keep their ordinary
-rules. An alternative is an explicit interface description sufficient to
-authorize field extraction and residual release; it needs its own admission
-and correspondence rules. Compare that extra expressiveness and cost before
-selecting either policy. Composition of a fully public record with an abstract
-member remains another alternative, but publishes that member as a separately
-replaceable/transferable value and does not meet every encapsulation need.
+Reconsider direct public-field moves and consuming destructuring under ordinary
+residual-release checks. A candidate permits binding only public fields and
+requires every unbound part, private or public, to satisfy the existing release
+rules. A private linear remainder rejects; a public consuming function can
+handle it inside the module. Changing a private field's capability then changes
+a tracked source-operation dependency, not an invisible implementation fact.
+This policy remains unselected pending ownership examples, generic capability
+qualification and access diagnostics; the earlier blanket ban is not retained
+merely because it was proposed for a split representation. Whole-value moves,
+permitted release, ordinary updates and swaps keep their existing rules.
 
 ### Public interface and generated compiler projections
 
@@ -960,13 +973,35 @@ structural comparison, not a semantic equivalence oracle or checked-in API
 lockfile. Changing only an implementation header to strengthen a requirement
 now fails correspondence instead of silently changing the exported API.
 
+Explicit publication also gives CI a useful review signal. Compare resolved
+public surfaces between the reviewed base and head: added/removed declarations,
+effective visibility, field types, generic bounds, callable labels/modes/types,
+effects, normalized contracts, and public constant meanings. Include changes to
+resolved dependency identities and derived capability or permitted-operation
+facts even when no line containing `public` changes. A keyword-only diff can
+draw attention to edits but cannot establish API stability: changing a public
+field's type, a contract on following lines, or a referenced constant can leave
+the modifier untouched.
+
+Report representation/layout/release changes separately when they preserve
+the usable source API, since they still affect backend consumers. A private
+field edit can also change source capabilities or extraction rights and then
+belongs in the semantic report. Qualification needs witnesses for both cases,
+plus alias renaming with unchanged identity and alias retargeting with changed
+identity. The expected benefit is focused review without flagging every private
+body edit; the cost and completeness of a resolved comparison are unmeasured.
+Defer CI wiring until the module frontend supplies the checked metadata. This
+is a review aid, not a new language acceptance or repository approval rule, and
+this design does not add a CI script or a checked-in API snapshot.
+
 ### Module collaboration and incremental ownership
 
 An implementation task can hold the public `.wfm` fixed while changing several
 files in the module's shared namespace. Public signature changes edit both
-interface and corresponding function definition; private helper/file changes
-do not edit the public interface. Direct directory membership is a tracked
-source input; dependency declaration changes touch the root graph file, where
+interface and corresponding function definition; implementation-only helper/file
+changes need not edit it, while a public struct's private fields live there.
+Direct directory membership is a tracked source input; dependency declaration
+changes touch the root graph file, where
 concurrent edits can conflict. Neither duplication checks
 nor a flat namespace proves improved
 multi-agent throughput. Cohesive contracts and independent changes remain
@@ -1472,7 +1507,7 @@ must update the affected rules together, not merely remove PROG-1's prohibition.
 | PROG-1/2/3, FN-7 | One ordered bundle, no modules, build-selected unqualified entry | One graph's directory fixes the primary source root; explicit external-root selection, ordered adjacency and named entry targets share that graph; source composition follows declared module closure while ordinary startup obligations remain required |
 | FORM-2/3, GRAM-1/2/3/4/5, DIAG-1 | One root and unqualified name roles | Complete interface/source and root-graph forms, file alias headers, qualified names and diagnostics joining graph rows, aliases, declarations and definitions |
 | TYPE-6, CONST-2, FN-3 | Whole-unit identity; non-function top-level visibility follows source order | Directory-named modules with fixed module.wfm interfaces and shared local names; pkg resolves to the source's owning root, external names select explicit dependencies, and only permitted direct interfaces are visible; ordinary privacy, dependency validity and lexical local scope retained |
-| Public declaration correspondence / type representation | No separate interface or public/private source boundary | Function declarations without executable bodies in .wfm; exact normalized callable correspondence; either complete public record schemas or abstract public structs with checked private representation/capability correspondence and one nominal identity |
+| Public declaration correspondence / type representation | No separate interface or public/private source boundary | Declarations and struct fields default private; only .wfm permits public. Every public source struct has one complete definition there, with private support; functions retain declaration-only interfaces and exact normalized body correspondence without repeating public |
 | Type/ownership/release consumers | Descriptions in one inventory | Same judgments over imported descriptions; privacy grants no storage or release exemption |
 | FN-2/4/6/9, ENT-3.S12 | Whole-unit instances and summary identities | Same instance and SCC rules across modules, with current cached claims and availability |
 | DIAG-2 | One exact-program value owns/discards all evidence | Checked component fragments and assembled receipt; failed composition grants no authority, unrelated valid entries survive |
@@ -1492,7 +1527,7 @@ with their exact direct dependencies and named entry targets. Current-package
 references use the fixed `pkg::` qualifier in the owning source context.
 The graph's proposed name is `modules.wfg`; exact external-binding,
 graph/target/alias syntax, declaration terminators,
-canonical path/collision rules, abstract nominal/capability syntax and
+canonical path/collision rules, public modifier grammar, imported capability derivation and
 normalized correspondence remain to be specified. META-5 deltas require the
 complete grammars and judgments with strong-LL(2) checks; no count is invented
 here.
@@ -1606,7 +1641,7 @@ The remaining responsibilities are concrete:
 | Identity and lookup | The fixed pkg qualifier binds to the source's selected owning root; external dependency-name environments need explicit graph-owned selection. Resolved module/declaration identity is separate from spelling, source revision, physical placement and graph row position. Equal text in distinct packages is distinct; moving a body between files requires equivalent resolved aliases and root context for reuse. |
 | Public correspondence | Form interfaces without reading implementation bodies; compare implementation headers by resolved type/const/function identities and normalized contracts. A matching declaration still needs its checked body and current composition evidence. |
 | Proof composition | Keep FN-6/FN-9 template, instance and recursive-component rules separate from the source DAG. Callers may reuse an unchanged claim only with current availability/evidence; deletion must retract dependencies and rebuild affected fixed points. |
-| Representation and abstract contracts | Public records declare their complete field schema in `.wfm`; abstract public structs declare their name/generics/capabilities there and bind to one private representation. Public getter declarations belong in the interface, their bodies in implementation. Logical getter use and precise public effects need the checked judgments below. |
+| Representation and abstract contracts | Every public source struct has its complete field list in `.wfm`, with private fields and support unmarked and public members explicit. Derive capabilities from that one definition; private source access does not hide layout or release dependencies. Getter declarations remain in the interface and bodies in implementation. Logical getter use and precise public effects need the checked judgments below. |
 | Optimization and caching | Use the same query/checker path for cold and warm builds, retain checked generic bodies and physical layouts where needed, and track optimizer dependencies separately. Source module boundaries must not require runtime indirection or prevent cross-module specialization. |
 
 There is a specific syntax obstacle to resolve, rather than an invitation to
@@ -1656,7 +1691,7 @@ family is selected here; the existing P2 remains open until those judgments
 are specified.
 
 The [queue specimen](demo/README.md#proposed-notation-used-here) uses
-`observe fn len` to show one public callable in runtime calls, operation
+`public observe fn len` to show one public callable in runtime calls, operation
 contracts, a client wrapper and a function-kind formal. The explicit marker
 makes the promised logical use readable without exposing the body; it is a
 notation under evaluation, not a completed admission judgment. Its constructor
@@ -1666,9 +1701,10 @@ Current FN-8 forbids both calls and borrows in contracts, and FN-9 does not
 admit that aggregate-result observation. A complete proposal therefore needs
 typed result views, appropriate result-binder scope and placement transport,
 not just permission to spell an accessor call. The specimen's nongeneric
-`nocopy struct Queue: drop;` makes its whole capability pair explicit without
-settling conditional generic capability syntax. Whole-object effects are
-adequate for this FIFO demonstration, but do not replace the precise-effect
+`public nocopy struct Queue` declares its private `Ring` field in the same
+interface; ordinary component rules make it droppable and its modifier forbids
+copying. Imported conditional generic capabilities still need qualification.
+Whole-object effects are adequate for this FIFO demonstration, but do not replace the precise-effect
 GrowVector qualification above. These assumptions remain research obligations
 rather than new language or live-tree decisions.
 
@@ -1720,11 +1756,16 @@ wrong-case/domain aliases, private targets, shadowing and attempted re-export.
 An alias in `.wfm` must not become a public member or silently enter a `.wf`.
 Owner-dependent field/argument/payload labels must keep their declared spelling.
 
-Reject executable bodies in `.wfm`, including getter bodies. Exercise a public
-record with direct component moves and disjoint field borrows, and an abstract
-public struct whose type/generics/capabilities are usable without naming its
-fields. Reject private field projection and construction from outside the
-module, mismatched capabilities and duplicate/missing private representations.
+Reject executable bodies in `.wfm`, including getter bodies, and reject `public`
+anywhere in `.wf`. Exercise a public record whose fields are individually public,
+a mixed-field struct and a public struct whose complete field list is private.
+Keep private support in `.wfm`; reject missing support in `.wf`, inaccessible
+types in public signatures/fields, a `public` alias and duplicate/extended struct
+definitions. A public field of a private enclosing type must not publish it.
+Qualify direct reads, writes, disjoint field borrows and the candidate consuming
+operations, including droppable and linear private remainders. Reject private
+field access and external construction needing private fields. Derive and check
+all capabilities rather than trusting a type's publication modifier.
 Retain ordinary `opaque`/`readonly` behavior and REF-3 rather than synthesizing
 reference-returning getters. Compare private layout changes against public
 field-schema changes for semantic, layout, release and codegen invalidation.
@@ -1738,7 +1779,7 @@ declaration with its implementation. Compare checking, correspondence and
 backend query counts plus current-source diagnostics. A whole-interface or
 build-file fingerprint invalidating all bodies fails precision. Verify public
 concrete type identity is shared with implementation uses, then separately
-qualify abstract representation/capability correspondence and public logical
+qualify imported capability/release facts and public logical
 expressions before claiming a representation-hiding API.
 
 Compare an indivisible LLVM module per WF module with compiler-owned backend
@@ -1926,8 +1967,9 @@ verification contexts cannot share proofs merely because IDs are stable.
 Four uncertainties are implementation acceptance work, not weaker endpoints:
 
 - Verify interface/source grammars, exact declaration correspondence, public
-  semantic closure, file-local alias formation, abstract representation/capability
-  matching, order-independent formation and exact specification deltas. Qualify
+  semantic closure, file-local alias formation, explicit publication with one
+  struct definition, imported capability derivation, order-independent formation
+  and exact specification deltas. Qualify
   canonical root/path rules, direct directory membership and namespace/declaration collisions. Specify
   the root graph's complete ordered adjacency format, one canonical row per
   registered module, earlier-target checks and sole dependency authority.

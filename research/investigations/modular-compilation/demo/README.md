@@ -4,7 +4,7 @@ This is a complete **source design specimen** for the proposed module system:
 every declared function has an implementation, both entries have complete
 bodies, and all application dependencies are present. It is not currently an
 executable Whitefoot project. The active compiler does not accept `.wfg`,
-`.wfm`, qualified module paths, file-local aliases, abstract public structs or
+`.wfm`, qualified module paths, file-local aliases, explicit public visibility or
 logical getter calls. The proposed forms are identified below; no build
 command, successful compiler run or incremental timing is implied.
 
@@ -29,8 +29,8 @@ It is not a daily CI input.
    target declarations.
 2. [data/module.wfm](data/module.wfm): two public data records and one generic
    allocating function. No field-access wrappers are required for these records.
-3. [runtime/queue/module.wfm](runtime/queue/module.wfm): the complete abstract
-   queue API, including capabilities, the getter and every operation's bounds.
+3. [runtime/queue/module.wfm](runtime/queue/module.wfm): the complete queue
+   definition with private storage, its getter and every operation's bounds.
 4. [runtime/module.wfm](runtime/module.wfm): a client of that API which states
    its own precondition and accepts a function-kind argument with the queue's
    contract.
@@ -134,21 +134,26 @@ directions would be a cycle, and row reordering cannot make that legal.
 | Module | What the caller can read in its `.wfm` | Implementation ownership |
 |---|---|---|
 | `pkg::data` | All `Job` and `Report` fields; `boxed_copy`'s complete generic signature | `heap.wf` implements the callable and reuses the interface's record declarations |
-| `pkg::runtime::queue` | Capacity, abstract `Queue` capabilities, logical/runtime `len`, constructor, push and pop contracts | `storage.wf` owns the private representation, private constructor helper and getter body; `operations.wf` owns the other public bodies |
+| `pkg::runtime::queue` | Public capacity, the one complete `Queue` definition with private storage, logical/runtime `len`, constructor, push and pop contracts | `storage.wf` owns the private constructor helper and getter body; `operations.wf` owns the other public bodies; both reuse the interface's type definition |
 | `pkg::runtime` | `run_two` and the complete required contract of its `take` argument | `batch.wf` calls the private `summarize` in `report.wf` through the shared module inventory |
 | `pkg::kernel` | The selected `start` callable | `start.wf` constructs jobs and a stack-resident queue |
 | `pkg::tools::inspect` | The selected `run` callable | `run.wf` also invokes the shared heap helper |
 
-`Job` and `Report` are copyable, droppable records by their complete public
-field schemas. Callers construct them and inspect their fields directly. The
-interface schemas are reused inside their owning module; implementation files
+Top-level declarations and struct fields are private unless marked `public`,
+and only `.wfm` permits that modifier. Neither aliases nor implementation files
+can publish a name. `Job` and `Report` explicitly publish both their types and
+each field; their complete schemas make them copyable and droppable. Callers
+construct them and inspect their fields directly. The interface schemas are
+reused inside their owning module; implementation files
 do not declare another `Job` or `Report`.
 
-`Queue` is published without fields. Its provisional declaration says exactly
-that it is not copyable and can be dropped. The one private definition contains
-`Ring<Job, capacity>`, whose capabilities justify that promise for this
-nongeneric type. This is the same nominal `Queue`, not a second type. Callers
-may own it by value and borrow it, but cannot construct it by fields or name
+`Queue` has its one complete definition in `.wfm`: the type is public and its
+unmarked `storage: Ring<Job, capacity>` field is private. The ordinary component
+rules make this nongeneric type droppable, and `nocopy` forbids copying. There
+is no second definition in `storage.wf` and no separate abstract capability
+declaration to match. The representation is readable in the interface but
+inaccessible to external source expressions. Callers may own it by value and
+borrow it, but cannot construct it by fields or name
 `storage`. There is no implicit allocation, handle, type invariant or
 reference-returning getter. The existing `opaque` modifier is not used as
 a privacy mechanism.
@@ -158,9 +163,10 @@ declared in `runtime/queue/module.wfm`. Likewise `summarize` is absent from
 `runtime/module.wfm`.
 All declarations in a module share its inventory, regardless of source-file
 order. `capacity`, although declared in the interface, is reused by the
-private representation; no duplicated implementation constant can drift.
+private storage field and implementation helpers; no duplicated constant can drift.
 
-Each public callable's implementation repeats its full header and contract.
+Each public callable's implementation repeats its full header and contract
+without the interface-only `public` modifier.
 In `runtime/queue/module.wfm` the job type is called `Job`; in `operations.wf`
 it is called `Work`. Both aliases resolve directly to `pkg::data::Job`, so the declarations
 must match after resolution. `runtime/module.wfm` uses an alias for `len`, while
@@ -270,9 +276,10 @@ or claiming a new proof mechanism is implemented.
 |---|---|---|
 | `pkg::`, ordered module rows and `target` in `.wfg` | Implicit primary root at the graph directory, exact earlier dependencies, selected entry and optional heap prohibition | Full graph grammar, owning-package identity, external dependency bindings and target/source/execution closure judgments |
 | `directory/module.wfm` | The only interface location for the module named by that directory | Canonical path and direct-file ownership checks, including root modules and namespace-only prefixes |
-| Function header ending in `;` in `.wfm` | A complete public declaration with no executable body | Interface grammar and normalized implementation correspondence |
+| `public` on a declaration or struct field in `.wfm` | Explicit publication; unmarked declarations/fields are private, and `.wf` cannot use the modifier | Complete modifier grammar, effective parent/member visibility, private type support and access diagnostics |
+| Function header ending in `;` in `.wfm` | A complete declaration with no executable body; publication is separate from the repeated implementation header | Interface grammar and normalized implementation correspondence |
 | `alias short = pkg::path;` and qualified names | A file-local binding to a canonical module or declaration | Complete strong-LL(2) grammar, lookup domains and collision checks |
-| `nocopy struct Queue: drop;` | An abstract public type with the complete capability pair: copy forbidden, drop permitted | Final capability syntax and checked private correspondence; this nongeneric case does not design conditional generic capabilities |
+| `public nocopy struct Queue { storage: Ring<Job, capacity>; }` | One complete public type definition with a private field; copy forbidden and drop derived from components | Imported capability derivation, private source access and layout/release dependencies; conditional generic summaries remain unqualified |
 | `observe fn len(...)` | One callable with an ordinary runtime implementation and an admissible total logical observation | Explicit admission, typed interpretation, deterministic finite realization checking and termination grounds; `observe` is only a spelling under evaluation |
 | `len(...)` as a contract relation term | The scalar observation at that argument's specified state, with no runtime call | New FN-8/FN-9/ENT term formation and state/support rules; arbitrary function calls remain outside this illustration |
 | `len(queue: &made)` in the constructor's `ensures` | Observation of the returned `Queue`, with a proof-only view of that result | Aggregate-result observation, result-binder scope, proof-only borrowing and fact transport through construction, return and binding |
@@ -319,7 +326,7 @@ not measured invalidation results. Each experiment starts from this specimen.
 | Rewrite `summarize`'s body with equivalent operations and unchanged header | Public APIs and permissions remain unchanged | Recheck that helper and any affected private summary users; update code importing its implementation, then link. Do not reprove every library solely because one file changed |
 | Move `summarize` to another direct `runtime/*.wf` file, preserving its resolved aliases | Same private declaration identity; still callable from `batch.wf` | Refresh file membership and locations; reuse semantic work only when the resolved declaration/context and dependencies are unchanged |
 | Rename the `Work` alias in `report.wf`, updating its uses | Same canonical type, no change in other files | Refresh that file's formation/resolution; normalized semantic results may remain reusable |
-| Change the private `Queue` representation while preserving its checked interface | Clients still cannot name the fields | Recheck representation/capabilities, getter realization and affected bodies; recompile actual layout/release/ABI and optimizer consumers even if source proofs remain reusable |
+| Change the private `Queue.storage` declaration in `.wfm` | Clients still cannot name the field; derived capabilities or layout can change | Recheck actual capability/ownership, getter, body, layout/release/ABI and optimizer consumers; source proofs reuse only when their consumed facts are unchanged, not merely because the field is private |
 | Change `Report`'s public field schema | Callers may need source changes | Revalidate schema, field/type/ownership users and layout/codegen consumers; publication is a real dependency |
 | Delete `pkg::kernel`'s direct queue edge while keeping its runtime edge | Reject the kernel's queue aliases/uses | Revalidate the edge/lookup consumers; transitive reachability grants no source permission |
 | Change only the tool's aliases or body | Kernel source proofs are unchanged when their actual inputs are unchanged | Recheck tool consumers and its changed specialization/optimizer dependencies; no blanket graph-file or target key should reprove all shared bodies |
@@ -329,11 +336,19 @@ not measured invalidation results. Each experiment starts from this specimen.
 
 For additional rejection probes, try calling `fifo::new_storage` externally,
 naming `pending.storage`, changing only `push`'s implementation contract,
-placing the getter body in `.wfm`, rebinding `pkg`, moving an interface to
+placing the getter body in `.wfm`, adding `public` to any `.wf` declaration,
+removing `public` from `Job.tag` while its external uses remain, repeating the
+`Queue` definition in `.wf`, rebinding `pkg`, moving an interface to
 the former sibling location, or adding an edge to a later graph row.
 Each should fail for that specific boundary; an unrelated earlier syntax
 failure is not evidence for it. These are review exercises until the real
 compiler implements the proposed forms.
+
+A future CI review aid should compare the resolved public API, not only changed
+lines containing `public`. Changing a published field type or a getter contract
+without editing its modifier must still be reported. Private storage changes
+that alter public capabilities also matter; layout-only effects can be reported
+separately. No comparison script or new review gate is implemented here.
 
 The eventual executable qualification must check both targets, the rejection
 probes, no allocator dependency in the kernel artifact, and cold/incremental

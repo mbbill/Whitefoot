@@ -1,13 +1,13 @@
-struct Job {
-  tag: u8;
-  payload: u8;
+public struct Job {
+  public tag: u8;
+  public payload: u8;
 }
 
-struct Report {
-  first_tag: u8;
-  second_tag: u8;
-  digest: u8;
-  remaining: u64;
+public struct Report {
+  public first_tag: u8;
+  public second_tag: u8;
+  public digest: u8;
+  public remaining: u64;
 }
 
-fn boxed_copy<T: copy>(value: own T) -> result: own Box<T> pure;
+public fn boxed_copy<T: copy>(value: own T) -> result: own Box<T> pure;

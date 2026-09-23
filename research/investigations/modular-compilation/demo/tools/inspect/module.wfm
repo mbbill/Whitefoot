@@ -1,1 +1,1 @@
-fn run() -> status: own ExitStatus pure;
+public fn run() -> status: own ExitStatus pure;
