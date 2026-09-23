@@ -123,6 +123,7 @@ enum StableCheckedType {
         substitution: StableGenericSubstitution,
     },
     Prelude(StablePreludeType),
+    ResultList(Vec<(String, StableCheckedType)>),
     Boxed {
         region: Option<DeclarationId>,
         referent: Box<StableCheckedType>,
@@ -339,6 +340,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | StablePreludeType::DivError
                 | StablePreludeType::NarrowError => {}
             },
+            StableCheckedType::ResultList(results) => {
+                for (_, ty) in results {
+                    self.substitute_stable_type_regions(ty, regions)?;
+                }
+            }
             StableCheckedType::Boxed { region, referent } => {
                 if let Some(region) = region {
                     *region = Self::substituted_region(regions, *region);
@@ -1450,6 +1456,29 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }))
     }
 
+    /// Preserves concrete types discovered by transient declaration checking
+    /// without letting a scratch nominal identity reach the executable table.
+    pub(super) fn retain_concrete_nominals_since(
+        &mut self,
+        checkpoint: usize,
+    ) -> Result<(), CheckStop> {
+        let mut concrete = Vec::new();
+        for nominal in self.nominals.iter().skip(checkpoint) {
+            if let Some(ty) = self.stabilize_concrete_type(
+                CheckedType::Nominal(nominal.id),
+                checkpoint,
+                &mut HashSet::new(),
+            )? {
+                concrete.push(ty);
+            }
+        }
+        self.restore_nominal_checkpoint(checkpoint)?;
+        for ty in &concrete {
+            self.reify_concrete_type(ty)?;
+        }
+        Ok(())
+    }
+
     fn stabilize_concrete_type(
         &self,
         ty: CheckedType,
@@ -1529,6 +1558,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         return Ok(None);
                     };
                     StableCheckedType::Prelude(prelude)
+                } else if let Some((results, _)) = self
+                    .result_list_nominals
+                    .iter()
+                    .find(|(_, candidate)| **candidate == id)
+                {
+                    let mut stable = Vec::with_capacity(results.len());
+                    for (name, ty) in results {
+                        let Some(ty) =
+                            self.stabilize_type(*ty, nominal_checkpoint, visiting, allow_symbolic)?
+                        else {
+                            visiting.remove(&id);
+                            return Ok(None);
+                        };
+                        stable.push((name.clone(), ty));
+                    }
+                    StableCheckedType::ResultList(stable)
                 } else {
                     match kind {
                         CheckedNominalKind::Box {
@@ -1732,6 +1777,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     StablePreludeType::NarrowError => PreludeType::NarrowError,
                 };
                 CheckedType::Nominal(self.intern_prelude_nominal(ty)?)
+            }
+            StableCheckedType::ResultList(results) => {
+                let mut reified = Vec::with_capacity(results.len());
+                for (name, ty) in results {
+                    reified.push((name.clone(), self.reify_concrete_type(ty)?));
+                }
+                CheckedType::Nominal(self.intern_result_list_nominal(&reified)?)
             }
             StableCheckedType::Boxed { region, referent } => {
                 let referent = self.reify_concrete_type(referent)?;

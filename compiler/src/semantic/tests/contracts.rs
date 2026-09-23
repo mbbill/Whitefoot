@@ -5,7 +5,8 @@ use crate::{
 
 use super::super::goal::{GoalExpression, GoalOperation};
 use super::super::model::{
-    CheckedExpression, CheckedIntegerOperation, CheckedStatement, CheckedValue,
+    CheckedExpression, CheckedIntegerOperation, CheckedNominalKind, CheckedStatement, CheckedType,
+    CheckedValue, IntegerType,
 };
 
 use super::{assert_parse_rule, assert_rule, with_semantics};
@@ -1416,6 +1417,152 @@ fn main() -> status: ExitStatus pure {
         // contract-subject placeholder that lowering would have to discard.
         assert_eq!(lowered.nominals().len(), semantic_nominal_count);
     });
+}
+
+#[test]
+fn formal_nominal_inventory_keeps_only_concrete_types_and_result_lists() {
+    let source = r#"struct Envelope<T> {
+  payload: T;
+}
+
+interface Reader<T> {
+  fn read(value: &Envelope<T>) -> result: u64 reads(value);
+}
+
+interface Factory {
+  fn make() -> (wrapped: Envelope<i32>, optional: Option<u8>) pure;
+}
+
+fn unused<T, fn read(value: &Envelope<T>) -> (wrapped: T, optional: u64) reads(value)>() -> result: unit pure {
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    for mode in [OverlapLowering::Off, OverlapLowering::On] {
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::Complete(checked) = outcome else {
+                panic!("unused symbolic formals must check: {outcome:?}");
+            };
+            let executable = &checked.data.nominals[..checked.data.executable_nominal_count];
+            let wrappers = executable
+                .iter()
+                .filter(|nominal| nominal.name.starts_with("Envelope<"))
+                .collect::<Vec<_>>();
+            let [wrapper] = wrappers.as_slice() else {
+                panic!("only the concrete formal-only Envelope<i32> must remain");
+            };
+            let CheckedNominalKind::Struct { fields } = &wrapper.kind else {
+                panic!("Envelope is a struct");
+            };
+            assert_eq!(fields[0].ty, CheckedType::Integer(IntegerType::I32));
+            let lists = executable
+                .iter()
+                .filter(|nominal| nominal.name.starts_with("(wrapped:"))
+                .collect::<Vec<_>>();
+            let [list] = lists.as_slice() else {
+                panic!("only the concrete formal-only result list must remain");
+            };
+            let CheckedNominalKind::Struct { fields } = &list.kind else {
+                panic!("a result list is a struct");
+            };
+            assert_eq!(fields.len(), 2);
+            assert_eq!(fields[0].name, "wrapped");
+            assert_eq!(fields[0].ty, CheckedType::Nominal(wrapper.id));
+            assert_eq!(fields[1].name, "optional");
+            let CheckedType::Nominal(optional) = fields[1].ty else {
+                panic!("the second result retains its Option type");
+            };
+            assert!(
+                checked.data.nominals[optional.0 as usize]
+                    .name
+                    .starts_with("Option<")
+            );
+            lower_checked(*checked, mode)
+                .expect("symbolic formal types must not reach executable lowering");
+        });
+    }
+
+    // Scratch rollback cannot bypass formation of an unused formal's contract.
+    assert_behavior_rule(
+        &source.replace(
+            "-> result: u64 reads(value);",
+            "-> result: u64 reads(value) contract {\n    requires deref(entry(value)).payload == deref(entry(value)).payload;\n  };",
+        ),
+        SemanticRule::Msr3,
+    );
+}
+
+#[test]
+fn nominal_formal_contract_queries_survive_scratch_rollback() {
+    let source = br#"struct Envelope<T: copy> {
+  tag: u64;
+  payload: T;
+}
+
+interface Reader<T: copy> {
+  fn read(value: &Envelope<T>) -> result: u64 reads(value) contract {
+    requires deref(value).tag <= 99_u64;
+    ensures result == deref(value).tag;
+  };
+}
+
+interface Factory {
+  fn make() -> result: Box<Slots<Envelope<i32>>> pure;
+}
+
+fn read_tag(input: &Envelope<u64>) -> output: u64 reads(input.tag) contract {
+  requires deref(input).tag <= 99_u64;
+  ensures output == deref(input).tag;
+} {
+  return deref(input).tag;
+}
+
+binding ReadU64 : Reader<u64> {
+  read = read_tag;
+}
+
+fn invoke<interface Reader<T>>(value: &Envelope<T>) -> result: u64 reads(value) contract {
+  requires deref(value).tag <= 99_u64;
+  ensures result == deref(value).tag;
+} {
+  let answer = Reader::read(value: value);
+  return answer;
+}
+
+fn main() -> status: ExitStatus pure {
+  let value = Envelope<u64>(tag: 7_u64, payload: 8_u64);
+  if value.tag <= 99_u64 {
+    let tag = invoke::<ReadU64>(value: &value);
+    if tag == 7_u64 {
+      return exit_status(code: 0_u8);
+    }
+  }
+  return exit_status(code: 1_u8);
+}
+"#;
+    for mode in [OverlapLowering::Off, OverlapLowering::On] {
+        with_semantics(source, |outcome| {
+            let SemanticOutcome::Complete(checked) = outcome else {
+                panic!("concrete nominal contracts must survive reification: {outcome:?}");
+            };
+            assert!(!checked.data.contract_queries.is_empty());
+            assert!(
+                checked
+                    .data
+                    .contract_queries
+                    .iter()
+                    .any(|query| query.instance.is_some())
+            );
+            for query in &checked.data.contract_queries {
+                super::entailment::validate_derivations(&query.proof);
+            }
+            lower_checked(*checked, mode)
+                .expect("concrete signatures and contract identities must remain valid");
+        });
+    }
 }
 
 #[test]

@@ -1104,8 +1104,23 @@ checks an unused schema, its concrete invocation, the exact 16-byte-stride
 u64 allocation bound, and OP-9 rejection one element above it. The boundary
 positive is semantic evidence, not a claim that the selected native target
 can allocate that extent. This repair changes neither OP-9 nor the target
-layout limit. It removes the semantic failure in the complete composite;
-its subsequent executable nominal inventory still needs lowering validation.
+layout limit. It removes the semantic failure in the complete composite.
+
+The remaining lowering failure reduced to an unused function formal whose
+parameter mentions `Envelope<T>`. Declaration formation materialized that
+symbolic nominal outside the existing scratch checkpoint, so lowering saw a
+generic field in its executable prefix. Formation now preserves structurally
+concrete roots, restores the nominal checkpoint and reifies those roots through
+the existing stable-type bridge. Concrete types mentioned only by an unused
+formal remain present; malformed unused contracts still reject. The bridge
+also handles ordinary ordered result lists and their captured-region
+substitution, retaining field names and order. No lowering filter, new type
+classifier or instance-selection rule is introduced. The focused
+`formal_nominal_inventory_keeps_only_concrete_types_and_result_lists` and
+`nominal_formal_contract_queries_survive_scratch_rollback` regressions cover
+mixed symbolic/concrete raw and named formals, result lists, concrete contract
+queries and both lowering modes. Full consumer execution remains a separate
+check from these reduced compiler cases.
 
 | Candidate or control | Discriminating property |
 | --- | --- |

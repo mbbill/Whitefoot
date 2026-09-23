@@ -260,6 +260,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     pub(super) fn validate_formal_declarations(&mut self) -> Result<(), CheckStop> {
+        let checkpoint = self.nominal_checkpoint();
         let members = self
             .resolved
             .declarations()
@@ -274,7 +275,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let signature = self.symbolic_behavior_signature(member)?;
             self.check_formal_contract_formation(&signature)?;
         }
-        Ok(())
+        // A formal may name both concrete types and types containing its
+        // owner's symbolic parameters. Only the concrete types belong to
+        // the executable inventory after the transient signatures expire.
+        self.retain_concrete_nominals_since(checkpoint)
     }
 
     pub(super) fn materialize_actual_groups(
