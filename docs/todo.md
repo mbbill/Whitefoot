@@ -169,6 +169,20 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   The [paired samples and limits](../research/experiments/container-representation/vector-library/RESULTS.md)
   are the starting evidence, not a claim of uniform improvement.
 
+- **Empty owning slots initialize inactive payload bytes.** In the owning-map
+  trial's optimized wide code, constructing each vacant enum slot zeros the
+  inactive 264-byte Pair region. A one-slot window similarly zeros that region
+  together with its length, although the native controls initialize only
+  occupancy. This is shared lowering work, not a necessary cost of one
+  sparse representation. The [map comparison](../research/experiments/container-representation/map-library/RESULTS.md)
+  separates these stores from later per-live-owner transfers. Investigate
+  leaving inactive storage uninitialized without allowing an active value,
+  discriminant or length to become undefined; check consuming projections,
+  all variants, empty windows, must-consume owners and ordinary call boundaries.
+  Measure an unchanged-source compiler comparison before claiming a runtime
+  gain. Defer the compiler change during representation selection; reopen
+  when the library's construction/rebuild trace supplies the measured consumer.
+
 - **Consumed aggregate locals can retain an argument snapshot.** An exposed
   mutable local is loaded into an immutable argument snapshot before a consuming
   call. Clang 21 forwards that snapshot in the large-record regression, while
@@ -593,6 +607,19 @@ condition under which it is taken up.
   source/proof benefit with checking cost before selecting a general relation.
   Defer a language extension while ordinary reads suffice for the map;
   do not manufacture an impossible branch to satisfy a postcondition.
+- **Conditional measure preservation needs a precise remaining diagnosis.**
+  A counted-loop control calling a length/capacity-preserving helper in only
+  one arm rejects its backedge facts. Capturing both measures before the
+  branch and restating their equality afterward admits the small control;
+  this is not a blanket inability to preserve conditional measures. The
+  full sparse-map loop still rejects its extent invariant when its
+  length-preserving wrapper is inlined with an explicit extent bridge. Its
+  normative classification is unresolved. The [exact controls](../research/investigations/containers-and-resources/X1-LIBRARY.md#generic-owning-map-trial-after-the-ring-comparison)
+  retain both outcomes. Reopen with contract-proof work: reduce the remaining
+  refusal, compare it with ENT-5/ENT-6, and distinguish a compiler defect from
+  a proposed rule change before implementation. Keep the admitted wrapper
+  while it supplies the needed proof; validate aliases and false preservation
+  claims as well as checking cost for any improvement.
 - **Open-addressing tables with non-Copy payloads.** The recorded extra null
   check per hit versus hashbrown is a hypothesis to test on a real table,
   not an established universal cost. The native
@@ -605,8 +632,8 @@ condition under which it is taken up.
   neither the C study nor the one-slot Slab establishes WF map parity.
   A one-slot-per-bucket map could migrate owners directly with ordinary
   append, avoiding the enum candidate's planning/permutation, but adds a word
-  per bucket and retains a second payload backing. Its complete source and
-  transfer costs are unverified. The [map trial](../research/investigations/containers-and-resources/X1-LIBRARY.md#generic-owning-map-trial-after-the-ring-comparison)
+  per bucket and retains a second payload backing. Its owning source chain
+  executes; its transfer costs remain to be compared. The [map trial](../research/investigations/containers-and-resources/X1-LIBRARY.md#generic-owning-map-trial-after-the-ring-comparison)
   records the algorithm, peak-memory tradeoff and measured lookup/growth
   split that motivates the bounded comparison. Validate actual admission,
   zero capacity, hostile hash/equality, exact owner cleanup and scalar/wide

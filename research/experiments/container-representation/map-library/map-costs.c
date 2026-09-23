@@ -55,6 +55,8 @@ extern uint64_t wf_map_cost_sparse_word_trace(uint64_t, uint64_t, uint64_t, uint
 extern uint64_t wf_map_cost_sparse_record_trace(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t wf_map_cost_dense_word_trace(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t wf_map_cost_dense_record_trace(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t wf_map_cost_slot_word_trace(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t wf_map_cost_slot_record_trace(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 #endif
 
 static void require(bool condition, const char *message) {
@@ -172,8 +174,18 @@ _Static_assert(sizeof(word_Put) == 24 && sizeof(record_Put) == 272, "compact Put
 
 /* This floor initializes tags, never the inactive payload. Rehash moves each
  * live pair directly into a new table; it is not the WF permutation algorithm. */
-#define SPARSE_NATIVE(P, B, T, LIMIT)                                       \
-typedef struct { uint32_t tag; B##_Pair pair; } P##_Cell;                    \
+/* Compile-time cells/direction keep the original ascending enum control and
+ * isolate descending migration and single-slot layout with the same native
+ * algorithm. SET never initializes an inactive Pair payload. */
+#define ENUM_CELL(B) struct { uint32_t tag; B##_Pair pair; }
+#define SINGLE_CELL(B) struct { uint64_t length; B##_Pair pair; bool deleted; }
+#define ENUM_TAG(cell) ((cell)->tag)
+#define ENUM_SET(cell, value) ((cell)->tag = (value))
+#define SINGLE_TAG(cell) ((cell)->length != 0 ? LIVE : ((cell)->deleted ? DELETED : EMPTY))
+#define SINGLE_SET(cell, value) do { (cell)->length = (value) == LIVE; (cell)->deleted = (value) == DELETED; } while (0)
+
+#define SPARSE_NATIVE_LAYOUT(P, B, T, CELL, TAG, SET, DESCENDING, ZERO_NOOP, LIMIT)                                       \
+typedef CELL(B) P##_Cell;                    \
 typedef struct { uint64_t length, capacity; P##_Cell cells[]; } P##_Block;   \
 typedef struct { P##_Block *slots; uint64_t count; } P##_Map;                \
 _Static_assert(sizeof(P##_Block) == 16, "sparse backing header");           \
@@ -181,7 +193,7 @@ static P##_Block *P##_block(uint64_t capacity) {                            \
     P##_Block *block = wf_cost_allocate(sizeof(*block)                      \
                                         + capacity * sizeof(P##_Cell));    \
     block->length = block->capacity = capacity;                            \
-    for (uint64_t i = 0; i < capacity; ++i) block->cells[i].tag = EMPTY;     \
+    for (uint64_t i = 0; i < capacity; ++i) SET(&block->cells[i], EMPTY);     \
     return block;                                                          \
 }                                                                          \
 static HELPER P##_Map P##_new(uint64_t capacity) {                          \
@@ -194,25 +206,27 @@ static Probe P##_probe(const P##_Map *map, const HashEnv *env,               \
     uint64_t index = key_hash(env, key) % capacity;                         \
     for (uint64_t visited = 0; visited < capacity; ++visited) {              \
         const P##_Cell *cell = &map->slots->cells[index];                   \
-        if (cell->tag == LIVE && key_equal(env, &cell->pair.key, key))       \
+        if (TAG(cell) == LIVE && key_equal(env, &cell->pair.key, key))       \
             return (Probe){true, index};                                   \
-        if (cell->tag != LIVE && vacancy == capacity) vacancy = index;     \
-        if (cell->tag == EMPTY) break;                                     \
+        if (TAG(cell) != LIVE && vacancy == capacity) vacancy = index;     \
+        if (TAG(cell) == EMPTY) break;                                     \
         index = successor(index, capacity);                               \
     }                                                                      \
     return (Probe){false, vacancy};                                        \
 }                                                                          \
 static bool P##_rehash_to(P##_Map *map, const HashEnv *env, uint64_t target) { \
     if (target > (LIMIT) || target < map->count) return false;              \
+    if ((ZERO_NOOP) && target == 0) return true;                        \
     P##_Block *next = P##_block(target);                                   \
     P##_Block *old = map->slots;                                           \
-    for (uint64_t i = 0; i < old->capacity; ++i) {                          \
-        if (old->cells[i].tag != LIVE) continue;                           \
+    for (uint64_t position = 0; position < old->capacity; ++position) { \
+        uint64_t i = (DESCENDING) ? old->capacity - 1 - position : position;                          \
+        if (TAG(&old->cells[i]) != LIVE) continue;                           \
         uint64_t index = key_hash(env, &old->cells[i].pair.key) % target;    \
-        while (next->cells[index].tag == LIVE)                             \
+        while (TAG(&next->cells[index]) == LIVE)                             \
             index = successor(index, target);                             \
         next->cells[index].pair = old->cells[i].pair;                       \
-        next->cells[index].tag = LIVE;                                    \
+        SET(&next->cells[index], LIVE);                                    \
     }                                                                      \
     wf_cost_release(old);                                                  \
     map->slots = next;                                                     \
@@ -236,7 +250,7 @@ static HELPER B##_Put P##_put(P##_Map *map, const HashEnv *env, B##_Pair offered
         }                                                                  \
         if (probe.index < map->slots->capacity) {                          \
             map->slots->cells[probe.index].pair = offered;                 \
-            map->slots->cells[probe.index].tag = LIVE;                     \
+            SET(&map->slots->cells[probe.index], LIVE);                     \
             ++map->count;                                                  \
             B##_Put result; result.kind = INSERTED; return result;        \
         }                                                                  \
@@ -251,7 +265,7 @@ static HELPER B##_Removed P##_remove(P##_Map *map, const HashEnv *env,       \
     Probe probe = P##_probe(map, env, key);                                \
     if (!probe.found) { B##_Removed result; result.found = false; return result; } \
     B##_Pair previous = map->slots->cells[probe.index].pair;                \
-    map->slots->cells[probe.index].tag = DELETED;                           \
+    SET(&map->slots->cells[probe.index], DELETED);                           \
     --map->count;                                                          \
     return (B##_Removed){true, previous};                                  \
 }                                                                          \
@@ -270,16 +284,28 @@ static HELPER Lookup P##_edit(P##_Map *map, const HashEnv *env, const uint64_t *
 }                                                                          \
 static HELPER void P##_free(P##_Map map, Digest *digest) {                  \
     for (uint64_t i = 0; i < map.slots->capacity; ++i)                      \
-        if (map.slots->cells[i].tag == LIVE)                               \
+        if (TAG(&map.slots->cells[i]) == LIVE)                               \
             B##_consume(digest, map.slots->cells[i].pair.key,              \
                         map.slots->cells[i].pair.value);                  \
     wf_cost_release(map.slots);                                            \
 }
+#define SPARSE_NATIVE(P, B, T, LIMIT) \
+    SPARSE_NATIVE_LAYOUT(P, B, T, ENUM_CELL, ENUM_TAG, ENUM_SET, false, false, LIMIT)
 
 SPARSE_NATIVE(word_sparse, word, uint64_t, CEILING)
 SPARSE_NATIVE(record_sparse, record, Record, CEILING)
 SPARSE_NATIVE(word_sparse_small, word, uint64_t, 3)
 SPARSE_NATIVE(record_sparse_small, record, Record, 3)
+
+/* Descending enum retains the ascending control's zero-capacity allocation.
+ * Single-slot rebuild at zero is the candidate's explicit no-allocation path. */
+SPARSE_NATIVE_LAYOUT(word_descending, word, uint64_t, ENUM_CELL, ENUM_TAG, ENUM_SET, true, false, CEILING)
+SPARSE_NATIVE_LAYOUT(record_descending, record, Record, ENUM_CELL, ENUM_TAG, ENUM_SET, true, false, CEILING)
+SPARSE_NATIVE_LAYOUT(word_single, word, uint64_t, SINGLE_CELL, SINGLE_TAG, SINGLE_SET, true, true, CEILING)
+SPARSE_NATIVE_LAYOUT(record_single, record, Record, SINGLE_CELL, SINGLE_TAG, SINGLE_SET, true, true, CEILING)
+_Static_assert(sizeof(word_single_Cell) == 32 && sizeof(record_single_Cell) == 280, "single-slot cell strides");
+_Static_assert(offsetof(word_single_Cell, pair) == 8 && offsetof(record_single_Cell, pair) == 8, "single-slot Pair offset");
+_Static_assert(offsetof(word_single_Cell, deleted) == 24 && offsetof(record_single_Cell, deleted) == 272, "single-slot Bool offset");
 
 typedef struct { uint32_t tag; uint64_t index; } TaggedIndex;
 static inline uint64_t compact_read(const uint64_t *slot) { return *slot; }
@@ -766,6 +792,137 @@ DENSE_MATCHED(record_repaired, record_tagged, record, Record, CEILING)
 DENSE_MATCHED(word_repaired_small, word_tagged_small, word, uint64_t, 3)
 DENSE_MATCHED(record_repaired_small, record_tagged_small, record, Record, 3)
 
+/* The single-slot source formulation takes every old materialized cell into
+ * a local, then drains its zero/one Pair through a bounded vacancy scan. It
+ * neither plans destinations nor copies the entire old backing during grow.
+ * Private helpers are ordinarily optimizable, including the local snapshots.
+ * memcpy may copy inactive bytes as representations, never as payload values. */
+#define SLOT_MATCHED(P, N, B, LIMIT)                                      \
+typedef N##_Cell P##_Cell;                                                \
+typedef N##_Block P##_Block;                                              \
+typedef N##_Map P##_Map;                                                  \
+static inline uint64_t P##_capacity(const P##_Map *map) { return map->slots->length; } \
+static P##_Block *P##_block(uint64_t capacity) {                           \
+    P##_Block *block = wf_cost_allocate(16 + capacity * sizeof(P##_Cell)); \
+    block->length = 0; block->capacity = capacity;                        \
+    while (block->length < capacity) {                                   \
+        P##_Cell *cell = &block->cells[block->length++];                   \
+        cell->length = 0; cell->deleted = false;                         \
+    }                                                                    \
+    return block;                                                        \
+}                                                                        \
+static HELPER P##_Map P##_new(uint64_t capacity) {                         \
+    return (P##_Map){P##_block(capacity), 0};                             \
+}                                                                        \
+static unsigned P##_action(const P##_Cell *cell, const HashEnv *env, const uint64_t *key) { \
+    if (cell->length != 0)                                               \
+        return key_equal(env, &cell->pair.key, key) ? ACTION_MATCH : ACTION_MISS; \
+    return cell->deleted ? ACTION_SKIP : ACTION_STOP;                    \
+}                                                                        \
+static Probe P##_find(const P##_Map *map, const HashEnv *env, const uint64_t *key) { \
+    uint64_t hash = key_hash(env, key), count = map->slots->length;        \
+    for (uint64_t step = 0; step < count; ++step) {                       \
+        uint64_t index = source_probe(hash % count, step, count);         \
+        unsigned action = P##_action(&map->slots->cells[index], env, key); \
+        if (action == ACTION_MATCH) return (Probe){true, index};          \
+        if (action == ACTION_STOP) break;                                \
+    }                                                                    \
+    return (Probe){false, 0};                                             \
+}                                                                        \
+static B##_Put P##_exchange(P##_Map *map, uint64_t index, B##_Pair offered) { \
+    P##_Cell *cell = &map->slots->cells[index];                           \
+    if (cell->length != 0) {                                             \
+        B##_Pair previous;                                               \
+        memcpy(&previous, &cell->pair, sizeof previous);                 \
+        memcpy(&cell->pair, &offered, sizeof offered);                    \
+        memcpy(&offered, &previous, sizeof offered);                      \
+        return (B##_Put){REPLACED, offered};                             \
+    }                                                                    \
+    memcpy(&cell->pair, &offered, sizeof offered);                        \
+    cell->length = 1; cell->deleted = false;                             \
+    B##_Put result; result.kind = INSERTED; return result;               \
+}                                                                        \
+static B##_Put P##_try_put(P##_Map *map, const HashEnv *env, B##_Pair offered) { \
+    uint64_t hash = key_hash(env, &offered.key), count = map->slots->length; \
+    uint64_t available = count;                                          \
+    for (uint64_t step = 0; step < count; ++step) {                       \
+        uint64_t index = source_probe(hash % count, step, count);         \
+        unsigned action = P##_action(&map->slots->cells[index], env, &offered.key); \
+        if (action == ACTION_MATCH) return P##_exchange(map, index, offered); \
+        if ((action == ACTION_STOP || action == ACTION_SKIP) && available == count) \
+            available = index;                                           \
+        if (action == ACTION_STOP) break;                                \
+    }                                                                    \
+    if (available < count && map->count < (LIMIT)) {                     \
+        ++map->count; return P##_exchange(map, available, offered);       \
+    }                                                                    \
+    return (B##_Put){REFUSED, offered};                                  \
+}                                                                        \
+static bool P##_rebuild(P##_Map *map, const HashEnv *env, uint64_t target) { \
+    if (target > (LIMIT) || target < map->slots->length) return false;    \
+    if (target == 0) return true;                                        \
+    P##_Block *next = P##_block(target), *old = map->slots;              \
+    map->slots = next;                                                   \
+    while (old->length != 0) {                                          \
+        P##_Cell cell;                                                   \
+        memcpy(&cell, &old->cells[--old->length], sizeof cell);           \
+        uint64_t hash = 0;                                               \
+        if (cell.length != 0) hash = key_hash(env, &cell.pair.key);       \
+        while (cell.length != 0) {                                      \
+            uint64_t count = map->slots->length;                         \
+            for (uint64_t step = 0; step < count; ++step) {              \
+                uint64_t index = source_probe(hash % count, step, count); \
+                P##_Cell *destination = &map->slots->cells[index];       \
+                if (destination->length == 0) {                          \
+                    memmove(&destination->pair, &cell.pair, cell.length * sizeof(B##_Pair)); \
+                    destination->length += cell.length; cell.length = 0; \
+                    break;                                               \
+                }                                                        \
+            }                                                            \
+        }                                                                \
+    }                                                                    \
+    wf_cost_release(old); return true;                                  \
+}                                                                        \
+static HELPER B##_Removed P##_remove(P##_Map *map, const HashEnv *env, const uint64_t *key) { \
+    uint64_t before = map->count;                                        \
+    if (before == 0) { B##_Removed result; result.found = false; return result; } \
+    Probe found = P##_find(map, env, key);                               \
+    if (found.found && map->slots->cells[found.index].length != 0) {      \
+        P##_Cell *cell = &map->slots->cells[found.index];                  \
+        B##_Pair removed; memcpy(&removed, &cell->pair, sizeof removed); \
+        --cell->length; cell->deleted = true; map->count = before - 1;    \
+        return (B##_Removed){true, removed};                            \
+    }                                                                    \
+    B##_Removed result; result.found = false; return result;              \
+}                                                                        \
+static HELPER Lookup P##_lookup(const P##_Map *map, const HashEnv *env, const uint64_t *key, Digest *digest) { \
+    Probe found = P##_find(map, env, key);                               \
+    if (!found.found) return (Lookup){false, 0};                          \
+    const B##_Pair *pair = &map->slots->cells[found.index].pair;           \
+    return (Lookup){true, B##_observe(digest, &pair->key, &pair->value)};  \
+}                                                                        \
+static HELPER Lookup P##_edit(P##_Map *map, const HashEnv *env, const uint64_t *key, Digest *digest) { \
+    Probe found = P##_find(map, env, key);                               \
+    if (!found.found) return (Lookup){false, 0};                          \
+    B##_Pair *pair = &map->slots->cells[found.index].pair;                 \
+    return (Lookup){true, B##_edit(digest, &pair->key, &pair->value)};     \
+}                                                                        \
+static HELPER void P##_free(P##_Map map, Digest *digest) {                 \
+    while (map.slots->length != 0) {                                    \
+        P##_Cell cell;                                                   \
+        memcpy(&cell, &map.slots->cells[--map.slots->length], sizeof cell); \
+        if (cell.length != 0) {                                          \
+            B##_Pair pair; memcpy(&pair, &cell.pair, sizeof pair);       \
+            --cell.length; B##_consume(digest, pair.key, pair.value);    \
+        }                                                                \
+    }                                                                    \
+    wf_cost_release(map.slots);                                          \
+}                                                                        \
+MATCHED_GROWING_API(P, B, LIMIT)
+
+SLOT_MATCHED(word_slot, word_single, word, CEILING)
+SLOT_MATCHED(record_slot, record_single, record, CEILING)
+
 _Static_assert(sizeof(word_sparse_Map) == 16 && sizeof(word_tagged_Map) == 16, "map owners");
 _Static_assert(sizeof(word_sparse_Cell) == 24 && sizeof(record_sparse_Cell) == 272, "sparse cells");
 _Static_assert(sizeof(word_tagged_Entry) == 24 && sizeof(record_tagged_Entry) == 272, "dense entries");
@@ -897,6 +1054,12 @@ TRACE(word_planned, word, uint64_t)
 TRACE(record_planned, record, Record)
 TRACE(word_repaired, word, uint64_t)
 TRACE(record_repaired, record, Record)
+TRACE(word_descending, word, uint64_t)
+TRACE(record_descending, record, Record)
+TRACE(word_single, word, uint64_t)
+TRACE(record_single, record, Record)
+TRACE(word_slot, word, uint64_t)
+TRACE(record_slot, record, Record)
 
 POLICY_CHECK(word_sparse_small, word, uint64_t)
 POLICY_CHECK(record_sparse_small, record, Record)
@@ -974,29 +1137,41 @@ static uint64_t oracle(bool wide, uint64_t count, uint64_t rounds,
 }
 
 typedef uint64_t (*Trace)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+enum { WF_VARIANT = 1, REBUILD_VARIANT = 2, ZERO_REHASH_NOOP = 4 };
 typedef struct {
     const char *name;
     bool wide, dense, planned;
     size_t cell_stride, index_stride;
     Trace trace;
     void (*policy_check)(void);
+    unsigned flags;
 } Variant;
 static const Variant variants[] = {
-    {"word-sparse-direct", false, false, false, sizeof(word_sparse_Cell), 0, word_sparse_trace, word_sparse_small_policy_check},
-    {"record-sparse-direct", true, false, false, sizeof(record_sparse_Cell), 0, record_sparse_trace, record_sparse_small_policy_check},
-    {"word-dense-tagged", false, true, false, sizeof(word_tagged_Entry), sizeof(TaggedIndex), word_tagged_trace, word_tagged_small_policy_check},
-    {"record-dense-tagged", true, true, false, sizeof(record_tagged_Entry), sizeof(TaggedIndex), record_tagged_trace, record_tagged_small_policy_check},
-    {"word-dense-compact", false, true, false, sizeof(word_compact_Entry), sizeof(uint64_t), word_compact_trace, word_compact_small_policy_check},
-    {"record-dense-compact", true, true, false, sizeof(record_compact_Entry), sizeof(uint64_t), record_compact_trace, record_compact_small_policy_check},
-    {"word-sparse-planned", false, false, true, sizeof(word_planned_Cell), 0, word_planned_trace, word_planned_small_policy_check},
-    {"record-sparse-planned", true, false, true, sizeof(record_planned_Cell), 0, record_planned_trace, record_planned_small_policy_check},
-    {"word-dense-repaired", false, true, true, sizeof(word_repaired_Entry), sizeof(TaggedIndex), word_repaired_trace, word_repaired_small_policy_check},
-    {"record-dense-repaired", true, true, true, sizeof(record_repaired_Entry), sizeof(TaggedIndex), record_repaired_trace, record_repaired_small_policy_check},
+    {"word-sparse-direct", false, false, false, sizeof(word_sparse_Cell), 0, word_sparse_trace, word_sparse_small_policy_check, 0},
+    {"record-sparse-direct", true, false, false, sizeof(record_sparse_Cell), 0, record_sparse_trace, record_sparse_small_policy_check, 0},
+    {"word-dense-tagged", false, true, false, sizeof(word_tagged_Entry), sizeof(TaggedIndex), word_tagged_trace, word_tagged_small_policy_check, 0},
+    {"record-dense-tagged", true, true, false, sizeof(record_tagged_Entry), sizeof(TaggedIndex), record_tagged_trace, record_tagged_small_policy_check, 0},
+    {"word-dense-compact", false, true, false, sizeof(word_compact_Entry), sizeof(uint64_t), word_compact_trace, word_compact_small_policy_check, 0},
+    {"record-dense-compact", true, true, false, sizeof(record_compact_Entry), sizeof(uint64_t), record_compact_trace, record_compact_small_policy_check, 0},
+    {"word-sparse-planned", false, false, true, sizeof(word_planned_Cell), 0, word_planned_trace, word_planned_small_policy_check, 0},
+    {"record-sparse-planned", true, false, true, sizeof(record_planned_Cell), 0, record_planned_trace, record_planned_small_policy_check, 0},
+    {"word-dense-repaired", false, true, true, sizeof(word_repaired_Entry), sizeof(TaggedIndex), word_repaired_trace, word_repaired_small_policy_check, 0},
+    {"record-dense-repaired", true, true, true, sizeof(record_repaired_Entry), sizeof(TaggedIndex), record_repaired_trace, record_repaired_small_policy_check, 0},
 #if defined(WITH_WF)
-    {"word-wf-sparse", false, false, true, sizeof(word_planned_Cell), 0, wf_map_cost_sparse_word_trace, NULL},
-    {"record-wf-sparse", true, false, true, sizeof(record_planned_Cell), 0, wf_map_cost_sparse_record_trace, NULL},
-    {"word-wf-dense", false, true, true, sizeof(word_repaired_Entry), sizeof(TaggedIndex), wf_map_cost_dense_word_trace, NULL},
-    {"record-wf-dense", true, true, true, sizeof(record_repaired_Entry), sizeof(TaggedIndex), wf_map_cost_dense_record_trace, NULL},
+    {"word-wf-sparse", false, false, true, sizeof(word_planned_Cell), 0, wf_map_cost_sparse_word_trace, NULL, WF_VARIANT},
+    {"record-wf-sparse", true, false, true, sizeof(record_planned_Cell), 0, wf_map_cost_sparse_record_trace, NULL, WF_VARIANT},
+    {"word-wf-dense", false, true, true, sizeof(word_repaired_Entry), sizeof(TaggedIndex), wf_map_cost_dense_word_trace, NULL, WF_VARIANT},
+    {"record-wf-dense", true, true, true, sizeof(record_repaired_Entry), sizeof(TaggedIndex), wf_map_cost_dense_record_trace, NULL, WF_VARIANT},
+#endif
+    {"word-sparse-descending", false, false, false, sizeof(word_descending_Cell), 0, word_descending_trace, NULL, REBUILD_VARIANT},
+    {"record-sparse-descending", true, false, false, sizeof(record_descending_Cell), 0, record_descending_trace, NULL, REBUILD_VARIANT},
+    {"word-slot-direct", false, false, false, sizeof(word_single_Cell), 0, word_single_trace, NULL, REBUILD_VARIANT | ZERO_REHASH_NOOP},
+    {"record-slot-direct", true, false, false, sizeof(record_single_Cell), 0, record_single_trace, NULL, REBUILD_VARIANT | ZERO_REHASH_NOOP},
+    {"word-slot-matched", false, false, false, sizeof(word_slot_Cell), 0, word_slot_trace, NULL, REBUILD_VARIANT | ZERO_REHASH_NOOP},
+    {"record-slot-matched", true, false, false, sizeof(record_slot_Cell), 0, record_slot_trace, NULL, REBUILD_VARIANT | ZERO_REHASH_NOOP},
+#if defined(WITH_WF)
+    {"word-wf-slot", false, false, false, sizeof(word_slot_Cell), 0, wf_map_cost_slot_word_trace, NULL, WF_VARIANT | REBUILD_VARIANT | ZERO_REHASH_NOOP},
+    {"record-wf-slot", true, false, false, sizeof(record_slot_Cell), 0, wf_map_cost_slot_record_trace, NULL, WF_VARIANT | REBUILD_VARIANT | ZERO_REHASH_NOOP},
 #endif
 };
 
@@ -1019,7 +1194,8 @@ static Ledger expected_ledger(const Variant *variant, uint64_t capacity,
             expected.requests += allocations; expected.releases += allocations;
             expected.bytes += next; expected.peak += next;
         }
-    } else if (path == REHASH && rounds != 0) {
+    } else if (path == REHASH && rounds != 0
+               && !(capacity == 0 && (variant->flags & ZERO_REHASH_NOOP))) {
         size_t per_round;
         if (variant->dense) {
             per_round = 8 + capacity * variant->index_stride;
@@ -1060,6 +1236,10 @@ static void check(void) {
                 for (size_t r = 0; r < sizeof rounds / sizeof rounds[0]; ++r)
                     for (size_t s = 0; s < sizeof seeds / sizeof seeds[0]; ++s)
                         for (unsigned collide = 0; collide < 2; ++collide) {
+                            if ((variant->flags & REBUILD_VARIANT)
+                                && ((path != GROW && path != REHASH)
+                                    || (n != 0 && n != 2 && n != 3 && n != 4 && n != 5)))
+                                continue;
                             uint64_t expected = oracle(variant->wide, shapes[n].count, rounds[r], seeds[s], path);
                             reset_ledger();
                             uint64_t actual = variant->trace(shapes[n].capacity, shapes[n].count, rounds[r], seeds[s], path, collide != 0);
@@ -1087,10 +1267,13 @@ static uint64_t nanoseconds(void) {
 /* Timings are complete, independently checked traces. Growth is one real
  * reserve; rehash includes deletion, verification and reinsertion. No setup
  * baseline is subtracted to invent an isolated operation latency. */
-enum { PRIMARY_SET, BOUNDARY_SET, EDIT_SET };
+enum { PRIMARY_SET, BOUNDARY_SET, EDIT_SET, REBUILD_SET };
 static bool selected_cohort(unsigned set, bool wide, uint64_t capacity,
                             unsigned occupancy, bool collide, unsigned path) {
     if (set == EDIT_SET) return capacity == 64 && !collide && path == EDIT;
+    if (set == REBUILD_SET)
+        return capacity == 4096 && occupancy == 1 && !collide
+            && (path == GROW || path == REHASH);
     if (set == BOUNDARY_SET)
         return capacity == 64 && occupancy == 1 && !collide
             && (path == REPLACE || path == CHURN);
@@ -1107,7 +1290,10 @@ static bool selected_cohort(unsigned set, bool wide, uint64_t capacity,
 static void measure(unsigned cohort, unsigned set, const char *source_shape) {
     const uint64_t capacities[] = {64, 4096};
     const char *paths[] = {"hit", "miss", "replace", "churn", "grow", "rehash", "setup-cleanup", "edit-first-word"};
-    const size_t variant_count = sizeof variants / sizeof variants[0];
+    size_t active[sizeof variants / sizeof variants[0]], variant_count = 0;
+    for (size_t v = 0; v < sizeof variants / sizeof variants[0]; ++v)
+        if (set == REBUILD_SET || !(variants[v].flags & REBUILD_VARIANT))
+            active[variant_count++] = v;
     puts("contract,cohort,element_bytes,path,capacity,count,hash,variant,source_shape,sample,rounds,traces,elapsed_ns,checksum,requests,requested_bytes,peak_bytes");
     for (unsigned wide = 0; wide < 2; ++wide)
             for (size_t n = 0; n < sizeof capacities / sizeof capacities[0]; ++n)
@@ -1128,7 +1314,7 @@ static void measure(unsigned cohort, unsigned set, const char *source_shape) {
                                         + oracle(wide != 0, count, rounds, seed + trace, path);
                                 for (size_t offset = 0; offset < variant_count; ++offset) {
                                     size_t position = (sample + offset) % variant_count;
-                                    size_t v = cohort ? variant_count - 1 - position : position;
+                                    size_t v = active[cohort ? variant_count - 1 - position : position];
                                     const Variant *variant = &variants[v];
                                     if (variant->wide != (wide != 0)) continue;
                                     reset_ledger();
@@ -1146,7 +1332,7 @@ static void measure(unsigned cohort, unsigned set, const char *source_shape) {
                                     printf("%s,%u,%zu,%s,%" PRIu64 ",%" PRIu64 ",%s,%s,%s,%u,%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%zu,%zu,%zu\n",
                                            CONTRACT, cohort, wide ? sizeof(Record) : sizeof(uint64_t), paths[path],
                                            capacity, count, collide ? "colliding" : "mixed", variant->name,
-                                           variant->policy_check ? "c-shared" : source_shape, sample,
+                                           (variant->flags & WF_VARIANT) ? source_shape : "c-shared", sample,
                                            rounds, traces, elapsed, checksum, ledger.requests, ledger.bytes, ledger.peak);
                                 }
                             }
@@ -1156,7 +1342,7 @@ static void measure(unsigned cohort, unsigned set, const char *source_shape) {
 #endif
 
 int main(int argc, char **argv) {
-    require(argc >= 2, "usage: map-costs check | measure 0|1 primary|boundary|edit original|compact");
+    require(argc >= 2, "usage: map-costs check | measure 0|1 primary|boundary|edit|rebuild original|compact");
     if (strcmp(argv[1], "check") == 0) {
         require(argc == 2, "check takes no arguments"); check();
     }
@@ -1167,6 +1353,7 @@ int main(int argc, char **argv) {
         unsigned set = PRIMARY_SET;
         if (strcmp(argv[3], "boundary") == 0) set = BOUNDARY_SET;
         else if (strcmp(argv[3], "edit") == 0) set = EDIT_SET;
+        else if (strcmp(argv[3], "rebuild") == 0) set = REBUILD_SET;
         else require(strcmp(argv[3], "primary") == 0, "unknown measurement set");
         require(strcmp(argv[4], "original") == 0 || strcmp(argv[4], "compact") == 0,
                 "unknown source shape");

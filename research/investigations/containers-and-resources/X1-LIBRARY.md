@@ -393,16 +393,19 @@ planning allocations and payload relocation are part of the sparse candidate's
 cost, just as reverse-index maintenance and the dependent lookup are part of
 the dense candidate's cost.
 
-A third ordinary formulation remains viable but has not been implemented:
-each sparse cell can contain `Slots<Pair<K,V>, 1>` and a deleted flag. After
+A third admitted ordinary formulation gives each sparse cell
+`Slots<Pair<K,V>, 1>` and a deleted flag. After
 allocating an empty destination with at least the old materialized capacity,
 swap the backing, drain each old cell, and append its single live pair into
 an empty destination window. The ordinary append postcondition establishes
 that the local source is empty, so cleanup needs no assumed enum refinement.
 Hash each owner once; equality is unnecessary. At owner j, at most j-1 of the
 M destinations are filled, so a complete cyclic scan finds a vacancy when
-j <= old capacity <= M. This is an algorithm argument, not an admitted
-third source witness or a published numeric contract.
+j <= old capacity <= M. The complete source and its scalar/owning-child
+caller execute in default, sequential and parallel CLI configurations. The
+allocation observer checks all eighteen identities, each released exactly
+once; a zero-capacity rebuild allocates nothing. The vacancy argument is
+not a published numeric contract or a general compiler proof of termination.
 
 That route avoids permutation plans and the bulk old-backing grow copy, but
 costs an extra word per cell: 32 rather than 24 bytes for the scalar pair,
@@ -411,11 +414,11 @@ during migration. Ignoring fixed headers, growing C to M has peak bytes
 `(C+M)*(B+8)`, versus the enum route's `(C+M)*B+8*M`: about 8*C more bytes.
 Same-capacity rebuilding needs a second full payload backing rather than
 only the enum route's metadata. Empty-cell construction and local cell/append
-transfers remain costs to inspect. Defer this additional candidate until
-measured copying/permutation is material, or sparse lookup/edit and dense
-growth split the result; then compare both growth and same-capacity rebuild,
-scalar and wide values, with retained helpers. Do not reject it as
-inexpressible or infer a smaller peak from fewer allocations.
+transfers remain costs to inspect. Its comparison criterion is material
+copying/permutation cost or a split between sparse lookup/edit and dense
+growth. Compare both growth and same-capacity rebuild, scalar and wide values,
+with retained helpers. Do not reject it as inexpressible or infer a smaller
+peak from fewer allocations.
 
 The first matched timings trigger that additional comparison. At capacity
 4096 and seven-eighths occupancy, the first cohort's wide growth trace takes
@@ -425,12 +428,36 @@ elsewhere. The same sparse growth is about 1.78 times its direct native
 control but 1.21/1.04 times its planned-algorithm C control. The
 [comparison record](../../experiments/container-representation/map-library/RESULTS.md)
 owns the complete paired samples and both cohorts; these particular results
-motivate a discriminator, not a layout selection. Implement the ordinary
+motivate a discriminator, not a layout selection. Extend the ordinary
 one-slot route only far enough to compare its admitted owning operation chain
 and matched growth/rehash traces. Count its larger cells and double-backing
 peak, as well as actual transfer work. Select it only if the observed benefit
 justifies those costs for the exposed contract; do not extend the full timing
 matrix merely because a third representation exists.
+
+The bounded discriminator uses only scalar/wide growth and same-capacity
+rehash at capacity 4096 with 3584 entries, under the original seeds, complete
+traces, optimization modes and reversed cohorts. Draining the old window
+visits buckets in descending order, whereas the original direct C floor
+visits ascending buckets. Retain that floor, then separate descending enum
+storage, descending one-slot storage, the source's cell-take/append algorithm
+in C, and the WF source. Keep the original sparse/dense implementations in
+the same run as references. This prevents a changed insertion order or
+source migration algorithm from being attributed solely to layout.
+
+The extra per-bucket word is not yet established as necessary for direct
+migration. An additional source discriminator keeps the enum buckets and
+uses one local `Slots<Pair<K,V>,1>` as the pending-owner carrier: pop and
+match the old slot, stage its pair, probe by occupancy, exchange at the
+vacancy, and restage any complete pair the exchange returns. An empty
+carrier ends that owner's migration. The earlier PROV-6 rejection concerned
+an unconsumed displaced enum, not this exhaustive ownership protocol.
+Validate this formulation before charging all direct migration the larger
+bucket layout; if admitted, compare it within the same four rebuild cells.
+Hash the current staged key on each attempt and never use equality to
+deduplicate. Its admission, complete owner accounting and transfer costs
+remain to be established; the conceptual vacancy argument alone selects
+neither an implementation nor a representation.
 
 The direct route exposes a separate contract boundary. After extending a
 fresh `previous` backing to `capacity`, it publishes that owner with
@@ -462,43 +489,280 @@ from the result's reserved width. The native control already has one Pair
 region, so its matching semantic outcome alone does not establish ABI parity
 with the initial WF result.
 
-Two existing contract limits have concrete consumers here. Under FN-9/MSR-3,
-`ensures deref(map).length == deref(entry(map)).length;` cannot publish exit
-state for the sparse map's ordinary mutable scalar counter; that denotation
-is currently a storage-measure facility. Likewise `ensures when Full(...):`
-is outside FN-9's exact integer-Result.Ok route. An unconditional length
-interval from `try_put` therefore cannot tell a caller that the Full arm
-preserves length before a retry. Ordinary counter reads, measure relations,
-and owned outcomes remain available. Retain the exact refused clauses beside
-the executable comparison and assess the remaining caller checks or interface
-cost before proposing broader publication; neither limit means runtime state
-or an owner is lost.
+The following complete controls retain the trial's proof boundaries under
+kernel v0.67 and the compiler identified in the comparison's
+[build identities](../../experiments/container-representation/map-library/RESULTS.md#sample-and-build-identities).
+Each standalone program and each listed variant was checked by guarded LLVM
+emission with that executable; apply variants independently to their stated
+baseline. The reported rejection is the first diagnostic, not a claim that
+every alternative formulation fails. For a standalone block saved as
+`control.wf`, the invocation is:
 
-The sparse trial also distinguishes a proof-formulation limit from an
-implementation defect. After a counted loop, this local assertion verifies:
-
-```wf
-invariant equal_extent: plan.inner.len == deref(holder).cells.inner.len;
+```sh
+perl .github/run-check.pl map-proof-control compiler/target/gate/whitefootc --emit-llvm control.wf -o control.ll
 ```
 
-An immediately following call cannot discharge the helper's requirement
-`deref(plan).inner.len == deref(cells).inner.len` from those affine premises.
-Changing only that requirement to the following two clauses admits the same
-call and algorithm:
+**Contract formation and publication.** This complete baseline accepts:
 
 ```wf
-requires deref(plan).inner.len <= deref(cells).inner.len;
-requires deref(plan).inner.len >= deref(cells).inner.len;
+struct Counter {
+  length: u64;
+}
+
+fn scalar(map: &Counter) -> result: own unit writes(map) {
+  set deref(map) = Counter(length: deref(map).length);
+  return unit;
+}
+
+fn append_proof(values: &Slots<u64, 1>, value: own u64) -> outcome: own Result<unit, unit> writes(values) contract {
+  requires deref(values).len < deref(values).cap;
+  ensures deref(values).len == deref(entry(values)).len + 1_u64;
+} {
+  place_back(window: values, value: value);
+  return Ok<unit, unit>(value: unit);
+}
+
+fn replace(cells: &Box<Slots<u64>>) -> result: own unit writes(cells) {
+  let previous = box_slots_new::<u64>(capacity: 1_u64);
+  place_back(window: &previous.inner, value: 7_u64);
+  invariant prepared: previous.inner.len == 1_u64;
+  swap(first: cells, second: &previous);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
 ```
 
-ENT-6's affine normalization of signed FN-8 goals lists integer ordering
-leaves, whereas INV-1 explicitly splits equality into two affine inequalities.
-The compiler follows that distinction. The paired requirements preserve exact
-equality and add no runtime check. This is separate from an ordinary branch
-join losing relations when one arm changes a measure's immutable current-value
-image: a length-preserving helper around the conditional tombstone operation
-publishes a common caller boundary without relocating live payloads. Its call
-structure still belongs in the matched source-cost comparison.
+The exact variants are:
+
+1. Replace `scalar`'s first line with these three lines:
+
+   ```wf
+   fn scalar(map: &Counter) -> result: own unit writes(map) contract {
+     ensures deref(map).length >= deref(entry(map)).length;
+   } {
+   ```
+
+   The first diagnostic is FN-9 `InvalidPostconditionRelation` at that clause.
+   FN-9 gives exit-state denotation to a written reference's measures, and
+   MSR-3's `entry` adds no scalar snapshot family. Ordinary counter reads and
+   writes remain available.
+2. In `append_proof`, replace its ensures with
+   `ensures when Ok(value: success): deref(values).len == deref(entry(values)).len + 1_u64;`.
+   The first diagnostic is FN-9 `InvalidPostconditionSelector` at `Ok`.
+   FN-9's routed form requires an integer success payload. The accepted
+   baseline instead publishes an unrouted exit-measure relation from a
+   `Result<unit, unit>` function; such relations are also legal on a plain
+   unit-returning function. Unit results do not prohibit ensures generally.
+3. Add the enum below, change `append_proof`'s result type from
+   `Result<unit, unit>` to `DenseProofPut`, replace its ensures with
+   `ensures when DenseProofReplaced(previous: old_value): deref(values).len == deref(entry(values)).len + 1_u64;`,
+   and replace its return with `return DenseProofReplaced(previous: value);`.
+   The first diagnostic is FN-9 `InvalidPostconditionSelector` at
+   `DenseProofReplaced`. FN-9 admits only the prelude `Result.Ok` route, so a
+   custom `Inserted / Replaced / Full` result cannot publish a relation for
+   each outcome. An unconditional insertion interval alone does not prove
+   that the Full arm preserves length before a retry.
+
+   ```wf
+   enum DenseProofPut {
+     DenseProofInserted();
+     DenseProofReplaced(previous: u64);
+   }
+   ```
+
+4. Replace `replace`'s first line with these three lines:
+
+   ```wf
+   fn replace(cells: &Box<Slots<u64>>) -> result: own unit writes(cells) contract {
+     ensures deref(cells).inner.len == 1_u64;
+   } {
+   ```
+
+   The first diagnostic is FN-9 `UndischargedPostcondition` at its return,
+   with relation `deref(cells).inner.len = 1` and disposition `Unproved`.
+   PRE-1 declares swap's writes without an ensures; ENT-5 kills the supported
+   facts, MSR-3 has no swap placement, and CALL-6 has no relation to publish.
+   Starting from this variant, replacing only the swap statement with
+   `set deref(cells) = move previous;` accepts through MSR-3's ordinary
+   placement. That control discards the old destination owner; it does not
+   implement the map's exchange-and-migrate algorithm.
+
+**Equality at a call after a counted loop.** This complete baseline accepts:
+
+```wf
+struct Holder {
+  cells: Box<Slots<u64>>;
+}
+
+fn preserve(cells: &Box<Slots<u64>>) -> result: own unit writes(cells) contract {
+  requires deref(cells).inner.cap <= 1_u64;
+  ensures deref(cells).inner.len == deref(entry(cells)).inner.len;
+  ensures deref(cells).inner.cap == deref(entry(cells)).inner.cap;
+} {
+  let capacity = deref(cells).inner.cap;
+  grow(cell: cells, capacity: capacity);
+  return unit;
+}
+
+fn apply(cells: &Box<Slots<u64>>, plan: &Box<Array<u64>>) -> result: own unit writes(cells), writes(plan) contract {
+  requires deref(cells).inner.cap <= 1_u64;
+  requires deref(plan).inner.len <= deref(cells).inner.len;
+  requires deref(plan).inner.len >= deref(cells).inner.len;
+} {
+  grow(cell: cells, capacity: 1_u64);
+  if deref(plan).inner.len > 0_u64 {
+    set deref(plan).inner[0_u64] = 0_u64;
+  }
+  return unit;
+}
+
+fn nested(holder: &Holder, capacity: own u64) -> result: own unit writes(holder.cells) contract {
+  requires deref(holder).cells.inner.cap <= 1_u64;
+  requires deref(holder).cells.inner.len == capacity;
+  requires capacity <= 1_u64;
+} {
+  let plan = box_array_filled::<u64>(count: capacity, value: 0_u64);
+  for (
+    index in 0_u64..capacity,
+    invariant retained: deref(holder).cells.inner.len == capacity,
+    invariant planned: plan.inner.len == capacity,
+    invariant bounded: deref(holder).cells.inner.cap <= 1_u64
+  ) {
+    preserve(cells: &deref(holder).cells);
+  }
+  invariant equal_extent: plan.inner.len == deref(holder).cells.inner.len;
+  apply(cells: &deref(holder).cells, plan: &plan);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let cells = box_slots_new::<u64>(capacity: 1_u64);
+  place_back(window: &cells.inner, value: 7_u64);
+  let holder = Holder(cells: move cells);
+  if holder.cells.inner.cap <= 1_u64 {
+    if holder.cells.inner.len == 1_u64 {
+      nested(holder: &holder, capacity: 1_u64);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+```
+
+Replace only `apply`'s paired length requirements with
+`requires deref(plan).inner.len == deref(cells).inner.len;`. The first
+diagnostic is FN-8 `UndischargedCallRequirement` at the call to `apply`, with
+instantiated goal `plan.inner.len == deref(holder).cells.inner.len` and
+disposition `Unproved`. Removing only that call from this rejected variant
+accepts, including the immediately preceding `equal_extent` invariant.
+INV-1 splits equality into two affine inequalities; ENT-6's affine
+normalization of signed FN-8 goals admits ordering leaves only. Ordinary
+L0 equality remains available, but these affine premises do not take that
+route. The paired requirements preserve exact equality without runtime work.
+
+**Conditional loop preservation.** This complete source rejects:
+
+```wf
+fn preserve(values: &Box<Slots<u64>>) -> result: own unit writes(values) contract {
+  requires deref(values).inner.cap <= 1_u64;
+  ensures deref(values).inner.len == deref(entry(values)).inner.len;
+  ensures deref(values).inner.cap == deref(entry(values)).inner.cap;
+} {
+  let capacity = deref(values).inner.cap;
+  grow(cell: values, capacity: capacity);
+  return unit;
+}
+
+fn conditional(values: &Box<Slots<u64>>, enabled: own Bool) -> result: own unit writes(values) contract {
+  requires deref(values).inner.cap <= 1_u64;
+  ensures deref(values).inner.len == deref(entry(values)).inner.len;
+} {
+  let count = deref(values).inner.len;
+  for (
+    index in 0_u64..count,
+    invariant retained: deref(values).inner.len == count,
+    invariant bounded: deref(values).inner.cap <= 1_u64
+  ) {
+    if enabled {
+      preserve(values: values);
+    }
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let values = box_slots_new::<u64>(capacity: 1_u64);
+  place_back(window: &values.inner, value: 7_u64);
+  let enabled = True();
+  conditional(values: &values, enabled: enabled);
+  if values.inner.len != 1_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+```
+
+The first diagnostic is INV-1 `UndischargedLoopInvariant`, name `retained`,
+obligation `Backedge`, with diagnostic relation `deref(values).len <= count`.
+Adding `invariant restored: deref(values).inner.len == count;` immediately
+after `preserve` inside the true arm leaves that same first rejection.
+Replacing the entire loop body with the following accepts:
+
+```wf
+let before = deref(values).inner.len;
+let before_capacity = deref(values).inner.cap;
+if enabled {
+  preserve(values: values);
+}
+invariant rejoined: deref(values).inner.len == count;
+invariant rejoined_capacity: deref(values).inner.cap <= 1_u64;
+```
+
+Removing only the `before_capacity` binding and `rejoined_capacity` invariant
+from this accepted body moves the first rejection to INV-1's `bounded`
+backedge obligation, relation `deref(values).cap <= 1_u64`. Replacing the
+original loop body with the unconditional `preserve(values: values);` also
+accepts. ENT-5 joins closed L0 relations over every reaching branch; ENT-6
+retains only canonically identical affine inequalities over their immutable
+images. Capturing both current measures supplies connections across this
+small conditional. The rejected form does not establish a general inability
+to preserve measures through conditionals.
+
+The full sparse candidate remains a separate unresolved case. Use
+[sparse-map.wf](https://github.com/mbbill/Whitefoot/blob/c206655d898ea32de9995bca2b19444c92c1f973/research/experiments/container-representation/map-library/sparse-map.wf)
+and its
+[sparse-check.wf driver](https://github.com/mbbill/Whitefoot/blob/c206655d898ea32de9995bca2b19444c92c1f973/research/experiments/container-representation/map-library/sparse-check.wf)
+from `c206655d898ea32de9995bca2b19444c92c1f973`, bundled in that order for
+`--emit-llvm`. In `sparse_map_rebuild`, replace only this loop-body statement:
+
+```wf
+sparse_map_clear_deleted::<K, V>(cells: &deref(map).cells, index: index);
+```
+
+with:
+
+```wf
+let deleted = sparse_map_is_deleted::<K, V>(slot: &deref(map).cells.inner[index]);
+let current_extent = deref(map).cells.inner.len;
+if deleted {
+  sparse_map_canonicalize::<K, V>(cells: &deref(map).cells, index: index);
+}
+invariant unchanged_extent: deref(map).cells.inner.len == current_extent;
+invariant rejoined_extent: deref(map).cells.inner.len == capacity;
+```
+
+Keep the existing helper and every other line. The first diagnostic is INV-1
+`UndischargedLoopInvariant`, name `rebuilt_extent`, obligation `Backedge`,
+with diagnostic relation `deref(map).cells.len <= capacity`. This reproduces
+the full candidate's failure despite its written post-join bridges. Whether
+that remaining refusal is required by the fixed proof rules or is a compiler
+defect has not been established. The admitted candidate retains the
+length-preserving helper around the conditional tombstone operation; that
+helper does not relocate live payloads, and its call structure remains part
+of the matched source-cost comparison. Neither this failed formulation nor
+the admitted small control settles the full candidate's normative diagnosis.
 
 The maintained [TODO](../../../docs/todo.md) remains the owner of unresolved
 issues. This trial reopens must-consume sparse slot state, aggregate result

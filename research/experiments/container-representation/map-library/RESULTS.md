@@ -4,11 +4,11 @@ This explicit experiment belongs to the generic owning-map trial in
 [X1-LIBRARY.md](../../../investigations/containers-and-resources/X1-LIBRARY.md#generic-owning-map-trial-after-the-ring-comparison).
 It stays outside daily correctness CI. The first maintained caller is
 `make -C research/experiments/container-representation map-native-check`,
-which checks the native controls only. `map-check` also executes both source
+which checks the native controls only. `map-check` also executes the source
 candidates and owning-child callers in three CLI configurations, checks their
 exact allocation identities with the existing formal observer, and compares
 WF/C trace contents and allocation totals. `map-measure` is the explicit
-timing caller; it is not a daily gate. The eight-path source/control checks
+timing caller; it is not a daily gate. The original eight-path source/control checks
 and the first paired timing matrix passed. The measurements split the
 representation tradeoff: sparse lookup/edit and dense wide rebuilding win
 different traces. They reopen the ordinary single-slot direct-migration
@@ -18,7 +18,7 @@ the same contracts and evidence.
 
 ## Contract fixed before measurement
 
-Both representations own inline keys and values. Put installs the offered
+All candidates own inline keys and values. Put installs the offered
 pair and either inserts it, returns the replaced pair, or returns the offered
 pair at the capacity ceiling. A replacement remains possible at that ceiling.
 Remove returns the owned pair. Lookup borrows its query and visits the stored
@@ -51,7 +51,7 @@ moves the last entry. Its reserved entry capacity counts in full, not merely
 its live population. A compact native index and a copy-enum index are distinct
 layouts whenever their strides differ.
 
-The current C controls distinguish five combinations, each at scalar and
+The original comparison distinguishes five C combinations, each at scalar and
 256-byte values: sparse direct rebuilding; sparse planning plus permutation;
 dense direct rebuilding with a tagged index; the same native algorithm with
 a compact index; and dense planning followed by a full bucket scan to repair
@@ -266,12 +266,18 @@ branch bodies, with renamed binders. Hashing, probing, allocation, mutation,
 edit callbacks and the operation trace are unchanged. The overlay exists only
 for this result-shape discriminator; remove it when the selected source or a
 maintained successor preserves the comparison, citing this checkpoint in Git
-instead of retaining duplicate libraries. Applying it reproduces the compact
-source hashes below exactly. It adds no daily gate dependency.
+instead of retaining duplicate libraries. Applying it at the measured
+[c206655d checkpoint](https://github.com/mbbill/Whitefoot/tree/c206655d/research/experiments/container-representation/map-library)
+reproduces the compact source hashes below exactly; use that checkout for
+the exact original build. It adds no daily gate dependency.
 The overlay SHA-256 is
 `d63ef0692294ae534127575065b5765125964e8e3789c6605dec5e03d3634e5a`;
-the maintained generation target was executed and all three generated files
-compared byte-for-byte with the measured compact sources. The recursive
+at that checkpoint the maintained generation target was executed and all
+three generated files compared byte-for-byte with the measured compact
+sources. The current extended adapter also contains the third candidate:
+the target replays the same result-shape control in that larger module,
+including the unchanged single-slot library, rather than claiming the old
+adapter or module hashes. The recursive
 build/check caller was dry-run checked; it reuses the already verified
 recipes, without another construction or timing run for the wiring change.
 
@@ -571,3 +577,97 @@ Use the edit archive with the same command for its paired table. The
 whole-trace units; those medians must not be divided and called the paired
 statistic above. All archives remain evidence for these exact source shapes,
 even if a later library choice supersedes their implementation.
+
+## Direct-migration extension
+
+The first matrix above is frozen evidence from `c206655d`, not a timing of
+the later candidate additions. Its wide rebuild costs reopen a direct
+migration using one inline `Slots<Pair,1>` per bucket. The source retains
+the same key/value, result and growth policies, but allocates one new backing
+and visits old materialized buckets in descending order. It takes each old
+cell into a local and drains the zero-or-one pair into an empty destination.
+Migration hashes each live key once and calls no equality function. A
+zero-capacity rehash returns without another allocation.
+
+The extension reuses the existing driver, oracle and `measure` target with
+`MEASURE_SET=rebuild`. It selects only scalar/record grow/rehash at capacity
+4096, count 3584 and mixed hashing. Growth performs one real reserve per trace;
+rehash removes the even key IDs, migrates 1792 live owners, then reinserts the
+removed IDs on each round. Timing still includes fill, lookup, reinsertion
+and cleanup. Neither a whole-trace ratio nor subtraction of a setup trace
+isolates migration latency.
+
+Three additional C controls separate the source choice from its lowering:
+descending direct migration of the original enum buckets; the same native
+algorithm with single-slot buckets; and the source-shaped take/local/drain
+algorithm. Direction and cell shape are compile-time parameters of the
+existing native control, not another copied harness. Native direct cleanup
+retains its ascending order; source-shaped cleanup, like WF, takes cells in
+descending order. That remaining algorithm difference is part of their
+whole-trace comparison. All preserve the original public-helper retention
+policy. Private functions remain ordinarily optimizable.
+
+The single-slot cells have scalar/record strides 32/280, Pair offset 8 and
+deleted-flag offsets 24/272. Actual WF IR stores the flag as `i1`, occupying
+one byte; C uses a one-byte `bool`. `B(C)=16+C*S` with these larger strides
+therefore gives both implementations' requested bytes. Growth adds one
+`B(T)` allocation and peaks at `B(C)+B(T)`; positive-capacity rehash adds one
+`B(C)` per round and peaks at `2*B(C)`. Empty rehash adds no request. C does
+not initialize inactive Pair bytes, so any WF initialization is a lowering
+cost, not a forced condition of the native floor.
+
+The original primary/edit/boundary sets explicitly exclude the new variants
+and keep their original implementation order. The rebuild set adds three C
+controls and one WF candidate to the existing seven implementations per
+payload: four cells, eleven implementations, eleven paired seeds, two modes
+and two reversed cohorts. Its 1936-row measurement has not yet been run.
+New control correctness is limited to these two paths at `(capacity,count)`
+`(0,0)`, `(1,1)`, `(3,2)`, `(3,3)` and `(63,55)`, retaining the existing three
+round counts, three seeds and both hash kinds. `slot-check.wf` separately
+exercises the full operation chain and owning-child identities in all three
+CLI configurations with the quarantining observer.
+
+The extended `build-candidates build-costs` construction passed in 39.62 s
+with the same v0.67 compiler and Apple Clang 21. It produced all five source
+fixtures and the six-entry trace module; 54 selected public/callback
+definitions receive the retained treatment. At this checkpoint the new
+`check` execution is pending the shared verification guard, and no rebuild
+timings have been taken. Construction is not a substitute for those checks.
+
+Optimized wide rebuild paths distinguish new extent `N`, old materialized
+extent `O`, and old live owners `L`. Each single-slot backing requests `16+280*N`
+bytes. The following transfers are dynamic path counts; empty old cells
+still contribute to `O` but not `L`.
+
+| Implementation | Initialization per new cell | Snapshot per old cell | Transfer per live owner |
+|---|---|---|---|
+| WF normal | memset 272 B + deleted byte | memcpy 264 B | memcpy 264 B |
+| WF retained | same | memcpy 272 B | memcpy 264 B |
+| Source-shaped C normal | length 8 B + deleted byte | memcpy 272 B | memmove 264 B |
+| Source-shaped C retained | same | memcpy 280 B | memmove 264 B |
+| Native descending enum C | tag 4 B | none | memcpy 264 B |
+| Native descending single-slot C | length 8 B + deleted byte | none | memcpy 264 B |
+
+The live transfer's IR length is `264*len`; the admitted single-slot owner
+has `len=1` on that path. LLVM has already collapsed the source append loop.
+There is no bulk copy of the old backing and no heap allocation for staging.
+The public reserve/rehash result occupies 8 B, so this boundary does not
+carry a wide Put result. Both source and C private rebuild helpers remain
+ordinarily optimizable. WF's 272-byte new-cell initialization becomes eight
+paired vector stores and one vector store on this AArch64 target. Original
+enum `SparseVacant` construction also clears its inactive payload; this
+initialization cost is not unique to the single-slot representation.
+
+This inspection uses raw WF module SHA-256
+`57c229193e564088aef3cd2315b959d4caea55ae1f3c9d25dbbedb5e4f34eadd`,
+normal/retained optimized WF modules
+`e217feea80f8f504d716197ccba408f19954f66fc2b80547e541b860e11f71a3` /
+`e39573b54bc561392e7410fcbc8775b2673f80c2b68a6c9bb2806a8c39afb107`,
+and normal/retained optimized C modules
+`e2ede7dd2bfa5b0e68ef401edfb3f0dc973364329b0f2b263e38300f21b51b56` /
+`3bf2d18bd2f30dff80a2cbfcac84e993ab82c000ab84f8685b6fd97035eae224`.
+The C source is
+`438aadb4773e7a9c990a6834da6ab7f77aab56684cdce1b6d11948b05f480523`;
+the extended adapter is
+`3687be38e4e7d77982c34a76ddc7b8d7013fc1bbfcf1b15db7a2845cd56be001`.
+These are construction and inspection identities, not new timing identities.

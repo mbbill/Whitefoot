@@ -55,6 +55,11 @@ binding MapCostSparseKey : SparseKey<u64, MapCostEnv> {
   equal = map_cost_equal;
 }
 
+binding MapCostSlotKey : SlotKey<u64, MapCostEnv> {
+  hash = map_cost_hash;
+  equal = map_cost_equal;
+}
+
 fn map_cost_key(index: own u64) -> result: own u64 pure {
   let doubled = index *wrap 2_u64;
   return doubled +wrap 1_u64;
@@ -576,10 +581,132 @@ fn map_cost_sparse_record_trace(capacity: own u64, count: own u64, rounds: own u
   return map_cost_sparse_trace::<MapCostWide>(capacity: capacity, count: count, rounds: rounds, seed: seed, path: path, collide: collide);
 }
 
+fn map_cost_slot_trace<interface MapCostElement<T>>(capacity: own u64, count: own u64, rounds: own u64, seed: own u64, path: own u64, collide: own u64) -> result: own u64 pure contract {
+  requires capacity <= 8192_u64;
+  requires count <= capacity;
+} {
+  let salt = ixor(seed, 11400714819323198485_u64);
+  let colliding = collide != 0_u64;
+  let env = MapCostEnv(salt: salt, collide: colliding);
+  let map = slot_map_new::<u64, T, 16384>(capacity: capacity);
+  let digest = MapCostDigest(ordered: seed, sum: 0_u64, parity: 0_u64, count: 0_u64);
+  for (index in 0_u64..count) {
+    let key = map_cost_key(index: index);
+    let next = seed +wrap index;
+    let value = MapCostElement::make(seed: next);
+    let inserted = slot_map_put::<MapCostSlotKey, T, 16384>(map: &map, key: key, value: move value, env: &env);
+    match move inserted {
+      SlotInserted() => {
+        map_cost_ordered(env: &digest, value: 0_u64);
+      }
+      SlotReplaced(previous: pair) => {
+        map_cost_ordered(env: &digest, value: 1_u64);
+        let SlotPair(key: old_key, value: old_value) = move pair;
+        let content = MapCostElement::content(key: old_key, value: move old_value);
+        map_cost_ordered(env: &digest, value: content);
+      }
+      SlotFull(offered: pair) => {
+        map_cost_ordered(env: &digest, value: 2_u64);
+        let SlotPair(key: old_key, value: old_value) = move pair;
+        let content = MapCostElement::content(key: old_key, value: move old_value);
+        map_cost_ordered(env: &digest, value: content);
+      }
+    }
+  }
+  for (round in 0_u64..rounds) {
+    if path == 5_u64 {
+      let lower_half = count / 2_u64;
+      let removed_count = count - lower_half;
+      for (removed_index in 0_u64..removed_count) {
+        let index = removed_index *wrap 2_u64;
+        let key = map_cost_key(index: index);
+        let removed = slot_map_remove::<MapCostSlotKey, T, 16384>(map: &map, key: &key, env: &env);
+        match move removed {
+          Some(value: pair) => {
+            map_cost_ordered(env: &digest, value: 1_u64);
+            let SlotPair(key: old_key, value: old_value) = move pair;
+            let content = MapCostElement::content(key: old_key, value: move old_value);
+            map_cost_ordered(env: &digest, value: content);
+          }
+          None() => {
+            map_cost_ordered(env: &digest, value: 0_u64);
+          }
+        }
+        let absent = slot_map_lookup::<MapCostSlotKey, T, MapCostDigest, u64, fn MapCostElement::observe, 16384>(map: &map, key: &key, key_env: &env, visit_env: &digest);
+        map_cost_lookup_result(found: absent, digest: &digest);
+      }
+      let rebuilt = slot_map_rehash::<MapCostSlotKey, T, 16384>(map: &map, env: &env);
+      map_cost_rebuild_result(result: rebuilt, digest: &digest);
+      for (index in 0_u64..count) {
+        let key = map_cost_key(index: index);
+        let found = slot_map_lookup::<MapCostSlotKey, T, MapCostDigest, u64, fn MapCostElement::observe, 16384>(map: &map, key: &key, key_env: &env, visit_env: &digest);
+        map_cost_lookup_result(found: found, digest: &digest);
+      }
+      for (removed_index in 0_u64..removed_count) {
+        let index = removed_index *wrap 2_u64;
+        let key = map_cost_key(index: index);
+        let next_round = round +wrap 1_u64;
+        let shift = next_round *wrap count;
+        let base = seed +wrap shift;
+        let next = base +wrap index;
+        let value = MapCostElement::make(seed: next);
+        let inserted = slot_map_put::<MapCostSlotKey, T, 16384>(map: &map, key: key, value: move value, env: &env);
+        match move inserted {
+          SlotInserted() => {
+            map_cost_ordered(env: &digest, value: 0_u64);
+          }
+          SlotReplaced(previous: pair) => {
+            map_cost_ordered(env: &digest, value: 1_u64);
+            let SlotPair(key: old_key, value: old_value) = move pair;
+            let content = MapCostElement::content(key: old_key, value: move old_value);
+            map_cost_ordered(env: &digest, value: content);
+          }
+          SlotFull(offered: pair) => {
+            map_cost_ordered(env: &digest, value: 2_u64);
+            let SlotPair(key: old_key, value: old_value) = move pair;
+            let content = MapCostElement::content(key: old_key, value: move old_value);
+            map_cost_ordered(env: &digest, value: content);
+          }
+        }
+      }
+    } else if path == 4_u64 {
+      let target = 1_u64;
+      if capacity != 0_u64 {
+        set target = capacity * 2_u64;
+      }
+      let grown = slot_map_reserve::<MapCostSlotKey, T, 16384>(map: &map, capacity: target, env: &env);
+      map_cost_rebuild_result(result: grown, digest: &digest);
+      for (index in 0_u64..count) {
+        let key = map_cost_key(index: index);
+        let found = slot_map_lookup::<MapCostSlotKey, T, MapCostDigest, u64, fn MapCostElement::observe, 16384>(map: &map, key: &key, key_env: &env, visit_env: &digest);
+        map_cost_lookup_result(found: found, digest: &digest);
+      }
+    }
+  }
+  slot_map_free::<u64, T, MapCostDigest, fn MapCostElement::consume, 16384>(map: move map, env: &digest);
+  return map_cost_finish(digest: digest);
+}
+
+fn map_cost_slot_word_trace(capacity: own u64, count: own u64, rounds: own u64, seed: own u64, path: own u64, collide: own u64) -> result: own u64 pure contract {
+  requires capacity <= 8192_u64;
+  requires count <= capacity;
+} {
+  return map_cost_slot_trace::<MapCostWord>(capacity: capacity, count: count, rounds: rounds, seed: seed, path: path, collide: collide);
+}
+
+fn map_cost_slot_record_trace(capacity: own u64, count: own u64, rounds: own u64, seed: own u64, path: own u64, collide: own u64) -> result: own u64 pure contract {
+  requires capacity <= 8192_u64;
+  requires count <= capacity;
+} {
+  return map_cost_slot_trace::<MapCostWide>(capacity: capacity, count: count, rounds: rounds, seed: seed, path: path, collide: collide);
+}
+
 fn main() -> status: own ExitStatus pure {
   let dense_word = map_cost_dense_word_trace(capacity: 3_u64, count: 2_u64, rounds: 2_u64, seed: 17_u64, path: 5_u64, collide: 0_u64);
   let dense_record = map_cost_dense_record_trace(capacity: 3_u64, count: 2_u64, rounds: 1_u64, seed: 17_u64, path: 4_u64, collide: 1_u64);
   let sparse_word = map_cost_sparse_word_trace(capacity: 3_u64, count: 2_u64, rounds: 2_u64, seed: 17_u64, path: 3_u64, collide: 1_u64);
   let sparse_record = map_cost_sparse_record_trace(capacity: 3_u64, count: 2_u64, rounds: 2_u64, seed: 17_u64, path: 2_u64, collide: 0_u64);
+  let slot_word = map_cost_slot_word_trace(capacity: 3_u64, count: 2_u64, rounds: 2_u64, seed: 17_u64, path: 4_u64, collide: 0_u64);
+  let slot_record = map_cost_slot_record_trace(capacity: 3_u64, count: 2_u64, rounds: 2_u64, seed: 17_u64, path: 5_u64, collide: 1_u64);
   return exit_status(code: 0_u8);
 }
