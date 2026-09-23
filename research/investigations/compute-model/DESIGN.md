@@ -2491,7 +2491,8 @@ flags for formal kernels whose complete frames all fit, beginning with
 records. Stencil and other nested cases need their own correspondence result.
 The unchanged sparse receiver must still emit below the bound and pass its
 native oracle; the fixed hosted comparison must no longer reproduce the known
-adverse records signal. These are prospective criteria, not claimed results.
+adverse records signal. These criteria were fixed before qualification; the
+results below distinguish payload correspondence from measured execution.
 No local timing run, new threshold, padding or type-specific exception is
 selected. Broader pruning of fitting tasks is deferred in the maintained TODO
 until a demonstrated benefit and qualified comparison justify that wider
@@ -2558,6 +2559,99 @@ LLVM emission took 0.72 seconds. These are construction and qualification
 costs, not a program performance comparison. Sparse-frontier native behavior,
 worker participation and performance remain separate qualification work.
 
+### Rescue-only payload qualification (2026-09-22)
+
+At `79775234`, the controlled regression restores only the old refusal's
+discard-and-retry behavior: replacing CFG reuse with `return Ok(false)`.
+The test-only construction counter remains present. Its library-test image
+took 80.85 seconds to construct; the sole growth case then failed as intended
+at depth two with three constructions instead of two, after depth one passed.
+The invocation took 0.72 seconds and stopped before the larger depths. Exact
+committed source bytes were restored before constructing the corrected test
+image in 81.32 seconds. Its 78 focused tests passed in 14.39 seconds: 32
+lowering, 24 storage, 12 loop-split, six tail-call, one cleanup and three
+read-only-reference pricing cases. These include depths 1/2/4/6, the fitting
+256-byte versus rescued 48-byte frame boundary, and native scalar/Unit fallback
+with retained inner splitting and sibling-call metadata. This isolates the
+repeated-construction mechanism; it is not a whole-compiler complexity proof
+or an execution-performance benchmark. The grouped scratch controller's final
+whole-worktree-clean assertion saw the concurrent research-document update and
+returned one after the successful tests; all 313 compiler/specification input
+hashes and exact restored source were independently verified, without reruns.
+
+The ordinary gate-profile CLI took 43.90 seconds to construct. Five formal
+LLVM emissions and comparison took 0.98 seconds on the same Apple M1 Pro
+host as the saved `9450decc` baseline: all five raw modules, five bound modules
+and five complete host-adapted modules are byte-identical. The 19 formal
+fixture/instrument inputs match. No native timing comparison was run locally.
+
+The unchanged sparse source emitted with ordinary `--par --emit-llvm
+--par-ledger` in 0.16 seconds. Routing retains 21 captures and its original
+256-byte frame; the receiver is rescued from the original 352-byte estimate
+to 11 captures and an actual 168-byte lane request. Their static work prices
+remain 363 and 2,580. One plain native image took 0.67 seconds to construct;
+its W1 and W4 oracle executions took 1.02 and 0.47 seconds, respectively.
+Each passed 96 configurations and 70,021,040 distance/input comparisons.
+The guarded complete qualification took 2.58 seconds, with all 31 source,
+adapter, oracle and runtime inputs checked unchanged before and after.
+Only saved scratch checkout paths were adapted to the current source tree.
+The image contains no observer symbols. Its module SHA-256 is
+`8bb906e243bfaed00117d66cdeaacbb67abcdfbf253a41ffea4ae87cc3edff67` and
+native image SHA-256 is
+`57c07839dee3872493368d7ca4322b374797122cec2641763541b3f65343be2e`.
+These checks qualify current native results, not helper participation or FIFO
+performance; the earlier failed FIFO null session remains closed.
+
+The automatic hosted comparisons at implementation `8fe62a10`
+([run 35816171952](https://github.com/mbbill/Whitefoot/actions/runs/35816171952))
+and its main integration `005000c`
+([run 35816497671](https://github.com/mbbill/Whitefoot/actions/runs/35816497671))
+both use baseline `e6349b80`. Their synthetic candidates `b48bd277` and
+`4ccef357` have the same tree `c049c7af8afbf1d097bbc6d41311d26401c1dc3d`,
+also the tree of `005000c`. All five formal kernels' complete LLVM modules,
+kernel objects and linked executables are byte-identical between baseline
+and candidate and across the two sessions. Ordinary runtime objects and all
+33 common recorded source/runtime inputs also match. The only differing
+image-directory file is the native configuration's checkout path. This is
+direct evidence that the bounded policy preserves these fitting programs'
+payloads; it does not identify the cause of the earlier different-payload
+records observation.
+
+Both hosts report AMD EPYC 7763, four logical CPUs on two cores, Linux
+6.17.0-1022-azure, clang 18.1.3 and rustc 1.98.1, using the ordinary `-O2`
+runtime. Each session retains five paired passes and its null control:
+
+| Hosted run | Records W1/W2/W4 baseline/candidate wall | Records W4 CPU | Null suspects | Comparison suspects |
+| --- | --- | --- | --- | --- |
+| `35816171952` | 1.003118 / 0.992181 / 0.999169 | 0.984852 | Stencil W4: 0.952463, four of five adverse | 0 |
+| `35816497671` | 0.997282 / 0.982966 / 0.982410 | 0.965794 | 0; stencil W4 is 0.973062 | 0 |
+
+Both comparisons pass the existing rule. Preserve the first session's null
+suspect: these are two automatic revision qualifications, not repeated samples
+selected for a favorable result, and neither supplies an optimization speedup
+between identical executables. Artifacts `10732050779` and `10731244189`
+retain the complete payloads, identities and samples; their downloaded ZIP
+SHA-256 values are respectively
+`b3f478f693ed6b0e9b282750fb89fb22c9b7d2499a7e6e6c2f460e3ee0af0232` and
+`096a6f3b1d8871d45130984af294add11d4c220c218301452fe54d61ca9edaee`.
+The following `79775234` change only repairs test access to the public emitter;
+it leaves this production implementation unchanged and requires its own
+correctness qualification.
+
+The automatic test-repair qualification
+([run 35817040045](https://github.com/mbbill/Whitefoot/actions/runs/35817040045))
+also compares with `e6349b80`, using synthetic `9aefcf3c`. Records W1/W2/W4
+wall ratios are 1.000321/1.015097/1.019881, with W4 CPU 1.035708 and zero
+comparison suspects. Its null retains another stencil W4 suspect: wall
+0.918926, four of five adverse, CPU 0.904133. This automatic run also passes
+the rule; its adverse null result is retained, not used to select another
+session or assert a speedup. Its synthetic tree equals `79775234`, and all
+five complete LLVM modules, kernel objects and linked executables remain
+byte-identical to its baseline and the preceding sessions. Its 33 common
+recorded inputs and runtime objects also match, on the same reported host
+class. Artifact `10731679336` retains the payloads and samples; its ZIP SHA-256
+is `6339dbf0d24cc7b02a53742c27d67504e4588ab30c04cd77ac821facce9f028f`.
+
 ### Records W4 hosted comparison remains unresolved
 
 The main-integration revision repeats this signal in
@@ -2568,8 +2662,8 @@ cores, clang 18.1.3, the null has zero suspects and records W4 reports
 baseline/candidate wall `0.926447`, five of five adverse, and CPU `0.904075`.
 The retained artifact is `/private/tmp/whitefoot-pr78-compute-35814248071`.
 This is evidence motivating the bounded rescue policy above, not a causal
-verdict or a qualification of that policy; its compiler has not yet been
-constructed or compared in this record.
+verdict. The narrowed policy's qualification preserves the fitting payloads;
+the cause of this earlier all-loop pruning result remains unresolved.
 
 The formal comparison already reported a `records` W4 suspect at `30198a19`.
 [Run 35706215154](https://github.com/mbbill/Whitefoot/actions/runs/35706215154)
