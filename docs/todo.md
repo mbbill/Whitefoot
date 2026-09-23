@@ -162,6 +162,26 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   before replacing the maintained one-slot form. Defer that distinct
   consumer experiment rather than infer a Slab improvement from map timings.
 
+- **PriorityQueue has distinct sift and return-boundary costs.** The
+  [complete library comparison](../research/experiments/container-representation/priority-library/RESULTS.md)
+  measures retained scalar pop/push at 1.510--1.722 times same-algorithm C for
+  16/256 elements. WF returns push's Result through a pointer and clears its
+  inactive payload; C returns the scalar result in registers. Their causal
+  shares are unmeasured. Normal wide replacement also costs 1.178--1.289 times
+  the swap control at those sizes, while retained replacement reverses the
+  direction. Separately, wide hole-sift C halves counted movement on large
+  complete traces; ordinary WF swaps cannot be credited with that algorithm's
+  cost. Validate return placement and initialization with unchanged-source
+  compiler variants, the full owning/refusal chains, preserved C controls,
+  both cohorts and emitted-code attribution. Investigate the wide replacement
+  reversal before choosing an inlining or forwarding change. A general
+  improvement must beat control variation without regressing the complete
+  matrix; source ownership must remain intact. Defer ABI changes and a new
+  storage operation until those discriminators establish their benefit and
+  interference obligations; reopen for the indexed heap composition or an
+  application dominated by these paths. Do not report universal native parity
+  from the large scalar queue results.
+
 - **Short Vector cycles retain unresolved lowering costs.** The paired
   consumption experiment improves the large-record paths but slows the
   16-element scalar reuse chain in both source orders. Ordinary optimization

@@ -1,0 +1,202 @@
+struct PriorityCostDigest {
+  value: u64;
+}
+
+struct PriorityCostOrder {
+}
+
+nodrop struct PriorityCostRecord {
+  words: Array<u64, 32>;
+}
+
+interface PriorityCostElement<T> {
+  fn make(seed: u64) -> value: T pure;
+  fn accept(env: &PriorityCostDigest, value: T) -> result: unit writes(env);
+  fn compare(env: &PriorityCostOrder, left: &T, right: &T) -> order: i32 reads(env), reads(left), reads(right);
+  fn observe(env: &PriorityCostDigest, value: &T) -> result: u64 reads(value), writes(env);
+}
+
+fn priority_cost_next(state: u64) -> result: u64 pure {
+  let product = state *wrap 6364136223846793005_u64;
+  return product +wrap 1442695040888963407_u64;
+}
+
+fn priority_cost_word_make(seed: u64) -> value: u64 pure {
+  return seed;
+}
+
+fn priority_cost_word_accept(env: &PriorityCostDigest, value: u64) -> result: unit writes(env) {
+  let prefix = deref(env).value *wrap 131_u64;
+  set deref(env).value = prefix +wrap value;
+  return unit;
+}
+
+fn priority_cost_word_compare(env: &PriorityCostOrder, left: &u64, right: &u64) -> order: i32 reads(left), reads(right) {
+  if deref(left) < deref(right) {
+    return -1_i32;
+  }
+  if deref(left) > deref(right) {
+    return 1_i32;
+  }
+  return 0_i32;
+}
+
+fn priority_cost_word_observe(env: &PriorityCostDigest, value: &u64) -> result: u64 reads(value) {
+  return deref(value);
+}
+
+fn priority_cost_record_make(seed: u64) -> value: PriorityCostRecord pure {
+  let words = array_filled::<u64, 32>(value: 0_u64);
+  for (index in 0_u64..32_u64) {
+    set words[index] = seed +wrap index;
+  }
+  return PriorityCostRecord(words: words);
+}
+
+fn priority_cost_record_accept(env: &PriorityCostDigest, value: PriorityCostRecord) -> result: unit writes(env) {
+  let PriorityCostRecord(words: words) = move value;
+  for (index in 0_u64..32_u64) {
+    let word = words[index];
+    let prefix = deref(env).value *wrap 131_u64;
+    set deref(env).value = prefix +wrap word;
+  }
+  return unit;
+}
+
+fn priority_cost_record_compare(env: &PriorityCostOrder, left: &PriorityCostRecord, right: &PriorityCostRecord) -> order: i32 reads(left), reads(right) {
+  if deref(left).words[0_u64] < deref(right).words[0_u64] {
+    return -1_i32;
+  }
+  if deref(left).words[0_u64] > deref(right).words[0_u64] {
+    return 1_i32;
+  }
+  return 0_i32;
+}
+
+fn priority_cost_record_observe(env: &PriorityCostDigest, value: &PriorityCostRecord) -> result: u64 reads(value) {
+  return deref(value).words[0_u64];
+}
+
+binding PriorityCostWord : PriorityCostElement<u64> {
+  make = priority_cost_word_make;
+  accept = priority_cost_word_accept;
+  compare = priority_cost_word_compare;
+  observe = priority_cost_word_observe;
+}
+
+binding PriorityCostWide : PriorityCostElement<PriorityCostRecord> {
+  make = priority_cost_record_make;
+  accept = priority_cost_record_accept;
+  compare = priority_cost_record_compare;
+  observe = priority_cost_record_observe;
+}
+
+fn priority_cost_prefix<interface PriorityCostElement<T>>(count: u64, seed: u64) -> storage: Box<Slots<T>> pure contract {
+  requires count <= 4096_u64;
+  ensures storage.inner.cap <= 4096_u64;
+} {
+  let storage = box_slots_new::<T>(capacity: count);
+  let state = seed;
+  for @fill (
+    index in 0_u64..count,
+    invariant length_low: storage.inner.len >= index,
+    invariant length_high: storage.inner.len <= index,
+    invariant capacity_low: storage.inner.cap >= count,
+    invariant capacity_high: storage.inner.cap <= count
+  ) {
+    set state = priority_cost_next(state: state);
+    let value = PriorityCostElement::make(seed: state);
+    place_back(window: &storage.inner, value: move value);
+  }
+  return move storage;
+}
+
+fn priority_cost_trace<interface PriorityCostElement<T>>(count: u64, rounds: u64, seed: u64, path: u64) -> result: u64 pure contract {
+  requires count <= 4096_u64;
+} {
+  doc "The cleanup path needs no heap ordering: its raw initialized prefix is consumed in reverse physical order without comparisons. Other paths consume through the queue's ordered drain.";
+  let digest = PriorityCostDigest(value: seed);
+  let order = PriorityCostOrder();
+  if path >= 3_u64 {
+    let storage = priority_cost_prefix::<PriorityCostElement<T>>(count: count, seed: seed);
+    if path == 4_u64 {
+      let queue = PriorityQueue<T, 4096>(storage: move storage);
+      priority_queue_free::<T, PriorityCostDigest, fn PriorityCostElement::accept, 4096>(queue: move queue, env: &digest);
+      return digest.value;
+    }
+    let queue = priority_queue_heapify::<T, PriorityCostOrder, fn PriorityCostElement::compare, 4096>(storage: move storage, env: &order);
+    priority_queue_drain::<T, PriorityCostOrder, fn PriorityCostElement::compare, PriorityCostDigest, fn PriorityCostElement::accept, 4096>(queue: &queue, order_env: &order, consume_env: &digest);
+    priority_queue_free::<T, PriorityCostDigest, fn PriorityCostElement::accept, 4096>(queue: move queue, env: &digest);
+    return digest.value;
+  }
+  let queue = priority_queue_new::<T, 4096>();
+  if path < 2_u64 {
+    let reserved = priority_queue_reserve::<T, 4096>(queue: &queue, total: count);
+  }
+  let state = seed;
+  for (index in 0_u64..count) {
+    set state = priority_cost_next(state: state);
+    let value = PriorityCostElement::make(seed: state);
+    match priority_queue_push::<T, PriorityCostOrder, fn PriorityCostElement::compare, 4096>(queue: &queue, value: move value, env: &order) {
+      Ok(value: accepted) => {
+      }
+      Err(error: refused) => {
+        PriorityCostElement::accept(env: &digest, value: move refused);
+      }
+    }
+  }
+  if path < 2_u64 {
+    let length = priority_queue_len::<T, 4096>(queue: &queue);
+    if length > 0_u64 {
+      let top = priority_queue_peek::<T, PriorityCostDigest, u64, fn PriorityCostElement::observe, 4096>(queue: &queue, env: &digest);
+      let prefix = digest.value *wrap 131_u64;
+      set digest.value = prefix +wrap top;
+    }
+    for (round in 0_u64..rounds) {
+      for (index in 0_u64..count) {
+        set state = priority_cost_next(state: state);
+        let value = PriorityCostElement::make(seed: state);
+        let available = priority_queue_len::<T, 4096>(queue: &queue);
+        if available > 0_u64 {
+          if path == 0_u64 {
+            let removed = priority_queue_pop::<T, PriorityCostOrder, fn PriorityCostElement::compare, 4096>(queue: &queue, env: &order);
+            PriorityCostElement::accept(env: &digest, value: move removed);
+            match priority_queue_push::<T, PriorityCostOrder, fn PriorityCostElement::compare, 4096>(queue: &queue, value: move value, env: &order) {
+              Ok(value: inserted) => {
+              }
+              Err(error: returned) => {
+                PriorityCostElement::accept(env: &digest, value: move returned);
+              }
+            }
+          } else {
+            let removed = priority_queue_replace_top::<T, PriorityCostOrder, fn PriorityCostElement::compare, 4096>(queue: &queue, value: move value, env: &order);
+            PriorityCostElement::accept(env: &digest, value: move removed);
+          }
+        } else {
+          PriorityCostElement::accept(env: &digest, value: move value);
+        }
+      }
+    }
+  }
+  priority_queue_drain::<T, PriorityCostOrder, fn PriorityCostElement::compare, PriorityCostDigest, fn PriorityCostElement::accept, 4096>(queue: &queue, order_env: &order, consume_env: &digest);
+  priority_queue_free::<T, PriorityCostDigest, fn PriorityCostElement::accept, 4096>(queue: move queue, env: &digest);
+  return digest.value;
+}
+
+fn priority_cost_word_trace(count: u64, rounds: u64, seed: u64, path: u64) -> result: u64 pure contract {
+  requires count <= 4096_u64;
+} {
+  return priority_cost_trace::<PriorityCostWord>(count: count, rounds: rounds, seed: seed, path: path);
+}
+
+fn priority_cost_record_trace(count: u64, rounds: u64, seed: u64, path: u64) -> result: u64 pure contract {
+  requires count <= 4096_u64;
+} {
+  return priority_cost_trace::<PriorityCostWide>(count: count, rounds: rounds, seed: seed, path: path);
+}
+
+fn main() -> status: ExitStatus pure {
+  let word = priority_cost_word_trace(count: 3_u64, rounds: 2_u64, seed: 17_u64, path: 0_u64);
+  let record = priority_cost_record_trace(count: 3_u64, rounds: 2_u64, seed: 17_u64, path: 3_u64);
+  return exit_status(code: 0_u8);
+}

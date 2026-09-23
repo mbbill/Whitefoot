@@ -1216,6 +1216,16 @@ compiler or specification changes. Generic array snapshot forwarding, indexed
 position repair and the full ordered-container chain are not claims made by
 this first queue implementation.
 
+The [complete cost matrix](../../experiments/container-representation/priority-library/RESULTS.md)
+retains 2,520 samples, both cohorts and all independent-oracle checks. Large
+scalar pop/push and growth are comparable to the native controls in this run;
+retained small/medium scalar pop/push is 1.510--1.722 times swap C. Wide sifts
+also retain more movement than native hole sifting. The Result ABI and
+inactive-result stores are specific code differences, not isolated timing
+attributions. This establishes a reusable ordinary implementation and a
+replayable cost baseline, not uniform native parity or an optimal heap fanout.
+The maintained TODO retains these separate validation questions.
+
 ## Vector consumption trial
 
 The first library implementation continues from merged `8c02e875`. Its
