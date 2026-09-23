@@ -2435,17 +2435,75 @@ only by an earlier source phase or the function's tail. These bindings reach no
 runtime operation in the receiver but are forwarded through every loop block
 parameter.
 
-The selected change builds the ordinary chunk once, then traces runtime need
-backward through its block parameters. All ordinary instruction operands,
+The selected policy first checks the original conservative frame against the
+unchanged 256-byte limit. If it fits, retain its complete capture interface,
+reconstruction, forwarding, readonly-formal markers and preorder helper
+reservation. If it is too wide, build the ordinary chunk once and trace runtime
+need backward through its block parameters to try to rescue it. All ordinary instruction operands,
 helper arguments, cleanup subjects and returned values seed need. Only the
 compiler-generated entry operations that reconstruct captured Box slots are
 removable computations; their inputs become needed when the reconstructed
-value is needed. Nested chunks select their inputs before the enclosing chunk
-reads the nested call. Keep value identities, source operations, ownership,
+value is needed. Nested candidates complete their own fit-or-rescue choice
+before the enclosing chunk reads the nested call. Keep value identities, source operations, ownership,
 cleanup order, range proof, source Box representation, and the chunk's loop.
-Capture loads and projections in the parent wait until the reduced frame fits.
-A still-oversized candidate discards its tentative nested synthesis and ledger
-before normal lowering revisits the body.
+For originally wide frames, capture loads and projections in the parent wait
+until the reduced frame fits. This bounded policy supersedes the earlier
+all-loop pruning experiment below: the repeated records W4 performance signal
+remains unresolved while the candidate changes an already-fitting task's
+transport and placement. Removing those captures unlocks no new loop there;
+their removal has not been established as the cause of that signal.
+The sparse receiver supplies a concrete capability benefit for rescue.
+The original refusal path discarded tentative nested synthesis and lowered the
+body again. The PR #78 review identified that nested refusals repeat this at
+each depth, giving exponential construction despite a small final module.
+
+The selected repair reuses the completed candidate on refusal: splice its
+ordinary CFG into the parent and connect its result to the continuation, with
+no new runtime call. Map original binding roots back to the parent's values
+and remove the generated capture reconstruction, so fallback retains the
+original Box slots and cleanup authority. Remap definitions, operands, drops,
+source-call result identities, call-site locations and counted-range metadata;
+the parent's ordinary overlap collection then resolves the imported call
+sites. Original readonly-formal markers stay on the parent's existing formals,
+never on new block values. Nested functions and ledger rows survive once.
+An originally wide frame reserves its enclosing helper pair only after the
+reduced frame fits: its nested helpers consequently precede that rescued
+parent in ordinal and emission order. Known-fit frames retain their existing
+preorder reservations and names. Retaining preorder names for an undecided
+wide candidate would require a second function-ordinal relocation pass with
+no semantic consumer. The unchanged frame bound, permissions and ordinary loop operations
+continue to select the emitted shape; no timeout or work budget is introduced.
+
+Before implementation, the deterministic criterion is one candidate-body
+construction per permitted loop for small increasing depths of genuinely
+oversized nested frames. A test-only counter records construction before any
+discard, because final function counts cannot expose the old recurrence.
+Also retain a fitting inner split beneath a refused outer loop, and validate
+source-call/overlap metadata, counted extents, cleanup and native results.
+Splicing can revisit a retained IR node once per refusing ancestor, so its
+cost is polynomial in the lowered program; source-body construction is not
+repeated. Construction and execution remain separately measured.
+
+Before qualification of this narrowed policy, require exactly-fit and
+one-scalar-over controls at the same bound, and byte-identical emitted LLVM
+against exact main `9450decc6df47ef3ec34e452f98ff7a6282ee72d` under identical
+flags for formal kernels whose complete frames all fit, beginning with
+records. Stencil and other nested cases need their own correspondence result.
+The unchanged sparse receiver must still emit below the bound and pass its
+native oracle; the fixed hosted comparison must no longer reproduce the known
+adverse records signal. These are prospective criteria, not claimed results.
+No local timing run, new threshold, padding or type-specific exception is
+selected. Broader pruning of fitting tasks is deferred in the maintained TODO
+until a demonstrated benefit and qualified comparison justify that wider
+transport change.
+
+An ordinary call to a refused chunk would avoid repeated construction but add
+a runtime ABI and outlining cost to fallback. A source-path refusal cache
+would need to prove that capture representation and original-formal facts are
+invariant between parent and chunk contexts. Extracting every accepted loop
+from its parent would replace more of the working outlining path. Reusing the
+existing candidate needs only the local CFG transfer and its metadata, so
+those broader alternatives are not selected.
 
 The discriminating criterion is that the unchanged sparse receiver actually
 emits its split with a frame below the existing limit, while ordinary native
@@ -2453,9 +2511,8 @@ loop tests retain their independently checked results and cleanup. Formal
 structural cases must retain call-, cleanup-, return- and nested-helper-only
 uses, remove forwarding-only captures, and preserve ordinary lowering when a
 still-oversized candidate declines. These are lowering observations, not a
-performance verdict. Construction cost must be recorded separately: accepted
-candidates lower once, while declined candidates lower their body again for
-the ordinary path.
+performance verdict. The construction-count regression and ordinary fallback
+checks must qualify reuse as well as the reduced capture interface.
 
 Enlarging the lane limit preserves the accidental dependency on lexical scope.
 Writer phase helpers would work around it in every consumer. A source-use or
@@ -2472,17 +2529,20 @@ aggregate ID, including those with no remaining definition. The selected
 companion change seeds storage candidates from the existing flow graph's
 entry parameters, block parameters and instruction results. It keeps storage
 for every remaining ordinary definition, including unused ones. A tail-only
-fixed array in the existing captured-fold native test checks that removed
-aggregate captures leave no chunk slots; the existing aligned Box test checks
-that unused generated reconstruction disappears while used payload and
-measure paths retain their original cleanup behavior. Type tombstones and a
+fixed array in the existing captured-fold native test checks that a rescued
+frame leaves no phantom aggregate chunk slots. The aligned Box test retains
+its fitting frame's original unused payload transport while checking that
+used payload and measure paths retain their cleanup behavior: its changed
+capture-count assertion narrows an optimization observation, not the no-read
+or single-owner cleanup requirement. Type tombstones and a
 whole-chunk renumberer would introduce another representation or rewrite
 without serving this consumer.
 
-Emitting the same source with `--par --par-scalar-leaf-limit off --emit-llvm
---par-ledger` meets the frame criterion:
+The earlier all-loop pruning candidate emitted the same source with
+`--par --par-scalar-leaf-limit off --emit-llvm --par-ledger` and met the frame
+criterion. These dated values do not describe the new rescue-only policy:
 
-| `outbox_level` phase | Before selection | After selection | Current work price |
+| `outbox_level` phase | Before selection | After selection | Dated work price |
 | --- | --- | --- | --- |
 | Routing, `6.0.16.0` | 21 captures, 256-byte frame | 10 captures, 152-byte frame; split emitted | 363 per iteration, static |
 | Receiver, `6.0.27.0` | 29 captures, 352-byte estimate; split declined | 11 captures, 168-byte frame; `+wrap` count reduction emitted | 2,580 per iteration, static |
@@ -2499,6 +2559,17 @@ costs, not a program performance comparison. Sparse-frontier native behavior,
 worker participation and performance remain separate qualification work.
 
 ### Records W4 hosted comparison remains unresolved
+
+The main-integration revision repeats this signal in
+[run 35814248071, job 107032257821](https://github.com/mbbill/Whitefoot/actions/runs/35814248071/job/107032257821):
+synthetic candidate `cd9a6329` has tree `75cbce23`, equal to work head
+`3eb29b09`, against baseline `9450decc`. On AMD 7763, four logical CPUs/two
+cores, clang 18.1.3, the null has zero suspects and records W4 reports
+baseline/candidate wall `0.926447`, five of five adverse, and CPU `0.904075`.
+The retained artifact is `/private/tmp/whitefoot-pr78-compute-35814248071`.
+This is evidence motivating the bounded rescue policy above, not a causal
+verdict or a qualification of that policy; its compiler has not yet been
+constructed or compared in this record.
 
 The formal comparison already reported a `records` W4 suspect at `30198a19`.
 [Run 35706215154](https://github.com/mbbill/Whitefoot/actions/runs/35706215154)

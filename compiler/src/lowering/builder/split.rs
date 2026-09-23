@@ -64,7 +64,7 @@
 //! here, at compile time, and a loop that does not fit declines with a line
 //! naming the width. Every decline in [`Decline`] is reported the same way.
 
-use std::cell::RefCell;
+use std::{cell::RefCell, collections::HashMap};
 
 use crate::semantic::{
     BindingId, CheckedDrop, CheckedLoopId, CheckedStatement, LoopActualization, LoopCombine,
@@ -76,8 +76,8 @@ use crate::{
     IrSynthesis, IrTerminator, IrType, IrValueId, LANE_FRAME_BYTES, LoweringFailure, NodePath,
 };
 
-use super::IrBuilder;
 use super::loops::U64;
+use super::{BuildingBlock, IrBuilder};
 
 /// The widest scalar the backend puts in a frame, and so the alignment every
 /// frame field is conservatively charged.
@@ -164,6 +164,9 @@ pub(crate) struct Synthesis {
     base: u32,
     functions: Vec<Option<IrFunction>>,
     ledger: Vec<String>,
+    /// Observe construction, including work a later refusal used to discard.
+    #[cfg(test)]
+    pub(super) candidate_constructions: usize,
 }
 
 impl Synthesis {
@@ -172,6 +175,8 @@ impl Synthesis {
             base,
             functions: Vec::new(),
             ledger: Vec::new(),
+            #[cfg(test)]
+            candidate_constructions: 0,
         }
     }
 
@@ -206,12 +211,23 @@ impl Synthesis {
     }
 }
 
+/// A completed candidate can become either an outlined chunk or the ordinary
+/// CFG at its source site. The extra identities are construction metadata;
+/// they are consumed here and never become a second executable IR.
+struct BuiltChunk {
+    function: IrFunction,
+    needed: Vec<bool>,
+    binding_roots: HashMap<BindingId, IrValueId>,
+    reconstructions: Vec<IrValueId>,
+    call_results: HashMap<NodePath, (IrBlockId, IrValueId)>,
+}
+
 impl IrBuilder<'_> {
-    /// Actualizes one counted loop, or reports that it did not.
+    /// Lowers one split candidate, or leaves the ordinary path to its caller.
     ///
-    /// Returns whether the loop was emitted as a split. A `false` answer leaves
-    /// the builder exactly where it found it, so the caller lowers the ordinary
-    /// block graph.
+    /// A candidate whose reduced frame is too wide reuses its completed CFG
+    /// at the source site. Only a refusal before body construction returns
+    /// `false`, leaving the caller to build the ordinary graph once.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn split_counted_range(
         &mut self,
@@ -254,9 +270,9 @@ impl IrBuilder<'_> {
             return Ok(false);
         }
 
-        // The ordinary graph initially forwards the complete scope. Build it
-        // once, then retain only captures with a runtime use reachable through
-        // those forwarding edges, including generated cleanup and nested splits.
+        // Preserve the original capture interface when it already fits. A
+        // wider scope gets one completed candidate whose runtime uses can
+        // rescue its frame, including generated cleanup and nested splits.
         let mut bindings: Vec<BindingId> = self
             .bindings
             .keys()
@@ -279,8 +295,8 @@ impl IrBuilder<'_> {
             // use. The chunk reverses the Array projection before rebuilding
             // borrowed local owner storage; it acquires no cleanup authority.
             // Other Box kinds retain the block pointer, and inline affine
-            // aggregates retain their address form. Unused bindings disappear
-            // before any parent load or payload projection is emitted.
+            // aggregates retain their address form. The rescue path removes
+            // unused bindings before any parent load or projection is emitted.
             let local_slot = if self.addressed_bindings.contains(&binding)
                 && let IrType::Address(referent @ IrAddressed::Nominal(nominal)) = stored_type
                 && matches!(
@@ -323,13 +339,17 @@ impl IrBuilder<'_> {
             });
         }
 
-        let (checkpoint, splitter, chunk) = {
+        let prune_captures = self.frame_decline(result_type, &captures)?.is_some();
+        // Preserve the established preorder names and complete fitting ABI.
+        // Only a still-undecided wide frame delays its helper reservation.
+        let reserved = if prune_captures {
+            None
+        } else {
             let mut synthesis = self.synthesis.borrow_mut();
-            let checkpoint = (synthesis.functions.len(), synthesis.ledger.len());
-            (checkpoint, synthesis.reserve()?, synthesis.reserve()?)
+            Some((synthesis.reserve()?, synthesis.reserve()?))
         };
-        let (chunk_function, needed) = self.build_chunk(
-            chunk,
+        let ledger_start = self.synthesis.borrow().ledger.len();
+        let mut candidate = self.build_chunk(
             id,
             binder,
             body,
@@ -337,24 +357,33 @@ impl IrBuilder<'_> {
             actualization,
             result_type,
             &captures,
+            prune_captures,
         )?;
         captures = captures
             .into_iter()
-            .zip(needed)
+            .zip(candidate.needed.iter().copied())
             .filter_map(|(capture, needed)| needed.then_some(capture))
             .collect();
         if let Some(decline) = self.frame_decline(result_type, &captures)? {
-            // Nested candidates were built in this tentative chunk. Restore
-            // their reservations and ledger too; ordinary lowering will visit
-            // the same nested statements in the parent graph after refusal.
-            let mut synthesis = self.synthesis.borrow_mut();
-            synthesis.functions.truncate(checkpoint.0);
-            synthesis.ledger.truncate(checkpoint.1);
-            drop(synthesis);
             self.note(node_path, &format!("declined: {}", decline.reason()));
-            return Ok(false);
+            // Keep the ordinary ledger order: this refusal precedes the
+            // nested decisions that remain in its reused body.
+            self.synthesis.borrow_mut().ledger[ledger_start..].rotate_right(1);
+            self.splice_chunk(candidate, reduction_seed, lower, upper, accumulator)?;
+            return Ok(true);
         }
 
+        // A chunk does not call itself. Delay the enclosing pair's ordinals
+        // until it fits, retaining every nested helper without reservation
+        // holes or a function-ordinal relocation pass on refusal.
+        let (splitter, chunk) = match reserved {
+            Some(pair) => pair,
+            None => {
+                let mut synthesis = self.synthesis.borrow_mut();
+                (synthesis.reserve()?, synthesis.reserve()?)
+            }
+        };
+        candidate.function.name = chunk_symbol(chunk);
         let capture_types = captures
             .iter()
             .map(|capture| capture.ty)
@@ -375,8 +404,7 @@ impl IrBuilder<'_> {
             };
             capture_values.push(value);
         }
-        // Declining a candidate leaves the parent graph untouched. Create the
-        // map's token only after its reduced frame fits; reductions reuse seed.
+        // The fitting path creates its map token here; reductions reuse seed.
         let seed = match reduction_seed {
             Some(seed) => seed,
             None => self.define(IrType::Unit, IrOperation::Constant(IrConstant::Unit))?,
@@ -385,7 +413,7 @@ impl IrBuilder<'_> {
             self.build_splitter(splitter, chunk, actualization, result_type, &capture_types)?;
         {
             let mut synthesis = self.synthesis.borrow_mut();
-            synthesis.file(chunk, chunk_function)?;
+            synthesis.file(chunk, candidate.function)?;
             synthesis.file(splitter, splitter_function)?;
         }
 
@@ -488,12 +516,12 @@ impl IrBuilder<'_> {
     ///
     /// This starts with the block graph [`IrBuilder::counted_range_graph`]
     /// builds at an unsplit site, using the same code and statements. Endpoints
-    /// and the accumulator come from parameters; after building, unused
-    /// capture forwarding is removed without changing any body operation.
+    /// and the accumulator come from parameters. An originally wide frame
+    /// removes unused capture forwarding without changing any body operation;
+    /// a fitting frame retains its existing interface and graph.
     #[allow(clippy::too_many_arguments)]
     fn build_chunk(
         &self,
-        ordinal: u32,
         id: CheckedLoopId,
         binder: BindingId,
         body: &[CheckedStatement],
@@ -501,7 +529,12 @@ impl IrBuilder<'_> {
         actualization: LoopActualization,
         result_type: IrType,
         captures: &[Capture],
-    ) -> Result<(IrFunction, Vec<bool>), LoweringFailure> {
+        prune_captures: bool,
+    ) -> Result<BuiltChunk, LoweringFailure> {
+        #[cfg(test)]
+        {
+            self.synthesis.borrow_mut().candidate_constructions += 1;
+        }
         let mut builder = IrBuilder::new(
             self.context(),
             result_type,
@@ -565,7 +598,16 @@ impl IrBuilder<'_> {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }
         }
-        let reconstruction_count = builder.blocks[0].instructions.len();
+        let binding_roots = builder.bindings.clone();
+        let reconstructions = builder.blocks[0]
+            .instructions
+            .iter()
+            .map(|instruction| match instruction {
+                IrInstruction::Define { result, .. } => Ok(*result),
+                _ => Err(LoweringFailure::InvalidCheckedProgram),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let reconstruction_count = reconstructions.len();
         // No give target and no enclosing loop: condition 4 refused every edge
         // that could leave this loop, so a body reaching for one is a
         // malformed checked program rather than a shape this declines on.
@@ -587,10 +629,152 @@ impl IrBuilder<'_> {
         // it; a group whose members do not all land in this body resolves to
         // nothing, which is the narrowing `overlaps` already performs.
         let overlaps = builder.overlaps();
-        let mut function =
-            builder.finish(chunk_symbol(ordinal), overlaps, Some(IrSynthesis::Chunk))?;
-        let needed = prune_capture_parameters(&mut function, reconstruction_count)?;
-        Ok((function, needed))
+        let call_results = std::mem::take(&mut builder.call_results);
+        let mut function = builder.finish(String::new(), overlaps, Some(IrSynthesis::Chunk))?;
+        let needed = if prune_captures {
+            prune_capture_parameters(&mut function, reconstruction_count)?
+        } else {
+            vec![true; captures.len()]
+        };
+        Ok(BuiltChunk {
+            function,
+            needed,
+            binding_roots,
+            reconstructions,
+            call_results,
+        })
+    }
+
+    /// Reuse a refused candidate in the current activation. Its source body
+    /// has already been lowered, including nested candidates. PAR-2 excludes
+    /// exits to the enclosing source context, so the chunk's return is the
+    /// only interface that needs reconnecting to the parent continuation.
+    fn splice_chunk(
+        &mut self,
+        candidate: BuiltChunk,
+        seed: Option<IrValueId>,
+        lower: IrValueId,
+        upper: IrValueId,
+        accumulator: Option<BindingId>,
+    ) -> Result<(), LoweringFailure> {
+        let BuiltChunk {
+            function,
+            binding_roots,
+            reconstructions,
+            call_results,
+            ..
+        } = candidate;
+        let seed = match seed {
+            Some(seed) => seed,
+            None => self.define(IrType::Unit, IrOperation::Constant(IrConstant::Unit))?,
+        };
+        let mut values = function
+            .values
+            .iter()
+            .map(|ty| self.new_value(*ty))
+            .collect::<Result<Vec<_>, _>>()?;
+        for ((parameter, _), actual) in function.parameters[..3].iter().zip([seed, lower, upper]) {
+            values[parameter.index()] = actual;
+        }
+        for (binding, root) in binding_roots {
+            values[root.index()] = self.bindings[&binding];
+        }
+        let value = |original: IrValueId| values[original.index()];
+        let mut reconstruction = vec![false; values.len()];
+        for original in reconstructions {
+            reconstruction[original.index()] = true;
+        }
+        let (continuation, results) = self.new_block(&[function.result])?;
+        let block_offset = self.blocks.len();
+        let blocks = (0..function.blocks.len())
+            .map(|index| IrBlockId::from_index(block_offset + index))
+            .collect::<Result<Vec<_>, _>>()?;
+        let block = |original: IrBlockId| blocks[original.index()];
+        for mut original in function.blocks {
+            // Bind a reconstructed capture's root directly to the original
+            // parent slot. No Box snapshot, inverse projection or duplicate
+            // local owner slot is needed by the ordinary fallback.
+            original.instructions.retain(|instruction| {
+                !matches!(instruction, IrInstruction::Define { result, .. }
+                    if reconstruction[result.index()])
+            });
+            for (parameter, _) in &mut original.parameters {
+                *parameter = value(*parameter);
+            }
+            for instruction in &mut original.instructions {
+                if let IrInstruction::Define { result, .. } = instruction {
+                    *result = value(*result);
+                }
+                instruction.remap_operands(value);
+            }
+            original.terminator.remap_operands(value);
+            let terminator = match original.terminator {
+                IrTerminator::Jump {
+                    target,
+                    arguments,
+                    drops,
+                } => IrTerminator::Jump {
+                    target: block(target),
+                    arguments,
+                    drops,
+                },
+                IrTerminator::Match {
+                    scrutinee,
+                    enum_type,
+                    mut targets,
+                } => {
+                    for target in &mut targets {
+                        target.block = block(target.block);
+                    }
+                    IrTerminator::Match {
+                        scrutinee,
+                        enum_type,
+                        targets,
+                    }
+                }
+                IrTerminator::Return { value, drops } => IrTerminator::Jump {
+                    target: continuation,
+                    arguments: vec![value],
+                    drops,
+                },
+                IrTerminator::Unreachable => IrTerminator::Unreachable,
+            };
+            self.blocks.push(BuildingBlock {
+                parameters: original.parameters,
+                instructions: original.instructions,
+                terminator: Some(terminator),
+            });
+        }
+        for mut source_call in function.source_calls {
+            source_call.result = value(source_call.result);
+            self.source_calls.push(source_call);
+        }
+        for (path, (original_block, result)) in call_results {
+            self.call_results
+                .insert(path, (block(original_block), value(result)));
+        }
+        for mut range in function.counted_ranges {
+            range.blocks = (range.blocks.start + block_offset)..(range.blocks.end + block_offset);
+            range.continuation = block(range.continuation);
+            range.lower = value(range.lower);
+            range.upper = value(range.upper);
+            self.counted_ranges.push(range);
+        }
+        // The parent computes overlaps from the imported call sites. It also
+        // retains only its own original readonly-reference formals; candidate
+        // formals and new block parameters confer no additional marker.
+        // Nested LoopSplit work is still unset: assign_weights runs only once
+        // all functions and their counted-range metadata have been completed.
+        self.terminate(IrTerminator::Jump {
+            target: blocks[0],
+            arguments: Vec::new(),
+            drops: Vec::new(),
+        })?;
+        self.current = Some(continuation);
+        if let Some(accumulator) = accumulator {
+            self.bindings.insert(accumulator, results[0]);
+        }
+        Ok(())
     }
 
     /// The recursive range splitter, whose two halves are one ordinary overlap
@@ -1239,7 +1423,7 @@ mod tests {
         let address = IrType::Address(referent);
         let value = IrValueId;
         let mut types = vec![U64; 20];
-        for index in [9, 10, 15, 16] {
+        for index in [3, 6, 9, 10, 11, 14, 15, 16] {
             types[index] = address;
         }
         types[19] = IrType::Bool;
@@ -1251,6 +1435,7 @@ mod tests {
         let mut function = IrFunction {
             name: "capture_need".into(),
             parameters: parameters(0..9),
+            readonly_reference_parameters: vec![value(3), value(6)],
             source_signature: None,
             source_calls: Vec::new(),
             result: U64,
@@ -1349,6 +1534,7 @@ mod tests {
         };
         let needed = prune_capture_parameters(&mut function, 2).expect("valid chunk graph");
         assert_eq!(needed, [true, true, true, false, true, false]);
+        assert_eq!(function.readonly_reference_parameters, [value(3)]);
         assert_eq!(
             function
                 .parameters

@@ -1820,6 +1820,9 @@ pub struct IrProgram<'classified, 'lexed, 'source> {
     actualization: Vec<String>,
     sequential_compute_refusal: bool,
     recursion_budget: Option<RecursionBudget>,
+    /// Construction work is not recoverable from final IR after a refusal.
+    #[cfg(test)]
+    loop_candidate_constructions: usize,
 }
 
 impl IrProgram<'_, '_, '_> {

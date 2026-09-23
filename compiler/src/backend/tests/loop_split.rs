@@ -397,8 +397,10 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
 /// PAR-2; the test retains that negative control and moves only this measure
 /// read to the preheader for its positive split. The empty Box's measure is
 /// still read by each iteration. A zero-length call takes the empty edge.
-/// `discarded` is deliberately consumed before the loop: its unused lexical
-/// binding must not acquire a capture, projection, cleanup or read in the chunk.
+/// `discarded` is deliberately consumed before the loop. This already-fitting
+/// frame retains its original unused transport, which must neither read the
+/// consumed allocation nor acquire cleanup authority in the chunk. Removing
+/// that transport is outside the rescue-only capture optimization.
 const ALIGNED_PAYLOAD_MAP: &[u8] = br#"struct Aligned {
   tag: u8;
   word: u64;
@@ -958,8 +960,8 @@ fn an_aligned_nominal_payload_capture_handles_empty_and_mixed_measure_element_pa
             .lines()
             .filter(|line| line.contains(&forward) && line.contains("i64 0, i32 1, i64 0"))
             .count(),
-        2,
-        "only the live output and empty box may acquire payload captures:\n{outer}"
+        3,
+        "the fitting ABI retains both used payloads and its original unused transport:\n{outer}"
     );
 
     let chunk = function_body(&split, &synthesized(&split, "@wf__par_chunk_"));
@@ -967,8 +969,8 @@ fn an_aligned_nominal_payload_capture_handles_empty_and_mixed_measure_element_pa
         format!("ptrtoint (ptr getelementptr ({block_type}, ptr null, i64 0, i32 1) to i64)");
     assert_eq!(
         chunk.matches(&inverse).count(),
-        2,
-        "the chunk must reconstruct its two used Box values and omit the consumed binding:\n{chunk}"
+        3,
+        "the fitting chunk retains its original reconstruction without acquiring cleanup:\n{chunk}"
     );
     assert!(
         chunk.lines().any(|line| {
@@ -1871,40 +1873,132 @@ fn a_loop_whose_frame_is_too_wide_declines_and_says_so() {
         "a declined loop must emit no splitter:\n{module}"
     );
 
-    // The outer candidate first builds an eligible inner reduction. Refusing
-    // its still-wide frame must discard that tentative synthesis, then emit
-    // the inner loop once when the ordinary outer graph is built.
-    let nested = std::str::from_utf8(WIDE_FRAME).expect("UTF-8 fixture").replace(
-        "    let bias0 = mixed +wrap a0;",
-        "    let partial = 0_u64;\n    for @inner (j in 0_u64..2_u64) {\n      set partial = partial +wrap j;\n    }\n    let initial = mixed +wrap a0;\n    let bias0 = initial +wrap partial;",
-    );
-    super::system::with_parallel_ir(nested.as_bytes(), |program| {
-        let rows = program.actualization_ledger();
-        assert_eq!(
-            rows.iter()
-                .filter(|line| line.contains("declined:"))
-                .count(),
-            1
+    // The outer candidate first builds a rescuable inner reduction. Reuse
+    // must retain it once, together with an ordinary sibling-call group, the
+    // original parent Box slot and iteration-local allocation/cleanup.
+    let expected = (0_u64..4).fold(7_u64, |total, seed| {
+        let mut state = seed;
+        for _ in 0..24 {
+            state = state.rotate_left(27) ^ state.wrapping_mul(6364136223846793005);
+            state = state.wrapping_add(1442695040888963407);
+        }
+        total.wrapping_add(state.wrapping_mul(2).wrapping_add(502))
+    });
+    let nested = std::str::from_utf8(WIDE_FRAME).expect("UTF-8 fixture")
+        .replace("400000_u64", "4_u64")
+        .replace("  let total = 0_u64;", "  let retained = box_array_filled::<u64>(count: 1_u64, value: 5_u64);\n  let total = 7_u64;")
+        .replace("    let mixed = mix(seed: i);", "    let first = mix(seed: i);\n    let second = mix(seed: i);\n    let doubled = first +wrap second;\n    let local = box_new::<u64>(value: i);\n    let saved = retained.inner[0_u64];\n    let mixed = doubled +wrap saved;")
+        .replace(
+            "    let bias0 = mixed +wrap a0;",
+            "    let partial = 0_u64;\n    for @inner (j in 0_u64..2_u64) {\n      set partial = partial +wrap j;\n    }\n    let initial = mixed +wrap a0;\n    let bias0 = initial +wrap partial;",
+        )
+        .replace("  if total == 0_u64 {", &format!("  if total != {expected}_u64 {{"));
+    let mapped = nested
+        .replace("  let total = 7_u64;", "  let mapped = box_array_filled::<u64>(count: 4_u64, value: 0_u64);")
+        .replace("    set total = total +wrap biased;", "    set mapped.inner[i] = biased;")
+        .replace(
+            &format!("  if total != {expected}_u64 {{"),
+            &format!("  let first = mapped.inner[0_u64];\n  let second = mapped.inner[1_u64];\n  let third = mapped.inner[2_u64];\n  let fourth = mapped.inner[3_u64];\n  let left = first +wrap second;\n  let right = third +wrap fourth;\n  let total = left +wrap right;\n  if total != {}_u64 {{", expected.wrapping_sub(7)),
         );
-        assert_eq!(
-            rows.iter()
-                .filter(|line| line.contains("split under"))
-                .count(),
-            1
-        );
-        assert_eq!(
-            program
+    for source in [&nested, &mapped] {
+        super::system::with_parallel_ir(source.as_bytes(), |program| {
+            let rows = program.actualization_ledger();
+            assert_eq!(
+                rows.iter()
+                    .filter(|line| line.contains("declined:"))
+                    .count(),
+                1
+            );
+            let parent = program
                 .functions()
                 .iter()
-                .filter(|function| function.synthesis() == Some(crate::IrSynthesis::Chunk))
-                .count(),
-            1
+                .find(|function| function.name() == "main")
+                .expect("ordinary parent function");
+            assert!(
+                !parent.overlaps().is_empty(),
+                "the imported sibling-call group must survive"
+            );
+            assert!(
+                parent.blocks().iter().any(|block| matches!(
+                    block.terminator(), crate::IrTerminator::Jump { drops, .. } if !drops.is_empty()
+                )),
+                "iteration-local cleanup must remain on the backedge"
+            );
+            assert!(
+                parent
+                    .blocks()
+                    .iter()
+                    .flat_map(|block| block.instructions())
+                    .all(|instruction| {
+                        !matches!(
+                            instruction,
+                            crate::IrInstruction::Define {
+                                operation: crate::IrOperation::RuntimeBoxPayload { .. }
+                                    | crate::IrOperation::RuntimeBoxOwner { .. },
+                                ..
+                            }
+                        )
+                    }),
+                "ordinary fallback must reuse the parent slot without payload reconstruction"
+            );
+            for source_call in parent.source_calls() {
+                let present = parent.blocks().iter().flat_map(|block| block.instructions()).any(|instruction| {
+                    matches!(instruction, crate::IrInstruction::Define {
+                        result, operation: crate::IrOperation::Call { arguments, .. }, ..
+                    } if *result == source_call.result() && arguments.len() == source_call.arguments().len())
+                });
+                assert!(
+                    present,
+                    "source-call metadata must still name its ordinary call"
+                );
+            }
+            assert!(
+                parent
+                    .source_calls()
+                    .iter()
+                    .any(|call| call.allocation().is_some())
+            );
+            assert_eq!(
+                rows.iter()
+                    .filter(|line| line.contains("split under"))
+                    .count(),
+                1
+            );
+            assert_eq!(
+                program
+                    .functions()
+                    .iter()
+                    .filter(|function| function.synthesis() == Some(crate::IrSynthesis::Chunk))
+                    .count(),
+                1
+            );
+            let host = crate::backend::target::TargetLayout::host().expect("supported test host");
+            let module = crate::backend::emitter::emit_llvm_with_layout(program, host)
+                .expect("ordinary lowering must retain valid nested synthesis ordinals")
+                .into_string();
+            assert_eq!(synthesized_symbols(&module, "@wf__par_split_").len(), 1);
+            assert!(function_body(&module, "@wf_main").contains("call i64 @wf__par_split_"));
+        });
+        let module = emit_with_overlap(source.as_bytes());
+        let directory = test_directory();
+        let executable = build_executable(&module, &directory);
+        for workers in ["1", "4"] {
+            let output = Command::new(&executable)
+                .env("WF_WORKERS", workers)
+                .output()
+                .expect("run reused ordinary outer loop");
+            assert_eq!(
+                output.status.code(),
+                Some(0),
+                "WF_WORKERS={workers}: {output:?}"
+            );
+        }
+        let (granted, output) = CountedProgram::link(&module, &directory).run(Some("4"));
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert!(
+            granted > 0,
+            "the retained sibling calls must execute a worker callback"
         );
-        let host = crate::backend::target::TargetLayout::host().expect("supported test host");
-        let module = crate::backend::emitter::emit_llvm_with_layout(program, host)
-            .expect("ordinary lowering must retain valid nested synthesis ordinals")
-            .into_string();
-        assert_eq!(synthesized_symbols(&module, "@wf__par_split_").len(), 1);
-        assert!(function_body(&module, "@wf_main").contains("call i64 @wf__par_split_"));
-    });
+        std::fs::remove_dir_all(&directory).expect("remove the test directory");
+    }
 }

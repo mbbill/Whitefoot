@@ -182,13 +182,23 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   retains every ordinary instruction and call argument. Removing an unused
   pure computation or an unused callee formal could shrink further frames,
   but needs independent effect and call-interface reasoning; no blocked
-  consumer currently justifies that scope. A still-oversized candidate also
-  lowers again on the ordinary path, with repeated work possible across
-  nested declines. Reopen when an otherwise useful map still exceeds the
-  fixed frame bound or a compilation profile attributes material cost to
-  repeated candidate construction. Validate smaller emitted frames or reduced
-  lowering time on the same source, preserving cleanup, calls and native
-  results, before selecting a broader analysis or reuse scheme.
+  consumer currently justifies that scope. Broader dead-computation or
+  dead-formal analysis remains deferred: reopen
+  when an otherwise useful map still exceeds the fixed frame bound, and
+  validate smaller emitted frames on the same source without changing calls,
+  cleanup or results before selecting that wider scope.
+
+- **Pruning already-fitting loop frames needs a qualified benefit.** The
+  [capture investigation](../research/investigations/compute-model/DESIGN.md#needed-loop-captures)
+  now selects capture pruning only to rescue an originally oversized frame.
+  Pruning fitting tasks changes transport and code placement without admitting
+  a new loop, and records repeatedly reports an adverse W4 observation whose
+  cause remains unresolved. Smaller frames could still help another consumer,
+  but that benefit is unverified. Defer the broader optimization until a real
+  fitting-frame consumer exposes a material transport cost; reopen with an
+  unchanged-source comparison that retains native results, cleanup and a
+  same-image null control, establishes its benefit and clears the protected
+  records case before selecting the wider policy.
 
 - **First-index search needs a variable-cost expression probe.** The
   [ordered-batch analysis](../research/investigations/io-model/CONCURRENCY-CATALOG.md#21-parallel-search-with-early-exit-added)
