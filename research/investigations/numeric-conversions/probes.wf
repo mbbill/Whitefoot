@@ -1,4 +1,4 @@
-fn low_byte(value: own u32) -> result: own u8 pure {
+fn low_byte(value: u32) -> result: u8 pure {
   let masked = iand(value, 255_u32);
   match cvt::<u32, u8>(masked) {
     Ok(value: byte) => {
@@ -10,13 +10,13 @@ fn low_byte(value: own u32) -> result: own u8 pure {
   }
 }
 
-fn signed_low_byte(value: own i32) -> result: own i8 pure {
+fn signed_low_byte(value: i32) -> result: i8 pure {
   let bits = reinterpret::<i32, u32>(value);
   let byte = low_byte(value: bits);
   return reinterpret::<u8, i8>(byte);
 }
 
-fn bounded_byte(value: own u32) -> result: own u8 pure contract {
+fn bounded_byte(value: u32) -> result: u8 pure contract {
   requires value <= 255_u32;
 } {
   match cvt::<u32, u8>(value) {
@@ -29,11 +29,11 @@ fn bounded_byte(value: own u32) -> result: own u8 pure contract {
   }
 }
 
-fn exact_byte(value: own u32) -> result: own Result<u8, NarrowError> pure {
+fn exact_byte(value: u32) -> result: Result<u8, NarrowError> pure {
   return cvt::<u32, u8>(value);
 }
 
-fn saturating_byte(value: own i32) -> result: own u8 pure {
+fn saturating_byte(value: i32) -> result: u8 pure {
   let nonnegative = imax(value, 0_i32);
   let bounded = imin(nonnegative, 255_i32);
   match cvt::<i32, u8>(bounded) {
@@ -46,45 +46,45 @@ fn saturating_byte(value: own i32) -> result: own u8 pure {
   }
 }
 
-fn bit_resign(value: own i32) -> result: own u32 pure {
+fn bit_resign(value: i32) -> result: u32 pure {
   return reinterpret::<i32, u32>(value);
 }
 
-fn value_resign(value: own i32) -> result: own Result<u32, NarrowError> pure {
+fn value_resign(value: i32) -> result: Result<u32, NarrowError> pure {
   return cvt::<i32, u32>(value);
 }
 
-fn wide_unsigned(value: own u32) -> result: own u64 pure {
+fn wide_unsigned(value: u32) -> result: u64 pure {
   return cvt::<u32, u64>(value);
 }
 
-fn exact_float(value: own u32) -> result: own Result<f32, NarrowError> pure {
+fn exact_float(value: u32) -> result: Result<f32, NarrowError> pure {
   return cvt::<u32, f32>(value);
 }
 
-fn exact_small_float(value: own u16) -> result: own f32 pure {
+fn exact_small_float(value: u16) -> result: f32 pure {
   return cvt::<u16, f32>(value);
 }
 
-fn exact_small_double(value: own u32) -> result: own f64 pure {
+fn exact_small_double(value: u32) -> result: f64 pure {
   return cvt::<u32, f64>(value);
 }
 
-fn exact_integer(value: own f64) -> result: own Result<i32, NarrowError> pure {
+fn exact_integer(value: f64) -> result: Result<i32, NarrowError> pure {
   return cvt::<f64, i32>(value);
 }
 
-fn truncated_integer(value: own f64) -> result: own Result<i32, NarrowError> pure {
+fn truncated_integer(value: f64) -> result: Result<i32, NarrowError> pure {
   let integral = ftrunc(value);
   return cvt::<f64, i32>(integral);
 }
 
-fn rounded_integer(value: own f64) -> result: own Result<i32, NarrowError> pure {
+fn rounded_integer(value: f64) -> result: Result<i32, NarrowError> pure {
   let integral = froundeven(value);
   return cvt::<f64, i32>(integral);
 }
 
-fn saturating_integer(value: own f64) -> result: own i32 pure {
+fn saturating_integer(value: f64) -> result: i32 pure {
   if fne(value, value) {
     return 0_i32;
   }
@@ -101,11 +101,11 @@ fn saturating_integer(value: own f64) -> result: own i32 pure {
   }
 }
 
-fn narrow_float(value: own f64) -> result: own Result<f32, NarrowError> pure {
+fn narrow_float(value: f64) -> result: Result<f32, NarrowError> pure {
   return cvt::<f64, f32>(value);
 }
 
-fn saturating_wide_integer(value: own f64) -> result: own i64 pure {
+fn saturating_wide_integer(value: f64) -> result: i64 pure {
   if fne(value, value) {
     return 0_i64;
   }
@@ -128,7 +128,7 @@ fn saturating_wide_integer(value: own f64) -> result: own i64 pure {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Conversion boundary probes. The unreachable integer fallback arms make the current total wrappers writable; they are not a proof-required conversion interface. Float saturation explicitly selects NaN-to-zero policy.";
   let byte = low_byte(value: 305419896_u32);
   if byte == 120_u8 {

@@ -2,8 +2,10 @@
 
 ## Question and scope
 
-The baseline is main at `5dd9d5d7`, after generic struct constants. TYPE-4 and
-OP-6 make `cvt` exact and value-preserving: its result type is selected from
+The initial baseline is main at `5dd9d5d7`, after generic struct constants.
+The retained sources use the callable syntax from main at `345e2966a`; that
+update does not change conversion semantics. TYPE-4 and OP-6 make `cvt` exact
+and value-preserving: its result type is selected from
 the complete source/destination type pair. OP-8 separately supplies same-width
 bit reinterpretation and same-type floating-point rounding operations.
 
@@ -82,7 +84,7 @@ so it does not depend on resolving that question.
 The low-byte helper is the current ordinary composition:
 
 ```wf
-fn low_byte(value: own u32) -> result: own u8 pure {
+fn low_byte(value: u32) -> result: u8 pure {
   let masked = iand(value, 255_u32);
   match cvt::<u32, u8>(masked) {
     Ok(value: byte) => {
@@ -238,16 +240,27 @@ software float-conversion library is not selected by this study.
 
 ## Reproduction and evidence boundary
 
-Use the compiler built from `5dd9d5d7` (its compiler tree equals `033f44a9`).
-The recorded probe run reused that already-built, gate-validated compiler;
-the executable SHA-256 was
+The initial probe run used compiler sources from `5dd9d5d7` (equal to the
+compiler tree at `033f44a9`), with the old callable spelling retained in the
+research sources at `432949aba`. That already-built, gate-validated compiler's
+executable SHA-256 was
 `c57f989b1b0073769d4999266f3353143d758b2f400c26a74e8d260b684afe33`.
-Run from this investigation's checkout root, whose compiler sources retain
-that baseline. The setup below creates scratch space and builds the compiler
-there. To reuse an existing binary from the same revision instead, skip the
-build and set `numeric_compiler` to its absolute path. The generated-code
-comparison requires the Clang version recorded above. Native construction and
-execution both run under the repository's shared verification guard.
+
+After adapting only the callable spelling to main at `345e2966a`, the native
+probe again exited 0. The three negative/capability outcomes below and the
+accepted original-index control were reproduced. Optimized `low_byte`,
+`signed_low_byte`, `bounded_byte` and `saturating_byte` retained the recorded
+instruction forms. This run reused the compiler built at `9be78e355`, whose
+compiler and specification trees equal `345e2966a`; its executable SHA-256 is
+`cbffd4dd1ae8641ef03790457181188988bf70cc4af1a53c50c1f406307bb7f9`.
+
+For the retained sources, run from this investigation's checkout root with
+the current compiler. The setup below creates scratch space and builds it
+there. To reuse an existing binary from the same compiler and specification
+revision instead, skip the build and set `numeric_compiler` to its absolute
+path. The generated-code comparison requires the Clang version recorded above.
+Native construction and execution both run under the repository's shared
+verification guard.
 
 ```sh
 numeric_scratch="$(mktemp -d "${TMPDIR:-/tmp}/wf-numeric-conversions.XXXXXX")"
@@ -369,9 +382,9 @@ value-dependent pairs. Totality no longer selects the result type:
 
 | Spelling | Result | Obligation/behavior |
 |---|---|---|
-| `cvt::<S,D>(x)` | `own D` | Prove `D(S,D,x)` before lowering, then produce `C` without a validity guard |
-| `cvt.checked::<S,D>(x)` | `own Result<D,NarrowError>` | Return Ok(C) on the domain, Err otherwise, for every pair |
-| `cvt.defined::<S,D>(x)` | `own Bool` | Compute only the total domain answer; do not execute a partial cast on an invalid value |
+| `cvt::<S,D>(x)` | `D` | Prove `D(S,D,x)` before lowering, then produce `C` without a validity guard |
+| `cvt.checked::<S,D>(x)` | `Result<D,NarrowError>` | Return Ok(C) on the domain, Err otherwise, for every pair |
+| `cvt.defined::<S,D>(x)` | `Bool` | Compute only the total domain answer; do not execute a partial cast on an invalid value |
 
 The same-type row is recommended over continued refusal because a generic
 conversion must not need a separate body when its two type parameters coincide.
@@ -464,7 +477,7 @@ These are proposal examples, not claims that the baseline accepts new names.
 First, range proof should replace the baseline's impossible-error branch:
 
 ```wf
-fn byte(value: own u32) -> result: own u8 pure contract {
+fn byte(value: u32) -> result: u8 pure contract {
   requires value <= 255_u32;
 } {
   return cvt::<u32, u8>(value);
@@ -479,17 +492,17 @@ S7 bound also proves the u8 conversion, including a binary-encoding consumer.
 Generic conversion keeps one result shape and an explicit obligation:
 
 ```wf
-fn convert<S: Int, D: Int>(value: own S) -> result: own D pure contract {
+fn convert<S: Int, D: Int>(value: S) -> result: D pure contract {
   requires cvt.defined::<S, D>(value);
 } {
   return cvt::<S, D>(value);
 }
 
-fn attempt<S: Int, D: Float>(value: own S) -> result: own Result<D, NarrowError> pure {
+fn attempt<S: Int, D: Float>(value: S) -> result: Result<D, NarrowError> pure {
   return cvt.checked::<S, D>(value);
 }
 
-fn same<T: Float>(value: own T) -> result: own T pure {
+fn same<T: Float>(value: T) -> result: T pure {
   return cvt::<T, T>(value);
 }
 ```
@@ -624,10 +637,10 @@ No step below is executed in this research delivery.
 
 The optional integer `.wrap` row fits steps 1/2/4/5 without extending the proof
 solver. Confirm its inclusion with the exact-family scope before implementation.
-Each coherent implementation revision stays on the existing Draft PR. Coordinate
-with the concurrent call-boundary syntax work rather than restoring old call
-spellings; at implementation start rebase or merge current main, settle the
-successor spec version then, and recheck the actual generated inventory.
+Each coherent implementation revision stays on the existing Draft PR. Use the
+call-boundary syntax now on main; at implementation start rebase or merge
+current main, settle the successor spec version then, and recheck the actual
+generated inventory.
 
 Step 1 precedes implementation. Once its rules and mode/type representation
 are fixed, backend work and corpus/fixture preparation can proceed in parallel
