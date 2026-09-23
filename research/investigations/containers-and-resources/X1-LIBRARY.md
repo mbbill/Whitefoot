@@ -343,6 +343,16 @@ pair; allocation itself has no source-visible refusal under STOR-8. Returned
 references, persistent iterators and stable payload addresses are not part of
 this contract.
 
+Borrowed value editing belongs beside read-only lookup: a callback may read
+the stored key, write the selected value and its disjoint environment, and
+return an owned result. Without that form, a counter or wide record update
+would require replacing or removing and reinserting the complete value merely
+because references cannot escape. Ordinary effect rows already express this
+boundary. Validate value-only edits, missing keys, owning children, and unchanged
+map extents; no key mutation or retained reference is implied. Compare a small
+scalar and wide-record edit trace with the same native callback contract before
+claiming that it removes a measured cost.
+
 Before using measurements to select a representation, hold the operation
 trace, supplied behaviors, occupancy, capacity policy and ownership outcomes
 fixed. Compare ordinary enum slots with dense entries plus sparse indexes;
@@ -354,6 +364,17 @@ helpers, scalar and wide inline values, and a native C control for the same
 contract. A layout improvement must survive inclusion of reverse-index repair
 and dense-growth costs; reducing table bytes alone does not select it.
 
+The first matched trace uses exact runtime capacities, no cached hash, and
+rehashes each live key through the supplied behavior. Reserve names its target
+capacity. An insertion that exhausts its bounded probe grows geometrically,
+saturating at the caller's ceiling; zero capacity grows to one. Replacement
+still succeeds at that ceiling. Steady-state comparisons use half-full and
+seven-eighths-full tables, with growth measured separately. This simple shared
+policy isolates the representation comparison; it does not select an optimal
+production load factor. The native sparse floor may rebuild directly into a
+new backing and initialize only empty tags. It is not charged WF's temporary
+planning arrays, whole-slot swaps, or zeroed inactive payload bytes.
+
 The correctness discriminator includes hostile equality, collision-heavy and
 full-table traces, zero capacity, replacement at the capacity ceiling, and
 cleanup after every owner-returning outcome. No equality law justifies a
@@ -361,6 +382,71 @@ bound or permits a value to disappear. Rehash must retain all entries without
 asking equality to deduplicate them. If an ordinary formulation fails, retain
 its exact source and separate a specified limit from a compiler defect before
 changing either interface or representation.
+
+The sparse rehash candidate plans destinations in copyable metadata, then
+grows the existing owning backing and permutes complete slots through `swap`.
+This avoids discarding a temporary enum on an unproved vacancy assumption.
+The dense candidate rebuilds only sparse metadata before publication, leaving
+its separate dense owners in place. Both routes need checked complete source;
+neither is selected on an assertion that the other is inexpressible. Temporary
+planning allocations and payload relocation are part of the sparse candidate's
+cost, just as reverse-index maintenance and the dependent lookup are part of
+the dense candidate's cost.
+
+Result layout is a separate source choice. The initial common result has three
+variants, `Inserted`, `Replaced(previous: Pair<K,V>)`, and
+`Full(offered: Pair<K,V>)`. Current product layout reserves both Pair regions.
+An ordinary alternative is `Inserted | Returned(reason: ReturnReason,
+pair: Pair<K,V>)`, with tag-only `Replaced / Full` reasons. It preserves every
+ownership outcome while sharing one payload region, at the cost of a nested
+match. For an eight-byte-aligned Pair of 16 or 264 bytes, the current layout
+calculation predicts 40 or 536 bytes for the original and 24 or 272 bytes for
+the shared form. A zero-byte Pair instead grows from four to eight bytes; this
+is not an unconditional layout win. These are layout deductions, not timings.
+Compare the same replacement and refusal/retry consumers under both source
+forms before choosing either the public result or a compiler optimization.
+Keep initialization, construction and consuming projection transfers separate
+from the result's reserved width. The native control already has one Pair
+region, so its matching semantic outcome alone does not establish ABI parity
+with the initial WF result.
+
+Two existing contract limits have concrete consumers here. Under FN-9/MSR-3,
+`ensures deref(map).length == deref(entry(map)).length;` cannot publish exit
+state for the sparse map's ordinary mutable scalar counter; that denotation
+is currently a storage-measure facility. Likewise `ensures when Full(...):`
+is outside FN-9's exact integer-Result.Ok route. An unconditional length
+interval from `try_put` therefore cannot tell a caller that the Full arm
+preserves length before a retry. Ordinary counter reads, measure relations,
+and owned outcomes remain available. Retain the exact refused clauses beside
+the executable comparison and assess the remaining caller checks or interface
+cost before proposing broader publication; neither limit means runtime state
+or an owner is lost.
+
+The sparse trial also distinguishes a proof-formulation limit from an
+implementation defect. After a counted loop, this local assertion verifies:
+
+```wf
+invariant equal_extent: plan.inner.len == deref(holder).cells.inner.len;
+```
+
+An immediately following call cannot discharge the helper's requirement
+`deref(plan).inner.len == deref(cells).inner.len` from those affine premises.
+Changing only that requirement to the following two clauses admits the same
+call and algorithm:
+
+```wf
+requires deref(plan).inner.len <= deref(cells).inner.len;
+requires deref(plan).inner.len >= deref(cells).inner.len;
+```
+
+ENT-6's affine normalization of signed FN-8 goals lists integer ordering
+leaves, whereas INV-1 explicitly splits equality into two affine inequalities.
+The compiler follows that distinction. The paired requirements preserve exact
+equality and add no runtime check. This is separate from an ordinary branch
+join losing relations when one arm changes a measure's immutable current-value
+image: a length-preserving helper around the conditional tombstone operation
+publishes a common caller boundary without relocating live payloads. Its call
+structure still belongs in the matched source-cost comparison.
 
 The maintained [TODO](../../../docs/todo.md) remains the owner of unresolved
 issues. This trial reopens must-consume sparse slot state, aggregate result

@@ -552,6 +552,35 @@ condition under which it is taken up.
   checking cost as well as the runtime check or source work saved. The Slab
   and Deque [source limits](../research/investigations/containers-and-resources/X1-LIBRARY.md#exact-unavailable-source-forms)
   remain examples, not an amendment or a claim that runtime state is lost.
+- **Reference exit fields and custom outcome contracts remain restricted.**
+  FN-9 gives exit-state denotation to a written reference parameter's storage
+  measures, not its ordinary mutable integer fields. An owning sparse map
+  cannot publish `deref(map).length == deref(entry(map)).length` for its own
+  scalar occupancy counter; the caller can still read that counter normally.
+  FN-9 routes only the integer success payload of the prelude Result, so a
+  custom `Inserted / Replaced / Full` outcome cannot directly publish a
+  different length relation for each variant. An unconditional insertion
+  interval alone does not prove that a failed first attempt leaves length
+  unchanged before a retry. Keep exact source refusals and the best ordinary
+  interfaces in the [map trial](../research/investigations/containers-and-resources/X1-LIBRARY.md#generic-owning-map-trial-after-the-ring-comparison).
+  Reopen when a caller needs those facts: compare ordinary re-reads or a
+  separate numeric result with richer publication, measuring remaining checks,
+  result transfers and checking cost. Validate entry/exit substitution, writes
+  through aliases and incorrect variant claims before selecting any extension.
+  Defer language changes while the complete map can use ordinary checked
+  accesses; no runtime data or ownership state is missing.
+- **Affine equality in call requirements has a narrower route than invariants.**
+  The [map proof reduction](../research/investigations/containers-and-resources/X1-LIBRARY.md#generic-owning-map-trial-after-the-ring-comparison)
+  verifies a local equality after a counted loop but rejects the identical
+  equality as a callee requirement. INV-1 splits equality into two affine
+  inequalities; ENT-6's signed FN-8 normalization lists ordering leaves only.
+  Splitting that one requirement into `<=` and `>=` admits the unchanged
+  algorithm without runtime checks. This is a specified proof-shape limit,
+  not an observed compiler violation. Reopen with contract-proof work to
+  assess consistent equality decomposition, including false equalities,
+  negative goals, alias invalidation and deterministic checking cost. Defer
+  a rule change while the exact paired-bound interface supplies the needed
+  proof without runtime or ownership cost.
 - **Open-addressing tables with non-Copy payloads.** The recorded extra null
   check per hit versus hashbrown is a hypothesis to test on a real table,
   not an established universal cost. The native
