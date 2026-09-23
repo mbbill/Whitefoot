@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-23 Retain splitter entry after the zero-budget dispatch comparison
+
+Nodes: compiler/parallel-lowering
+
+Owner-approved: The owner explicitly accepted the complete PR #89 amendment after the reviewed handoff at 2e9db016a4b69346a287cd800e23e09d4a011ee9, replying that it was accepted. This ruling does not authorize a merge.
+
+Summary: Apply the reviewed decision unchanged: retain the existing runtime query and splitter entry because the general caller branch lacks demonstrated general benefit and retains a qualified regression. A replacement must demonstrate benefit and qualify both worlds while caller and placement effects remain unresolved. Remove the accepted amendment and its directory. The implementation, tests and specification are unchanged by this ruling.
+
 ## 2026-09-22 Keep design decisions concise and link their supporting detail
 
 Nodes: compiler/checker-facts, compiler/closure-row-dominance, compiler/completion-runtime, compiler/incremental-closure, compiler/parallel-lowering/parallel-runtime, compiler/parallel-lowering/two-worlds, compiler/parallel-lowering, compiler/proof-query-context, compiler/tag-only-lowering, language/checks-and-proofs/obligation-discharge/loop-fact-retention, language/checks-and-proofs, language/contracts, language/data-model/kernel-minimality, language/data-model/storage-shapes, language/data-model, language/effects/call-site-check, language/effects, language/generics, language/ownership/no-stored-references, language/ownership/reference-rebinding, language/ownership, language/parallelism/loop-permission, language/parallelism/permission-judgment, language/parallelism, language/system-interface/declaration-home, language/system-interface/directory-enumeration, language/system-interface/handle-factory, language/system-interface

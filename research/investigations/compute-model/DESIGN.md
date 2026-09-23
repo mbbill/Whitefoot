@@ -2748,3 +2748,386 @@ that block without a sweep. Attribution and its validation remain deferred in
 the [formal-compute TODO](../../../docs/todo.md), because a mechanism change
 needs evidence distinguishing these possible causes. No threshold, runtime,
 compiler, specification or correctness-CI change follows from this inspection.
+
+## Query-retained zero-budget dispatch control
+
+The one-site experiment and general implementation below retain their original
+revisions. The [subsequent reassessment](#general-dispatch-reassessment)
+withdraws the general compiler change after a qualified hosted regression;
+the positive one-site result is not a speedup claim for that implementation.
+
+### Prospective protocol, published at c4e96d64
+
+This prospective development control starts from main
+`7127bcb6f48a0664d31a856ef54e21010bb2c238`, including the Buffer representation
+and checker changes in #84. It does not include the pending capture amendment
+or PR80. The [earlier combined control at its published revision](https://github.com/mbbill/Whitefoot/blob/44ee9c1352f44de553149f49a57dd471ebc073fc/research/investigations/compute-model/DESIGN.md#zero-budget-stencil-dispatch-control)
+removed both the query and recursive entry and allowed further LLVM changes.
+Its 17.97 percent result does not predict the effect of retaining the query.
+No language or runtime policy change is proposed by this experiment.
+
+Arm A is newly emitted ordinary `--par` LLVM from a freshly built compiler at
+this source revision. Arm B changes one inner row-helper `LoopSplit` call site:
+retain `wf__par_split_budget` and its exact arguments, then call the existing
+overlapping-world chunk if its returned budget is zero; otherwise call the
+existing splitter with that budget. Derive the exact site and callee anchors
+from this fresh IR, preserve their exact diff, and reject any other raw IR
+change. Preserve outer split sites, W1 sequential clones, arithmetic,
+allocation, cleanup, query/configuration handling and runtime support. The
+overlapping chunk preserves nested parallel opportunities; substituting a
+sequential clone would change the experiment. Timing images contain no
+observation calls. Both arms use identical freshly compiled current-main
+driver, sequential module, runtime and support objects and link order;
+cached external dependencies may be reused only with recorded hashes.
+
+The current research caller requires a shared scratch ABI repair before any
+native execution. Its two WF entry declarations and calls must pass the
+sixth retained-owner-cell pointer, and release must receive that one cell;
+native callbacks must obey the same signatures and retain their allocation.
+Check the repair against maintained `stencil_host.ll` and `stencil_oracle.c`,
+record the original/repaired source hashes and exact diff, and compile that
+one repaired caller for both arms. Do not modify the maintained harness in
+this diagnostic. Record source, compiler, toolchain, command, object and image
+identities; no old image is relabeled as a current-main baseline.
+
+Qualification precedes timing. Run the maintained full stencil oracle matrix
+for A and B at W1 and W4. Inspect optimized overlapping pixel work and W1
+clones: arithmetic and cleanup must remain equivalent, W1 code must be
+unchanged apart from incidental labels/addresses, and any dispatch-induced
+inlining, alias-check motion or code growth must be recorded. Such effects
+belong to this control's combined result, not a standalone runtime-query cost.
+An unexplained body difference stops the experiment.
+
+Use one qualification-only ordinary `stencil_row` helper adapter, derived
+from its actual emitted ABI, with initialized input rows and disjoint output
+of width 1,024 and 32,770. This calls a helper whose own contract has no 4,096
+upper bound, not an out-of-contract full-stencil entry. Verify view extents,
+disjointness and oracle support, and compare its one interior row with the
+maintained C oracle's one-step, three-row result. In a separate observed image
+at W4, record actual zero and positive query returns and the corresponding
+dispatch paths while forwarding the exact query arguments to the unchanged
+runtime and returning its actual answer. Affordability alone cannot prove
+positive coverage because the caller's deque can refuse a budget. If this
+fixed helper qualification cannot establish both paths, stop; do not force a
+return, change a floor or widen the input set. The full matrix covers zero
+timesteps. Neither fixture establishes empty or inverted inner-range behavior;
+that remains a general compiler-test obligation if implementation is selected.
+
+The sole timed input is 1,024 by 4,096 for 16 steps, at W1 and W4. Reuse the
+existing harness with one first call and five warm calls per process, five
+paired passes, no inter-call gap, and no core pinning or runtime override.
+Within each width, arm order is A/B, B/A, A/B, B/A, A/B; width order reverses
+on odd passes. Before execution, dry-run all 20 invocations and independently
+assert that every pass contains each arm once per width and that each width
+alternates arm order independently of width order. Every result is checked.
+Run exactly one fresh identical-image A/A null action, then one A/B action;
+retain all raw rows, orders, commands, hashes and failed outcomes. No retry,
+adaptive sweep, extra timing cell or replacement session is authorized here.
+
+For each width and pass, divide B's median of five warm wall times by A's.
+Let D be the maximum absolute deviation from one among all ten new-null
+paired ratios, including both widths. A useful W4 lead requires B/A at most
+0.95 in at least four of five pairs and `1 - median(W4 B/A) > D`. The null
+sets that numerical drift bound; there is no separate numerical pre-main
+rejection band. A failed order, provenance, correctness or time-cap check in
+the null stops before the main action. A valid null followed by failure of
+either numerical condition is inconclusive and stops without a rerun. Report
+all paired ratios, W1 behavior, wall/CPU and first-call results, including
+regressions; CPU/wall ratios do not attribute an effect to scheduling.
+
+Check the live shared guard before each heavy stage. The fresh compiler build
+has a 120-second cap and two Cargo jobs; LLVM emission, native construction,
+full-oracle execution, helper-path qualification, optimized-code inspection,
+null timing and main timing each have a separate 30-second cap. Record build
+time separately from program execution. A stage failure or cap overrun stops
+the sequence; an expected cost above its cap must be reported before changing
+the protocol. This document is published before any of these stages begins.
+Scratch recipes and artifacts remain outside the repository; only compact
+dated evidence needed to assess the result is retained here afterward, and
+none enters CI or creates a maintained benchmark runner.
+
+**Design suitability.** Retaining the runtime query keeps configured floors,
+queue state and nested parallelism authoritative while testing whether a
+known-zero splitter activation is worth avoiding. It can remove parameter
+transport and entry tests, but adds a positive-path branch and may grow code;
+the retained call can also prevent the earlier alias-check hoisting. No gain
+is presumed. If selected, the smallest general implementation belongs in
+`backend/emitter/parallel.rs` with continuation/phi handling in `emitter.rs`:
+branch results must join with the existing seed/return ABI, including Unit
+maps and reductions, without creating nonexistent W1 predecessors. A small
+synthesized dispatch wrapper is an alternative that avoids caller CFG changes
+but adds helper/ABI ownership and depends on inlining. Prefer testing the local
+branch first; neither choice needs capture pruning, copied floor constants,
+source recognition or a scheduler change. Production selection would require
+ordinary compiler tests for zero/nonzero budgets, empty/inverted ranges,
+map/reduction seeds, nested loops, cleanup and CFG/phi continuation, with its
+design amendment and deferred opportunities recorded in the existing TODO.
+At publication this was preparation for that decision, not a production
+implementation or a change to the frozen PR78 review scope.
+
+### Query-retained control result
+
+The frozen main-7127 control meets its prospective useful-lead criterion.
+The [dated evidence](../../experiments/compute-bench/query-retained-dispatch-2026-09-22.tsv)
+retains all 240 call rows, including first-call CPU, invocation order, all
+paired ratios, hashes, commands and the exact control/caller patches. Exactly
+one null and one main action ran, with every output checked and no extra
+input, repetition or replacement session.
+
+| Action | Width | Five paired B/A wall ratios | Median wall ratio | Median CPU ratio |
+|---|---|---|---:|---:|
+| Identical A/A | W1 | 0.979661, 0.995525, 0.959309, 0.990721, 0.947377 | 0.979661 | 0.979566 |
+| Identical A/A | W4 | 0.973999, 0.987581, 1.081364, 0.978329, 0.949190 | 0.978329 | 0.984452 |
+| A/B | W1 | 1.034792, 1.038415, 0.998710, 1.013452, 1.029674 | 1.029674 | 1.028801 |
+| A/B | W4 | 0.763206, 0.851518, 0.832559, 0.783404, 0.728371 | 0.783404 | 0.790007 |
+
+The maximum absolute null drift D is 0.081363656, from W4 pass 2. The W4
+median benefit is 0.216595743 and all five pairs beat 0.95. The W1 paired
+median nevertheless records a 2.97 percent regression. It remains unexplained;
+identical normalized W1 instructions neither clear that observation nor
+establish its cause. No rerun was used to resolve it.
+
+Median process medians for main A/B are 28.721208/29.824542 ms wall and
+28.687/29.816 ms CPU at W1; at W4 they are 16.561500/13.047000 ms wall and
+60.283/47.624 ms CPU. Median first-call wall/CPU are
+36.291459/36.254 versus 34.455750/34.429 ms at W1 and
+21.379708/67.564 versus 18.800792/55.762 ms at W4. These arm medians describe
+the samples; selection uses within-pass ratios. The median successful-steal
+counts are 0/0 at W1 and 167/167 at W4, which do not attribute the time change.
+
+Qualification passed all four full matrices, each checking 3,387,721 values.
+The separate ordinary-row helper observed actual budgets 0 and 1 for spans
+1,022 and 32,768 at weight 17, with exactly one matching chunk/split path
+event each and bitwise full-row oracle agreement. No runtime answer was
+forced. The helper's own contract admits the wide input; the full stencil
+entry was never called beyond its width bound. Empty/inverted inner ranges
+remain outside this diagnostic's coverage.
+
+Raw IR differs only at the selected call; all four queries and seven W1
+clone definitions agree. Optimized code changes exactly five definitions:
+the row helper, outer chunks 39/41 and splitters 38/40. Direct pixel inlining
+moves three range-conflict checks into outer row preheaders and introduces
+a stride guard, while retaining the per-row query and positive-budget
+splitter. Strict floating-point grouping, eight-pixel vector work,
+allocation, initialization, cleanup and release agree. Object text grows
+from 8,808 to 11,208 bytes, a 2,400-byte or 27.25 percent cost. The measured
+gain therefore belongs to the combined dispatch, inlining and alias-check
+motion, not isolated recursive-entry overhead or scheduler behavior.
+
+The original optimized inspection failed after generating its artifacts:
+its assembly extractor assumed `.cfi_endproc`, absent from five leaf W1
+functions. The root agent authorized a read-only correction against those
+frozen files, using actual `-- End function` boundaries, the exact seven
+symbols and a no-nested-definition check. All seven normalized assembly
+bodies then agreed, as had their optimized LLVM bodies. Original script,
+failure, generated hashes and correction remain retained; no native image
+was rebuilt and the first inspection is not reported as passing. An earlier
+runner-header concern was a preparation misdiagnosis: its saved bytes already
+contained tabs. The explicit `printf` spelling changed clarity, not a failed
+run. A guard rejection before oracle execution was scheduling overhead only.
+
+Guarded costs in seconds were compiler 46.34, emission 0.83, native
+construction 2.56, aggregate full oracles 1.27, observed helper 0.33, original
+inspection 0.55, null 5.09 and main 5.00. The static extractor correction
+took 0.01 s. Full real/user/system costs are retained in the dated evidence.
+All native stages stayed below 30 seconds; the compiler stayed below 120
+seconds at two jobs.
+
+### Current-main correspondence and general implementation
+
+After merging main `95b21cfd98cef3be3fb94a92486aa57b418cc0ae`, a fresh compiler
+was built from clean `a5784dcf76c22746714c91d8cf3e17044a025c00`, whose compiler,
+tests and specification match that main revision. The immutable baseline CLI
+SHA-256 is `95a56584361fe0debc284f803af0676f972305ca7b3586fc6ec6e97f2f4c893d`.
+Its stencil parallel LLVM, sequential LLVM and ledger match the frozen-7127
+outputs byte for byte. Build cost was 46.97 s and the separate emission and
+comparison cost 1.04 s. This is static correspondence, not a new timing result
+or a relabeling of the frozen images.
+
+The selected general implementation keeps the existing query and work
+estimate at every overlapping-world `LoopSplit`. A zero answer calls its
+existing overlapping chunk; a positive answer retains the splitter and its
+exact allowance. The sequential world still calls its existing chunk without
+either query or branch. Scalar results join through a phi; addressed results
+share the planned destination and take one post-join snapshot. Predecessor
+planning uses the same world selection, and an ensuing ordinary overlap join
+remains the final continuation. The
+[original amendment](https://github.com/mbbill/Whitefoot/blob/0fe62339885b3254a4a76214ab5146d2360605b8/design/amendments/zero-budget-loop-dispatch.md)
+recorded this candidate without changing the live tree, specification, proof
+or runtime policy. The [reassessment below](#general-dispatch-reassessment)
+supersedes that proposal.
+
+Entering an empty chunk differs from the splitter's early seed return, so
+entry behavior matters. Current chunk synthesis reconstructs borrowed local
+Box storage, then reaches the counted-range bound test before source body
+work. Reconstruction uses an existing valid pointer and target header offset,
+without reading elements/headers, allocating, publishing or taking cleanup
+ownership. Seed/capture snapshots and work pricing already occur at the
+caller in either path. Empty or inverted chunks return the incoming seed;
+nested queries remain behind the loop test. Focused qualification reuses the
+maintained degenerate-range and Box-reference pricing cases, extends cleanup
+and nested-publication observations, and adds an emitter-level aggregate
+result case for the addressed ABI without inventing an admitted aggregate
+reduction.
+
+**Design suitability.** A local caller branch keeps the existing query,
+chunk, splitter, ABI and runtime responsibilities. A synthesized dispatch
+wrapper could avoid new caller CFG, but adds helper/ABI ownership and still
+depends on inlining for the measured opportunity; it is deferred. The branch
+adds positive-path work and may increase code size. The one-site result does
+not establish the all-site candidate's speed or W1 protection: focused
+correctness, candidate optimized-code inspection, canonical checks and the
+maintained hosted comparison remain required. Its unresolved W1 outcome and
+code-growth tradeoff are retained in [TODO](../../../docs/todo.md), rather
+than resolved by another exploratory timing trial.
+
+### General candidate qualification at cdac793c
+
+Candidate `cdac793c09f00f0943060671e1b01326107ee6ed` built in 44.88 s
+(real/user/system 44.85/77.50/1.09 s), within its 120-second, two-job cap.
+Its saved compiler SHA-256 is
+`f4161711dfe56d116b72b535bd37324ca5fca180f3fd49bcb1387d253d3e7623`.
+The 295 seconds waiting for an external guard owner is separate from that
+cost. Parallel ledger and sequential LLVM are byte-identical to the fresh
+main-95 baseline. All four raw query operand-expression graphs retain the
+same source value IDs and arithmetic; all seven raw W1 functions, normalized
+optimized LLVM bodies and assembly instruction bodies agree. The dated
+evidence records candidate module, object, compiler and comparison hashes.
+
+The general candidate grows text to 12,728 bytes: 3,920 bytes (44.50 percent)
+above the 8,808-byte baseline, and 1,520 above the one-site control. Six
+optimized definitions change: the previous five and top-level `stencil`.
+Its zero paths also inline initialization and both row-loop directions into
+that top-level function, which grows from 102 to 541 body lines. Strict
+eight-pixel arithmetic, the allocation/memset/free structure and positive
+splitter calls remain. LLVM places query instructions in mutually exclusive
+loop versions, including a constant-zero initialization-span version; the
+four raw sites and their arguments are unchanged. All other normalized
+optimized bodies agree. This broader optimizer effect has no new local
+timing result; the frozen 21.66 percent W4 result still belongs only to the
+one-site control.
+
+The 30-second static action completed both new source preflights, emission,
+optimization, comparisons and artifact hashing, then exited 1 after 1.57 s:
+its final repository-relative source manifest was checked from the scratch
+directory. The same read-only check from the repository passed in 0.01 s.
+The original script and failed log remain retained; no generated module or
+object was rebuilt. This was a bookkeeping correction, not an uninterrupted
+passing action. Both preflights use `--par-scalar-leaf-limit off`, matching
+the Rust tests' existing helper configuration.
+
+The library test executable built in 80.10 s (80.01/139.54/1.84 s), below its
+180-second cap. The initial focused action ran 19 tests in 9.42 s
+(9.36/4.94/1.69 s): 18 passed, including all 13 loop-split tests, the three
+pricing cases, ordinary overlap continuation and the maintained stencil
+oracle matrix. The new private-IR addressed-result case passed its shared
+destination, one-snapshot and W1 assertions, then failed LLVM verification:
+the raw `lower_checked` fixture left the floor fallback's `wf__main_body`
+reference undefined. The test now appends the existing ordinary launcher,
+as the backend helpers do; this correction awaits revalidation, with the
+LLVM check and all result assertions unchanged. The complete original failure
+and module are preserved, and this suite is not reported as passing.
+
+The [hosted compute comparison for this candidate](https://github.com/mbbill/Whitefoot/actions/runs/35800610607)
+passed with no suspect among its 15 candidate cells. Its ratios are
+**baseline/candidate**, unlike the local control's B/A: stencil W1 is 1.025454
+and W4 is 1.005683. The identical-image control retains a stencil W1 suspect
+at 0.968419; it is not cleared as noise. This maintained comparison supports
+the candidate's behavior on its own cells, not transfer of the local one-site
+speedup. The [other checks at cdac](https://github.com/mbbill/Whitefoot/commit/cdac793c09f00f0943060671e1b01326107ee6ed/checks)
+passed I/O-host, corpus and runtime checks on the supported hosts; both unit
+jobs failed the same addressed-fixture launcher gap. Static checking failed
+because the newly upstreamed v0.63 archive was absent from cdac, and design
+readiness also exposed a dated citation anchor in the amendment. That anchor
+is now stable and undated; lightweight design lint passes. The pending
+amendment still requires an owner ruling, and no full-gate pass is claimed.
+
+Main subsequently advanced to `e8e1c411ca64b6aefb2a04e99e6c208cfabfe410`
+through PR88, which changes storage/lowering and the active specification.
+All candidate binaries and evidence above retain their cdac/main-95 identity.
+Further builds and reruns were held for composition assessment; no evidence
+here qualifies or measures the newer compiler.
+
+### General dispatch reassessment
+
+The general candidate at `0fe62339`, against `8d6da723`, passed correctness but
+failed the maintained comparison on an Intel Xeon Platinum 8573C in
+[run 35801623482](https://github.com/mbbill/Whitefoot/actions/runs/35801623482).
+Its synthetic checkout `46534248` has exactly the published tree `151878b0`.
+The identical-image null has zero suspects; null and comparison each retain
+the complete 900-row matrix. Ratios below are baseline/candidate, so values
+below one mean the candidate takes longer.
+
+| Workload | Wall ratio | Candidate elapsed-time change | Adverse pairs |
+| --- | ---: | ---: | ---: |
+| Records W1 | 0.764973 | +30.72% | 5/5 |
+| Records W2 | 0.961469 | +4.01% | 5/5 |
+| Stencil W2 | 0.955501 | +4.66% | 4/5 |
+
+Records fails at two widths; stencil W2 remains a suspect. Records W1 process
+medians are 20.811--20.996 ms for baseline and 27.205--27.409 ms for candidate.
+CPU, warmups and both execution orders agree; every measured candidate sample
+is slower than every baseline sample. The candidate's null timings agree with
+its comparison timings. The
+[earlier AMD EPYC 9V45 run](https://github.com/mbbill/Whitefoot/actions/runs/35800610607)
+passes the rule, but its records W1 ratio is already 0.971251 with five adverse
+pairs. All 34 baseline files and all 34 candidate files respectively match
+byte-for-byte between those sessions, including LLVM, objects and executables.
+The different verdicts therefore do not describe a compiler repair. Keep both
+outcomes, including the earlier null's stencil W1 suspect.
+
+Static inspection of those saved x86 artifacts finds only
+`wf_summarize_records` changed among 29 raw LLVM definitions. Its query and
+work price 814 remain. Crucially, W1 selects the inactive-pool sequential
+world and executes neither that query nor the new zero-budget branch. Its
+440-byte sequential chunk is byte-identical but moves from `0x32f0` to
+`0x32d0`. LLVM also changes the shared `wf_bench_records` adapter: baseline
+inlines both summary arms, while candidate keeps the overlapping summary as
+a call and inlines only the sequential arm. W1 register setup and stack depth
+change, the latter by 32 bytes. This identifies changed optimization context
+and placement, not their causal contributions. No hardware counters or new
+native timing were collected. The
+[Intel artifact](https://github.com/mbbill/Whitefoot/actions/runs/35801623482/artifacts/10726315723)
+and [AMD artifact](https://github.com/mbbill/Whitefoot/actions/runs/35800610607/artifacts/10726116067)
+retain the exact code and samples; inspect `records.ll`, `records.o` and the
+linked `records` in each `performance-baseline`/`performance-candidate`
+directory with `llvm-nm --print-size --numeric-sort` and
+`llvm-objdump -dr --no-show-raw-insn` without rerunning either image.
+
+This meets the prior TODO's reopening condition. The selected response is to
+withdraw the all-site compiler optimization, preserving main's existing query,
+splitter and chunk behavior. A wrapper that inlines recreates the exposure;
+one that stays outlined retains an entry boundary. A noinline restriction
+removes part of the mechanism behind the only measured stencil gain.
+Alignment or ordering changes do not isolate the changed caller. None has
+enough evidence for a replacement implementation, and an ARM timing trial
+would not resolve the Intel result. No replacement benchmark campaign or
+runner infrastructure is selected.
+
+A future bounded discriminator could place the same 32 padding bytes before
+versus after the unchanged sequential chunk in each original arm, requiring
+each pair to preserve caller instructions, stack depth and subsequent symbol
+addresses before any timing. One predetermined comparable Intel session with
+qualified null and full outputs could then test a placement contribution;
+it would not by itself establish an adoption-worthy dispatch policy. This
+control has not been constructed or run. Defer it until a concrete compiler
+consumer and suitable native host justify the separate attribution study.
+
+The affected set is the emitter's dispatch and continuation handling, its
+dispatch-specific tests, this investigation, the TODO and the
+[replacement pending amendment](../../../design/amendments/zero-budget-loop-dispatch.md).
+The withdrawal restored production compiler code to then-current main `3d7fa496`, retaining
+useful zero-budget output/cleanup, nested-publication and ordinary continuation
+coverage. The synthetic addressed-result case is retired with the removed
+two-edge destination join it protected; it does not qualify an admitted
+aggregate reduction. Existing degenerate ranges and pricing cases remain.
+The live tree has not changed and the new proposal awaits the owner's ruling.
+No specification, conformance verdict, runtime policy or performance threshold
+changes follow from this reassessment.
+
+**Design suitability.** Restoring the existing path avoids selecting another
+optimizer boundary without evidence. The single-site opportunity remains
+useful research, while broad caller and placement control is a separate,
+unqualified optimization problem. Keep its cost, uncertainty, validation and
+reopening condition in the maintained TODO; do not expand this change into
+world separation or host-specific tuning.

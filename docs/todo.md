@@ -291,23 +291,28 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   that case supplies both the benefit and the availability evidence; pricing
   must not infer a separate source lifetime.
 
-- **Known-zero loop dispatch has a qualified combined cost, but no production mechanism.**
-  The [bounded stencil control](../research/investigations/compute-model/DESIGN.md#zero-budget-stencil-dispatch-control)
-  removes 65,504 queries returning zero and inner splitter entries together in
-  the parallel world, enabling pixel inlining and alias-check movement. Its
-  corrected W4 trial improves all five pairs, with a 17.97 percent median benefit
-  against 4.25 percent maximum null drift. It does not isolate query cost or
-  justify a grain-policy change.
-  Defer implementation until a general lowering/runtime path is selected;
-  reopen with a design that handles zero and nonzero budgets, configured work
-  floors, nested loops and the sequential world without copying a fixture's
-  threshold into lowering. Preserve ordinary operations and exact-once cleanup,
-  inspect optimized paths, and validate full oracles plus a prospective bounded
-  paired/null whole-call criterion. A query-retained direct-chunk control is
-  the smallest additional observation if choosing that mechanism requires
-  distinguishing query effects from splitter removal and resulting optimization;
-  select its cost cap and stop rule before running it, rather than extending
-  the completed trial.
+- **Zero-budget dispatch needs caller and placement attribution before adoption.** The
+  [query-retained one-site control](../research/investigations/compute-model/DESIGN.md#query-retained-control-result)
+  meets its W4 criterion, but grows module text by 2,400 bytes and measures a
+  2.97 percent W1 paired-median regression despite identical normalized W1
+  instructions. It couples dispatch, pixel inlining and alias-check motion;
+  it establishes neither standalone entry cost nor the benefit of applying
+  the branch at every site. The general cdac candidate grows text by 3,920
+  bytes (44.50 percent), including additional top-level inlining, with no new
+  local timing. The subsequent
+  [null-qualified Intel comparison](../research/investigations/compute-model/DESIGN.md#general-dispatch-reassessment)
+  regresses records by 30.72 percent at W1 and 4.01 percent at W2. W1 never
+  executes the added dispatch: its unchanged sequential chunk has different
+  placement and a differently optimized caller. Neither cause is isolated.
+  Withdraw the all-site optimization while retaining the existing query and
+  splitter entry; a wrapper, noinline boundary or alignment policy needs its
+  own grounds. Defer that broader optimizer/layout investigation behind the
+  remaining compute-expression questions. Reopen with a comparable Intel host
+  and a bounded control separating caller/stack changes from placement, with
+  an identical-image control and full outputs, before selecting a general
+  replacement. Require a demonstrated candidate benefit and qualification of
+  the affected W1/parallel paths; a passing ARM or different-host run alone
+  cannot clear the retained counterexample.
 
 - **Stable scatter retains construction and packing costs.** The dated merged-model
   [joined-phase result](../research/investigations/compute-model/DESIGN.md#joined-phase-result-2026-09-21)

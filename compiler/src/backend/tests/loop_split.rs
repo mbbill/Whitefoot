@@ -740,6 +740,73 @@ fn synthesized_symbols(module: &str, prefix: &str) -> Vec<String> {
     found
 }
 
+/// Observe the selected outer call without changing any inner query or worker
+/// protocol. The same image exercises a zero answer and the real runtime's
+/// answer. A zero allowance enters the splitter once and reaches one chunk;
+/// that chunk retains its nested queries and publication opportunities.
+fn observe_outer_loop_budget(module: &str, caller: &str, splitter: &str, chunk: &str) -> String {
+    let body = function_body(module, caller);
+    assert_eq!(body.matches("call i64 @wf__par_split_budget(").count(), 1);
+    let changed = body.replace(
+        "call i64 @wf__par_split_budget(",
+        "call i64 @wf_test_outer_budget(",
+    );
+    let mut observed = module.replacen(body, &changed, 1);
+    for (symbol, observer) in [
+        (splitter, "wf_test_outer_splitter"),
+        (chunk, "wf_test_outer_chunk"),
+    ] {
+        let body = function_body(&observed, symbol).to_owned();
+        let entry = body.lines().find(|line| line.ends_with(':')).unwrap();
+        let changed = body.replacen(entry, &format!("{entry}\n  call void @{observer}()"), 1);
+        observed = observed.replacen(&body, &changed, 1);
+    }
+    observed.push_str(
+        "\ndeclare i64 @wf_test_outer_budget(i64, i64)\ndeclare void @wf_test_outer_splitter()\ndeclare void @wf_test_outer_chunk()\n",
+    );
+    super::parallel::observe_worker_schedule(&observed)
+}
+
+// Appended to the existing worker observer, so both ordinary and zero-budget
+// runs share one construction and retain the real publication/join protocol.
+// WF_TEST_NESTED distinguishes a map with no inner offers from the nested
+// reduction, whose zero-budget outer chunk must still publish inner work.
+const OUTER_LOOP_BUDGET_OBSERVER: &str = r#"
+extern uint64_t wf__par_split_budget(uint64_t, uint64_t);
+extern unsigned long wf__par_grants(void);
+static _Atomic unsigned outer_queries, outer_splitters, outer_chunks;
+static _Atomic uint64_t outer_allowance;
+uint64_t wf_test_outer_budget(uint64_t span, uint64_t weight) {
+    atomic_fetch_add(&outer_queries, 1);
+    uint64_t allowance = getenv("WF_TEST_ZERO_BUDGET") ? 0 : wf__par_split_budget(span, weight);
+    atomic_store(&outer_allowance, allowance);
+    return allowance;
+}
+void wf_test_outer_splitter(void) { atomic_fetch_add(&outer_splitters, 1); }
+void wf_test_outer_chunk(void) { atomic_fetch_add(&outer_chunks, 1); }
+static void report_outer_budget(void) {
+    unsigned queries = atomic_load(&outer_queries);
+    unsigned splitters = atomic_load(&outer_splitters);
+    unsigned chunks = atomic_load(&outer_chunks);
+    uint64_t allowance = atomic_load(&outer_allowance);
+    unsigned long grants = wf__par_grants();
+    int zero = getenv("WF_TEST_ZERO_BUDGET") != NULL;
+    if (queries != 1 || !chunks ||
+        (!allowance && (splitters != 1 || chunks != 1)) ||
+        (allowance && !splitters) ||
+        (!WF_TEST_NESTED && !zero && !allowance) ||
+        ((WF_TEST_NESTED || !zero) &&
+            (!grants || !atomic_load(&schedule_entered)))) {
+        fprintf(stderr, "outer loop budget: zero=%d queries=%u splitters=%u chunks=%u grants=%lu\n",
+                zero, queries, splitters, chunks, grants);
+        _Exit(116);
+    }
+}
+__attribute__((constructor)) static void register_outer_budget(void) {
+    atexit(report_outer_budget);
+}
+"#;
+
 /// A split that carries captures and folds under a second admitted operation
 /// publishes what the unsplit lowering publishes, at every worker count.
 ///
@@ -1087,13 +1154,36 @@ fn nested_boxed_array_payload_reductions_preserve_the_unsplit_result() {
         );
         assert_eq!(output.stdout, reference.stdout, "WF_WORKERS={workers}");
     }
-    let (granted, output) = CountedProgram::link(&split, &directory).run(Some("4"));
-    assert!(
-        granted > 0,
-        "the controlled nested program must grant worker work"
+    let outer_splitter = splitters
+        .iter()
+        .find(|symbol| nested.contains(&format!("call i64 {symbol}(")))
+        .expect("the enclosing function enters the outer splitter");
+    let outer_chunk_symbol = chunks
+        .iter()
+        .find(|symbol| {
+            function_body(&split, outer_splitter).contains(&format!("call i64 {symbol}("))
+        })
+        .expect("the outer splitter has one chunk");
+    let observed =
+        observe_outer_loop_budget(&split, "@wf_nested", outer_splitter, outer_chunk_symbol);
+    let observer = format!(
+        "#define WF_TEST_NESTED 1\n{}\n{OUTER_LOOP_BUDGET_OBSERVER}",
+        super::parallel::WORKER_SCHEDULE,
     );
-    assert_eq!(output.status.code(), Some(0));
-    assert_eq!(output.stdout, reference.stdout);
+    let executable = super::build_linked_executable(&observed, Some(&observer), &[], &directory);
+    for zero in [false, true] {
+        let mut command = Command::new(&executable);
+        command
+            .env("WF_WORKERS", "4")
+            .env_remove("WF_SPLIT_WORK")
+            .env_remove("WF_TEST_ZERO_BUDGET");
+        if zero {
+            command.env("WF_TEST_ZERO_BUDGET", "1");
+        }
+        let output = command.output().expect("run observed nested loop budget");
+        assert_eq!(output.status.code(), Some(0), "zero={zero}: {output:?}");
+        assert_eq!(output.stdout, reference.stdout);
+    }
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
@@ -1192,16 +1282,24 @@ fn an_independent_map_joins_and_preserves_its_outer_buffer() {
     }
     identical(&runs).expect("splitting an independent map must not move one output byte");
 
-    let counted = CountedProgram::link(&split, &directory);
-    {
-        let workers = "4";
-        let (granted, output) = counted.run(Some(workers));
-        assert_eq!(output.status.code(), Some(0));
+    let observed = observe_outer_loop_budget(&split, "@wf_mapped", &splitter_symbol, &chunk_symbol);
+    let observer = format!(
+        "#define WF_TEST_NESTED 0\n{}\n{OUTER_LOOP_BUDGET_OBSERVER}",
+        super::parallel::WORKER_SCHEDULE,
+    );
+    let executable = super::build_linked_executable(&observed, Some(&observer), &[], &directory);
+    for zero in [false, true] {
+        let mut command = Command::new(&executable);
+        command
+            .env("WF_WORKERS", "4")
+            .env_remove("WF_SPLIT_WORK")
+            .env_remove("WF_TEST_ZERO_BUDGET");
+        if zero {
+            command.env("WF_TEST_ZERO_BUDGET", "1");
+        }
+        let output = command.output().expect("run observed Unit-map loop budget");
+        assert_eq!(output.status.code(), Some(0), "zero={zero}: {output:?}");
         assert_eq!(output.stdout, runs[0].1);
-        assert!(
-            granted > 0,
-            "WF_WORKERS={workers} granted no map lane in the controlled worker execution"
-        );
     }
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
@@ -1781,6 +1879,126 @@ fn assert_combine_rows(reference: &[u8], published: &[u8], setting: &str) {
             combine.spelling
         );
     }
+}
+
+/// Two split loops surround an ordinary call join and precede a loop-header
+/// phi. One image checks both allowance answers and the sequential world;
+/// native construction also verifies every emitted phi predecessor.
+#[test]
+fn multiple_split_loops_and_an_ordinary_join_keep_phi_predecessors() {
+    let source = br#"fn choose(value: own u64) -> result: own u64 pure {
+  return imax(value, value);
+}
+
+fn composed(limit: own u64) -> result: own u64 pure {
+  let total = 5_u64;
+  for (i in 0_u64..limit) {
+    set total = total +wrap i;
+  }
+  let a = choose(value: total);
+  let b = choose(value: 17_u64);
+  let c = choose(value: 19_u64);
+  let ab = a +wrap b;
+  let combined = ab +wrap c;
+  let marks = array_filled::<u64, 2>(value: 0_u64);
+  for (j in 0_u64..2_u64) {
+    set marks[j] = j +wrap combined;
+  }
+  let acc = marks[0_u64] +wrap marks[1_u64];
+  let round = 0_u64;
+  loop @carry {
+    if round == 2_u64 {
+      break @carry;
+    }
+    set acc = acc +wrap 1_u64;
+    set round = round +wrap 1_u64;
+  }
+  return acc;
+}
+
+fn main() -> status: own ExitStatus pure {
+  let result = composed(limit: 4_u64);
+  if result != 97_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let module = emit_with_overlap(source);
+    let body = function_body(&module, "@wf_composed");
+    assert_eq!(body.matches("call i64 @wf__par_split_budget(").count(), 2);
+    assert!(body.contains("call void @wf__par_publish("));
+    assert!(body.contains(" = phi i64 "));
+    let sequential = function_body(&module, "@wf__par_seq_composed");
+    assert!(!sequential.contains("@wf__par_split_budget("));
+    assert!(!sequential.contains("@wf__par_publish("));
+
+    let splitters = synthesized_symbols(&module, "@wf__par_split_");
+    assert_eq!(splitters.len(), 2);
+    let mut observed = module.replace(
+        "call i64 @wf__par_split_budget(",
+        "call i64 @wf_test_cfg_budget(",
+    );
+    for symbol in splitters {
+        let body = function_body(&observed, &symbol).to_owned();
+        let entry = body.lines().find(|line| line.ends_with(':')).unwrap();
+        let changed = body.replacen(
+            entry,
+            &format!("{entry}\n  call void @wf_test_cfg_splitter()"),
+            1,
+        );
+        observed = observed.replacen(&body, &changed, 1);
+    }
+    observed.push_str(
+        "\ndeclare i64 @wf_test_cfg_budget(i64, i64)\ndeclare void @wf_test_cfg_splitter()\n",
+    );
+    let observer = r#"#include <stdatomic.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+static _Atomic unsigned queries, splitters;
+uint64_t wf_test_cfg_budget(uint64_t span, uint64_t weight) {
+    (void)weight;
+    if (span != 4 && span != 2) { fputs("wrong composed span\n", stderr); exit(117); }
+    atomic_fetch_add(&queries, 1);
+    return getenv("WF_TEST_POSITIVE_BUDGET") ? 4 : 0;
+}
+void wf_test_cfg_splitter(void) { atomic_fetch_add(&splitters, 1); }
+static void report(void) {
+    unsigned queried = atomic_load(&queries), entered = atomic_load(&splitters);
+    int sequential = strcmp(getenv("WF_WORKERS"), "1") == 0;
+    int positive = getenv("WF_TEST_POSITIVE_BUDGET") != NULL;
+    if (queried != (sequential ? 0 : 2) ||
+        (sequential ? entered != 0 : (positive ? entered <= 2 : entered != 2))) {
+        fprintf(stderr, "composed loops: queries=%u splitters=%u\n", queried, entered);
+        _Exit(118);
+    }
+}
+__attribute__((constructor)) static void register_report(void) { atexit(report); }
+"#;
+    let directory = test_directory();
+    let executable = super::build_linked_executable(&observed, Some(observer), &[], &directory);
+    for (workers, positive) in [("1", false), ("4", false), ("4", true)] {
+        let mut command = Command::new(&executable);
+        command
+            .env("WF_WORKERS", workers)
+            .env_remove("WF_TEST_POSITIVE_BUDGET");
+        if positive {
+            command.env("WF_TEST_POSITIVE_BUDGET", "1");
+        }
+        let output = command.output().expect("run composed split loops");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "WF_WORKERS={workers}, positive={positive}: {output:?}"
+        );
+        assert!(
+            output.stdout.is_empty() && output.stderr.is_empty(),
+            "{output:?}"
+        );
+    }
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
 /// An empty range folds nothing, an inverted one folds nothing, and a one-wide
