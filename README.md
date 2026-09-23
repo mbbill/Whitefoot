@@ -36,7 +36,7 @@ Read the material that owns the question you are working on:
 | What does the language admit? | [Active kernel specification](spec/kernel-spec.md) |
 | What does this compiler implement, and how do I run it? | [Running the compiler](#running-the-compiler) below; the conformance report states the implemented surface |
 | What are the project goals and design principles? | [Constitution](docs/constitution.md) |
-| How do I work on a branch and prepare a merge? | [AGENTS.md](AGENTS.md); [CLAUDE.md](CLAUDE.md) is the identical alternate entry |
+| How do I work on a branch and prepare a merge? | [AGENTS.md](AGENTS.md) |
 | Which writer forms should I try? | [Patterns](docs/patterns.md) |
 | How should I investigate, verify, and maintain documentation? | [Engineering practice](docs/practice.md) |
 | Why was a design chosen? | [Design trees](design/), with reasons and refused alternatives |

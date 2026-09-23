@@ -7,6 +7,17 @@ criterion for deciding whether to pursue it. Entries do not select a design.
 Remove an item when its implementation and checks land, or its validation
 concludes with a recorded disposition; retain any selected follow-up work here.
 
+- **Generic struct constants are not implemented.** CONST-2's `cvalue`
+  grammar admits written type arguments, but
+  `compiler/src/semantic/check/types.rs::parse_const_construction` returns
+  `UnsupportedSemanticFeature::CompositeValues` whenever they are present.
+  This is an implementation gap, not a source-language rejection. Reopen when
+  extending static aggregate initialization: instantiate the exact named
+  const-eligible struct, preserve declared field order and field types, and
+  validate a generic struct constant's field reads against wrong-type,
+  wrong-order and non-const-eligible controls. Remove this item when those
+  cases pass through the ordinary compiler and conformance paths.
+
 - **Audit numeric conversion coverage and unnecessary fallible interfaces.**
   The known starting case is integer low-bit narrowing: `cvt::<u32, u8>(x)`
   preserves the numeric value and returns `Result`, while `reinterpret` only
@@ -94,23 +105,38 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   against direct C and the current WF implementation. No new language operation
   is selected yet.
 
-- **Ring payload addressing withholds a useful unsigned offset fact.** The
-  [Deque comparison](../research/experiments/container-representation/deque-library/RESULTS.md)
-  observes a 2.256–2.405x scalar forward-churn cost against C with ordinary
-  inlining at v0.64. A bounded IR-only probe adding `nuw` to four positive-stride
-  payload GEPs lets Clang keep the descriptor in registers; merely splitting
-  the address calculation does not. No timing recovery or general validity
-  claim follows from that probe. Qualify the effective byte offset against
-  the actual padded header, stride, allocation domain and parent extent,
-  including zero-capacity, zero-size and maximum-index cases; do not apply
-  the fact to wrapping head arithmetic. Older LLVM needs a supported spelling
-  or an equally justified portable fact. Compare identical source with the
-  fact on and off, retain the independent oracle, and measure the full
-  normal/retained matrix before selecting production emission. Defer that
-  backend change while completing the library baseline; reopen for the next
-  container lowering experiment. Zero-stride address steps now use the
-  selected-target zero displacement; that repair does not qualify an unsigned
-  flag for positive-stride payload steps.
+- **Deque scalar costs remain after payload-address qualification.** The
+  [paired comparison](../research/experiments/container-representation/deque-library/RESULTS.md)
+  isolates the qualified index fact and reduces normal scalar forward churn
+  from about 2.3x C to 1.20–1.26x, leaving that residual gap unattributed.
+  Retained scalar reverse churn is about seven percent slower in the new
+  production layout despite identical relevant instructions and dependencies.
+  A controlled 32-byte padding experiment restores the endpoint addresses
+  without reliably removing the difference, so neither endpoint placement
+  nor an intrinsic assumption cost is established as its cause. The owner
+  selected provisional retention of the fact with both results preserved;
+  no measured application mix makes the forward gain cancel the reverse loss.
+  Compare the remaining scalar work with the same source, independent oracle
+  and C controls, preserving native code/data placement and recording
+  execution-state variation before attributing a cost to the interface or
+  choosing a production alignment policy. Require repeatable improvement in
+  both measurement orders and account for other affected paths. Defer broader
+  tuning while this causal question is open; reopen for a workload dominated
+  by retained reverse calls, a native-toolchain change or another material
+  regression under the matched comparison.
+
+- **Upstream LLVM on Darwin does not yet support the selected stack-probe
+  spelling.** The [Deque comparison](../research/experiments/container-representation/deque-library/RESULTS.md)
+  records LLVM 22.1.8 rejecting native construction of the unchanged baseline
+  with `Unsupported stack probing method`; the emitted
+  `"probe-stack"="__chkstk_darwin"` remains present. Parsing and optimization
+  succeed, and the native builder's Apple Clang path works, so this does not
+  establish a failure of the new address fact. Before offering upstream LLVM
+  as a native Darwin consumer, determine the supported probe form and link
+  requirements and validate large-frame and recursive exhaustion through the
+  existing floor tests. Disabling probes is not an acceptable workaround.
+  Defer this separate toolchain extension while the current native path is
+  supported; reopen when another native Darwin consumer is required.
 
 - **Slab aggregate results retain extra transfers and layout overhead.**
   The [Slab comparison](../research/experiments/container-representation/slab-library/RESULTS.md)

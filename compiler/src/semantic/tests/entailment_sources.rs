@@ -34,22 +34,6 @@ fn defined_sources() -> BTreeSet<u8> {
         .collect()
 }
 
-/// Every label the `retired:` envelope key withdraws.
-fn retired_sources() -> BTreeSet<u8> {
-    ent3_body()
-        .lines()
-        .filter_map(|line| line.strip_prefix("retired: "))
-        .flat_map(|list| list.split(", "))
-        .map(|label| {
-            label
-                .strip_prefix('S')
-                .expect("a retired label is S-prefixed")
-                .parse()
-                .expect("a retired label ends in its source number")
-        })
-        .collect()
-}
-
 /// The source number of one fact-establishing event. Synthetic diagnostic and
 /// invalidation events return `None` and never add a fact by themselves.
 const fn fact_event_source(kind: FlowEventKind) -> Option<u8> {
@@ -128,12 +112,9 @@ fn ent3_labels_and_fact_event_constructors_name_the_same_sources() {
 
 #[test]
 fn retired_fact_source_labels_are_never_reused() {
-    let retired = retired_sources();
-    assert_eq!(
-        retired,
-        BTreeSet::from([8, 10]),
-        "S8 and the v0.58-retired external S10 source stay reserved"
-    );
+    // Rule IDs stay stable: withdrawn S8 and S10 remain reserved even though
+    // the active specification lists only current fact sources.
+    let retired = BTreeSet::from([8, 10]);
     let defined = defined_sources();
     assert!(
         retired.is_disjoint(&defined),
