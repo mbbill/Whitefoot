@@ -491,6 +491,40 @@ prefer preserving the existing closure's completed work over introducing
 another solver or omitting facts. Any representation choice must state its
 correspondence argument before it is selected by timing.
 
+The paired comparison is available through the existing research runner:
+
+```sh
+rustc --edition=2024 -O research/investigations/result-proof-transport/probe.rs -o "$wf_result_scratch/probe"
+perl .github/run-check.pl result-proof-cost "$wf_result_scratch/probe" \
+  "$wf_result_before" "$wf_result_scratch/comparison" \
+  --compare "$wf_result_after" "$PWD"
+```
+
+It emits every sample to `comparison.csv`, includes the six maintained
+workloads and all twelve existing scale inputs, and compares the emitted LLVM
+after every paired round. Compiler construction remains a separate command;
+both paths must name prebuilt gate-profile executables.
+
+The first attribution used macOS `sample` on the unoptimized `a1aa1aa7`
+compiler during the DEFLATE invocation: 316 of 470 sampled driver stacks had
+`close_with_row_pruning` at their leaf. Major callers included ordinary
+pre-kill closure following Result selection. This single short sample locates
+an investigation target, not a precise phase-time partition. Code inspection
+then found that importing an equal or weaker bound marked a closed cell fresh
+even when its selected numeric value did not change. Reimporting a closed
+Result snapshot therefore scheduled ordinary matrix cells for closure again.
+
+The isolated first experiment preserves the full layer's closure record when
+a new candidate cannot improve its selected bound, and separately preserves
+the ordinary layer's record when no non-call candidate improves that layer.
+A new disequality matters only to a layer that did not already contain it.
+Every distinct proof candidate is still stored: a weaker or equal candidate
+can become necessary after another proof's support is killed. This is an
+implementation correction under the existing incremental-closure decision;
+it does not select a different witness or numeric fact family. The matched
+timing comparison tests whether these unnecessary fresh marks explain the
+observed regression before changing conditional-state representation.
+
 ## Candidate evidence and remaining validation
 
 With the candidate compiler, the same current runner accepts `--candidate`

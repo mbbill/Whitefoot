@@ -3,7 +3,7 @@
 
 use std::error::Error;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const PRODUCER: &str = r#"fn selected(value: own i32) -> result: own Result<i32, Overflow> pure contract {
@@ -212,11 +212,14 @@ fn cases() -> Vec<Case> {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = std::env::args().collect::<Vec<_>>();
+    if args.len() == 6 && args[3] == "--compare" {
+        return compare_cost(&args[1], &args[4], Path::new(&args[5]), Path::new(&args[2]));
+    }
     if args.len() == 4 && args[3] == "--scale" {
         return scale(&args[1], Path::new(&args[2]));
     }
     if !(args.len() == 3 || (args.len() == 4 && args[3] == "--candidate")) {
-        return Err("usage: probe COMPILER SCRATCH_DIRECTORY [--candidate|--scale]".into());
+        return Err("usage: probe COMPILER SCRATCH_DIRECTORY [--candidate|--scale|--compare OTHER_COMPILER REPOSITORY]".into());
     }
     let scratch = Path::new(&args[2]);
     fs::create_dir_all(scratch)?;
@@ -293,25 +296,7 @@ fn scale(compiler: &str, scratch: &Path) -> Result<(), Box<dyn Error>> {
     let mut csv = String::from("axis,size,repeat,source_bytes,wall_ms,peak_rss_bytes\n");
     for axis in ["copies", "outcomes", "joins"] {
         for count in [4, 8, 16, 32] {
-            let mut body = String::from("let outcome0 = selected(value: input);\n");
-            for index in 1..=count {
-                let previous = index - 1;
-                body.push_str(&match axis {
-                    "copies" => format!("let outcome{index} = outcome{previous};\n"),
-                    "outcomes" => format!("let outcome{index} = selected(value: input);\n"),
-                    "joins" => format!(
-                        "let outcome{index} = if choose {{\n  give outcome{previous};\n}} else {{\n  give selected(value: input);\n}}\n"
-                    ),
-                    _ => unreachable!(),
-                });
-            }
-            // The outcome remains an ordinary value on both compilers; the
-            // correctness probes separately require the transported relations.
-            body.push_str(&matched(
-                &format!("outcome{count}"),
-                "let observed = payload;",
-            ));
-            let source = consumer(&body);
+            let source = scale_source(axis, count);
             let path = scratch.join(format!("{axis}-{count}.wf"));
             fs::write(&path, &source)?;
             for repeat in 0..3 {
@@ -348,6 +333,153 @@ fn scale(compiler: &str, scratch: &Path) -> Result<(), Box<dyn Error>> {
                 fs::write(scratch.join("scale.csv"), &csv)?;
             }
         }
+    }
+    Ok(())
+}
+
+fn scale_source(axis: &str, count: usize) -> String {
+    let mut body = String::from("let outcome0 = selected(value: input);\n");
+    for index in 1..=count {
+        let previous = index - 1;
+        body.push_str(&match axis {
+            "copies" => format!("let outcome{index} = outcome{previous};\n"),
+            "outcomes" => format!("let outcome{index} = selected(value: input);\n"),
+            "joins" => format!(
+                "let outcome{index} = if choose {{\n  give outcome{previous};\n}} else {{\n  give selected(value: input);\n}}\n"
+            ),
+            _ => unreachable!(),
+        });
+    }
+    // Both compilers can accept this source without the transported relation.
+    // The correctness probes separately require the recovered proof authority.
+    body.push_str(&matched(
+        &format!("outcome{count}"),
+        "let observed = payload;",
+    ));
+    consumer(&body)
+}
+
+/// Explicit research comparison; never called by correctness CI. Construction
+/// precedes timing. One warmup is followed by five alternating paired rounds.
+fn compare_cost(
+    before: &str,
+    after: &str,
+    repository: &Path,
+    scratch: &Path,
+) -> Result<(), Box<dyn Error>> {
+    if std::env::consts::OS != "macos" {
+        return Err("this measurement uses macOS /usr/bin/time -l RSS bytes".into());
+    }
+    fs::create_dir_all(scratch)?;
+    let repository = repository.canonicalize()?;
+    let scratch = scratch.canonicalize()?;
+    let programs: &[(&str, &[&str])] = &[
+        ("dense-control", &["containers/dense.wf"]),
+        ("grayscale", &["grayscale_pixels.wf"]),
+        ("telemetry", &["telemetry_packet.wf"]),
+        ("prefix-expression", &["prefix_expression.wf"]),
+        ("wfgrep", &["wfgrep.wf"]),
+        (
+            "raw-deflate",
+            &[
+                "raw_deflate.wf",
+                "raw_deflate_dynamic.wf",
+                "raw_deflate_dynamic_decode.wf",
+                "raw_deflate_vectors.wf",
+            ],
+        ),
+    ];
+    let mut workloads: Vec<(String, Vec<PathBuf>)> = programs
+        .iter()
+        .map(|(name, sources)| {
+            (
+                name.to_string(),
+                sources
+                    .iter()
+                    .map(|path| repository.join("tests/programs").join(path))
+                    .collect(),
+            )
+        })
+        .collect();
+    for axis in ["copies", "outcomes", "joins"] {
+        for count in [4, 8, 16, 32] {
+            let name = format!("{axis}-{count}");
+            let path = scratch.join(format!("{name}.wf"));
+            fs::write(&path, scale_source(axis, count))?;
+            workloads.push((name, vec![path]));
+        }
+    }
+    let mut csv =
+        String::from("workload,compiler,round,warmup,wall_ms,peak_rss_bytes,source_bytes\n");
+    for (name, paths) in workloads {
+        let bytes: u64 = paths
+            .iter()
+            .map(fs::metadata)
+            .collect::<Result<Vec<_>, _>>()?
+            .iter()
+            .map(|metadata| metadata.len())
+            .sum();
+        let mut samples: [Vec<f64>; 2] = [Vec::new(), Vec::new()];
+        let mut memory = [0_u64; 2];
+        for round in 0..=5 {
+            let order = if round % 2 == 0 { [0, 1] } else { [1, 0] };
+            for index in order {
+                let compiler = [before, after][index];
+                let side = ["before", "after"][index];
+                let started = std::time::Instant::now();
+                let output = Command::new("/usr/bin/time")
+                    .arg("-l")
+                    .arg(compiler)
+                    .arg("--emit-llvm")
+                    .arg("-o")
+                    .arg(scratch.join(format!("{name}-{side}.ll")))
+                    .args(&paths)
+                    .output()?;
+                let wall_ms = started.elapsed().as_secs_f64() * 1000.0;
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                fs::write(
+                    scratch.join(format!("{name}-{side}-{round}.stderr")),
+                    &output.stderr,
+                )?;
+                if !output.status.success() {
+                    return Err(format!("{name}/{side}: {stderr}").into());
+                }
+                let rss = stderr
+                    .lines()
+                    .find(|line| line.contains("maximum resident set size"))
+                    .and_then(|line| line.split_whitespace().next())
+                    .ok_or("missing peak RSS")?
+                    .parse::<u64>()?;
+                csv.push_str(&format!(
+                    "{name},{side},{round},{},{wall_ms:.3},{rss},{bytes}\n",
+                    round == 0
+                ));
+                fs::write(scratch.join("comparison.csv"), &csv)?;
+                if round > 0 {
+                    samples[index].push(wall_ms);
+                    memory[index] = memory[index].max(rss);
+                }
+            }
+            if fs::read(scratch.join(format!("{name}-before.ll")))?
+                != fs::read(scratch.join(format!("{name}-after.ll")))?
+            {
+                return Err(format!("{name}: emitted LLVM differs in round {round}").into());
+            }
+        }
+        for values in &mut samples {
+            values.sort_by(f64::total_cmp);
+        }
+        println!(
+            "{name}: {:.3} [{:.3}, {:.3}] -> {:.3} [{:.3}, {:.3}] ms, {:.2} -> {:.2} MiB",
+            samples[0][2],
+            samples[0][0],
+            samples[0][4],
+            samples[1][2],
+            samples[1][0],
+            samples[1][4],
+            memory[0] as f64 / 1_048_576.0,
+            memory[1] as f64 / 1_048_576.0
+        );
     }
     Ok(())
 }

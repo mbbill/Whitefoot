@@ -7045,6 +7045,89 @@ pub(crate) mod tests {
         assert!(close(&state, &terms, &goals, &mut ledger).contradictory());
     }
 
+    /// Reimporting a numeric snapshot must not schedule its complete matrix
+    /// for closure again. Additional candidates still matter after a call's
+    /// authority is removed, even when they do not improve the full layer.
+    #[test]
+    fn repeated_snapshot_imports_preserve_closure_and_ordinary_fallbacks() {
+        let mut terms = TermTable::new();
+        let [left, middle, right] = [0, 1, 2].map(|binding| {
+            terms.intern(TermKind::Place(
+                super::super::term::ResolvedPlace::binding(BindingId(binding)),
+                IntegerType::U8,
+            ))
+        });
+        let goals = GoalTable::default();
+        let mut ledger = DerivationLedger::default();
+        let event = ledger.event(FlowEventKind::S1, None);
+        let mut state = FactState::new();
+        for (left, right, bound) in [(left, middle, 10), (middle, right, 4)] {
+            state.establish(&Relation::Bound { left, right, bound }, &mut ledger, event);
+        }
+        for relation in [
+            Relation::Bound {
+                left,
+                right: middle,
+                bound: 0,
+            },
+            Relation::Distinct {
+                left: middle,
+                right,
+                difference: 0,
+            },
+        ] {
+            let proof = postcondition_call_proof(&mut ledger, relation.clone());
+            state.establish_from_proof(&relation, proof, &ledger);
+        }
+        materialize_closure_before_kill(&mut state, &terms, &goals, &mut ledger);
+        for (relation, proof) in state.l0_candidates() {
+            state.establish_from_proof(&relation, proof, &ledger);
+        }
+        let weaker = Relation::Bound {
+            left,
+            right: middle,
+            bound: 20,
+        };
+        state.establish(&weaker, &mut ledger, event);
+        assert!(state.closure.is_closed_over(terms.ids().count()));
+        assert!(state.ordinary_closure.is_closed_over(terms.ids().count()));
+        assert!(
+            state
+                .bounds
+                .candidates((left, middle))
+                .iter()
+                .any(|(bound, _)| *bound == 20)
+        );
+
+        // These ordinary facts change only the fallback layer: the full
+        // layer already knows the stronger bound and the same disequality.
+        state.establish(
+            &Relation::Bound {
+                left,
+                right: middle,
+                bound: 5,
+            },
+            &mut ledger,
+            event,
+        );
+        state.establish(
+            &Relation::Distinct {
+                left: middle,
+                right,
+                difference: 0,
+            },
+            &mut ledger,
+            event,
+        );
+        assert!(state.closure.is_closed_over(terms.ids().count()));
+        state.retain_non_postcondition_candidates(&ledger);
+        let closed = close(&state, &terms, &goals, &mut ledger);
+        assert!(closed.derives_bound(left, right, 9));
+        assert!(!closed.derives_bound(left, right, 8));
+        assert!(closed.distinct.contains(&ordered(middle, right)));
+        assert_seeded_closure_matches_complete(&state, &terms, &goals, &ledger, &closed);
+    }
+
     fn bound_store_proof(
         ledger: &mut DerivationLedger,
         event: FlowEventId,
