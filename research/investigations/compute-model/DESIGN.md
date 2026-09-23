@@ -447,6 +447,46 @@ no timing comparison. Source emission, native construction and each selected
 matrix remain separate 30-second guarded stages with at most two build jobs.
 This source representation control adds no specification or production change.
 
+The source admitted on its first compiler invocation at 09:56:29 UTC on
+2026-09-23, using the same saved main-equivalent compiler and emission flags.
+The invocation took 0.18 seconds including stack-ledger code generation,
+or 0.22 seconds with the guard. Source SHA-256 is
+`5b66aa892b7da036c24b1aa3e8972ac5e0d1e808c0c419944216803ec3c09152`;
+module SHA-256 is
+`4baa3915c3ed717de2ecf340d738b798a71f9fe88d6d91267e62d51d855d37d7`.
+Only the new entry and one main reachability call were added; previous
+functions and the three-helper path are unchanged.
+
+The spine loop remains serial and the leaf map has PAR-2 permission with five
+captures. Its emitted frame request is 88 bytes, versus 96 for the
+array-loaded map. The actual captured scalar reaches the leaf helper and the
+price query. For the selected inputs the emitted saturating arithmetic
+reduces to `10*leaf_steps + 38`: price 48 for cost 1 and 655,398 for cost
+65,536. With the existing work unit and no queued local work, W4 length 32
+therefore receives budget five for costly leaves, while cheap, empty and
+single-leaf controls receive zero. The original array-loaded query in the
+same module still uses 199. This establishes availability through the existing
+summary depth without selecting loaded-value aggregation or changing pricing.
+
+The [retained qualification rows](../../experiments/compute-bench/dag-fanin-2026-09-23.tsv)
+record all six cases and 132 task rows passing once in each ordinary/traced
+W1/W4 image, with the original oracle and corruption controls. The costly
+length-32 W4 trace used four native threads, reached four active threads and
+observed 87 overlapping task pairs. Its last spine completion is event 63 and
+first leaf entry event 64, preserving the phase barrier. Successful steals
+were five in the ordinary image and three in the traced image; neither count
+measures offer attempts. Cheap length 32, both single-leaf cases and both
+empty cases had zero steals or overlap. Nonempty controls used one thread,
+and all W1 traces were sequential. No earlier matrix was rerun.
+
+The captured scalar therefore exposes the predicted costly leaf parallelism
+without a compiler change, while preserving the cheap and boundary controls.
+This qualifies availability for the uniform input representation, with one
+eight-byte cost parameter in place of the source cost array. The independent
+oracle still constructs its full cost vector, and the output, observer and
+added phase precedences remain charged. It supplies no aggregate price for
+heterogeneous loaded costs and no elapsed-performance conclusion.
+
 ## Bounded call-group bridge trial
 
 The selected compiler experiment retains consecutive full call groups while
@@ -454,8 +494,8 @@ bridging their source-adjacent tail/head pair when that exact pair already
 has PAR-1 permission. The diagnostic N order supplies the concrete consumer:
 its B/A and D/C groups discard the permitted A/D pair, and the native W4
 matrix observed no A/D overlap in any of the sixteen assignments. The other
-source orders expose A/D while adding a different precedence; the phased
-spine comparator addresses a separate family and remains unoffered at this
+source orders expose A/D while adding a different precedence; the array-loaded
+phased spine comparator addresses a separate family and remains unoffered at this
 trial's counts. These observations select a bounded compiler experiment,
 not a general runtime DAG executor or a performance conclusion.
 

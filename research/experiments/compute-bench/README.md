@@ -128,6 +128,15 @@ precedences. It introduces neither a worker-count source parameter nor a grain
 override; permission, generated splitting, actual steals and observed overlap
 remain separate facts.
 
+The captured-scalar availability control uses `DAG_VARIANT=scalar` with the
+ordinary `--par` emission and `DAG_ENGINE=wf-scalar`. It selects six existing
+spine graphs: lengths 0, 1 and 32, with uniform leaf steps 1 or 65,536 and
+spine steps 1 (132 task rows). Its one u64 leaf-cost scalar drives the real
+recurrence. The original per-task cost vector remains oracle metadata and is
+not passed to WF; `input` rows report these payloads separately. Use a separate
+work directory and run plain/traced W1/W4 once each. The task contract,
+spine-first phase order and observer are unchanged, with no grain hint.
+
 The traced image records one begin/end pair per serial task recurrence and
 checks exact event counts, IDs, inputs, results, native thread identity and
 completion of every original prerequisite before its consumer begins.

@@ -30,6 +30,8 @@ void dag_probe_spine(std::uint64_t, const std::uint64_t *, std::uint64_t,
                      TaskCell *, std::uint64_t);
 void dag_probe_spine_phased(std::uint64_t, const std::uint64_t *, std::uint64_t,
                             TaskCell *, std::uint64_t);
+void dag_probe_spine_phased_scalar(std::uint64_t, std::uint64_t, std::uint64_t,
+                                   TaskCell *, std::uint64_t);
 void dag_probe_notify(std::uint64_t, const std::uint64_t *, TaskCell *,
                       std::uint64_t *, std::uint64_t);
 void dag_probe_n(std::uint64_t, const std::uint64_t *, TaskCell *, std::uint64_t);
@@ -43,12 +45,13 @@ constexpr std::uint64_t expensive = 65536;
 constexpr std::uint64_t seed_value = UINT64_C(0xffffffffffffffe7);
 constexpr std::uint64_t guard_value = UINT64_C(0xbadc0ffee0ffee17);
 enum class Family { spine, notify, n };
-enum class Engine { whitefoot, tbb, phased };
+enum class Engine { whitefoot, tbb, phased, scalar };
 struct Graph {
     Family family;
     std::string name;
     unsigned mode = 0;
     std::uint64_t argument = 0, seed = seed_value;
+    std::uint64_t scalar_leaf_steps = 1;
     std::vector<std::uint64_t> costs;
     std::vector<std::pair<std::size_t, std::size_t>> edges;
     Graph(Family kind, std::string label) : family(kind), name(std::move(label)) {}
@@ -154,9 +157,12 @@ std::vector<Graph> fixtures(Engine engine) {
     for (std::uint64_t length : {0, 1, 2, 4, 7, 8, 9, 16, 32}) {
         for (unsigned profile = 0; profile != 4; ++profile) {
             if (length == 0 && profile >= 2) continue;
+            if (engine == Engine::scalar &&
+                ((length != 0 && length != 1 && length != 32) || profile >= 2)) continue;
             Graph graph{Family::spine, "spine-" + std::to_string(length) + "-" +
                                          std::to_string(profile)};
             graph.argument = length;
+            graph.scalar_leaf_steps = profile == 1 ? expensive : 1;
             graph.costs.assign(2 * length, 1);
             for (std::size_t i = 0; i != length; ++i) {
                 if (profile == 1 || (profile == 2 && i == 0) ||
@@ -167,7 +173,7 @@ std::vector<Graph> fixtures(Engine engine) {
             result.push_back(std::move(graph));
         }
     }
-    if (engine == Engine::phased) return result;
+    if (engine == Engine::phased || engine == Engine::scalar) return result;
     for (unsigned fixture = 0; fixture != 17; ++fixture) {
         const unsigned mask = fixture == 16 ? 15 : fixture;
         Graph graph{Family::notify, "notify-" + std::to_string(mask) +
@@ -287,8 +293,13 @@ void native_graph(const Graph &graph, const std::uint64_t *costs,
 void whitefoot_graph(Engine engine, const Graph &graph, const std::uint64_t *costs,
                       TaskCell *output, std::uint64_t *receipts) {
     if (graph.family == Family::spine) {
-        const auto entry = engine == Engine::phased ? dag_probe_spine_phased : dag_probe_spine;
-        entry(graph.argument, costs, graph.costs.size(), output, graph.seed);
+        if (engine == Engine::scalar) {
+            dag_probe_spine_phased_scalar(graph.argument, graph.scalar_leaf_steps,
+                                          graph.costs.size(), output, graph.seed);
+        } else {
+            const auto entry = engine == Engine::phased ? dag_probe_spine_phased : dag_probe_spine;
+            entry(graph.argument, costs, graph.costs.size(), output, graph.seed);
+        }
     }
     else if (graph.family == Family::notify)
         dag_probe_notify(graph.argument, costs, output, receipts, graph.seed);
@@ -321,7 +332,8 @@ int run_matrix(Engine engine, unsigned workers) {
         arena->initialize();
     }
     std::printf("configuration\tengine=%s\timage=%s\ttotal_participants=%u\trepeats=1\n",
-                native ? "tbb" : engine == Engine::phased ? "wf-phased" : "wf",
+                native ? "tbb" : engine == Engine::phased ? "wf-phased" :
+                engine == Engine::scalar ? "wf-scalar" : "wf",
                 traced ? "trace" : "plain", workers);
     std::printf("accounting\ttask_cell_bytes=%zu\tevent_bytes=%zu\tphysical_peak=not-measured\n",
                 sizeof(TaskCell), sizeof(Event));
@@ -354,7 +366,9 @@ int run_matrix(Engine engine, unsigned workers) {
         if (!equal(storage.front(), guard) || !equal(storage.back(), guard) ||
             receipt_storage.front() != guard_value || receipt_storage.back() != guard_value)
             fail(graph.name + ": output boundary changed");
-        if (costs != original_costs) fail(graph.name + ": input changed");
+        if (costs != original_costs)
+            fail(graph.name + (engine == Engine::scalar ? ": oracle cost metadata changed"
+                                                       : ": input changed"));
         for (std::size_t i = 0; i != 4; ++i)
             if (receipt_storage[i + 1] != expected.receipts[i])
                 fail(graph.name + ": notification receipt mismatch");
@@ -368,10 +382,15 @@ int run_matrix(Engine engine, unsigned workers) {
                     static_cast<unsigned long long>(expected.work),
                     static_cast<unsigned long long>(expected.critical),
                     static_cast<unsigned long long>(expected.level), count * sizeof(TaskCell),
-                    count * sizeof(std::uint64_t),
+                    (engine == Engine::scalar ? 1 : count) * sizeof(std::uint64_t),
                     !native && graph.family == Family::notify ? 4U : 0U,
                     !native && graph.family == Family::notify ? 4U : 0U,
                     observation.events.size() * sizeof(Event), steals);
+        if (engine == Engine::scalar)
+            std::printf("input\t%s\trepresentation=scalar\tleaf_steps=%llu"
+                        "\tsource_cost_bytes=%zu\toracle_cost_bytes=%zu\n",
+                        graph.name.c_str(), static_cast<unsigned long long>(graph.scalar_leaf_steps),
+                        sizeof(std::uint64_t), count * sizeof(std::uint64_t));
         for (std::size_t id = 0; id != count; ++id)
             std::printf("task\t%s\t%zu\tsteps=%llu\tvalue=%016llx\tevaluations=%llu\n",
                         graph.name.c_str(), id, static_cast<unsigned long long>(graph.costs[id]),
@@ -487,7 +506,9 @@ void native_graph(const Graph &graph, const std::uint64_t *costs,
 } // namespace
 extern "C" int wf__main_body(int, char **argv) {
     try {
-        const Engine engine = std::string(argv[1]) == "wf-phased" ? Engine::phased : Engine::whitefoot;
+        const std::string selected = argv[1];
+        const Engine engine = selected == "wf-phased" ? Engine::phased :
+                              selected == "wf-scalar" ? Engine::scalar : Engine::whitefoot;
         return run_matrix(engine, selected_workers());
     }
     catch (const std::exception &error) {
@@ -497,11 +518,12 @@ extern "C" int wf__main_body(int, char **argv) {
 }
 int main(int argc, char **argv) {
     try {
-        if (argc != 2) fail("usage: dag_fanin_{plain,trace} wf|tbb|wf-phased");
+        if (argc != 2) fail("usage: dag_fanin_{plain,trace} wf|tbb|wf-phased|wf-scalar");
         if (std::string(argv[1]) == "tbb") return run_matrix(Engine::tbb, selected_workers());
-        if (std::string(argv[1]) == "wf" || std::string(argv[1]) == "wf-phased")
+        if (std::string(argv[1]) == "wf" || std::string(argv[1]) == "wf-phased" ||
+            std::string(argv[1]) == "wf-scalar")
             return wf__floor_run(argc, argv);
-        fail("engine must be wf, tbb or wf-phased");
+        fail("engine must be wf, tbb, wf-phased or wf-scalar");
     } catch (const std::exception &error) {
         std::fprintf(stderr, "dag-fanin: %s\n", error.what());
         return 2;

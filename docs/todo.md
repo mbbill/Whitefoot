@@ -336,17 +336,21 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   unsplit, matching zero observed W4 overlap. Useful independent work may be
   withheld because a recurrence bound loaded inside a chunk is unavailable
   at its split site, even when the source input is read-only. Extent transport
-  alone does not provide a representative task price for mixed loads. A first
-  discriminating control would use the same uniform task recurrence with its
-  actual bound passed as a captured scalar, then compare emitted prices and
-  offered work with the array-loaded form. Preserve IDs, values, exactly-once
-  counts, original edges and cheap/zero-trip controls; do not add padding or
-  manual grain. Any later aggregation or observation policy must charge its
-  extra reads, work and storage and establish validity at every split site.
-  Defer implementation until this availability control or a concrete loaded-
-  cost consumer establishes the missing mechanism; reopen with a prospective
-  qualification of scheduling benefit and cheap/W1 overhead. This is separate
-  from read-only header extent transport and selects no pricing policy.
+  alone does not provide a representative task price for mixed loads. The
+  [captured-scalar control](../research/investigations/compute-model/DESIGN.md#captured-scalar-availability-control)
+  transports the actual uniform leaf bound through the same helper chain:
+  prices 48 and 655,398 retain sequential cheap/boundary controls and expose
+  costly length-32 overlap on four W4 threads. All six cases pass at W1/W4
+  in ordinary/traced images. This establishes scalar availability at the
+  existing summary depth, but changes the input representation and derives no
+  price for heterogeneous loads. Defer a general pricing change until a
+  concrete variable-cost consumer supplies representative benefit criteria.
+  Reopen with its unchanged IDs, values, exactly-once counts and original
+  edges, preserving cheap/zero-trip controls and qualifying wall/CPU and W1
+  overhead prospectively. Charge any added observation or aggregation reads,
+  work and storage and establish validity at every split site; do not bypass
+  the missing input with padding or manual grain. This is separate from
+  read-only header extent transport and selects no pricing policy.
 
 - **Zero-budget dispatch needs caller and placement attribution before adoption.** The
   [query-retained one-site control](../research/investigations/compute-model/DESIGN.md#query-retained-control-result)

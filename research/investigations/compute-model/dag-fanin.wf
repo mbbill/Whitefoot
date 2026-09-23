@@ -259,6 +259,37 @@ fn dag_spine_phased(count: u64, costs: &[u64], output: &[TaskCell], seed: u64) -
   return unit;
 }
 
+fn dag_spine_phased_scalar(count: u64, leaf_steps: u64, output: &[TaskCell], seed: u64) -> result: unit writes(output) contract {
+  requires count <= 9223372036854775807_u64;
+  requires 2_u64 * count <= deref(output).len;
+} {
+  doc "Uses one recurrence step per spine task and a common captured bound for leaf work, retaining the same two phases and canonical output pairs as the uniform-cost phased spine.";
+  let predecessor_mix = 0_u64;
+  for (i in 0_u64..count) {
+    let id = i * 2_u64;
+    let end = id + 1_u64;
+    invariant output_room: end <= deref(output).len {
+      use 2 times (i + 1_u64 <= count);
+      use (2_u64 * count <= deref(output).len);
+    }
+    let spine_output = &deref(output)[id..end];
+    let value = evaluate(output: spine_output, id: id, steps: 1_u64, seed: seed, predecessor_mix: predecessor_mix);
+    set predecessor_mix = value;
+  }
+  for (i in 0_u64..count) {
+    let start = i * 2_u64;
+    let end = start + 2_u64;
+    let id = start + 1_u64;
+    invariant output_room: end <= deref(output).len {
+      use 2 times (i + 1_u64 <= count);
+      use (2_u64 * count <= deref(output).len);
+    }
+    let pair = &deref(output)[start..end];
+    let leaf = phased_leaf(pair: pair, id: id, steps: leaf_steps, seed: seed);
+  }
+  return unit;
+}
+
 fn main() -> status: ExitStatus pure {
   let empty = TaskCell(value: 0_u64, evaluations: 0_u64);
   let costs = array_filled::<u64, 4>(value: 1_u64);
@@ -270,5 +301,6 @@ fn main() -> status: ExitStatus pure {
   let notifications = dag_notify(mask: 15_u64, costs: &costs[0_u64..4_u64], output: &notice_output[0_u64..4_u64], receipts: &receipts[0_u64..4_u64], seed: 17_u64);
   let n = dag_n(mode: 0_u64, costs: &costs[0_u64..4_u64], output: &n_output[0_u64..4_u64], seed: 17_u64);
   let phased = dag_spine_phased(count: 2_u64, costs: &costs[0_u64..4_u64], output: &spine_output[0_u64..4_u64], seed: 17_u64);
+  let scalar = dag_spine_phased_scalar(count: 2_u64, leaf_steps: 1_u64, output: &spine_output[0_u64..4_u64], seed: 17_u64);
   return exit_status(code: 0_u8);
 }

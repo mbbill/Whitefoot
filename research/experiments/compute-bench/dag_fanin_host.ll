@@ -18,6 +18,13 @@ define void @dag_probe_spine_phased(i64 %count, ptr %costs, i64 %length, ptr %ou
   ret void
 }
 
+define void @dag_probe_spine_phased_scalar(i64 %count, i64 %leaf_steps, i64 %length, ptr %output, i64 %seed) {
+  %oa = insertvalue { ptr, i64 } poison, ptr %output, 0
+  %ob = insertvalue { ptr, i64 } %oa, i64 %length, 1
+  %r = call i8 @wf_dag_spine_phased_scalar(i64 %count, i64 %leaf_steps, { ptr, i64 } %ob, i64 %seed)
+  ret void
+}
+
 define void @dag_probe_notify(i64 %mask, ptr %costs, ptr %output, ptr %receipts, i64 %seed) {
   %ca = insertvalue { ptr, i64 } poison, ptr %costs, 0
   %cb = insertvalue { ptr, i64 } %ca, i64 4, 1

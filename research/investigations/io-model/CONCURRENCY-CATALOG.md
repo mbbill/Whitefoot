@@ -872,10 +872,15 @@ the ordinary default image. At W4 the recursive budget suppresses offers
 beyond depth eight; a separately labelled frontier-off control restores deep
 overlap at lengths 16 and 32, without qualifying longer spines or the retained
 64-slot-per-lane limit. A source-only spine-then-leaf-map comparator preserves
-the original outputs without another array, but its static price 199 leaves
-all selected lengths through 32 unsplit despite PAR-2 permission. These are
-source, lowering and overlap results, with no timing comparison or general
-fan-in result.
+the original outputs without another array, but its array-loaded task costs
+retain static price 199, leaving all selected lengths through 32 unsplit
+despite PAR-2 permission. A
+[captured-scalar control](../compute-model/DESIGN.md#captured-scalar-availability-control)
+uses the actual common leaf bound on the uniform subfamily and exposes costly
+length-32 overlap on four threads while retaining sequential cheap/boundary
+controls. This changes the input representation; heterogeneous loaded-cost
+pricing remains open. These are source, lowering and overlap results, with
+no timing comparison or general fan-in result.
 
 For edges A-to-C, B-to-C and B-to-D, the same trial qualifies three source
 decompositions with respective extra edges A-to-D, B-to-A and D-to-C. A

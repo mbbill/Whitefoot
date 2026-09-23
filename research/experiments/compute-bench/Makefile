@@ -524,7 +524,7 @@ dag-fanin-build: dag-fanin-build-inputs $(RUNTIME_OBJS)
 # selected process independently so its exit status remains visible.
 dag-fanin-run:
 	@test "$(DAG_IMAGE)" = plain -o "$(DAG_IMAGE)" = trace
-	@test "$(DAG_ENGINE)" = wf -o "$(DAG_ENGINE)" = tbb -o "$(DAG_ENGINE)" = wf-phased
+	@test "$(DAG_ENGINE)" = wf -o "$(DAG_ENGINE)" = tbb -o "$(DAG_ENGINE)" = wf-phased -o "$(DAG_ENGINE)" = wf-scalar
 	@test "$(DAG_WORKERS)" = 1 -o "$(DAG_WORKERS)" = 4
 	WF_WORKERS=$(DAG_WORKERS) $(DAG_PREFIX)_$(DAG_IMAGE) $(DAG_ENGINE)
 

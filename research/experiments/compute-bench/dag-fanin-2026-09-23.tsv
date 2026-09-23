@@ -447,3 +447,90 @@ phased	spine-W4	case=spine-32-0	actual_steals=0	observed_threads=1	peak_active_t
 phased	spine-W4	case=spine-32-1	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
 phased	spine-W4	case=spine-32-2	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
 phased	spine-W4	case=spine-32-3	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+scalar	protocol	criterion_commit=e7d75b5136f4ef547d22537c37acbb88099198c1	compiler=immutable main-345e	emission=--par --par-ledger --stack-ledger --emit-llvm	spine_lengths=0,1,32	uniform_leaf_steps=1,65536	spine_steps=1	repeats_per_configuration=1	additional_grain_controls=none	timing_comparison=none
+scalar	input-representation	WF_leaf_cost=one u64 scalar	source_cost_bytes=8	per_task_cost_vector=oracle metadata; not a WF input	task_contract=unchanged	phase_order=all spine recurrences complete before any leaf recurrence
+scalar	artifact	file=whitefootc	sha256=cbffd4dd1ae8641ef03790457181188988bf70cc4af1a53c50c1f406307bb7f9
+scalar	artifact	file=dag-fanin.wf	sha256=5b66aa892b7da036c24b1aa3e8972ac5e0d1e808c0c419944216803ec3c09152
+scalar	artifact	file=dag_fanin_host.ll	sha256=b8533146bcdec50e43fa756c7a50cc4fb5aaf622dcebcbec55cffb0cf68db429
+scalar	artifact	file=dag_fanin_trace.awk	sha256=95740fb87edcd550940cae3951b0b73b000453e9cc6022616135fea169df77bd
+scalar	artifact	file=dag-fanin-main-345e-scalar-emit.log	sha256=8fd08f4f8478ef48f5186c764c1a2a2164a955f3ef8c7d168263af47e0286e25
+scalar	artifact	file=dag_fanin_scalar.raw.ll	sha256=4baa3915c3ed717de2ecf340d738b798a71f9fe88d6d91267e62d51d855d37d7
+scalar	artifact	file=dag_fanin_scalar_plain.ll	sha256=86a40b134fb78615109d80743bc460984a2d91cf9275177f0bdc1e3a352d2eea
+scalar	artifact	file=dag_fanin_scalar_trace.ll	sha256=fc970e015e33ba58b95d0288fcbf81877adc0da40be030a016d5f7a096bdb7f7
+scalar	artifact	file=dag_fanin_probe.cpp	sha256=ba76c63f4cc07dc66cb7b8423a1e1d81d8cbe2086018a21da7b039001fb3a55e
+scalar	artifact	file=libtbb.dylib	sha256=61fec48dc42829dc97943d72051ab2ca00786f97d198c412db1042b2b08e3188
+scalar	artifact	file=metadata.txt	sha256=bb1ed8f84e8d4a817f7a63c93ca22ec529aec47615ff4b38fa6118718e19f470
+scalar	artifact	file=dag_fanin_scalar_probe.o	sha256=d0536976381e3f16be2592f698f7dfcad55b6d18afdd1fbdae4571fbe07230d0
+scalar	artifact	file=dag_fanin_scalar_plain.o	sha256=54e05fbdb56a9293e43d05459593a73ac0e3a7c4868f0c503ce4efc9d917e73b
+scalar	artifact	file=dag_fanin_scalar_trace.o	sha256=c16f72792a9195ff2db8c62f4dc16a7ba575c3549d74d6847d4b5ac50a340e1b
+scalar	artifact	file=floor.o	sha256=8342e7ea0b8d6a0817d543e8c05e807c96527393945e95597718ba9a27ce722d
+scalar	artifact	file=sched_core.o	sha256=0655633c69666fcce21bf67258101aedb49c914fc50a6cc8edbfe22a8315e645
+scalar	artifact	file=sched_prim_host.o	sha256=c3a5140b8221a57d27a510995ae37c7b33a64ebc87ec9f9286b99ece649bce45
+scalar	artifact	file=sched_entry.o	sha256=e04734d7a1ddbe9083b47570ca2854963803b88a7197628bed2ca66cb4924d5c
+scalar	artifact	file=completion_runtime.o	sha256=75cb971977625c9b05adcf74b14989544ccbf61b0a81fe4843ec72226eb36c61
+scalar	artifact	file=completion_wait_host.o	sha256=d95b24c2367aa6dcf60a9d9e4e36acf79fa502d4ded856f244c6f4afcf28aa10
+scalar	artifact	file=completion_file_adapter.o	sha256=fb4ee3f397da5bcee9188332d56fb3c854b931b4c1f07b4c8350a9c941891937
+scalar	artifact	file=completion_file_posix.o	sha256=1d1fe1c3033038fc69cd031e32b5eff6e85571da89176f85e442f52f0fb1b940
+scalar	artifact	file=completion_bridge.o	sha256=af91032f29dc1b1c22dcf43099d933303ff3b1e4741a93122f987bdbdb70c4ec
+scalar	artifact	file=completion_linux_io_uring.o	sha256=e389769ac8c9f38af9cd00e5bc5d56d3c180dff5985fb81ddfff63dfa89eb453
+scalar	artifact	file=ordinary_values_c.o	sha256=685d56fcf6c89bbddf8d1921b44952bb909dd0362715817babbacd64da8898c3
+scalar	artifact	file=ordinary_values_ll.o	sha256=d578790251750de1a10ef95e1265d028184cc1d18f0c40d78e88c5ee8f1fcd80
+scalar	artifact	file=dag_fanin_scalar_plain	sha256=731e6a55d323947a70902b2a8f4142de9474c70f1d580b23b87eaa8cc2793f58
+scalar	artifact	file=dag_fanin_scalar_trace	sha256=25d045dbe5d6a8d1ccb80f71b61c9a15038d90f9b7a5f0c7eae535ae3289126b
+scalar	raw-log	file=dag-fanin-main-345e-scalar-emit.log	sha256=8fd08f4f8478ef48f5186c764c1a2a2164a955f3ef8c7d168263af47e0286e25
+scalar	phase	label=dag-fanin-main-345e-scalar-emit	stage=source-analysis-and-emission	command_wall_s=0.18	process_user_s=0.16	process_system_s=0.01	guard_wall_s=0.22	exit=0	benchmark_interval=false
+scalar	raw-log	file=dag-fanin-main-345e-scalar-native-build.log	sha256=c70f494466d4b843e368a2d9f2a720b6b0eea7ee9120f737d5a62ff429ff02d9
+scalar	phase	label=dag-fanin-main-345e-scalar-native-build	stage=native-construction	command_wall_s=2.10	process_user_s=1.86	process_system_s=0.47	guard_wall_s=2.17	exit=0	benchmark_interval=false
+scalar	optimized-bracketing	image_disassembly_sha256=b4d4274b82248d9a72325439d4513f89a1f74935d14b255098b5a760491871d3	WF=begin return feeds scalar recurrence; recurrence result feeds end	begin_call=0x100003d10	seed_consumed=0x100003d14	end_call=0x100003d64	native=not executed by this WF-only control
+scalar	raw-log	file=dag-fanin-main-345e-scalar-wf-scalar-plain-W1.log	sha256=f1d09776a730571d27d9c4778fc806fbbea89f694bd28a4fbc059627abfbdc9c
+scalar	phase	label=dag-fanin-main-345e-scalar-wf-scalar-plain-W1	stage=complete-matrix-execution	command_wall_s=0.43	process_user_s=0.02	process_system_s=0.01	guard_wall_s=0.55	exit=0	benchmark_interval=false
+scalar	matrix	engine=wf-scalar	image=plain	workers=1	PASS	cases=6	task_rows=132	trace=0	events=0	checks=all_values,exactly_once,output_canaries,oracle_metadata_unchanged
+scalar	negative-control	engine=wf-scalar	image=plain	workers=1	output-corruption	rejected=task value mismatch at 0
+scalar	raw-log	file=dag-fanin-main-345e-scalar-wf-scalar-plain-W4.log	sha256=ec027c7288d8056de203d86bde8815373e77339f6607277a0e344523ae56e7de
+scalar	phase	label=dag-fanin-main-345e-scalar-wf-scalar-plain-W4	stage=complete-matrix-execution	command_wall_s=0.04	process_user_s=0.02	process_system_s=0.01	guard_wall_s=0.11	exit=0	benchmark_interval=false
+scalar	matrix	engine=wf-scalar	image=plain	workers=4	PASS	cases=6	task_rows=132	trace=0	events=0	checks=all_values,exactly_once,output_canaries,oracle_metadata_unchanged
+scalar	negative-control	engine=wf-scalar	image=plain	workers=4	output-corruption	rejected=task value mismatch at 0
+scalar	plain-steals-W4	case=spine-0-0	actual_steals=0
+scalar	plain-steals-W4	case=spine-0-1	actual_steals=0
+scalar	plain-steals-W4	case=spine-1-0	actual_steals=0
+scalar	plain-steals-W4	case=spine-1-1	actual_steals=0
+scalar	plain-steals-W4	case=spine-32-0	actual_steals=0
+scalar	plain-steals-W4	case=spine-32-1	actual_steals=5
+scalar	raw-log	file=dag-fanin-main-345e-scalar-wf-scalar-trace-W1.log	sha256=4b97ade0de285f079a1736683081edff0b3b18c46338eb1cbc008af82b745f36
+scalar	phase	label=dag-fanin-main-345e-scalar-wf-scalar-trace-W1	stage=complete-matrix-execution	command_wall_s=0.30	process_user_s=0.02	process_system_s=0.01	guard_wall_s=0.33	exit=0	benchmark_interval=false
+scalar	matrix	engine=wf-scalar	image=trace	workers=1	PASS	cases=6	task_rows=132	trace=1	events=264	checks=all_values,exactly_once,output_canaries,oracle_metadata_unchanged,event_ids_inputs_values,exact_events,original_edge_order,stable_thread
+scalar	negative-control	engine=wf-scalar	image=trace	workers=1	output-corruption	rejected=task value mismatch at 0
+scalar	negative-control	engine=wf-scalar	image=trace	workers=1	trace-corruption	rejected=trace event count mismatch
+scalar	phase-order	case=spine-0-0	workers=1	last_spine_end=-1	first_leaf_begin=none	PASS
+scalar	phase-order	case=spine-0-1	workers=1	last_spine_end=-1	first_leaf_begin=none	PASS
+scalar	phase-order	case=spine-1-0	workers=1	last_spine_end=1	first_leaf_begin=2	PASS
+scalar	phase-order	case=spine-1-1	workers=1	last_spine_end=1	first_leaf_begin=2	PASS
+scalar	phase-order	case=spine-32-0	workers=1	last_spine_end=63	first_leaf_begin=64	PASS
+scalar	phase-order	case=spine-32-1	workers=1	last_spine_end=63	first_leaf_begin=64	PASS
+scalar	raw-log	file=dag-fanin-main-345e-scalar-wf-scalar-trace-W4.log	sha256=f1bb36423cac5f7d9051ae90418767443a776194ea5f6bb1df614e31e164a0fb
+scalar	phase	label=dag-fanin-main-345e-scalar-wf-scalar-trace-W4	stage=complete-matrix-execution	command_wall_s=0.04	process_user_s=0.02	process_system_s=0.01	guard_wall_s=0.11	exit=0	benchmark_interval=false
+scalar	matrix	engine=wf-scalar	image=trace	workers=4	PASS	cases=6	task_rows=132	trace=1	events=264	checks=all_values,exactly_once,output_canaries,oracle_metadata_unchanged,event_ids_inputs_values,exact_events,original_edge_order,stable_thread
+scalar	negative-control	engine=wf-scalar	image=trace	workers=4	output-corruption	rejected=task value mismatch at 0
+scalar	negative-control	engine=wf-scalar	image=trace	workers=4	trace-corruption	rejected=trace event count mismatch
+scalar	phase-order	case=spine-0-0	workers=4	last_spine_end=-1	first_leaf_begin=none	PASS
+scalar	input-W4	case=spine-0-0	representation=scalar	leaf_steps=1	source_cost_bytes=8	oracle_cost_bytes=0
+scalar	spine-W4	case=spine-0-0	actual_steals=0	observed_threads=0	peak_active_threads=0	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+scalar	phase-order	case=spine-0-1	workers=4	last_spine_end=-1	first_leaf_begin=none	PASS
+scalar	input-W4	case=spine-0-1	representation=scalar	leaf_steps=65536	source_cost_bytes=8	oracle_cost_bytes=0
+scalar	spine-W4	case=spine-0-1	actual_steals=0	observed_threads=0	peak_active_threads=0	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+scalar	phase-order	case=spine-1-0	workers=4	last_spine_end=1	first_leaf_begin=2	PASS
+scalar	input-W4	case=spine-1-0	representation=scalar	leaf_steps=1	source_cost_bytes=8	oracle_cost_bytes=16
+scalar	spine-W4	case=spine-1-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+scalar	phase-order	case=spine-1-1	workers=4	last_spine_end=1	first_leaf_begin=2	PASS
+scalar	input-W4	case=spine-1-1	representation=scalar	leaf_steps=65536	source_cost_bytes=8	oracle_cost_bytes=16
+scalar	spine-W4	case=spine-1-1	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=0	deep_overlap_pairs=0	pairs=0	spine_progress=0
+scalar	phase-order	case=spine-32-0	workers=4	last_spine_end=63	first_leaf_begin=64	PASS
+scalar	input-W4	case=spine-32-0	representation=scalar	leaf_steps=1	source_cost_bytes=8	oracle_cost_bytes=512
+scalar	spine-W4	case=spine-32-0	actual_steals=0	observed_threads=1	peak_active_threads=1	deep_threads=1	deep_overlap_pairs=0	pairs=0	spine_progress=0
+scalar	phase-order	case=spine-32-1	workers=4	last_spine_end=63	first_leaf_begin=64	PASS
+scalar	input-W4	case=spine-32-1	representation=scalar	leaf_steps=65536	source_cost_bytes=8	oracle_cost_bytes=512
+scalar	spine-W4	case=spine-32-1	actual_steals=3	observed_threads=4	peak_active_threads=4	deep_threads=3	deep_overlap_pairs=45	pairs=87	spine_progress=0
+scalar	event-witness	engine=wf-scalar	spine-32-1	119	1	begin	thread=4	value=ffffffffffffffe7	steps=65536
+scalar	event-witness	engine=wf-scalar	spine-32-1	121	17	begin	thread=2	value=ffffffffffffffe7	steps=65536
+scalar	event-witness	engine=wf-scalar	spine-32-1	125	1	end	thread=4	value=be4bb84c1dbde977	steps=0
+scalar	event-witness	engine=wf-scalar	spine-32-1	126	17	end	thread=2	value=cdfaca10bed40f62	steps=0
