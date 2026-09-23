@@ -15,6 +15,7 @@ compiler. The active specification and executable cases remain authoritative.
 
 This trial starts at merged `f2140599` and qualifies candidates
 left open by [catalog section 5](../io-model/CONCURRENCY-CATALOG.md#5-task-dag-with-dependencies-static-and-dynamic).
+The source now follows v0.68 at merged `345e2966a`.
 The complete source admits and emits the groups reported below. Native
 correctness and observed overlap remain separate evidence.
 
@@ -146,8 +147,9 @@ can. This alternative is not implemented or selected by the initial trial.
 The initial source admitted without repair on the saved `f2140599`-equivalent
 compiler. Source analysis and emission used
 `--par --par-ledger --stack-ledger --emit-llvm`, with the 30-second guard and
-two-job environment. The successful command took 0.17 seconds in the compiler
-and 0.21 seconds including its wrapper; these are construction observations,
+two-job environment. The successful compiler invocation, including native
+code generation for its stack ledger, took 0.17 seconds, and 0.21 seconds
+including its wrapper; these are construction observations,
 not a runtime performance comparison. The source was last written at
 08:57:33 UTC on 2026-09-23 and the successful output at 09:07:50 UTC. Their
 SHA-256 identities are:
@@ -155,11 +157,35 @@ SHA-256 identities are:
 | Artifact | SHA-256 |
 |---|---|
 | Saved compiler executable | `c57f989b1b0073769d4999266f3353143d758b2f400c26a74e8d260b684afe33` |
-| [Source](dag-fanin.wf) | `291d5e11f77820e4281986bd1f026ad32ed2aa530948b8fc17e63d24bf45cca8` |
-| Active specification | `6c7de1e375a0f5815ddf83d63ed1ad121ec0dd10b2cd8b94fab34a7f6c64f065` |
+| [Source before v0.68 migration](https://github.com/mbbill/Whitefoot/blob/4a7ba4aef63a070b189dfd32d03c6938e4210b80/research/investigations/compute-model/dag-fanin.wf) | `291d5e11f77820e4281986bd1f026ad32ed2aa530948b8fc17e63d24bf45cca8` |
+| Specification at `f2140599` | `6c7de1e375a0f5815ddf83d63ed1ad121ec0dd10b2cd8b94fab34a7f6c64f065` |
 | Default emitted LLVM module | `92fdcad44f82524683565ca1983104fe16d5bbef333768029ba7ede216435159` |
 
-The compiler and specification source trees match `f2140599`. The public
+That compiler and specification matched `f2140599`. After rebasing to
+`345e2966a`, all twelve declarations were migrated from `name: own T` to
+`name: T`, following the already adopted v0.68 grammar. Reference forms,
+result names, contracts and every body statement are unchanged. The saved
+current-main-equivalent compiler comes from `9be78e355`, whose compiler and
+active specification trees equal `345e2966a`. Repeating the same guarded
+emission on 2026-09-23 completed at 09:20:01 UTC, taking 0.62 seconds for the
+compiler invocation and 0.62 seconds including the wrapper, with exit zero.
+Its identities are:
+
+| Artifact | SHA-256 |
+|---|---|
+| Saved `345e2966a`-equivalent compiler | `cbffd4dd1ae8641ef03790457181188988bf70cc4af1a53c50c1f406307bb7f9` |
+| [Current source](dag-fanin.wf) | `8824d372ce063c5646d2dbaf84a573cbf7f7ea34d117b79e6e7c4b46dd9e3a52` |
+| Active v0.68 specification | `5917e3ee2234300a21affb2663a5d8fa80821257e66d7b759945e4c99d61ca14` |
+| Default emitted LLVM module | `92fdcad44f82524683565ca1983104fe16d5bbef333768029ba7ede216435159` |
+
+The two LLVM files are byte-identical, including metadata, and every PAR and
+STACK ledger line is identical. Thus the signature migration changes no
+emitted ABI, group, cutoff or frame in this witness. The ledger's native
+code generation uses `/usr/bin/clang -O2 -S -fstack-usage`; the current host
+reports Apple clang 21.0.0 (`clang-2100.3.34.2`), arm64-apple-darwin25.6.0.
+This compilation evidence establishes no native task-matrix result.
+
+The public
 spine contract admits counts through `floor(u64::max / 2)`, with both supplied
 ranges covering `2*count` cells; 32 is a fixture size, not a source limit.
 All task costs remain runtime inputs. The ledger denies PAR-2 permission for
@@ -212,10 +238,14 @@ originating slot until the enclosing suffix returns and the join releases it.
 Those retained slots are another finite resource even when
 the recursion budget is disabled. The stack ledger reports 96 bytes per
 overlapped suffix level, 48 for the spine entry, 224 for the notification
-entry, and 112 for the N entry. These are emitted alloca/capture counts,
-excluding native spill frames, runtime stacks and the observer; they do not
-measure physical peak memory. A zero-byte sequential-suffix ledger frame
-likewise does not establish constant native stack use.
+entry, and 112 for the N entry. These ledger figures come from optimized
+machine frames and the post-inline assembly call graph, including ABI frame
+records and register spills. They exclude separately linked runtime code and
+the probe/observer, whereas capture requests are read directly from LLVM.
+The sequential suffix has a zero-byte machine frame and no recursive cycle
+in this optimized ledger; this observation is limited to this compilation.
+Neither the ledger nor the reserved lane storage measures physical peak
+memory or the final instrumented image's stack use.
 
 **Design suitability.** The existing checked calls express all three selected
 families. Two concrete improvement opportunities remain unselected: a

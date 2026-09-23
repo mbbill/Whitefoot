@@ -9,7 +9,7 @@ struct Notice {
   value: u64;
 }
 
-fn dag_task(id: own u64, steps: own u64, seed: own u64, predecessor_mix: own u64) -> result: own u64 pure {
+fn dag_task(id: u64, steps: u64, seed: u64, predecessor_mix: u64) -> result: u64 pure {
   doc "Every task uses the same serial recurrence. Each iteration consumes its preceding state, so its work cannot become an independent iteration map or an associative accumulator fold.";
   let initial = seed +wrap id;
   let state = ixor(initial, predecessor_mix);
@@ -22,7 +22,7 @@ fn dag_task(id: own u64, steps: own u64, seed: own u64, predecessor_mix: own u64
   return state;
 }
 
-fn evaluate(output: &[TaskCell], id: own u64, steps: own u64, seed: own u64, predecessor_mix: own u64) -> result: own u64 writes(output) contract {
+fn evaluate(output: &[TaskCell], id: u64, steps: u64, seed: u64, predecessor_mix: u64) -> result: u64 writes(output) contract {
   requires 1_u64 <= deref(output).len;
 } {
   let value = dag_task(id: id, steps: steps, seed: seed, predecessor_mix: predecessor_mix);
@@ -32,7 +32,7 @@ fn evaluate(output: &[TaskCell], id: own u64, steps: own u64, seed: own u64, pre
   return value;
 }
 
-fn evaluate_join(output: &[TaskCell], steps: own u64, seed: own u64, a: own u64, b: own u64) -> result: own u64 writes(output) contract {
+fn evaluate_join(output: &[TaskCell], steps: u64, seed: u64, a: u64, b: u64) -> result: u64 writes(output) contract {
   requires 1_u64 <= deref(output).len;
 } {
   let shifted = irotl(a, 7_u32);
@@ -40,7 +40,7 @@ fn evaluate_join(output: &[TaskCell], steps: own u64, seed: own u64, a: own u64,
   return evaluate(output: output, id: 2_u64, steps: steps, seed: seed, predecessor_mix: mixed);
 }
 
-fn spine_suffix(costs: &[u64], output: &[TaskCell], first_id: own u64, seed: own u64, predecessor_mix: own u64) -> result: own unit reads(costs), writes(output) contract {
+fn spine_suffix(costs: &[u64], output: &[TaskCell], first_id: u64, seed: u64, predecessor_mix: u64) -> result: unit reads(costs), writes(output) contract {
   requires deref(costs).len == deref(output).len;
 } {
   let count = deref(output).len;
@@ -61,7 +61,7 @@ fn spine_suffix(costs: &[u64], output: &[TaskCell], first_id: own u64, seed: own
   return unit;
 }
 
-fn dag_spine(count: own u64, costs: &[u64], output: &[TaskCell], seed: own u64) -> result: own unit reads(costs), writes(output) contract {
+fn dag_spine(count: u64, costs: &[u64], output: &[TaskCell], seed: u64) -> result: unit reads(costs), writes(output) contract {
   requires count <= 9223372036854775807_u64;
   requires 2_u64 * count <= deref(costs).len;
   requires 2_u64 * count <= deref(output).len;
@@ -73,7 +73,7 @@ fn dag_spine(count: own u64, costs: &[u64], output: &[TaskCell], seed: own u64) 
   return spine_suffix(costs: selected_costs, output: selected_output, first_id: 0_u64, seed: seed, predecessor_mix: 0_u64);
 }
 
-fn notify_source(output: &[TaskCell], notices: &[Notice], id: own u64, source_bit: own u64, destinations: own u64, steps: own u64, seed: own u64) -> result: own unit writes(output), writes(notices) contract {
+fn notify_source(output: &[TaskCell], notices: &[Notice], id: u64, source_bit: u64, destinations: u64, steps: u64, seed: u64) -> result: unit writes(output), writes(notices) contract {
   requires 1_u64 <= deref(output).len;
   requires 2_u64 <= deref(notices).len;
 } {
@@ -87,7 +87,7 @@ fn notify_source(output: &[TaskCell], notices: &[Notice], id: own u64, source_bi
   return unit;
 }
 
-fn receive_owner(notices: &[Notice], output: &[TaskCell], receipts: &[u64], first: own u64, second: own u64, id: own u64, steps: own u64, seed: own u64) -> result: own unit reads(notices), writes(output), writes(receipts) contract {
+fn receive_owner(notices: &[Notice], output: &[TaskCell], receipts: &[u64], first: u64, second: u64, id: u64, steps: u64, seed: u64) -> result: unit reads(notices), writes(output), writes(receipts) contract {
   requires first < deref(notices).len;
   requires second < deref(notices).len;
   requires 1_u64 <= deref(output).len;
@@ -117,7 +117,7 @@ fn receive_owner(notices: &[Notice], output: &[TaskCell], receipts: &[u64], firs
   return unit;
 }
 
-fn dag_notify(mask: own u64, costs: &[u64], output: &[TaskCell], receipts: &[u64], seed: own u64) -> result: own unit reads(costs), writes(output), writes(receipts) contract {
+fn dag_notify(mask: u64, costs: &[u64], output: &[TaskCell], receipts: &[u64], seed: u64) -> result: unit reads(costs), writes(output), writes(receipts) contract {
   requires mask < 16_u64;
   requires 4_u64 <= deref(costs).len;
   requires 4_u64 <= deref(output).len;
@@ -149,7 +149,7 @@ fn dag_notify(mask: own u64, costs: &[u64], output: &[TaskCell], receipts: &[u64
   return unit;
 }
 
-fn run_ac(a_output: &[TaskCell], c_output: &[TaskCell], a_cost: own u64, c_cost: own u64, seed: own u64, b: own u64) -> result: own unit writes(a_output), writes(c_output) contract {
+fn run_ac(a_output: &[TaskCell], c_output: &[TaskCell], a_cost: u64, c_cost: u64, seed: u64, b: u64) -> result: unit writes(a_output), writes(c_output) contract {
   requires 1_u64 <= deref(a_output).len;
   requires 1_u64 <= deref(c_output).len;
 } {
@@ -158,7 +158,7 @@ fn run_ac(a_output: &[TaskCell], c_output: &[TaskCell], a_cost: own u64, c_cost:
   return unit;
 }
 
-fn run_bd(b_output: &[TaskCell], d_output: &[TaskCell], b_cost: own u64, d_cost: own u64, seed: own u64) -> result: own u64 writes(b_output), writes(d_output) contract {
+fn run_bd(b_output: &[TaskCell], d_output: &[TaskCell], b_cost: u64, d_cost: u64, seed: u64) -> result: u64 writes(b_output), writes(d_output) contract {
   requires 1_u64 <= deref(b_output).len;
   requires 1_u64 <= deref(d_output).len;
 } {
@@ -167,7 +167,7 @@ fn run_bd(b_output: &[TaskCell], d_output: &[TaskCell], b_cost: own u64, d_cost:
   return b;
 }
 
-fn dag_n(mode: own u64, costs: &[u64], output: &[TaskCell], seed: own u64) -> result: own unit reads(costs), writes(output) contract {
+fn dag_n(mode: u64, costs: &[u64], output: &[TaskCell], seed: u64) -> result: unit reads(costs), writes(output) contract {
   requires mode < 4_u64;
   requires 4_u64 <= deref(costs).len;
   requires 4_u64 <= deref(output).len;
@@ -207,7 +207,7 @@ fn dag_n(mode: own u64, costs: &[u64], output: &[TaskCell], seed: own u64) -> re
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let empty = TaskCell(value: 0_u64, evaluations: 0_u64);
   let costs = array_filled::<u64, 4>(value: 1_u64);
   let spine_output = array_filled::<TaskCell, 4>(value: empty);
