@@ -942,7 +942,7 @@ ishr.defined(x, k) iff k < K
 Each domain query is pure, total, and returns `own Bool`; it does not execute the corresponding exact operation.
 An executed branch condition, proved requirement, proved invariant, or verified postcondition may establish its canonical goal through [ENT-3].
 Merely computing the Bool value without an admitted fact source establishes nothing.
-The former `.trap` spellings and hidden named aliases such as `iadd.trap` do not derive and are not compatibility names.
+The `.trap` spellings and hidden named aliases such as `iadd.trap` do not derive and are not compatibility names.
 
 After discharge, exact add, subtract, and multiply return their mathematical result, which the obligation proves belongs to T.
 Exact division is truncating toward zero and exact remainder satisfies `n = (n / d) * d + (n % d)` with the remainder having the dividend's sign or being zero; their obligation excludes both zero divisor and the signed `MIN(T), -1` pair for division and remainder alike.
@@ -972,7 +972,6 @@ All these rows are pure.
 
 [OP-3] Float ops that ROUND carry `.strict` (IEEE 754, no reassociation, no contraction): `fadd.strict` `fsub.strict` `fmul.strict` `fdiv.strict` `fsqrt.strict` `ffma.strict`.
 Float ops that are EXACT or exact-selection are dotless: `fneg` `fabs` `fcopysign` `fmin` `fmax` `ffloor` `fceil` `ftrunc` `froundeven` `frem` and the six comparisons.
-Approximation/fast-math modes remain an OPEN numeric-semantics question; a relaxed float op would be introduced as a distinct OPNAME (FORM-1-additive).
 
 [OP-4] A subscript `p[i]` selects one element place of an indexable base: the base place `p`'s final selected type must be `Array<T, N>`, `Array<T>`, `Slots<T, N>`, `Slots<T>`, `Ring<T, N>`, `Ring<T>`, or the run of T elements a range reference `&[T]` names [TYPE-9, REF-4], a runtime-capacity form and a range reference alike being reached through `deref` [TYPE-7], and the subscripted place's selected type is exactly that element type T — derived from the base place's already-fixed type [TYPE-5] — written where the binding carries an annotation, derived at a body `let` — by the same declared-type selection that types a field suffix, never from expected type or cross-statement inference; a subscript whose base's final selected type is not one of those indexable types is a hard error citing OP-4 at that subscript's `psuffix` node.
 A `const` item whose type is `Array<T, N>` is indexable on the same terms [CONST-2].
