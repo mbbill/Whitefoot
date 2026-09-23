@@ -121,11 +121,21 @@ text does not meet the requirement by itself. Ordinary private implementation
 edits must not change the public interface file. Module size still does not
 select incremental checking or LLVM partition size.
 
+The intended authoring split gives this boundary a concrete purpose: a
+coordinating agent maintains the public `.wfm`, while delegated agents implement
+and prove bodies in `.wf` against that contract. Putting public function bodies
+in `.wfm` would remove header duplication, but ordinary implementation edits
+would then cross the coordinator's interface-file boundary. Retain the
+declaration-only interface for this workflow. These are task responsibilities,
+not compiler-visible agent identities or language-enforced editing permissions;
+their effect on coordination cost remains unmeasured.
+
 | Candidate | Benefit | Cost and disposition |
 |---|---|---|
 | Per-source module/import headers and `pub` declarations | Definition and visibility appear together | Refused: the public contract is spread across implementation files |
 | Thin export list plus generated complete interface | Each signature and contract is written once | Superseded: the handwritten file alone does not satisfy public-interface self-containment |
 | Complete public declarations in one `.wfm`, with checked ordinary implementations | A caller or agent can read and hold the written contract fixed independently of implementation | Selected; the compiler must enforce declaration correspondence and the implementation must prove the declared obligations |
+| Complete public function definitions in `.wfm`, private definitions in `.wf` | One written signature and contract per function, with centralized publication | Not selected for the intended authoring split: implementation edits would enter the coordinator's public-contract file; fine-grained incrementality does not itself require either placement |
 | Complete interface with body-only implementation bindings | Avoids repeated function headers | Not selected: ordinary complete definitions remain locally readable and avoid a second body-binding form; repeated declarations are mechanically checked |
 | Canonical module directory with direct implementation-file membership | Filesystem and module ownership have one spelling | Selected under the path-based namespace requirement; snapshot and track the directory inventory, while complete .wfm declarations still exclusively control publication |
 | Recursive directory collection or automatic export | Few written entries | Refused: recursively collecting a child implementation confuses ownership, and adding a private definition must not publish it |
@@ -824,6 +834,47 @@ or destructor escape. A layout change may invalidate code generation even
 when the written interface is unchanged; dependency interface changes can
 also alter resolved API meaning without editing this module's `.wfm`.
 Composition validates those actual identities and inputs.
+
+### Questions for a mixed public and private representation
+
+The current candidate offers complete public records or abstract public types.
+A type with some publicly accessible fields and some hidden representation is
+a concrete reason to reconsider that whole-record choice. It is a discussion
+question, not an admitted third form or permission to add field modifiers.
+One nominal identity and one complete physical representation do not require
+every public declaration and representation fact to occupy the same file.
+Any split must give each fact an authority and a checked correspondence.
+
+The following questions organize that discussion without selecting new syntax:
+
+| Topic | Question and discriminating case |
+|---|---|
+| Type and representation correspondence | If `.wfm` declares selected public fields, does `.wf` supply a complete representation with checked repetition, or only private additions? Compare both with a public record composed with a fully abstract member. Require one type identity, complete initialization and unambiguous layout ownership. |
+| Field operations and construction | Does exposing a field permit reading, writing, borrowing and component moves equally? A public `length` tied to hidden storage tests whether external updates can invalidate a relation. Construction, replacement, destructuring and partial moves must account for every hidden field and its release obligations. |
+| Public capabilities | Which copy/drop properties and generic conditions must be written in `.wfm`, and how does private representation establish them? Hiding a field must not hide an ownership obligation or imply a heap handle. |
+| Public contract vocabulary | How can a caller or wrapper state a requirement about hidden state? Compare direct public data with a declared getter's checked logical meaning; no private path or unproved observation may enter the public contract. |
+| State, results and invariants | What do entry observations and observations of an owned result denote, and how do writes and moves affect them? If an object invariant is proposed, identify who establishes it, when it may be assumed and when it must be restored, including external field access and callbacks. Privacy alone establishes none of these facts. |
+| Read/write effects | Can the interface describe independently usable parts without naming private fields? Check that the implementation's concrete accesses justify the public effects and that the abstraction preserves the required independence. |
+| Contract authority | What happens when a delegated implementation needs a stronger requirement or proves a stronger result? The current candidate requires normalized equality of repeated public headers; local proof facts do not silently change the published contract. Any alternative inheritance or refinement mechanism needs its own grounds. |
+| Other declaration forms | Apply the same boundary questions to enum variants and payloads, constants used in types/contracts, generic bounds and aliases used by public declarations. File-local aliases remain abbreviations rather than new exports. A hidden value needed to determine public source meaning would break interface self-containment. |
+
+Begin with the field-operation case: external inspection of a length is a
+different requirement from external mutation of that length. Establish the
+needed operations before choosing a partial-record spelling. Exercise one
+mixed record with independent public data and one whose visible value is
+related to hidden storage; preserve proof, ownership and effect obligations
+when comparing representations. Runtime layout and accessor costs need a
+matched implementation comparison before selecting on performance grounds.
+Getter realization and precise-effect qualification remain the obligations
+below, regardless of the eventual field-visibility choice.
+
+The public contract is sufficient for a caller, but implementers of operations
+over one hidden representation also need a shared private definition and any
+proved internal relations they consume. Assigning each body to a different
+agent does not make those facts independent. One ordinary `.wf` can own the
+complete private representation, with other `.wf` files using it through the
+existing shared module inventory. Coordinate edits to that shared definition;
+no additional interface file or agent-role mechanism is implied.
 
 ### Public interface and generated compiler projections
 

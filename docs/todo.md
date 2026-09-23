@@ -83,6 +83,21 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   getters under REF-3. Compare private-layout and public-schema invalidation
   and prove useful by-value no-heap use without forced handles. Exact abstract
   capability syntax and logical getter admission remain unqualified.
+  The desired split between an interface-owning coordinator and delegated
+  implementation authors reopens the question of a type with both public
+  fields and private representation; the current candidate still selects only
+  full public schemas or fully hidden fields. Evaluate the
+  [mixed-representation questions](../research/investigations/modular-compilation/DESIGN.md#questions-for-a-mixed-public-and-private-representation)
+  before selecting field visibility: compare a checked partial interface with
+  one complete representation against composition with an abstract member.
+  Require useful direct access where needed, complete hidden-field ownership
+  and initialization, explicit capability correspondence and justified
+  invariant/effect handling. Use both independent public data and a visible
+  length tied to hidden storage; distinguish inspection from mutation. The
+  expected benefit is clearer task ownership without exposing representation,
+  but declaration complexity and performance remain unverified. This design
+  and validation work precedes adopting a mixed form; remove it when the
+  comparison selects or declines that extension with its required evidence.
   Public declaration duplication and useful module sizes remain unmeasured.
   Preserve ordinary privacy without transitive access or parent/child
   privileges. Subtree-private separately compiled modules remain unselected:
