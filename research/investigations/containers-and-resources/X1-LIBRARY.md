@@ -1045,6 +1045,23 @@ adding casts, hidden proof assumptions, runtime proof traps or a language change
 
 #### Comparisons registered before implementation
 
+The first shared-core library implementation keeps the plain queue's public
+signatures and uses ordinary no-op reporting wrappers; indexed operations use
+arbitrary-start rise/sink, explicit initial placement and repair in either
+direction. The unchanged plain queue caller, existing Slab/membership callers
+and a small indexed/SlabEdit caller admit and emit LLVM on the frozen main
+compiler in 0.34, 0.22 and 0.18 seconds respectively. These are source-admission
+observations, not native correctness or cost results for the composite.
+
+The spelling `fn helper<interface PriorityOrder<T, E>, interface PriorityPosition<T, P>, ...>`
+is refused with TYPE-6 `DeclarationCollision` on the second `T`: each group
+import declares fresh binders under FN-3. The implementation retains one
+`PriorityOrder` group and writes `P, fn placed(env: &P, value: &T, index: u64)
+-> result: unit reads(value), writes(env)` as ordinary additional parameters.
+No unused second interface descriptor is added. This is a spelling workaround,
+not a claim that different named groups cannot be instantiated at the same
+concrete type, and it introduces no new behavior mechanism.
+
 | Candidate or control | Discriminating property |
 | --- | --- |
 | Compose the current public heap and scan to repair positions | Establishes an ordinary executable fallback, but an O(n) scan after each update/removal fails the selected O(log n) indexed-operation requirement. It is not the proposed production path. |
@@ -1123,7 +1140,7 @@ starting another. These budgets do not narrow the canonical gate.
 Reusable Slab/heap support belongs with the existing source libraries; its
 maintained consumer and oracle wiring belong in the existing container corpus.
 Any comparison-only sources, harness and results belong under
-`research/experiments/container-representation/indexed-composite`, with one
+`research/experiments/container-representation/indexed-library`, with one
 explicit experiment caller and no correctness-gate dependency. Their purpose
 is this complete consumer and sharing/cost discriminator; retire them when
 superseded and no maintained claim needs their replay. Retire a maintained

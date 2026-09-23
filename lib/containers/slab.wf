@@ -18,6 +18,10 @@ interface SlabVisit<T, E, R> {
   fn visit(env: &E, value: &T) -> result: R reads(value), writes(env);
 }
 
+interface SlabEdit<T, E, R> {
+  fn edit(env: &E, value: &T) -> result: R writes(env), writes(value);
+}
+
 interface SlabConsume<T, E> {
   fn consume(env: &E, value: T) -> result: unit writes(env);
 }
@@ -85,6 +89,23 @@ fn slab_visit<interface SlabVisit<T, E, R>, const ceiling: u64, const generation
       if deref(slab).cells.inner[index].storage.len > 0_u64 {
         let observed = SlabVisit::visit(env: env, value: &deref(slab).cells.inner[index].storage[0_u64]);
         return Ok<R, unit>(value: move observed);
+      }
+    }
+  }
+  return Err<R, unit>(error: unit);
+}
+
+fn slab_edit<interface SlabEdit<T, E, R>, const ceiling: u64, const generation_limit: u64>(slab: &Slab<T, ceiling, generation_limit>, handle: SlabHandle, env: &E) -> result: Result<R, unit> writes(slab.cells), writes(env) contract {
+  ensures deref(slab).cells.inner.len == deref(entry(slab)).cells.inner.len;
+  ensures deref(slab).cells.inner.cap == deref(entry(slab)).cells.inner.cap;
+} {
+  doc "Validates materialization, generation and occupancy before lending a writable payload to the supplied member. Missing, deleted, reused and retired handles return Err without invoking it. The payload argument supplies no containing-cell or free-list access. The member preserves ordinary ownership and returns owned data only; its environment must be disjoint from slab.cells. Successful payload edits preserve the outer storage extents and handle generation.";
+  let index = handle.index;
+  if index < deref(slab).cells.inner.len {
+    if deref(slab).cells.inner[index].generation == handle.generation {
+      if deref(slab).cells.inner[index].storage.len > 0_u64 {
+        let changed = SlabEdit::edit(env: env, value: &deref(slab).cells.inner[index].storage[0_u64]);
+        return Ok<R, unit>(value: move changed);
       }
     }
   }
