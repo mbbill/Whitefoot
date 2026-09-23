@@ -7,23 +7,37 @@ criterion for deciding whether to pursue it. Entries do not select a design.
 Remove an item when its implementation and checks land, or its validation
 concludes with a recorded disposition; retain any selected follow-up work here.
 
-- **Select numeric conversion interfaces and evidence improvements.** The
-  [source and lowering survey](../research/investigations/numeric-conversions/DESIGN.md)
-  separates four concrete questions: total low-bit truncation, exact conversion
-  under a proved domain, checked integer Ok-payload equality, and rounded or
-  saturated float conversion. On Apple Clang 21 arm64, a masked low-byte wrapper
-  optimizes to truncation alone, while a requirement-bounded wrapper retains
-  comparisons and selection; a stated LLVM-assumption control removes them.
-  No timing benefit or general optimizer guarantee is established. Checked
-  narrowing also loses the equality needed by a round-trip array index under
-  current ENT-3.S5. Compare an explicit exact/checked/domain family with retained
-  APIs plus Result evidence and qualified proof transport; do not silently
-  change exact `cvt` semantics. Float policy must fix NaNs, signed zero,
-  rounding and endpoint behavior, especially nonrepresentable i64 maxima.
-  Select rules with the owner before implementation. Validate direct/named
-  Results, replacement, joins and loops against stale-value controls and
-  proof-state costs; qualify any cost claim on a concrete consumer. Remove
-  resolved parts when selected rules and their ordinary-path evidence land.
+- **Review and implement the exact conversion proposal.** The
+  [completed design and sequence](../research/investigations/numeric-conversions/DESIGN.md#proposed-rules-for-owner-review)
+  recommend a uniform proved/checked/domain family, same-type copies, integer
+  Result equality and numeric generics, with integer `.wrap` as a separable
+  companion. Implementation awaits the owner's pre-implementation review.
+  Validate all type-pair shapes, direct/named Results, replacement, joins and
+  loops against stale-value controls; exact conversions must emit no validity
+  guard and domain queries must remain total. No timing benefit is established.
+  Remove resolved parts when approved rules and ordinary-path evidence land.
+
+- **Select direct rounded/saturated float conversion policies.** The
+  [conversion study](../research/investigations/numeric-conversions/DESIGN.md#companion-operations-and-explicit-deferrals)
+  identifies missing direct rounded-to-float semantics and cumbersome total
+  float-to-integer compositions. A rounded-to-float candidate needs explicit
+  ties, overflow, subnormal, signed-zero and NaN rules; saturation needs its own
+  NaN and rounding choice, including nonrepresentable i64 maxima. Defer from the
+  exact-conversion implementation because these select different results and
+  no concrete consumer has selected their complete surface. Reopen for a
+  float-heavy program or owner selection; compare source and emitted/native
+  behavior before choosing spellings or claiming an improvement.
+
+- **Validate float and domain evidence through saved Results.** The exact
+  conversion proposal extends integer value relations only. A checked result
+  with a float endpoint does not transport a domain predicate for its old
+  input or a float equality; callers can use the payload or branch on
+  `.defined` when the predicate is needed. Extending ENT-5/FN-9 could remove
+  repeated validation in a real consumer, but requires typed noninteger value
+  identities and guarded goal transport beyond the current numeric context.
+  Validate input replacement, copied/replaced Results, joins, loops and proof
+  costs without combining independent guards. Defer until such a consumer
+  demonstrates the need; remove when a selected evidence rule covers it.
 
 - **Numeric generic conversion remains unimplemented.** The
   [generic witness](../research/investigations/numeric-conversions/generic-conversion.wf)
@@ -32,10 +46,9 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   pair is distinct and numeric. This is a compiler capability gap, separate
   from selecting new conversion semantics. Validate symbolic formation and
   concrete total/checked instances without inferring a uniform return type
-  or misreporting the gap as invalid source. Implementation is deferred from
-  the conversion-design survey; reopen for the next numeric-generic repair
-  or an ordinary generic numeric consumer, and remove when those controls
-  pass through the existing compiler path.
+  or misreporting the gap as invalid source. Include it in the proposed exact
+  conversion implementation after owner review, and remove when symbolic and
+  concrete controls pass through the existing compiler path.
 
 - **Validate further sharing of dense Result evidence when larger consumers need it.**
   The [cost comparison](../research/investigations/result-proof-transport/DESIGN.md#selected-cost-result)

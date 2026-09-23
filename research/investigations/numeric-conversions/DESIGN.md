@@ -207,7 +207,7 @@ function's result shape; it changes TYPE-4/OP-6 and every dependent contract,
 operation inventory and conformance case. Integer range domains fit existing
 proof terms, but float exactness needs a precisely specified predicate and
 proof route; it must not be advertised as automatically inferable from ranges.
-The concept is more coherent, but a full family still needs a rule-level trial.
+The completed proposal below supplies the rule-level trial for this option.
 
 **C. Keep the interface and improve evidence/optimization.** Publish the
 checked integer Ok payload's equality through existing value-associated Result
@@ -216,15 +216,14 @@ recover the indexed example and remove the demonstrated redundant check without
 new operation spellings. It leaves impossible-failure arms in source and does
 not provide rounded float conversion or direct total truncation.
 
-These options are partly composable. The recommended next comparison is B
-against C for exact conversion, with A retained as the narrower alternative;
-no option has been adopted. Do not change `cvt` to truncation or rounding under
-its existing exact meaning. A checked equality extension must capture the
-operand's value at conversion, survive only the specified copy/join routes,
-and never relate a payload to a later replacement of its original variable.
-Direct and named Results, source replacement, joins and loops need paired
-controls before selecting the extension; deterministic completion without
-implementation work budgets and proof-state cost remain obligations.
+The recommended proposal is B with C's integer Result evidence. They solve
+different problems, rather than being mutually exclusive alternatives. General
+proof-to-backend assumptions are not required: an admitted bare conversion can
+lower directly under its retained domain proof. No proposal has entered the
+active specification or live tree. A checked equality extension must capture
+the operand's value at conversion and cannot follow later replacement of its
+original variable. The cases and implementation boundaries below make those
+obligations explicit.
 
 Direct rounded conversions to float and total float-to-integer saturation are
 separate candidates. Their policy includes ties, overflow/underflow, signed
@@ -283,3 +282,366 @@ to insert unchecked assumptions in source or implementation. Generated LLVM,
 assembly and executables are scratch outputs and are not retained in the
 repository. No compiler/specification/conformance file is changed by this
 investigation, and no timing result or accepted new operation is claimed.
+
+## Completion criteria for the B proposal
+
+The next research step completes a proposal and implementation plan, not an
+implementation. Before choosing its detailed rules, use these discriminators:
+
+- One exact conversion relation must determine bare, checked and domain-query
+  behavior for every numeric type pair, including the proposed same-type rows.
+  NaN handling and signed zero must not acquire inconsistent answers between
+  these interfaces.
+- An independent binary-value oracle must agree with the candidate domain
+  algorithms at integer precision boundaries, float integer endpoints,
+  subnormal/overflow edges and NaN/infinity. A rounded reverse conversion alone
+  is insufficient evidence: include its integer-maximum collision controls.
+- Each proposed proof rule must name its existing fact representation and a
+  paired stale-value or control-flow counterexample. No general float solver,
+  new guard-product analysis or proof work budget is assumed.
+- Source sketches must cover static proof, explicit runtime branching,
+  checked-result delivery, generic bodies and same-type instantiation, with
+  outcomes separated from what the baseline compiler currently implements.
+- The implementation plan must identify normative changes, frontend and proof
+  owners, IR/lowering consumers, migration classes and discriminating checks.
+  Independent review and the owner's review precede implementation.
+
+The standalone Rust oracle belongs beside this investigation because it checks
+conversion-domain mathematics independently of the WF implementation. Its
+only caller is the reproduction command documented with its results; it is
+not a gate dependency and is removed or superseded when the selected domain's
+maintained conformance oracle covers these observations.
+
+### Domain-oracle result and reproduction
+
+On arm64 Darwin with rustc 1.98.1, [domain-oracle.rs](domain-oracle.rs) completed
+804,542 domain comparisons and 416 modular comparisons with exit 0. Its
+integer-only binary-value reference agrees with the candidate cast/round-trip
+tests on all u16 magnitudes, neighborhoods of integer powers of two, every
+f32/f64 exponent with selected edge significands/signs, and 10,000 deterministic
+additional bit samples. The modular checks exercise all 64 integer endpoint
+pairs at their source boundaries. Explicit negative controls expose both
+maximum round-trip collisions and signed widening by zero extension.
+
+Run from this checkout root with the Rust toolchain installed:
+
+```sh
+numeric_scratch="$(mktemp -d "${TMPDIR:-/tmp}/wf-numeric-domain.XXXXXX")"
+perl .github/run-check.pl numeric-domain-oracle sh -c '
+  rustc --edition=2024 -O "$1" -o "$2/domain-oracle" && "$2/domain-oracle"
+' sh research/investigations/numeric-conversions/domain-oracle.rs "$numeric_scratch"
+```
+
+This is a bounded comparison of domain algorithms and modular semantics,
+not an exhaustive float proof, WF implementation, acceptance checker or timing
+experiment. Host casts model the candidate round-trip algorithms using the
+[Rust conversion rules](https://doc.rust-lang.org/reference/expressions/operator-expr.html#numeric-cast);
+the reference side uses decoded significands and integer bounds. Existing WF
+native probes separately cover cross-format canonical NaNs and signed zero;
+the research oracle alone does not certify their LLVM lowering.
+
+## Proposed rules for owner review
+
+This section is a complete recommendation for the exact-conversion change,
+not an implemented language revision. Its code uses candidate syntax. The
+recommended implementation scope is B, integer Result evidence and generic
+conversion support. Low-bit wrapping is a separable recommended companion;
+rounded and saturated float interfaces remain follow-up scope as described
+below. The active specification and compiler stay unchanged in this PR.
+
+### One relation, three interfaces
+
+Define one partial value function `C(S,D,x)` and its total Boolean domain
+`D(S,D,x)`. The following rows partition the supported pairs and values:
+
+| Pair/value class | Domain and selected result |
+|---|---|
+| Same numeric type | Always defined; copy the complete input representation, including NaN payload/sign and negative zero |
+| Distinct integer types | Defined exactly when the mathematical integer lies in the destination's closed range; preserve that integer |
+| Integer to float | Defined exactly when the integer is representable in the destination format; integer zero gives positive zero |
+| Float to integer | Defined exactly for finite integral values within the destination's closed integer range; either signed zero gives integer zero |
+| Distinct float formats, finite input | Defined exactly when representable in the destination; preserve value and the sign of zero |
+| Distinct float formats, infinity or NaN | Defined; preserve infinity's sign and use the destination canonical quiet NaN for every NaN |
+
+All 100 ordered pairs of the ten numeric types are admitted. There are 39
+whole-type total pairs (the original 29 plus ten same-type pairs) and 61
+value-dependent pairs. Totality no longer selects the result type:
+
+| Spelling | Result | Obligation/behavior |
+|---|---|---|
+| `cvt::<S,D>(x)` | `own D` | Prove `D(S,D,x)` before lowering, then produce `C` without a validity guard |
+| `cvt.checked::<S,D>(x)` | `own Result<D,NarrowError>` | Return Ok(C) on the domain, Err otherwise, for every pair |
+| `cvt.defined::<S,D>(x)` | `own Bool` | Compute only the total domain answer; do not execute a partial cast on an invalid value |
+
+The same-type row is recommended over continued refusal because a generic
+conversion must not need a separate body when its two type parameters coincide.
+It copies bits rather than canonicalizing same-format NaNs: there is no format
+change to make their representation ambiguous, and generic specialization to
+an identity should require no NaN test. Cross-format canonicalization remains
+the existing OP-6 rule. This distinction is explicit table data, not a claim
+that all exact conversions are bit-preserving. No new `Numeric` bound is needed;
+the current Int and Float bounds already select each endpoint's capability.
+
+### Proof boundary
+
+Each bare call has a ConversionDomain obligation with the exact source type,
+destination type and evaluated operand identity. It uses the existing signed
+goal, support, closure and derivation machinery. Use these fixed routes:
+
+1. The ordinary contradictory-state rule or an established identical positive
+   `cvt.defined` goal discharges it. An identical negative goal refutes it in
+   a consistent state. Calculating a Bool alone establishes neither sign.
+2. Whole-type totality discharges it. For symbolic endpoints, evaluate the
+   finite bound domains while preserving equality of repeated type parameters;
+   at most 100 pairs are inspected, not independent choices for each occurrence.
+3. A direct typed literal or scalar named const is decided by its already
+   decoded exact value. Integer constants use integer arithmetic; floating
+   constants use sign/significand/exponent bits, not the host's rounded cast.
+   This adds no conversion syntax to const-expressions.
+4. Integer-to-integer obligations normalize to the destination's upper and
+   lower bounds, in that order, over the operand's current immutable integer
+   image, using existing L0 and affine routes and their usual proof certificates.
+5. Integer-to-float obligations additionally admit the sufficient closed
+   interval `-2^p <= x <= 2^p`, with p=24 for f32 and p=53 for f64, through the
+   same bound routes. This is not the entire exactness domain: larger even
+   integers may also be representable. Constant evaluation or an exact domain
+   predicate handles those cases; failure of this sufficient test is unknown,
+   not proof that the conversion is undefined.
+
+Otherwise the operation is rejected under OP-6 with its missing domain goal.
+The same domain normalization is used when a `.defined` goal is queried by
+FN-8 at a call boundary, rather than only by a bare conversion in the body.
+Thus a caller with `x <= 255_u32` can discharge
+`requires cvt.defined::<u32,u8>(x)` without executing a query. A failed
+sufficient interval route cannot refute a `.defined` requirement or establish
+its negation; only an exact constant answer or established negative goal does
+so in the proposed initial routes. Positive domain facts are not automatically
+projected back into all numerical inequalities: after an exact integer cast,
+its equality and destination type bounds supply the ordinary consequences.
+For nonconstant float operands there is no new automatic float arithmetic,
+integrality, round-trip or bit-divisibility solver. A `.defined` condition or
+an identical verified requirement supplies the proof. Merely proving a float
+is within integer bounds does not prove it has no fractional part.
+
+The predicate's origin follows the current immutable Bool-binding and support
+rules used by integer `.defined` queries; changing the operand kills its use
+as evidence about that operand. Exact conversion expressions may occur in
+FN-8 erased definitions only for whole-type total pairs (including universally
+total symbolic pairs). A preceding requirement does not make a partial
+conversion legal inside another clause. `.defined` is total and usable in
+requirements. FN-9 stays the existing integer relation fragment; no arbitrary
+float postcondition or Bool-result theorem is introduced.
+
+### Integer result evidence
+
+An admitted bare integer conversion publishes ordinary mathematical equality
+and preserves its input's existing integer image regardless of width or sign.
+For checked integer-to-integer conversion, its local Result's private success
+payload equals the evaluated input value inside that Result's conditional
+context. Source terms or images already available at evaluation supply their
+relations; an untracked indirect read supplies its evaluated value and type
+bounds, not a newly invented relation to mutable array storage.
+
+Capture before subsequent mutation, use the existing pre-kill closure and
+immutable operand/commit identities, and reuse the current Result transport:
+direct match, named binding, copy, whole-binding replacement, value delivery,
+propagate and forwarded return. Each outcome keeps an isolated context; joins
+retain common weaker bounds and continuing-backedge kills remain unchanged.
+No guard product, body re-analysis or new path enumeration is introduced.
+
+This release does not transport float-valued equalities or opaque domain
+goals through Result. A checked conversion with a float endpoint returns the
+correct value, but its Ok tag alone does not authorize a second bare conversion
+of the old input. A writer already has the converted payload; when a domain
+fact is needed for the input, branch on `.defined`. This is a specified proof
+precision boundary, not an implementation omission disguised as a source error.
+Extending it requires changing ENT-5 and FN-9's evidence vocabulary and is a
+separate opportunity recorded in TODO.
+
+### Source cases and expected outcomes
+
+These are proposal examples, not claims that the baseline accepts new names.
+First, range proof should replace the baseline's impossible-error branch:
+
+```wf
+fn byte(value: own u32) -> result: own u8 pure contract {
+  requires value <= 255_u32;
+} {
+  return cvt::<u32, u8>(value);
+}
+```
+
+Removing the requirement rejects an unconstrained parameter. Replacing the
+body's argument by `256_u32` also rejects; changing only the destination to
+u64 needs no requirement. Masking into a local first and using its existing
+S7 bound also proves the u8 conversion, including a binary-encoding consumer.
+
+Generic conversion keeps one result shape and an explicit obligation:
+
+```wf
+fn convert<S: Int, D: Int>(value: own S) -> result: own D pure contract {
+  requires cvt.defined::<S, D>(value);
+} {
+  return cvt::<S, D>(value);
+}
+
+fn attempt<S: Int, D: Float>(value: own S) -> result: own Result<D, NarrowError> pure {
+  return cvt.checked::<S, D>(value);
+}
+
+fn same<T: Float>(value: own T) -> result: own T pure {
+  return cvt::<T, T>(value);
+}
+```
+
+Check the symbolic bodies before calls, then concrete instances through the
+existing FN-2 path. Include an unused malformed body, forwarded type parameters,
+constant arguments and nested generic calls. A same-type Float instance must
+preserve a noncanonical NaN's bits; a cross-format instance must canonicalize.
+Unknown numeric width never becomes a guessed concrete type. An unconstrained
+`<T>` cannot use numeric operations merely because current callers use integers.
+
+The two mutation controls below are distinct:
+
+```wf
+let permitted = cvt.defined::<u32, u8>(value);
+set value = 300_u32;
+if permitted {
+  let invalid = cvt::<u32, u8>(value);
+}
+```
+
+This rejects: the saved Bool does not describe the replacement value. In the
+next sketch, the entry state has `index < 4_u64`:
+
+```wf
+let pending = cvt.checked::<u64, u8>(index);
+set index = 1000_u64;
+match pending {
+  Ok(value: small) => {
+    let restored = cvt::<u8, u64>(small);
+    let selected = values[restored];
+  }
+  Err(error: refused) => {
+  }
+}
+```
+
+The selected read of a four-element array accepts: the saved payload still
+represents the old index. Changing only that read to `values[index]` rejects.
+Changing the saved Result to another conversion before the match must replace
+its evidence, and a write through any possible alias must apply normal kills.
+
+| Case | Required observation |
+|---|---|
+| Guarded float conversion | `.defined::<f64,i32>(x)` true edge admits bare conversion; merely `0 <= x < 4` does not prove integrality |
+| Exactness boundary | 2^24 and 2^24+2 convert exactly to f32; 2^24+1 does not |
+| Float integer edge | f64 2^63 fails i64 conversion; its predecessor succeeds; the negative endpoint succeeds |
+| Special values | NaN/infinity fail integer destinations; cross-format floats admit/canonicalize them as the table states; signed zero behavior is observed by reinterpretation |
+| Predicate mismatch | A proof about u8 cannot authorize i8, another operand, or the false edge |
+| Caller initialization | A caller's `x <= 255_u32` proves a callee's `.defined::<u32,u8>(x)` requirement by the same domain normalization; x=256 fails |
+| Join | Results known below 4 and below 8 join to below 8; a four-element index still needs a new bound |
+| Independent Results | Facts under one success tag cannot be conjoined with a second unselected Result's facts |
+| Loop | A Result or predicate replaced on a continuing backedge carries no previous iteration's evidence; a fresh value in the body can establish fresh evidence |
+| Delivery | Direct and named matches, copies, propagate, give and forwarded return preserve exactly the existing transport routes |
+| Aggregate storage | Saving a Result in a struct/array does not add ENT-5 transport; after loading, ordinary payload type facts remain |
+| Contract | `.defined` is legal in requires; a partially defined conversion inside a clause remains inadmissible |
+| Const expression | Existing const-expression grammar is unchanged; a runtime bare conversion of a scalar named constant can use its value |
+
+### Domain mathematics and lowering
+
+For a finite binary input, decode `(-1)^s * m * 2^e` exactly and remove powers
+of two from m. Integrality is `m=0` or `e>=0`; integer bounds are compared with
+integer magnitudes. Integer-to-float exactness needs at most p significant bits
+after removing trailing zero bits (all current integers fit the float exponent
+range). A nonzero binary64 value fits binary32 exactly when that normalized
+significand has at most 24 bits, its least significant exponent is at least
+-149, and its highest is at most 127. Handle zero, infinities and NaNs in the
+table's distinct rows. These are finite exact tests, not a search procedure.
+
+For runtime checked/domain operations, the current saturating cast and reverse
+comparison can be shared, retaining both maximum-collision exclusions in
+`backend/emitter/conversion/float_endpoint.rs`. A naive round trip accepts
+u64::MAX after it rounds upward and saturates back, and similarly accepts f64
+2^63 for i64. A `.defined` lowering cannot execute an out-of-domain raw
+float-to-integer instruction before deciding its answer. LLVM's
+[saturating conversion contract](https://llvm.org/docs/LangRef.html#saturating-floating-point-to-integer-conversions)
+provides a total building block. Bare conversion consumes the proved domain
+and emits the direct cast; cross-format float NaN canonicalization remains
+required result behavior, not a failure check to remove.
+
+Use an explicit conversion mode in checked expressions, goals and IR. Do not
+infer the mode from the type-pair totality or from an incidental Result layout.
+Semantic formation accepts numeric symbolic endpoint types; only concrete
+numeric pairs reach IR. Result interning depends on Checked mode, including
+total and symbolic pairs. Keep the shared type-argument parser's reinterpret
+consumer on its own existing operation rules.
+
+There is no new compiler pass or general `llvm.assume` family. Domain and result
+relations use the existing proof ledger and its ordinary emission boundary.
+Byte extraction should already be a cast in unoptimized emitted IR under B;
+this is a stronger and more direct criterion than hoping a fallback match is
+optimized away. Predicate lowering still performs real work when the writer
+asks for runtime validation. No timing claim follows from this design.
+
+### Companion operations and explicit deferrals
+
+For the original low-bit request, recommend `cvt.wrap::<S,D>` over `itrunc` as
+a separable companion, with integer endpoints only and result `wrap_D(x)` as
+OP-2 already defines it. It admits all integer width/sign pairs: narrowing
+keeps low bits, same-width conversion reinterprets signedness, and widening a
+negative signed input preserves its mathematical residue modulo the destination
+width. For example, `cvt.wrap::<i8,u32>(-1_i8)` is 4294967295, not 255. This last
+case requires sign extension even with an unsigned destination; blindly
+reusing the current exact-cast helper's unsigned-destination zero extension
+would be wrong. The name describes modular value semantics and uses the
+existing mode vocabulary; no competing `itrunc` spelling is proposed. This
+mode publishes no exact input equality on an overflowing conversion.
+
+Do not block the exact family on additional float result policies. A later
+rounded-to-float operation should explicitly fix nearest/ties-to-even,
+overflow to signed infinity, gradual underflow, signed zero, and cross-format
+canonical NaN; a later total float-to-integer operation should separately
+select NaN handling, rounding and saturation. The source examples establish
+that these are real missing/direct-interface questions, but no consumer yet
+selects their complete surface. `froundeven` cannot substitute for format
+rounding. Their semantics must not be smuggled into bare `cvt` or `.wrap`.
+General float Result facts and general backend range-assumption transport are
+also deferred; neither is necessary to implement the stated B contract.
+
+## Implementation sequence after owner review
+
+No step below is executed in this research delivery.
+
+| Step | Change and affected owners | Completion criterion |
+|---|---|---|
+| 1. Normative contract | TYPE-4/5, OP-1/6/7/8, FN-8 and ENT-2/3/5/6; extend the retained type-argument list and the operation inventory; propose the current spec's successor and archive its outgoing bytes | One domain/value table, fixed proof routes, same-type behavior, result evidence and diagnostics agree; owner-rulable amendments stay beside the tree |
+| 2. Formation and generics | `semantic/model.rs`, `goal.rs`, `check/expressions/calls{,/conversions}.rs`, `check/nominal_instances.rs`, `check/requires.rs`, `check/generics.rs` and stable goal substitution | Explicit modes, uniform result shape, symbolic numeric endpoints, checked Result interning, correct contract admissibility; no generic Unsupported residue for the planned cases |
+| 3. Proof and evidence | `entailment/flow.rs` obligation dispatch/identity; focused domain helper under flow; `flow/sources.rs`, `flow/results.rs`, `state.rs`, derivation inventory and diagnostics | Domain checks and integer value images use the shared ledger; stale-value, join, loop and Result-isolation controls give the specified outcomes |
+| 4. Lowering | `lowering.rs`, `lowering/builder.rs`, `backend/emitter{,/conversion}.rs`, `conversion/float_endpoint.rs` and affected checked-model visitors | Exact has no validity guard, Defined is total without Result construction, Checked agrees with it and produces the same exact value; same-type is a copy; NaN normalization and signedness survive |
+| 5. Corpus migration | Conversion semantic/backend tests, entails/generic/contract tests, OP-6/TYPE-4 conformance cases, maintained programs and current guidance | Migrate old partial calls to `.checked` when preserving a genuinely fallible contract; use bare calls with actual proofs for invariant conversions; deliberately replace the old no-equality expectation with paired positive/stale-value controls |
+| 6. Verification and publication | Ordinary compiler/conformance/program test homes and existing gates; owner-ruling process | Independent completion review/DCR, full `make check` and required CI on the delivered revision; no root entries, benchmark gates or research dependencies added |
+
+The optional integer `.wrap` row fits steps 1/2/4/5 without extending the proof
+solver. Confirm its inclusion with the exact-family scope before implementation.
+Each coherent implementation revision stays on the existing Draft PR. Coordinate
+with the concurrent call-boundary syntax work rather than restoring old call
+spellings; at implementation start rebase or merge current main, settle the
+successor spec version then, and recheck the actual generated inventory.
+
+Step 1 precedes implementation. Once its rules and mode/type representation
+are fixed, backend work and corpus/fixture preparation can proceed in parallel
+with the proof work in disjoint files. Generic substitution and model changes
+share files, so one owner integrates them. Run expensive verification once
+through the shared guard after focused failures are resolved; use the existing
+conversion matrix tests rather than adding one full compiler build per pair.
+
+Required checks are all 100 pairs' interface shapes, representative valid and
+invalid domain values per class, the code cases above, and native boundary
+observations with an independent bit-value oracle. Compare emitted helpers
+before optimization, then ordinary optimized/native execution; poison-free
+query lowering and preservation of specified NaN/zero results need separate
+observations. Include same-type NaN bits and signed-to-unsigned wrap widening,
+which the old distinct-pair exact suite could not observe. Whole-program
+timings remain unclaimed; proof-cost qualification reuses the existing dense
+Result consumer if this new producer materially changes its state sizes.
