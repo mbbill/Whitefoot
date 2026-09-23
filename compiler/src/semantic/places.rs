@@ -27,7 +27,7 @@ use crate::DeclarationId;
 
 use super::model::{
     BindingId, CheckedConstantId, CheckedExpression, CheckedFunction, CheckedLoopId,
-    CheckedMatchArm, CheckedMeasure, CheckedPlaceStep, CheckedStatement, CheckedType, IntegerType,
+    CheckedMatchArm, CheckedMeasure, CheckedStatement, CheckedType, IntegerType,
 };
 
 /// The generation in which an index expression or range endpoint was
