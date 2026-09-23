@@ -481,14 +481,16 @@ fn assert_join_parents(
 
 fn term_integer_range(kind: &TermKind) -> Option<(i128, i128)> {
     match kind {
-        TermKind::Place(_, ty) => Some(type_range(*ty)),
+        TermKind::Place(_, ty) | TermKind::ConstParameter(_, ty) => Some(type_range(*ty)),
         TermKind::Measure(..)
         | TermKind::CountedCapture { .. }
         | TermKind::IndexCapture { .. }
         | TermKind::EntryDatum { .. }
         | TermKind::MeasureDatum { .. } => Some(type_range(IntegerType::U64)),
-        TermKind::CommitValue { ty, .. } | TermKind::CallDatum { ty, .. } => Some(type_range(*ty)),
-        TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => None,
+        TermKind::ResultPayload(ty)
+        | TermKind::CommitValue { ty, .. }
+        | TermKind::CallDatum { ty, .. } => Some(type_range(*ty)),
+        TermKind::Zero | TermKind::Constant(_) => None,
     }
 }
 
@@ -1294,7 +1296,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                                     || *term == TermKind::Constant(i128::from(value))
                             }
                             CapturedTerm::Const(declaration) => {
-                                *term == TermKind::ConstParameter(declaration)
+                                matches!(term, TermKind::ConstParameter(candidate, _) if *candidate == declaration)
                             }
                             CapturedTerm::Binding(_) => matches!(
                                 term,
@@ -1708,10 +1710,68 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 );
                 DerivationConclusion::ContractCall
             }
-            DerivationNode::PostconditionDirectResult {
-                relation, parent, ..
+            DerivationNode::ResultTransport {
+                from,
+                to,
+                relation,
+                parent,
+                ..
+            } => {
+                assert_relation_terms_resolve(summary, relation);
+                let DerivationConclusion::Relation(source) =
+                    retained_conclusion(&conclusions, *parent)
+                else {
+                    panic!("Result substitution needs a numeric premise");
+                };
+                assert!(
+                    matches!(retained_term(summary, *from), TermKind::ResultPayload(_))
+                        || matches!(retained_term(summary, *to), TermKind::ResultPayload(_))
+                );
+                let replace = |term| if term == *from { *to } else { term };
+                let expected = match source {
+                    Relation::Bound { left, right, bound } => Relation::Bound {
+                        left: replace(*left),
+                        right: replace(*right),
+                        bound: *bound,
+                    },
+                    Relation::Equal {
+                        left,
+                        right,
+                        difference,
+                    } => Relation::Equal {
+                        left: replace(*left),
+                        right: replace(*right),
+                        difference: *difference,
+                    },
+                    Relation::Distinct {
+                        left,
+                        right,
+                        difference,
+                    } => {
+                        let (left, right) = (replace(*left), replace(*right));
+                        if left <= right {
+                            Relation::Distinct {
+                                left,
+                                right,
+                                difference: *difference,
+                            }
+                        } else {
+                            Relation::Distinct {
+                                left: right,
+                                right: left,
+                                difference: -*difference,
+                            }
+                        }
+                    }
+                };
+                assert_eq!(relation.as_ref(), &expected);
+                DerivationConclusion::Relation(expected)
             }
-            | DerivationNode::PostconditionDirectMatch {
+            DerivationNode::ResultErr { statement } => {
+                assert!(!statement.components().is_empty());
+                DerivationConclusion::Contradiction
+            }
+            DerivationNode::PostconditionDirectResult {
                 relation, parent, ..
             } => {
                 let relation = relation.as_ref();
@@ -1734,44 +1794,6 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     retained_conclusion(&conclusions, *parent),
                     &DerivationConclusion::Relation(relation.clone())
                 );
-                let event = retained_event(summary, *target_event);
-                used_events[target_event.0 as usize] = true;
-                assert_eq!(event.kind, FlowEventKind::PostconditionReceiverWrite);
-                DerivationConclusion::Relation(relation.clone())
-            }
-            DerivationNode::PostconditionSelectedReceiver {
-                payload,
-                binding,
-                relation,
-                target_event,
-                parent,
-                ..
-            } => {
-                let relation = relation.as_ref();
-                let DerivationNode::PostconditionDirectMatch {
-                    binding: parent_binding,
-                    relation: parent_relation,
-                    ..
-                } = &summary.derivations.nodes[parent.0 as usize]
-                else {
-                    panic!("a selected receiver must extend one direct-match route");
-                };
-                let parent_relation = parent_relation.as_ref();
-                assert_relation_terms_resolve(summary, relation);
-                assert_eq!(parent_binding, payload);
-                assert_ne!(payload, binding);
-                assert!(relation_has_bare_binding(
-                    summary,
-                    parent_relation,
-                    *payload
-                ));
-                assert!(!relation_has_bare_binding(
-                    summary,
-                    parent_relation,
-                    *binding
-                ));
-                assert!(!relation_has_bare_binding(summary, relation, *payload));
-                assert!(relation_has_bare_binding(summary, relation, *binding));
                 let event = retained_event(summary, *target_event);
                 used_events[target_event.0 as usize] = true;
                 assert_eq!(event.kind, FlowEventKind::PostconditionReceiverWrite);
@@ -1966,9 +1988,11 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 match outcome.family {
                     ObligationFamily::Bounds => assert_eq!(outcome.conjunct, 0),
                     ObligationFamily::AllocationFit => assert_eq!(outcome.conjunct, 0),
-                    // [EFF-5] a range separation submits its four orderings as
-                    // one occurrence and never carries a conjunct of its own.
-                    ObligationFamily::CallSeparation | ObligationFamily::ExchangeSeparation => {
+                    // Separation for a call, exchange or reference preservation
+                    // is one occurrence, without a conjunct of its own.
+                    ObligationFamily::CallSeparation
+                    | ObligationFamily::ExchangeSeparation
+                    | ObligationFamily::ReferencePreservation(_) => {
                         assert_eq!(outcome.conjunct, 0)
                     }
                     // [REF-4] the two formation goals `lo <= hi` and
@@ -1982,14 +2006,17 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 }
                 assert_eq!(outcome.derivation, Some(root.node));
                 assert!(!outcome.node_path.components().is_empty());
-                // [EFF-5] a range separation has no canonical goal or single
-                // normalized component; its retained wrapper names the exact
-                // pair and selected ordering. Another family may lack an L0
-                // component when its source operands have only the canonical
-                // goal plus an affine normalization. That root must conclude
+                // Call and reference-preservation separations have no canonical
+                // goal or single normalized component; their retained wrapper
+                // names the exact pair and selected ordering. Another family
+                // may lack an L0 component when its source operands have only
+                // the canonical goal plus an affine normalization. That root must conclude
                 // the exact retained positive goal (or the actual entering
                 // contradiction), rather than being accepted by shape alone.
-                if outcome.family == ObligationFamily::CallSeparation {
+                if matches!(
+                    outcome.family,
+                    ObligationFamily::CallSeparation | ObligationFamily::ReferencePreservation(_)
+                ) {
                     assert!(outcome.components.is_empty());
                     assert!(outcome.canonical_goal.is_none());
                     assert!(matches!(
@@ -2456,7 +2483,8 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     ),
                 }
             }
-            DerivationRootKind::PostconditionState { occurrence } => {
+            DerivationRootKind::PostconditionState { occurrence }
+            | DerivationRootKind::PostconditionConditional { occurrence } => {
                 assert_eq!(occurrence, seen_s12);
                 seen_s12 += 1;
                 assert!(!seen_s12_nodes[root.node.0 as usize]);
@@ -2478,17 +2506,6 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     DerivationNode::PostconditionDirectResult { .. }
                 ));
             }
-            DerivationRootKind::PostconditionDirectMatch { occurrence, .. } => {
-                assert_eq!(occurrence, seen_s12);
-                seen_s12 += 1;
-                assert!(!seen_s12_nodes[root.node.0 as usize]);
-                seen_s12_nodes[root.node.0 as usize] = true;
-                assert!(matches!(conclusion, DerivationConclusion::Relation(_)));
-                assert!(matches!(
-                    summary.derivations.nodes[root.node.0 as usize],
-                    DerivationNode::PostconditionDirectMatch { .. }
-                ));
-            }
             DerivationRootKind::PostconditionDirectReceiver { occurrence, .. } => {
                 assert_eq!(occurrence, seen_s12);
                 seen_s12 += 1;
@@ -2498,17 +2515,6 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert!(matches!(
                     summary.derivations.nodes[root.node.0 as usize],
                     DerivationNode::PostconditionDirectReceiver { .. }
-                ));
-            }
-            DerivationRootKind::PostconditionSelectedReceiver { occurrence, .. } => {
-                assert_eq!(occurrence, seen_s12);
-                seen_s12 += 1;
-                assert!(!seen_s12_nodes[root.node.0 as usize]);
-                seen_s12_nodes[root.node.0 as usize] = true;
-                assert!(matches!(conclusion, DerivationConclusion::Relation(_)));
-                assert!(matches!(
-                    summary.derivations.nodes[root.node.0 as usize],
-                    DerivationNode::PostconditionSelectedReceiver { .. }
                 ));
             }
             DerivationRootKind::PostconditionGive { occurrence, .. } => {
@@ -2571,15 +2577,17 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
         let is_state_root = matches!(node, DerivationNode::PostconditionCall { .. })
             && summary.derivations.roots.iter().any(|root| {
                 root.node.0 as usize == index
-                    && matches!(root.kind, DerivationRootKind::PostconditionState { .. })
+                    && matches!(
+                        root.kind,
+                        DerivationRootKind::PostconditionState { .. }
+                            | DerivationRootKind::PostconditionConditional { .. }
+                    )
             });
         let is_route = is_state_root
             || matches!(
                 node,
                 DerivationNode::PostconditionDirectResult { .. }
-                    | DerivationNode::PostconditionDirectMatch { .. }
                     | DerivationNode::PostconditionDirectReceiver { .. }
-                    | DerivationNode::PostconditionSelectedReceiver { .. }
             );
         assert_eq!(
             seen_s12_nodes[index], is_route,
@@ -4568,7 +4576,7 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn missing_value_if_evidence_and_value_match_create_no_delivery_roots() {
+fn value_match_delivers_common_bounds_while_a_missing_branch_does_not() {
     let source = br#"enum Choice {
   Narrow();
   Wide();
@@ -4611,7 +4619,8 @@ fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    for function in ["missing", "matched"] {
+    {
+        let function = "missing";
         let summary = entailment(source, function);
         validate_derivations(&summary);
         assert!(
@@ -4632,6 +4641,15 @@ fn main() -> status: own ExitStatus pure {
             FlowEventKind::PostconditionGive | FlowEventKind::PostconditionDeliveryJoin
         )));
     }
+    let summary = entailment(source, "matched");
+    validate_derivations(&summary);
+    assert!(
+        summary.derivations.nodes.iter().any(|node| matches!(
+            node, DerivationNode::PostconditionDeliveryJoin { detail }
+                if matches!(detail.relation, Relation::Bound { bound: 127, .. })
+        )),
+        "all delivering arms prove the weaker upper bound"
+    );
 }
 
 #[test]
@@ -5879,7 +5897,7 @@ fn main() -> status: own ExitStatus pure {
                     .inventory
                     .terms
                     .iter()
-                    .all(|term| !matches!(term, TermKind::ConstParameter(_))),
+                    .all(|term| !matches!(term, TermKind::ConstParameter(..))),
                 "concrete instances retain no symbolic const term"
             );
             // [MSR-1] the window place carries three measures, and [MSR-2]'s
@@ -7476,7 +7494,7 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn direct_match_and_value_match_retain_only_selected_payload_routes() {
+fn success_selections_retain_one_conditional_call_context() {
     let source = br#"fn callee(value: own i32) -> result: own Result<i32, Overflow> pure contract {
   ensures when Ok(value: payload): payload == value;
 } {
@@ -7508,47 +7526,51 @@ fn delivered(value: own i32) -> result: own i32 pure {
   return selected;
 }
 
+fn propagated(value: own i32) -> result: own Result<i32, Overflow> pure contract {
+  ensures when Ok(value: payload): payload == value;
+} {
+  let selected = propagate callee(value: value);
+  return Ok<i32, Overflow>(value: selected);
+}
+
 fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    for function in ["direct", "delivered"] {
+    for function in ["direct", "delivered", "propagated"] {
         let summary = entailment(source, function);
         validate_derivations(&summary);
-        let routes = summary
+        let roots = summary
             .derivations
-            .nodes
+            .roots
             .iter()
-            .filter_map(|node| {
-                let DerivationNode::PostconditionDirectMatch {
-                    variant,
-                    field,
-                    tag,
-                    binding,
-                    ..
-                } = node
-                else {
-                    return None;
-                };
-                Some((*variant, *field, *tag, *binding))
+            .filter(|root| {
+                matches!(
+                    root.kind,
+                    DerivationRootKind::PostconditionConditional { .. }
+                )
             })
             .collect::<Vec<_>>();
-        assert_eq!(routes.len(), 1, "{function} retains one selected route");
-        assert_eq!(routes[0].0, crate::BuiltinPreludeId::OK);
-        assert_eq!(routes[0].1, crate::BuiltinPreludeId::OK_VALUE);
-        assert_eq!(routes[0].2, 0, "PRE-1 Ok is the selected tag");
         assert_eq!(
-            summary
-                .derivations
-                .roots
-                .iter()
-                .filter(|root| matches!(
-                    root.kind,
-                    DerivationRootKind::PostconditionDirectMatch { .. }
-                ))
-                .count(),
+            roots.len(),
             1,
-            "{function} keeps the direct selected route as a required root"
+            "{function} retains its conditional call clause"
+        );
+        let DerivationNode::PostconditionCall { detail } =
+            &summary.derivations.nodes[roots[0].node.0 as usize]
+        else {
+            panic!("conditional evidence must retain its checked call");
+        };
+        assert!(detail.relation.terms().iter().any(|term| matches!(
+            retained_term(&summary, *term),
+            TermKind::ResultPayload(IntegerType::I32)
+        )));
+        assert!(
+            summary.derivations.nodes.iter().any(|node| matches!(
+                node, DerivationNode::ResultTransport { from, .. }
+                    if matches!(retained_term(&summary, *from), TermKind::ResultPayload(_))
+            )),
+            "{function} uses a selected payload in its ordinary proof"
         );
         assert!(
             summary
@@ -7561,7 +7583,7 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn direct_and_selected_receivers_retain_one_source_context_route_root() {
+fn direct_receivers_and_selected_payload_assignments_discharge_their_uses() {
     let source = br#"fn choose(ignored: own i32, value: own i32) -> result: own i32 pure contract {
   ensures result == value;
 } {
@@ -7626,7 +7648,7 @@ fn main() -> status: own ExitStatus pure {
             .iter()
             .filter(|node| {
                 if selected_route {
-                    matches!(node, DerivationNode::PostconditionSelectedReceiver { .. })
+                    matches!(node, DerivationNode::PostconditionCall { .. })
                 } else {
                     matches!(node, DerivationNode::PostconditionDirectReceiver { .. })
                 }
@@ -8331,11 +8353,10 @@ fn main(text: &HostString, destination: &[u8]) -> result: own unit reads(text), 
 }
 
 #[test]
-fn a_let_bound_numeric_outcome_does_not_gain_a_special_endpoint_route() {
-    // C2 retires ENT-3.S10's external-only let-bound outcome propagation.
-    // CALL-4 explicitly defers carrying a non-measure relation through this
-    // naming event. Direct `match write_once(...)` is the ordinary supported
-    // destination and is covered alongside this negative.
+fn a_named_boundary_outcome_uses_the_same_numeric_evidence_as_source_calls() {
+    // PRE-1 calls and source calls retain the same conditional context.
+    // A known endpoint proves the fixed-table bound; an unconstrained old
+    // limit does not become a table bound after writing a new limit.
     let source = br#"const count: u64 = 4_u64;
 
 const table: Array<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
@@ -8377,8 +8398,8 @@ fn killed(factory: &HandleFactory, output: &OutputStream, source: &[u8], limit: 
             .filter(|outcome| outcome.family == ObligationFamily::Bounds)
             .map(|outcome| outcome.discharged)
             .collect::<Vec<_>>(),
-        vec![false],
-        "CALL-4 does not carry the numeric endpoint through a named enum"
+        vec![true],
+        "the named outcome retains its proved endpoint"
     );
     assert_eq!(
         obligations(source, "killed")
@@ -8387,7 +8408,7 @@ fn killed(factory: &HandleFactory, output: &OutputStream, source: &[u8], limit: 
             .map(|outcome| outcome.discharged)
             .collect::<Vec<_>>(),
         vec![false],
-        "writing the bounding actual before the match ends the origin"
+        "a new limit cannot strengthen the old call datum"
     );
 }
 
@@ -8826,7 +8847,7 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
         Some(127),
     ];
     assert_eq!(calls.len(), expected_masks.len());
-    let mut selected_rows = Vec::new();
+
     for (ordinal, (call, expected)) in calls.iter().zip(expected_masks).enumerate() {
         match (call.mask, expected) {
             (MaskActual::Literal(actual), Some(expected)) => {
@@ -8839,21 +8860,28 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
         let summary = &program.functions[call.caller].entailment;
         let direct = summary
             .derivations
-            .nodes
+            .roots
             .iter()
-            .filter_map(|node| {
-                let DerivationNode::PostconditionDirectMatch {
-                    call: candidate,
-                    relation,
-                    ..
-                } = node
+            .filter_map(|root| {
+                if !matches!(
+                    root.kind,
+                    DerivationRootKind::PostconditionConditional { .. }
+                ) {
+                    return None;
+                }
+                let DerivationNode::PostconditionCall { detail } =
+                    &summary.derivations.nodes[root.node.0 as usize]
                 else {
                     return None;
                 };
-                (candidate == &call.path).then_some(relation)
+                (detail.call == call.path).then_some(&detail.relation)
             })
             .collect::<Vec<_>>();
-        assert_eq!(direct.len(), 1, "read_bits row {ordinal} DirectMatch route");
+        assert_eq!(
+            direct.len(),
+            1,
+            "read_bits row {ordinal} conditional call clause"
+        );
         for relation in direct {
             assert!(
                 relation.terms().into_iter().any(|term| match call.mask {
@@ -8884,46 +8912,6 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
                 "read_bits row {ordinal} relation must retain its exact mask actual"
             );
         }
-        let selected = summary
-            .derivations
-            .nodes
-            .iter()
-            .filter_map(|node| {
-                let DerivationNode::PostconditionSelectedReceiver {
-                    binding,
-                    relation,
-                    target_event,
-                    parent,
-                    ..
-                } = node
-                else {
-                    return None;
-                };
-                matches!(
-                    &summary.derivations.nodes[parent.0 as usize],
-                    DerivationNode::PostconditionDirectMatch { call: candidate, .. }
-                        if candidate == &call.path
-                )
-                .then_some((*binding, relation.as_ref().clone(), *target_event))
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(
-            selected.len(),
-            usize::from(ordinal != 1),
-            "read_bits row {ordinal} SelectedReceiver route"
-        );
-        // The five fixed-distance wire bits now feed a bit-reversal loop,
-        // not a direct assignment of the selected payload to distance_symbol.
-        // Its direct-match fact must not become a false receiver identity.
-        selected_rows.push(selected.first().map(|selected| {
-            (
-                call.caller,
-                call.path.clone(),
-                selected.0,
-                selected.1.clone(),
-                selected.2,
-            )
-        }));
         assert!(summary.derivations.nodes.iter().all(|node| {
             let DerivationNode::PostconditionDirectReceiver { parent, .. } = node else {
                 return true;
@@ -8939,8 +8927,8 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
     }
 
     // PRE-1 supplies ordinary signatures: write_once and read_at each publish
-    // their two endpoint clauses through the same CALL-6 direct-match route.
-    // The fourteen read_bits calls remain; thirteen directly assign payloads.
+    // their two endpoint clauses through the same conditional call route.
+    // The fourteen read_bits calls retain their original clause inventory.
     for (caller_name, callee_name) in [("publish_all", "write_once"), ("exercise", "read_at")] {
         let caller = program
             .functions
@@ -8969,11 +8957,11 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
                 .iter()
                 .filter(|root| matches!(
                     root.kind,
-                    DerivationRootKind::PostconditionDirectMatch { .. }
+                    DerivationRootKind::PostconditionConditional { .. }
                 ))
                 .filter(|root| matches!(
                     &caller.entailment.derivations.nodes[root.node.0 as usize],
-                    DerivationNode::PostconditionDirectMatch { call, .. } if call == *path
+                    DerivationNode::PostconditionCall { detail } if detail.call == **path
                 ))
                 .count(),
             2,
@@ -8988,23 +8976,15 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
             .flat_map(|function| &function.entailment.derivations.roots)
             .filter(|root| matches!(
                 root.kind,
-                DerivationRootKind::PostconditionDirectMatch { .. }
+                DerivationRootKind::PostconditionConditional { .. }
             ))
             .count(),
         18
     );
-    assert_eq!(
-        program
-            .functions
-            .iter()
-            .flat_map(|function| &function.entailment.derivations.roots)
-            .filter(|root| matches!(
-                root.kind,
-                DerivationRootKind::PostconditionSelectedReceiver { .. }
-            ))
-            .count(),
-        13
-    );
+    // Result transport retires required roots for a direct match's first assignment.
+    // An unused assignment no longer forces a special retained proof. Source
+    // call identities and exact masks remain checked above; focused tests
+    // check ordinary assignments by consuming their facts in obligations.
     // Check every source call, rather than retaining totals from the retired
     // owned-view API. PRE-1 gives slots_new two result clauses (len and cap),
     // and place_back one exit-state clause. The two source helpers each
@@ -9107,75 +9087,6 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
             )
         })
     }));
-    let mut receiver_events = program
-        .functions
-        .iter()
-        .enumerate()
-        .flat_map(|(owner, function)| {
-            function
-                .entailment
-                .derivations
-                .nodes
-                .iter()
-                .filter_map(move |node| match node {
-                    DerivationNode::PostconditionSelectedReceiver { target_event, .. } => {
-                        Some((owner, *target_event))
-                    }
-                    _ => None,
-                })
-        })
-        .collect::<Vec<_>>();
-    receiver_events.sort_unstable_by_key(|(owner, event)| (*owner, event.0));
-    receiver_events.dedup();
-    assert_eq!(receiver_events.len(), 13);
-    for (owner, event) in receiver_events {
-        assert_eq!(
-            retained_event(&program.functions[owner].entailment, event).kind,
-            FlowEventKind::PostconditionReceiverWrite,
-        );
-    }
-
-    let short = selected_rows[12].as_ref().expect("short repeat assignment");
-    let long = selected_rows[13].as_ref().expect("long repeat assignment");
-    assert_eq!(short.0, long.0);
-    assert_eq!(
-        short.2, long.2,
-        "R13 and R14 target the same repeat_bits binding"
-    );
-    assert!(short.1.components() < long.1.components());
-    assert!(
-        short.4 < long.4,
-        "receiver writes retain short-before-long event order"
-    );
-    for (row, expected) in [(short, 7), (long, 127)] {
-        let summary = &program.functions[row.0].entailment;
-        let Relation::Bound {
-            left,
-            right,
-            bound: 0,
-        } = &row.3
-        else {
-            panic!("R13/R14 must retain their direct result <= mask relation");
-        };
-        assert!(matches!(
-            retained_term(summary, *left),
-            TermKind::Place(place, IntegerType::U64)
-                if place.root == PlaceRoot::Binding(row.2)
-                    && place.path.is_empty()
-        ));
-        assert_eq!(
-            retained_term(summary, *right),
-            &TermKind::Constant(expected),
-        );
-        assert_eq!(
-            retained_event(summary, row.4).kind,
-            FlowEventKind::PostconditionReceiverWrite,
-        );
-    }
-    // The ordinary weakest-bound join is intentionally unrooted because no
-    // later real-source query consumes it; sole finish prunes it. These exact
-    // ordered branch roots are its retained real-source inputs, while the
-    // generic weakest-bound join is locked by the focused join tests above.
 }
 
 fn assert_real_raw_append_routes(program: &CheckedProgramData) {

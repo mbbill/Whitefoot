@@ -998,7 +998,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         expanded_bindings: &HashMap<BindingId, ExpandedClauseExpression>,
     ) -> Result<(GoalProjection, CheckedType), CheckStop> {
         let element = match base {
-            CheckedType::Buffer { element } => element.ty(),
+            CheckedType::Buffer { element } => self.element_type(element)?,
             CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
                 self.element_type(element)?
             }
@@ -1114,7 +1114,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element, capacity, ..
             } => (Some(element), capacity),
             CheckedType::Array { element, length } => (Some(element), Some(length)),
-            CheckedType::Buffer { element } => (Some(self.intern_element(element.ty())?), None),
+            CheckedType::Buffer { element } => (Some(element), None),
             _ if range_referent => (Some(self.intern_element(ty)?), None),
             _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
         };

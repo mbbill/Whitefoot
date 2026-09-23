@@ -5,6 +5,62 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-22 Align counted-loop value-name reservation
+
+Nodes: language/name-resolution
+
+Owner-approved: The owner explicitly approved the complete counted-binder amendment presented after PR #90's independent review at be149728. This ruling does not authorize a merge.
+
+Summary: Apply the reviewed addition and its refused alternative unchanged. Counted-loop binders follow ordinary let bindings in the operation and mode-word reservation because both introduce ordinary value names; the proof-only invariant domain stays separate. OP-1 now includes the counted binder explicitly, matching DIAG-1 and the existing resolver. The [follow-up investigation](../research/investigations/consistency-followups/DESIGN.md#reserved-names-and-declaration-roles) records the alternatives and boundary cases. Remove the accepted amendment and its directory.
+
+## 2026-09-22 Adopt ordinary Slab and Deque library boundaries
+
+Nodes: compiler/checker-facts, language/data-model/storage-shapes, language/ownership/range-reference, language/data-model/slab-storage, language/data-model/deque-rebase
+
+Owner-approved: The owner explicitly adopted all five revisions presented for PR #86 at dcbfdc0f and directed both DCR responses: maintained multi-vacancy Slab coverage and correction plus verification of the integrated-emission evidence.
+
+Summary: Apply the five reviewed amendments unchanged. Retain a symbolic integer constant's declaration identity and exact source type through the shared read-only inventory. Correct the storage-versus-range wording and qualify source Ring growth without promising a native copy count. Retain REF-4's Ring-range exclusion as a fresh ruling, not a recovered historical decision, leaving proved-contiguous and two-span admission open to a concrete consumer. Select the ordinary one-slot Slab representation with its measured storage and transfer costs, and direct boxed Ring endpoints with an explicit consuming rebase, without claiming universal native parity or automatic reference-based growth. The [library investigation](../research/investigations/containers-and-resources/X1-LIBRARY.md#slab-and-deque-trial-over-v063), [Slab controls](../research/experiments/container-representation/slab-library/RESULTS.md) and [Deque controls](../research/experiments/container-representation/deque-library/RESULTS.md) supply the grounds and alternatives. Remove the resolved amendments and their directory. The specification is unchanged; this ruling does not authorize a merge.
+
+## 2026-09-22 Carry Result evidence through ordinary local value flow
+
+Nodes: language/checks-and-proofs/automatic-facts, compiler/checker-facts
+
+Owner-approved: The owner explicitly directed correction of all five review findings and accepted both complete Result proof-transport amendments after the Chinese PR #87 handoff for ba876003.
+
+Summary: Apply the two reviewed amendments unchanged. Local own Results with integer payloads carry isolated conditional evidence through ordinary transfers and read it only under their own success condition. Reuse the existing weakest-bound joins, support invalidation and continuing-backedge rules, with a private child of the ordinary entailment flow owning evidence operations and the walker retaining event order. The [Result investigation](../research/investigations/result-proof-transport/DESIGN.md) records the composition failures, alternatives, finite representation argument and measured costs behind these choices. Retain the sharing/projection and broader storage questions in TODO, remove the accepted amendments and their directory, and preserve the existing live decisions. This ruling does not authorize a merge.
+
+## 2026-09-22 Resolve source input, zero-stride addressing and proof-name boundaries
+
+Nodes: compiler/prelude-records, compiler/storage-representation, language/name-resolution
+
+Owner-approved: The owner explicitly accepted all three reviewed amendments and both DCR wording corrections after the complete PR #88 handoff at 86e048de, replying that all were agreed. This ruling does not authorize a merge.
+
+Summary: Apply the three reviewed additions unchanged: require caller source records before public prelude injection while preserving the internal transport and complete resource accounting; canonicalize only zero-stride element-address operands while retaining logical coordinates and all layout obligations; and admit invariant IDENT spellings in their separate proof domain without additional operation-name reservation. STOR-6 defines the zero-stride length-bound case, and OP-1/DIAG-1 consistently exclude invariant declarations from that reservation. The [follow-up investigation](../research/investigations/consistency-followups/DESIGN.md) records the discriminating examples, alternatives and remaining validation tasks. Narrow the conformance result-binding explanation and correct the PR's runtime-check claim as reviewed. Remove the three accepted amendments and their directory.
+
+## 2026-09-22 Retain Array extents through read-only Box helpers
+
+Nodes: compiler/parallel-lowering
+
+Owner-approved: The owner accepted the reviewed PR #80 contents at 1d8f838b, including its unchanged Array-reference work amendment.
+
+Summary: Apply the reviewed extension and its rejected alternatives unchanged. Preserve runtime Array-length observations through original read-only reference formals and exact direct captures, using checker-owned validity and ordinary typed header projection. Keep mutable, rebound, local-owner and unsupported projection cases on the static estimate. The [matched helper trial](../research/investigations/compute-model/DESIGN.md#matched-helper-result-2026-09-22-utc) retains the measured benefit, CPU costs and validation limits. Remove the resolved amendment and its directory. No specification or compiler implementation changes accompany this ruling; it does not authorize a merge.
+
+## 2026-09-22 Preserve references through event-site separation proofs
+
+Nodes: compiler/checker-facts
+
+Owner-approved: The owner explicitly approved the complete reference-preservation amendment and the accompanying D3 TODO wording correction after the detailed PR #84 explanation of all eight repairs and both requested rulings.
+
+Summary: Apply the reviewed amendment unchanged. Retain finite conjunctive preservation questions across reference copies, joins and loop dependencies, demand them only at reference uses, and discharge them at the original write through the existing proof ledger. Preserve assignment targets captured before right-hand-side evaluation while judging preservation at commit; failed preservation reports REF-2 without suppressing the write's effects. Record the reviewed alternatives, remove the accepted amendment and its directory, and remove the stale bystander cross-reference from the still-open joined-reference precision task. The language specification is unchanged; this ruling does not authorize a merge.
+
+## 2026-09-22 Carry owned descendant measures and reduce Vector transfer costs
+
+Nodes: compiler/checker-facts, compiler/storage-placement, language/data-model/vector-consumption
+
+Owner-approved: The owner replied that all presented revisions were accepted after the PR #82 handoff at 29516a39, approving the ENT-2/MSR-3 clarification, all three tree amendments including the measured scalar tradeoff, and both DCR responses. This ruling does not authorize a merge.
+
+Summary: Record finite measure placement through exact owned fields, payloads and Box content, keeping current-state invalidation and distinguishing descendant covers from exact identity. ENT-2 and MSR-3 explicitly carry those descendants at their existing within-body naming events and include the descendant projection in datum identity; ordinary cross-function contracts and implicit-window-slot limits remain. Record independent stack allocations only after complete target qualification permits a uniform, padding-free layout, and complete takes that capture the old element address before updating the descriptor and transferring the element. Replace the separate-reversal Vector baseline with take-first local exchange and original-order consumption, preserving the ownership and O(removed), constant-auxiliary-space contract. The [Box investigation](../research/investigations/containers-and-resources/X1-LIBRARY.md#box-placement-and-vector-consumption-follow-up) and [paired measurements](../research/experiments/container-representation/vector-library/RESULTS.md#paired-v062-source-measurements) supply the grounds and alternatives. Accept the measured large-record benefit with the short-scalar regression and remaining optimizer costs retained in TODO; claim neither uniform improvement nor native parity. Remove the three resolved amendments and their directory.
+
 ## 2026-09-21 Select eligible ordinary self calls for tail lowering
 
 Nodes: compiler/self-tail-lowering, language/self-tail-calls

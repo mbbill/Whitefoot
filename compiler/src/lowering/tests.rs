@@ -283,7 +283,7 @@ fn runtime_helper_extents_reach_the_outer_split_estimate() {
         use super::IrWorkEstimate as Work;
         match work {
             Work::Constant(value) => *value,
-            Work::Value(_) | Work::Length(_) => extent,
+            Work::Value(_) | Work::Length(_) | Work::BoxArrayLength(_) => extent,
             Work::Sum(parts) => parts.iter().fold(0_u64, |total, part| {
                 total.saturating_add(evaluate(part, extent))
             }),

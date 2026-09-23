@@ -7,34 +7,154 @@ criterion for deciding whether to pursue it. Entries do not select a design.
 Remove an item when its implementation and checks land, or its validation
 concludes with a recorded disposition; retain any selected follow-up work here.
 
-- **Ordered Vector consumption still makes avoidable transfers.** The ordinary
-  prefix-window library reverses a removed suffix before consuming it in
-  original order. It is O(n), but the
-  [matched native comparison](../research/experiments/container-representation/vector-library/RESULTS.md#lowering-attribution)
-  retains three whole-record transfers per reversed pair that a direct
-  consumer does not need. With retained helpers, the 4096-element 256-byte
-  reuse chain is 18.4 percent slower than direct C; ordinary optimization
-  also exposes a separate WF/reverse-C gap and short-vector overhead. The
-  Slots wrap-arithmetic repair does not remove either source-required movement
-  or every lowering cost. Retain the tested composition as the current
-  implementation, without claiming minimum-transfer or general native parity.
-  Reopen before relying on ordered consumption in a performance-critical
-  container: compare a representation or operation that avoids reversal under
-  the same original-order, disjoint-callback, nodrop-ownership contract, and
-  separately attribute alignment/alias facts and ordinary inlining against
-  the retained-helper controls. No new language operation is selected yet.
+- **Audit numeric conversion coverage and unnecessary fallible interfaces.**
+  The known starting case is integer low-bit narrowing: `cvt::<u32, u8>(x)`
+  preserves the numeric value and returns `Result`, while `reinterpret` only
+  admits its listed equal-width pairs. Masking with `iand(x, 255_u32)` before
+  `cvt` expresses the low-byte result but still exposes `Result`; there is no
+  direct total truncating conversion. Survey similar gaps across integer widths
+  and signedness, bit reinterpretation, saturation, and floating-point rounding
+  or narrowing, distinguishing existing compositions from missing operations.
+  Use small source examples and boundary controls to define each desired
+  behavior, including negative values, range edges, and relevant NaN/infinity
+  cases. Assess whether a clearer total operation or proved-domain form removes
+  unnecessary source branching without weakening exact conversion or proof
+  requirements; inspect ordinary emitted code before claiming a runtime cost
+  or improvement. Additional gaps and performance costs are unverified. Defer
+  operation selection and implementation to the requested conversion review;
+  reopen when that review starts or a real numeric workload needs a workaround.
 
-- **Measure placement stops at Box content.** Destructuring an owner with a
-  `Box<Slots<T>>` field loses established facts about its `.inner.len`;
-  `free_empty` on the resulting binding then fails OP-14. The exact
-  [Vector example](../research/investigations/containers-and-resources/X1-LIBRARY.md#vector-source-obligations)
-  is a naming event covered by MSR-3, whose implementation's `measured_paths`
-  currently traverses inline nominal fields but stops at a Box. The Vector
-  can consume its sole storage field directly, so this does not block its
-  cleanup. Repair the general placement path when a consumer needs the
-  destructured or rebound owner; account for recursive nominal types without
-  enumerating infinitely many content paths and test kills as well as fact
-  retention.
+- **Joined reference proofs lose useful target-relative information.** A
+  reference selecting either of two freshly empty Slots cannot establish the
+  append precondition from both constructors' facts; captured disjoint ranges
+  formed in separate branches also lose their branch-local endpoint images
+  at the join. These safe examples are rejected under the current fixed proof
+  routes, rather than demonstrating an implementation violation. The
+  [bounded query experiment](../research/investigations/consistency-followups/DESIGN.md#reference-joins-and-bounded-proof-precision)
+  supports substituting both operands for the same selected alternative, but
+  does not yet establish a complete family: current target authority differs
+  from the function-wide origin inventory; Boolean and integer-domain consumers
+  need uniform normalization; failed-query term registration needs inertness
+  evidence; and polynomial work in an explicit target set is not a bound in
+  source size. Keep the current rules until those obligations are resolved and
+  matching full-origin, stale-capture, query-order and growth controls pass.
+  Branch-local range images additionally need target-presence and capture-
+  generation information; a plain union of branch images is insufficient.
+
+- **Establish whether the reference-summary depth fallback is source-reachable.**
+  `PlaceMap::resolve_root` returns wholly unresolved beyond 32 recursive summary
+  expansions. Any unresolved child discards the whole alternative set; inspected
+  proof and parallel consumers fail closed, so no partial-origin omission or
+  incorrect acceptance is established. Ordinary aliases are flattened when
+  recorded, and a long source alias chain is not itself a reproducer. Trace
+  checked-source summary construction and test the internal boundary with a
+  shallow sibling; if reachable, replace the depth-dependent precision boundary
+  with source-bounded traversal and explicit cycle handling. Deferred until
+  reference-summary work provides a discriminating source witness or proves the
+  cap redundant; reopen before reusing this resolver for a new proof family.
+
+- **Validate reuse of selected-target element layouts during emission.**
+  [Zero-stride addressing](../compiler/src/backend/target.rs) currently queries
+  the ordinary layout calculator afresh for each element-address step. Repeated
+  accesses to a deeply nested nominal element may recompute the same layout.
+  Compare checking/emission cost on repeated nested-element accesses before
+  introducing shared layout storage; require identical qualification and emitted
+  addresses. The benefit and material cost are unmeasured, so keep the simple
+  query for now and reopen when measuring target-emission cost or extending its
+  layout consumers.
+
+- **Validate a shared Ring wrap calculation independent of layout bounds.**
+  The corrected front predecessor handles every admitted capacity. Remaining
+  address-only modular additions are justified by the positive-stride target
+  bound or the zero-stride address operand; head advancement separately uses
+  the safe offset one. An overflow-free common formulation could simplify
+  those grounds across indexed access, shifts, transfers and cleanup, at the
+  cost of more emitted arithmetic. Compare exact coordinates at u64 boundaries
+  and representative native cost before selecting it. No remaining observable
+  defect is established; defer beyond the predecessor repair and reopen when
+  changing Ring layout or coordinate consumers.
+
+- **Ordered Vector consumption still relocates rear elements.** The take-first
+  composition exchanges an owned local with each first-half suffix slot, then
+  consumes the reversed remainder. It preserves the prefix and callback order
+  with O(removed) work and constant auxiliary storage, but still relocates
+  `floor(removed / 2)` rear elements beyond a direct consumer's handoffs. The
+  [matched native comparison](../research/experiments/container-representation/vector-library/RESULTS.md)
+  separates that source cost from redundant compiler snapshots; qualified
+  independent stack slots and descriptor-before-transfer takes remove the
+  latter in the local Clang 21 retained-record witness. That result establishes
+  neither a guarantee across optimizers nor universal native parity. Keep the
+  current ordinary composition while measuring any
+  concrete workload that makes its remaining movement significant; introducing
+  a more general operation without that evidence is deferred. Reopen before
+  relying on ordered consumption in a performance-critical container. Compare
+  an alternative under the same original-order, disjoint-callback,
+  nodrop-ownership, constant-auxiliary-space and O(removed) contract, including
+  nearly complete retention; require an attributable measured improvement
+  against direct C and the current WF implementation. No new language operation
+  is selected yet.
+
+- **Ring payload addressing withholds a useful unsigned offset fact.** The
+  [Deque comparison](../research/experiments/container-representation/deque-library/RESULTS.md)
+  observes a 2.256–2.405x scalar forward-churn cost against C with ordinary
+  inlining at v0.64. A bounded IR-only probe adding `nuw` to four positive-stride
+  payload GEPs lets Clang keep the descriptor in registers; merely splitting
+  the address calculation does not. No timing recovery or general validity
+  claim follows from that probe. Qualify the effective byte offset against
+  the actual padded header, stride, allocation domain and parent extent,
+  including zero-capacity, zero-size and maximum-index cases; do not apply
+  the fact to wrapping head arithmetic. Older LLVM needs a supported spelling
+  or an equally justified portable fact. Compare identical source with the
+  fact on and off, retain the independent oracle, and measure the full
+  normal/retained matrix before selecting production emission. Defer that
+  backend change while completing the library baseline; reopen for the next
+  container lowering experiment. Zero-stride address steps now use the
+  selected-target zero displacement; that repair does not qualify an unsigned
+  flag for positive-stride payload steps.
+
+- **Slab aggregate results retain extra transfers and layout overhead.**
+  The [Slab comparison](../research/experiments/container-representation/slab-library/RESULTS.md)
+  separates the one-slot cell's extra word from its helper boundary: retained
+  wide removal and consumption has three 256-byte transfers in WF versus one
+  in C, and WF's product-layout result differs from the C union ABI. Keep
+  this distinction when interpreting timing; a cell-layout change alone
+  cannot remove these costs. Validate forwarding or result placement with
+  the same owning return paths, failed insertion returning the offered owner,
+  partial cleanup and alias controls, checking optimized transfers and
+  same-source timings on supported toolchains. Defer general enum layout and
+  call ABI changes until that experiment establishes which transfer can be
+  removed without changing ownership; reopen with the owning-map library or
+  a workload dominated by wide Slab removal.
+
+- **Short Vector cycles retain unresolved lowering costs.** The paired
+  consumption experiment improves the large-record paths but slows the
+  16-element scalar reuse chain in both source orders. Ordinary optimization
+  also leaves a large WF/direct-C gap in the one-element suffix cycle, where
+  neither composition relocates a rear element. Fewer aggregate transfers do
+  not explain either cost. Keep this attribution separate from the operation
+  choice above: compare the emitted loop, callback and argument code under
+  ordinary and retained helpers, preserving the same source contract and
+  accounting for the in-binary C controls' variation. A general lowering
+  improvement is worthwhile if the short-cycle reduction is reproducible
+  without losing the established large-record gain. Defer further tuning until
+  that cause is established; reopen for a workload dominated by these cycles.
+  The [paired samples and limits](../research/experiments/container-representation/vector-library/RESULTS.md)
+  are the starting evidence, not a claim of uniform improvement.
+
+- **Consumed aggregate locals can retain an argument snapshot.** An exposed
+  mutable local is loaded into an immutable argument snapshot before a consuming
+  call. Clang 21 forwards that snapshot in the large-record regression, while
+  Apple Clang 15 retains an extra whole-record copy. General forwarding could
+  remove that copy independently of the optimizer, but needs a liveness and
+  interference argument across the complete argument list and result/input
+  reuse. Existing call-result coalescing does not cover a consumer returning
+  unit. Defer broadening that path while the frame and descriptor changes are
+  qualified; reopen when the retained snapshot materially affects a measured
+  workload. Require a before/after transfer and timing comparison plus the
+  existing exposed-place, later-argument-write, reentered-block and owned-result
+  snapshot controls. The
+  [transfer evidence](../research/experiments/container-representation/vector-library/RESULTS.md#v061-copy-and-consumption-trial)
+  separates this opportunity from the library's remaining element relocation.
 
 - **Parallel footprints omit ordinary result-list bindings.** The
   [sparse-routing trial](../research/investigations/compute-model/DESIGN.md#sparse-destination-routing-trial-2026-09-21)
@@ -120,6 +240,19 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   when a policy meets explicit representative criteria or its accepted
   tradeoffs are recorded.
 
+- **Array-helper pricing beyond original read-only references remains conservative.**
+  The accepted [typed Box-array extent extension](../research/investigations/compute-model/DESIGN.md#read-only-box-array-helper-work-pricing)
+  keeps static estimates for local owners, write-capable formals and references
+  changed away from the original formal. Some unchanged forwarded references
+  also lose the exact capture identity and fall back. Retaining those runtime extents could
+  expose useful work, but their measured workload impact is unknown and a
+  captured owner may already be consumed. Reopen when an affected helper's
+  static price demonstrably withholds useful splitting and an existing checked
+  validity fact or captured scalar measure can authorize the observation at
+  every split site, including zero-trip loops. Defer broader transport until
+  that case supplies both the benefit and the availability evidence; pricing
+  must not infer a separate source lifetime.
+
 - **Known-zero loop dispatch has a qualified combined cost, but no production mechanism.**
   The [bounded stencil control](../research/investigations/compute-model/DESIGN.md#zero-budget-stencil-dispatch-control)
   removes 65,504 queries returning zero and inner splitter entries together in
@@ -203,18 +336,6 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   until the observations and measurement/detection tradeoff are explained by
   discriminating evidence, rather than a later pass or changed threshold.
 
-- **Recursive cleanup has no general bounded-stack lowering.** The current
-  emitter recursively calls release actions, so machine-stack use can grow
-  with owned value depth; its stack ledger reports the release cycle. The
-  [continuation models](../research/investigations/access-effects/cleanup-continuations/README.md)
-  demonstrate fixed-stack, nonallocating walks only for their selected layouts.
-  They establish neither an encoding for all WF types without extra object
-  fields nor its impossibility. Retain the existing lowering while researching
-  how every suspended aggregate, enum, array and window traversal records its
-  continuation. Preserve reverse binding order, declaration order within
-  aggregates, logical window order, and content-before-Box-free order. Close
-  this item when a general implementation and native regressions establish
-  those properties, or a different resource tradeoff is selected explicitly.
 - **Box/window representation costs remain unqualified.** The current runtime-
   capacity Box is one pointer to one header-first allocation; `grow` uses
   allocation, memmove and free. A one-word owner, one allocation and header
@@ -315,6 +436,70 @@ concludes with a recorded disposition; retain any selected follow-up work here.
 Questions the owner has left open on purpose. None of them is a decision;
 each is resolved by a discussion and a tree change.
 
+- **Remaining value-evidence boundaries.** The
+  [investigation](../research/investigations/result-proof-transport/DESIGN.md)
+  leaves three related extensions to assess together: borrowed Result
+  selection and aggregate/indexed storage, multiple Result destinations from
+  one call, and general scalar `give` expressions beyond the existing bare
+  atom. These can remove remaining naming/projection workarounds, but storage
+  invalidation, cross-result guard identity and evaluated-expression images
+  need their own acceptance rules and cost evidence. Reopen when an ordinary
+  library example needs one of these boundaries. Validate matched direct/local/
+  projected programs, alias and descriptor writes, joins, loop iterations and
+  stronger-contract negatives before choosing an extension; do not infer a
+  general refinement system from the local-result implementation. Also assess
+  sharing or projecting per-local conditional fact matrices when many outcomes
+  remain live: 32 outcome additions measured 585 ms versus 23 ms at the
+  baseline, and 32 chained joins measured 721 ms and 214 MiB peak RSS. These
+  are whole compilations of small sources; the benefit and precision tradeoff
+  of sharing/projection remain unverified by that observation. Compare checking
+  time, retained evidence and peak memory
+  on the investigation's scaled sources before selecting that representation
+  improvement. These extensions are deferred because the selected ordinary
+  local composition rule can be validated without widening the storage or
+  predicate vocabulary.
+- **Declaration and call-boundary syntax after the ownership redesign.**
+  Reassess mandatory `own` on value parameters and results, mandatory names
+  for every result including `unit`, and the named-argument/construction-field
+  discipline together. References now have only the `&` form and cannot be
+  returned; result names serve contracts rather than runtime storage. These
+  changes may leave declarations repeating information without improving the
+  callable boundary. Named arguments and fields have a separate transposition
+  rationale and must not be removed merely because they are verbose. Compare
+  complete alternative signature and contract forms on scalar, generic,
+  multi-result and resource APIs. A candidate must preserve explicit boundary
+  types, unambiguous result references, useful mismatch diagnostics and one
+  grammar-defined spelling, without site-dependent inference relief. The
+  benefit and final spelling are unverified; defer selection until the next
+  syntax-design discussion.
+- **Ownership transfer and reference-access forms.** Audit unnecessary
+  owner-in/owner-out APIs now expressible with reference parameters and exact
+  effect rows, the differing consumption spellings of calls, returns, matches
+  and `propagate`, and repeated `deref`/`&deref` paths. `move` still marks a
+  consumption boundary; `deref` distinguishes a reference holder from its
+  referent and from owned `Box.inner`, so neither is redundant solely because
+  `own` may be. Compare the same container and owned-link operations under
+  proposed forms, preserving copy/drop capabilities, whole-owner consumption,
+  atomic replacement, reference rebinding, invalidation and effect separation.
+  Require the ordinary positive and invalid-use examples to remain explainable
+  by one rule per operation, with no additional runtime checks or transfers.
+  Reduced ceremony is an opportunity, not an established gain. Defer these
+  interface and syntax choices to a dedicated discussion; reopen with those
+  same-operation comparisons.
+- **Expression composition and canonical source policy.** Reassess mandatory
+  three-address computation and intermediate names together with the ban on
+  comments and rejection of noncanonical formatting. Compare authoring,
+  local refactoring and diagnostic locality on unchanged algorithms and proof
+  obligations; assess each restriction's concrete purpose rather than treating
+  explicitness or brevity as sufficient grounds. Expression alternatives must
+  specify evaluation order, temporary ownership and cleanup, proof invalidation
+  and parallel-permission granularity while retaining deterministic parsing.
+  Documentation and formatting alternatives must distinguish canonical output
+  from the accepted-input boundary and must grant no proof authority to prose.
+  No relaxation or authoring-cost improvement is established. Defer selection
+  until the syntax review reaches this group; close it only with an explicit
+  disposition supported by these comparisons.
+
 - **Sparse containers over must-consume linear elements need ownership-visible
   slot state.** The maintained
   [owning-map witness](../tests/programs/containers/owning-behavior.wf)
@@ -323,10 +508,40 @@ each is resolved by a discussion and a tree change.
   An unconstrained `K` also admits those linear values under OWN-1 and
   PROV-6. A numeric phase alone cannot prove that a returned enum slot is
   vacant; an occupied variant still contains a key that must be consumed.
-  Investigate an ordinary state encoding or checked variant-state relation
-  that lets rehash move every must-consume key without an impossible cleanup
-  branch. Retain occupancy as program data, and do not add an implicit
-  discard merely to satisfy the checker.
+  The [Slab trial](../research/investigations/containers-and-resources/X1-LIBRARY.md#exact-unavailable-source-forms)
+  uses an inline `Slots<T,1>` per cell and executes insertion, removal, reuse
+  and cleanup for nodrop T; it supplies an ordinary state encoding, at a
+  metadata cost measured against tagged C cells. This does not establish a
+  complete map rehash or select the same layout for it. Reopen for the next
+  owning-map library trial: compare the one-slot encoding and ordinary enum
+  alternatives through collision, replacement, tombstone reuse and rehash,
+  including bytes and helper transfers. Retain occupancy as program data and
+  do not add an implicit discard or impossible cleanup branch to satisfy the
+  checker. A new variant-state relation needs a remaining measured consumer.
+- **Deque still lacks zero-copy two-span access over Ring.** REF-4 rejects
+  every Ring range, even empty and proved non-wrapping ones. The current
+  library's slot visitor is not a substitute for a native consumer accepting
+  two contiguous extents. A fully initialized Array works for copy elements
+  but adds spare-capacity initialization and does not provide arbitrary T.
+  The [source analysis](../research/investigations/containers-and-resources/X1-LIBRARY.md#ring-range-correspondence)
+  identifies the missing contiguous-span interface. An extension needs a
+  concrete span consumer, precise empty/non-wrap formation and invalidation
+  rules, native-cost comparison and negative wrap/stale-reference cases.
+  Defer extension while this library tests endpoint and rebase costs; reopen
+  before using it for scatter/gather or another required bulk span consumer.
+- **Deque rebase is an explicit new-owner conversion.** Reference-based
+  replacement currently loses the exchanged owners' measures; append's
+  lower-bound-only contract also lacks the exact sum needed by the library's
+  return contract. The current counted take/place conversion supports nodrop
+  T without an impossible cleanup branch, but its cost must be separated
+  from a two-extent native transfer. The
+  [source limits](../research/investigations/containers-and-resources/X1-LIBRARY.md#exact-unavailable-source-forms)
+  and [cost comparison](../research/experiments/container-representation/deque-library/RESULTS.md)
+  distinguish interface precision from lowering. Keep the explicit conversion
+  for this slice; reopen if a real caller needs automatic reference-based
+  growth or rebase dominates its work. Evaluate the already-open affine
+  contract question below before choosing a new storage operation; require
+  exact length, emptied-old-owner and unchanged element-order evidence.
 - **The automatic-fact menu is a leftover.** [ENT-3] admits a narrow and
   asymmetric set of arithmetic idioms as automatic facts, each added for one
   proof pattern, with no general criterion and no counterpart for rows it
@@ -344,19 +559,20 @@ Items the owner asked to be kept on this list during the redesign recorded in
 `design/language` on 2026-09-19. None of them is a decision; each names the
 condition under which it is taken up.
 
-- **Mutual tail transfers.** [FN-10](../spec/kernel-spec.md) admits direct
-  self calls through `return musttail f(...);`. Extending the guarantee to
-  a different function needs a matching tail-call ABI and target evidence;
-  the current parameter reassignment and entry jump cannot cross a function
-  boundary. Reopen when a real mutually recursive program needs that bound.
-- **Totality and recursion-depth proofs.** Domains that need determinism about
-  resource use will need proved totality (termination) and proved recursion
-  depth as obligation families; the atomic in-place update deliberately
-  requires only a function that returns the place's type with no failure exit.
-  The current recursive-cleanup stack cost is a separate compiler limitation
-  recorded above; the call-site `musttail` guarantee covers only retained
-  activations at marked self transfers. Neither is an implemented
-  source-level recursion-depth proof.
+- **Fixed-resource execution with proved completion — deferred.** Resume from
+  the [research checkpoint](../research/investigations/fixed-resource-execution/README.md#deferred-work-and-resumption),
+  which preserves the stack, recursion, loop, allocation/runtime and cleanup
+  findings, proposals, probes and remaining validation. The goal is no heap,
+  proved completion and peak storage within supplied byte capacities; a depth
+  cap or `program no_heap;` alone does not establish it. Automatic qualification
+  is unimplemented, the diagnostic stack ledger has coverage/geometry gaps,
+  and general recursive release can still grow with value depth. Work is
+  deferred until this topic is explicitly resumed. Start by rechecking the
+  recorded compiler/target assumptions, then the complete acyclic stack-byte
+  inventory; preserve unknown-call/alignment controls and exact budget-boundary
+  cases. Progress proofs and full resource closure follow separately. The
+  checkpoint also retains the consumer conditions for mutual tail transfers,
+  general cleanup lowering and total-work estimation; none is scheduled now.
 - **Facts a contract can carry (after PR 70 merges; owner, 2026-09-20).**
   Three additive widenings, taken up together, each measured:
   (1) Affine `ensures`. A `requires` may already be an affine relation and

@@ -17,7 +17,9 @@ fn a_run_is_a_queue_whose_window_wraps() {
     // `{ i64 len, i64 head, [4 x i8] slots }`, so one address computation
     // serves the inline and the boxed placement alike [STOR-1].
     assert!(llvm.contains("select i1"));
-    assert!(llvm.contains("getelementptr inbounds { { i64, i64, [4 x i8] }"));
+    // Independent frame roots no longer need an enclosing frame-struct GEP;
+    // the window's own typed address still carries the complete header.
+    assert!(llvm.contains("getelementptr inbounds { i64, i64, [4 x i8] }"));
 
     let output = compile_and_run(&llvm);
     assert_eq!(output.status.code(), Some(0));
@@ -46,7 +48,7 @@ fn a_run_is_viewable_and_a_copy_view_dies_at_its_last_use() {
     // A range reference over an inline window is the address of the first
     // element of the range and the element count [REF-4, MSR-1], taken in the
     // window's own frame slot, whose block is header-first [STOR-1].
-    assert!(llvm.contains("getelementptr inbounds { { i64, [4 x i8] }"));
+    assert!(llvm.contains("getelementptr inbounds { i64, [4 x i8] }"));
 
     let output = compile_and_run(&llvm);
     assert_eq!(output.status.code(), Some(0));
@@ -74,7 +76,12 @@ fn a_bump_extent_hands_out_runs_and_refuses_the_one_it_cannot_hold() {
     // range descriptor reads its length and selects its first inline slot from
     // one backing pointer, then indexes that slot with typed u64 arithmetic;
     // no allocation call is emitted [STOR-1, REF-4].
-    assert!(main.contains("alloca { { i64, [256 x i64] } }, align 8"));
+    // Both qualified frame recipes keep this complete, aligned window inline:
+    // an independent root or a field of the padded frame allocation.
+    assert!(
+        main.contains("alloca { i64, [256 x i64] }, align 8")
+            || main.contains("alloca { { i64, [256 x i64] } }, align 8")
+    );
     let slots_gep = main
         .lines()
         .find(|line| {

@@ -79,9 +79,12 @@ element is acceptable; it transfers a constant number of elements.
 `grow_vector_truncate` preserves a chosen prefix, while `grow_vector_drain`
 consumes the complete window. Both invoke the supplied `VectorDrain` member
 in the removed elements' original order and preserve capacity for reuse.
-They reverse the removed suffix and take from the back, so element movement
-is linear but greater than a direct native consumer. Their callback's
-environment must be effect-disjoint from the backing [EFF-5].
+For the first half of the removed suffix, they take the rear element into a
+local, exchange it with the next suffix element and consume that local. The
+remaining suffix can then be consumed from the back. Work is proportional
+to the number removed, with constant auxiliary element storage; rear-element
+relocation remains extra movement compared with a direct native consumer.
+The callback's environment must be effect-disjoint from the backing [EFF-5].
 
 These operations also accept `nodrop` elements: the callback explicitly
 consumes each one, then `grow_vector_free_empty` consumes the empty owner.
@@ -91,6 +94,30 @@ emptiness comes from a proved invariant; that route does not introduce an
 equality goal. An ordinary-loop header hypothesis itself expires at loop
 exit. Publish the required outer conclusion as a local `invariant` before
 `break` when the continuation needs it [ENT-5, INV-1].
+
+The [deque library](../lib/containers/deque.wf) uses `Box<Ring<T>>` directly.
+Endpoint helpers take a reference and require the caller to prove room or
+nonemptiness. `deque_rebase` consumes the old owner and returns a genuinely new
+backing, with the same logical length and head zero; it can grow or shrink to
+any sufficient capacity within the written ceiling. `DequeVisit` borrows each
+element in logical order, while `DequeDrain` consumes them in that order and
+leaves the allocation reusable. Per-element visitation does not provide two
+contiguous ranges: REF-4 refuses all Ring range references, even after a
+non-wrap test. The [caller](../tests/programs/containers/deque-program.wf)
+also shows an existing filled-slot reference surviving a back append whose
+row writes only the next slot and length.
+
+The [slab library](../lib/containers/slab.wf) reserves one bounded backing and
+materializes cells lazily. Each cell has an inline `Slots<T, 1>` for its
+zero-or-one occupant, a generation and a free-list link. An exhausted insert
+returns the offered owner; removal returns its occupant and retires the slot
+at the generation limit instead of wrapping. `SlabVisit` supplies borrowed
+access with an owned result, and `SlabConsume` handles every live element at
+teardown. Handles are ordinary index/generation data relative to a slab. The
+[membership example](../tests/programs/containers/slab-membership-program.wf)
+distinguishes an index that may expire from a composite protocol that refuses
+deletion while another index retains the object; ordinary public bookkeeping
+does not prove that arbitrary client functions preserve that protocol.
 
 ## P3. Reach heap content through `Box.inner`
 
@@ -457,3 +484,32 @@ Current unresolved language and compiler questions are recorded in
 pattern does not authorize retired syntax or a new mechanism. Reduce the need
 to a small source case, identify the specification rule that admits or refuses
 it, and record measured cost only when performance selects between alternatives.
+
+## P15. Keep a Result's evidence with its value
+
+A local `Result` with an integer success payload retains its verified success
+relations when named, copied, moved, assigned or delivered by `give`. A match's
+own `Ok` binder and a successful `propagate` make those relations available.
+The error edge keeps its ordinary return and cleanup behavior [FN-9, ENT-5].
+
+```whitefoot
+let outcome = bounded(count: limit);
+let saved = outcome;
+let index = propagate saved;
+```
+
+If `bounded` declares its Ok payload less than `count`, `index < limit` is
+available after propagation while that relation remains valid. The fragment
+assumes that contract and a compatible enclosing Result return. A wrapper may
+return the named outcome or the call directly; its own routed `ensures` must
+still be proved. The
+[complete transport case](../tests/conformance/cases/fn9-pos-result-value-transport.wf)
+shows both forms and executes success and error paths.
+
+Evidence describes the value that was evaluated. Replacing the original
+binding does not change an earlier copy. Changing supporting storage does not
+retarget an old relation to the new contents, and merely holding an outcome
+does not assert that it is Ok. A branch join keeps only common consequences:
+`payload < 8` on one path and `payload < 10` on another retain `payload < 10`.
+An unchanged outcome can cross a loop head; one changed by a continuing
+backedge cannot reuse the initial payload's evidence there.

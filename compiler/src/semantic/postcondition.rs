@@ -209,6 +209,11 @@ pub(crate) struct SelectedPostconditionReturn {
 #[allow(dead_code)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PostconditionReturnDatum {
+    /// Success payload of a forwarded Result, read only in that value's
+    /// isolated conditional proof context.
+    ResultPayload {
+        ty: CheckedType,
+    },
     Place(PostconditionReturnPlace),
     Literal {
         value: CheckedValue,

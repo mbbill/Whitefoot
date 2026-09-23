@@ -1,4 +1,4 @@
-# Kernel Specification v0.62
+# Kernel Specification v0.66
 
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives. These bytes are this version's identity; nothing else records it.
 
@@ -333,9 +333,9 @@ A call with a normal result edge does not itself count as delivery or must-diver
 No `loop_stmt` or `for_stmt` is assumed to diverge.
 This recursion is strictly simpler than the ownership checker.
 `give e;` moves or copies `e` per [OWN-1].
-Only when the enclosing initializer is a `value_if`, its derived delivery mode is `own`, and its type is one [ENT-2] fragment integer may a direct non-consuming bare-atom `give` additionally participate in [ENT-5]'s bounded relation delivery.
-The same spelling inside `value_match` carries no relation.
-This adds no typing premise and never makes a move, borrow, call, construction, subscript, projection, or computed expression into a fact carrier.
+When an initializer's derived delivery mode is `own` and its type is one [ENT-2] fragment integer, a direct non-consuming bare-atom `give` additionally participates in [ENT-5]'s bounded relation delivery.
+A local Result value follows ENT-5's conditional value transport through either initializer.
+This scalar delivery adds no typing premise and never makes a move, borrow, call, construction, subscript, projection, or computed expression into a scalar fact carrier.
 GIVE-1 still owns delivery completeness and exact mode/type agreement; only after those judgments succeed may ENT-5 substitute the atom's already evaluated value into the receiving binding.
 
 For that additional fact-carrier judgment, the direct atom must be one bare tracked own-value binding of the exact receiving type: its root resolves to a body `let_stmt` binding, `for_stmt` binder, parameter, or match binder, and it carries no suffix.
@@ -831,7 +831,8 @@ This stop is a target-layout failure under [DIAG-1], not a source-language rejec
 For a runtime-sized allocation, the concrete descriptor and element layout are checked statically as above.
 For every runtime-capacity shape materialized by a construction function [OP-13] or resized by `grow` [OP-10], target qualification additionally verifies the actual size, alignment, and element stride against [OP-9]'s language ceilings before lowering the operation.
 The accepted [OP-9] judgment retains a numeric upper bound for the source length at that allocation site; target qualification computes the complete allocation size, including the shape's descriptor, its padding before the elements, and that bound multiplied by the actual target stride, using checked mathematical arithmetic, and requires the result to fit both the allocator-parameter and address-index domains before lowering the operation.
-At this target stage, the exact SSA result of a runtime-capacity shape's `len` measure additionally carries the selected target's runtime-allocation byte maximum minus that shape's padded descriptor size, divided by its actual element stride and rounded down, because every materialized shape already satisfies the successful-allocation representation invariant.
+At this target stage, when the actual element stride is positive, the exact SSA result of a runtime-capacity shape's `len` measure additionally carries the selected target's runtime-allocation byte maximum minus that shape's padded descriptor size, divided by its actual element stride and rounded down, because every materialized shape already satisfies the successful-allocation representation invariant.
+When that stride is zero, the invariant contributes no additional count bound beyond the source length type; the complete padded descriptor must still satisfy target qualification, and every actually emitted address operand still obeys the exact-representation requirement below.
 Qualification may intersect this target bound with the retained source bound only for that exact SSA result; it does not publish a Whitefoot comparison fact or transfer the bound through a block parameter, storage load, conversion, user call, or another value merely because its source spelling or type is similar.
 The source allocation proof and this target qualification jointly establish that every reachable runtime byte count has one exact value-preserving target representation; neither alone authorizes emission, and the allocator receives exactly that value.
 Every emitted target address computation must likewise be proved valid for every runtime value that reaches it: the compiler establishes before emission that each runtime index and each mathematically scaled byte offset actually used by the computation has an exact value-preserving representation in the applicable target address-index domain, and that scaling and offset addition do not wrap.
@@ -912,10 +913,10 @@ Later typed operation checking uses the operand domains and, for the retained-ar
 Operand types never select between an operation family and a function.
 A bare `place` operand that a table-operation row reads without consuming — the base place of a subscript — is a non-consuming read: it neither moves nor partially consumes an affine root [OWN-1], exactly the reading [FN-8] already states for a place used as a non-consuming operand of an admitted table operation.
 
-No source declaration or FN-9 result-datum candidate in this closed list may use a member of `ReservedLowerNames`: the IDENT of `fn_decl`; the IDENT of `const_decl`; every `param` and `result_binding` IDENT; every `let_stmt` IDENT, including ordinary, propagate, value-match, and value-if lets; every `contract_define` IDENT; the second IDENT of any `fieldbind`, including a `result_route` payload binder; and every `field` and `vfield` IDENT.
+No source declaration or FN-9 result-datum candidate in this closed list may use a member of `ReservedLowerNames`: the IDENT of `fn_decl`; the IDENT of `const_decl`; every `param` and `result_binding` IDENT; every `let_stmt` IDENT, including ordinary, propagate, value-match, and value-if lets; every `for_binding` IDENT; every `contract_define` IDENT; the second IDENT of any `fieldbind`, including a `result_route` payload binder; and every `field` and `vfield` IDENT.
 Such a reserved spelling is rejected citing exactly FORM-3 before freshness ownership is considered.
 Dependent field declarations participate in this pre-resolution reservation inventory even though their owner/member duplicates remain deferred.
-No other declaration role is covered: type-generic TYPEIDs, const-generic IDENTs, LABELs, and interface-member `fn_sig` IDENTs remain outside this prohibition.
+No other declaration role is covered: type-generic TYPEIDs, const-generic IDENTs, LABELs, interface-member `fn_sig` IDENTs, and the IDENTs of `header_invariant` and `invariant_stmt` remain outside this prohibition.
 Dotted OPNAMEs cannot be declarations under the grammar.
 This reservation keeps operation-versus-function resolution context-free [META-2] and keeps a field-access place from maximal-munching as OPNAME [FORM-3].
 
@@ -1327,8 +1328,8 @@ The template retains parameter ordinals and projections, result ordinals, route 
 Its occurrence is `(concrete function instance, ensures_clause NodePath)`.
 
 An unrouted clause selects every explicit return.
-A routed Ok clause selects exactly a return whose routed ordinal's expression is a direct canonical `Ok<T,E>(value: atom)` and uses that payload atom as that ordinal's result datum; a direct Err there and propagated error exits are unselected.
-Every other Result shape at that ordinal in a function with an Ok clause is an FN-9 rejection rather than an inferred route.
+A routed Ok clause selects an explicit return of its routed ordinal under the assumption that the returned value is Ok. A direct canonical `Ok<T,E>(value: atom)` uses its payload atom as that ordinal's result datum. A forwarded Result uses the private payload parameter and conditional numeric context of [ENT-5]; the return proves the clause in that context combined with the ordinary current context.
+A direct Err, an outcome whose transported constructor-tag information is definitely Err [ENT-5], and a propagated error exit are unselected. No other Result expression is rejected solely for its return shape; absent transported evidence supplies only the payload's standing type facts.
 At a selected return, each result datum the clause names evaluates to one [ENT-2] term or constant, read from its own ordinal's returned expression; an ordinal the clause does not name imposes nothing.
 For an ordinary inhabited instance, each clause's selected-return set is independently nonempty; an empty set rejects at that `ensures_clause`.
 An [FN-8] uninhabited instance still checks route, type, expression, and return-shape source judgments, but is exempt from nonempty and proof requirements and publishes no relation.
@@ -1353,7 +1354,7 @@ Declaration or worklist order and iteration cannot change the result.
 For one ordinary call c, `A0(c)` means resolution, concrete instantiation, named arguments, exact types, borrow feasibility, every actual-expression obligation, exact formal substitution, and success of every FN-8 requirement have all occurred in that order at the same pre-transfer point.
 Failure forms no postcondition candidate.
 For one relation q, `M(c,q)` holds only when q's route matches that exact establishment event, result and referenced formals substitute independently to live [ENT-2] terms or constants after ordinary kills, and no referenced actual is represented only by an occurrence-local evaluated-value datum.
-A discarded or nested result, stored or propagated whole outcome, unsupported or unselected route, killed support, or nonterm actual makes only the relations that reference that unavailable datum false under M. A relation naming no result needs no result destination and establishes on an ordinary successful call continuation, including a unit-returning or discarded-result call.
+A discarded or aggregate-stored result with no admitted destination, an unsupported route, killed support, or a nonterm actual makes only the relations that reference that unavailable datum false under M. An integer-payload Result's conditional destination and success selections are [ENT-5]'s. A relation naming no result needs no result destination and establishes on an ordinary successful call continuation, including a unit-returning or discarded-result call.
 
 Subject to A0 and M, failure-atomic scratch establishes q after transfer, consumes, borrow commits, callee-effect kills, and target kills.
 Every establishment retains its ordinary declared-relation parent, including the selected-return proofs for a source definition, plus all actual-obligation and requirement parents from A0.
@@ -1361,13 +1362,11 @@ Every establishment retains its ordinary declared-relation parent, including the
 All matching verified relations are established together on the admitted result route.
 An unrouted fragment result establishes onto the fresh binding of a direct ordinary-let call and onto the target place of a direct ordinary `set` whose right-hand side is that call: one destination rule at two placements, the `set` placement established after that statement's own commit and target kills [CALL-6], where a substitution whose support those kills remove makes only that relation unavailable.
 An unrouted relation over a declaration's result ordinals establishes onto the binders of a destructuring `let`, ordinal i onto binder i [GRAM-4, CALL-4]; an ordinal whose destination is no [ENT-2] place makes only the relations naming it unavailable.
-A selected Ok payload establishes only when the ordinary call is the direct scrutinee of a `match_stmt` or `value_match`, at entry to its exact direct `Ok(value: payload)` arm.
-A named, stored, aliased, propagated, discarded, or otherwise indirect whole outcome carries no pending summary token.
+A routed Ok relation establishes in the returned value's conditional context with the private payload parameter substituted for the routed result. ENT-5 owns its transport, support lifetime and selection; naming the outcome does not re-instantiate the call.
 
 The existing narrow receiver routes remain per relation.
 For `set x = user_call(...)`, x is a live bare own fragment of the exact result type and exactly one argument is direct non-consuming x; after transfer, effects, commit, and kill, a relation may substitute result with post-write x only when it omits the formal supplied by x and all other supports remain live and disjoint [OWN-7].
-For a selected payload, the first arm statement may be exactly `set outer = payload;`; after the ordinary commit and kill, replace only result-payload occurrences in each established relation with post-write outer when every other support remains live.
-These routes establish no equality and every projected, consuming, repeated, aliased, nonfirst, wrong-type, wrong-binder, or unsupported form establishes nothing.
+That direct-set receiver route establishes no equality; a projected, consuming, repeated, aliased, wrong-type or unsupported receiver establishes nothing by that route. A selected integer payload subsequently follows the ordinary S5 value-image and SET-1 commit rules at every assignment, with no first-arm-statement condition.
 
 All candidate S12 and delivery facts remain in one failure-atomic scratch batch until the current statement's ordinary transfer, effects, ownership commits, and kills succeed; then the whole batch commits once.
 No candidate is individually committed or retracted and no second flow walk or negative fixed point exists.
@@ -1400,9 +1399,9 @@ It is deferred with the measured result above, because the route identity a clau
 
 The destinations are exactly [ENT-3.S12]'s closed list, and a relation reaches a caller only there; [CALL-6] fixes the point at which each is instantiated and the point at which each is established.
 That list gains the one destination a multi-result contract creates, and only a multi-result contract exercises it: **each binder of a destructuring `let`** is the S12 destination for every published relation naming the value that lands there, ordinal i landing at binder i [GRAM-4].
-Neither the arm binder of an own-place `match` whose scrutinee is not the call itself nor the destructuring-consume binder is a destination of its own: each needs a relation to survive a naming event between the call and its destination, and [MSR-3]'s placement table is what carries one across such an event.
-A published [MSR-1] measure of the transferred value reaches both, because the payload and destructuring placements carry exactly that; a measure datum carries nothing else.
-DEFERRED: the same two positions for a published relation that is not one of [MSR-1]'s measures of the transferred value, which names terms no placement mints. Its delta is numbered rules +0 and grammar productions +0.
+An own-place match of an integer-payload Result selects its transported conditional evidence under [ENT-5]. Measured payloads and destructuring-consume binders receive their measure relations through [MSR-3]'s placement table.
+A published measure of the transferred value or one of its exact owned measured descendants reaches both through [MSR-3]'s payload and destructuring placements; a measure datum carries nothing else.
+DEFERRED: published relations at these positions outside both the integer Result transport judgment of ENT-5 and the measure-placement vocabulary of MSR-3. Its delta is numbered rules +0 and grammar productions +0.
 
 [FN-10] Guaranteed self-tail calls.
 The optional `musttail` atom on a `call` [GRAM-5] requires that call to transfer to the enclosing function without retaining the current activation or growing the stack for that transfer.
@@ -1691,7 +1690,7 @@ Each declaration or result-reservation event forms an inventory candidate only f
 The stage selects the minimum canonical event key among events with at least one candidate and then the first applicable rank at that event.
 A FORM-3 reservation payload is `(spelling, carrier_role, reserved_class, inventory_ordinal)`.
 Its `spelling` is the complete declaration or result-candidate spelling.
-Its closed carrier roles are function, named-const, parameter, contract-definition, let, for-binder, match-binder, result-binding, route-result, field, variant-field, and invariant.
+Its closed carrier roles are function, named-const, parameter, contract-definition, let, for-binder, match-binder, result-binding, route-result, field, and variant-field.
 `reserved_class` is dotless-operation or mode-word.
 A dotless-operation ordinal is the zero-based first occurrence among distinct operation-family spellings, scanning OP-1 rows top to bottom and each `op` cell left to right and skipping every later occurrence of the same spelling; both `cvt` rows therefore name one family and one ordinal.
 A mode-word ordinal is the zero-based FORM-3 alternative order `wrap`, `defined`, `checked`, `sat`, `strict`.
@@ -1772,7 +1771,7 @@ The header candidate is available only to an admitted unrouted ensures clause; a
 No result datum is visible in a contract definition, requirement, function body, or different ensures clause.
 The name of every `header_invariant` and `invariant_stmt` produces one proof-only invariant declaration record that uses TYPE-6's inventory and scope machinery; [INV-1] owns collision and lookup failure in this domain.
 An IDENT premise of `use_premise` produces one lexical-use record querying only that domain; it can never resolve to a value declaration that happens to have the same spelling. A `proof_use`'s own IDENT is the named multiplicity and queries the value domain instead, so the two positions never compete for one spelling.
-These records have no runtime declaration or value identity, but they participate in FORM-3 reservation and deterministic lexical resolution exactly at their stated scopes.
+These records have no runtime declaration or value identity and participate in deterministic lexical resolution exactly at their stated scopes; OP-1 owns declaration-name reservation.
 The retired law-name and law-argument roles produce no records. A function-formal expansion retains its written declaration and application identities rather than fabricating a second lexical spelling.
 In an `arm` or `result_route`, the leading TYPEID first resolves globally to an enum variant.
 Later typed checking compares that variant's owner with the scrutinee enum for an arm; a foreign arm variant cites TYPE-6.
@@ -1846,8 +1845,8 @@ A concrete instance with no selected normal exit uses the `ensures_clause` and r
 An unsupported selected return expression, unavailable entry image, or complete relation failure uses `SourceNode` at that existing `return_stmt` and its complete checked extent.
 The deterministic relation payload is `(concrete function instance, postcondition occurrence, route identity or unrouted, instantiated normalized relation, disposition)`, with disposition exactly `unproved` or `refuted`; entry-image unavailability fixes `unproved`.
 Instances use DIAG-1's stable concrete-instance order, selected returns use NodePath order, and the first relation failure wins.
-No FN-9 failure fabricates an executable epilogue, runtime fallback, optimizer assumption, pending named-outcome fact, or caller-side rejection.
-An excluded caller route, including a named or pending outcome, is not itself a rejection: it establishes no S12 fact or metadata, and any later query that needed that absent relation is diagnosed only at that later node by its ordinary owning rule.
+No FN-9 failure fabricates an executable epilogue, runtime fallback, optimizer assumption, conditional outcome evidence, or caller-side rejection.
+An excluded caller route is not itself a rejection: it establishes no S12 fact, and a later query needing that absent relation is diagnosed at that later node by its ordinary owning rule. An admitted named Result retains the conditional metadata of ENT-5.
 
 Invariant and certificate diagnostics use their ordinary semantic schedule.
 FN-1 first rejects every structurally unreachable statement; only a reachable loop header or `invariant_stmt` enters the schedule below.
@@ -1917,16 +1916,15 @@ Component summaries become referenceable together only after the SCC schedule va
 Every S12 fact actually established in accepted semantic flow is a required caller-local root even when no later query consumes it.
 `PostconditionCall` carries q, the checked aggregate summary reference, exact per-formal pre-transfer substitution, A0's complete actual-obligation and FN-8 goal roots, and the ordered transfer/consume/borrow/effect/kill event prefix.
 `PostconditionDirectResult` adds the fresh ordinary-let binding substitution.
-`PostconditionDirectMatch` adds the direct-call scrutinee, selected `Ok` variant and `value` field identities, and payload substitution at arm entry.
+`PostconditionConditional` roots the call relation inside its returned value's conditional Ok context. `ResultTransport` records each retained forward substitution between an evaluated integer and that context's private payload parameter, or between the parameter and a selected receiving binding, with its source occurrence and relation parent. `ResultErr` identifies the constructor whose success context is contradictory. Conditional roots are never unconditional caller premises.
 `PostconditionDirectReceiver` adds the direct-set target kill and result-only post-write substitution.
-`PostconditionSelectedReceiver` adds the selected arm's immediate payload read, target kill, and result-payload-only outer substitution.
-A named or pending outcome, false `M(c,q)`, rejected call, killed support, or excluded receiver creates no fact root or pending metadata.
+False `M(c,q)`, a rejected call, killed support or an excluded receiver creates no source fact root. Result copies and joins retain the corresponding conditional parents without re-instantiating a callee contract.
 
-For bounded `value_if` delivery, `PostconditionGive` records one eligible reaching edge, the already evaluated source value and relation root, then the forward `d ↦ x` substitution, then that edge's ordinary scope and event kills applied to every other support in that order.
+For bounded value-initializer delivery, `PostconditionGive` records one eligible reaching edge, the already evaluated source value and relation root, then the forward `d ↦ x` substitution, then that edge's ordinary scope and event kills applied to every other support in that order.
 `PostconditionDeliveryJoin` orders all non-contradictory reaching delivery images by edge NodePath and applies exactly the ordinary [ENT-5] L0 delivery join.
 Its parents therefore need not state byte-identical relations; an `x < 8` image and an `x < 128` image may parent the joined `x < 128` root.
 Contradictory inputs use the existing contradiction root and are neutral when a non-contradictory input reaches.
-Missing edge evidence, a `value_match`, or no common joined relation creates no delivery root.
+Missing edge evidence or no common joined relation creates no delivery root.
 Kill events never become invented positive evidence.
 
 Candidate S12 and delivery nodes live only in failure-atomic semantic scratch until the current source judgment and its ordinary ownership, effect, and kill events all succeed.
@@ -2400,8 +2398,8 @@ Adding a fact source, relation family, closure rule, proof rule, protected opera
 No caller fact is copied into a callee: an ordinary call judges its instantiated [FN-8] goal in the caller's entering state, the callee body begins with its own proved requirement as [ENT-3] source S4, and only a separately FN-9-verified earlier-SCC summary may establish its instantiated normal-result relation back in the caller.
 A fragment type is one member of the closed integer set [OP-2]; relations are over mathematical values, so relations between terms of different fragment types are well-formed and are created only by the sources and flow transports [ENT-3, ENT-5] admit.
 
-A term is exactly one of: (a) a tracked place — a `place` [GRAM-5] whose root `pbase` IDENT resolves to any `let_stmt` binding, a `for_stmt` binder, a `param`, any match binder regardless of its [OWN-13]-derived mode, or a named const [CONST-2], formed with any number of field-selection and enum-payload `psuffix`es and `deref` wrappings and no subscript suffix, whose final selected type is one fragment type; (b) a place whose final step selects a readonly field [TYPE-2] of one fragment type — the measure terms `P.len`, `P.cap`, and `P.head` of the storage shapes [MSR-1] are the prelude's — or the `len` of a range reference [REF-4], where P is an admitted measure place — a `place` [GRAM-5] whose root resolves as in (a) and which is formed with any number of field-selection and enum-payload `psuffix`es, `deref` wrappings, and subscripts, and whose final selected type is a measured type [MSR-1] having that measure; (c) a constant — the mathematical value of an integer literal or of an integer-typed named const, or symbolically an in-scope integer-typed const-generic parameter; (d) one of the two compiler-owned u64 capture terms belonging to an admitted `for_stmt`, identified exactly by `(that for_stmt's NodePath, lower)` or `(that for_stmt's NodePath, upper)`; (e) the one compiler-owned symbolic result datum of an admitted FN-9 clause while its RelationTemplate is formed, identified by that `ensures_clause`, its route or unrouted class, and fragment type; (f) the one compiler-owned commit value of an admitted [SET-1] `set` whose right-hand side has one fragment type, identified exactly by `(that statement's NodePath, that fragment type)`; (g) the distinguished zero term Z, used only to carry constant bounds, S7's exact mathematical-zero disequality, and [ENT-6]'s normalized integer-domain components; or (h) one compiler-owned measure datum [MSR-3], which is a call datum [ENT-3.S13], identified exactly by `(that call's NodePath, the formal ordinal, that operand's ordered projections, whether it denotes the operand's value or one measure of it)`; an entry datum, identified exactly by `(the formal ordinal, that operand's ordered projections, which measure it denotes)`; or a placement datum, identified exactly by `(that statement's NodePath, which placement of [MSR-3]'s placement table it stands at, the ordinal within that statement, which measure it denotes)`.
-The FN-9 result datum occurs only in its template: every selected-return or caller query substitutes it with one ordinary term or constant before flow, so it never enters a body state, survives a return, or creates runtime storage.
+A term is exactly one of: (a) a tracked place — a `place` [GRAM-5] whose root `pbase` IDENT resolves to any `let_stmt` binding, a `for_stmt` binder, a `param`, any match binder regardless of its [OWN-13]-derived mode, or a named const [CONST-2], formed with any number of field-selection and enum-payload `psuffix`es and `deref` wrappings and no subscript suffix, whose final selected type is one fragment type; (b) a place whose final step selects a readonly field [TYPE-2] of one fragment type — the measure terms `P.len`, `P.cap`, and `P.head` of the storage shapes [MSR-1] are the prelude's — or the `len` of a range reference [REF-4], where P is an admitted measure place — a `place` [GRAM-5] whose root resolves as in (a) and which is formed with any number of field-selection and enum-payload `psuffix`es, `deref` wrappings, and subscripts, and whose final selected type is a measured type [MSR-1] having that measure; (c) a constant — the mathematical value of an integer literal or of an integer-typed named const, or symbolically an in-scope integer-typed const-generic parameter; (d) one of the two compiler-owned u64 capture terms belonging to an admitted `for_stmt`, identified exactly by `(that for_stmt's NodePath, lower)` or `(that for_stmt's NodePath, upper)`; (e) the one compiler-owned symbolic result datum of an admitted FN-9 clause while its RelationTemplate is formed, identified by that `ensures_clause`, its route or unrouted class, and fragment type; (f) the one compiler-owned commit value of an admitted [SET-1] `set` whose right-hand side has one fragment type, identified exactly by `(that statement's NodePath, that fragment type)`; (g) the distinguished zero term Z, used only to carry constant bounds, S7's exact mathematical-zero disequality, and [ENT-6]'s normalized integer-domain components; or (h) one compiler-owned measure datum [MSR-3], which is a call datum [ENT-3.S13], identified exactly by `(that call's NodePath, the formal ordinal, that operand's ordered projections, whether it denotes the operand's value or one measure of it)`; an entry datum, identified exactly by `(the formal ordinal, that operand's ordered projections, which measure it denotes)`; or a placement datum, identified exactly by `(that statement's NodePath, which placement of [MSR-3]'s placement table it stands at, the ordinal within that statement, the ordered owned descendant projection, which measure it denotes)`. The final alternative (i) is the private integer success-payload parameter of an ENT-5 conditional Result context, typed by the Ok payload and scoped to that context; the same formal name in two contexts does not identify their values.
+The FN-9 result datum occurs only in its template: every selected-return or caller query substitutes it with an ordinary term, constant or the private payload parameter of ENT-5's conditional Result context. That typed parameter denotes only the success payload of the value associated with its context; parameters of distinct contexts have no shared value identity. It is compiler-owned, unwritable, carries its fragment type's standing bounds, and is substituted away at an ordinary success delivery. Neither symbolic datum creates runtime storage.
 Two places are the same term exactly when their roots resolve to the same declaration event [TYPE-6, DIAG-1] and their canonical source spellings [FORM-2] are byte-identical; a fresh binding legally reusing an expired spelling is a distinct term, and distinct spellings are distinct terms even when they resolve to overlapping storage.
 Term identity thus under-approximates aliasing, while kills [ENT-5] use [OWN-7]'s resolved-place overlap relation and over-approximate it.
 
@@ -2554,30 +2552,39 @@ A body that overwrites an `own` parameter's local binding with newly constructed
 For a reference parameter whose declared row writes it the immutable entry datum is named explicitly through `deref(entry(parameter))`; the same measure read through `deref(parameter)` without that former instead denotes the selected return's resolved referent.
 An entry datum is formed, never proved, and it is not a second fact source: its standing orderings [MSR-2] reach it through the equality it is established with, exactly as they reach any other term.
 A parameter operand that is not a measure keeps the entry-image judgment [FN-9] states over the live place, since a value of fragment type is not a measured value and has no measure datum.
-A **placement datum** is the same former at every remaining placement, each of which is one naming event inside a body at which a measured value crosses from one place to another.
-For each such event, one compiler-owned immutable term per [MSR-1] measure is identified by `(that statement's NodePath, which placement of the table below it stands at, the ordinal within that statement, which measure it denotes)`, is established equal to that measure of the event's **source** place immediately before the statement's own kills, and is established equal to that measure of the event's **destination** place at the statement's normal continuation.
+A **placement datum** is the same former at every remaining placement, each of which is one naming event inside a body in the table below.
+Each event carries the measures of the transferred value and its exact owned measured descendants from its **source** place to its **destination** place.
+An **owned descendant projection** is an ordered sequence of struct-field selections, enum-payload selections, and selections of a `Box`'s `inner` content, each selecting a value owned by the preceding value, ending at the first measured type [MSR-1]; the sequence is empty when the transferred value itself has that type.
+The source and destination need not themselves have a measured type: the same projection from each selects the measured value whose measures the event carries.
+The projection contains no subscript, range, or dereference of a borrowed referent, so a measured storage's elements are outside it.
+Its source identity is exact [ENT-2]; an alias or a set of possible descendants used by [OWN-7]'s overlap judgment does not identify that source.
+For each carried projection, one compiler-owned immutable term per [MSR-1] measure of its endpoint is identified by `(that statement's NodePath, which placement of the table below it stands at, the ordinal within that statement, the ordered owned descendant projection, which measure it denotes)`, is established equal to that measure of the projected source immediately before the statement's own kills, and is established equal to that measure of the corresponding projected destination at the statement's normal continuation after those kills.
 It is the same kind of term as a call datum and carries the same closure: no place occurs in it, no [ENT-5] event kills it, and no later write retargets it.
 That the datum is minted before the statement's kills and read after them is the whole content of every placement: the event consumes or overwrites the source, so without a term with empty support standing between the two places a measured value would arrive at its new place with no measures at all, and `let built = move spare;` would lose what the caller proved about `spare`.
 A placement datum is formed, never proved, and it is not a second fact source: its standing orderings [MSR-2] reach it through the equality it is established with, exactly as they reach any other term.
+The finite measure vocabulary already formed at the event suffices for these equalities to carry the available measure relations; a descendant outside that vocabulary has only [MSR-2]'s standing facts, which hold at its destination without transport.
+This applies equally to recursive types: each admitted projection is finite, its depth has no fixed bound, and type recursion creates no requirement to enumerate further descendant terms.
+A path's presence in that vocabulary establishes neither a relation nor a variant refinement; the source equality reads the current pre-kill state after all earlier events and their kills, and a discarded fact is not restored by finding its former path.
 The complete placement table is:
 
 ```text
 | the naming event                                                      | source place                | destination place            |
 |-----------------------------------------------------------------------|-----------------------------|------------------------------|
 | the REBIND: one `let` binder, or one [SET-1] `set` target that is a   | that place                  | the binder, or the place the |
-|   place, whose right-hand side is a bare use of one measured place    |                             |   commit writes              |
+|   place, whose right-hand side is a bare use of one place             |                             |   commit writes              |
 | the ELEMENT: the same, where the [SET-1] target is an element         | that place                  | `P[i]`, the element position |
 |   position of a window                                                |                             |   the commit writes          |
 | the CONSTRUCT: one field operand of a constructor `call` that is a bare use  | that place                  | that field of the            |
-|   of one measured place                                               |                             |   constructed value          |
+|   of one place                                                        |                             |   constructed value          |
 | the DESTRUCTURING: one binder of a destructuring consume [GRAM-4]     | that field of the operand   | the binder                   |
-|   whose operand is a bare use of one measured nominal place           |                             |                              |
+|   whose operand is a bare use of one nominal place                    |                             |                              |
 | the PAYLOAD: one arm binder of a `match` whose scrutinee is a bare    | that field of the           | the arm binder               |
 |   use of one enum place                                               |   scrutinee's payload       |                              |
 ```
 
-A `move p` of a measured place is such a use: [OWN-1] requires the `move` spelling of an affine place, so `move p` carries that place's measures into the REBIND and CONSTRUCT placements exactly as a bare use of a copy place does.
-A right-hand side, operand, or scrutinee that is anything but a bare or `move`d use of a measured place mints none, and the ordinary sources establish whatever that expression publishes.
+A `move p` is such a use: [OWN-1] requires the `move` spelling of an affine place, so it participates in the placements of the table exactly as a bare use of a copy place does.
+A right-hand side, operand, or scrutinee that is anything but a bare or `move`d use of a place mints none, and the ordinary sources establish whatever that expression publishes.
+The source or destination place itself may contain a written subscript admitted by [MSR-1]; the carried projection begins at that selected value and retains the boundary above.
 The element placement names an element position, and an element position is a place exactly where its offset is one a place relation can name [MSR-1]: a written literal, a live `own` fragment-integer binding, or an in-scope const generic [MSR-6].
 Two element places are decided by their offsets [OWN-7], so an offset provably distinct from nothing — itself included — would relate two elements of one window as one term; a commit at such an offset carries no measure and, being an element write of unknown position, kills every measure of every element of that window [MSR-2].
 The element placement reaches only a written element position, so a window operation [OP-10] carries no measure through the slot it writes: `place_back` stores its value at the entry length of its referent and `take_back` takes one from the exit length of its referent, and a measure term is not an offset this version admits.
@@ -2725,9 +2732,9 @@ For one call c and verified relation q, use exactly FN-9's `A0(c)` and per-relat
 Candidate scratch establishes q once in the current ProofContext exactly as [FN-9] fixes, after ordinary transfer and every applicable consume, borrow, callee-effect, and target kill.
 Each substituted formal is independent: a referenced actual that has no ENT-2 image makes only that q unavailable, while an unreferenced non-ENT-2 actual has no effect on q.
 Occurrence-local call-argument evaluated-value datums never enter q.
-For relations that name a result, the only result destinations are the fresh direct ordinary-let binding, direct-call selected `Ok` payload, the direct-set target place — of which [FN-9]'s narrow direct-set receiver is the case where that same target is also an argument — narrow selected-payload outer receiver, and each binder of a destructuring `let` [FN-9, CALL-4, ENT-5].
-The last takes result ordinal i at binder i and exists only for a declaration that writes an ordered result list [GRAM-2, GRAM-4]. An unrouted result-free relation over the exit state of a written reference parameter needs no result destination: it establishes once on the call's normal continuation at its resolved exit places, after the same kills, including for an expression statement and a unit call.
-A named or pending outcome, stored or propagated whole outcome, false matching predicate, killed support, or rejected call establishes nothing.
+For relations that name a result, the result destinations are the fresh direct ordinary-let binding, the direct-set target place — including FN-9's narrow direct-set receiver — each binder of a destructuring `let`, and the private success-payload parameter of an admitted single-Result call's conditional context [FN-9, CALL-4, ENT-5].
+The destructuring destination takes result ordinal i at binder i and exists only for a declaration that writes an ordered result list [GRAM-2, GRAM-4]. An unrouted result-free relation over the exit state of a written reference parameter needs no result destination: it establishes once on the call's normal continuation at its resolved exit places, after the same kills, including for an expression statement and a unit call.
+A false matching predicate, killed support or rejected call establishes nothing. Conditional evidence moves and is selected only under ENT-5; excluded aggregate and indexed storage adds no transport.
 The complete candidate set stays unchanged in failure-atomic scratch until the owning source judgment succeeds; any failure publishes none, and success commits all of them atomically.
 
 [ENT-3.S13]
@@ -2766,7 +2773,7 @@ This rule states that route's four points once, so no rule computes a fact at on
 A declared relation is **instantiated at the call**, by substituting each operand at the denotation [MSR-3]'s table gives it: an `own` measure or an explicitly entry-qualified measure of a written reference parameter by that call's pre-transfer datum [ENT-3.S13], a measure at a reference parameter the row only reads by its live resolved referent, a bare measure at a written reference parameter by the actual's resolved exit place, and a referenced result binder by its destination below. Entry and exit terms are distinct even when they name one formal.
 Its **support** is the ordinary L0 support of the substituted terms. The immutable call datums have empty support; an exit term at a written reference parameter has the support of the resolved place after the call's projected write kills. Those writes kill pre-call facts, not the exit relation that the verified callee establishes afterwards. A later target commit or other write to that place kills the exit relation normally.
 It is **established** on the call's normal continuation, after the call's ordinary transfer, consumes, borrow commits, target commit and kills, exactly in [ENT-5]'s call-boundary order.
-A relation routed to a variant is instantiated at the call in the same order and is **restricted** to that variant's arm: it is available exactly on the paths on which that arm is entered, and it is not deferred to the arm, so an [ENT-5] event lying between the call and the arm kills a relation whose support it removes rather than preceding an establishment that has not happened.
+A relation routed to Ok is instantiated at the call in the same order and is **restricted** to that value's conditional success context [ENT-5]. A later success selection activates surviving evidence; it never performs the call substitution again. An intervening event therefore kills the conclusions whose support it removes before they can be selected.
 A relation whose support is dead is not available at all; a relation over a call datum has empty support and no event kills it.
 A relation naming results uses exactly [ENT-3.S12]'s closed result-destination list [CALL-4]. An unrouted relation naming only the exit state of a written reference parameter is established on the ordinary normal continuation even when no result is bound; its destination is that resolved state, and a unit return adds no result datum.
 
@@ -2825,7 +2832,7 @@ Without a current value image or another retained theorem connecting an old atom
 Header assumptions are removed on every edge leaving their loop, while local invariant conclusions follow [ENT-5]'s canonical control-flow intersection independently of their proof-only names.
 The compiler neither removes one constructor and reruns the body nor computes a masked fact state to decide whether any fact was necessary.
 
-An S12 relation, a narrow-receiver relation, and a relation transported through `value_if` have exactly the ordinary L0 support of their terms after the route's stated substitutions.
+An S12 relation, a narrow-receiver relation, and a relation transported through a value initializer have exactly the ordinary L0 support of their terms after the route's stated substitutions.
 The callee summary reference, call or delivery edge, pre-transfer substitution record, and a result or payload binder already replaced by its receiver are checked metadata, not additional support.
 A route whose substitution leaves a non-[ENT-2] operand never creates an L0 fact.
 
@@ -2844,22 +2851,30 @@ An ordinary user-call boundary has one order in the current ProofContext.
 First, at the pre-transfer point, complete the A0 judgments, retain each referenced formal's exact pre-transfer substitution, and judge the actual obligations and FN-8 goal.
 Second, apply argument consumes and borrow commits, the callee's projected effect and write kills, and any route-specific target commit and kill.
 Third, and only when `M(c,q)` still holds after those events, establish an eligible S12 relation with its result destination substituted.
-A fresh direct ordinary-let result is introduced only after the call kills; a direct-call match result is introduced only after dispatch enters the exact selected `Ok(value:)` arm; no relation or pending token exists on the intervening whole outcome.
+A fresh direct ordinary-let result is introduced only after the call kills. A whole Result retains conditional evidence at that point; selecting its Ok payload later delivers it under the conditional transport judgment below.
 For the narrow direct-set route, the target kill precedes the result-to-post-write receiver substitution.
-For the narrow selected-payload route, the payload relation already exists at arm entry, the right-hand side is evaluated, the outer target kill occurs, and only then is the result-payload term replaced by the post-write outer receiver.
 No pre-transfer substitution carries an old fact through a kill, no later substitution reverses a kill, and every non-result support must still be live at establishment.
 
-Bounded relation delivery is an additional edge transfer only for the `value_if` carrier admitted by [GIVE-1].
+Conditional Result transport: a local own `Result<T,E>` with T one fragment integer has an independent conditional numeric context meaning "if this value is Ok, these L0 relations hold of its payload". It carries one private typed payload parameter and the existing finite L0 vocabulary, with no new source spelling or runtime value. No conditional relation is an ordinary fact before success selection, and contexts of different outcomes are never conjoined. An unknown outcome has an empty conditional context and no known constructor tag.
+
+A successful ordinary single-Result call establishes its admitted routed relations there by FN-9 and CALL-6. Constructing Ok substitutes the private parameter for its evaluated payload term in the closed ordinary L0 facts and establishes their equality; a payload outside the existing term vocabulary contributes no numeric image. Constructing Err gives a contradictory success context and definitely-Err tag information. A direct non-consuming or consuming use of a bare own Result binding copies that value's context and tag information before transfer. A fresh binding, a whole-binding set commit and a give edge install the evaluated value's context at their destination after the operation's ordinary kills. The source association then follows the ordinary copy, consume and replacement rules. Aggregate fields, indexed storage, borrowed Result selections and multi-result calls add no conditional transport in this version; their ordinary value and existing measure-placement semantics remain unchanged.
+
+Before a conditional context crosses an ordinary event or scope exit, include the current ordinary closed L0 facts, close under ENT-4 and apply ENT-5's existing support kills to its conclusions. The private parameter itself has no external support. A write that may overlap the owning Result, its consume or its scope exit removes that holder's association; a previously evaluated copy has its own association. No association is reconstructed from an old call expression. At a loop head, remove associations and external supports changed by any continuing-backedge kill under the existing loop rule. Calls and constructions in the abstract body create evidence for that iteration, without identifying values of separate iterations or unrolling them.
+
+At an ordinary control-flow or value-delivery join, align each reaching value's private payload parameter and join its conditional contexts by ENT-5's weakest-bound and common-disequality judgment. A missing association supplies an empty context; a definitely-Err alternative supplies a contradictory success context. Definitely-Err tag information survives exactly when every contributing incoming value has it. Conditional contradiction remains local and never makes the ordinary continuation contradictory. No conjunction of guards, path-history enumeration or iterative summary inference is performed.
+
+An own match's Ok arm and propagate's successful continuation select the evaluated outcome's context: combine it with the current ordinary L0 facts, close it, substitute the receiving integer binding for the private parameter, and establish the surviving relations as ordinary facts. The Err edge establishes no success relation. FN-9 uses the same context when judging a forwarded return under its success route. Relations retain their verified call, value substitution and join parents in DIAG-2's derivation DAG; none of these events adds a runtime branch, slot, allocation, dependency or scheduling edge.
+
+Bounded relation delivery is an additional edge transfer for the integer carrier admitted by [GIVE-1], in either value initializer.
 On one reaching eligible `give d;` edge, evaluate the bare atom's value first.
 From the closed state at that point, take exactly each L0 bound or disequality whose normalized terms contain d; facts that do not contain d and opaque signed goals are not delivery candidates.
 Replace every occurrence of d with the receiving binding x before applying the give edge's ordinary scope-exit and other event kills to every remaining support.
 Thus d's own branch-scope exit cannot delete the already delivered relation, while the death of any other support deletes that relation normally.
 Close the surviving substituted relations under [ENT-4] to form that edge's delivery image.
 A non-bare, projected, consuming, computed, constructed, call, subscripted, literal, named-const, const-generic, capture, Z, contract-symbolic, wrong-mode, or wrong-type delivery forms no image; the value still follows ordinary GIVE-1 semantics.
-A `value_match` forms no delivery image under any source shape.
 
 At the receiving `let` continuation, ordinary fact flow and its ordinary branch join remain unchanged.
-Separately join one delivery image from every reaching `give` edge of the `value_if`, in edge NodePath order, after the substitutions and kills above.
+Separately join one delivery image from every reaching `give` edge of the initializer, in edge NodePath order, after the substitutions and kills above.
 When at least one image is non-contradictory, contradictory images are neutral and the non-contradictory images retain for each ordered term pair the weakest (largest-constant) bound held by all and each disequality held by all; a relation missing from one such image is not delivered.
 Hence images containing `x < 8` and `x < 128` establish `x < 128`, not nothing and not `x < 8`.
 An all-contradictory image set is contradictory; an absent eligible relation on a non-contradictory edge contributes an empty image and prevents delivery of that relation.
@@ -2874,7 +2889,7 @@ A nonempty join whose every input is contradictory, and an empty join with no re
 At the continuation of an `if_stmt` or `value_if`, this same join is taken over every branch exit edge reaching that continuation — for an else-free `if_stmt`, the false edge is such an edge — each after its pre-exit closure, scope-exit kills, and surviving-state closure; a branch every path of which leaves by `return`, `break` to an enclosing loop, or `propagate`'s error edge contributes nothing there.
 The continuation of a `loop_stmt` uses the same join over its `break` edges.
 A `loop_stmt` with no `break` resolved to it has an empty join and therefore the contradictory state, consistent with that continuation being unreachable in truth while the conservative graph keeps it reachable.
-A `propagate` right-hand side's `Err` edge leaves the function; its normal continuation keeps the preceding state subject to the initializer call's own kill events (b) and (c), and its binder gains no fact.
+A `propagate` right-hand side's `Err` edge leaves the function; its normal continuation keeps the preceding state subject to the initializer call's own kill events (b) and (c), and its binder selects the evaluated outcome's conditional success evidence as specified above.
 For every join above, contributing arm, branch, `give`, and `break` edges use their source `NodePath` order.
 
 The continuation of a `for_stmt` is the join of its structural false-header edge and every `break` edge resolved to that counted loop, each taken after the applicable pre-exit closure, all binder, capture, and body-scope exit kills, and surviving-state closure.

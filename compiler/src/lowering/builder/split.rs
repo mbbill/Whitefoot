@@ -113,7 +113,9 @@ enum Decline {
 /// ordinary statement lowering from the value carried in its task frame.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CaptureReconstruction {
-    Direct,
+    Direct {
+        readonly_reference: bool,
+    },
     BoxSlot {
         referent: IrAddressed,
     },
@@ -307,7 +309,12 @@ impl IrBuilder<'_> {
                     }
                 }
                 Some(_) => return Err(LoweringFailure::InvalidCheckedProgram),
-                None => (stored_type, CaptureReconstruction::Direct),
+                None => (
+                    stored_type,
+                    CaptureReconstruction::Direct {
+                        readonly_reference: self.readonly_reference_parameters.contains(&stored),
+                    },
+                ),
             };
             captures.push(Capture {
                 binding,
@@ -356,7 +363,7 @@ impl IrBuilder<'_> {
         for capture in &captures {
             let stored = self.bindings[&capture.binding];
             let value = match capture.reconstruction {
-                CaptureReconstruction::Direct => stored,
+                CaptureReconstruction::Direct { .. } => stored,
                 CaptureReconstruction::BoxSlot { .. } => self.load_storage_value(stored)?,
                 CaptureReconstruction::RuntimeBoxPayload { nominal, .. } => {
                     let owner = self.load_storage_value(stored)?;
@@ -514,7 +521,12 @@ impl IrBuilder<'_> {
         for capture in captures {
             let value = builder.new_parameter(capture.ty)?;
             let value = match &capture.reconstruction {
-                CaptureReconstruction::Direct => value,
+                CaptureReconstruction::Direct { readonly_reference } => {
+                    if *readonly_reference {
+                        builder.readonly_reference_parameters.push(value);
+                    }
+                    value
+                }
                 CaptureReconstruction::BoxSlot { referent } => {
                     if referent.ty() != capture.ty {
                         return Err(LoweringFailure::InvalidCheckedProgram);
@@ -938,6 +950,9 @@ fn prune_capture_parameters(
     function
         .parameters
         .retain(|(value, _)| needed[value.index()]);
+    function
+        .readonly_reference_parameters
+        .retain(|value| needed[value.index()]);
     Ok(captures)
 }
 

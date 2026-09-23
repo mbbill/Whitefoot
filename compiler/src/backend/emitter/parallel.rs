@@ -61,8 +61,8 @@ use std::fmt::Write;
 use super::{BackendFailure, FunctionEmitter, IntrinsicDeclaration, llvm_type, value_name};
 use crate::backend::abi::{FunctionAbi, ResultAbi};
 use crate::{
-    IrAddressed, IrFunction, IrInstruction, IrOperation, IrProgram, IrSynthesis, IrType, IrValueId,
-    IrWorkEstimate,
+    IrAddressed, IrFunction, IrInstruction, IrNominalKind, IrOperation, IrProgram, IrSynthesis,
+    IrType, IrValueId, IrWorkEstimate,
 };
 
 /// The counted loop's index type [FN-1], which fixes every width question the
@@ -635,7 +635,9 @@ impl FunctionEmitter<'_, '_> {
     }
 
     /// Scheduling arithmetic is total even when the priced source branch
-    /// would never execute. Only already-materialized SSA captures are read.
+    /// would never execute. Scalars and range descriptors are already
+    /// captured; a Box-array header load additionally relies on its exhibited
+    /// typed read and the retained no-write fact for the original formal.
     fn emit_work_estimate(
         &mut self,
         work: &IrWorkEstimate,
@@ -651,6 +653,28 @@ impl FunctionEmitter<'_, '_> {
                     return Err(BackendFailure::InvalidIr);
                 }
                 self.value_name(*value)
+            }
+            IrWorkEstimate::BoxArrayLength(value) => {
+                let Some(IrType::Address(IrAddressed::Nominal(nominal))) = self.value_type(*value)
+                else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                let IrNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind() else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                let block @ IrType::Buffer { element } = *referent else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                let pointer = self.projected_address_pointer(
+                    IrType::Address(IrAddressed::Buffer { element }),
+                    *value,
+                    &crate::IrPlaceStep::BoxReferent { nominal },
+                )?;
+                let address = self.aggregate_field_pointer(block, &pointer, 0)?;
+                let result = format!("%{}", self.next_temporary()?);
+                writeln!(self.output, "  {result} = load i64, ptr {address}")
+                    .map_err(|_| BackendFailure::TextEmission)?;
+                result
             }
             IrWorkEstimate::Length(value) => {
                 let ty = self.value_type(*value).ok_or(BackendFailure::InvalidIr)?;

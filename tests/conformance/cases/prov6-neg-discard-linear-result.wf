@@ -1,0 +1,11 @@
+nodrop struct Token {
+}
+
+fn mint() -> result: own Token pure {
+  return Token();
+}
+
+fn main() -> status: own ExitStatus pure {
+  mint();
+  return exit_status(code: 0_u8);
+}

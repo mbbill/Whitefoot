@@ -1193,18 +1193,6 @@ pub(super) fn set_target_place(
             PlaceRoot::Binding(target.binding),
             &field_steps(&target.fields),
         ),
-        CheckedSetTarget::ArrayIndex(target) => {
-            collect_operand_reads(places, &target.offset, node, footprint);
-            let mut steps = field_steps(&target.fields);
-            steps.push(PlaceStep::Index(CapturedValue::unknown()));
-            places.resolve(PlaceRoot::Binding(target.binding), &steps)
-        }
-        CheckedSetTarget::BufferIndex(target) => {
-            collect_operand_reads(places, &target.offset, node, footprint);
-            let mut steps = target.root.place_path();
-            steps.push(PlaceStep::Index(CapturedValue::unknown()));
-            places.resolve(PlaceRoot::Binding(target.root.binding), &steps)
-        }
         // [REF-4] a range reference names one path, so the element a
         // subscript through it writes is that path extended by the index.
         CheckedSetTarget::RangeIndex(target) => {

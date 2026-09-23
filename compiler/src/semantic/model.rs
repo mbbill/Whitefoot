@@ -271,8 +271,7 @@ pub(crate) struct CheckedSourceProof {
 }
 
 /// The checked source production that owns a value initializer. These forms
-/// share GIVE-1 typing and lowering, but only `value_if` is an ENT-5 relation
-/// carrier.
+/// share GIVE-1 typing and lowering and ENT-5 relation delivery.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum ValueInitializerKind {
     ValueIf,
@@ -456,46 +455,6 @@ impl CheckedNumericType {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) enum CheckedFlatElement {
-    Unit,
-    Bool,
-    Integer(IntegerType),
-    Float(FloatType),
-    GenericInt(DeclarationId),
-    GenericFloat(DeclarationId),
-    TagOnlyNominal(NominalId),
-    /// One affine aggregate element type: a region-free non-copy nominal
-    /// stored by value. [TYPE-2] admits this element domain for `buffer`
-    /// formation only; slices keep the flat copy domain, so
-    /// their element constructors never produce this variant.
-    Nominal(NominalId),
-    /// One unbounded type parameter in a run's element position [TYPE-9].
-    ///
-    /// [FN-2] makes generics monomorphization-only, so this variant belongs
-    /// to the symbolic pass alone: every concrete instance re-parses the
-    /// element position with its own substitution and produces a concrete
-    /// element. Only a run's element position forms it — a `buffer`, an
-    /// `array` and a `slice` keep the element domains [TYPE-2] gives them —
-    /// and it reaches no layout, no lowering, and no backend.
-    Generic(DeclarationId),
-}
-
-impl CheckedFlatElement {
-    pub(crate) const fn ty(self) -> CheckedType {
-        match self {
-            Self::Unit => CheckedType::Unit,
-            Self::Bool => CheckedType::Bool,
-            Self::Integer(ty) => CheckedType::Integer(ty),
-            Self::Float(ty) => CheckedType::Float(ty),
-            Self::GenericInt(declaration) => CheckedType::GenericInt(declaration),
-            Self::GenericFloat(declaration) => CheckedType::GenericFloat(declaration),
-            Self::TagOnlyNominal(id) | Self::Nominal(id) => CheckedType::Nominal(id),
-            Self::Generic(declaration) => CheckedType::Generic(declaration),
-        }
-    }
-}
-
 /// [STOR-1, STOR-3] which release action a compiler-owned cell performs.
 ///
 /// The active language has one heap and therefore one represented action:
@@ -540,7 +499,7 @@ pub(crate) enum CheckedType {
     /// One runtime-capacity `Array<T>` [TYPE-9]. Its `len` is the allocated
     /// slot count, the one runtime number its block stores [WIN-1, MSR-1].
     Buffer {
-        element: CheckedFlatElement,
+        element: CheckedElement,
     },
     /// One `Slots<T, N>`, `Slots<T>`, `Ring<T, N>` or `Ring<T>` [TYPE-9]: a
     /// run of `cap` slots whose initialized storage is the window of `len`
@@ -598,7 +557,9 @@ impl CheckedType {
                     .is_some_and(|ty| ty.is_concrete(elements))
                     && capacity.is_none_or(|capacity| capacity.is_concrete())
             }
-            Self::Buffer { element } => element.ty().is_concrete(elements),
+            Self::Buffer { element } => elements
+                .get(element.index())
+                .is_some_and(|ty| ty.is_concrete(elements)),
             Self::Unit | Self::Bool | Self::Integer(_) | Self::Float(_) | Self::Nominal(_) => true,
         }
     }
@@ -1520,7 +1481,8 @@ pub(crate) struct CheckedBufferRoot {
     /// [TYPE-9], so the path of one reached from an owner carries that
     /// content step and [OWN-7] and [ENT-5] compare it like any other.
     pub(crate) path: Vec<CheckedPlaceStep>,
-    pub(crate) element: CheckedFlatElement,
+    pub(crate) element: CheckedElement,
+    pub(crate) element_type: CheckedType,
 }
 
 impl CheckedBufferRoot {
@@ -1617,9 +1579,9 @@ impl CheckedRangeElementPlace {
 
     pub(crate) const fn element(&self) -> Option<CheckedElement> {
         match self.ty {
-            CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
-                Some(element)
-            }
+            CheckedType::Array { element, .. }
+            | CheckedType::Window { element, .. }
+            | CheckedType::Buffer { element } => Some(element),
             _ => None,
         }
     }
@@ -1735,9 +1697,9 @@ impl CheckedContainerRoot {
     /// The element type of a storage shape.
     pub(crate) const fn element(&self) -> Option<CheckedElement> {
         match self.ty {
-            CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
-                Some(element)
-            }
+            CheckedType::Array { element, .. }
+            | CheckedType::Window { element, .. }
+            | CheckedType::Buffer { element } => Some(element),
             _ => None,
         }
     }
@@ -2119,7 +2081,7 @@ impl CheckedExpression {
             | Self::ContainerMeasure { .. }
             | Self::RangeMeasure { .. }
             | Self::RangeElementMeasure { .. } => CheckedType::Integer(IntegerType::U64),
-            Self::BufferIndex { root, .. } => root.element.ty(),
+            Self::BufferIndex { root, .. } => root.element_type,
             // [TYPE-8] `&[T]` is a reference kind, not a type: the value's
             // own type is the element type and its kind is its mode, exactly
             // as a `&[T]` parameter carries them [GRAM-2, REF-4].
@@ -2213,30 +2175,8 @@ pub(crate) struct CheckedWritablePlace {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedArraySetTarget {
-    pub(crate) binding: BindingId,
-    pub(crate) fields: Vec<u32>,
-    pub(crate) array_type: CheckedType,
-    pub(crate) element_type: CheckedType,
-    pub(crate) length: CheckedConst,
-    pub(crate) offset: CheckedExpression,
-    pub(crate) obligation: NodePath,
-    pub(crate) target_domain: CheckedTargetDomainObligation,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedBufferSetTarget {
-    pub(crate) root: CheckedBufferRoot,
-    pub(crate) offset: CheckedExpression,
-    pub(crate) obligation: NodePath,
-    pub(crate) target_domain: CheckedTargetDomainObligation,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedSetTarget {
     Place(CheckedWritablePlace),
-    ArrayIndex(Box<CheckedArraySetTarget>),
-    BufferIndex(Box<CheckedBufferSetTarget>),
     /// One element position of the run a range reference names [REF-4].
     RangeIndex(Box<CheckedRangeElementPlace>),
     /// A typed storage path including all subscripts and terminal fields.
@@ -2247,8 +2187,6 @@ impl CheckedSetTarget {
     pub(crate) fn binding(&self) -> BindingId {
         match self {
             Self::Place(target) => target.binding,
-            Self::ArrayIndex(target) => target.binding,
-            Self::BufferIndex(target) => target.root.binding,
             Self::RangeIndex(target) => target.root.binding,
             Self::Storage(target) => target
                 .binding()
@@ -2259,8 +2197,6 @@ impl CheckedSetTarget {
     pub(crate) fn ty(&self) -> CheckedType {
         match self {
             Self::Place(target) => target.ty,
-            Self::ArrayIndex(target) => target.element_type,
-            Self::BufferIndex(target) => target.root.element.ty(),
             Self::RangeIndex(target) => target.ty,
             Self::Storage(target) => target.ty,
         }
@@ -2338,6 +2274,7 @@ pub(crate) enum CheckedStatement {
     /// compiler-derived release it runs [STOR-3].
     DropExpression {
         value: CheckedExpression,
+        drops: Vec<CheckedProjectedDrop>,
     },
     /// A finite source-written local invariant checked before it is published
     /// and erased before lowering. It has no runtime expression, effect,
@@ -2517,25 +2454,35 @@ pub(crate) struct CheckedFunction {
     pub(crate) entailment: super::entailment::FunctionEntailment,
 }
 
-/// One [EFF-5] pairwise comparison the checker could not settle by syntax.
+/// One [OWN-7] separation question the checker could not settle by syntax.
 ///
-/// Two substituted effect paths overlap [OWN-7] and at least one of them is a
-/// write, so the call is admitted only where the two positions are proved
-/// distinct. The checker holds the actual argument spellings and the live
+/// A mandatory call-effect pair [EFF-5] or a write's preservation of a later
+/// reference use [REF-2] requires the positions to be proved distinct.
+/// The checker holds the actual argument spellings and the live
 /// reference state, so it owns the comparison; what it cannot do is discharge
 /// the index or range goal, which is the fixed [ENT-6] families' work under
 /// [MSR-4]'s disposition. This record is that handover, and the diagnostic it
-/// carries cites EFF-5, or OP-11 for exchange, at the complete `call`.
+/// carries cites EFF-5 or OP-11 at the call, or REF-2 at the reference use.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedCallSeparation {
-    /// The complete `call` the diagnostic is reported at.
+    /// The call or set commit whose pre-write proof context answers the query.
     pub(crate) site: NodePath,
     /// Exchange's possible ancestry is refused by OP-11, rather than EFF-5.
     pub(crate) exchange: bool,
+    /// A demanded REF-2 use; the separation is still proved at `site`, before
+    /// the invalidating write, and diagnosed at this later use.
+    pub(crate) reference_use: Option<CheckedReferencePreservationUse>,
     pub(crate) positions: Vec<CheckedCallSeparationPositions>,
     /// The two substituted paths as the diagnostic renders them.
     pub(crate) left_spelling: String,
     pub(crate) right_spelling: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedReferencePreservationUse {
+    pub(crate) site: NodePath,
+    pub(crate) binder: String,
+    pub(crate) event: &'static str,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

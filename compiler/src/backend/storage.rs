@@ -860,8 +860,7 @@ impl FlowInstruction {
                 };
                 (Some(index(*result)), reuse, exposed)
             }
-            IrInstruction::StoreBuffer { .. }
-            | IrInstruction::StoreSlice { .. }
+            IrInstruction::StoreSlice { .. }
             | IrInstruction::Store { .. }
             | IrInstruction::Drops(_) => (None, None, None),
         };
@@ -885,10 +884,7 @@ mod tests {
     use super::*;
 
     const AGGREGATE: IrType = IrType::Buffer {
-        element: crate::IrFlatElement::Integer {
-            width: 64,
-            signed: false,
-        },
+        element: crate::IrElement(0),
     };
 
     fn define(result: usize, operands: &[usize], reuse: Option<usize>) -> FlowInstruction {

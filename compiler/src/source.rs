@@ -473,11 +473,16 @@ impl SourceBundle {
     }
 
     /// Builds a compilation source bundle including the fixed ordinary PRE-1 declarations.
-    /// Source-only tooling can continue to use `with_limits`.
+    /// At least one caller-provided source record is required by PROG-2;
+    /// compiler-owned prelude records do not supply that source identity.
+    /// Source-only transport tooling can continue to use `with_limits`.
     pub fn with_prelude(
         inputs: &[SourceInput<'_>],
         limits: SourceLimits,
     ) -> Result<Self, SourceBundleError> {
+        if inputs.is_empty() {
+            return Err(SourceBundleError::EmptySourceSequence);
+        }
         let mut complete = inputs.to_vec();
         complete.extend(
             crate::prelude::DECLARATIONS
@@ -713,6 +718,8 @@ impl SourceBundle {
 /// Why source inputs cannot form a bundle.
 #[derive(Debug, Eq, PartialEq)]
 pub enum SourceBundleError {
+    /// A compilation invocation supplied no source record before prelude injection.
+    EmptySourceSequence,
     /// One logical path is structurally invalid.
     LogicalPath(LogicalPathError),
     /// Two source positions use the same case-sensitive logical path.
@@ -747,6 +754,9 @@ pub enum SourceBundleError {
 impl fmt::Display for SourceBundleError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::EmptySourceSequence => {
+                formatter.write_str("compilation requires at least one source record")
+            }
             Self::LogicalPath(error) => write!(formatter, "{error}"),
             Self::DuplicateLogicalPath {
                 path,

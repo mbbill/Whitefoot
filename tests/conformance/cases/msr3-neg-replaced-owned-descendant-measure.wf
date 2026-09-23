@@ -1,0 +1,17 @@
+struct Packet {
+  storage: Box<Slots<u8>>;
+}
+
+fn main() -> status: own ExitStatus pure {
+  doc "MSR-3, ENT-5, MSR-2: a named placement carries a boxed descendant's current length, but replacing that descendant kills the old supported fact. The invariant first confirms that the nonempty fact reached the transported owner; after an overlapping replacement with an empty window, destructuring carries only the new length, so the element read is rejected by OP-4.";
+  let original = box_slots_new::<u8>(capacity: 2_u64);
+  place_back(window: &original.inner, value: 7_u8);
+  let packet = Packet(storage: move original);
+  let transported = move packet;
+  invariant delivered: transported.storage.inner.len == 1_u64;
+  let empty = box_slots_new::<u8>(capacity: 2_u64);
+  set transported.storage = move empty;
+  let Packet(storage: unpacked) = move transported;
+  let observed = unpacked.inner[0_u64];
+  return exit_status(code: observed);
+}

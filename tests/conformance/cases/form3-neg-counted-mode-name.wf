@@ -1,0 +1,6 @@
+fn main() -> status: own ExitStatus pure {
+  for @range (checked in 0_u64..1_u64) {
+    break @range;
+  }
+  return exit_status(code: 0_u8);
+}

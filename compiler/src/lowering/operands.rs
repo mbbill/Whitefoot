@@ -6,11 +6,6 @@ impl IrInstruction {
     pub(crate) fn operands(&self) -> Vec<IrValueId> {
         match self {
             Self::Define { operation, .. } => operation.operands(),
-            Self::StoreBuffer {
-                buffer,
-                index,
-                value,
-            } => vec![*buffer, *index, *value],
             Self::StoreSlice {
                 slice,
                 index,

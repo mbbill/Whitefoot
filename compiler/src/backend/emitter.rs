@@ -295,11 +295,11 @@ pub(super) fn emit_llvm_with_layout(
     }
     let windows = target.triple().contains("windows");
     if writes_a_record {
-        text.push_str(if windows {
-            "declare i64 @wf__windows_diagnostic_write(ptr, i64)\n"
+        if windows {
+            text.push_str("declare i64 @wf__windows_diagnostic_write(ptr, i64)\n");
         } else {
-            "declare i64 @write(i32, ptr, i64)\n"
-        });
+            emit_posix_resource_write(&mut text, target)?;
+        }
     }
     if writes_a_record || has_matches {
         text.push_str("declare void @abort() noreturn\n");
@@ -334,6 +334,13 @@ pub(super) fn emit_llvm_with_layout(
     text.push_str(&drop_helpers);
     for intrinsic in intrinsics {
         match intrinsic {
+            IntrinsicDeclaration::MemoryCopy => {
+                writeln!(
+                    text,
+                    "declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1 immarg)"
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+            }
             IntrinsicDeclaration::MemoryMove => {
                 writeln!(
                     text,
@@ -742,6 +749,7 @@ struct Incoming {
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum IntrinsicDeclaration {
+    MemoryCopy,
     MemoryMove,
     Overflow {
         name: String,
@@ -901,8 +909,31 @@ impl FunctionFramePlan {
             .iter()
             .map(|field| llvm_storage_type(program, field))
             .collect::<Result<Vec<_>, _>>()?;
-        let frame_type = format!("{{ {} }}", fields.join(", "));
         let mut output = String::new();
+        if let Some(alignment) = self.target.independent_slot_alignment() {
+            // The complete frame was qualified before this representation
+            // choice. Keep each full allocation root, including parents of
+            // reused result fields; only unrelated roots gain distinct LLVM
+            // allocation provenance. Storage interference is unchanged.
+            for key in &self.ordered {
+                let slot = self.slots.get(key).ok_or(BackendFailure::InvalidIr)?;
+                let field = self
+                    .target
+                    .logical_field(slot.logical_index)
+                    .ok_or(BackendFailure::InvalidIr)?;
+                let ty = fields
+                    .get(field.physical_index() as usize)
+                    .ok_or(BackendFailure::InvalidIr)?;
+                writeln!(
+                    output,
+                    "  {} = alloca {ty}, align {alignment}",
+                    slot.pointer
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+            }
+            return Ok(output);
+        }
+        let frame_type = format!("{{ {} }}", fields.join(", "));
         writeln!(
             output,
             "  %wf.frame = alloca {frame_type}, align {}",
@@ -1508,13 +1539,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         instruction: &IrInstruction,
     ) -> Result<(), BackendFailure> {
         match instruction {
-            IrInstruction::StoreBuffer {
-                buffer,
-                index,
-                value: _,
-            } => {
-                self.materialize_operands([*buffer, *index])?;
-            }
             IrInstruction::StoreSlice {
                 slice,
                 index,
@@ -1557,11 +1581,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 ty,
                 operation,
             } => self.emit_definition(*result, *ty, operation),
-            IrInstruction::StoreBuffer {
-                buffer,
-                index,
-                value,
-            } => self.emit_buffer_store(*buffer, *index, *value),
             IrInstruction::StoreSlice {
                 slice,
                 index,
@@ -2220,7 +2239,10 @@ pub(crate) fn llvm_type(
         // names its element count.
         IrType::Buffer { element } => Ok(format!(
             "{{ i64, [0 x {}] }}",
-            llvm_type(program, element.ty())?
+            llvm_type(
+                program,
+                program.element(element).ok_or(BackendFailure::InvalidIr)?
+            )?
         )),
         // compiler/storage-representation: header first, so the inline and
         // the boxed placement of one shape share one address computation. A
@@ -2503,13 +2525,51 @@ pub(crate) fn overlapped_clone_symbol(sequential: &str) -> Option<String> {
     sequential.strip_prefix("wf__par_seq_").map(source_symbol)
 }
 
+/// Retry an interrupted POSIX diagnostic write without changing the caller's
+/// cursor. The supported Darwin and Linux ABIs both number EINTR as four but
+/// expose the thread-local errno cell through different accessors. This stays
+/// in the emitted module, including when no floor runtime is linked.
+fn emit_posix_resource_write(
+    text: &mut String,
+    target: TargetLayout,
+) -> Result<(), BackendFailure> {
+    let errno = if target.triple().contains("apple-darwin") {
+        "__error"
+    } else {
+        "__errno_location"
+    };
+    writeln!(
+        text,
+        r#"declare i64 @write(i32, ptr, i64)
+declare ptr @{errno}()
+
+define private i64 @wf_resource_write(ptr %bytes, i64 %length) {{
+entry:
+  br label %write
+write:
+  %written = call i64 @write(i32 2, ptr %bytes, i64 %length)
+  %failed = icmp slt i64 %written, 0
+  br i1 %failed, label %error, label %done
+error:
+  %errno = call ptr @{errno}()
+  %code = load i32, ptr %errno, align 4
+  %interrupted = icmp eq i32 %code, 4
+  br i1 %interrupted, label %write, label %done
+done:
+  ret i64 %written
+}}
+"#
+    )
+    .map_err(|_| BackendFailure::TextEmission)
+}
+
 /// The heap-resource record writer of a module with one thread.
 ///
 /// The thread that reaches it writes its complete record to standard error and
 /// aborts the process without unwinding. There is no one to arbitrate with, so
 /// there is no latch: these are the bytes every module emitted before the
 /// overlapped world existed, and they are what a default build still gets.
-const SEQUENTIAL_RESOURCE_RECORD_WRITER: &str = "\ndefine private void @wf_resource_record_abort(ptr %message, i64 %length) noreturn {\nentry:\n  br label %write.loop\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @write(i32 2, ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\n}\n\n";
+const SEQUENTIAL_RESOURCE_RECORD_WRITER: &str = "\ndefine private void @wf_resource_record_abort(ptr %message, i64 %length) noreturn {\nentry:\n  br label %write.loop\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @wf_resource_write(ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\n}\n\n";
 
 /// Windows twin of [`SEQUENTIAL_RESOURCE_RECORD_WRITER`]. The private runtime
 /// call writes the same bytes to the process diagnostic channel without
@@ -2560,7 +2620,7 @@ const RESOURCE_RECORD_LATCH_FALLBACK: &str = "\ndefine weak ptr @wf__floor_recor
 /// The park spins on a *volatile* load rather than an empty loop, so no
 /// optimizer may delete the loop and let a losing thread fall through into a
 /// second record.
-const LATCHED_RESOURCE_RECORD_WRITER: &str = "\ndefine private void @wf_resource_record_abort(ptr %message, i64 %length) noreturn {\nentry:\n  %latch = call ptr @wf__floor_record_latch()\n  %acquired = cmpxchg ptr %latch, i32 0, i32 1 seq_cst seq_cst\n  %won = extractvalue { i32, i1 } %acquired, 1\n  br i1 %won, label %write.loop, label %park\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @write(i32 2, ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\npark:\n  %parked = load volatile i32, ptr %latch, align 4\n  br label %park\n}\n\n";
+const LATCHED_RESOURCE_RECORD_WRITER: &str = "\ndefine private void @wf_resource_record_abort(ptr %message, i64 %length) noreturn {\nentry:\n  %latch = call ptr @wf__floor_record_latch()\n  %acquired = cmpxchg ptr %latch, i32 0, i32 1 seq_cst seq_cst\n  %won = extractvalue { i32, i1 } %acquired, 1\n  br i1 %won, label %write.loop, label %park\nwrite.loop:\n  %cursor = phi ptr [ %message, %entry ], [ %next, %write.more ]\n  %remaining = phi i64 [ %length, %entry ], [ %left, %write.more ]\n  %written = call i64 @wf_resource_write(ptr %cursor, i64 %remaining)\n  %complete = icmp eq i64 %written, %remaining\n  br i1 %complete, label %abort, label %write.incomplete\nwrite.incomplete:\n  %progress = icmp sgt i64 %written, 0\n  br i1 %progress, label %write.more, label %abort\nwrite.more:\n  %next = getelementptr i8, ptr %cursor, i64 %written\n  %left = sub i64 %remaining, %written\n  br label %write.loop\nabort:\n  call void @abort()\n  unreachable\npark:\n  %parked = load volatile i32, ptr %latch, align 4\n  br label %park\n}\n\n";
 
 /// Windows twin of [`LATCHED_RESOURCE_RECORD_WRITER`], sharing the floor
 /// runtime's first-writer latch while using the native diagnostic channel.

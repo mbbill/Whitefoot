@@ -185,6 +185,10 @@ pub(crate) struct EntailmentContext<'check> {
     /// equality keeps the former while L0 projection reads the latter's
     /// mathematical value.
     pub(crate) constant_ids: &'check HashMap<DeclarationId, CheckedConstantId>,
+    /// Written integer types of symbolic const parameters [MSR-6]. Extents
+    /// and forwarded arguments carry the original declaration identity, even
+    /// when their use has a different integer type.
+    pub(crate) const_parameter_types: &'check HashMap<DeclarationId, super::model::IntegerType>,
     pub(crate) nominals: &'check [CheckedNominal],
     pub(crate) elements: &'check [CheckedType],
     /// Accepted instantiated FN-4 implications. Bound-call evidence refers
@@ -286,6 +290,8 @@ pub(crate) enum ObligationFamily {
     CallSeparation,
     /// Disjoint positions exclude proper ancestry at an exchange [OP-11].
     ExchangeSeparation,
+    /// A REF-2 use depends on this event-site separation query.
+    ReferencePreservation(u32),
 }
 
 /// One exact single-binder affine image retained at a discharged OP-4 site.
@@ -1375,12 +1381,6 @@ pub(super) fn collect_statement_calls(
             CheckedStatement::Set { target, value, .. } => {
                 match target {
                     CheckedSetTarget::Place(_) => {}
-                    CheckedSetTarget::ArrayIndex(target) => {
-                        collect_expression_calls(caller, &target.offset, calls);
-                    }
-                    CheckedSetTarget::BufferIndex(target) => {
-                        collect_expression_calls(caller, &target.offset, calls);
-                    }
                     CheckedSetTarget::RangeIndex(target) => {
                         for offset in target.offsets() {
                             collect_expression_calls(caller, offset, calls);

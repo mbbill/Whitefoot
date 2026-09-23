@@ -1,7 +1,325 @@
-//! Mutable measure facts follow the storage a write may replace [ENT-5, MSR-2].
+//! Measure placement follows owned storage [MSR-3], while mutable facts die
+//! with the storage a write may replace [ENT-5, MSR-2].
 
 use super::{assert_accepts, assert_rule_kind};
-use crate::SemanticRule;
+use crate::{SemanticIssueKind, SemanticRule};
+
+#[test]
+fn destructuring_a_boxed_window_preserves_its_empty_measure() {
+    let source = br#"struct GrowVector<T> {
+  storage: Box<Slots<T>>;
+}
+
+fn release<T>(values: own GrowVector<T>) -> result: own unit pure contract {
+  requires values.storage.inner.len <= 0_u64;
+} {
+  let GrowVector(storage: storage) = move values;
+  free_empty(window: move storage);
+  return unit;
+}
+"#;
+    assert_accepts(source);
+}
+
+#[test]
+fn boxed_window_measures_cross_rebinding_construction_and_payload_selection() {
+    let source = br#"struct Wrapper {
+  storage: Box<Ring<u8>>;
+  stamp: u64;
+}
+
+fn carry(window: own Box<Ring<u8>>) -> result: own unit pure contract {
+  requires window.inner.len == 0_u64;
+  requires window.inner.cap == 4_u64;
+  requires window.inner.head == 2_u64;
+} {
+  let renamed = move window;
+  invariant empty: renamed.inner.len == 0_u64;
+  invariant capacity: renamed.inner.cap == 4_u64;
+  invariant head: renamed.inner.head == 2_u64;
+  let target = box_ring_new::<u8>(capacity: 1_u64);
+  set target = move renamed;
+  let wrapper = Wrapper(storage: move target, stamp: 0_u64);
+  let transferred = move wrapper;
+  set transferred.stamp = 1_u64;
+  let selected = Some<Box<Ring<u8>>>(value: move transferred.storage);
+  match selected {
+    None() => {
+    }
+    Some(value: returned) => {
+      invariant retained_capacity: returned.inner.cap == 4_u64;
+      invariant retained_head: returned.inner.head == 2_u64;
+      free_empty(window: move returned);
+    }
+  }
+  return unit;
+}
+"#;
+    assert_accepts(source);
+}
+
+#[test]
+fn a_projected_box_move_preserves_the_selected_fields_measures() {
+    let source = br#"struct Wrapper {
+  storage: Box<Slots<u8>>;
+}
+
+fn carry(wrapper: own Wrapper) -> result: own unit pure contract {
+  requires wrapper.storage.inner.len <= 0_u64;
+} {
+  let storage = move wrapper.storage;
+  free_empty(window: move storage);
+  return unit;
+}
+
+fn replace(target: own Wrapper, source: own Wrapper) -> result: own unit pure contract {
+  requires source.storage.inner.len <= 0_u64;
+} {
+  set target.storage = move source.storage;
+  free_empty(window: move target.storage);
+  return unit;
+}
+"#;
+    assert_accepts(source);
+}
+
+#[test]
+fn taking_nested_box_content_preserves_its_measures() {
+    let source = br#"struct Wrapper {
+  storage: Box<Slots<u8>>;
+}
+
+fn unbox(outer: own Box<Box<Slots<u8>>>) -> result: own unit pure contract {
+  requires outer.inner.inner.len <= 0_u64;
+} {
+  let storage = move outer.inner;
+  free_empty(window: move storage);
+  return unit;
+}
+
+fn destructure(outer: own Box<Wrapper>) -> result: own unit pure contract {
+  requires outer.inner.storage.inner.len <= 0_u64;
+} {
+  let Wrapper(storage: storage) = move outer.inner;
+  free_empty(window: move storage);
+  return unit;
+}
+
+fn take_inline(outer: own Box<Slots<u8, 4>>) -> result: own unit pure contract {
+  requires outer.inner.len <= 0_u64;
+} {
+  let storage = move outer.inner;
+  free_empty(window: move storage);
+  return unit;
+}
+
+fn construct_inside(outer: own Box<Wrapper>, empty: own Box<Slots<u8>>) -> result: own unit pure contract {
+  requires empty.inner.len <= 0_u64;
+} {
+  set outer.inner = Wrapper(storage: move empty);
+  invariant filled_content: outer.inner.storage.inner.len == 0_u64;
+  let Wrapper(storage: storage) = move outer.inner;
+  free_empty(window: move storage);
+  return unit;
+}
+"#;
+    assert_accepts(source);
+}
+
+#[test]
+fn a_written_element_placement_preserves_box_content_measures() {
+    let source = br#"struct Wrapper {
+  storage: Box<Slots<u8>>;
+}
+
+fn carry() -> result: own unit pure {
+  let initial = box_slots_new::<u8>(capacity: 1_u64);
+  let table = slots_new::<Box<Slots<u8>>, 1>();
+  place_back(window: &table, value: move initial);
+  let empty = box_slots_new::<u8>(capacity: 3_u64);
+  set table[0_u64] = move empty;
+  invariant empty_element: table[0_u64].inner.len == 0_u64;
+  invariant element_capacity: table[0_u64].inner.cap == 3_u64;
+  return unit;
+}
+
+fn construct_element() -> result: own unit pure {
+  let initial = box_slots_new::<u8>(capacity: 1_u64);
+  let wrapper = Wrapper(storage: move initial);
+  let table = slots_new::<Wrapper, 1>();
+  place_back(window: &table, value: move wrapper);
+  let empty = box_slots_new::<u8>(capacity: 3_u64);
+  set table[0_u64] = Wrapper(storage: move empty);
+  invariant empty_element: table[0_u64].storage.inner.len == 0_u64;
+  invariant element_capacity: table[0_u64].storage.inner.cap == 3_u64;
+  return unit;
+}
+"#;
+    assert_accepts(source);
+}
+
+#[test]
+fn an_overwrite_before_or_after_box_placement_kills_the_old_measure() {
+    for statements in [
+        "set original = move replacement;\n  let renamed = move original;",
+        "let renamed = move original;\n  set renamed = move replacement;",
+    ] {
+        let source = format!(
+            r#"fn release(original: own Box<Slots<u8>>, replacement: own Box<Slots<u8>>) -> result: own unit pure contract {{
+  requires original.inner.len <= 0_u64;
+}} {{
+  {statements}
+  free_empty(window: move renamed);
+  return unit;
+}}
+"#
+        );
+        assert_rule_kind(source.as_bytes(), SemanticRule::Op14, |_| true);
+    }
+}
+
+#[test]
+fn a_declared_write_before_or_after_box_placement_kills_the_old_measure() {
+    for statements in [
+        "fill(window: &original);\n  let renamed = move original;",
+        "let renamed = move original;\n  fill(window: &renamed);",
+    ] {
+        let source = format!(
+            r#"fn fill(window: &Box<Slots<u8>>) -> result: own unit writes(window) {{
+  let filled = box_slots_new::<u8>(capacity: 1_u64);
+  place_back(window: &filled.inner, value: 7_u8);
+  set deref(window) = move filled;
+  return unit;
+}}
+
+fn release(original: own Box<Slots<u8>>) -> result: own unit pure contract {{
+  requires original.inner.len <= 0_u64;
+}} {{
+  {statements}
+  free_empty(window: move renamed);
+  return unit;
+}}
+"#
+        );
+        assert_rule_kind(source.as_bytes(), SemanticRule::Op14, |_| true);
+    }
+}
+
+// The second and third selected windows lie beyond repeated Chain and Box
+// nominal identities. Merely stopping the type walk at its first cycle loses
+// their distinct facts. Ordinary constructors and set targets establish the
+// complete paths without relying on a call to publish its Box content.
+const RECURSIVE_BOX_MEASURES: &str = r#"enum Chain {
+  End();
+  Next(window: Box<Ring<u8>>, tail: Box<Chain>);
+}
+
+fn carry(third_window: own Box<Ring<u8>>) -> result: own unit pure contract {
+  requires third_window.inner.len == 2_u64;
+  requires third_window.inner.cap == 8_u64;
+  requires third_window.inner.head == 3_u64;
+} {
+  let end = End();
+  let end_box = box_new::<Chain>(value: move end);
+  let deepest_value = End();
+  let deepest = box_new::<Chain>(value: move deepest_value);
+  set deepest.inner = Next(window: move third_window, tail: move end_box);
+  let second_window = box_ring_new::<u8>(capacity: 4_u64);
+  place_back(window: &second_window.inner, value: 7_u8);
+  let middle_value = End();
+  let middle_box = box_new::<Chain>(value: move middle_value);
+  set middle_box.inner = Next(window: move second_window, tail: move deepest);
+  let first_window = box_ring_new::<u8>(capacity: 4_u64);
+  let root = Next(window: move first_window, tail: move middle_box);
+  let moved = move root;
+  match moved {
+    End() => {
+    }
+    Next(window: first, tail: middle) => {
+      free_empty(window: move first);
+      match move middle.inner {
+        End() => {
+        }
+        Next(window: second, tail: last) => {
+          invariant second_length: second.inner.len == 1_u64;
+          match move last.inner {
+            End() => {
+            }
+            Next(window: third, tail: remaining) => {
+              invariant third_length: third.inner.len == 2_u64;
+              invariant third_capacity: third.inner.cap == 8_u64;
+              invariant third_head: third.inner.head == 3_u64;
+            }
+          }
+        }
+      }
+    }
+  }
+  return unit;
+}
+"#;
+
+#[test]
+fn recursive_box_placements_preserve_distinct_measures_beyond_two_cycles() {
+    assert_accepts(RECURSIVE_BOX_MEASURES.as_bytes());
+}
+
+#[test]
+fn recursive_box_placement_preserves_capacity_and_head_without_length_evidence() {
+    let source = RECURSIVE_BOX_MEASURES
+        .replace("  requires third_window.inner.len == 2_u64;\n", "")
+        .replace(
+            "              invariant third_length: third.inner.len == 2_u64;\n",
+            "",
+        );
+    assert_accepts(source.as_bytes());
+}
+
+#[test]
+fn recursive_box_placement_does_not_revive_an_overwritten_descendants_measure() {
+    let source = RECURSIVE_BOX_MEASURES.replace(
+        "  let second_window =",
+        r#"  let replacement_window = box_ring_new::<u8>(capacity: 4_u64);
+  let replacement_end = End();
+  let replacement_tail = box_new::<Chain>(value: move replacement_end);
+  set deepest.inner = Next(window: move replacement_window, tail: move replacement_tail);
+  let second_window ="#,
+    );
+    assert_rule_kind(source.as_bytes(), SemanticRule::Inv1, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedLocalInvariant { name, .. }
+            if name == "third_length")
+    });
+}
+
+#[test]
+fn a_recursive_descendant_cursors_fact_is_not_the_owners_fact() {
+    let source = br#"struct Node {
+  window: Box<Slots<u8>>;
+  next: Option<Box<Node>>;
+}
+
+fn examine(root: own Node) -> result: own unit pure {
+  let cursor = &root;
+  for (i in 0_u64..2_u64) {
+    match deref(cursor).next {
+      Some(value: child) => {
+        set cursor = &deref(child).inner;
+      }
+      None() => {
+        break;
+      }
+    }
+  }
+  if deref(cursor).window.inner.len == 0_u64 {
+    let moved = move root;
+    free_empty(window: move moved.window);
+    return unit;
+  }
+  return unit;
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Op14, |_| true);
+}
 
 #[test]
 fn a_call_through_a_joined_reference_kills_every_possible_targets_fact() {
