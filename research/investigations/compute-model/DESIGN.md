@@ -489,6 +489,16 @@ heterogeneous loaded costs and no elapsed-performance conclusion.
 
 ## Bounded call-group bridge trial
 
+This is retained candidate evidence. The compiler bridge and its nine
+dedicated regression tests were withdrawn under the prospective stop rule
+after the [amended cost control failed](#amended-cost-result-identical-image-control-failure).
+All eight changed Rust files again match `345e2966a` byte-for-byte, including
+the original twenty-six maintained backend parallel tests and their support.
+The candidate's passing correctness checks and observed A/D overlap remain
+recorded below. Retirement follows the failed cost qualification, not a
+compiler test failure or a measured candidate regression; no language or
+specification rule changed.
+
 The selected compiler experiment retains consecutive full call groups while
 bridging their source-adjacent tail/head pair when that exact pair already
 has PAR-1 permission. The diagnostic N order supplies the concrete consumer:
@@ -578,6 +588,11 @@ removing an emitted precedence alone does not establish a useful speedup.
 
 ### Initial completion observation
 
+This is retained candidate evidence. The DONE-first policy and its added
+native checks were withdrawn after the
+[amended cost control failed](#amended-cost-result-identical-image-control-failure);
+the production runtime again uses the original main join behavior.
+
 The prospective criterion, published in PR #100 before execution, compares
 one baseline and one candidate image through the real lane acquire, publish,
 steal, execute, join and release operations. Publish B, synchronously steal
@@ -626,17 +641,17 @@ pending-target path and avoids the pop's SC writes or claim when DONE is
 observed. Their workload cost remains unqualified. Completion after a pending
 observation can still leave the owner inside a newer helper until it returns.
 
-The maintained regression is in the existing
-[`deque_probe.c`](../../../compiler/src/backend/sched/deque_probe.c): before
-worker startup, strict completed/pending cases also check untouched deque
+The candidate regression is retained in the historical
+[`deque_probe.c`](https://github.com/mbbill/Whitefoot/blob/b68f6777a0ef8c31a41da8a6a785ac6f67e644bb/compiler/src/backend/sched/deque_probe.c): before
+worker startup, strict completed/pending cases also checked untouched deque
 indices for the completed join, result order, exact once and slot reuse in
 both cases before joining the newer offer, for six callbacks total. The
-original 200,000-task concurrent stress follows unchanged; its steal bounds
-exclude and separately verify the single deterministic protocol steal. No
+original 200,000-task concurrent stress followed unchanged; its steal bounds
+excluded and separately verified the single deterministic protocol steal. No
 new executable, runtime feature flag, test target or research dependency is
 introduced.
 
-The maintained revision passed the existing statistics-on/off deque targets,
+The candidate revision passed the existing statistics-on/off deque targets,
 all scheduler smoke modes, and both statistics-on/off ThreadSanitizer deque
 targets on the same host. Each deque image ran the strict ordering/reuse cases
 and its complete 200,000-task stress once; no sanitizer report occurred.
@@ -654,7 +669,7 @@ Separate construction and execution phases stayed below their initial
 
 The tested core SHA-256 is
 `79aefbd14afd647ed22ae5806e57785aee23d3f8136fb003507b5f2fa4d6f625`,
-and the maintained probe SHA-256 is
+and the candidate probe SHA-256 is
 `1e26dd2dd9666b8275b7174c5118d6c54468bcab5adbcc3a52839feb27c91390`.
 All captured source, header and Makefile input hashes remained unchanged
 before and after the four phases. These native observations do not provide
@@ -692,14 +707,16 @@ Before results select the disposition, require:
   same-source timing, numerical benefit/regression thresholds, protected
   wide-group and recursive controls, and a baseline-against-itself control.
 
-The pending [lowering amendment](../../../design/amendments/rolling-call-groups.md)
-replaces the current contiguous-group decision's restriction to unclaimed
-adjacent pairs and adds one owner for the target-selected schedule. The
-[runtime amendment](../../../design/amendments/rolling-group-retirement.md)
-replaces the own-offer-first wording and the whole-group newest-first
-decision: newest-first still holds within each retirement set, but an older
-target can remain below a retained newer offer. No live tree or specification
-rule is changed by this author experiment.
+The experimental lowering proposal relaxed the contiguous-group decision's
+restriction to unclaimed adjacent pairs and added one owner for the
+target-selected schedule. Its runtime proposal changed the own-offer-first
+wording and the whole-group newest-first decision: newest-first still held
+within each retirement set, but an older target could remain below a retained
+newer offer. The current [lowering amendment](../../../design/amendments/rolling-call-groups.md)
+and [runtime amendment](../../../design/amendments/rolling-group-retirement.md)
+instead propose recording rejected adoption after the cost-control stop.
+Both retain unchanged live Decision text as context; only their Rejected
+addition awaits owner ruling. No live tree or specification rule changed.
 
 ### Compiler-only arm with the baseline runtime
 
@@ -801,8 +818,8 @@ compare sequential and unchanged-function bodies. Earlier failed arms remain
 recorded. No favourable rerun or timing claim is allowed. If this final arm
 fails the overlap criterion, defer further compiler/runtime scheduling
 expansion in this investigation; adoption still needs the separately assessed
-correctness and cost evidence. The pending lowering amendment records this
-selection before production edits; no live-tree decision is changed.
+correctness and cost evidence. The then-pending lowering amendment recorded
+this selection before production edits; no live-tree decision changed.
 
 The `tail-first-done-first-runtime` arm passed all four once-only 115-case,
 956-task matrices and rejected all six negative controls. Its raw LLVM has
@@ -818,26 +835,26 @@ sixteen weights, A/B, A/D and C/D overlap counts are 9, 8 and 2, respectively,
 versus 8, 0 and 8 for the preceding DONE-first arm. The C/D reduction is
 retained alongside the recovered A/D overlap in the evidence table. There
 was no favourable rerun, and this arm makes no timing or general throughput
-claim. All nine focused [maintained bridge regressions](../../../compiler/src/backend/tests/parallel.rs)
-pass, including consumed aggregate input storage, mixed refusal, addressed-tail
+claim. All nine focused [candidate bridge regressions](https://github.com/mbbill/Whitefoot/blob/b68f6777a0ef8c31a41da8a6a785ac6f67e644bb/compiler/src/backend/tests/parallel.rs)
+passed, including consumed aggregate input storage, mixed refusal, addressed-tail
 rejection, source argument boundaries, frame/budget refusal, dynamic captures,
 owned-result cleanup and wider/consecutive groups. The full 35-test backend
 parallel module also passed in a separate 20.08-second optimized test execution,
 covering ordinary and wide groups, clone and machine-frame behavior, recursion
 controls, native refusal and runtime linkage.
 
-**Design suitability.** This bounded extension addresses the missing A/D
-consumer through the existing checked-call path, and the final arm supplies
-the selected observed-overlap evidence. Argument boundaries, target refusal
-and continuation labels require one consistent schedule if bridging is
-retained; workload and representation cost remain unqualified. Lowering,
-scalar selection, imported loop
-CFG metadata, frame fitting, ordinary call emission, labels, clone/frontier
-selection and storage lifetime consumers are affected. Keep their existing
-responsibilities; defer singleton-group bridges, broader pending-call
-scheduling and stronger runtime policy until a concrete remaining consumer
-and qualified evidence justify them. The investigation remains the owner of
-the experiment; pending amendments are removed when ruled on.
+**Design suitability.** The final arm demonstrated the missing A/D overlap
+through the existing checked-call path, with passing correctness controls.
+The [failed cost control](#amended-cost-result-identical-image-control-failure)
+leaves workload and representation cost unqualified, so restoring the
+established schedule avoids adopting that added complexity without the
+selected evidence. This does not establish a candidate regression. Any future
+bridge still requires consistent argument boundaries, target refusal,
+continuation labels, clone selection and storage lifetimes, plus a new
+prospectively qualified cost comparison. Singleton-group bridges, broader
+pending-call scheduling and stronger runtime policy remain deferred. The
+investigation retains this experiment; the two rejection proposals remain
+pending owner ruling.
 
 ### Prospective cost qualification of the final bridge
 
@@ -1139,6 +1156,95 @@ without changing compiler or scheduler design. Its extra work is explicit,
 the resource caps remain binding, and all cost-selection thresholds are
 unchanged. Further resolution or scheduling exploration is deferred beyond
 this one amended campaign.
+
+### Amended cost result: identical-image control failure
+
+The one resolution amendment was published at
+`2d7a408946a360499be29b29e9fdc8e1a9e310e8` before implementation or execution.
+The amended null completed all forty cells but failed its fixed symmetric
+bands in two. This ends cost work under the published final stop rule.
+Neither the compiler bridge nor DONE-first receives cost qualification;
+both production candidates and their candidate-specific tests are withdrawn.
+The unchanged main behavior and original tests remain. There was no actual
+candidate timing, so this is not a measured compiler or runtime regression.
+The identical-input variation establishes this control's nonqualification;
+the experiment does not identify its cause.
+
+The only executable changes from the first cost session were the two cheap
+batch constants and matching driver count expectations: W1 1,048,576 and W4
+16,384, with costly batches still 32. Synthetic instrument checks passed.
+The new probe source has SHA-256
+`4a03627460ca290e89348e4318f3d037bf6e3b5a65a2ed4569ef1e59fac2bbe0` and the
+driver `07686b2d467a00e6ebaaf8b6c81fe0fb7190bcf0337bebd095d0515fec10877c`.
+Both arms' plain/traced LLVM and corresponding native LLVM objects are
+byte-identical to their first-session inputs; all frozen runtime objects
+were reused unchanged. Both images share the new probe object
+`3561e97483c57848a753bb1f6afadf3b888404f82e830191d5aa75256e0592fb`.
+The baseline plain image is
+`f3be933a4a2625b01094bc63b0b44577c6928808decd9ac6a5dc795e564010b6` and the
+combined image `3dc6a0484cf0af554feeac265bcd11766ab405350fbd71214ce9f826b2f415d6`.
+All seven executable-input hashes were rechecked unchanged after the run.
+
+The separate native construction phases passed in 2.36/2.48 seconds for B
+and 0.89/0.97 seconds for C, command/guard time respectively: 3.25 seconds
+construction, 3.45 seconds including guards. No compiler emission or
+dependency build was repeated. An unrelated build held the shared guard
+before construction; a later unrelated owner caused the first preflight
+launcher to return 75 before starting any WF process. Those refusals are
+retained. After the owner ended, the still-unstarted preflight ran once:
+all four plain B/C W1/W4 matrices passed 117 cases and 964 task rows each,
+with the existing output-corruption controls. That execution phase took
+0.87 seconds command time and 0.97 seconds including its guard.
+
+The null used the exact same baseline path and SHA-256 for both labels. Its
+ten phases all passed their 30-second caps, taking 2.21–2.46 seconds each in
+command time, 23.25 seconds total, or 23.78 seconds including guards. All
+400 processes completed one checked warmup and five checked measured
+batches: 400 warmup rows and 2,000 measured rows. Every result, cumulative
+task count, input-preservation and canary check passed. The smallest measured
+wall and CPU intervals were 2,934,000 ns and 1,843,000 ns, respectively, so
+the unchanged 1-millisecond floors were satisfied throughout.
+
+The complete forty-cell reduction reported `NOT_QUALIFIED`, with these two
+cells outside the selected symmetric bands. Ratios are baseline-label time
+divided by candidate-label time; both labels execute the baseline image.
+
+| Cell | Wall ratio | CPU ratio | Candidate-label faster wall/CPU pairs | Failed null band |
+| --- | ---: | ---: | ---: | --- |
+| N mode 3, mask 12, W4 | 1.0011157601115761 | 1.2979956932251118 | 3/5, 3/5 | CPU above `1/0.90` |
+| Spine 8, costly-leaf profile 1, W4 | 1.1949915221077345 | 1.1825007903888713 | 4/5, 5/5 | Wall above `1/0.97`; CPU above `1/0.90` |
+
+Direction counts are retained independently for each metric; the null rule
+rejects any band breach and has no four-pair exemption. All forty paired
+rows are retained, including the other thirty-eight within the bands. The
+driver returned 2 after reducing the complete null once. No doubled-work
+control, B/C comparison, runtime-only construction or B/R comparison followed.
+There was no sample/phase repetition after workload start, no sample trimming,
+and no further instrument, batch or threshold correction. Total executed
+correctness plus null phases cost 24.12 seconds, 24.75 seconds including
+guards, separate from construction.
+
+The `cost-resolution/` artifact session retains commands, images, manifests,
+all raw stdout/stderr and the complete reduction separately from the first
+stop. Its null `raw.tsv`, `paired.tsv` and `verdict.txt` have SHA-256
+`ad7bd71245dc849ad68c5af11de96f919501dc135de2c061fd485e3f2aa56990`,
+`1a4aeb55264c9dd15ffb47bf2fa7fc961150d16d5ed62bd9d689b1b88bae3935` and
+`5cf053f5db0358fd0450ae862d95817c0258c9998ed1d28a4626977d2ba35a16`.
+The evidence stream's prior 1,113-line prefix remains unchanged, SHA-256
+`fb550998ecb70729e34522dc4cbad9b446e0576604c95729b666105e7ab95971`, as does
+the earlier 1,080-line prefix. Full machine-local locators remain in the PR
+and conversation rather than repository evidence.
+
+The DONE-first withdrawal restores `core.c` and `deque_probe.c` byte-for-byte
+to `345e2966a`, removing only this unadopted policy and its introduced
+ordering/reuse checks. Original ring reuse, counter and 200,000-task stress
+checks are preserved unchanged. Their hashes are
+`48f0080fd5c43e9e07691a05936c36e232b76d1bde309b6f53bc912176ac3285` and
+`a30b0ab5195da0d26b440fb82d90c980d831504e419c51c24dde6a62afa79667`.
+The candidate's earlier deterministic behavior and focused correctness
+evidence remain valid records of that experiment, not grounds for bypassing
+its cost criterion. Applicable final-tree checks follow the withdrawal;
+none are claimed by this measurement result.
 
 ## Runtime-adjacency all-predecessor probe
 

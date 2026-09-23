@@ -602,7 +602,6 @@ struct IrBuilder<'program> {
     /// identity every written call position has, so this is how a permitted
     /// group is found in the IR.
     call_results: HashMap<NodePath, (IrBlockId, IrValueId)>,
-    call_starts: HashMap<NodePath, (IrBlockId, usize)>,
     /// The permission table of the source function this body belongs to: the
     /// [PAR-1] groups its statements may overlap and the [PAR-2] verdict of
     /// each of its counted loops.
@@ -669,7 +668,6 @@ impl<'program> IrBuilder<'program> {
             addressed_bindings,
             function_results,
             call_results: HashMap::new(),
-            call_starts: HashMap::new(),
             permissions,
             overlap,
             synthesis,
@@ -723,20 +721,6 @@ impl<'program> IrBuilder<'program> {
         if self.current.is_some() || self.blocks.iter().any(|block| block.terminator.is_none()) {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
-        let overlap_bridges = self.overlap_bridges(&overlaps);
-        let mut call_boundaries = self
-            .call_starts
-            .iter()
-            .filter_map(|(path, (block, start))| {
-                let (call_block, result) = self.call_results.get(path)?;
-                (block == call_block).then_some(IrCallBoundary {
-                    result: *result,
-                    block: *block,
-                    start: *start,
-                })
-            })
-            .collect::<Vec<_>>();
-        call_boundaries.sort_by_key(|site| site.result);
         Ok(IrFunction {
             name,
             parameters: self.parameters,
@@ -759,8 +743,6 @@ impl<'program> IrBuilder<'program> {
                 })
                 .collect::<Result<Vec<_>, LoweringFailure>>()?,
             overlaps,
-            overlap_bridges,
-            call_boundaries,
             counted_ranges: self.counted_ranges,
             synthesis,
         })
@@ -866,28 +848,24 @@ impl<'program> IrBuilder<'program> {
         let mut overlaps = Vec::new();
         let mut claimed = HashSet::new();
         let finish = |members: &mut Vec<IrValueId>,
-                      source_run: bool,
                       claimed: &mut HashSet<IrValueId>,
                       overlaps: &mut Vec<IrOverlap>| {
             let members = std::mem::take(members);
             if members.len() >= 2 {
                 claimed.extend(members.iter().copied());
-                overlaps.push(IrOverlap {
-                    members,
-                    source_run,
-                });
+                overlaps.push(IrOverlap { members });
             }
         };
         let runs = permissions
             .runs
             .iter()
-            .map(|run| (true, run.sites.iter().collect::<Vec<_>>()));
+            .map(|run| run.sites.iter().collect::<Vec<_>>());
         let pairs = permissions
             .pairs
             .iter()
             .filter(|pair| pair.verdict.is_eligible())
-            .map(|pair| (false, vec![&pair.first, &pair.second]));
-        for (source_run, sites) in runs.chain(pairs) {
+            .map(|pair| vec![&pair.first, &pair.second]);
+        for sites in runs.chain(pairs) {
             let mut members = Vec::new();
             let mut home = None;
             for site in sites {
@@ -897,22 +875,22 @@ impl<'program> IrBuilder<'program> {
                 // group here. A later contiguous part can start another
                 // group, but no group bridges this intervening statement.
                 let Some(call) = &site.call else {
-                    finish(&mut members, source_run, &mut claimed, &mut overlaps);
+                    finish(&mut members, &mut claimed, &mut overlaps);
                     home = None;
                     continue;
                 };
                 let Some((block, value)) = self.call_results.get(call).copied() else {
-                    finish(&mut members, source_run, &mut claimed, &mut overlaps);
+                    finish(&mut members, &mut claimed, &mut overlaps);
                     home = None;
                     continue;
                 };
                 if claimed.contains(&value) {
-                    finish(&mut members, source_run, &mut claimed, &mut overlaps);
+                    finish(&mut members, &mut claimed, &mut overlaps);
                     home = None;
                     continue;
                 }
                 if home.is_some_and(|previous| previous != block) {
-                    finish(&mut members, source_run, &mut claimed, &mut overlaps);
+                    finish(&mut members, &mut claimed, &mut overlaps);
                 }
                 home = Some(block);
                 let addressed = site
@@ -921,64 +899,13 @@ impl<'program> IrBuilder<'program> {
                 members.push(value);
                 if addressed {
                     // This member must be the group's last, so it ends it.
-                    finish(&mut members, source_run, &mut claimed, &mut overlaps);
+                    finish(&mut members, &mut claimed, &mut overlaps);
                     home = None;
                 }
             }
-            finish(&mut members, source_run, &mut claimed, &mut overlaps);
+            finish(&mut members, &mut claimed, &mut overlaps);
         }
         overlaps
-    }
-
-    /// Retain only the checker's exact complete-statement adjacency. In
-    /// particular its operand-read half, rather than IR dataflow or callee
-    /// rows alone, authorizes the head's argument evaluation beside the tail.
-    fn overlap_bridges(&self, groups: &[IrOverlap]) -> Vec<IrOverlapBridge> {
-        let Some(permissions) = self.permissions else {
-            return Vec::new();
-        };
-        permissions
-            .pairs
-            .iter()
-            .filter_map(|pair| {
-                if !pair.verdict.is_eligible()
-                    || pair
-                        .first
-                        .binding
-                        .is_some_and(|binding| self.addressed_bindings.contains(&binding))
-                {
-                    return None;
-                }
-                let first = pair.first.call.as_ref()?;
-                let second = pair.second.call.as_ref()?;
-                let (left_block, tail) = *self.call_results.get(first)?;
-                let (right_block, head) = *self.call_results.get(second)?;
-                let (argument_block, _) = *self.call_starts.get(second)?;
-                if left_block != right_block || argument_block != right_block {
-                    return None;
-                }
-                groups
-                    .iter()
-                    .find(|group| group.source_run && group.join_site() == Some(tail))?;
-                let right = groups
-                    .iter()
-                    .find(|group| group.source_run && group.members.first() == Some(&head))?;
-                Some(IrOverlapBridge {
-                    tail,
-                    head,
-                    right_join: right.join_site()?,
-                })
-            })
-            .collect()
-    }
-
-    fn note_call_start(&mut self, expression: &CheckedExpression) -> Result<(), LoweringFailure> {
-        if let CheckedExpression::UserCall { call, .. } = expression {
-            let block = self.current.ok_or(LoweringFailure::InvalidCheckedProgram)?;
-            let start = self.current_block_mut()?.instructions.len();
-            self.call_starts.insert(call.clone(), (block, start));
-        }
-        Ok(())
     }
 
     /// Records where a named-function call in call position landed, whatever
@@ -1020,7 +947,6 @@ impl<'program> IrBuilder<'program> {
                     value: expression,
                     ..
                 } => {
-                    self.note_call_start(expression)?;
                     let value = self.expression(expression)?;
                     self.note_call_result(expression, value)?;
                     if self.bindings.insert(*binding, value).is_some() {
@@ -1297,7 +1223,6 @@ impl<'program> IrBuilder<'program> {
         outer_give_target: Option<GiveTarget>,
     ) -> Result<(), LoweringFailure> {
         let scrutinee_expression = scrutinee;
-        self.note_call_start(scrutinee_expression)?;
         let borrowed_payloads = arms
             .iter()
             .flat_map(|arm| &arm.binders)

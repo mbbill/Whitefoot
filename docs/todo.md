@@ -212,20 +212,24 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   results. PAR-2 allows iteration-owned writes, but the current PAR-1/PAR-2
   walkers model one result definition per statement and refuse this form.
   A two-field record admits the same receiver map without added allocation or
-  traversal. Defer a general multi-definition footprint implementation while
-  measuring the algorithm; reopen when that workaround materially complicates
-  a real consumer. Validate complete effects, consumption, exits and lowering
-  for all result ordinals rather than granting a tuple-specific exception.
+  traversal; the retained form now qualifies useful helper discovery.
+  Defer a general multi-definition footprint implementation; reopen when that
+  workaround materially complicates a real consumer. Validate complete effects,
+  consumption, exits and lowering for all result ordinals rather than granting
+  a tuple-specific exception.
 
 - **Initialized allocation can impose serial span on parallel work.** The
   [private-outbox representation](../research/investigations/compute-model/DESIGN.md#private-outboxes-without-frontier-compaction)
   requires a fresh C-by-D head matrix each level; its element fill is a
   sequential emitted loop before otherwise independent routing. Initialization
-  remains linear work but can dominate the full critical path. The end-to-end
-  cost is not yet attributed. Measure fill/allocation separately from useful
-  routing before choosing a general lowering change; preserve initial values,
+  remains linear work but can dominate the full critical path. The sparse
+  oracle and useful helper work are now qualified, but the
+  [FIFO comparison](../research/investigations/compute-model/DESIGN.md#native-phase-qualification-and-prospective-fifo-comparison-2026-09-22)
+  stopped at its identical-image control. The end-to-end cost is not attributed.
+  Measure fill/allocation separately from useful routing before choosing a
+  general lowering change; preserve initial values,
   cleanup and the unchanged sequential image in any later experiment. Defer
-  repair until the sparse oracle and bounded comparison establish materiality.
+  repair until a qualified cost comparison establishes materiality.
 
 - **Loop capture selection remains conservative beyond forwarding.** The
   [needed-capture change](../research/investigations/compute-model/DESIGN.md#needed-loop-captures)
@@ -282,7 +286,7 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   or serial execution. Defer until those active qualifications finish; no
   executor or new concurrency rule is selected by this follow-up.
 
-- **General runtime DAG competitiveness remains unqualified.** The
+- **General DAG scheduling and competitiveness remain unqualified.** The
   [runtime-adjacency probe](../research/investigations/compute-model/DESIGN.md#runtime-adjacency-all-predecessor-probe)
   executes runtime-provided forward graphs with at most two predecessors and
   successors per vertex through ordinary WF source. Both owner mappings pass
@@ -300,6 +304,15 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   precedences, wall/CPU and peak space against a useful native readiness
   executor. An owner-round limitation does not establish that every ordinary
   source formulation needs the same barrier.
+  Separately, the bounded checked-call bridge recovered the selected A/D
+  overlap while reducing observed C/D overlap across its fixed masks. The
+  [amended identical-image control](../research/investigations/compute-model/DESIGN.md#amended-cost-result-identical-image-control-failure)
+  failed before any candidate comparison, so both the bridge and DONE-first
+  runtime change are withdrawn for lack of cost qualification, not a measured
+  implementation regression. Reopen only for a concrete call-group consumer
+  and a bounded comparison with qualified measurement controls, unchanged
+  results/edges and prospective wall/CPU protection for the other masks and W1.
+  Recovered overlap alone selects neither implementation nor a broader executor.
 
 - **Recursive frontier policy suppresses deep work on a spine with side leaves.**
   The [cutoff-attribution control](../research/investigations/compute-model/DESIGN.md#native-qualification-and-cutoff-attribution)
@@ -428,6 +441,13 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   are accepted.
 
 - **The formal compute comparison has unresolved attribution and measurement costs.**
+  The separate [amended DAG cost control](../research/investigations/compute-model/DESIGN.md#amended-cost-result-identical-image-control-failure)
+  completed all forty identical-image cells with correct results and adequate
+  interval resolution, but two cells exceeded their fixed symmetric wall/CPU
+  criteria. No candidate comparison ran. The variation is unattributed and
+  supplies neither a compiler-regression verdict nor evidence of host noise;
+  any later attribution needs its own bounded discriminator, not a favorable
+  rerun or relaxed threshold.
   [Hosted observations](../research/investigations/test-economy/redesign.md#identical-image-host-control-failure)
   include an identical-image stencil control failing the unchanged three-percent
   band, and a separate actual records comparison failing at two widths while

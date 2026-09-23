@@ -82,7 +82,11 @@ Registering edges supplies the notification thresholds; no constructor
 predecessor count is added a second time.
 
 Cost construction uses the separately frozen main/final compiler emissions
-and ordinary runtime objects. Set `DAG_PROBE_OBJECT` to the same absolute
+and ordinary runtime objects. Current compiler/runtime sources and their
+defaults contain restored main behavior; they do not recreate the withdrawn
+candidate arms. Historical reproduction requires explicitly selecting the
+retained compiler and runtime inputs identified by each arm's recorded
+manifests. Set `DAG_PROBE_OBJECT` to the same absolute
 scratch object path for both native builds. The probe's plain-only `measure`
 mode enters the ordinary WF floor without a oneTBB arena. Its fixed batch
 checks final values, cumulative task counts, input preservation and canaries
@@ -124,6 +128,18 @@ candidate result, with separate data and unchanged thresholds/stop controls.
 It does not relabel the stopped run as a pass. See the
 [cost result](../../investigations/compute-model/DESIGN.md#cost-qualification-result-interval-floor-stop)
 for exact identities, setup-access refusal, separate phase costs and limits.
+
+The one amended campaign completed all forty identical-image cells with the
+larger fixed batches and valid intervals. Its symmetric null failed N12/W4
+on CPU ratio 1.2979956932 and spine-8-1/W4 on wall 1.1949915221 and CPU
+1.1825007904. The other thirty-eight cells stayed within the bands. No
+doubled-work control or candidate/runtime-only comparison followed, and no
+further correction or rerun is selected. The final disposition withdraws both
+production candidates for lack of cost qualification; it does not claim an
+implementation regression or identify the cause of identical-input
+variation. The [amended result](../../investigations/compute-model/DESIGN.md#amended-cost-result-identical-image-control-failure)
+retains all forty rows, raw identities and separate construction/execution
+totals. Ordinary main scheduler behavior and its original tests are restored.
 
 Use an existing compiler, a dedicated scratch work directory, and the existing
 oneTBB cache pinned by `deps.sh` (`3046c8b0c29df995980003ea24f4d78c80ec0c8d`).

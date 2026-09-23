@@ -1535,16 +1535,13 @@ pub enum RecursionBudget {
     Pinned(std::num::NonZeroU8),
 }
 
-/// One group of sibling calls whose evaluations may be overlapped
+/// One group of pure sibling calls whose evaluations may be overlapped
 /// [PAR-1 candidate].
 ///
 /// The members are the values those calls define, in source order, all in one
 /// block of one function. The compute scheduler may hand out every member but
 /// the last, runs that source-last member on the calling lane, and joins the
-/// handed-out calls before any value use or block exit. An exact permitted
-/// bridge may offer the last member too; its target-selected schedule retires
-/// the earlier members before the next head's arguments, then the old tail
-/// after that head, without changing either group's complete permission.
+/// handed-out calls before any value use or block exit.
 ///
 /// The group is a permission the target stage may take, never an obligation:
 /// a target that hands nothing out emits exactly the sequential code, because
@@ -1555,14 +1552,11 @@ pub enum RecursionBudget {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IrOverlap {
     members: Vec<IrValueId>,
-    /// Only complete-run groups supply the two sides of a rolling bridge.
-    /// Adjacent-pair recovery and synthesized splitters keep their old joins.
-    source_run: bool,
 }
 
 impl IrOverlap {
-    /// The original group's source-last member and join identity, retained
-    /// even when a selected bridge offers this member instead of inlining it.
+    /// The value whose definition is the group's join site: the last member,
+    /// which runs on the calling thread.
     pub fn join_site(&self) -> Option<IrValueId> {
         self.members.last().copied()
     }
@@ -1573,24 +1567,6 @@ impl IrOverlap {
             .split_last()
             .map_or(&[][..], |(_, earlier)| earlier)
     }
-}
-
-/// The beginning of a source call statement, before any argument evaluation.
-/// Instruction deletion remaps this boundary together with the ordinary CFG.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct IrCallBoundary {
-    pub(crate) result: IrValueId,
-    pub(crate) block: IrBlockId,
-    pub(crate) start: usize,
-}
-
-/// One exact permitted adjacency between consecutive full groups. The group
-/// identities are their original source-last results, preserved by pruning.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct IrOverlapBridge {
-    pub(crate) tail: IrValueId,
-    pub(crate) head: IrValueId,
-    pub(crate) right_join: IrValueId,
 }
 
 /// How large a lane frame a handed-out call is granted, in bytes.
@@ -1779,8 +1755,6 @@ pub struct IrFunction {
     /// Counted extents retained only for the scheduler's work estimate.
     counted_ranges: Vec<IrCountedRange>,
     overlaps: Vec<IrOverlap>,
-    overlap_bridges: Vec<IrOverlapBridge>,
-    call_boundaries: Vec<IrCallBoundary>,
     synthesis: Option<IrSynthesis>,
 }
 
@@ -1818,37 +1792,6 @@ impl IrFunction {
     /// source order and pairwise disjoint in their members.
     pub fn overlaps(&self) -> &[IrOverlap] {
         &self.overlaps
-    }
-
-    pub(crate) fn overlap_bridges(&self) -> &[IrOverlapBridge] {
-        &self.overlap_bridges
-    }
-
-    pub(crate) fn call_boundary(&self, result: IrValueId) -> Option<IrCallBoundary> {
-        self.call_boundaries
-            .iter()
-            .find(|site| site.result == result)
-            .copied()
-    }
-
-    /// Keep source argument boundaries attached to their instruction prefix
-    /// when capture pruning or refused-chunk splicing removes definitions.
-    fn retain_instructions(&mut self, block: usize, mut keep: impl FnMut(&IrInstruction) -> bool) {
-        let instructions = &mut self.blocks[block].instructions;
-        let mut prefix = Vec::with_capacity(instructions.len() + 1);
-        let mut retained = 0;
-        instructions.retain(|instruction| {
-            prefix.push(retained);
-            let kept = keep(instruction);
-            retained += usize::from(kept);
-            kept
-        });
-        prefix.push(retained);
-        for site in &mut self.call_boundaries {
-            if site.block.index() == block {
-                site.start = prefix[site.start];
-            }
-        }
     }
 
     pub(crate) fn contains_buffer(&self) -> bool {

@@ -17,7 +17,7 @@ sub cells {
 }
 sub repeats {
     my ($fixture, $width) = @_;
-    return $width == 1 ? 65536 : 4096
+    return $width == 1 ? 1048576 : 16384
         if $fixture eq 'n-0-3' || $fixture eq 'wide-cheap' || $fixture eq 'spine-8-0';
     return 32;
 }

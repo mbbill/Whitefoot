@@ -629,7 +629,7 @@ impl IrBuilder<'_> {
         // it; a group whose members do not all land in this body resolves to
         // nothing, which is the narrowing `overlaps` already performs.
         let overlaps = builder.overlaps();
-        let call_results = builder.call_results.clone();
+        let call_results = std::mem::take(&mut builder.call_results);
         let mut function = builder.finish(String::new(), overlaps, Some(IrSynthesis::Chunk))?;
         let needed = if prune_captures {
             prune_capture_parameters(&mut function, reconstruction_count)?
@@ -658,7 +658,7 @@ impl IrBuilder<'_> {
         accumulator: Option<BindingId>,
     ) -> Result<(), LoweringFailure> {
         let BuiltChunk {
-            mut function,
+            function,
             binding_roots,
             reconstructions,
             call_results,
@@ -690,16 +690,14 @@ impl IrBuilder<'_> {
             .map(|index| IrBlockId::from_index(block_offset + index))
             .collect::<Result<Vec<_>, _>>()?;
         let block = |original: IrBlockId| blocks[original.index()];
-        for block_index in 0..function.blocks.len() {
+        for mut original in function.blocks {
             // Bind a reconstructed capture's root directly to the original
             // parent slot. No Box snapshot, inverse projection or duplicate
             // local owner slot is needed by the ordinary fallback.
-            function.retain_instructions(block_index, |instruction| {
+            original.instructions.retain(|instruction| {
                 !matches!(instruction, IrInstruction::Define { result, .. }
                     if reconstruction[result.index()])
             });
-        }
-        for mut original in function.blocks {
             for (parameter, _) in &mut original.parameters {
                 *parameter = value(*parameter);
             }
@@ -752,14 +750,6 @@ impl IrBuilder<'_> {
             self.source_calls.push(source_call);
         }
         for (path, (original_block, result)) in call_results {
-            if let Some(site) = function
-                .call_boundaries
-                .iter()
-                .find(|site| site.result == result)
-            {
-                self.call_starts
-                    .insert(path.clone(), (block(site.block), site.start));
-            }
             self.call_results
                 .insert(path, (block(original_block), value(result)));
         }
@@ -987,7 +977,6 @@ impl IrBuilder<'_> {
             splitter_symbol(ordinal),
             vec![IrOverlap {
                 members: vec![left, right],
-                source_run: false,
             }],
             Some(IrSynthesis::Splitter),
         )
@@ -1124,7 +1113,7 @@ fn prune_capture_parameters(
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    for block in &mut function.blocks {
+    for (block_index, block) in function.blocks.iter_mut().enumerate() {
         block.parameters.retain(|(value, _)| needed[value.index()]);
         if let IrTerminator::Jump {
             target, arguments, ..
@@ -1133,14 +1122,15 @@ fn prune_capture_parameters(
             let mut keep = block_parameters[target.index()].iter();
             arguments.retain(|_| *keep.next().expect("checked jump arity"));
         }
+        if block_index == 0 {
+            let mut index = 0;
+            block.instructions.retain(|instruction| {
+                let reconstruction = index < reconstruction_count;
+                index += 1;
+                !reconstruction || matches!(instruction, IrInstruction::Define { result, .. } if needed[result.index()])
+            });
+        }
     }
-    let mut index = 0;
-    function.retain_instructions(0, |instruction| {
-        let reconstruction = index < reconstruction_count;
-        index += 1;
-        !reconstruction
-            || matches!(instruction, IrInstruction::Define { result, .. } if needed[result.index()])
-    });
     function
         .parameters
         .retain(|(value, _)| needed[value.index()]);
@@ -1452,8 +1442,6 @@ mod tests {
             values: types.clone(),
             counted_ranges: Vec::new(),
             overlaps: Vec::new(),
-            overlap_bridges: Vec::new(),
-            call_boundaries: Vec::new(),
             synthesis: Some(IrSynthesis::Chunk),
             blocks: vec![
                 IrBlock {

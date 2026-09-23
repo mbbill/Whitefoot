@@ -1111,3 +1111,60 @@ bridge-cost-resolution-protocol	amendment	status=prospective, awaiting publicati
 bridge-cost-resolution-protocol	batch	cheap_W1=1048576	cheap_W4=16384	costly=32	W1_multiplier=16	W4_multiplier=4	scaled_prior_W1_wall_ns=5328000	input_program_and_graph=unchanged	impact=more complete calls, longer possible phases
 bridge-cost-resolution-protocol	invariants	floor_ns=1000000	cells=40	passes=5	warmups=1	samples=5	thresholds=unchanged	null_and_slowdown_controls=unchanged	phase_cap_seconds=30	max_construction_jobs=2	new_measurements=not started
 bridge-cost-resolution-protocol	stop	resolution_corrections_allowed=1	any_revised_interval_correctness_timeout_null_control_issue=stop all cost work and withdraw both candidates	further_instrument_change=forbidden	conditional_runtime_arm=only after valid controls and complete combined comparison	old_raw_rows=kept separate
+bridge-cost-resolution	publication	amendment=2d7a408946a360499be29b29e9fdc8e1a9e310e8	prior_rows=1113	prior_prefix_sha256=fb550998ecb70729e34522dc4cbad9b446e0576604c95729b666105e7ab95971	old_session=bridge-cost, unchanged
+bridge-cost-resolution	input	probe_source_sha256=4a03627460ca290e89348e4318f3d037bf6e3b5a65a2ed4569ef1e59fac2bbe0	driver_sha256=07686b2d467a00e6ebaaf8b6c81fe0fb7190bcf0337bebd095d0515fec10877c	cheap_W1=1048576	cheap_W4=16384	costly=32
+bridge-cost-resolution	input	main_plain_image_sha256=f3be933a4a2625b01094bc63b0b44577c6928808decd9ac6a5dc795e564010b6	final_plain_image_sha256=3dc6a0484cf0af554feeac265bcd11766ab405350fbd71214ce9f826b2f415d6	shared_probe_object_sha256=3561e97483c57848a753bb1f6afadf3b888404f82e830191d5aa75256e0592fb
+bridge-cost-resolution	static	both_arms_plain_and_trace_LLVM=byte-identical to first session	both_arms_plain_and_trace_LLVM_objects=byte-identical to first session	all_runtime_objects=reused immutable first-session objects	executable_input_manifest_recheck=all7 passed
+bridge-cost-resolution	construction	B_real_seconds=2.36	B_guard_seconds=2.48	C_real_seconds=0.89	C_guard_seconds=0.97	real_total_seconds=3.25	guard_total_seconds=3.45	compiler_emissions=0	dependency_builds=0	exit=0
+bridge-cost-resolution	setup	preconstruction_external_owner=83833	preflight_guard_refusal_owner=92922	refusal_exit=75	WF_processes_started_by_refused_setup=0	preflight_after_guard=once only	refusal_log_sha256=bf43c1afddad12e324649c9761a97b4a11ac9852808035cd5e6319b5967160c2
+bridge-cost-resolution	correctness	B_W1=PASS117cases964tasks	B_W4=PASS117cases964tasks	C_W1=PASS117cases964tasks	C_W4=PASS117cases964tasks	real_seconds=0.87	guard_seconds=0.97
+bridge-cost-resolution	null_identity	both_label_image_sha256=f3be933a4a2625b01094bc63b0b44577c6928808decd9ac6a5dc795e564010b6	both_label_path=cost-resolution/main/build/dag_fanin_cost_plain	available_CPUs=8	wall_clock=CLOCK_MONOTONIC	CPU_clock=task_info_live_plus_exited
+bridge-cost-resolution	null_execution	phases=10	processes=400	warmup_rows=400	measured_rows=2000	cells=40	minimum_wall_ns=2934000	minimum_CPU_ns=1843000	all_value_count_input_canary_checks=PASS	all_interval_floors=PASS
+bridge-cost-resolution	null_cost	phase_real_min_seconds=2.21	phase_real_max_seconds=2.46	real_total_seconds=23.25	guard_total_seconds=23.78	phase_cap_seconds=30	all_phases_exit=0
+bridge-cost-resolution	execution_total	correctness_plus_null_real_seconds=24.12	correctness_plus_null_guard_seconds=24.75	construction_excluded=true
+bridge-cost-resolution	null_artifact	raw_sha256=ad7bd71245dc849ad68c5af11de96f919501dc135de2c061fd485e3f2aa56990	paired_sha256=1a4aeb55264c9dd15ffb47bf2fa7fc961150d16d5ed62bd9d689b1b88bae3935	verdict_sha256=5cf053f5db0358fd0450ae862d95817c0258c9998ed1d28a4626977d2ba35a16	artifact_session=cost-resolution/
+bridge-cost-resolution	paired-columns	fixture	width	wall_B_over_C	cpu_B_over_C	wall_C_slower_pairs	cpu_C_slower_pairs	wall_C_faster_pairs	cpu_C_faster_pairs	B_wall_ns_per_call	C_wall_ns_per_call	B_cpu_ns_per_call	C_cpu_ns_per_call	paired_wall_delta_ns_per_call	verdict
+bridge-cost-resolution	null-paired	n-0-3	1	1.002262443438914	1.0018867924528303	2	2	3	3	5.06591796875	5.05828857421875	5.062103271484375	5.0554275512695312	-0.011444091796875	pass
+bridge-cost-resolution	null-paired	n-0-3	4	0.97491821155943292	1.0286870653025375	3	2	2	3	979.1259765625	1507.568359375	3766.54052734375	5142.4560546875	23.86474609375	pass
+bridge-cost-resolution	null-paired	n-1-3	1	1.0055096418732783	1.0042905301869445	0	0	5	5	102656.25	101906.25	102406.25	101843.75	-562.5	pass
+bridge-cost-resolution	null-paired	n-1-3	4	0.99596076168493941	0.98946498657302207	5	4	0	1	108031.25	108812.5	148656.25	149812.5	437.5	pass
+bridge-cost-resolution	null-paired	n-2-3	1	1.0015356265356266	1.0018438844499078	2	1	3	3	101906.25	101812.5	101875	101687.5	-156.25	pass
+bridge-cost-resolution	null-paired	n-2-3	4	0.99456366237482119	1.0014638226683397	3	2	2	3	108906.25	109468.75	149656.25	151125	593.75	pass
+bridge-cost-resolution	null-paired	n-3-3	1	1.0003067014261617	1.0001534448365812	2	1	3	3	203843.75	203781.25	203687.5	203687.5	-62.5	pass
+bridge-cost-resolution	null-paired	n-3-3	4	1.000278164116829	0.98884649251540946	2	3	3	2	112375	112343.75	210562.5	212937.5	-31.25	pass
+bridge-cost-resolution	null-paired	n-4-3	1	1.003688902551491	1.0033825338253382	1	1	4	4	102093.75	101812.5	102062.5	101750	-375	pass
+bridge-cost-resolution	null-paired	n-4-3	4	1.0167533217793183	1.0122311261071277	1	1	4	4	110000	108468.75	150000	148906.25	-1812.5	pass
+bridge-cost-resolution	null-paired	n-5-3	1	0.9995406522737712	0.99954037076758084	3	3	2	2	204000	204250	203875	204093.75	93.75	pass
+bridge-cost-resolution	null-paired	n-5-3	4	1.0031357324175003	1.0029695619896066	1	1	4	4	210218.75	209593.75	247562.5	246812.5	-656.25	pass
+bridge-cost-resolution	null-paired	n-6-3	1	0.99938631482049711	0.999539453484802	3	3	2	2	203750	203812.5	203718.75	203750	125	pass
+bridge-cost-resolution	null-paired	n-6-3	4	1.0008935219657484	0.99823031222348624	2	4	3	1	210031.25	209875	247031.25	247218.75	-187.5	pass
+bridge-cost-resolution	null-paired	n-7-3	1	1.0044079958995387	1.0043068088597211	1	1	4	4	306187.5	305875	306062.5	305750	-1343.75	pass
+bridge-cost-resolution	null-paired	n-7-3	4	1.0004935834155972	0.99344262295081964	2	3	3	2	253937.5	253843.75	382593.75	384656.25	-125	pass
+bridge-cost-resolution	null-paired	n-8-3	1	0.99877225291589933	0.99785078292907581	3	3	2	2	102031.25	102218.75	101937.5	102093.75	125	pass
+bridge-cost-resolution	null-paired	n-8-3	4	1.0083936324167873	1.0206663854913538	1	1	4	4	111281.25	108343.75	155500	148781.25	-906.25	pass
+bridge-cost-resolution	null-paired	n-9-3	1	0.99862237869279047	0.99800429843414185	3	4	1	1	203781.25	203968.75	203625	203937.5	281.25	pass
+bridge-cost-resolution	null-paired	n-9-3	4	1.0093959731543625	1.0108791903858318	2	2	3	3	211500	210250	249718.75	247125	-1968.75	pass
+bridge-cost-resolution	null-paired	n-10-3	1	1	0.99985083532219565	2	3	2	2	203843.75	204093.75	203718.75	203968.75	0	pass
+bridge-cost-resolution	null-paired	n-10-3	4	0.99955403597443138	1.0030291556228701	3	2	1	3	210093.75	210937.5	247781.25	247750	93.75	pass
+bridge-cost-resolution	null-paired	n-11-3	1	1.0006959634122092	1.0007957032027055	2	2	3	3	314531.25	305562.5	314437.5	305406.25	-218.75	pass
+bridge-cost-resolution	null-paired	n-11-3	4	0.97726111394992332	1.0062059454489733	4	2	1	3	244625	244625	396687.5	395468.75	5562.5	pass
+bridge-cost-resolution	null-paired	n-12-3	1	1.0033752684872661	1.0032233307751344	2	2	3	3	204875	203687.5	204375	203625	-687.5	pass
+bridge-cost-resolution	null-paired	n-12-3	4	1.0011157601115761	1.2979956932251118	1	2	3	3	112500	112187.5	202000	153781.25	-125	inconclusive_null
+bridge-cost-resolution	null-paired	n-13-3	1	0.99795668165100127	0.99785363859362219	3	3	2	2	306281.25	305875	306187.5	305750	625	pass
+bridge-cost-resolution	null-paired	n-13-3	4	0.99607361963190189	0.99648635397940843	4	4	1	1	253062.5	253812.5	381093.75	382437.5	1000	pass
+bridge-cost-resolution	null-paired	n-14-3	1	1.0003066857493355	1.0006136224176723	2	2	3	3	305781.25	305687.5	305750	305562.5	-93.75	pass
+bridge-cost-resolution	null-paired	n-14-3	4	1.0035271064663618	0.99310012836970474	1	4	4	1	240812.5	239531.25	390718.75	392593.75	-843.75	pass
+bridge-cost-resolution	null-paired	n-15-3	1	0.99969381506429889	0.99977013255689218	3	3	2	2	407812.5	407968.75	407687.5	407843.75	125	pass
+bridge-cost-resolution	null-paired	n-15-3	4	0.99928335961014758	0.98674410659378198	4	3	1	2	217250	217406.25	451281.25	431000	156.25	pass
+bridge-cost-resolution	null-paired	wide-cheap	1	0.99961627014581733	0.99980817187799731	3	3	2	2	4.9829483032226562	4.9772262573242188	4.9800872802734375	4.9762725830078125	0.0019073486328125	pass
+bridge-cost-resolution	null-paired	wide-cheap	4	0.99338387319090282	0.96749288395173683	4	4	1	1	1248.1689453125	1256.04248046875	4688.53759765625	4884.33837890625	8.7890625	pass
+bridge-cost-resolution	null-paired	wide-costly	1	0.99747281360085771	0.99754864409376431	3	3	1	2	407593.75	408062.5	407437.5	407937.5	1031.25	pass
+bridge-cost-resolution	null-paired	wide-costly	4	0.99885681623320954	0.93476085651390839	3	3	2	2	109312.5	109500	291937.5	312312.5	125	pass
+bridge-cost-resolution	null-paired	spine-8-0	1	0.99928850942725012	0.99957295373665478	3	3	2	2	13.373374938964844	13.385772705078125	13.369560241699219	13.379096984863281	0.0095367431640625	pass
+bridge-cost-resolution	null-paired	spine-8-0	4	0.98078467985322537	0.93587938392218872	4	3	1	2	2776.55029296875	2819.82421875	10613.58642578125	10859.19189453125	54.01611328125	pass
+bridge-cost-resolution	null-paired	spine-8-1	1	0.9994257054251694	0.9998467432950191	3	3	2	2	814875	815062.5	814593.75	814687.5	468.75	pass
+bridge-cost-resolution	null-paired	spine-8-1	4	1.1949915221077345	1.1825007903888713	1	0	4	5	283281.25	229031.25	935062.5	790750	-46718.75	inconclusive_null
+bridge-cost-resolution	stop	verdict=NOT_QUALIFIED	failed_cells=2	within_band_cells=38	N12W4=CPU upper null band	spine8profile1W4=wall and CPU upper null bands	driver_exit=2	complete_null_reductions=1
+bridge-cost-resolution	not_run	doubled_work_controls=0	combined_candidate_timing=0	runtime_only_construction=0	runtime_only_timing=0	further_measurement=none
+bridge-cost-resolution	withdrawal	compiler_bridge=withdraw	DONE_first=withdraw	basis=selected identical-image control nonqualification	implementation_regression=not established	cause_of_identical_input_variation=not identified	further_instrument_change=none	reruns=0
+bridge-cost-resolution	runtime_retirement	core_and_deque_probe=byte-identical to345e2966a	original200000task_stress=preserved	core_sha256=48f0080fd5c43e9e07691a05936c36e232b76d1bde309b6f53bc912176ac3285	deque_probe_sha256=a30b0ab5195da0d26b440fb82d90c980d831504e419c51c24dde6a62afa79667	post_withdrawal_tests=not claimed here

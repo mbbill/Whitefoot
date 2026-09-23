@@ -768,7 +768,7 @@ int run_measurement(int argc, char **argv) {
     const Expected expected = oracle(graph);
     const bool cheap = std::all_of(graph.costs.begin(), graph.costs.end(),
                                    [](std::uint64_t cost) { return cost == 1; });
-    const unsigned repeats = cheap ? (workers == 1 ? 65536U : 4096U) : 32U;
+    const unsigned repeats = cheap ? (workers == 1 ? 1048576U : 16384U) : 32U;
     const unsigned actual_repeats = repeats * (argc == 7 ? 2U : 1U);
     const std::size_t count = graph.costs.size();
     const TaskCell guard{guard_value, ~guard_value};
