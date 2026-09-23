@@ -735,7 +735,7 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_bound_routed_relation_publishes_only_at_its_direct_selected_arm() {
+fn a_bound_routed_relation_follows_a_named_outcome_to_its_selected_arm() {
     let source = r#"interface RoutedIdentity {
   fn choose(value: own i32) -> outcome: own Result<i32, u8> pure contract {
     ensures when Ok(value: selected): selected == value;
@@ -781,13 +781,18 @@ fn main() -> status: own ExitStatus pure {
         );
     });
 
-    // A routed relation is not an unrouted token carried by a named whole
-    // outcome. Only making the call the direct match scrutinee selects it.
+    // The formal boundary supplies conditional evidence at the call; naming
+    // the outcome preserves it without strengthening the supplied contract.
     let indirect = source.replace(
         "  match RoutedIdentity::choose(value: value) {",
         "  let outcome = RoutedIdentity::choose(value: value);\n  match outcome {",
     );
-    assert_behavior_rule(&indirect, SemanticRule::Fn8);
+    with_semantics(indirect.as_bytes(), |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
 }
 
 /// A bound call cannot form a recursive postcondition component with its

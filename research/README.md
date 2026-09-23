@@ -38,6 +38,9 @@ they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge bounda
 - [Source certificate checking cost](investigations/proof-certificate-architecture/CHECKING-COST.md):
   separate written-proof length from entering-context size and attribute the
   large `proof_use` cost without changing its accepted rules.
+- [Result proof transport](investigations/result-proof-transport/DESIGN.md):
+  compare verified result facts across direct matches, named outcomes and
+  propagation, including capture, invalidation and composition boundaries.
 - [Incremental L0 closure](investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md):
   keep fact states' closed cores and insert fresh edges instead of recomputing
   the cubic closure, relaxing only which equal-bound L0 derivation is retained.

@@ -1,0 +1,32 @@
+fn smaller() -> result: own Result<i32, Overflow> pure contract {
+  ensures when Ok(value: payload): payload < 8_i32;
+} {
+  return Ok<i32, Overflow>(value: 0_i32);
+}
+
+fn larger() -> result: own Result<i32, Overflow> pure contract {
+  ensures when Ok(value: payload): payload < 10_i32;
+} {
+  return Ok<i32, Overflow>(value: 0_i32);
+}
+
+fn bounded(value: own i32) -> result: own unit pure contract {
+  requires value < 8_i32;
+} {
+  return unit;
+}
+
+fn consumer(choose: own Bool) -> result: own Result<unit, Overflow> pure {
+  let outcome = if choose {
+    give smaller();
+  } else {
+    give larger();
+  }
+  let value = propagate outcome;
+  bounded(value: value);
+  return Ok<unit, Overflow>(value: unit);
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

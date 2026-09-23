@@ -36,6 +36,10 @@ pub(crate) enum TermKind {
     Constant(i128),
     /// An in-scope integer-typed const-generic parameter, judged symbolically.
     ConstParameter(DeclarationId),
+    /// The typed payload parameter of one isolated conditional Result context.
+    /// Contexts interpret this parameter independently; selection substitutes
+    /// it away before publishing anything into ordinary flow.
+    ResultPayload(IntegerType),
     /// A tracked place [ENT-2] clause (a) whose final selected type is one
     /// fragment type, carried as the one resolved path the checker has
     /// [REF-1].

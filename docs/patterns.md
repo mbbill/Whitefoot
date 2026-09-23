@@ -460,3 +460,32 @@ Current unresolved language and compiler questions are recorded in
 pattern does not authorize retired syntax or a new mechanism. Reduce the need
 to a small source case, identify the specification rule that admits or refuses
 it, and record measured cost only when performance selects between alternatives.
+
+## P15. Keep a Result's evidence with its value
+
+A local `Result` with an integer success payload retains its verified success
+relations when named, copied, moved, assigned or delivered by `give`. A match's
+own `Ok` binder and a successful `propagate` make those relations available.
+The error edge keeps its ordinary return and cleanup behavior [FN-9, ENT-5].
+
+```whitefoot
+let outcome = bounded(count: limit);
+let saved = outcome;
+let index = propagate saved;
+```
+
+If `bounded` declares its Ok payload less than `count`, `index < limit` is
+available after propagation while that relation remains valid. The fragment
+assumes that contract and a compatible enclosing Result return. A wrapper may
+return the named outcome or the call directly; its own routed `ensures` must
+still be proved. The
+[complete transport case](../tests/conformance/cases/fn9-pos-result-value-transport.wf)
+shows both forms and executes success and error paths.
+
+Evidence describes the value that was evaluated. Replacing the original
+binding does not change an earlier copy. Changing supporting storage does not
+retarget an old relation to the new contents, and merely holding an outcome
+does not assert that it is Ok. A branch join keeps only common consequences:
+`payload < 8` on one path and `payload < 10` on another retain `payload < 10`.
+An unchanged outcome can cross a loop head; one changed by a continuing
+backedge cannot reuse the initial payload's evidence there.
