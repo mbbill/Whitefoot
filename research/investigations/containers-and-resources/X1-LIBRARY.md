@@ -903,8 +903,9 @@ under TYPE-6 (the resolution diagnostic is classified TYPE-5). The later node
 can instantiate that earlier entry with itself. This ordinary type argument
 changes neither storage nor the ownership protocol.
 
-These shapes pass the bounded ownership probe below; the complete map still
-awaits admission and execution. K/V have no copy/drop bound. The ceiling
+The complete library and maintained caller using these shapes now admit and
+execute as recorded below; the representation remains a cost candidate.
+K/V have no copy/drop bound. The ceiling
 limits logical entries; nodes grow by fixed-size Box
 allocation, with no allocation-failure result. Replacement remains available
 at the ceiling. A consistent comparator and environment determine map order;
@@ -966,8 +967,8 @@ The complete mutation chain is part of the experiment, including deletion:
   work for k results at height h under lawful order. Full visitation/cleanup
   is O(n); recursively consuming suffixes needs no stored reference stack.
 
-The bounded probe qualifies split, merge and root contraction, not yet the
-complete insertion/deletion chain. OP-12's
+The bounded probe isolates split, merge and root contraction; the maintained
+caller supplies the complete insertion/deletion chain below. OP-12's
 affine/copy update does not admit a linear `set link = f(move link)`. Swapping
 through local None preserves owners but does not publish the vacant variant
 needed to discard a linear temporary; explicit one-slot windows avoid that
@@ -1008,9 +1009,9 @@ particular capacity premise by attaching each following edge to its separator
 entry. Its zero-or-one links are ordinary data, not stored references or a
 new proof mechanism. Its nodrop split, sibling borrow/merge and root-contraction
 probe builds in 0.62 seconds and executes in 0.44 seconds, consuming all 15
-pairs on the expected merged branch. Complete map admission, the independent
-operation-chain oracle and cost measurements remain outstanding. A two-window
-implementation with a genuine
+pairs on the expected merged branch. The full map subsequently passes the
+independent operation-chain oracle below; cost measurements remain outstanding.
+A two-window implementation with a genuine
 checked operation protocol remains an alternative; an impossible failure arm
 added only to discharge its missing relation does not establish that protocol.
 
@@ -1066,12 +1067,43 @@ results by workload instead of declaring universal native parity or an upfront
 winner. Any proposed compiler/proof improvement needs the completed ordinary
 consumer and an isolated material cost or exact rule discrepancy.
 
+The first admitted source leaves two concrete insertion costs for that
+comparison: it searches for replacement before a second descent for an absent
+key, and passes the offered Pair by value through recursive insertion. The
+source C control must preserve both. If either materially separates it from
+the direct control, a single descent could combine replacement with insertion,
+while an ordinary one-slot Pair carrier could keep descending arguments
+pointer-sized and take the owner only at the leaf. These are source-level
+alternatives, not a request for a new mechanism. The first must retain
+replacement at the logical ceiling and return an absent offered owner without
+mutation; the second must prove its entry/exit length through each recursive
+helper. Neither alternative is implemented or selected by admission alone.
+
 Correctness uses an independent sorted oracle and exact owner accounting:
 zero/one entries, root splits, both borrow directions, merges, internal-key
 deletion, contraction to empty, reuse, equal-key replacement with distinct
 owners, edit returning an owned value, empty/inverted ranges and partial final
 cleanup. Hostile comparisons check bounded progress and ownership, not sorted
 semantics. The owning/nodrop chain must cover every operation above.
+
+The complete [library](../../../lib/containers/ordered-map.wf) and
+[maintained caller](../../../tests/programs/containers/ordered-map-program.wf)
+now pass that chain through the existing container corpus harness. The
+independent sorted-array oracle observes each mutation and traversal; owning
+keys/values, an owned edit result, refusal/retry and hostile comparators share
+an exact serial ledger. Sequential and parallel lowering both pass ordinary
+execution and dirty/quarantined allocation observation. Each observer records
+exactly 64 allocations released once: 22 scalar tree nodes, three owning nodes
+and 39 payload Boxes; payload serials zero through 38 are each consumed once.
+No observer change, compiler change or specification amendment was needed.
+
+Clean gate-profile Rust harness construction took 48.84 seconds including its
+guard. The focused corpus test then took 5.05 seconds: 1.174 seconds WF
+compilation, 2.765 seconds native construction and 1.101 seconds across the
+four executions. These establish the selected operation/ownership observations;
+they do not establish native parity, all structural branch counts or a default
+representation. The matched controls and complete canonical gate remain
+separate validation stages.
 
 **Design suitability.** Packed boxed nodes trade more balancing source for
 fewer allocations and avoid pool-wide movement. Bundling edges with separator

@@ -270,3 +270,21 @@ fn hash_map_operations_preserve_owned_pairs_in_both_lowering_modes() {
     // Box returned by the borrowed edit callback and consumed by its caller.
     execute_container_program("hash-map", &sources, 28, false);
 }
+
+#[test]
+fn ordered_map_mutations_match_sorted_oracle_and_preserve_every_owner_in_both_lowering_modes() {
+    let sources: [(&str, &[u8]); 2] = [
+        (
+            "lib/containers/ordered-map.wf",
+            include_bytes!("../../../lib/containers/ordered-map.wf"),
+        ),
+        (
+            "containers/ordered-map-program.wf",
+            include_bytes!("../../../tests/programs/containers/ordered-map-program.wf"),
+        ),
+    ];
+    // Twenty-two scalar nodes, three owning nodes, and thirty-nine payload
+    // Boxes. One caller covers the complete public mutation and traversal
+    // chain; the existing harness adds both lowering and allocator modes.
+    execute_container_program("ordered-map", &sources, 64, false);
+}

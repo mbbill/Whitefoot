@@ -10,9 +10,10 @@ its code no special source-language status, import behavior or native ABI.
 | [deque.wf](deque.wf) | Reference-taking endpoints, logical visitation and drain over `Box<Ring<T>>`; explicit consuming rebase produces a new backing. No automatic endpoint growth or zero-copy two-span interface. |
 | [slab.wf](slab.wf) | One bounded backing with lazily materialized slots, generation handles, reuse, expiry, exhaustion returning the offered owner, and explicit consumption. Handles are relative to the supplied slab. |
 | [hash-map.wf](hash-map.wf) | Generic owning keys and values with supplied hash/equality, growing insertion, removal, borrowed lookup/edit, rehash, and explicit consumption. No stable bucket index or payload address. |
+| [ordered-map.wf](ordered-map.wf) | Owning B-tree with supplied ordering, insertion/replacement, complete deletion and rebalancing, borrowed lookup/edit, ordered and bounded-range visitation, and explicit consumption. |
 
-The caller-selected capacity ceiling supplies the size bound for each concrete
-allocation. See [the writer pattern](../../docs/patterns.md#p2-choose-the-storage-shape-from-its-occupancy-rule)
+The caller-selected capacity ceiling bounds backing growth, or logical entries
+for the fixed-node ordered map. See [the writer pattern](../../docs/patterns.md#p2-choose-the-storage-shape-from-its-occupancy-rule)
 for the contracts and [the container investigation](../../research/investigations/containers-and-resources/X1-LIBRARY.md)
 for comparison evidence and remaining interface limits. These evolving libraries
 do not claim native parity for every operation.
@@ -37,6 +38,24 @@ removed owned pair. Supply a `HashMapConsume` binding to `hash_map_free` and
 owners. Hash/equality consistency determines ordinary map contents; ownership
 and bounded probing do not assume those laws. Neither iteration order nor
 stable indices are promised.
+
+`OrderedMap<K, V, ceiling>` uses an `OrderedKey` binding whose borrowed
+environment and keys determine a negative, zero, or positive comparison.
+`ordered_map_put` returns `OrderedInserted` or `OrderedReturned`: an
+`OrderedReplaced` reason returns the old complete pair, and `OrderedFull`
+returns the offered pair unchanged. Replacement remains available at the
+logical ceiling. The empty map allocates no nodes; split promotion grows the
+tree, and deletion releases merged nodes and contracts the root.
+
+`ordered_map_lookup` and `ordered_map_edit` use callbacks returning arbitrary
+owned results, with only the value writable during editing. `ordered_map_each`
+visits every pair in order; `ordered_map_range` visits the half-open interval
+`[lower, upper)`. `ordered_map_remove` returns the owned pair. Supply a consuming
+callback to `ordered_map_free` for all remaining keys and values, including
+`nodrop` owners. Comparison consistency determines sorted semantics; progress
+and ownership do not depend on it. The candidate uses fanout 16 and bundles
+each separator with its right child link; its representation and native cost
+comparison remain part of the [ordered-map trial](../../research/investigations/containers-and-resources/X1-LIBRARY.md#ordered-map-trial-at-v068).
 
 From the repository root, after building `whitefootc`:
 
