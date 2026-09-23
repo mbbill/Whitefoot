@@ -265,6 +265,48 @@ the repair. A bounded baseline CLI probe of the single descent was stopped
 after three seconds without a result; the unbounded path recurrence above,
 not that elapsed limit, establishes why the secondary fixed point cannot close.
 
+## Generic struct constants
+
+CONST-2 admits concrete source struct constants with written generic arguments.
+The implementation baseline at `9bed1c33` collects nominal constants before
+function signatures and bodies establish their concrete nominal instances.
+`collect_constant` reads the declared type without first ensuring its instance;
+`parse_const_construction` separately stops on every written argument list.
+These are implementation gaps under the existing rule, not a proposed language
+extension. Ordinary struct constants and ordinary generic construction already
+provide the type, field and static-layout mechanisms.
+
+The minimal positive must need no unrelated declaration to establish its type:
+
+```wf
+struct Pair<T: copy> {
+  left: T;
+  right: T;
+}
+
+const origin: Pair<u64> = Pair<u64>(left: 3_u64, right: 2_u64);
+```
+
+The implementation criterion is to prepare the declared concrete type through
+the existing nominal machinery, then check the complete written constructor
+instance against that type before recursively checking its fields. Reuse the
+current static aggregate representation; do not infer missing generic arguments
+from the declared type, compare only template names, or make initializer values
+select an instance. No new constant evaluator, runtime initialization or proof
+family is needed.
+
+Discriminating evidence must cover type and integer arguments, nested generic
+fields and arrays, phantom arguments that do not affect layout, and ordinary
+static field/reference reads. Wrong argument kinds, arities, bounds, concrete
+instances, field order/types/counts and ineligible storage remain source
+rejections. Check both a first-use instance and an already established instance:
+neither may fail internally or depend on an unrelated declaration. Preserve
+declaration-before-use, earlier scalar constants used as extents, non-generic
+constants and symbolic generic validation. A complete native conformance case
+must observe the selected fields and array contents through the ordinary path.
+Tests belong in the maintained compiler/conformance suites; this record retains
+the reasoning and observed outcomes rather than supplying daily test inputs.
+
 ## Reserved names and declaration roles
 
 OP-1's exhaustive reservation list excludes invariant declarations, but DIAG-1
