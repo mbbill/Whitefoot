@@ -176,6 +176,29 @@ Branch-local range images also need presence and generation information: absence
 of an alternative on a predecessor differs from losing a fact about an alternative
 that is present. Blindly unioning endpoint images is not the proposed repair.
 
+## Reference-summary roots and expansion depth
+
+The baseline at `9450decc` stops `PlaceMap::resolve_root` after 32 recursive
+summary expansions. An unresolved child discards the complete result, including
+any shallow sibling; the limit is not evidence of an omitted target or an
+incorrect acceptance. Ordinary local aliases are flattened when recorded, so
+generating a long `let` chain alone cannot establish source reachability.
+
+The discriminating question is whether checked-source construction can retain
+a summary root that must itself be expanded. Trace every writer, including
+incoming-reference rebinding, value deliveries, payload aliases and imported
+loop-header covers. A source witness must exercise the ordinary checker and
+distinguish a genuine unresolved origin from an arbitrary expansion limit.
+Otherwise the construction argument must establish why stored roots are already
+ultimate storage identities, including when a reference parameter is rebound.
+
+Select a change only if it preserves every possible origin and complete paths,
+keeps an unresolved alternative from becoming a partial result, and terminates
+from a finite source-derived domain rather than a replacement depth budget.
+Positive and negative source controls must distinguish independent places from
+overlap. Synthetic summary graphs can check an internal invariant or algorithm,
+but cannot substitute for evidence that those graphs arise from source.
+
 ## Reserved names and declaration roles
 
 OP-1's exhaustive reservation list excludes invariant declarations, but DIAG-1
