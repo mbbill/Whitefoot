@@ -16,7 +16,7 @@ compiler. The active specification and executable cases remain authoritative.
 This prospective trial starts at merged `f2140599` and qualifies candidates
 left open by [catalog section 5](../io-model/CONCURRENCY-CATALOG.md#5-task-dag-with-dependencies-static-and-dynamic).
 No source, permission, emitted structure, native result or overlap result is
-established yet. Publish this protocol on the Draft PR before source work.
+established yet.
 
 The initial scope is three runtime-selected fixed graph families, not
 arbitrary runtime adjacency:
@@ -65,20 +65,19 @@ Before results select a conclusion, require the following evidence:
   universal level/serial-retirement claim, not establish efficient general
   fan-in. The N witnesses qualify their added edges, not a universal limit.
 
-Use the saved current-main-equivalent compiler first. Analysis/emission,
+Reuse the saved current-main-equivalent compiler, rebuilding only if source
+correspondence or artifact availability requires it. Analysis/emission,
 native construction and execution are separate stages guarded through
 `.github/run-check.pl`, each capped at 30 seconds, with at most two build jobs
 and one host-wide owner; inspect an existing owner instead of competing.
-Compiler rebuilds need root-agent approval for this trial. Record compiler and
-source identities, flags, workers and observer changes. No source edit or
-build starts before the root agent reports the Draft PR published.
+Record compiler and source identities, flags, workers and observer changes.
 
 **Design suitability.** Existing references, effects, ranges and call lowering
 fit these questions; no executor, grain, cancellation or specification change
 is selected. Assess revealed compiler structural choices against their owner
-subtree and record benefit, cost, scope, uncertainty and amendments as needed;
-ordinary branch implementation needs no owner approval. Keep the few source,
-probe and adapter files here and in `research/experiments/compute-bench/`,
+subtree and record benefit, cost, scope, uncertainty and amendments as needed.
+Keep the few source, probe and adapter files here and in
+`research/experiments/compute-bench/`,
 wired only to explicit experiment targets; remove them when superseded or no
 longer supporting this question. Update the catalog and TODO as conclusions
 settle; research stays outside daily CI. This protocol needs no tree amendment.
