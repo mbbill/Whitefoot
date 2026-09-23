@@ -1,5 +1,3 @@
-Node: language/numeric-conversion
-
 Decision: Numeric conversion has one exact value relation exposed by proof-required `cvt`, total `cvt.checked` returning Result, and total `cvt.defined` returning its domain, each keeping the same result shape for every admitted numeric pair, because a range proof should remove the failure obligation from source and generic result shape should follow the chosen interface rather than type-pair totality, instead of the current mixed-result `cvt` or a second proved-conversion alias. The domain, bounded automatic proof routes and examples are in [the proposal](../../research/investigations/numeric-conversions/DESIGN.md#proposed-rules-for-owner-review).
 
 Decision: Same-type numeric conversion is admitted and copies the complete representation, while cross-format float conversion retains the specified canonical NaN policy, because a generic conversion instantiated at equal endpoint types should be an ordinary copy without a NaN test and no representation changes at that boundary, instead of refusing same-type instances or normalizing their NaN payloads.

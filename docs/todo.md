@@ -10,12 +10,12 @@ concludes with a recorded disposition; retain any selected follow-up work here.
 - **Select the modular conversion companion.** The
   [conversion comparison](../research/investigations/numeric-conversions/DESIGN.md#companion-operations-and-explicit-deferrals)
   recommends integer-only `cvt.wrap` for direct low-bit extraction and modular
-  signedness conversion. It is independent of the exact conversion family and
-  awaits a separate scope decision. Validate all integer width/sign classes,
-  especially negative signed inputs widened to unsigned destinations, and
-  ensure changed values publish no exact input equality. Defer until the owner
-  selects this additional result policy; remove after its selected rules and
-  ordinary-path evidence land.
+  signedness conversion. It is deferred from the exact conversion family
+  because it selects an additional result policy. Validate all integer
+  width/sign classes, especially negative signed inputs widened to unsigned
+  destinations, and ensure changed values publish no exact input equality.
+  Reopen when the owner selects this companion for implementation; remove
+  after its selected rules and ordinary-path evidence land.
 
 - **Select direct rounded/saturated float conversion policies.** The
   [conversion study](../research/investigations/numeric-conversions/DESIGN.md#companion-operations-and-explicit-deferrals)

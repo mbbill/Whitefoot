@@ -1,3 +1,0 @@
-Node: language/numeric-conversion
-
-Decision: Integer modular conversion is the total `cvt.wrap` family with result `wrap_D(x)` for every integer endpoint pair, because low-bit extraction and signedness conversion need an explicit value policy that composes across generic widths, instead of an exact conversion with an impossible-error arm or a separate truncation-only spelling. Signed widening preserves the input's mathematical residue, including negative signed inputs to wider unsigned destinations; the [companion comparison](../../research/investigations/numeric-conversions/DESIGN.md#companion-operations-and-explicit-deferrals) states the distinguishing case. This family gives no exact input equality when wrapping changes the value and admits no float endpoint.
