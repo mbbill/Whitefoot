@@ -1389,6 +1389,137 @@ runtime mechanisms unchanged and defers broader wall-variation attribution
 because placement and runtime activity need different evidence. The original
 cost stop and pending design rulings remain in force.
 
+### Baseline CPU-accounting result: short-interval attribution failure
+
+The criterion above was published at
+`493ca94b7bf42f9e987f24b3ea21d16c51c259de` before construction or execution.
+The selected diagnostic ran once: W1 then W4, one child process each, with
+one 32-call warmup and 64 checked 32-call batches. All 130 oracle, evaluation
+count, input and canary checks passed, covering 4,160 complete ABI calls and
+16,640 task evaluations. Both children exited zero with empty stderr. The
+host-only construction took 1.48 seconds, 1.50 including its guard; execution
+took 1.62 seconds, 1.63 including its separate guard. Both 30-second caps held.
+No workload was repeated and no candidate was executed.
+
+The original work-batch physical violation was not reproduced in either
+64-batch series. Short-boundary attribution nevertheless failed in the W4
+gap counter differences:
+
+| Width and interval | Count | Physical-bound violations | Nonpositive CPU deltas | CPU/wall range |
+| --- | ---: | ---: | ---: | ---: |
+| W1 work batch | 64 | 0 | 0 | 0.996023–1.000000 |
+| W1 gap | 65 | 0 | 0 | 0.808989–1.000000 |
+| W4 work batch | 64 | 0 | 0 | 1.351058–3.954937 |
+| W4 gap | 65 | 25 | 0 | 0.800000–468.450000 |
+
+Both warmups and both enclosing intervals also remained within the physical
+bound. All 262 reported interval CPU deltas were positive. W4 gap 63 reports
+9,369,000 ns CPU over an enclosing wall span of 20,000 ns. Its allowed total
+is `8 * 20,000 + 24,000 = 184,000` ns, including the conservative endpoint
+rounding allowance. Live user/system counters move from
+962,664,000/41,797,000 to 972,009,000/41,821,000 ns; both exited-thread
+components remain zero, and each endpoint observes five live threads. The
+counter change is not CPU work proven to have occurred during that gap.
+
+The enclosing and independently obtained lifetime totals are compatible:
+
+| Width | Enclosing wall, ms | Enclosing CPU, ms | `wait4` lifetime CPU, ms |
+| --- | ---: | ---: | ---: |
+| W1 | 844.319 | 844.149 | 862.767 |
+| W4 | 327.545 | 1,010.562 | 1,028.302 |
+
+Short CPU deltas plus gap deltas equal enclosing CPU exactly, as expected
+algebraically. Gap wall spans include both surrounding clock-query brackets
+and overlap adjacent work-batch spans; their sum does not partition enclosing
+wall time. The largest individual CPU-query wall brackets were 8,000 ns at
+W1 and 7,000 ns at W4. Instrumentation, including thread enumeration and
+printing, changes cadence; these observations cannot recover the original
+null's boundaries. Compatible enclosing/lifetime totals do not establish
+three-percent wall or ten-percent CPU accuracy, validate individual work-batch
+CPU deltas, or identify a kernel accounting mechanism. The remaining CPU
+measurement question is accuracy at a useful interval and comparison scale,
+not whether these observed short deltas have valid interval attribution.
+
+The run used Darwin 25.6.0, kernel `xnu-12377.161.14~5`, and Apple clang 21.0.0.
+Raw CPU and performance-level queries succeeded and agreed with the existing
+primitives: eight CPUs and two performance levels. After warmup and at the
+end, helpers were zero at W1 and three at W4, matching the requested widths;
+live-thread counts were two and five. One additional non-helper thread is
+therefore present beyond the calling thread, but its role and work were not
+identified. The idle-window rule calculated from the observed primitive
+returns is zero; the private startup value was not observed. These facts do
+not attribute helper idleness, placement, competing load or the original
+spine/BFS wall-time variation. Both failed nulls and the withdrawn compiler
+bridge/DONE-first candidates retain their previous dispositions.
+
+The existing [dated evidence stream](../../../research/experiments/compute-bench/dag-fanin-2026-09-23.tsv)
+contains a `clock-accounting` block with exact W1/W4 stdout, summary, reducer,
+a host-probe patch with only its two path headers normalized, and a portable
+build recipe with input paths parameterized. The source preimage is
+`research/experiments/compute-bench/dag_fanin_probe.cpp` at the criterion
+commit; its SHA-256 is
+`4a03627460ca290e89348e4318f3d037bf6e3b5a65a2ed4569ef1e59fac2bbe0`.
+Applying the retained patch reconstructs the executed diagnostic source,
+SHA-256 `0a560f025dd551872d37b8792b6253a4e86a9fd4b827772809564b61fc900fd6`.
+The executed image has SHA-256
+`1eccf27800b214a601b556b1713b0de061dbce81a773f1792c46d95019549781`.
+Raw stdout hashes are
+`89613d369763d1672b1f10c609fc3f23e0e39faf4a4a079ec4d91dd07c2e3e76` and
+`49d016e5f9ad7b56469a0c1c956156de75798e70f10c1051aa133a632bff4b4d`;
+the summary hash is
+`11af03c4806f19ef7d838b7f3610b56c347071101ae723b6dca3d4f2fa750609`.
+The record retains scratch manifest and native-input hashes without
+machine-local paths.
+
+The following manual extraction reproduces the data reduction and instrument
+source without executing a workload. A whitespace-only patch context line
+uses a trailing tab-dot transport marker, removed below. Run from the
+repository root:
+
+```sh
+dag_record=research/experiments/compute-bench/dag-fanin-2026-09-23.tsv
+dag_replay=$(mktemp -d "${TMPDIR:-/tmp}/whitefoot-clock-record.XXXXXX")
+for dag_part in W1.stdout W4.stdout summary.tsv reduce.awk host-probe.patch \
+  build.sh frozen-native.sha256 research-inputs.sha256 retained.sha256; do
+  awk -v part="$dag_part" '$1 == "clock-accounting" && $2 == part {
+    sub(/^[^\t]*\t[^\t]*\t/, ""); sub(/\t[.]$/, ""); print
+  }' "$dag_record" > "$dag_replay/$dag_part"
+done
+(cd "$dag_replay" && shasum -a 256 -c retained.sha256)
+LC_ALL=C awk -f "$dag_replay/reduce.awk" \
+  "$dag_replay/W1.stdout" "$dag_replay/W4.stdout" | LC_ALL=C sort \
+  > "$dag_replay/reduced.tsv"
+cmp "$dag_replay/summary.tsv" "$dag_replay/reduced.tsv"
+git show 493ca94b7bf42f9e987f24b3ea21d16c51c259de:research/experiments/compute-bench/dag_fanin_probe.cpp \
+  > "$dag_replay/dag_fanin_probe.cpp"
+(cd "$dag_replay" && patch -p1 < host-probe.patch)
+shasum -a 256 "$dag_replay/dag_fanin_probe.cpp"
+```
+
+Native relinking additionally needs the separately retained, hash-matched
+baseline plain LLVM object, twelve runtime objects and pinned oneTBB cache
+listed in `frozen-native.sha256`. Export `DAG_BASE_OBJECT`, `DAG_RUNTIME_DIR` and
+`DAG_TBB_PREFIX` to those inputs and `DAG_ACCOUNT` to the extracted directory;
+the manual construction caller is
+`WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl dag-clock-accounting-build sh "$DAG_ACCOUNT/build.sh"`.
+The recorded execution used `WF_SPLIT_WORK` unset and invoked
+`WF_WORKERS=1 "$DAG_ACCOUNT/dag_fanin_account" account 1` followed by W4 in one
+separate 30-second guarded phase. The portable recipe has not been executed;
+it changes only path binding from the recorded commands. This is portable
+source/data replay with explicitly external native inputs, not standalone
+reproduction of the executable from repository contents. Retaining these
+commands does not extend the completed experiment or its no-rerun rule.
+
+**Design suitability.** Retaining this one-shot instrument as dated evidence
+avoids adding an accounting mode to the maintained probe or a new runner.
+The manual extraction, reduction and relink commands are its callers; it has
+no CI dependency. Retire the replay support when the diagnostic is superseded
+and no live claim needs it, while preserving useful dated raw evidence. The
+affected guidance is the compute-bench clock explanation and the existing
+measurement TODO. No new design amendment is needed: the published diagnostic
+produced evidence without selecting a compiler, runtime, clock or policy
+replacement. Longer-interval accuracy and wall variation remain open.
+
 ## Runtime-adjacency all-predecessor probe
 
 This prospective source probe asks whether destination ownership can execute

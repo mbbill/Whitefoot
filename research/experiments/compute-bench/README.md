@@ -73,6 +73,11 @@ They use the same probe/ABI, with one added four-independent-call control;
 the frozen earlier correctness and overlap records retain their original
 matrix and input identities. The ordinary `dag-fanin-run` target remains an
 untimed correctness run.
+The separate [CPU-accounting diagnostic result and replay recipe](../../investigations/compute-model/DESIGN.md#baseline-cpu-accounting-result-short-interval-attribution-failure)
+use an exact host-only patch retained in the same dated stream. They add no
+maintained probe mode or daily check; offline extraction reconstructs its raw
+data, reduction and source, while native relinking requires the named frozen
+objects and dependency cache.
 The probe compares every task output and exactly-once count with a serial
 Kahn oracle over the original graph edges, and checks input preservation,
 boundary canaries and each notification owner's received source mask/count.
@@ -914,8 +919,9 @@ program doing its own sequential work between parallel regions does, while the
 runtime's helper lanes go idle and park. A driver that slept would hand its CPU
 back and measure something else. The wait is the last thing before the clock
 starts — after the previous call's verification and its printf — so no part of
-a gap is inside any reported wall or CPU figure, and the whole of what the gap
-did to a call is in that call's own numbers.
+a gap is inside the wall bracket. CPU reads also follow the gap, but their
+placement alone does not establish that a short counter delta excludes work
+accounted from an earlier interval; see the CPU attribution qualification below.
 
 **It reaches every form identically, references included.** A gap that reached
 only the `wf` row would compare one scheduler's idle policy against another
@@ -1065,9 +1071,10 @@ kernel       w form              median_us  mad%  p10..p90_us  cpu_us  ratio  cp
   end-to-end Mandelbrot check behind this bundle's sizing spread 11.3 to 13.4 ms
   on a quiet four-CPU box at width four, which is about eighteen percent.
 - **`cpu_us`** is the same median of medians over **process CPU time** rather
-  than wall, read around the same interval the wall clock brackets, so it counts
-  every thread the form started, spinning and parked ones included. The source
-  is chosen per host and the driver line of `raw.tsv` names the one that was
+  than wall, using counter deltas read around the same call. The intended
+  coverage is CPU spent across the process's threads, including spinning
+  workers; precise attribution to that call needs the qualification below.
+  The source is chosen per host and the driver line of `raw.tsv` names the one
   read as `cpu_clock=`: `CLOCK_PROCESS_CPUTIME_ID` on Linux, **`task_info` on
   Darwin**, `getrusage(RUSAGE_SELF)` as the fallback anywhere the chosen source
   is absent or refuses. Darwin is not on the POSIX clock because it answers that
@@ -1079,8 +1086,10 @@ kernel       w form              median_us  mad%  p10..p90_us  cpu_us  ratio  cp
   Darwin source is therefore the task-level pair that does consult the live
   threads when asked: `task_info(TASK_THREAD_TIMES_INFO)` for the threads that
   still exist plus `task_info(TASK_BASIC_INFO)` for the ones that have exited,
-  each `time_value_t` seconds and microseconds, summed. That source is held on a
-  reading and not on its documentation: the hosted `macos-14` leg of run
+  each `time_value_t` seconds and microseconds, summed. These separate reads
+  cover both categories but do not form an atomic snapshot across thread exit.
+  That source is held on a reading and not on its documentation: the hosted
+  `macos-14` leg of run
   34668036736, a three-CPU runner, printed `cpu_clock=task_info` on every driver
   line and returned CPU that grows with the lanes and stops where the CPUs do —
   mandelbrot `static` at W=4 read **107,878 us of CPU against a 36,495 us wall**
@@ -1090,13 +1099,23 @@ kernel       w form              median_us  mad%  p10..p90_us  cpu_us  ratio  cp
   the same kind of evidence: on the hosted `macos-14` runner of run 34667394566
   its figures read 0.02 to 0.07 times their own wall and hardly moved with the
   work, which is not a CPU figure and is not a unit error either. The wall clock
-  stays the outermost pair and the two CPU reads are nested inside it, so no CPU
-  a call spends can fall outside the wall interval; the nested pair was timed at
-  757 ns on the Linux host where that was measured (`RESULTS.md`, 2026-09-11),
-  against per-call intervals of milliseconds. A form whose wall time is bought
-  by burning four lanes is indistinguishable from one that is simply fast in
-  `median_us` and is not in `cpu_us`. It is a measurement, never a pass/fail
-  input.
+  stays the outermost pair and the two CPU reads are nested inside it, enclosing
+  call execution; the nested pair was timed at 757 ns on the Linux host where
+  that was measured (`RESULTS.md`, 2026-09-11),
+  against per-call intervals of milliseconds.
+
+  Those historical longer-call observations support cumulative worker-CPU
+  coverage, not precise short-interval attribution. Darwin's live-thread API
+  qualifies its totals as accurate only when suspended. The
+  [retained-data diagnosis](../../investigations/compute-model/DESIGN.md#follow-up-diagnosis-of-retained-identical-image-variation)
+  observes CPU deltas exceeding the host's physical interval capacity. These
+  short deltas therefore cannot establish worker idleness or candidate CPU
+  cost. The separate [fixed accounting diagnostic](../../investigations/compute-model/DESIGN.md#baseline-cpu-accounting-result-short-interval-attribution-failure)
+  also violates that bound in gap counter differences, despite compatible
+  enclosing and lifetime totals; accuracy at longer intervals remains open.
+  This qualification concerns CPU
+  interpretation; the clock choice, raw data and wall measurements are retained.
+  This column is a measurement, never a pass/fail input.
 - **`ratio`** is filled only on `wf` rows. It is the **median of within-pass
   matched pairs**: for each pass, WF's process median divided by the lowest
   process median among the parallel references at that same width, printed with
@@ -1109,7 +1128,8 @@ kernel       w form              median_us  mad%  p10..p90_us  cpu_us  ratio  cp
   WF's process CPU median divided by the CPU median of **the reference that was
   fastest by wall in that pass**, and the median of those pairs. The two ratios
   are therefore about the same pairs and can be read side by side --- `ratio`
-  says whether WF finished first, `cpu_r` says what it spent to. Pairing CPU
+  says whether WF finished first, while `cpu_r` compares the reported CPU
+  deltas subject to the attribution limit above. Pairing CPU
   against whichever reference happened to burn least CPU would answer a
   different question and would not line up with the verdict line. It sits beside
   `ratio` as a column rather than in `note` because it is the number the

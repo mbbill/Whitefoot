@@ -456,13 +456,18 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   deltas to diagnose worker idleness. Per-thread activity, placement and
   competing-load observations are absent, so neither runtime work nor the
   wall-time variation is attributed. Preserve both stopped controls and defer
-  scheduling or threshold changes. The selected
-  [two-process baseline diagnostic](../research/investigations/compute-model/DESIGN.md#prospective-baseline-cpu-accounting-diagnostic)
-  compares short and enclosing accounting against physical capacity and
-  terminal process CPU, with fixed work and no rerun. Reopen CPU attribution
-  only on those declared observations; a missing reproduction or inconsistent
-  total leaves the question open, and no outcome clears the old null or
-  attributes the separate wall-time variation.
+  scheduling or threshold changes. The completed
+  [two-process baseline diagnostic](../research/investigations/compute-model/DESIGN.md#baseline-cpu-accounting-result-short-interval-attribution-failure)
+  found no work-batch violation, but 25 of 65 W4 gap counter deltas exceeded
+  physical capacity despite compatible enclosing and terminal CPU totals.
+  Short-boundary attribution is therefore contradicted; it is no longer an
+  unanswered validity question. The remaining measurement work is to establish
+  accuracy at useful longer intervals and the selected comparison scale with
+  independent accounting evidence before interpreting CPU cost. A compatible
+  lifetime total does not supply that accuracy. No replacement clock is
+  selected, no outcome clears the old null, and the separate wall-time
+  variation remains unattributed. Reopen on a bounded discriminator for those
+  remaining questions, preserving this result if it is uninformative.
   [Hosted observations](../research/investigations/test-economy/redesign.md#identical-image-host-control-failure)
   include an identical-image stencil control failing the unchanged three-percent
   band, and a separate actual records comparison failing at two widths while
