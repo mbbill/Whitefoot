@@ -7,7 +7,7 @@ interface PureMember {
 }
 
 fn writing_apply(store: &Counter, x: i32) -> result: i32 writes(store.count) {
-  doc "FN-4 requires every actual effect path to be covered in the same category by the formal row. A writing actual exceeds a reads-only formal, and `writes` subsumes `reads` rather than the other way round [EFF-1].";
+  doc "FN-4 requires each actual write to be covered by a formal write. A writing actual exceeds a reads-only formal; writes subsumes reads, not conversely [EFF-1].";
   let seen = deref(store).count;
   set deref(store).count = seen;
   return x;

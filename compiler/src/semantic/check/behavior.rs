@@ -1435,21 +1435,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // actual's allocation fact rather than inferring purity from the
         // interface's path row.
         boundary.allocates = actual.declared_effects.allocates;
-        for (implementation, promised) in [
-            (&actual.declared_effects.reads, &boundary.reads),
-            (&actual.declared_effects.writes, &boundary.writes),
-        ] {
-            if implementation.iter().any(|path| {
-                !promised
-                    .iter()
-                    .any(|prefix| prefix.root == path.root && path.steps.starts_with(&prefix.steps))
-            }) {
-                return self.behavior_mismatch(
-                    SemanticRule::Fn4,
-                    node,
-                    "the formal row covers every actual path in the same effect category",
-                );
-            }
+        // [EFF-1] writes subsumes reads at or below the same path. FN-4
+        // checks this one-way coverage; the actual's own EFF-2 check still
+        // requires every write it declares to be exhibited by its body.
+        let reads_covered = actual.declared_effects.reads.iter().all(|path| {
+            boundary
+                .reads
+                .iter()
+                .chain(&boundary.writes)
+                .any(|prefix| Self::effect_path_covers(prefix, path))
+        });
+        let writes_covered = actual.declared_effects.writes.iter().all(|path| {
+            boundary
+                .writes
+                .iter()
+                .any(|prefix| Self::effect_path_covers(prefix, path))
+        });
+        if !reads_covered || !writes_covered {
+            return self.behavior_mismatch(
+                SemanticRule::Fn4,
+                node,
+                "the formal row covers actual reads with reads or writes and actual writes with writes",
+            );
         }
         let contract = self.check_behavior_contracts(node, instance, formal, &bound_actual)?;
         // [FN-5] the immediate call judgment stays wholly in the formal

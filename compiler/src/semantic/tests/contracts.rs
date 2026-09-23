@@ -378,6 +378,77 @@ fn main() -> status: ExitStatus pure {
 }
 
 #[test]
+fn formal_writes_cover_actual_reads_by_parameter_and_path() {
+    let source = r#"struct Pair {
+  left: u64;
+  right: u64;
+}
+
+interface Inspect {
+  fn inspect(value: &Pair) -> result: u64 writes(value);
+}
+
+fn visit_left(input: &Pair) -> result: u64 reads(input.left) {
+  return deref(input).left;
+}
+
+binding ReadLeft : Inspect {
+  inspect = visit_left;
+}
+
+fn apply<interface Inspect>(data: &Pair) -> result: u64 writes(data) {
+  return Inspect::inspect(value: data);
+}
+
+fn main() -> status: ExitStatus pure {
+  let pair = Pair(left: 7_u64, right: 9_u64);
+  let named = apply::<ReadLeft>(data: &pair);
+  let raw = apply::<fn visit_left>(data: &pair);
+  return exit_status(code: 0_u8);
+}
+"#;
+    let field_formal = source
+        .replace("writes(value)", "writes(value.left)")
+        .replace("writes(data)", "writes(data.left)");
+    // Both binding forms normalize renamed parameters and retain the formal
+    // write at the call, so apply's declared write is still exhibited. Cover
+    // both a proper prefix and the exact field read by the actual.
+    for accepted in [source.to_owned(), field_formal.clone()] {
+        with_semantics(accepted.as_bytes(), |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{outcome:?}"
+            );
+        });
+    }
+
+    let writing_actual = source
+        .replace("writes(value)", "reads(value)")
+        .replace("writes(data)", "reads(data)")
+        .replace("reads(input.left)", "writes(input.left)")
+        .replace(
+            "  return deref(input).left;",
+            "  set deref(input).left = 1_u64;\n  return deref(input).left;",
+        );
+    let sibling_read = field_formal
+        .replace("reads(input.left)", "reads(input.right)")
+        .replace("return deref(input).left;", "return deref(input).right;");
+    let uncovered_read = source
+        .replace("writes(value)", "pure")
+        .replace("writes(data)", "pure");
+    for rejected in [writing_actual, sibling_read, uncovered_read] {
+        assert_behavior_site(&rejected, SemanticRule::Fn4, "inspect = visit_left;");
+    }
+
+    // A wider formal does not let the actual pad its own exact row with an
+    // unexhibited write, even though that declared write would refine it.
+    assert_behavior_rule(
+        &source.replace("reads(input.left)", "writes(input.left)"),
+        SemanticRule::Eff2,
+    );
+}
+
+#[test]
 fn bound_allocating_actuals_keep_allocation_metadata_outside_fn4_rows() {
     let source = br#"interface Factory {
   fn make(value: u64) -> result: Box<u64> pure;

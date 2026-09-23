@@ -1062,6 +1062,34 @@ No unused second interface descriptor is added. This is a spelling workaround,
 not a claim that different named groups cannot be instantiated at the same
 concrete type, and it introduces no new behavior mechanism.
 
+The complete consumer also exposed an implementation defect in FN-4 effect
+refinement. The ordinary Slab edit formal writes its environment and value;
+the position callback only reads the environment and writes the position:
+
+```wf
+fn edit(env: &E, value: &T) -> result: R writes(env), writes(value);
+fn record_set_position<T>(env: &u64, value: &Record<T>) -> result: unit
+  reads(env), writes(value.position) {
+  set deref(value).position = deref(env);
+  return unit;
+}
+```
+
+The unchanged compiler rejects that binding under FN-4 because it compares
+actual reads only with formal reads. EFF-1 already states that a write covers
+reads at the same path, and FN-4 requires normalized subset coverage. The
+repair reuses the ordinary effect-path coverage relation: actual reads may
+be covered by formal reads or writes, while actual writes still require formal
+writes. The selected actual must still exhibit its own exact row under EFF-2,
+and the caller still uses the authoritative formal row under FN-5/EFF-2.
+No dummy write or row padding is an admissible workaround. The focused
+`formal_writes_cover_actual_reads_by_parameter_and_path` regression covers
+named/raw bindings, renamed parameters, whole/field coverage, wrong-direction
+and uncovered/sibling negatives, and the actual's unchanged exact-row check.
+The existing conformance negative keeps its verdict and body; only its
+incorrect same-category explanation is corrected. This changes no language
+rule or lowering policy.
+
 | Candidate or control | Discriminating property |
 | --- | --- |
 | Compose the current public heap and scan to repair positions | Establishes an ordinary executable fallback, but an O(n) scan after each update/removal fails the selected O(log n) indexed-operation requirement. It is not the proposed production path. |
@@ -1231,8 +1259,9 @@ The four libraries' maintained callers run through
 [`compiler/tests/programs/containers.rs`](../../../compiler/tests/programs/containers.rs)
 with sequential/parallel lowering and exact allocation-release ledgers. Those
 checks establish their stated operation/ownership coverage, not native parity.
-No current confirmed compiler defect is needed to explain the remaining
-library rows. Ring spans, richer contract publication and whole-owner swap
+The composite's FN-4 read-under-write refinement discrepancy is a compiler
+defect repaired under existing rules, as recorded above. Ring spans, richer
+contract publication and whole-owner swap
 facts are specified limits; the full sparse-map conditional-preservation
 refusal above remains unclassified. Header-plus-tail storage, compact byte
 pages, generic construction placement and concurrent reclamation remain
