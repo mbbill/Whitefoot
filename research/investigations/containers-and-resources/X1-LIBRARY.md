@@ -330,6 +330,47 @@ representation study with some noisy controls, not WF emitted-code evidence or
 a comparison against SIMD-group probing. It argues against adding a projected
 layout solely because one branch exists, not for a universal winning layout.
 
+#### Generic owning-map trial after the Ring comparison
+
+The reusable-map trial starts from `e6349b80`, kernel v0.67. Its contract is a
+map over arbitrary owned K and V, including must-consume values, with hash and
+equality supplied through the existing `interface`/`binding` mechanism. Neither
+key nor value requires a separate Box. Collision insertion, replacement that
+returns the previous pair, lookup past deletion, removal, slot reuse, growth
+and rehash, visitation, and explicit final consumption belong to the same
+operation chain. A caller-selected capacity ceiling may return the offered
+pair; allocation itself has no source-visible refusal under STOR-8. Returned
+references, persistent iterators and stable payload addresses are not part of
+this contract.
+
+Before using measurements to select a representation, hold the operation
+trace, supplied behaviors, occupancy, capacity policy and ownership outcomes
+fixed. Compare ordinary enum slots with dense entries plus sparse indexes;
+the Slab's one-element window is an available occupancy encoding, not a
+preselected map layout. Count complete backing and result layouts, sparse and
+dense reserved capacity, allocations, probe work, relocation during growth,
+and helper-boundary transfers. Use both ordinary optimization and retained
+helpers, scalar and wide inline values, and a native C control for the same
+contract. A layout improvement must survive inclusion of reverse-index repair
+and dense-growth costs; reducing table bytes alone does not select it.
+
+The correctness discriminator includes hostile equality, collision-heavy and
+full-table traces, zero capacity, replacement at the capacity ceiling, and
+cleanup after every owner-returning outcome. No equality law justifies a
+bound or permits a value to disappear. Rehash must retain all entries without
+asking equality to deduplicate them. If an ordinary formulation fails, retain
+its exact source and separate a specified limit from a compiler defect before
+changing either interface or representation.
+
+The maintained [TODO](../../../docs/todo.md) remains the owner of unresolved
+issues. This trial reopens must-consume sparse slot state, aggregate result
+transfer costs, and any contract boundary its actual source crosses. Ring
+two-span access, automatic reference-based rebase, ordered-drain movement,
+header-plus-tail storage, retained membership, fixed-resource execution and
+generic checking cost retain their own evidence and reopening conditions.
+A passing map does not resolve those independent questions. New evidence
+updates the existing entry rather than creating a second backlog here.
+
 ### Priority queue and ordered map
 
 A priority queue compares two local references through an interface and swaps
