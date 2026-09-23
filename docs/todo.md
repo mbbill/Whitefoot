@@ -35,16 +35,19 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   operation selection and implementation to the requested conversion review;
   reopen when that review starts or a real numeric workload needs a workaround.
 
-- **Result transport loses practical compilation performance.** The matched
-  [maintained-program comparison](../research/investigations/result-proof-transport/DESIGN.md#maintained-program-cost-and-optimization-criterion)
-  measures raw DEFLATE at 697 ms with transport versus 228 ms before it, and
-  the existing 32-step independent-outcome and join probes expose further
-  growth. Attribute the checker cost and preserve completed closure work or
-  share conditional numeric state without changing acceptance, fallback
-  candidates, support invalidation or guard isolation. Validate against the
-  stated real-program and scale criteria plus independent proof checks. The
-  real-program regression reopens the previous deferral; storage extensions
-  below remain a separate language question.
+- **Validate further sharing of dense Result evidence when larger consumers need it.**
+  The [cost comparison](../research/investigations/result-proof-transport/DESIGN.md#selected-cost-result)
+  still places 32 independent outcomes at about 62 ms and 32 joins at about
+  265 ms, versus 22 and 26 ms before value-associated proof transport. A dense
+  matrix remains per live value and every surviving context participates in a
+  join. Sharing more unchanged ordinary cells may reduce this cost, but the
+  benefit and representation complexity remain unmeasured. Require matched
+  time/RSS improvement on a larger real consumer, identical acceptance and
+  valid retained proofs, and candidate/fallback preservation through support
+  kills and joins. Defer a broader storage change because numeric-core reuse
+  meets the recorded real-program and scale targets; reopen when more live
+  Results or wider storage support makes this cost material. The language
+  extensions below remain a separate question.
 
 - **Joined reference proofs lose useful target-relative information.** A
   reference selecting either of two freshly empty Slots cannot establish the

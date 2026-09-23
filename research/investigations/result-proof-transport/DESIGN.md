@@ -531,7 +531,7 @@ reduces DEFLATE from 700.756 to 371.629 ms against current unoptimized main
 This supports the attribution but misses the practical target, so it does not
 end the investigation.
 
-The next experiment preserves the closed numeric core when starting and
+The selected implementation preserves the closed numeric core when starting and
 substituting a conditional context. A fresh context takes the already
 materialized ordinary numeric snapshot, drops writer-origin and opaque-goal
 metadata, and uses the existing term kill to remove private payload parameters.
@@ -549,40 +549,29 @@ paths; the existing insertion and kill records require those paths to close
 normally. No claim that arbitrary substitution preserves a complete closure is
 needed. Both layers retain their separate candidates and closure records.
 
-The initial snapshot-reuse comparison reaches 295.320 ms for DEFLATE and
-380.188/330.218 ms for the 32-outcome/join cases. It still misses the first two
-criteria, and join peak RSS increases from 215.20 to 260.56 MiB. The next
-experiment prepares one ordinary snapshot per predecessor at a join, kill or
-scope exit, then imports that same snapshot into each independent Result.
+It prepares one ordinary snapshot per predecessor at a join, kill or scope
+exit, then imports that same snapshot into each independent Result.
 Previously each import rematerialized an unchanged ordinary state with a new
 snapshot event. The facts and support are identical at this shared flow point;
-only the valid witness identity is shared. No conditional context is shared
-between distinct guards. This tests whether repeated preparation explains the
-remaining time and ledger allocation before considering a wider representation
-change.
+the materialized witness can be shared. No conditional context is shared
+between distinct guards.
 
-Sharing ordinary preparation brings the 32-join case to 261.976 ms and
-105.36 MiB peak RSS (734.556 ms and 214.72 MiB before); DEFLATE and the
-independent-outcome axis barely change. A native sample of the snapshot-only
-32-outcome case places 167 of 192 driver-thread samples in closure while
-materializing each conditional context at scope exit. A context captured from
-an empty ordinary state has no closed core, even after later importing a
-completed ordinary matrix. The next union experiment reverses that import
-when only the ordinary side has a closed core: filter its private parameters,
-then add every original conditional candidate. This is the same candidate
-union, with existing insertion records for conditional edges, but permits
-the already completed ordinary core to seed closure. Contradictory conditional
-states retain their existing absorbing handling.
-
-That unseeded-only union variant leaves the independent-outcome case at
-373.694 ms, so it does not explain the remaining repeated closure. The next
-comparison also reuses an ordinary core covering more registered terms than
+Refreshing also reuses an ordinary core covering more registered terms than
 the conditional core: repeated calls add immutable datums after earlier
-contexts were captured. Core size only chooses a reuse opportunity; all fresh
-and weakened cells still undergo the existing closure. Candidate/provenance
-sets are preserved, while a different valid equal-bound witness may win when
-import order reverses. The direct correspondence test compares both an
+contexts were captured. It filters private payload parameters from the ordinary
+snapshot, then imports every original conditional candidate. This is exactly
+the previous candidate union, including all ordinary fallbacks. Core size only
+chooses a reuse opportunity; all fresh and weakened cells still undergo the
+existing closure. Candidate/provenance sets are preserved, while a different
+valid equal-bound witness may win when import order reverses. Contradictory
+contexts remain absorbing. The direct correspondence test compares both an
 unseeded context and one with an older closed core, including S12 removal.
+
+The narrower variant at `16fed4e5` reused the ordinary core only when the
+conditional context had none. It reduced the 32-join case to about 264 ms and
+106 MiB but left independent outcomes at about 374 ms: existing smaller cores
+still repeated closure over later call datums. Reusing the larger core addresses
+that measured case without adding a lifetime analysis or omitting any fact.
 
 This private representation change stays inside FactState and the Result flow
 child. The walker still owns event order, and no additional solver, acceptance
@@ -591,6 +580,57 @@ budget or lifetime analysis is introduced. The proposed supplement is kept in
 predicate sets and last-use tracking are declined for this change because they
 need broader correspondence arguments; the measured question is whether reuse
 of already completed numeric work suffices.
+
+### Selected cost result
+
+The final compiler code is `f16eea6b`, compared with unoptimized `1b916975` in
+the same environment and gate profile as the maintained-program measurement.
+[optimization-cost.csv](optimization-cost.csv) retains every warmup and measured
+sample, including the isolated first experiment and the pre-feature comparison.
+The table gives medians of five alternating pairs and maximum measured RSS;
+the CSV retains each range. All eighteen workloads produce identical LLVM in
+every paired round.
+
+| Workload | Unoptimized ms | Optimized ms | Peak MiB before / after |
+|---|---:|---:|---:|
+| Dense container control | 33.812 | 34.370 | 16.62 / 16.78 |
+| Grayscale | 24.751 | 24.500 | 11.95 / 12.45 |
+| Telemetry | 28.538 | 27.336 | 12.59 / 12.58 |
+| Prefix expression | 24.038 | 24.122 | 11.17 / 11.30 |
+| Wfgrep | 839.589 | 833.489 | 247.44 / 244.06 |
+| Raw DEFLATE vectors | 691.728 | 279.112 | 111.45 / 86.58 |
+| Copies 4 | 19.929 | 19.967 | 10.12 / 10.22 |
+| Copies 8 | 20.644 | 20.453 | 10.38 / 10.36 |
+| Copies 16 | 21.507 | 21.606 | 11.14 / 11.05 |
+| Copies 32 | 23.873 | 25.577 | 12.61 / 12.59 |
+| Independent outcomes 4 | 21.353 | 20.391 | 10.53 / 10.53 |
+| Independent outcomes 8 | 25.268 | 21.949 | 12.25 / 11.45 |
+| Independent outcomes 16 | 61.832 | 28.451 | 19.41 / 17.08 |
+| Independent outcomes 32 | 591.040 | 61.515 | 57.75 / 36.23 |
+| Joins 4 | 21.827 | 21.469 | 10.73 / 10.75 |
+| Joins 8 | 28.364 | 25.689 | 13.19 / 12.80 |
+| Joins 16 | 79.097 | 50.528 | 33.59 / 24.14 |
+| Joins 32 | 728.315 | 267.276 | 214.42 / 105.83 |
+
+DEFLATE falls by 59.6%, independent outcomes by 89.6%, and joins by 63.3%.
+The DEFLATE ranges are 687.905-698.689 and 276.630-280.973 ms; the final
+median is 22.5% above the original pre-feature 227.915 ms, meeting the stated
+25% target. Both large scale cases exceed the 50% reduction criterion. Other
+maintained workloads show no regression above 10%; the copying scale control
+at 32 steps increases by 1.704 ms (7.1%). These whole-CLI observations do not
+establish zero transport overhead or a whole-suite speedup.
+
+A fresh paired comparison against pre-feature `e8e1c411` confirms the target:
+DEFLATE is 225.091 ms (222.413-228.038) before transport and 275.585 ms
+(274.754-279.796) after this optimization, a 22.4% increase. The final code
+still costs 62.147 ms versus 22.377 ms for 32 independent outcomes, and
+265.133 ms versus 26.281 ms for 32 joins. The feature's proof work has not
+become free, even though the selected reduction criteria are met.
+
+The representation still stores a dense matrix per live conditional value,
+and a join still processes every surviving context. The remaining scaling
+opportunity and its reopening criterion are kept in TODO; broader storage or
+last-use analysis is not necessary to meet this measured target.
 
 ## Candidate evidence and remaining validation
 
@@ -602,14 +642,22 @@ perl .github/run-check.pl result-proof-probe "$wf_result_scratch/probe" \
   "$wf_result_compiler" "$wf_result_scratch/results" --candidate
 ```
 
-The unified path, after removing the old direct-match and selected-receiver
-code, passes all 35 candidate probes: 25 accepts and 10 expected rejections.
-The compiler's 950 semantic unit tests pass, including independent retained-DAG
+The original unified path, after removing the old direct-match and selected-receiver
+code, passed all 35 candidate probes: 25 accepts and 10 expected rejections.
+Its 950 semantic unit tests passed, including independent retained-DAG
 arithmetic/substitution checks and the maintained real-program proof inventory.
 A first complete library run exposed eight expectations for the retired rules;
 those expectations were revised against the amendment and the semantic suite
 was rerun. Complete gate results and their tested revision are reported in
 [PR #87](https://github.com/mbbill/Whitefoot/pull/87).
+
+The cost revision repeats all 35 probes and adds implementation-specific
+observations to the maintained tests: exact candidate-set agreement for
+substitution into an existing destination and refresh from a larger core,
+before and after S12 removal; equal-value witness replacement and fallback;
+and eager complete-closure comparison at every proof point in the existing
+Result value-transport and conditional-join cases. These protect candidate
+provenance and closure records without duplicating normative case ownership.
 
 The formal corpus adds a runtime value-transport case and a conditional-join
 case, and negative cases for replacement, mutable support, guard isolation,
@@ -633,7 +681,8 @@ Design suitability: a private child of the existing entailment flow owns
 conditional evidence construction, selection and joins. The parent retains
 ordinary event order and callable authority; no second solver, runtime state
 or body-private interprocedural summary is introduced. Dense per-local contexts
-have the measured cost above; sharing/projection is a follow-up with explicit
-precision and cost criteria. This evidence does not constitute a general
+reuse the ordinary numeric core under the measured criteria above; further
+storage sharing remains a follow-up with explicit precision and cost criteria.
+This evidence does not constitute a general
 soundness certificate; the independent review and current validation status
 belong to the PR.
