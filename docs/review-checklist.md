@@ -185,7 +185,7 @@ Source: [specification and test integrity](../AGENTS.md#specification-and-test-i
   it. The conformance runner checks unique rule IDs and resolving references;
   inspect semantic duplication, exception clauses, and whether non-authoritative
   review inventories match their normative definitions.
-  the approval boundary remains [AGENTS.md rule 4](../AGENTS.md#branch-and-main-boundary).
+  The approval boundary remains [AGENTS.md rule 4](../AGENTS.md#branch-and-main-boundary).
 - [ ] **T2 — Preserved checks.** Every removed, skipped, narrowed, regenerated
   or weakened test/check has a technical reason consistent with the requested
   change. An implementation gap, crash, timeout or unsupported feature has not

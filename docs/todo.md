@@ -18,6 +18,23 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   wrong-order and non-const-eligible controls. Remove this item when those
   cases pass through the ordinary compiler and conformance paths.
 
+- **Audit numeric conversion coverage and unnecessary fallible interfaces.**
+  The known starting case is integer low-bit narrowing: `cvt::<u32, u8>(x)`
+  preserves the numeric value and returns `Result`, while `reinterpret` only
+  admits its listed equal-width pairs. Masking with `iand(x, 255_u32)` before
+  `cvt` expresses the low-byte result but still exposes `Result`; there is no
+  direct total truncating conversion. Survey similar gaps across integer widths
+  and signedness, bit reinterpretation, saturation, and floating-point rounding
+  or narrowing, distinguishing existing compositions from missing operations.
+  Use small source examples and boundary controls to define each desired
+  behavior, including negative values, range edges, and relevant NaN/infinity
+  cases. Assess whether a clearer total operation or proved-domain form removes
+  unnecessary source branching without weakening exact conversion or proof
+  requirements; inspect ordinary emitted code before claiming a runtime cost
+  or improvement. Additional gaps and performance costs are unverified. Defer
+  operation selection and implementation to the requested conversion review;
+  reopen when that review starts or a real numeric workload needs a workaround.
+
 - **Joined reference proofs lose useful target-relative information.** A
   reference selecting either of two freshly empty Slots cannot establish the
   append precondition from both constructors' facts; captured disjoint ranges
@@ -46,17 +63,6 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   with source-bounded traversal and explicit cycle handling. Deferred until
   reference-summary work provides a discriminating source witness or proves the
   cap redundant; reopen before reusing this resolver for a new proof family.
-
-- **Counted-loop binder reservation has a separate normative mismatch.**
-  OP-1's exhaustive prohibited-role list omits `for_binding`, while DIAG-1's
-  reservation payload inventory includes `for-binder` and the resolver rejects
-  `for (cvt in 0_u64..1_u64)` with FORM-3. The existing resolver case
-  `counted_range_binder_uses_the_for_binder_reservation_role` requires that result.
-  Decide whether runtime loop binders join ordinary value binders in the reserved
-  domain, then align the two rule lists, resolver and positive/negative controls.
-  Invariant names have a separate proof-only lookup domain, so their exemption
-  does not decide this question. Deferred to an explicit runtime-name ruling;
-  reopen before changing reservation or counted-loop declaration inventory.
 
 - **Validate reuse of selected-target element layouts during emission.**
   [Zero-stride addressing](../compiler/src/backend/target.rs) currently queries
