@@ -60,6 +60,75 @@ The diagnostic reports absolute per-call wall and CPU differences separately;
 the recorded CPU interval quantum is 1,000 ns, or 0.244 ns per call after
 normalization. Its fixed paired order and results are in the investigation.
 
+The separate [runtime-DAG fan-in trial](../../investigations/compute-model/DESIGN.md#runtime-dag-fan-in-source-trial-2026-09-23)
+uses `dag_fanin_probe.cpp`, its LLVM host adapter and `dag_fanin_trace.awk`.
+These files serve only the explicit targets below and retire with that trial.
+They do not enter the framework scoreboard or daily correctness checks.
+The probe compares every task output and exactly-once count with a serial
+Kahn oracle over the original graph edges, and checks input preservation,
+boundary canaries and each notification owner's received source mask/count.
+Its oneTBB reference builds `continue_node` edges directly from the same
+original graph, independently of the WF decompositions and oracle schedule.
+Registering edges supplies the notification thresholds; no constructor
+predecessor count is added a second time.
+
+Use an existing compiler, a dedicated scratch work directory, and the existing
+oneTBB cache pinned by `deps.sh` (`3046c8b0c29df995980003ea24f4d78c80ec0c8d`).
+The targets never download dependencies or build a compiler/framework. Run
+source analysis/emission and native construction as separate guarded phases:
+
+```sh
+WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl dag-fanin-emit \
+  make -C research/experiments/compute-bench -j2 dag-fanin-emit \
+  WFC=/absolute/path/to/whitefootc WORK=/absolute/scratch/dag-fanin
+WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl dag-fanin-build \
+  make -C research/experiments/compute-bench -j2 dag-fanin-build \
+  WORK=/absolute/scratch/dag-fanin DAG_TBB_PREFIX=/absolute/existing/deps
+```
+
+The emitted module and complete ordinary runtime use the CLI's `-O2` flags;
+the C++ probe also uses `-O2`, with no historical placement or vectorization
+controls. The cached oneTBB library keeps its recorded build flags.
+The `*.sha256` and `*-flags.txt` files retain construction identities and
+options. Before interpreting trace events, inspect the optimized code to
+confirm that the recurrence consumes the begin hook's returned seed and the
+end hook consumes the recurrence result. The hooks are opaque to WF, and
+the C++ begin hook is noinline with a volatile seed readback.
+
+Run each engine/image/width process once, retaining every result. Each command
+below is a complete matrix, not an individual fixture. The WF matrix contains
+115 cases/956 task rows; the oneTBB matrix contains 67 cases/764 task rows,
+because it runs the original N graph once per weight assignment rather than
+repeating the four WF source orders. Neither target times or retries calls:
+
+```sh
+for engine in wf tbb; do
+  for image in plain trace; do
+    for workers in 1 4; do
+      WHITEFOOT_CHECK_TIMEOUT=30 perl .github/run-check.pl \
+        "dag-fanin-$engine-$image-W$workers" \
+        make -C research/experiments/compute-bench dag-fanin-run \
+        WORK=/absolute/scratch/dag-fanin DAG_ENGINE="$engine" \
+        DAG_IMAGE="$image" DAG_WORKERS="$workers" || exit
+    done
+  done
+done
+```
+
+The traced image records one begin/end pair per serial task recurrence and
+checks exact event counts, IDs, inputs, results, native thread identity and
+completion of every original prerequisite before its consumer begins.
+Overlapping intervals on distinct threads establish observed task overlap;
+the observer's atomics affect scheduling, so these are not timing results.
+Notification owner events begin after notice folding and cover task work only.
+Separate deliberate output-bit and event-deletion controls must be rejected.
+W1/W4 mean total participants; native mode uses a matching oneTBB arena and
+does not start a WF worker pool. Source and observer byte counts are logical
+payloads, excluding allocator metadata, oneTBB internal nodes, runtime lanes,
+native stacks and canaries; no physical peak-memory measurement is claimed.
+`DAG_VARIANT` and `DAG_EMIT_FLAGS` allow a separately labelled, explicitly
+selected compiler control without overwriting the ordinary default evidence.
+
 ## What "WF" means here, and what it does not
 
 The range-loan consumer is selected with `make KERNELS=stencil verify` or

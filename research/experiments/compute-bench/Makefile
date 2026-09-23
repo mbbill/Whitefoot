@@ -430,6 +430,7 @@ LINK_LIBS := -L$(DEPS)/lib -Wl,-rpath,$(DEPS)/lib -ltbb \
              $(DEPS)/rayon/libwf_compute_bench_rayon.a -ldl -lm
 
 .PHONY: all compiler deps build images verify compare programs-check verdict array-reference-build \
+        dag-fanin-emit dag-fanin-build dag-fanin-build-inputs dag-fanin-run \
         verdict-test module-symbols-test baseline-entry-test baseline-check clean clean-deps FORCE
 all: build
 
@@ -459,6 +460,73 @@ array-reference-build: compiler $(RUNTIME_OBJS)
 	    $(BUILD)/array_reference-linked.ll array_reference_bench.c \
 	    $(RUNTIME_OBJS) -lm -o $(BUILD)/array_reference
 	$(SHA256) array_reference.wf array_reference_bench.c array_reference_host.ll $(BUILD)/array_reference
+
+# Explicit runtime-DAG qualification, separate construction and execution.
+# No compiler/dependency build or daily gate reaches these targets. Retire the
+# probe, adapter and observer with the investigation when they are superseded.
+DAG_SOURCE := $(ROOT)/research/investigations/compute-model/dag-fanin.wf
+DAG_VARIANT ?= default
+DAG_EMIT_FLAGS ?= --par
+DAG_PREFIX := $(BUILD)/dag_fanin_$(DAG_VARIANT)
+DAG_TBB_PREFIX ?= $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-compute-bench/deps
+DAG_TBB_LIBRARY := $(DAG_TBB_PREFIX)/lib/$(if $(filter Darwin,$(shell uname -s)),libtbb.dylib,libtbb.so)
+DAG_NATIVE_FLAGS := -std=c11 -pthread -O2 -Wno-override-module
+DAG_CXX_FLAGS := -std=c++17 -pthread -O2 -Wall -Wextra -Werror -Wpedantic
+DAG_ENGINE ?= wf
+DAG_IMAGE ?= plain
+DAG_WORKERS ?= 1
+
+dag-fanin-emit:
+	@test -x "$(WFC)"
+	@mkdir -p $(BUILD)
+	$(WFC) $(DAG_EMIT_FLAGS) --par-ledger --emit-llvm $(DAG_SOURCE) -o $(DAG_PREFIX).raw.ll > $(DAG_PREFIX).ledger
+	awk -f $(HOST_ADAPTER) $(DAG_PREFIX).raw.ll dag_fanin_host.ll > $(DAG_PREFIX).bound.ll
+	awk -v observed=0 -f dag_fanin_trace.awk $(DAG_PREFIX).bound.ll > $(DAG_PREFIX)_plain.ll.new
+	mv $(DAG_PREFIX)_plain.ll.new $(DAG_PREFIX)_plain.ll
+	awk -v observed=1 -f dag_fanin_trace.awk $(DAG_PREFIX).bound.ll > $(DAG_PREFIX)_trace.ll.new
+	mv $(DAG_PREFIX)_trace.ll.new $(DAG_PREFIX)_trace.ll
+	$(SHA256) $(WFC) $(DAG_SOURCE) dag_fanin_host.ll dag_fanin_trace.awk \
+	    $(DAG_PREFIX).raw.ll $(DAG_PREFIX).ledger $(DAG_PREFIX)_plain.ll \
+	    $(DAG_PREFIX)_trace.ll > $(DAG_PREFIX).emission.sha256
+	@printf '%s\n' 'emission_flags=$(DAG_EMIT_FLAGS)' > $(DAG_PREFIX).emission-flags.txt
+
+dag-fanin-build-inputs:
+	@test -f "$(DAG_PREFIX)_plain.ll" -a -f "$(DAG_PREFIX)_trace.ll" || \
+	    { echo 'dag-fanin: run the separate dag-fanin-emit phase first' >&2; exit 1; }
+	@test -f "$(DAG_TBB_PREFIX)/include/oneapi/tbb/flow_graph.h" -a -f "$(DAG_TBB_LIBRARY)" || \
+	    { echo 'dag-fanin: name an existing pinned cache with DAG_TBB_PREFIX; this target never installs dependencies' >&2; exit 1; }
+
+# Reuse the ordinary library recipes with ordinary CLI flags. In particular,
+# none of compute-bench's historical alignment/vectorization controls reaches
+# this untimed qualification. Use a dedicated WORK directory.
+dag-fanin-build: WF_FLAGS := $(DAG_NATIVE_FLAGS)
+dag-fanin-build: dag-fanin-build-inputs $(RUNTIME_OBJS)
+	$(CXX) $(DAG_CXX_FLAGS) -isystem $(DAG_TBB_PREFIX)/include -c dag_fanin_probe.cpp -o $(DAG_PREFIX)_probe.o
+	$(CC) $(DAG_NATIVE_FLAGS) -c $(DAG_PREFIX)_plain.ll -o $(DAG_PREFIX)_plain.o
+	$(CC) $(DAG_NATIVE_FLAGS) -c $(DAG_PREFIX)_trace.ll -o $(DAG_PREFIX)_trace.o
+	$(CXX) -pthread -O2 $(DAG_PREFIX)_plain.o $(DAG_PREFIX)_probe.o $(RUNTIME_OBJS) \
+	    -L$(DAG_TBB_PREFIX)/lib -Wl,-rpath,$(DAG_TBB_PREFIX)/lib -ltbb -lm -o $(DAG_PREFIX)_plain
+	$(CXX) -pthread -O2 $(DAG_PREFIX)_trace.o $(DAG_PREFIX)_probe.o $(RUNTIME_OBJS) \
+	    -L$(DAG_TBB_PREFIX)/lib -Wl,-rpath,$(DAG_TBB_PREFIX)/lib -ltbb -lm -o $(DAG_PREFIX)_trace
+	@$(call assert-real-runtime,$(DAG_PREFIX)_plain)
+	@$(call require-strong,$(DAG_PREFIX)_plain,wf__floor_run)
+	@$(call require-strong,$(DAG_PREFIX)_plain,wf__par_acquire_lane)
+	@$(call assert-real-runtime,$(DAG_PREFIX)_trace)
+	@$(call require-strong,$(DAG_PREFIX)_trace,wf__floor_run)
+	@$(call require-strong,$(DAG_PREFIX)_trace,wf__par_acquire_lane)
+	$(SHA256) dag_fanin_probe.cpp $(DAG_TBB_LIBRARY) $(DAG_TBB_PREFIX)/metadata.txt \
+	    $(DAG_PREFIX)_probe.o $(DAG_PREFIX)_plain.o $(DAG_PREFIX)_trace.o $(RUNTIME_OBJS) \
+	    $(DAG_PREFIX)_plain $(DAG_PREFIX)_trace > $(DAG_PREFIX).native.sha256
+	@printf '%s\n' 'native_flags=$(DAG_NATIVE_FLAGS)' 'probe_flags=$(DAG_CXX_FLAGS)' \
+	    'tbb_prefix=$(DAG_TBB_PREFIX)' > $(DAG_PREFIX).native-flags.txt
+
+# This target never builds, emits, times, repeats or retries. Guard each
+# selected process independently so its exit status remains visible.
+dag-fanin-run:
+	@test "$(DAG_IMAGE)" = plain -o "$(DAG_IMAGE)" = trace
+	@test "$(DAG_ENGINE)" = wf -o "$(DAG_ENGINE)" = tbb
+	@test "$(DAG_WORKERS)" = 1 -o "$(DAG_WORKERS)" = 4
+	WF_WORKERS=$(DAG_WORKERS) $(DAG_PREFIX)_$(DAG_IMAGE) $(DAG_ENGINE)
 
 # -------------------------------------------------------------------- deps --
 # `fetch` is the only network step; everything after it is offline. A

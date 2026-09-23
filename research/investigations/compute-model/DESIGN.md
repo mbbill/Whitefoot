@@ -13,10 +13,10 @@ compiler. The active specification and executable cases remain authoritative.
 
 ## Runtime DAG fan-in source trial (2026-09-23)
 
-This prospective trial starts at merged `f2140599` and qualifies candidates
+This trial starts at merged `f2140599` and qualifies candidates
 left open by [catalog section 5](../io-model/CONCURRENCY-CATALOG.md#5-task-dag-with-dependencies-static-and-dynamic).
-No source, permission, emitted structure, native result or overlap result is
-established yet.
+The complete source admits and emits the groups reported below. Native
+correctness and observed overlap remain separate evidence.
 
 The initial scope is three runtime-selected fixed graph families, not
 arbitrary runtime adjacency:
@@ -140,6 +140,92 @@ A considered future spine form computes the spine first and then maps all
 leaves, with span `k + max(T_i)` before overhead. It matches `k+T` on uniform
 leaves, so that family alone cannot distinguish it from nested calls; skew
 can. This alternative is not implemented or selected by the initial trial.
+
+### Source admission and emitted structure
+
+The initial source admitted without repair on the saved `f2140599`-equivalent
+compiler. Source analysis and emission used
+`--par --par-ledger --stack-ledger --emit-llvm`, with the 30-second guard and
+two-job environment. The successful command took 0.17 seconds in the compiler
+and 0.21 seconds including its wrapper; these are construction observations,
+not a runtime performance comparison. The source was last written at
+08:57:33 UTC on 2026-09-23 and the successful output at 09:07:50 UTC. Their
+SHA-256 identities are:
+
+| Artifact | SHA-256 |
+|---|---|
+| Saved compiler executable | `c57f989b1b0073769d4999266f3353143d758b2f400c26a74e8d260b684afe33` |
+| [Source](dag-fanin.wf) | `291d5e11f77820e4281986bd1f026ad32ed2aa530948b8fc17e63d24bf45cca8` |
+| Active specification | `6c7de1e375a0f5815ddf83d63ed1ad121ec0dd10b2cd8b94fab34a7f6c64f065` |
+| Default emitted LLVM module | `92fdcad44f82524683565ca1983104fe16d5bbef333768029ba7ede216435159` |
+
+The compiler and specification source trees match `f2140599`. The public
+spine contract admits counts through `floor(u64::max / 2)`, with both supplied
+ranges covering `2*count` cells; 32 is a fixture size, not a source limit.
+All task costs remain runtime inputs. The ledger denies PAR-2 permission for
+`dag_task` because its updated state survives across iterations and has no
+admitted associative reduction. The LLVM contains that dependent scalar loop
+and no synthesized loop splitters, so later task overlap cannot be attributed
+to a parallelized recurrence.
+
+The default module contains nine static compute-offer sites. Each two-call
+group offers its first call, executes its second on the current stack, then
+joins or executes the refused first call before proceeding. The ledger and
+actual calls agree on the following groups:
+
+| Source family | Permitted task calls | Emitted groups and joins |
+|---|---|---|
+| Spine | Each leaf and following suffix | Offer leaf; execute suffix; join leaf |
+| Notifications | A/B sources and C/D owners | A/B group; join; C/D group; join |
+| N mode 0 | A/B and C/D | A/B group; join; C/D group; join |
+| N mode 1 | A-then-C helper and D, after B | B; AC/D group; join |
+| N mode 2 | A and B-then-D helper | A/BD group; join; C |
+| N mode 3 | B/A, A/D and D/C as separate pairs | B/A group; join; D/C group; join |
+
+The diagnostic mode 3 therefore adds A-to-D and has the same ideal phase
+span as mode 0. Its permitted A/D pair is not emitted: A already belongs to
+the earlier B/A group, and B/D dependence prevents all three forming one
+pairwise-independent group. The existing greedy grouping loses that middle
+permission. This is an emitted-structure limitation of this lowering, not a
+source rejection or a proof that another scheduling scheme is impossible.
+The notification owner group likewise establishes independent owner calls,
+not yet observed simultaneous receipt processing; source/owner joining also
+retains absent-edge precedences for sparse masks.
+
+The recursive family carries one budget through `spine_suffix`, subtracting
+one at every suffix edge and entering its fully sequential clone at zero.
+The [current policy](../../../design/compiler/parallel-lowering/two-worlds.md)
+uses `min(24, floor(log2(64*lanes)))`. At W4 its budget is eight: only the
+first `min(k,8)` leaves can be offered, and task IDs 16 onward in a longer
+spine execute in the sequential suffix. A length-eight input reaches its
+empty terminal suffix at the cut; length nine includes the first nonempty
+sequential suffix. The native adapter selects the sequential world at W1,
+so the runtime's nominal no-pool budget of six does not make W1 offer tasks.
+The `off` control may isolate this cutoff later; none has been emitted or
+run as part of this source-admission result.
+
+Emitted captures request 56 bytes for a spine leaf, 80 for a notification
+source, 96 for an owner, and 56 or 72 for the N groups. The runtime reserves
+64 slots of 256 capture bytes per lane, plus slot/deque metadata, in a lane
+array declared for the maximum 64 lanes. A completed leaf keeps its
+originating slot until the enclosing suffix returns and the join releases it.
+Those retained slots are another finite resource even when
+the recursion budget is disabled. The stack ledger reports 96 bytes per
+overlapped suffix level, 48 for the spine entry, 224 for the notification
+entry, and 112 for the N entry. These are emitted alloca/capture counts,
+excluding native spill frames, runtime stacks and the observer; they do not
+measure physical peak memory. A zero-byte sequential-suffix ledger frame
+likewise does not establish constant native stack use.
+
+**Design suitability.** The existing checked calls express all three selected
+families. Two concrete improvement opportunities remain unselected: a
+recursive policy that accounts for this unary spine with side leaves could
+preserve offers beyond depth eight, and a lowering that retains permitted A/D
+overlap across the current groups could avoid the diagnostic extra edge.
+Both affect compiler scheduling and require independent work/space and
+performance qualification; removing the depth cut alone leaves the retained
+slot limit. This trial records their structure and defers implementation
+until native evidence qualifies the impact. No specification rule changes.
 
 ## Sparse destination routing trial (2026-09-21)
 
