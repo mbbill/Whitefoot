@@ -300,7 +300,12 @@ fn borrowed_output_capacity_contract_informs_the_body_without_a_callee_prologue(
     // compiler-derived free of that one heap object is on its return edge
     // [STOR-1, STOR-3, LIV-1].
     assert_eq!(copy.matches("call void @free").count(), 1);
-    assert!(!copy.contains("llvm.assume"));
+    // Retire the blanket absence-of-assume expectation: source.inner[offset]
+    // now receives the qualified nonnegative payload-index fact. The
+    // source_length <= out_length requirement itself remains erased; it
+    // supplies neither a callee prologue nor a separate assumption.
+    assert_eq!(copy.matches("call void @llvm.assume(i1 ").count(), 1);
+    assert_eq!(copy.matches(".nonnegative = icmp sge i64 ").count(), 1);
 
     let output = compile_and_run(&llvm);
     assert!(output.status.success());

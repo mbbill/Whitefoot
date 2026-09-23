@@ -31,6 +31,9 @@
 //! The remaining cases keep their subject and were retargeted onto the [OP-13]
 //! construction functions over the one heap [STOR-8].
 
+use crate::backend::emitter::{
+    BackendFailure, WindowAddressFacts, emit_llvm_with_window_address_facts,
+};
 use crate::backend::target::{
     TargetLayout, TargetLayoutFailure, TargetObject, TargetStorageType, validate_program,
     validate_static_storage,
@@ -85,7 +88,26 @@ fn slots_addresses_use_proved_offsets_and_ring_addresses_still_wrap() {
             let source = format!(
                 "fn read(values: &{ty}, index: own u64) -> result: own u64 reads(values) contract {{\n  requires index < {window}.len;\n}} {{\n  return {window}[index];\n}}\n\nfn roundtrip(values: &{ty}, value: own u64) -> result: own u64 writes(values) contract {{\n  requires {window}.len < {window}.cap;\n}} {{\n  place_back(window: &{window}, value: value);\n  let result = take_back(window: &{window});\n  return result;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
             );
-            let llvm = compile(source.as_bytes());
+            let (llvm, withheld) = with_ir(source.as_bytes(), |program| {
+                let target = TargetLayout::host().expect("supported target");
+                let emit = |facts| {
+                    emit_llvm_with_window_address_facts(program, target, facts)
+                        .expect("both fact choices use the same qualified program")
+                        .into_string()
+                };
+                (
+                    emit(WindowAddressFacts::Emit),
+                    emit(WindowAddressFacts::Withhold),
+                )
+            });
+            assert!(!withheld.contains("@llvm.assume"));
+            let ordinary_lines = llvm
+                .lines()
+                .filter(|line| {
+                    !line.contains("@llvm.assume") && !line.contains(".nonnegative = icmp sge i64 ")
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(ordinary_lines, withheld.lines().collect::<Vec<_>>());
             let functions = llvm
                 .split("\ndefine ")
                 .filter(|body| {
@@ -100,6 +122,32 @@ fn slots_addresses_use_proved_offsets_and_ring_addresses_still_wrap() {
             for body in functions {
                 assert!(body.contains("getelementptr inbounds"), "{body}");
                 assert_eq!(body.contains("icmp uge i64"), shape == "Ring", "{body}");
+                assert_eq!(body.matches("call void @llvm.assume(").count(), 1, "{body}");
+                let lines = body.lines().collect::<Vec<_>>();
+                let assume = lines
+                    .iter()
+                    .position(|line| line.contains("call void @llvm.assume("))
+                    .expect("one payload fact");
+                let address = lines[assume + 1].trim();
+                let (pointer, _) = address.split_once(" = ").expect("payload pointer");
+                let (_, operand) = address.rsplit_once(", i64 ").expect("actual GEP index");
+                assert_eq!(
+                    lines[assume - 1].trim(),
+                    format!("{pointer}.nonnegative = icmp sge i64 {operand}, 0")
+                );
+                assert_eq!(
+                    lines[assume].trim(),
+                    format!("call void @llvm.assume(i1 {pointer}.nonnegative)")
+                );
+                assert!(address.contains(" = getelementptr inbounds "), "{address}");
+                for line in lines {
+                    if line.contains(" = add ") || line.contains(" = sub ") {
+                        assert!(
+                            !line.contains(" nuw ") && !line.contains(" nsw "),
+                            "window coordinate arithmetic keeps its ordinary form: {line}"
+                        );
+                    }
+                }
             }
         }
     }
@@ -181,8 +229,32 @@ fn zero_sized_takes_update_slots_and_wrapped_ring_boundaries_once() {
   return exit_status(code: 0_u8);
 }
 "#;
-    for overlap in [OverlapLowering::Off, OverlapLowering::On] {
-        let module = super::emit_lowered(source, overlap);
+    for (overlap, facts) in [
+        (OverlapLowering::Off, WindowAddressFacts::Emit),
+        (OverlapLowering::Off, WindowAddressFacts::Withhold),
+        (OverlapLowering::On, WindowAddressFacts::Emit),
+    ] {
+        let module = super::system::with_mutated_ir_lowering(source, overlap, |program| {
+            let target = TargetLayout::host().expect("supported target");
+            let mut module = emit_llvm_with_window_address_facts(program, target, facts)
+                .expect("the zero-stride program qualifies in both fact choices")
+                .into_string();
+            module.push_str(
+                &crate::driver::launcher::render(program, "main").expect("ordinary test launcher"),
+            );
+            module
+        });
+        let assumptions = module
+            .lines()
+            .filter(|line| line.contains(".nonnegative = icmp sge i64 "))
+            .collect::<Vec<_>>();
+        if facts == WindowAddressFacts::Emit {
+            assert!(!assumptions.is_empty(), "observe zero-stride payload facts");
+            assert!(assumptions.iter().all(|line| line.ends_with("i64 0, 0")));
+        } else {
+            assert!(assumptions.is_empty());
+            assert!(!module.contains("@llvm.assume"));
+        }
         let retained = super::owned_places::retain_calls(&module);
         let output = super::compile_and_run(&retained);
         assert_eq!(output.status.code(), Some(0), "{output:?}");
@@ -274,6 +346,14 @@ fn main() -> status: own ExitStatus pure {
                 TargetObject::RuntimeSizedAllocation
             ))
         );
+        for facts in [WindowAddressFacts::Emit, WindowAddressFacts::Withhold] {
+            assert_eq!(
+                emit_llvm_with_window_address_facts(program, short, facts),
+                Err(BackendFailure::TargetLayout(
+                    TargetLayoutFailure::Unrepresentable(TargetObject::RuntimeSizedAllocation)
+                ))
+            );
+        }
         let mut module = crate::backend::emitter::emit_llvm_with_layout(program, exact)
             .expect("the exact allocation boundary emits")
             .into_string();

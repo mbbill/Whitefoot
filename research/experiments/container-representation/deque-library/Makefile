@@ -59,6 +59,7 @@ measure: check
 	  echo "Raw samples: $$output"
 
 # Optional causal probe over the four positive-stride u64 Ring endpoint GEPs.
+# Compare the unsigned GEP flag with an assumption on the actual index.
 # Run under the repository guard. This requires local Clang support for GEP
 # `nuw`; it neither changes compiler emission nor promises optimizer parity.
 probe-scalar-gep: $(BUILD)/deque-library-normal.ll deque-costs.c $(NATIVE_OBJECTS)
@@ -70,16 +71,20 @@ probe-scalar-gep: $(BUILD)/deque-library-normal.ll deque-costs.c $(NATIVE_OBJECT
 	  my $$nuw_count = ($$nuw =~ s/$$pattern/$$1$$2 = getelementptr inbounds nuw $$3, ptr $$4, i64 0, i32 3, i64 $$5/g); \
 	  my $$split = $$baseline; \
 	  my $$split_count = ($$split =~ s/$$pattern/$$1$$2.payload_base = getelementptr inbounds $$3, ptr $$4, i64 0, i32 3\n$$1$$2 = getelementptr inbounds [0 x i64], ptr $$2.payload_base, i64 0, i64 $$5/g); \
-	  die "scalar GEP probe drift: expected 4 u64 Ring payload GEPs, got nuw=$$nuw_count split=$$split_count\n" unless $$nuw_count == 4 && $$split_count == 4; \
-	  for my $$variant (["baseline", $$baseline], ["nuw", $$nuw], ["split", $$split]) { \
+	  my $$nonnegative = $$baseline; \
+	  die "scalar GEP probe requires an unmodified baseline without llvm.assume or probe suffixes\n" if $$baseline =~ /\@llvm\.assume\b|\.wf_probe_nonnegative\b/; \
+	  my $$nonnegative_count = ($$nonnegative =~ s/$$pattern/$$1$$2.wf_probe_nonnegative = icmp sge i64 $$5, 0\n$${1}call void \@llvm.assume(i1 $$2.wf_probe_nonnegative)\n$$1$$2 = getelementptr inbounds $$3, ptr $$4, i64 0, i32 3, i64 $$5/g); \
+	  $$nonnegative .= "\ndeclare void \@llvm.assume(i1)\n"; \
+	  die "scalar GEP probe drift: expected 4 u64 Ring payload GEPs, got nuw=$$nuw_count split=$$split_count nonnegative=$$nonnegative_count\n" unless $$nuw_count == 4 && $$split_count == 4 && $$nonnegative_count == 4; \
+	  for my $$variant (["baseline", $$baseline], ["nuw", $$nuw], ["split", $$split], ["nonnegative", $$nonnegative]) { \
 	    open my $$out, ">", "$$build/deque-gep-$$variant->[0].ll" or die $$!; \
 	    print {$$out} $$variant->[1]; close $$out or die $$!; \
 	  } \
 	  print "Scalar GEP probe: 4 u64 Ring payload GEPs selected per variant\n";' "$<" "$(BUILD)"
-	@set -eu; for variant in baseline nuw split; do \
+	@set -eu; for variant in baseline nuw split nonnegative; do \
 	  source="$(BUILD)/deque-gep-$$variant.ll"; \
 	  $(CLANG) -O2 -Wno-override-module -x ir -S -emit-llvm "$$source" -o "$(BUILD)/deque-gep-$$variant.opt.ll" || { \
-	    echo "Scalar GEP probe failed; local Clang must accept getelementptr inbounds nuw. See its diagnostic above." >&2; exit 1; \
+	    echo "Scalar GEP probe $$variant failed; local Clang must accept the requested LLVM syntax, including GEP nuw. See its diagnostic above." >&2; exit 1; \
 	  }; \
 	  $(CLANG) -std=c11 -O2 -Wall -Wextra -Werror -Wno-override-module deque-costs.c "$$source" $(NATIVE_OBJECTS) $(NATIVE_LINK_FLAGS) -o "$(BUILD)/deque-gep-$$variant$(EXE)"; \
 	  "$(BUILD)/deque-gep-$$variant$(EXE)" check > "$(BUILD)/deque-gep-$$variant.check.txt"; \

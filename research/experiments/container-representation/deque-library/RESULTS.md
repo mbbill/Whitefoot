@@ -207,12 +207,102 @@ not establish that those other cases may receive the flag.
 The maintained optional reproduction is
 `make -C research/experiments/container-representation/deque-library probe-scalar-gep`,
 under the shared guard. It refuses drift from the exact four selected u64
-GEPs, saves the three optimized IR variants and their oracle results under
+GEPs, saves the optimized IR variants and their oracle results under
 `.build/`, and requires a local Clang that accepts GEP `nuw`. It is outside
 both daily checks and the ordinary benchmark targets. It changes no compiler
 emission. The target was added after baseline timing: the measured Makefile
-hash below predates it; the Makefile containing the optional target is
+hash below predates it; the original three-variant target's Makefile was
 `1facd9eafce1baabac65e456df6ba962b46abd45a944af4eeeaf5f0afbd4e020`.
+
+#### Nonnegative-index assumption candidate
+
+The next bounded probe adds a fourth variant to the same target. Immediately
+before each of the same four positive-stride u64 payload GEPs, it inserts
+`icmp sge i64 <actual normalized address index>, 0` and
+`call void @llvm.assume(i1 <comparison>)`, leaving the original `inbounds`
+GEP intact. One intrinsic declaration is added. The target requires exactly
+four replacements and refuses an input already containing `llvm.assume` or
+the probe's temporary-name suffix. This is a transformation of a fixed
+baseline module, not a general lowering implementation.
+
+The 2026-09-22 run used the unchanged Deque library, workload and C driver
+identified in this report, and the v0.65 baseline compiler corresponding to merged
+`1b916975`, SHA-256
+`0ab0f5730590828c511d0a0d4d90d3131654377ea020e5634f5a0800ff9edb96`.
+Its raw WF output is
+`a32c7d14640f6f855f67149281fa839c65d3d30597c96bc50d8de8e012fa32b6`.
+The extended Makefile is
+`c5d94d9e71160a37894d11f3deca02b2ec659b8a017a1543646a3d739b9c77bc`.
+Reproduction pins that baseline compiler rather than a future compiler that
+may already emit the assumption:
+
+```sh
+BASELINE_WHITEFOOTC=/path/to/baseline/whitefootc
+perl .github/run-check.pl ring-gep-portable-probe \
+  make -C research/experiments/container-representation/deque-library \
+  probe-scalar-gep \
+  WHITEFOOTC="$BASELINE_WHITEFOOTC" \
+  CLANG=/usr/bin/clang
+```
+
+Set the variable to a saved compiler with the recorded baseline identity. Apple
+Clang 21.0.0 (`clang-2100.3.34.2`) on the recorded arm64 host optimized,
+linked and executed all four variants. Each passed 432 configurations and
+1,296 independent checksum/allocation-ledger executions, for 5,184 executions
+in total. No timing samples were collected. Probe construction and correctness
+took 4.07 seconds, including rebuilt runtime objects; the complete shared
+guard interval took 4.56 seconds including assembly generation. Assembly was
+generated directly from each transformed input with
+`clang -O2 -Wno-override-module -S -x ir`, matching the native executable's
+input rather than reoptimizing the already optimized module.
+
+Here `trace` means `wf_deque_library_trace$instance$37`, and the hot loop is
+its forward-churn `bb32`. Branch counts are static instruction counts, not
+dynamic branch frequencies. The full trace includes fill, reverse churn,
+rebase and cleanup as well as that hot loop.
+
+| Variant | Hot-loop i64 loads / stores | Optimized IR assume calls, trace / hot loop | AArch64 trace calls / conditional branches | AArch64 hot-loop calls / branches |
+| --- | --- | --- | --- | --- |
+| Baseline | 4 / 4 | 0 / 0 | 6 / 24 | 0 / 1 |
+| GEP `nuw` | 1 / 1 | 0 / 0 | 6 / 30 | 0 / 1 |
+| Split only | 4 / 4 | 0 / 0 | 6 / 24 | 0 / 1 |
+| Nonnegative-index `assume` | 1 / 1 | 22 / 1 | 6 / 30 | 0 / 1 |
+
+The assumption variant retains 34 intrinsic calls across the optimized
+module, but none becomes an assembly call or a branch checking the sign.
+The two fact-bearing variants have identical forward hot-loop instructions:
+one payload load, one payload store, no call, and one loop backedge branch.
+Both also allow initial-fill vectorization; their scalar trace has eight
+`<2 x i64>` store instructions, versus none in the baseline or split control.
+Their additional trace branches come with the same vectorized/loop forms,
+not an extra assumption check. The complete scalar functions are nevertheless
+different: the `nuw` variant has 310 machine instructions and the assumption
+variant 305, with other-path register allocation and scheduling differences.
+This is not a whole-function equivalence or performance claim. The record
+trace's complete assembly is equal after removing comments and blank lines
+(481 instructions), since this bounded probe does not change record payload
+addresses.
+
+| Variant | Optimized LLVM SHA-256 |
+| --- | --- |
+| Baseline | `912fa2d161292a9d600f423d582ccbb3a20ba18606096b3dc55ebc86caa856c9` |
+| GEP `nuw` | `a59d9fec4de6587daff422e9aca58590bb98b40fdde1c2137eae8a205e256116` |
+| Split only | `2a8736557f16554218531368eb22d429a95225045bbf044fb3a9ca64070e2f7d` |
+| Nonnegative-index `assume` | `a06f39c34ed65e80cd1c6fd1eaeea72668da4020771a588ad5ea85b4b817fb13` |
+
+This evidence selects the normalized-index assumption as the production
+candidate to evaluate: it communicates the useful local fact without
+requiring newer GEP-flag syntax or making emitted syntax depend on a
+build-time compiler that may differ from the actual IR consumer. It does not
+establish that the two candidates have equal full-matrix cost. The target's
+four-case `nuw` comparison still needs a recent LLVM; this run does not test
+LLVM 18 or Apple Clang 15 compatibility of production output. The full
+normal/retained scalar/record timing comparison and actual older-consumer
+qualification are still pending. General padded-header/extent/index
+qualification needs its own proof; this four-site experiment does not
+establish it. These selected u64 sites do not qualify every alignment,
+zero-stride step or maximum admitted index, and the preserved historical
+CSV files are not measurements of this candidate.
 
 ### Instrumentation correction
 

@@ -1118,6 +1118,19 @@ object and actual emitted allocation against the checked byte boundary,
 including Array conversion and cleanup, rather than only repeat the
 checker's preexisting size result.
 
+The maintained backend regression
+`zero_capacity_windows_keep_header_layout_inside_nonempty_storage` embeds
+both empty window shapes between scalar sentinels in one record. The checked
+record is 40 bytes with alignment eight, and its one-slot runtime Ring needs
+64 bytes including the header. A same-source native before/after run with
+retained helpers and an allocation observer measured 96 bytes from the saved
+`1b916975` baseline and 64 from the repair: the independent 64-byte oracle
+exits six before the fix and zero afterward. The test also checks a synthetic
+64-byte allocation limit and the rejection one byte below it, plus empty
+range formation, Array conversion, sentinel preservation and cleanup. These
+observations distinguish actual layout correspondence from an assertion
+about the calculator alone.
+
 Once representation and qualification agree, let `H` be the actual padded
 tail-field offset, `S` the actual allocation stride of that GEP's element,
 `C` the capacity, and `E` the complete window extent. On the currently
@@ -1156,3 +1169,25 @@ same benefit is an empirical question. GEP `nuw` first appears in
 already defines the nonnegative inbounds implication and the assumption
 intrinsic. Use the existing four-position probe only to discriminate these
 expressions, then validate the selected compiler path and full matrix.
+
+The four-position comparison on Apple Clang 21 admits both expressions and
+passes the same independent oracle. Both reduce the scalar forward loop from
+four loads/four stores to one payload load/one payload store; their hot-loop
+assembly is identical. Their complete scalar functions are not identical,
+so this observation does not establish timing parity elsewhere. The selected
+candidate for the full compiler experiment is the nonnegative-index
+assumption: it recovers the observed local optimization without a new LLVM
+dialect requirement. A build-time syntax probe would inspect the build's
+compiler, while the native builder uses its selected native compiler; those
+need not be the same consumer. The existing [comparison record](../../experiments/container-representation/deque-library/RESULTS.md)
+owns the probe commands, counts and artifacts. Production selection still
+depends on the complete normal/retained paired matrix above.
+
+The implementation stays in the shared run projection and intrinsic registry.
+A test-only withholding choice exercises that same emitter after the same
+target validation; it is not a source mode or a second qualification path.
+The corresponding proposal is in `compiler/backend-facts`; the zero-capacity
+representation proposal is in `compiler/storage-representation`. This keeps
+the representation repair independent of the optional optimization and needs
+neither a second table of per-address qualification nor a public compiler
+switch. No source rule or container contract changes.
