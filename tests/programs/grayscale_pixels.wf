@@ -18,7 +18,7 @@ fn grayscale(input: &[u8], output: &[u8]) -> result: own Result<unit, NarrowErro
   requires input_length >= 24_u64;
   requires output_length >= 8_u64;
 } {
-  doc "Both operands are range references, whose one measure is len; whether the callee may write through one is stated by this row and by nothing on the reference itself [REF-4, LEX-1].";
+  doc "Both operands are range references, whose one measure is len; whether the callee may write through one is stated by this row and by nothing on the reference itself [REF-4, EFF-1].";
   let pixel = 0_u64;
   loop @pixels {
     let done = pixel == 8_u64;
