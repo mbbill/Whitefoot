@@ -92,6 +92,25 @@ there is no elapsed-time criterion or rerun for a more favourable schedule.
 The largest spine remains 32, so this control does not qualify behavior beyond
 the existing 64 retained frames per lane or select a replacement policy.
 
+The selected source-only phased-spine comparator first evaluates the spine
+in order, then maps leaves through complete two-cell ranges
+`output[2*i..2*i+2]`. Each helper reads its spine cell and writes only its
+descendant leaf cell. This keeps the existing interleaved storage and
+canonical IDs without another O(k) array or an output remapping. Use the
+same 34 spine profiles, task costs, original-edge oracle, values and
+exactly-once checks, in ordinary and traced W1/W4 images once each; do not
+repeat oneTBB or rerun the preserved default cases. Charge the added
+future-spine-to-earlier-leaf precedences, `k*(k-1)/2` ordered pairs, and ideal
+span `k + max(T_i)` rather than the nested source's `max_i(i+1+T_i)`.
+Task work remains `k + sum(T_i)` with O(k) loop/range bookkeeping. Inspect
+PAR-2 permission, emitted chunks and their work price before interpreting
+execution: per-task costs loaded inside the map may retain a static estimate.
+Use no padding, grain override or compiler change, and retain observed zero
+overlap as a result. The full-pair helper fits the existing single-origin
+range rule; split output halves or copied spine values would add interface or
+storage costs without serving this comparison. Qualification of this source
+form does not select a compiler scheduling policy.
+
 **Design suitability.** Existing references, effects, ranges and call lowering
 fit these questions; no executor, grain, cancellation or specification change
 is selected. Assess revealed compiler structural choices against their owner
