@@ -14940,7 +14940,6 @@ impl Analyzer<'_, '_> {
                 invariants,
                 body,
                 backedge_drops: _,
-                carried_references: _,
             } => {
                 for invariant in invariants {
                     self.judge_affine_relation_subscripts(&invariant.relation, state);
@@ -15017,7 +15016,6 @@ impl Analyzer<'_, '_> {
                 invariants,
                 body,
                 backedge_drops: _,
-                carried_references: _,
             } => {
                 let occurrence = self.encountered_counted;
                 self.encountered_counted = self
@@ -16707,6 +16705,7 @@ mod indexed_goal_kill_tests {
             requirements: Vec::new(),
             postconditions: Vec::new(),
             body: None,
+            reference_origins: Vec::new(),
             body_disposition: Default::default(),
             allocates: false,
             call_separations: Vec::new(),

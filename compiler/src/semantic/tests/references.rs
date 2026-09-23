@@ -28,7 +28,311 @@
 
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
-use super::{assert_accepts, assert_rule_kind};
+use super::{assert_accepts, assert_rule_kind, with_semantics};
+
+/// Stored formal roots describe the incoming storage, even after the formal
+/// reference holder is rebound. The all-source inventory may widen an alias,
+/// but must not turn two exchanged formals into an unresolved recursive graph.
+#[test]
+fn rebound_parameter_summaries_preserve_every_entry_root() {
+    let source = br#"fn exchange(first: &u64, second: &u64, other: &u64, flag: own Bool) -> result: own unit pure {
+  let saved = first;
+  let selected = if flag {
+    give first;
+  } else {
+    give other;
+  }
+  set first = &deref(second);
+  set second = &deref(saved);
+  set selected = &deref(first);
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        use crate::semantic::model::CheckedStatement;
+        use crate::semantic::places::{PlaceMap, PlaceRoot, ResolvedPlace};
+
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("expected checked reference rebindings, got {outcome:?}");
+        };
+        let function = program
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "exchange")
+            .unwrap();
+        let map = PlaceMap::for_function(function);
+        let roots = function.parameters[..3]
+            .iter()
+            .map(|parameter| ResolvedPlace::binding(parameter.binding))
+            .collect::<Vec<_>>();
+        for parameter in &function.parameters[..2] {
+            let paths = map.resolve(PlaceRoot::Binding(parameter.binding), &[]);
+            assert_eq!(paths.len(), 2, "both exchanged entry roots: {paths:?}");
+            assert!(roots[..2].iter().all(|root| paths.contains(root)));
+        }
+        let selected = function
+            .body
+            .as_ref()
+            .unwrap()
+            .iter()
+            .find_map(|statement| match statement {
+                CheckedStatement::ValueMatchLet { binding, .. } => Some(*binding),
+                _ => None,
+            })
+            .unwrap();
+        let paths = map.resolve(PlaceRoot::Binding(selected), &[]);
+        assert_eq!(
+            paths.len(),
+            3,
+            "the shallow sibling also remains: {paths:?}"
+        );
+        assert!(roots.iter().all(|root| paths.contains(root)));
+    });
+}
+
+/// Source-backed coverage replaces the retired synthetic payload-origin
+/// reconstruction tests: both roots, complete field/Box/payload suffixes,
+/// nested matches, distinct payload fields and variant overlap are retained.
+#[test]
+fn nested_reference_payload_origins_keep_all_roots_and_suffixes() {
+    let source = br#"enum Leaf {
+  Pair(left: u64, right: u64);
+  Single(value: u64);
+}
+
+enum Branch {
+  Child(value: Box<Leaf>);
+  Empty();
+}
+
+struct Envelope {
+  payload: Branch;
+}
+
+struct Holder {
+  value: Box<Envelope>;
+}
+
+struct Parent {
+  left: Holder;
+  right: Holder;
+}
+
+fn inspect(first: &Parent, second: &Parent, flag: own Bool) -> result: own unit reads(first.left.value.inner.payload), reads(second.right.value.inner.payload) {
+  let selected = if flag {
+    give &deref(first).left;
+  } else {
+    give &deref(second).right;
+  }
+  match deref(selected).value.inner.payload {
+    Child(value: child) => {
+      match deref(child).inner {
+        Pair(left: left_value, right: right_value) => {
+        }
+        Single(value: single) => {
+        }
+      }
+    }
+    Empty() => {
+    }
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        use crate::semantic::model::CheckedStatement;
+        use crate::semantic::places::{
+            PlaceMap, PlaceRoot, PlaceStep, ResolvedPlace, UnprovedSeparations,
+        };
+
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("expected checked nested payload aliases, got {outcome:?}");
+        };
+        let function = program
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "inspect")
+            .unwrap();
+        let map = PlaceMap::for_function(function);
+        let CheckedStatement::Match { arms: outer, .. } = &function.body.as_ref().unwrap()[1]
+        else {
+            panic!("expected the outer borrowed match");
+        };
+        let CheckedStatement::Match { arms: inner, .. } = &outer[0].body[0] else {
+            panic!("expected the inner borrowed match");
+        };
+        let prefix = vec![
+            PlaceStep::Field(0),
+            PlaceStep::Deref,
+            PlaceStep::Field(0),
+            PlaceStep::Payload {
+                variant: outer[0].tag,
+                field: 0,
+            },
+        ];
+        let child = outer[0].binders[0].binding;
+        let paths = map.resolve(PlaceRoot::Binding(child), &[]);
+        assert_eq!(paths.len(), 2);
+        for (field, parameter) in function.parameters[..2].iter().enumerate() {
+            let mut expected = vec![PlaceStep::Field(u32::try_from(field).unwrap())];
+            expected.extend_from_slice(&prefix);
+            assert!(paths.contains(&ResolvedPlace {
+                root: PlaceRoot::Binding(parameter.binding),
+                path: expected,
+            }));
+        }
+        let mut payloads = Vec::new();
+        for arm in inner {
+            for binder in &arm.binders {
+                let paths = map.resolve(PlaceRoot::Binding(binder.binding), &[]);
+                assert_eq!(paths.len(), 2, "every payload keeps both scrutinee roots");
+                let mut expected = prefix.clone();
+                expected.extend([
+                    PlaceStep::Deref,
+                    PlaceStep::Payload {
+                        variant: arm.tag,
+                        field: binder.field,
+                    },
+                ]);
+                for (field, parameter) in function.parameters[..2].iter().enumerate() {
+                    let mut complete = vec![PlaceStep::Field(u32::try_from(field).unwrap())];
+                    complete.extend_from_slice(&expected);
+                    assert!(paths.contains(&ResolvedPlace {
+                        root: PlaceRoot::Binding(parameter.binding),
+                        path: complete,
+                    }));
+                }
+                payloads.push(paths);
+            }
+        }
+        assert_eq!(payloads.len(), 3);
+        let first_root = PlaceRoot::Binding(function.parameters[0].binding);
+        let same_root = payloads
+            .iter()
+            .map(|paths| paths.iter().find(|path| path.root == first_root).unwrap())
+            .collect::<Vec<_>>();
+        assert!(!map.overlaps(&UnprovedSeparations, same_root[0], same_root[1]));
+        assert!(map.overlaps(&UnprovedSeparations, same_root[0], same_root[0]));
+        assert!(map.overlaps(&UnprovedSeparations, same_root[0], same_root[2]));
+    });
+}
+
+/// One source descent has two observed cursor targets; it must not become a
+/// path equation whose fixed point invents infinitely many further descents.
+#[test]
+fn straight_line_recursive_reference_descent_has_finite_origins() {
+    let source = br#"struct Node {
+  next: Option<Box<Node>>;
+}
+
+fn descend(root: &Node) -> result: own unit reads(root.next) {
+  let cursor = root;
+  match deref(cursor).next {
+    Some(value: child) => {
+      set cursor = &deref(child).inner;
+    }
+    None() => {
+    }
+  }
+  return unit;
+}
+
+fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        use crate::semantic::model::CheckedStatement;
+        use crate::semantic::places::{PlaceMap, PlaceRoot, PlaceStep};
+
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("expected checked one-step descent, got {outcome:?}");
+        };
+        let function = program
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "descend")
+            .unwrap();
+        let CheckedStatement::Let { binding, .. } = &function.body.as_ref().unwrap()[0] else {
+            panic!("expected the cursor binding");
+        };
+        let map = PlaceMap::for_function(function);
+        let paths = map.resolve(PlaceRoot::Binding(*binding), &[]);
+        assert_eq!(
+            paths.len(),
+            2,
+            "only the entry and the one selected child: {paths:?}"
+        );
+        assert!(
+            paths
+                .iter()
+                .all(|path| path.root == PlaceRoot::Binding(function.parameters[0].binding))
+        );
+        assert!(paths.iter().any(|path| path.path.is_empty()));
+        assert!(paths.iter().any(|path| matches!(
+            path.path.as_slice(),
+            [
+                PlaceStep::Field(0),
+                PlaceStep::Payload { field: 0, .. },
+                PlaceStep::Deref
+            ]
+        )));
+    });
+}
+/// Acyclic source chains beyond the retired 32-expansion boundary remain
+/// finite, and an earlier reference never follows a later holder rebind.
+#[test]
+fn long_parameter_rebindings_keep_captured_entry_targets() {
+    use std::fmt::Write;
+
+    let mut source = String::from("fn rebind(");
+    for index in 0..40 {
+        if index != 0 {
+            source.push_str(", ");
+        }
+        write!(source, "p{index}: &u64").unwrap();
+    }
+    source.push_str(") -> result: own unit pure {\n");
+    for index in 0..39 {
+        writeln!(source, "  set p{index} = &deref(p{});", index + 1).unwrap();
+    }
+    source.push_str("  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n");
+    with_semantics(source.as_bytes(), |outcome| {
+        use crate::semantic::places::{PlaceMap, PlaceRoot, ResolvedPlace};
+
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("expected checked parameter rebindings, got {outcome:?}");
+        };
+        let function = program
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "rebind")
+            .unwrap();
+        let map = PlaceMap::for_function(function);
+        for pair in function.parameters.windows(2) {
+            let paths = map.resolve(PlaceRoot::Binding(pair[0].binding), &[]);
+            assert_eq!(
+                paths,
+                vec![
+                    ResolvedPlace::binding(pair[0].binding),
+                    ResolvedPlace::binding(pair[1].binding),
+                ]
+            );
+        }
+    });
+}
 
 /// [REF-1] a reference variable names a path and is not storage of its own, so
 /// `&p` where `p` is a reference variable has no path to name that `p` does not

@@ -27,8 +27,7 @@ use crate::DeclarationId;
 
 use super::model::{
     BindingId, CheckedConstantId, CheckedExpression, CheckedFunction, CheckedLoopId,
-    CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedPlaceStep, CheckedRangeSource,
-    CheckedStatement, CheckedType, IntegerType,
+    CheckedMatchArm, CheckedMeasure, CheckedStatement, CheckedType, IntegerType,
 };
 
 /// The generation in which an index expression or range endpoint was
@@ -840,111 +839,52 @@ impl SeparationOracle for UnprovedSeparations {
 
 /// What one binding names when it is a reference variable [REF-1].
 ///
-/// A reference is not storage of its own, so a binding that is one carries
-/// the path set it names rather than a place of its own. The set has more
-/// than one member only at a control-flow join, where [REF-1] takes the union
-/// of the incoming edges' path sets and every check must hold for every
-/// member.
+/// Origins are already resolved storage paths, including immutable incoming
+/// parameter anchors. They are not edges to another reference holder's summary.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct BindingSummary {
     pub(crate) ty: Option<CheckedType>,
-    /// The paths this binding names, empty when the binding is storage of
-    /// its own.
+    /// Every target established for this holder during the final structural
+    /// walk. This function-wide inventory is not its target at a particular use.
     pub(crate) reference_paths: Vec<ResolvedPlace>,
-    /// Whether this binding is a reference variable [REF-1] — a name for a
-    /// path rather than storage of its own.
-    ///
-    /// It is not `!reference_paths.is_empty()`: a range reference names a
-    /// path this prepass cannot spell, because [REF-4] puts the formation's
-    /// two captured endpoints in that path and the captures belong to the
-    /// checker's own place resolution. Such a binding is still a reference
-    /// variable, and every judgment that asks *whether* a binding names a
-    /// path — [MSR-2]'s holder support, the body reading of a `deref`
-    /// projection, and the spelling a diagnostic prints [OP-15] — has to see
-    /// it as one.
+    /// References have no storage of their own. Keep their kind even when an
+    /// incomplete summary supplies no target, so resolution fails closed.
     pub(crate) reference: bool,
-    /// A reference binding whose possible origin set this prepass could not
-    /// resolve. Permission consumers must fail closed instead of treating the
-    /// local binding anchor as storage disjoint from its possible origins.
     pub(crate) reference_unknown: bool,
 }
 
-/// Dense per-binding summaries for one checked function and the place
-/// resolution they support.
+/// Dense per-binding types and the structural checker's resolved origins.
 #[derive(Debug, Default)]
 pub(crate) struct PlaceMap {
     bindings: Vec<BindingSummary>,
-    loop_covers: Vec<(BindingId, ResolvedPlace)>,
 }
 
 impl PlaceMap {
-    /// Runs the binding prepass over one complete function body.
     pub(crate) fn for_function(function: &CheckedFunction) -> Self {
         let mut map = Self::default();
         for parameter in &function.parameters {
             let summary = map.summary_mut(parameter.binding);
             summary.ty = Some(parameter.ty);
-            // An incoming reference parameter arrives carrying the caller's
-            // path by substitution [EFF-5]; inside this body the parameter
-            // name is the path, so it anchors at itself.
-            if !matches!(parameter.mode, CheckedMode::Own) {
+            if parameter.mode.is_reference() {
                 summary.reference = true;
                 summary.reference_paths = vec![ResolvedPlace::binding(parameter.binding)];
             }
         }
-        map.collect_block_bindings(function.body.as_deref().unwrap_or_default());
-        map.collect_loop_carried_origins(function.body.as_deref().unwrap_or_default());
-        // A reference `set` is flow-sensitive, and one inside a loop may feed
-        // an earlier rebinding on the next iteration. Permission needs every
-        // possible origin, not one traversal's current origin, so close the
-        // finite set of captured source paths to a fixed point. This is an
-        // over-approximation: it can refuse overlap but cannot grant it from
-        // one selected flow state.
-        while map.collect_reference_origins(function.body.as_deref().unwrap_or_default()) {}
-        while map.mark_unknown_reference_origins(function.body.as_deref().unwrap_or_default()) {}
-        map
-    }
-
-    /// Seeds the compiler-owned arbitrary-header alternatives produced by
-    /// the reference checker for every loop-carried holder.
-    ///
-    /// The ordinary all-source fixed point below must see these paths before
-    /// it propagates aliases. It may then conservatively add a later exact
-    /// source formation to an earlier alias, but it can never omit the opaque
-    /// header alternative and use that exact formation as evidence about a
-    /// prior iteration. Every root and static step remains present, so this is
-    /// unknown captured value, not invented local storage.
-    fn collect_loop_carried_origins(&mut self, statements: &[CheckedStatement]) {
-        for statement in statements {
-            if let CheckedStatement::Loop {
-                carried_references, ..
-            }
-            | CheckedStatement::CountedRange {
-                carried_references, ..
-            } = statement
-            {
-                for reference in carried_references {
-                    for path in &reference.paths {
-                        if path.has_descendant() {
-                            self.loop_covers.push((reference.binding, path.clone()));
-                        }
-                    }
-                    let summary = self.summary_mut(reference.binding);
-                    summary.reference = true;
-                    if reference.paths.is_empty() {
-                        summary.reference_unknown = true;
-                    }
-                    for path in &reference.paths {
-                        if !summary.reference_paths.contains(path) {
-                            summary.reference_paths.push(path.clone());
-                        }
-                    }
-                }
-            }
-            for nested in place_nested_bodies(statement) {
-                self.collect_loop_carried_origins(nested);
+        map.bindings.resize_with(
+            map.bindings.len().max(function.reference_origins.len()),
+            BindingSummary::default,
+        );
+        for (summary, paths) in map.bindings.iter_mut().zip(&function.reference_origins) {
+            if !paths.is_empty() {
+                summary.reference = true;
+                summary.reference_paths.clone_from(paths);
             }
         }
+        map.collect_block_bindings(function.body.as_deref().unwrap_or_default());
+        for summary in &mut map.bindings {
+            summary.reference_unknown = summary.reference && summary.reference_paths.is_empty();
+        }
+        map
     }
 
     /// [OWN-7]: whether the two resolved places overlap.
@@ -954,15 +894,13 @@ impl PlaceMap {
         left: &ResolvedPlace,
         right: &ResolvedPlace,
     ) -> bool {
-        // Two places rooted at different local variables or parameters are
-        // two storages; that is the first of [OWN-7]'s separations.
         if left.root != right.root {
             return false;
         }
         places_overlap(oracle, left, right)
     }
 
-    pub(crate) fn summary_mut(&mut self, binding: BindingId) -> &mut BindingSummary {
+    fn summary_mut(&mut self, binding: BindingId) -> &mut BindingSummary {
         let index = binding.0 as usize;
         if self.bindings.len() <= index {
             self.bindings.resize(index + 1, BindingSummary::default());
@@ -974,233 +912,57 @@ impl PlaceMap {
         self.bindings.get(binding.0 as usize)
     }
 
-    /// Whether this binding is a reference variable rather than storage.
     pub(crate) fn is_reference(&self, binding: BindingId) -> bool {
         self.summary(binding).is_some_and(|summary| {
             summary.reference || summary.reference_unknown || !summary.reference_paths.is_empty()
         })
     }
 
-    /// Resolves a spelled place to the [OWN-7] resolved places it may name.
+    /// Resolves a written holder and suffix through its complete origin inventory.
     ///
-    /// Resolving a place rooted at a reference variable replaces that root
-    /// with the path that reference names, recursively [REF-1], and at a join
-    /// a reference variable names a set, so the result is a set: every check
-    /// on the place must hold for every member.
+    /// Stored paths are already resolved. Looking their roots up again would
+    /// reinterpret an incoming parameter's entry storage through the same
+    /// parameter's later rebindings. The structural walk owns reference flow;
+    /// neither recursive expansion nor another origin fixed point belongs here.
     pub(crate) fn resolve(&self, root: PlaceRoot, steps: &[PlaceStep]) -> Vec<ResolvedPlace> {
-        let PlaceRoot::Binding(binding) = root else {
-            return vec![ResolvedPlace {
+        let mut resolved = match root {
+            PlaceRoot::Constant(_) => vec![ResolvedPlace {
                 root,
-                path: steps.to_vec(),
-            }];
+                path: Vec::new(),
+            }],
+            PlaceRoot::Binding(binding) => match self.summary(binding) {
+                Some(summary) if summary.reference_unknown => Vec::new(),
+                Some(summary) if summary.reference || !summary.reference_paths.is_empty() => {
+                    summary.reference_paths.clone()
+                }
+                _ => vec![ResolvedPlace::binding(binding)],
+            },
         };
-        let mut resolved = self.resolve_root(binding, 0);
         for place in &mut resolved {
             place.path.extend_from_slice(steps);
         }
         resolved
     }
 
-    /// The path set one reference variable names, read through to storage.
-    ///
-    /// Loop-carried recursive descent is already bounded by the checker's
-    /// finite covers [REF-1]. A summary this prepass cannot close yields no resolved place;
-    /// permission consumers turn that into an unresolved footprint and fail
-    /// closed rather than inventing a disjoint local anchor.
-    fn resolve_root(&self, binding: BindingId, depth: usize) -> Vec<ResolvedPlace> {
-        if depth > 32 {
-            return Vec::new();
-        }
-        let Some(summary) = self.summary(binding) else {
-            return vec![ResolvedPlace::binding(binding)];
-        };
-        if summary.reference_unknown {
-            return Vec::new();
-        }
-        if summary.reference_paths.is_empty() {
-            return if summary.reference {
-                Vec::new()
-            } else {
-                vec![ResolvedPlace::binding(binding)]
-            };
-        }
-        let mut resolved = Vec::new();
-        for named in &summary.reference_paths {
-            let PlaceRoot::Binding(root) = named.root else {
-                resolved.push(named.clone());
-                continue;
-            };
-            if root == binding {
-                // An incoming reference parameter anchors at its own binding:
-                // its caller path is substituted at each call boundary.
-                resolved.push(named.clone());
-                continue;
-            }
-            let nested = self.resolve_root(root, depth + 1);
-            if nested.is_empty() {
-                return Vec::new();
-            }
-            for mut place in nested {
-                place.path.extend_from_slice(&named.path);
-                resolved.push(place);
-            }
-        }
-        resolved
-    }
-
-    /// Adds every origin a checked reference rebinding may assign. Repeating
-    /// this walk reaches loop-carried and mutually propagated aliases while
-    /// the union keeps each captured path immutable [REF-1].
-    fn collect_reference_origins(&mut self, statements: &[CheckedStatement]) -> bool {
-        let mut changed = false;
-        for statement in statements {
-            let origins = match statement {
-                CheckedStatement::Let { binding, value, .. }
-                    if self.expression_names_reference(value) =>
-                {
-                    Some((*binding, self.reference_paths_of(value)))
-                }
-                CheckedStatement::Set {
-                    target: super::model::CheckedSetTarget::Place(target),
-                    value,
-                    ..
-                } if target.fields.is_empty() && self.is_reference(target.binding) => {
-                    Some((target.binding, self.reference_paths_of(value)))
-                }
-                CheckedStatement::ValueMatchLet {
-                    binding,
-                    result_mode,
-                    arms,
-                    ..
-                } if result_mode.is_reference() => {
-                    Some((*binding, self.delivered_reference_paths(arms).0))
-                }
-                _ => None,
-            };
-            if let Some((binding, paths)) = origins {
-                let paths = paths
-                    .into_iter()
-                    .filter(|path| {
-                        !self.loop_covers.iter().any(|(holder, cover)| {
-                            *holder == binding
-                                && cover.root == path.root
-                                && cover.cover_prefix().len() <= path.cover_prefix().len()
-                                && cover
-                                    .cover_prefix()
-                                    .iter()
-                                    .zip(path.cover_prefix())
-                                    .all(|(left, right)| steps_provably_same(*left, *right))
-                        })
-                    })
-                    .collect::<Vec<_>>();
-                let summary = self.summary_mut(binding);
-                for path in paths {
-                    if !summary.reference_paths.contains(&path) {
-                        summary.reference_paths.push(path);
-                        changed = true;
-                    }
-                }
-            }
-            if let CheckedStatement::Match {
-                scrutinee, arms, ..
-            }
-            | CheckedStatement::ValueMatchLet {
-                scrutinee, arms, ..
-            } = statement
-            {
-                changed |= self.collect_match_binder_origins(scrutinee, arms);
-            }
-            for nested in place_nested_bodies(statement) {
-                changed |= self.collect_reference_origins(nested);
-            }
-        }
-        changed
-    }
-
-    /// Propagates an unresolved origin after the finite known-origin closure
-    /// has completed. One unknown alternative makes the whole reference
-    /// unknown for permission: selecting only its known alternatives would
-    /// under-approximate overlap.
-    fn mark_unknown_reference_origins(&mut self, statements: &[CheckedStatement]) -> bool {
-        let mut changed = false;
-        for statement in statements {
-            let unresolved = match statement {
-                CheckedStatement::Let { binding, value, .. }
-                    if self.expression_names_reference(value) =>
-                {
-                    self.reference_paths_of(value)
-                        .is_empty()
-                        .then_some(*binding)
-                }
-                CheckedStatement::Set {
-                    target: super::model::CheckedSetTarget::Place(target),
-                    value,
-                    ..
-                } if target.fields.is_empty() && self.is_reference(target.binding) => self
-                    .reference_paths_of(value)
-                    .is_empty()
-                    .then_some(target.binding),
-                CheckedStatement::ValueMatchLet {
-                    binding,
-                    result_mode,
-                    arms,
-                    ..
-                } if result_mode.is_reference() => {
-                    let (paths, unresolved) = self.delivered_reference_paths(arms);
-                    (unresolved || paths.is_empty()).then_some(*binding)
-                }
-                _ => None,
-            };
-            if let Some(binding) = unresolved {
-                let summary = self.summary_mut(binding);
-                if !summary.reference_unknown {
-                    summary.reference_unknown = true;
-                    changed = true;
-                }
-            }
-            if let CheckedStatement::Match {
-                scrutinee, arms, ..
-            }
-            | CheckedStatement::ValueMatchLet {
-                scrutinee, arms, ..
-            } = statement
-                && self.matched_place_paths(scrutinee).is_empty()
-            {
-                for arm in arms {
-                    for binder in &arm.binders {
-                        if matches!(binder.mode, CheckedMode::Own) {
-                            continue;
-                        }
-                        let summary = self.summary_mut(binder.binding);
-                        if !summary.reference_unknown {
-                            summary.reference_unknown = true;
-                            changed = true;
-                        }
-                    }
-                }
-            }
-            for nested in place_nested_bodies(statement) {
-                changed |= self.mark_unknown_reference_origins(nested);
-            }
-        }
-        changed
-    }
-
+    /// Collects types and reference kinds only. Origin paths come from the
+    /// final structural traversal, including every payload and delivery edge.
     fn collect_block_bindings(&mut self, statements: &[CheckedStatement]) {
         for statement in statements {
             match statement {
                 CheckedStatement::Let { binding, value, .. } => {
-                    let reference_paths = self.reference_paths_of(value);
-                    let names_reference = self.expression_names_reference(value);
+                    let names_reference = matches!(
+                        value,
+                        CheckedExpression::BorrowAddressed { .. }
+                            | CheckedExpression::BorrowRangeIndex { .. }
+                            | CheckedExpression::RangeOf { .. }
+                    ) || matches!(
+                        value,
+                        CheckedExpression::Binding { binding, .. } if self.is_reference(*binding)
+                    );
                     let summary = self.summary_mut(*binding);
                     summary.ty = Some(value.ty());
-                    summary.reference = names_reference;
-                    summary.reference_unknown = false;
-                    summary.reference_paths = reference_paths;
+                    summary.reference |= names_reference;
                 }
-                // [CALL-4] every binder of a destructuring `let` is an
-                // ordinary fresh binding of its result ordinal's type, and a
-                // function returns owned values only [FN-1, REF-3].
                 CheckedStatement::DestructuringLet { bindings, .. } => {
                     for (binding, ty, _) in bindings {
                         self.summary_mut(*binding).ty = Some(*ty);
@@ -1211,278 +973,40 @@ impl PlaceMap {
                 } => {
                     self.summary_mut(*binding).ty = Some(*ok_type);
                 }
-                // [REF-1] the checker-recorded result mode says whether the
-                // continuing delivery edges bind a reference. Returning and
-                // breaking arms contribute no delivered path; every `give`
-                // edge that can continue contributes to the union.
                 CheckedStatement::ValueMatchLet {
                     binding,
                     result_type,
                     result_mode,
-                    scrutinee,
                     arms,
                     ..
                 } => {
-                    let scrutinee_paths = self.matched_place_paths(scrutinee);
-                    for arm in arms {
-                        self.collect_arm_bindings(arm, &scrutinee_paths);
-                    }
-                    let (delivered, unresolved) = self.delivered_reference_paths(arms);
-                    let names_reference = result_mode.is_reference();
                     let summary = self.summary_mut(*binding);
                     summary.ty = Some(*result_type);
-                    summary.reference = names_reference;
-                    summary.reference_unknown = names_reference && unresolved;
-                    summary.reference_paths = delivered;
-                }
-                CheckedStatement::Match {
-                    scrutinee, arms, ..
-                } => {
-                    let scrutinee_paths = self.matched_place_paths(scrutinee);
-                    for arm in arms {
-                        self.collect_arm_bindings(arm, &scrutinee_paths);
-                    }
-                }
-                CheckedStatement::Loop { body, .. } => {
-                    self.collect_block_bindings(body);
-                }
-                CheckedStatement::CountedRange { binder, body, .. } => {
-                    let summary = self.summary_mut(*binder);
-                    summary.ty = Some(CheckedType::Integer(IntegerType::U64));
-                    self.collect_block_bindings(body);
-                }
-                _ => {}
-            }
-        }
-    }
-
-    /// Installs each reference-mode payload binder as the complete scrutinee
-    /// place followed by its payload step [OWN-13, REF-1]. Every possible
-    /// scrutinee origin contributes one path; an unresolved scrutinee remains
-    /// explicitly unknown rather than becoming fresh local storage.
-    fn collect_arm_bindings(&mut self, arm: &CheckedMatchArm, scrutinee_paths: &[ResolvedPlace]) {
-        for binder in &arm.binders {
-            let summary = self.summary_mut(binder.binding);
-            summary.ty = Some(binder.ty);
-            if !matches!(binder.mode, CheckedMode::Own) {
-                summary.reference = true;
-                // Unknown propagation deliberately runs only after the
-                // all-origins fixed point. An empty set here may gain an
-                // origin from a loop-carried alias on a later pass.
-                summary.reference_unknown = false;
-                summary.reference_paths = scrutinee_paths
-                    .iter()
-                    .cloned()
-                    .map(|mut path| {
-                        path.path.push(PlaceStep::Payload {
-                            variant: arm.tag,
-                            field: binder.field,
-                        });
-                        path
-                    })
-                    .collect();
-            }
-        }
-        self.collect_block_bindings(&arm.body);
-    }
-
-    /// Adds newly discovered scrutinee origins to payload binders during the
-    /// same finite fixed point that closes ordinary reference aliases. This
-    /// matters when a loop-carried alias feeding a nested match gains another
-    /// possible target after the initial structural pass.
-    fn collect_match_binder_origins(
-        &mut self,
-        scrutinee: &CheckedExpression,
-        arms: &[CheckedMatchArm],
-    ) -> bool {
-        let scrutinee_paths = self.matched_place_paths(scrutinee);
-        let mut changed = false;
-        for arm in arms {
-            for binder in &arm.binders {
-                if matches!(binder.mode, CheckedMode::Own) {
-                    continue;
-                }
-                let paths = scrutinee_paths.iter().cloned().map(|mut path| {
-                    path.path.push(PlaceStep::Payload {
-                        variant: arm.tag,
-                        field: binder.field,
-                    });
-                    path
-                });
-                let summary = self.summary_mut(binder.binding);
-                for path in paths {
-                    if !summary.reference_paths.contains(&path) {
-                        summary.reference_paths.push(path);
-                        changed = true;
-                    }
-                }
-            }
-        }
-        changed
-    }
-
-    /// The complete storage paths selected by a match scrutinee. Checked
-    /// value projections retain the field and `Box`-content steps needed to
-    /// extend a reference payload binder back to its ultimate storage root.
-    fn matched_place_paths(&self, expression: &CheckedExpression) -> Vec<ResolvedPlace> {
-        match expression {
-            CheckedExpression::Binding { binding, .. }
-            | CheckedExpression::DerefAddressed { binding, .. } => {
-                self.resolve(PlaceRoot::Binding(*binding), &[])
-            }
-            CheckedExpression::Project {
-                binding, fields, ..
-            } => self.resolve(
-                PlaceRoot::Binding(*binding),
-                &fields
-                    .iter()
-                    .copied()
-                    .map(PlaceStep::Field)
-                    .collect::<Vec<_>>(),
-            ),
-            CheckedExpression::ProjectValue { value, field, .. } => {
-                let mut paths = self.matched_place_paths(value);
-                for path in &mut paths {
-                    path.path.push(PlaceStep::Field(*field));
-                }
-                paths
-            }
-            CheckedExpression::BoxDeref { value, .. } => {
-                let mut paths = self.matched_place_paths(value);
-                for path in &mut paths {
-                    path.path.push(PlaceStep::Deref);
-                }
-                paths
-            }
-            CheckedExpression::ReadStorage { root, .. } => {
-                self.resolve(root.root, &root.place_path())
-            }
-            _ => Vec::new(),
-        }
-    }
-
-    /// The union of the path sets a value initializer's continuing `give`
-    /// edges name [REF-1, GIVE-1], plus whether any such edge was unresolved.
-    fn delivered_reference_paths(&self, arms: &[CheckedMatchArm]) -> (Vec<ResolvedPlace>, bool) {
-        let mut union: Vec<ResolvedPlace> = Vec::new();
-        let mut delivered = false;
-        let mut unresolved = false;
-        for arm in arms {
-            self.collect_delivery_reference_paths(
-                &arm.body,
-                &mut union,
-                &mut delivered,
-                &mut unresolved,
-            );
-        }
-        (union, unresolved || !delivered)
-    }
-
-    /// Collects the `give` edges targeting the surrounding value initializer.
-    /// A nested `ValueMatchLet` owns its own `give` edges and is therefore a
-    /// boundary; ordinary control nested inside the arm still delivers to the
-    /// surrounding initializer and is walked.
-    fn collect_delivery_reference_paths(
-        &self,
-        statements: &[CheckedStatement],
-        union: &mut Vec<ResolvedPlace>,
-        delivered: &mut bool,
-        unresolved: &mut bool,
-    ) {
-        for statement in statements {
-            match statement {
-                CheckedStatement::Give { value, .. } => {
-                    *delivered = true;
-                    let paths = self.reference_paths_of(value);
-                    if paths.is_empty() {
-                        *unresolved = true;
-                    }
-                    for path in paths {
-                        if !union.contains(&path) {
-                            union.push(path);
-                        }
-                    }
+                    summary.reference |= result_mode.is_reference();
+                    self.collect_arm_bindings(arms);
                 }
                 CheckedStatement::Match { arms, .. } => {
-                    for arm in arms {
-                        self.collect_delivery_reference_paths(
-                            &arm.body, union, delivered, unresolved,
-                        );
-                    }
+                    self.collect_arm_bindings(arms);
                 }
-                CheckedStatement::Loop { body, .. }
-                | CheckedStatement::CountedRange { body, .. } => {
-                    self.collect_delivery_reference_paths(body, union, delivered, unresolved)
+                CheckedStatement::Loop { body, .. } => self.collect_block_bindings(body),
+                CheckedStatement::CountedRange { binder, body, .. } => {
+                    self.summary_mut(*binder).ty = Some(CheckedType::Integer(IntegerType::U64));
+                    self.collect_block_bindings(body);
                 }
-                CheckedStatement::ValueMatchLet { .. } => {}
                 _ => {}
             }
         }
     }
 
-    /// The path set a `let` right-hand side names, when it names one.
-    ///
-    /// A `borrow_expr` names the path its operand spells; a copy of a
-    /// reference name copies a name for a path and therefore carries the same
-    /// set. Everything else is storage of its own and names none.
-    fn reference_paths_of(&self, value: &CheckedExpression) -> Vec<ResolvedPlace> {
-        match value {
-            CheckedExpression::BorrowAddressed { root, .. } => {
-                self.resolve(root.root, &root.place_path())
+    fn collect_arm_bindings(&mut self, arms: &[CheckedMatchArm]) {
+        for arm in arms {
+            for binder in &arm.binders {
+                let summary = self.summary_mut(binder.binding);
+                summary.ty = Some(binder.ty);
+                summary.reference |= binder.mode.is_reference();
             }
-            CheckedExpression::BorrowRangeIndex { place, .. } => {
-                let mut paths = self.resolve(PlaceRoot::Binding(place.root.binding), &[]);
-                for path in &mut paths {
-                    path.path.push(PlaceStep::Index(place.captured));
-                    path.path
-                        .extend(place.path.iter().map(CheckedPlaceStep::place_step));
-                }
-                paths
-            }
-            CheckedExpression::RangeOf {
-                source, captured, ..
-            } => {
-                let mut paths = match source {
-                    CheckedRangeSource::Storage(root) => {
-                        self.resolve(root.root, &root.place_path())
-                    }
-                    CheckedRangeSource::Range(root) => {
-                        self.resolve(PlaceRoot::Binding(root.binding), &[])
-                    }
-                };
-                for path in &mut paths {
-                    path.path.push(PlaceStep::Range(*captured));
-                }
-                paths
-            }
-            CheckedExpression::Binding { binding, .. } if self.is_reference(*binding) => {
-                self.resolve(PlaceRoot::Binding(*binding), &[])
-            }
-            _ => Vec::new(),
+            self.collect_block_bindings(&arm.body);
         }
-    }
-
-    fn expression_names_reference(&self, value: &CheckedExpression) -> bool {
-        matches!(
-            value,
-            CheckedExpression::BorrowAddressed { .. }
-                | CheckedExpression::BorrowRangeIndex { .. }
-                | CheckedExpression::RangeOf { .. }
-        ) || matches!(value, CheckedExpression::Binding { binding, .. } if self.is_reference(*binding))
-    }
-}
-
-/// Every nested statement block whose reference rebindings contribute to the
-/// finite all-origins closure.
-fn place_nested_bodies(statement: &CheckedStatement) -> Vec<&[CheckedStatement]> {
-    match statement {
-        CheckedStatement::Match { arms, .. } | CheckedStatement::ValueMatchLet { arms, .. } => {
-            arms.iter().map(|arm| arm.body.as_slice()).collect()
-        }
-        CheckedStatement::Loop { body, .. } | CheckedStatement::CountedRange { body, .. } => {
-            vec![body.as_slice()]
-        }
-        _ => Vec::new(),
     }
 }
 
@@ -1492,11 +1016,7 @@ mod tests {
         CaptureId, CapturedRange, CapturedTerm, CapturedValue, PlaceMap, PlaceRoot, PlaceStep,
         ResolvedPlace, SeparationOracle, WindowPart,
     };
-    use crate::NodePath;
-    use crate::semantic::model::{
-        BindingId, CheckedEnumType, CheckedExpression, CheckedLoopId, CheckedMatchArm,
-        CheckedMatchBinder, CheckedMeasure, CheckedMode, CheckedStatement, CheckedType, NominalId,
-    };
+    use crate::semantic::model::{BindingId, CheckedLoopId, CheckedMeasure};
 
     fn literal(capture: u32, value: u64) -> CapturedValue {
         CapturedValue::new(CaptureId::source(capture), CapturedTerm::Literal(value))
@@ -1563,229 +1083,20 @@ mod tests {
         assert_ne!(carried_range.start.capture, carried_range.end.capture);
     }
 
-    fn node() -> NodePath {
-        NodePath {
-            components: Vec::new(),
-        }
-    }
-
-    fn deref(binding: u32) -> CheckedExpression {
-        CheckedExpression::DerefAddressed {
-            carrier: node(),
-            binding: BindingId(binding),
-            ty: CheckedType::Nominal(NominalId(0)),
-        }
-    }
-
-    fn box_content(value: CheckedExpression) -> CheckedExpression {
-        CheckedExpression::BoxDeref {
-            carrier: node(),
-            nominal: NominalId(1),
-            referent: CheckedType::Nominal(NominalId(0)),
-            value: Box::new(value),
-        }
-    }
-
-    fn reference_binder(binding: u32, field: u32) -> CheckedMatchBinder {
-        CheckedMatchBinder {
-            node_path: node(),
-            binding: BindingId(binding),
-            field,
-            mode: CheckedMode::Reference,
-            ty: CheckedType::Nominal(NominalId(0)),
-        }
-    }
-
-    /// [OWN-13, REF-1] a payload binder keeps every possible origin of an
-    /// aliased scrutinee and the complete field/Box/payload prefix. Dropping
-    /// either joined target could falsely separate a later call through it.
+    /// Payload construction is covered through checked source by
+    /// tests::references::nested_reference_payload_origins_keep_all_roots_and_suffixes.
+    /// Missing or explicitly incomplete origins still fail closed here.
     #[test]
-    fn reference_payload_binders_keep_all_scrutinee_origins_and_steps() {
+    fn unresolved_reference_summary_does_not_publish_a_partial_origin_set() {
         let mut map = PlaceMap::default();
-        let alias = map.summary_mut(BindingId(0));
-        alias.reference = true;
-        alias.reference_paths = vec![
-            place(10, &[PlaceStep::Field(2)]),
-            place(11, &[PlaceStep::Field(3)]),
-        ];
-        let scrutinee = CheckedExpression::ProjectValue {
-            carrier: node(),
-            value: Box::new(box_content(deref(0))),
-            nominal: NominalId(0),
-            field: 4,
-            ty: CheckedType::Nominal(NominalId(0)),
-        };
-        let paths = map.matched_place_paths(&scrutinee);
-        let arm = CheckedMatchArm {
-            tag: 7,
-            binders: vec![reference_binder(1, 5)],
-            body: Vec::new(),
-            fallthrough_drops: Vec::new(),
-        };
+        let binding = BindingId(0);
+        map.summary_mut(binding).reference = true;
+        assert!(map.resolve(PlaceRoot::Binding(binding), &[]).is_empty());
 
-        map.collect_arm_bindings(&arm, &paths);
-
-        assert_eq!(
-            map.resolve(PlaceRoot::Binding(BindingId(1)), &[]),
-            vec![
-                place(
-                    10,
-                    &[
-                        PlaceStep::Field(2),
-                        PlaceStep::Deref,
-                        PlaceStep::Field(4),
-                        PlaceStep::Payload {
-                            variant: 7,
-                            field: 5,
-                        },
-                    ],
-                ),
-                place(
-                    11,
-                    &[
-                        PlaceStep::Field(3),
-                        PlaceStep::Deref,
-                        PlaceStep::Field(4),
-                        PlaceStep::Payload {
-                            variant: 7,
-                            field: 5,
-                        },
-                    ],
-                ),
-            ],
-        );
-    }
-
-    /// Every match arm is installed. Within one variant, different payload
-    /// fields separate while two uses of the same payload still conflict.
-    /// A different variant is not a simultaneous field separation: it names
-    /// the enum's reused payload storage and therefore remains overlapping.
-    #[test]
-    fn reference_payload_binders_preserve_arm_and_field_identity() {
-        let mut map = PlaceMap::default();
-        let root = map.summary_mut(BindingId(0));
-        root.reference = true;
-        root.reference_paths = vec![place(9, &[])];
-        let statement = CheckedStatement::Match {
-            scrutinee: deref(0),
-            enum_type: CheckedEnumType::Nominal(NominalId(0)),
-            arms: vec![
-                CheckedMatchArm {
-                    tag: 3,
-                    binders: vec![reference_binder(1, 0), reference_binder(2, 1)],
-                    body: Vec::new(),
-                    fallthrough_drops: Vec::new(),
-                },
-                CheckedMatchArm {
-                    tag: 4,
-                    binders: vec![reference_binder(3, 0)],
-                    body: Vec::new(),
-                    fallthrough_drops: Vec::new(),
-                },
-            ],
-            continues: true,
-        };
-
-        map.collect_block_bindings(std::slice::from_ref(&statement));
-
-        let left = map.resolve(PlaceRoot::Binding(BindingId(1)), &[]);
-        let right = map.resolve(PlaceRoot::Binding(BindingId(2)), &[]);
-        let other_variant = map.resolve(PlaceRoot::Binding(BindingId(3)), &[]);
-        assert_eq!(left.len(), 1);
-        assert_eq!(right.len(), 1);
-        assert_eq!(other_variant.len(), 1);
-        let oracle = Proves {
-            indices: false,
-            ranges: false,
-            not_last: false,
-        };
-        assert!(!map.overlaps(&oracle, &left[0], &right[0]));
-        assert!(map.overlaps(&oracle, &left[0], &left[0]));
-        assert!(map.overlaps(&oracle, &left[0], &other_variant[0]));
-    }
-
-    /// A nested match resolves through the outer arm binder before extending
-    /// the inner binder, so neither payload step nor the intervening Box
-    /// content step is lost.
-    #[test]
-    fn nested_reference_matches_extend_the_outer_payload_origin() {
-        let mut map = PlaceMap::default();
-        let root = map.summary_mut(BindingId(0));
-        root.reference = true;
-        root.reference_paths = vec![place(9, &[PlaceStep::Field(1)])];
-        let inner = CheckedMatchArm {
-            tag: 4,
-            binders: vec![reference_binder(2, 6)],
-            body: Vec::new(),
-            fallthrough_drops: Vec::new(),
-        };
-        let outer = CheckedMatchArm {
-            tag: 3,
-            binders: vec![reference_binder(1, 5)],
-            body: vec![CheckedStatement::Match {
-                scrutinee: box_content(deref(1)),
-                enum_type: CheckedEnumType::Nominal(NominalId(0)),
-                arms: vec![inner],
-                continues: true,
-            }],
-            fallthrough_drops: Vec::new(),
-        };
-        let paths = map.matched_place_paths(&deref(0));
-
-        map.collect_arm_bindings(&outer, &paths);
-
-        assert_eq!(
-            map.resolve(PlaceRoot::Binding(BindingId(2)), &[]),
-            vec![place(
-                9,
-                &[
-                    PlaceStep::Field(1),
-                    PlaceStep::Payload {
-                        variant: 3,
-                        field: 5,
-                    },
-                    PlaceStep::Deref,
-                    PlaceStep::Payload {
-                        variant: 4,
-                        field: 6,
-                    },
-                ],
-            )],
-        );
-    }
-
-    /// An unresolved scrutinee never turns its reference payload binder into
-    /// independent local storage. Unknown propagation keeps resolution empty
-    /// so every permission consumer fails closed.
-    #[test]
-    fn unresolved_reference_payload_binders_remain_unknown() {
-        let mut map = PlaceMap::default();
-        let root = map.summary_mut(BindingId(0));
-        root.reference = true;
-        // A joined reference with one known origin and one unrepresentable
-        // alternative must not retain only the known member.
-        root.reference_paths = vec![place(9, &[PlaceStep::Field(2)])];
-        root.reference_unknown = true;
-        let statement = CheckedStatement::Match {
-            scrutinee: deref(0),
-            enum_type: CheckedEnumType::Nominal(NominalId(0)),
-            arms: vec![CheckedMatchArm {
-                tag: 1,
-                binders: vec![reference_binder(1, 0)],
-                body: Vec::new(),
-                fallthrough_drops: Vec::new(),
-            }],
-            continues: true,
-        };
-
-        map.collect_block_bindings(std::slice::from_ref(&statement));
-        while map.mark_unknown_reference_origins(std::slice::from_ref(&statement)) {}
-
-        assert!(map.summary(BindingId(1)).unwrap().reference_unknown);
-        assert!(
-            map.resolve(PlaceRoot::Binding(BindingId(1)), &[])
-                .is_empty()
-        );
+        let summary = map.summary_mut(binding);
+        summary.reference_paths = vec![place(9, &[PlaceStep::Field(2)])];
+        summary.reference_unknown = true;
+        assert!(map.resolve(PlaceRoot::Binding(binding), &[]).is_empty());
     }
 
     /// An oracle that discharges exactly the separations a test names, so a

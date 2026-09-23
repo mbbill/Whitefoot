@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-22 Reuse the structural checker's resolved reference origins
+
+Nodes: compiler/checker-facts
+
+Owner-approved: The owner explicitly accepted the complete PR #94 amendment and the unused-import cleanup after the DCR handoff for 5002e290, replying that both were agreed. This ruling does not authorize a merge.
+
+Summary: Apply the reviewed addition unchanged. Publish the final structural traversal's complete resolved reference-origin inventory and consume it directly in place summaries, preserving parameter entry roots and all observed alternatives without a second origin fixed point, recursive holder lookup or depth cutoff. Keep the inventory conservative rather than treating it as point-current proof authority. The [reference-summary investigation](../research/investigations/consistency-followups/DESIGN.md#reference-summary-roots-and-expansion-depth) records the source counterexamples, replacement-test evidence and validation criteria. Remove the resolved amendment and its directory, and apply the directed unused-import cleanup. The language specification is unchanged.
+
 ## 2026-09-22 Rescue oversized loop frames without repeated lowering
 
 Nodes: compiler/parallel-lowering/two-worlds
