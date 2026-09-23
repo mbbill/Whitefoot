@@ -452,12 +452,30 @@ match the old slot, stage its pair, probe by occupancy, exchange at the
 vacancy, and restage any complete pair the exchange returns. An empty
 carrier ends that owner's migration. The earlier PROV-6 rejection concerned
 an unconsumed displaced enum, not this exhaustive ownership protocol.
-Validate this formulation before charging all direct migration the larger
-bucket layout; if admitted, compare it within the same four rebuild cells.
-Hash the current staged key on each attempt and never use equality to
-deduplicate. Its admission, complete owner accounting and transfer costs
-remain to be established; the conceptual vacancy argument alone selects
-neither an implementation nor a representation.
+That formulation admits and executes against the unchanged scalar and
+owning-child callers under sequential lowering. Their exact allocation
+ledgers fall from 29/14 to 15/12, each identity released once: six initial
+backings, five growths and four same-capacity rebuilds for the scalar chain;
+ten children and two backings for the owning chain. The local staging window
+allocates nothing. It therefore joins the same four rebuild cells before
+charging direct migration the larger bucket layout. Each attempt hashes
+the current staged key and never uses equality to deduplicate. Transfer
+costs and paired timings are recorded in the same comparison: scalar growth
+improves, while wide growth retains substantial staging and result work.
+Admission and the conceptual vacancy argument alone select neither
+implementation nor representation.
+
+The optimized migration path exposes one further source choice before
+promotion: it calls the general exchange helper even though migration needs
+only to consume the displaced enum, not to construct a public insertion
+result. A bounded alternative puts the same swap and exhaustive enum match
+inside rebuild, restoring any displaced pair to the same pending window.
+It may remove a wide intermediate result and let ordinary optimization use
+the just-observed vacancy; no variant is discarded on that observation.
+Select this form only if the unchanged owning and hostile-behavior callers
+pass, its emitted migration removes the result construction without adding
+storage, and the same four rebuild cells support the cost improvement.
+The public insertion interface and helper-retention policy stay fixed.
 
 The direct route exposes a separate contract boundary. After extending a
 fresh `previous` backing to `capacity`, it publishes that owner with

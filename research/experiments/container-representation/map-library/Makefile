@@ -7,19 +7,35 @@ BUILD ?= .build
 MEASURE_SET ?= primary
 SOURCE_SHAPE ?= original
 SAMPLES ?= $(BUILD)/measurements-$(MEASURE_SET)-$(SOURCE_SHAPE).csv
-SOURCES := dense-map.wf sparse-map.wf slot-map.wf map-library.wf
+STAGED_SOURCE_DIR := $(abspath $(BUILD)/staged-source)
+STAGED_BASE := $(STAGED_SOURCE_DIR)/sparse-map.wf
+STAGED_SOURCE := $(STAGED_SOURCE_DIR)/staged-map.wf
+SOURCES := dense-map.wf sparse-map.wf slot-map.wf $(STAGED_SOURCE) map-library.wf
 COMPACT_SOURCE_DIR := $(abspath $(BUILD)/compact-source)
-COMPACT_SOURCES := $(addprefix $(COMPACT_SOURCE_DIR)/,dense-map.wf sparse-map.wf) $(abspath slot-map.wf) $(COMPACT_SOURCE_DIR)/map-library.wf
+COMPACT_SOURCES := $(addprefix $(COMPACT_SOURCE_DIR)/,dense-map.wf sparse-map.wf) $(abspath slot-map.wf) $(STAGED_SOURCE) $(COMPACT_SOURCE_DIR)/map-library.wf
 OBSERVER := $(ROOT)/tests/programs/containers/container-allocation-observer.c
 .DELETE_ON_ERROR:
 .DEFAULT_GOAL := check
 
 include $(ROOT)/compiler/runtime.mk
 
-.PHONY: native-check build-candidates check-candidates build-costs check-costs compact-source build-compact check-compact check measure summarize clean
+.PHONY: native-check staged-source build-candidates check-candidates build-costs check-costs compact-source build-compact check-compact check measure summarize clean
 
 $(BUILD):
 	mkdir -p $@
+
+# Keep one reviewable overlay rather than another copy of the sparse library.
+# The unchanged public names serve its original callers; the prefix permits
+# the same candidate beside the planned representation in one timing image.
+$(STAGED_BASE): sparse-map.wf staged-rebuild.patch Makefile | $(BUILD)
+	mkdir -p $(STAGED_SOURCE_DIR)
+	cp sparse-map.wf $@
+	patch -s -f -F 0 -p1 -d $(STAGED_SOURCE_DIR) < staged-rebuild.patch
+
+$(STAGED_SOURCE): $(STAGED_BASE) Makefile
+	sed -e 's/Sparse/Staged/g' -e 's/sparse_/staged_/g' $< > $@
+
+staged-source: $(STAGED_SOURCE)
 
 $(BUILD)/map-native-%$(EXE): map-costs.c Makefile | $(BUILD)
 	@set -eu; case '$*' in normal) flags= ;; retained) flags=-DRETAIN_HELPERS ;; *) exit 1 ;; esac; \
@@ -31,18 +47,22 @@ native-check: $(addprefix $(BUILD)/map-native-,normal$(EXE) retained$(EXE))
 
 # Three CLI configurations exercise two distinct lowerings: default and
 # --no-overlap both select sequential lowering; --par selects parallel.
-FIXTURES := dense dense-owned sparse sparse-owned slot
+FIXTURES := dense dense-owned sparse sparse-owned slot staged staged-owned
 MODES := default no-overlap par
 FIXTURE_dense := dense-map.wf dense-check.wf
 FIXTURE_dense-owned := dense-map.wf dense-owned-check.wf
 FIXTURE_sparse := sparse-map.wf sparse-check.wf
 FIXTURE_sparse-owned := sparse-map.wf sparse-owned-check.wf
 FIXTURE_slot := slot-map.wf slot-check.wf
+FIXTURE_staged := $(STAGED_BASE) sparse-check.wf
+FIXTURE_staged-owned := $(STAGED_BASE) sparse-owned-check.wf
 EXPECTED_dense := 24
 EXPECTED_dense-owned := 14
 EXPECTED_sparse := 29
 EXPECTED_sparse-owned := 14
 EXPECTED_slot := 18
+EXPECTED_staged := 15
+EXPECTED_staged-owned := 12
 FLAGS_default :=
 FLAGS_no-overlap := --no-overlap
 FLAGS_par := --par
@@ -98,10 +118,10 @@ $(BUILD)/map-library.raw.ll: $(SOURCES) $(WHITEFOOTC) Makefile | $(BUILD)
 $(BUILD)/map-library-normal.ll: $(BUILD)/map-library.raw.ll Makefile
 	sed -e 's/@malloc(/@wf_cost_allocate(/g' -e 's/@free(/@wf_cost_release(/g' -e 's/@main(/@wf_fixture_main(/g' \
 	    -e 's/^declare ptr @wf_cost_allocate(i64)$$/declare noalias nonnull ptr @wf_cost_allocate(i64)/' $< | \
-	  awk '/^define .* @wf_map_cost_(dense|sparse|slot)_(word|record)_trace\(/ { if (sub(/ #0 [{]$$/, " noinline #0 {") != 1) exit 1; traces++ } { print } END { if (traces != 6) exit 1 }' > $@
+	  awk '/^define .* @wf_map_cost_(dense|sparse|slot|staged)_(word|record)_trace\(/ { if (sub(/ #0 [{]$$/, " noinline #0 {") != 1) exit 1; traces++ } { print } END { if (traces != 8) exit 1 }' > $@
 
 $(BUILD)/map-library-retained.ll: $(BUILD)/map-library-normal.ll Makefile
-	awk '/^define .* @wf_(dense|sparse|slot)_map_(new|put|remove|lookup|edit|reserve|rehash|free)[$$(]/ || \
+	awk '/^define .* @wf_(dense|sparse|slot|staged)_map_(new|put|remove|lookup|edit|reserve|rehash|free)[$$(]/ || \
 	     /^define .* @wf_map_cost_(hash|equal|word_observe|record_observe|word_consume|record_consume|word_edit|record_edit)\(/ \
 	     { if (sub(/ #0 [{]$$/, " noinline #0 {") != 1) exit 1; retained++ } \
 	     { print } END { if (retained == 0) exit 1; print "Retained public map/callback definitions: " retained > "/dev/stderr" }' $< > $@
@@ -129,9 +149,11 @@ check-costs: build-costs
 	  grep -Eq "call .*@\"?wf_(dense|sparse)_map_$${operation}"'[$$(]' $(BUILD)/map-library-retained.opt.ll; \
 	  grep -Eq "call .*@(word|record)_[a-z]+_$${operation}[.(]" $(BUILD)/control-retained.opt.ll; \
 	done; \
-	for operation in new put remove lookup reserve rehash free; do \
-	  grep -Eq "call .*@\"?wf_slot_map_$${operation}"'[$$(]' $(BUILD)/map-library-retained.opt.ll; \
-	  grep -Eq "call .*@(word|record)_slot_$${operation}[.(]" $(BUILD)/control-retained.opt.ll; \
+	for representation in slot staged; do \
+	  for operation in new put remove lookup reserve rehash free; do \
+	    grep -Eq "call .*@\"?wf_$${representation}_map_$${operation}"'[$$(]' $(BUILD)/map-library-retained.opt.ll; \
+	    grep -Eq "call .*@(word|record)_$${representation}_$${operation}[.(]" $(BUILD)/control-retained.opt.ll; \
+	  done; \
 	done; \
 	for callback in hash equal word_observe record_observe word_consume record_consume word_edit record_edit; do \
 	  grep -Eq "call .*@wf_map_cost_$${callback}[(]" $(BUILD)/map-library-retained.opt.ll; \
@@ -153,7 +175,7 @@ $(COMPACT_SOURCE_DIR)/.patched: dense-map.wf sparse-map.wf map-library.wf compac
 
 compact-source: $(COMPACT_SOURCE_DIR)/.patched
 
-build-compact: compact-source
+build-compact: compact-source $(STAGED_SOURCE)
 	$(MAKE) build-costs BUILD=$(BUILD)/compact-build SOURCES='$(COMPACT_SOURCES)'
 
 check-compact: build-compact

@@ -57,6 +57,8 @@ extern uint64_t wf_map_cost_dense_word_trace(uint64_t, uint64_t, uint64_t, uint6
 extern uint64_t wf_map_cost_dense_record_trace(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t wf_map_cost_slot_word_trace(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 extern uint64_t wf_map_cost_slot_record_trace(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t wf_map_cost_staged_word_trace(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+extern uint64_t wf_map_cost_staged_record_trace(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 #endif
 
 static void require(bool condition, const char *message) {
@@ -500,12 +502,12 @@ static HELPER B##_Put P##_put(P##_Map *map, const HashEnv *env, B##_Pair offered
 
 enum { ACTION_STOP, ACTION_SKIP, ACTION_MISS, ACTION_MATCH };
 
-/* This control follows the admitted sparse source algorithm: two temporary
- * Arrays, metadata planning before ownership changes, used freed before
- * grow, complete-cell permutations, and variant-preserving tombstone repair.
+/* Compile-time policy selects either the admitted two-Array plan/permutation
+ * or descending direct migration through one local pending Pair. All other
+ * operations and public boundaries are shared between the source controls.
  * memcpy moves object representations; inactive payload bytes are never read
  * as values and are not artificially initialized for the C control. */
-#define SPARSE_MATCHED(P, N, B, T, LIMIT)                                  \
+#define SPARSE_MATCHED(P, N, B, T, DIRECT, LIMIT)                          \
 typedef N##_Cell P##_Cell;                                                 \
 typedef N##_Block P##_Block;                                               \
 typedef N##_Map P##_Map;                                                   \
@@ -620,6 +622,41 @@ static void P##_apply(P##_Map *map, WordArray *plan) {                     \
 static bool P##_rebuild(P##_Map *map, const HashEnv *env, uint64_t target) { \
     uint64_t count = map->slots->length;                                  \
     if (target > (LIMIT) || target < count) return false;                 \
+    if (DIRECT) {                                                         \
+        if (target == 0) return true;                                    \
+        P##_Block *block = wf_cost_allocate(16 + target * sizeof(P##_Cell)); \
+        block->length = 0; block->capacity = target;                      \
+        P##_Map fresh = {block, 0}; P##_extend(&fresh, target);            \
+        P##_Block *old = map->slots; map->slots = fresh.slots;            \
+        while (old->length != 0) {                                       \
+            P##_Cell cell;                                               \
+            memcpy(&cell, &old->cells[--old->length], sizeof cell);       \
+            if (cell.tag != LIVE) continue;                              \
+            struct { uint64_t length; B##_Pair pair; } pending;          \
+            pending.length = 0;                                         \
+            memcpy(&pending.pair, &cell.pair, sizeof pending.pair);      \
+            pending.length = 1;                                         \
+            while (pending.length != 0) {                               \
+                uint64_t hash = key_hash(env, &pending.pair.key);        \
+                uint64_t extent = map->slots->length;                    \
+                for (uint64_t step = 0; step < extent; ++step) {         \
+                    uint64_t index = source_probe(hash % extent, step, extent); \
+                    if (map->slots->cells[index].tag != LIVE) {          \
+                        B##_Pair offered;                               \
+                        memcpy(&offered, &pending.pair, sizeof offered); \
+                        --pending.length;                               \
+                        B##_Put exchanged = P##_exchange(map, index, offered); \
+                        if (exchanged.kind != INSERTED) {                \
+                            memcpy(&pending.pair, &exchanged.owner, sizeof pending.pair); \
+                            ++pending.length;                           \
+                        }                                                \
+                        break;                                           \
+                    }                                                    \
+                }                                                        \
+            }                                                            \
+        }                                                                \
+        wf_cost_release(old); return true;                              \
+    }                                                                    \
     PlacementPlan plan = P##_plan(map, env, target);                       \
     if (!plan.complete) { wf_cost_release(plan.destinations); return false; } \
     P##_extend(map, target);                                               \
@@ -659,10 +696,12 @@ static HELPER void P##_free(P##_Map map, Digest *digest) {                 \
 }                                                                         \
 MATCHED_GROWING_API(P, B, LIMIT)
 
-SPARSE_MATCHED(word_planned, word_sparse, word, uint64_t, CEILING)
-SPARSE_MATCHED(record_planned, record_sparse, record, Record, CEILING)
-SPARSE_MATCHED(word_planned_small, word_sparse_small, word, uint64_t, 3)
-SPARSE_MATCHED(record_planned_small, record_sparse_small, record, Record, 3)
+SPARSE_MATCHED(word_planned, word_sparse, word, uint64_t, false, CEILING)
+SPARSE_MATCHED(record_planned, record_sparse, record, Record, false, CEILING)
+SPARSE_MATCHED(word_planned_small, word_sparse_small, word, uint64_t, false, 3)
+SPARSE_MATCHED(record_planned_small, record_sparse_small, record, Record, false, 3)
+SPARSE_MATCHED(word_staged, word_sparse, word, uint64_t, true, CEILING)
+SPARSE_MATCHED(record_staged, record_sparse, record, Record, true, CEILING)
 
 /* Dense source planning publishes only after all indexes exist. Growth copies
  * live dense entries, then a full sparse-table scan installs reverse indexes.
@@ -1060,6 +1099,8 @@ TRACE(word_single, word, uint64_t)
 TRACE(record_single, record, Record)
 TRACE(word_slot, word, uint64_t)
 TRACE(record_slot, record, Record)
+TRACE(word_staged, word, uint64_t)
+TRACE(record_staged, record, Record)
 
 POLICY_CHECK(word_sparse_small, word, uint64_t)
 POLICY_CHECK(record_sparse_small, record, Record)
@@ -1169,9 +1210,13 @@ static const Variant variants[] = {
     {"record-slot-direct", true, false, false, sizeof(record_single_Cell), 0, record_single_trace, NULL, REBUILD_VARIANT | ZERO_REHASH_NOOP},
     {"word-slot-matched", false, false, false, sizeof(word_slot_Cell), 0, word_slot_trace, NULL, REBUILD_VARIANT | ZERO_REHASH_NOOP},
     {"record-slot-matched", true, false, false, sizeof(record_slot_Cell), 0, record_slot_trace, NULL, REBUILD_VARIANT | ZERO_REHASH_NOOP},
+    {"word-staged-matched", false, false, false, sizeof(word_staged_Cell), 0, word_staged_trace, NULL, REBUILD_VARIANT | ZERO_REHASH_NOOP},
+    {"record-staged-matched", true, false, false, sizeof(record_staged_Cell), 0, record_staged_trace, NULL, REBUILD_VARIANT | ZERO_REHASH_NOOP},
 #if defined(WITH_WF)
     {"word-wf-slot", false, false, false, sizeof(word_slot_Cell), 0, wf_map_cost_slot_word_trace, NULL, WF_VARIANT | REBUILD_VARIANT | ZERO_REHASH_NOOP},
     {"record-wf-slot", true, false, false, sizeof(record_slot_Cell), 0, wf_map_cost_slot_record_trace, NULL, WF_VARIANT | REBUILD_VARIANT | ZERO_REHASH_NOOP},
+    {"word-wf-staged", false, false, false, sizeof(word_staged_Cell), 0, wf_map_cost_staged_word_trace, NULL, WF_VARIANT | REBUILD_VARIANT | ZERO_REHASH_NOOP},
+    {"record-wf-staged", true, false, false, sizeof(record_staged_Cell), 0, wf_map_cost_staged_record_trace, NULL, WF_VARIANT | REBUILD_VARIANT | ZERO_REHASH_NOOP},
 #endif
 };
 

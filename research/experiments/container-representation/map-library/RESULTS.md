@@ -97,7 +97,8 @@ Let `C` be the initial capacity, `T` the requested growth capacity,
 `B(C) = 16 + C * S` the slot/entry backing, `I(C) = 8 + C * J` the dense
 index backing, `P(C) = 8 + 8*C` the sparse destination plan, and
 `U(C) = 8 + C` its used array. `S` is 24 or 272 bytes for scalar or record;
-`J` is 16 for the tagged index and 8 for the compact native index. Allocation
+`J` is 16 for the tagged index and 8 for the compact native index. The later
+single-slot extension uses its separately stated 32/280-byte strides. Allocation
 headers belonging only to the observer are excluded equally from requested
 bytes. Every request has one release and final live bytes must be zero.
 
@@ -620,7 +621,8 @@ The original primary/edit/boundary sets explicitly exclude the new variants
 and keep their original implementation order. The rebuild set adds three C
 controls and one WF candidate to the existing seven implementations per
 payload: four cells, eleven implementations, eleven paired seeds, two modes
-and two reversed cohorts. Its 1936-row measurement has not yet been run.
+and two reversed cohorts. This eleven-implementation image was checked but
+not timed; the four-candidate image measured below supersedes that timing plan.
 New control correctness is limited to these two paths at `(capacity,count)`
 `(0,0)`, `(1,1)`, `(3,2)`, `(3,3)` and `(63,55)`, retaining the existing three
 round counts, three seeds and both hash kinds. `slot-check.wf` separately
@@ -630,9 +632,11 @@ CLI configurations with the quarantining observer.
 The extended `build-candidates build-costs` construction passed in 39.62 s
 with the same v0.67 compiler and Apple Clang 21. It produced all five source
 fixtures and the six-entry trace module; 54 selected public/callback
-definitions receive the retained treatment. At this checkpoint the new
-`check` execution is pending the shared verification guard, and no rebuild
-timings have been taken. Construction is not a substitute for those checks.
+definitions receive the retained treatment. C-only construction took 2.70 s;
+execution/check took 9.57 s. Each mode passed 14,040 C-only and 19,584 WF/C
+traces, ten policy chains, and the retained-call checks. The five fixtures
+passed all thirty ordinary/observed executions with exact allocation counts
+24/14/29/14/18. No rebuild timing was taken on this six-entry image.
 
 Optimized wide rebuild paths distinguish new extent `N`, old materialized
 extent `O`, and old live owners `L`. Each single-slot backing requests `16+280*N`
@@ -671,3 +675,204 @@ The C source is
 the extended adapter is
 `3687be38e4e7d77982c34a76ddc7b8d7013fc1bbfcf1b15db7a2845cd56be001`.
 These are construction and inspection identities, not new timing identities.
+
+### Enum buckets with one local staging window
+
+Before choosing the larger buckets, a fourth source candidate retains the
+original enum bucket layout and stages only the currently migrating owner
+in a local `Slots<Pair,1>`. It descends through the old buckets, hashes a
+staged owner, probes occupancy without equality, and exchanges into the
+available bucket. The exhaustive result match empties staging on insertion
+and restores a returned owner on either other outcome. This uses the ordinary
+model without a global occupancy fact authorizing a discard. It keeps the
+same 24/272-byte buckets and one fresh backing per nonempty rebuild; there is
+no staging allocation. Empty rehash again allocates nothing.
+
+The reviewable source difference is [staged-rebuild.patch](staged-rebuild.patch),
+applied by `staged-source` to `sparse-map.wf`. The generated unprefixed source
+reuses the corrected sparse callers, with allocation expectations 15/12.
+A second generated file changes only the `Sparse`/`sparse_` name prefixes to
+`Staged`/`staged_`, allowing both candidates in the same timing image. Public
+contracts and the unchanged, uninstantiated planning helpers remain in this
+overlay; the latter produce no runtime calls. This overlay is removed when
+a selected implementation or maintained successor preserves the comparison,
+with its historical bytes retained in Git. It is not a selected library API.
+
+The C source control selects the same local-staging algorithm through a
+compile-time rebuild policy in the existing sparse macro. Its other
+operations remain shared with the original planned control, and no private
+`noinline` barrier is added. Adding this WF/C pair increases the same four
+rebuild cells to thirteen implementations and 2288 paired rows; it does not
+expand the original workload sets. The fourth candidate still uses the
+original three-variant Put result. Its migration exchange can therefore
+carry a 536-byte wide result where single-slot append returns unit. The
+previous compact-public-put measurement does not establish this migration
+path's cost; any recommendation to promote a compact staged candidate needs
+its own focused four-cell validation.
+
+The generated unprefixed source is byte-identical to the admitted candidate,
+SHA-256 `3c6358a57869e62fb35652aeec552b67d594d356f7d4271b07f3518a0a736911`;
+the prefixed source is
+`74fb915d7e68569ac4d2ddf7789480775377444064883b8732af2cc8a6d76edd`.
+Overlay SHA-256 is
+`9d0ca2b0207be964bf0556a4f49a9a7909d55fd052cec60ca3b2d1884f89956d`.
+The extended adapter preserves every previous trace byte and has SHA-256
+`68266d9373bcb33661cb8d0ae65cbbf717f7ffff5b06ed084774f2fcda48d0b5`.
+
+Construction of the fourth candidate and combined image passed in 31.41 s;
+execution/check passed in 13.49 s. The unchanged earlier fixture images and
+runtime objects were reused after checking their unchanged recipes, flags
+and sources; the two new callers and all changed C/WF trace modules were
+rebuilt. Each normal/retained image passed 14,400 C-only and 20,304 WF/C
+traces, ten policy chains and retained-call checks. All seven fixtures passed
+ordinary and exact-identity observer execution in three CLI configurations:
+42 runs, with allocation counts 24/14/29/14/18/15/12. The concurrent and three
+negative observer controls also passed. All 68 selected WF public/callback
+definitions receive the retained treatment, with the selected calls checked
+in both optimized modules.
+
+### Four-candidate rebuild measurements
+
+The combined image produced 2,288 samples: thirteen implementations per
+payload, four cells, eleven paired seeds, normal/retained modes and two
+reversed cohorts. All checksums and allocation counters passed during timing.
+Independent CSV validation also checked every request/byte/peak formula,
+all sixteen complete groups, and checksum equality across implementations,
+modes and cohorts. Samples range from 229 microseconds upward and have an
+observed 1-microsecond quantum. These are whole-trace times, not isolated
+rehash or transfer times. The host, compiler, Clang flags and runtime are
+unchanged from the first comparison.
+
+The four measurement invocations completed within a 1.86-second guarded
+interval. That interval subsequently attempted a separate scratch library
+admission and stopped on a duplicate documentation statement, so 1.86 s is
+an upper bound rather than an isolated measurement wall time; it does not
+indicate a failed timing oracle. Construction and correctness execution are
+the separate 31.41 s and 13.49 s measurements above.
+
+Each entry below is cohort zero / cohort one, using the median of eleven
+per-seed time ratios. The denominator is the original planned sparse WF
+implementation **in the same combined executable**. Lower is faster.
+
+| Payload / path / mode | Dense / planned sparse | Single-slot / planned sparse | Staged enum / planned sparse |
+|---|---:|---:|---:|
+| 8 B / grow / normal | 0.822 / 0.828 | 0.866 / 0.876 | 0.784 / 0.797 |
+| 8 B / grow / retained | 0.884 / 0.874 | 0.916 / 0.918 | 0.847 / 0.830 |
+| 8 B / rehash / normal | 0.973 / 0.970 | 0.934 / 0.927 | 0.921 / 0.895 |
+| 8 B / rehash / retained | 0.966 / 0.961 | 0.946 / 0.946 | 0.939 / 0.934 |
+| 256 B / grow / normal | 0.690 / 0.690 | 0.980 / 0.982 | 1.013 / 1.014 |
+| 256 B / grow / retained | 0.744 / 0.747 | 0.997 / 0.992 | 1.093 / 1.035 |
+| 256 B / rehash / normal | 0.810 / 0.804 | 0.931 / 0.932 | 0.913 / 0.915 |
+| 256 B / rehash / retained | 0.824 / 0.826 | 0.931 / 0.921 | 0.931 / 0.928 |
+
+Staged enum improves these scalar traces, but its original wide result
+shape does not establish an overall advantage: wide growth is slightly
+slower than planned sparse and 38–47% slower than dense; wide rehash remains
+12–14% slower than dense. The larger single-slot layout does not resolve
+that split. There is no assumed application mix with which to average it
+away. Cohort variation also matters: retained wide staged/planned growth
+moves from 1.093 to 1.035.
+
+The added native controls distinguish some, but not all, causes. The table
+uses the same paired statistic and cohort ordering. `C staged` and `C slot`
+use the source-shaped algorithms; `C descending` and `C ascending` directly
+migrate enum buckets; `C slot direct` changes only that native layout.
+
+| Payload / path / mode | WF staged / C staged | WF slot / C slot | C staged / C descending | C slot direct / C descending | C descending / C ascending |
+|---|---:|---:|---:|---:|---:|
+| 8 B / grow / normal | 1.013 / 1.025 | 1.141 / 1.151 | 1.007 / 0.997 | 0.987 / 1.000 | 1.010 / 1.023 |
+| 8 B / grow / retained | 0.915 / 0.929 | 1.034 / 1.041 | 1.195 / 1.197 | 0.978 / 0.994 | 0.986 / 0.997 |
+| 8 B / rehash / normal | 1.003 / 0.981 | 1.078 / 1.063 | 0.970 / 0.973 | 0.957 / 0.953 | 1.004 / 1.009 |
+| 8 B / rehash / retained | 0.966 / 0.966 | 1.025 / 1.013 | 1.063 / 1.043 | 0.971 / 0.954 | 0.987 / 1.012 |
+| 256 B / grow / normal | 1.248 / 1.242 | 1.472 / 1.429 | 1.452 / 1.437 | 1.030 / 1.017 | 1.006 / 1.015 |
+| 256 B / grow / retained | 1.051 / 1.048 | 1.307 / 1.308 | 1.775 / 1.536 | 1.021 / 0.982 | 1.011 / 1.150 |
+| 256 B / rehash / normal | 1.090 / 1.111 | 1.247 / 1.245 | 1.191 / 1.193 | 0.990 / 1.006 | 1.013 / 1.008 |
+| 256 B / rehash / retained | 0.999 / 0.994 | 1.146 / 1.159 | 1.313 / 1.324 | 0.990 / 0.979 | 1.011 / 1.021 |
+
+The wide staged source algorithm is already costlier than direct native
+migration, and WF retains further source/result-boundary work below. It
+would be incorrect to attribute its entire gap to the bucket layout or
+to LLVM copying alone. The retained wide-growth native direction control
+also varies substantially (1.011 versus 1.150); small direction/layout
+differences are not a stable selection ground here.
+
+Allocation totals below are independently checked whole-trace values,
+formatted as `requests / requested bytes / peak live bytes`. Growth runs
+two complete traces with one growth each; rehash runs one trace with two
+rebuilds. Peaking is measured across each complete trace, not summed.
+
+| WF representation / payload | Grow | Rehash |
+|---|---:|---:|
+| Planned sparse / 8 B | 8 / 737376 / 360488 | 5 / 172080 / 135200 |
+| Dense / 8 B | 8 / 983136 / 491568 | 4 / 294952 / 229408 |
+| Single-slot / 8 B | 4 / 786496 / 393248 | 3 / 393264 / 262176 |
+| Staged enum / 8 B | 4 / 589888 / 294944 | 3 / 294960 / 196640 |
+| Planned sparse / 256 B | 8 / 6832224 / 3407912 | 5 / 1187888 / 1151008 |
+| Dense / 256 B | 8 / 7077984 / 3538992 | 4 / 1310760 / 1245216 |
+| Single-slot / 256 B | 4 / 6881344 / 3440672 | 3 / 3440688 / 2293792 |
+| Staged enum / 256 B | 4 / 6684736 / 3342368 | 3 / 3342384 / 2228256 |
+
+Staged enum eliminates the plan allocations and saves one word per bucket
+relative to single-slot. Same-capacity rehash nevertheless has a higher
+peak than planned sparse because it holds both complete backings at once.
+These counters do not replace the separate quarantining observer's exact
+allocation-identity release checks.
+
+In the measured wide staged rebuild, both optimized modes first read the
+old tag and copy a Pair only for a Filled bucket: unlike single-slot, an
+empty/deleted old bucket has no payload snapshot. Each initial live owner
+still clears its 272-byte local staging window and transfers 264 bytes into
+it. The take/projection then passes key and value directly to an outlined
+private exchange; no extra aggregate memcpy survives there. Exchange reads
+the destination's old 264 bytes into SSA, writes the offered Pair into the
+bucket, and clears a 536-byte Put result on the Inserted path. The caller
+only reads the tag on successful insertion. A 264-byte result-to-staging
+copy executes only for the Replaced/Full retry; the exchange body itself
+does not return Full. Each owner-loop attempt hashes once, with no equality
+or per-probe hashing. New enum cells clear 264 inactive payload bytes plus
+their tag. These facts hold in normal and retained native output, including
+the outlined exchange and its Inserted `bzero` tail call; neither private
+helper has an imposed `noinline` attribute.
+
+Source-shaped C inlines exchange and has five common-path transfers on
+Inserted: old to pending, pending to offered, destination to swap temporary,
+offered to destination, and temporary to offered. These are 256-byte copies
+plus scalar key handling in normal mode, and 264-byte copies in retained
+mode. A sixth copy site is retry-only. C performs no staging-payload or Put
+clear. Counting only memcpy intrinsics, or adding every static copy site,
+therefore misstates the dynamic comparison. The earlier single-slot
+transfer extents remain unchanged in this combined image. Public
+reserve/rehash returns 8 bytes throughout; its boundary is separate from
+the private exchange's wide Put result.
+
+The measured C source SHA-256 is
+`0159dba272b04375fe217d26268a2020c730822a6b2c908b026d7c0f14cfdf59`;
+Makefile SHA-256 is
+`ba3d7d918946e29d99e92766d3048741c0a96e1f7238164d7a75c8e5f3ee8436`.
+The adapter and staged-source identities are those above. The compiler is
+unchanged (`bec227121f4a223906f6f429cec0e4a34a108e8dafac46daa56ffc8a23d19674`).
+
+| Combined measured artifact | SHA-256 |
+|---|---|
+| Raw WF module | `71808b10a76711f526716a3b1ea6c77a0a96cf60278f83ad61344dc4b4ac956b` |
+| Normal optimized WF | `5e3077cf3df6a4abbdff37a6d6a3fb36eeb301024306c671e29481957d5892d5` |
+| Retained optimized WF | `78e07f3aef13dc7b9e571b76f7086ac774234a7b928817e122a6363a802c4dbf` |
+| Normal optimized C | `7c1fad17e6b4e7fae755d3a941d67af4bef7ad42784b825c83d33f122f8fd420` |
+| Retained optimized C | `89f54ea6953feca783e54627d60d2fcf75486b7ddb776228131c47017b73506f` |
+| Normal executable | `d57fe63766c183cedc737d7724be2c7fb509416fb020264fb3a4168b196bb666` |
+| Retained executable | `fd256599c5ee06068ccadcddb6d2cc40cdae952f185d60afafaeda4c0a6afd60` |
+
+[The rebuild archive](measurements-rebuild-original.csv.gz) keeps the same
+seventeen columns and cohort/mode concatenation order as the earlier
+archives. Its 2,288 data rows have gzip SHA-256
+`18da6db7b08482396a9f81cfb9dffc427851e708aa354017b3ae5e572161ac32`
+and uncompressed SHA-256
+`b52c2851a368ebac5ef1550bb8510c4a18dacc9ef2a31e10ef4e7349ac8665c1`.
+Filtering one `(contract,cohort)` pair recovers each original CSV byte for
+byte. Reproduction uses the existing `measure` target with
+`MEASURE_SET=rebuild SOURCE_SHAPE=original`; no separate harness is required.
+The earlier inline paired-ratio command applies to this archive as written
+for dense/planned sparse; change its two variant names for the other
+comparisons. These samples retain the original three-variant public/private
+result shape. They do not measure a later compact library or an inlined
+migration exchange.
