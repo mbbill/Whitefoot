@@ -7,6 +7,23 @@ criterion for deciding whether to pursue it. Entries do not select a design.
 Remove an item when its implementation and checks land, or its validation
 concludes with a recorded disposition; retain any selected follow-up work here.
 
+- **Audit numeric conversion coverage and unnecessary fallible interfaces.**
+  The known starting case is integer low-bit narrowing: `cvt::<u32, u8>(x)`
+  preserves the numeric value and returns `Result`, while `reinterpret` only
+  admits its listed equal-width pairs. Masking with `iand(x, 255_u32)` before
+  `cvt` expresses the low-byte result but still exposes `Result`; there is no
+  direct total truncating conversion. Survey similar gaps across integer widths
+  and signedness, bit reinterpretation, saturation, and floating-point rounding
+  or narrowing, distinguishing existing compositions from missing operations.
+  Use small source examples and boundary controls to define each desired
+  behavior, including negative values, range edges, and relevant NaN/infinity
+  cases. Assess whether a clearer total operation or proved-domain form removes
+  unnecessary source branching without weakening exact conversion or proof
+  requirements; inspect ordinary emitted code before claiming a runtime cost
+  or improvement. Additional gaps and performance costs are unverified. Defer
+  operation selection and implementation to the requested conversion review;
+  reopen when that review starts or a real numeric workload needs a workaround.
+
 - **Joined reference proofs lose useful target-relative information.** A
   reference selecting either of two freshly empty Slots cannot establish the
   append precondition from both constructors' facts; captured disjoint ranges
