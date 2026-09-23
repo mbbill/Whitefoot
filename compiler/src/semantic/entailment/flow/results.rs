@@ -65,11 +65,12 @@ impl Analyzer<'_, '_> {
         }
         if !result.facts.all_derivable
             && ((result.facts.bounds.is_empty() && result.facts.distinct.is_empty())
-                || (!closure_is_seeded(&result.facts) && closure_is_seeded(ordinary)))
+                || result.facts.numeric_core_terms() < ordinary.numeric_core_terms())
         {
-            // Reuse the ordinary core when this context has none. Importing
-            // every existing conditional candidate into that core gives the
-            // same union as importing ordinary facts into the old context.
+            // Reuse the ordinary core when it covers more registered terms.
+            // Importing all conditional candidates gives the same union as
+            // importing ordinary facts into the old context; a different
+            // valid witness can win an equal-bound tie.
             let conditional = result.facts.l0_candidates();
             result.facts = ordinary.numeric_snapshot();
             result
@@ -473,9 +474,6 @@ mod tests {
         let from = analyzer
             .terms
             .intern(TermKind::ResultPayload(IntegerType::I32));
-        let foreign = analyzer
-            .terms
-            .intern(TermKind::ResultPayload(IntegerType::U8));
         let [middle, to] = [0, 1].map(|binding| {
             analyzer.terms.intern(TermKind::Place(
                 ResolvedPlace::binding(BindingId(binding)),
@@ -601,6 +599,9 @@ mod tests {
             assert!(actual.derives_bound(to, middle, if remove_calls { 5 } else { -1 }));
         }
 
+        let foreign = analyzer
+            .terms
+            .intern(TermKind::ResultPayload(IntegerType::U8));
         let mut ordinary = FactState::new();
         ordinary.establish(
             &Relation::Bound {
@@ -612,81 +613,89 @@ mod tests {
             event,
         );
         let ordinary = analyzer.result_ordinary_snapshot(&ordinary);
-        let mut refreshed = ResultEvidence {
-            payload: from,
-            facts: unseeded.clone(),
-            definitely_err: false,
-        };
-        assert!(!closure_is_seeded(&refreshed.facts));
-        let mut imported = unseeded;
-        // The former refresh loop is an independent reference for the union.
-        for (relation, parent) in ordinary.l0_candidates() {
-            if !relation
-                .terms()
-                .iter()
-                .any(|term| matches!(analyzer.terms.kind(*term), TermKind::ResultPayload(_)))
-            {
-                imported.establish_from_proof(&relation, parent, &analyzer.derivations);
-            }
-        }
-        analyzer.refresh_result_from_snapshot(&mut refreshed, &ordinary);
-        assert!(closure_is_seeded(&refreshed.facts));
-        assert!(
-            refreshed
-                .facts
-                .l0_candidates()
-                .iter()
-                .all(|(relation, _)| { !relation.terms().contains(&foreign) })
-        );
-        for remove_calls in [false, true] {
-            if remove_calls {
-                refreshed
-                    .facts
-                    .retain_non_postcondition_candidates(&analyzer.derivations);
-                imported.retain_non_postcondition_candidates(&analyzer.derivations);
-            }
-            assert_eq!(candidates(&refreshed.facts), candidates(&imported));
-            let actual = close(
-                &refreshed.facts,
-                &analyzer.terms,
-                &analyzer.goals,
-                &mut analyzer.derivations,
-            );
-            let expected = close(
-                &imported,
-                &analyzer.terms,
-                &analyzer.goals,
-                &mut analyzer.derivations,
-            );
-            assert!(!actual.contradictory());
-            for left in analyzer.terms.ids() {
-                for right in analyzer.terms.ids() {
-                    assert_eq!(
-                        actual.tight_bound(left, right),
-                        expected.tight_bound(left, right)
-                    );
-                    let distinct = Relation::Distinct {
-                        left,
-                        right,
-                        difference: 0,
-                    };
-                    assert_eq!(actual.derives(&distinct), expected.derives(&distinct));
+        // Exercise both an unseeded conditional state and a previously
+        // closed context whose core predates a newly registered term.
+        for conditional in [unseeded, source] {
+            let mut refreshed = ResultEvidence {
+                payload: from,
+                facts: conditional.clone(),
+                definitely_err: false,
+            };
+            assert!(refreshed.facts.numeric_core_terms() < ordinary.numeric_core_terms());
+            let mut imported = conditional;
+            // The former refresh loop is an independent reference for the union.
+            for (relation, parent) in ordinary.l0_candidates() {
+                if !relation
+                    .terms()
+                    .iter()
+                    .any(|term| matches!(analyzer.terms.kind(*term), TermKind::ResultPayload(_)))
+                {
+                    imported.establish_from_proof(&relation, parent, &analyzer.derivations);
                 }
             }
-            assert_eq!(actual.tight_bound(to, middle), Some(8));
+            analyzer.refresh_result_from_snapshot(&mut refreshed, &ordinary);
+            assert!(closure_is_seeded(&refreshed.facts));
             assert_eq!(
-                actual.tight_bound(from, middle),
-                Some(if remove_calls { 5 } else { -1 })
+                refreshed.facts.numeric_core_terms(),
+                ordinary.numeric_core_terms()
             );
+            assert!(
+                refreshed
+                    .facts
+                    .l0_candidates()
+                    .iter()
+                    .all(|(relation, _)| { !relation.terms().contains(&foreign) })
+            );
+            for remove_calls in [false, true] {
+                if remove_calls {
+                    refreshed
+                        .facts
+                        .retain_non_postcondition_candidates(&analyzer.derivations);
+                    imported.retain_non_postcondition_candidates(&analyzer.derivations);
+                }
+                assert_eq!(candidates(&refreshed.facts), candidates(&imported));
+                let actual = close(
+                    &refreshed.facts,
+                    &analyzer.terms,
+                    &analyzer.goals,
+                    &mut analyzer.derivations,
+                );
+                let expected = close(
+                    &imported,
+                    &analyzer.terms,
+                    &analyzer.goals,
+                    &mut analyzer.derivations,
+                );
+                assert!(!actual.contradictory());
+                for left in analyzer.terms.ids() {
+                    for right in analyzer.terms.ids() {
+                        assert_eq!(
+                            actual.tight_bound(left, right),
+                            expected.tight_bound(left, right)
+                        );
+                        let distinct = Relation::Distinct {
+                            left,
+                            right,
+                            difference: 0,
+                        };
+                        assert_eq!(actual.derives(&distinct), expected.derives(&distinct));
+                    }
+                }
+                assert_eq!(actual.tight_bound(to, middle), Some(8));
+                assert_eq!(
+                    actual.tight_bound(from, middle),
+                    Some(if remove_calls { 5 } else { -1 })
+                );
+            }
+            let contradiction = analyzer.derivations.intern(DerivationNode::ResultErr {
+                statement: statement.clone(),
+            });
+            refreshed.facts = FactState::contradictory(contradiction);
+            refreshed.definitely_err = true;
+            analyzer.refresh_result_from_snapshot(&mut refreshed, &ordinary);
+            assert!(refreshed.facts.all_derivable);
+            assert_eq!(refreshed.facts.contradiction, Some(contradiction));
+            assert!(refreshed.definitely_err);
         }
-        let contradiction = analyzer
-            .derivations
-            .intern(DerivationNode::ResultErr { statement });
-        refreshed.facts = FactState::contradictory(contradiction);
-        refreshed.definitely_err = true;
-        analyzer.refresh_result_from_snapshot(&mut refreshed, &ordinary);
-        assert!(refreshed.facts.all_derivable);
-        assert_eq!(refreshed.facts.contradiction, Some(contradiction));
-        assert!(refreshed.definitely_err);
     }
 }

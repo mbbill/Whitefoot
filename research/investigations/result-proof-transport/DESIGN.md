@@ -574,6 +574,16 @@ union, with existing insertion records for conditional edges, but permits
 the already completed ordinary core to seed closure. Contradictory conditional
 states retain their existing absorbing handling.
 
+That unseeded-only union variant leaves the independent-outcome case at
+373.694 ms, so it does not explain the remaining repeated closure. The next
+comparison also reuses an ordinary core covering more registered terms than
+the conditional core: repeated calls add immutable datums after earlier
+contexts were captured. Core size only chooses a reuse opportunity; all fresh
+and weakened cells still undergo the existing closure. Candidate/provenance
+sets are preserved, while a different valid equal-bound witness may win when
+import order reverses. The direct correspondence test compares both an
+unseeded context and one with an older closed core, including S12 removal.
+
 This private representation change stays inside FactState and the Result flow
 child. The walker still owns event order, and no additional solver, acceptance
 budget or lifetime analysis is introduced. The proposed supplement is kept in

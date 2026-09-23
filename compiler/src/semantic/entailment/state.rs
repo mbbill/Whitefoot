@@ -2851,6 +2851,16 @@ impl FactState {
         }
     }
 
+    /// Size of the recorded numeric core, before its fresh and weakened
+    /// cells are closed again. This selects a reuse opportunity, not a fact
+    /// or a bound on the amount of closure work that remains.
+    pub(crate) fn numeric_core_terms(&self) -> u32 {
+        match self.closure {
+            ClosureRecord::Unknown => 0,
+            ClosureRecord::Closed { terms } | ClosureRecord::Core { terms, .. } => terms,
+        }
+    }
+
     /// Deterministic normalized live L0 facts and their canonical proofs.
     /// This excludes opaque goals and origin metadata.
     pub(crate) fn live_l0_relations(&self) -> Vec<(Relation, DerivationId)> {
