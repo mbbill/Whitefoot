@@ -13,6 +13,14 @@ Owner-approved: The owner explicitly accepted both complete PR #93 amendments an
 
 Summary: Apply both reviewed additions unchanged. Omit nonexistent element alignment from constant-capacity zero Array, Slots and Ring payloads while retaining the window descriptors. Publish the signed nonnegativity of the qualified, normalized physical payload index through portable `llvm.assume`, without changing acceptance, target qualification, logical coordinates or wrapping arithmetic. Retain that fact provisionally for its repeatable inline-path benefit while accepting the unexplained retained-reverse cost; the original selection criterion remains unmet and the reopening conditions remain in force. The [Ring address investigation](../research/investigations/containers-and-resources/X1-LIBRARY.md#ring-payload-address-qualification) and [paired Deque comparison](../research/experiments/container-representation/deque-library/RESULTS.md) supply the contract, measurements, alternatives and limitations. Preserve the existing decisions and rejections, remove the two resolved amendments and their directory, and update the affected investigation and TODO status. The specification is unchanged; this ruling does not authorize a merge.
 
+## 2026-09-22 Align counted-loop value-name reservation
+
+Nodes: language/name-resolution
+
+Owner-approved: The owner explicitly approved the complete counted-binder amendment presented after PR #90's independent review at be149728. This ruling does not authorize a merge.
+
+Summary: Apply the reviewed addition and its refused alternative unchanged. Counted-loop binders follow ordinary let bindings in the operation and mode-word reservation because both introduce ordinary value names; the proof-only invariant domain stays separate. OP-1 now includes the counted binder explicitly, matching DIAG-1 and the existing resolver. The [follow-up investigation](../research/investigations/consistency-followups/DESIGN.md#reserved-names-and-declaration-roles) records the alternatives and boundary cases. Remove the accepted amendment and its directory.
+
 ## 2026-09-22 Adopt ordinary Slab and Deque library boundaries
 
 Nodes: compiler/checker-facts, language/data-model/storage-shapes, language/ownership/range-reference, language/data-model/slab-storage, language/data-model/deque-rebase
