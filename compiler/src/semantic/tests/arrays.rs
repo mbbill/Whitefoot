@@ -152,6 +152,145 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
+fn generic_struct_constants_prepare_their_own_instances() {
+    for preparation in ["", "struct Holder {\n  pair: Pair<u64>;\n}\n\n"] {
+        let source = format!(
+            "struct Pair<T: copy> {{\n  left: T;\n  right: T;\n}}\n\n{preparation}const pair: Pair<u64> = Pair<u64>(left: 3_u64, right: 2_u64);\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::Complete(checked) = outcome else {
+                panic!("a constant needs no unrelated instance seed: {outcome:?}");
+            };
+            let constant = &checked.data.constants[0];
+            let CheckedValue::Struct { ty, fields } = &constant.value else {
+                panic!("the constant must retain its ordinary struct representation");
+            };
+            assert_eq!(*ty, constant.declared_type);
+            assert!(matches!(
+                fields.as_slice(),
+                [
+                    CheckedValue::Integer {
+                        ty: IntegerType::U64,
+                        bits: 3
+                    },
+                    CheckedValue::Integer {
+                        ty: IntegerType::U64,
+                        bits: 2
+                    },
+                ]
+            ));
+        });
+    }
+}
+
+#[test]
+fn generic_struct_constants_match_phantom_arguments_and_require_explicit_lists() {
+    let declarations =
+        "struct Marker<T, const n: u64> {\n}\n\nstruct AlternativeMarker<T, const n: u64> {\n}\n\n";
+    for (initializer, rule) in [
+        ("Marker<u64, 3>()", None),
+        ("Marker<u32, 3>()", Some(SemanticRule::Const2)),
+        ("Marker<u64, 4>()", Some(SemanticRule::Const2)),
+        ("AlternativeMarker<u64, 3>()", Some(SemanticRule::Const2)),
+        ("Marker()", Some(SemanticRule::Type5)),
+        ("Marker<u64>()", Some(SemanticRule::Type5)),
+        ("Marker<u64, 3, 4>()", Some(SemanticRule::Type5)),
+    ] {
+        let source = format!(
+            "{declarations}const marker: Marker<u64, 3> = {initializer};\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        if let Some(rule) = rule {
+            super::assert_rule_at(source.as_bytes(), rule, initializer);
+        } else {
+            super::assert_accepts(source.as_bytes());
+        }
+    }
+    let source = format!(
+        "{declarations}const marker: Marker<u64, 3> = Marker<3, u64>();\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+    );
+    super::assert_rule_at(source.as_bytes(), SemanticRule::Type5, "3");
+}
+
+#[test]
+fn generic_struct_constants_check_instantiated_fields_and_bounds() {
+    let declarations = "struct Pair<T: copy> {\n  left: T;\n  right: T;\n}\n\n";
+    for (initializer, rule) in [
+        ("Pair<u64>(left: 3_u64, right: 2_u32)", SemanticRule::Const2),
+        ("Pair<u64>(right: 2_u64, left: 3_u64)", SemanticRule::Gram8),
+        ("Pair<u64>(left: 3_u64)", SemanticRule::Gram8),
+        (
+            "Pair<u64>(left: 3_u64, right: 2_u64, extra: 1_u64)",
+            SemanticRule::Gram8,
+        ),
+        (
+            "Pair<Box<u64>>(left: 3_u64, right: 2_u64)",
+            SemanticRule::Prov6,
+        ),
+    ] {
+        let source = format!(
+            "{declarations}const pair: Pair<u64> = {initializer};\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::SourceIssue { issue } = outcome else {
+                panic!("{initializer} must be a source rejection: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), rule, "{initializer}: {issue:?}");
+        });
+    }
+}
+
+#[test]
+fn generic_struct_constant_eligibility_follows_fields_not_phantom_arguments() {
+    let declarations = "enum Flag {\n  On();\n  Off();\n}\n\nopaque struct Token {\n}\n\nstruct Cell<T> {\n  value: T;\n}\n\nstruct Phantom<T> {\n}\n\n";
+    for argument in [
+        "Box<u64>",
+        "Slots<u64, 2>",
+        "Ring<u64, 2>",
+        "Flag",
+        "Token",
+        "Array<Box<u64>, 0>",
+    ] {
+        let ty = format!("Cell<{argument}>");
+        let source = format!(
+            "{declarations}const cell: {ty} = {ty}(value: unit);\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        super::assert_rule_at(source.as_bytes(), SemanticRule::Const2, &ty);
+    }
+    let source = format!(
+        "{declarations}const marker: Phantom<Box<u64>> = Phantom<Box<u64>>();\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+    );
+    super::assert_accepts(source.as_bytes());
+}
+
+#[test]
+fn generic_struct_constants_preserve_function_arguments() {
+    let source = br#"interface Read<T: copy> {
+  fn read(value: &T) -> result: own T reads(value);
+}
+
+fn read_value(value: &u64) -> result: own u64 reads(value) {
+  return deref(value);
+}
+
+binding ReadWord : Read<u64> {
+  read = read_value;
+}
+
+struct Cell<interface Read<T>> {
+  value: T;
+}
+
+const cell: Cell<ReadWord> = Cell<ReadWord>(value: 7_u64);
+
+fn main() -> status: own ExitStatus pure {
+  let value = cell.value;
+  return exit_status(code: 0_u8);
+}
+"#;
+    super::assert_accepts(source);
+}
+
+#[test]
 fn constant_array_eligibility_closes_recursive_types_before_checking_the_value() {
     let source = br#"struct Recursive {
   children: Array<Recursive, 0>;

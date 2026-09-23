@@ -265,6 +265,75 @@ the repair. A bounded baseline CLI probe of the single descent was stopped
 after three seconds without a result; the unbounded path recurrence above,
 not that elapsed limit, establishes why the secondary fixed point cannot close.
 
+## Generic struct constants
+
+CONST-2 admits concrete source struct constants with written generic arguments.
+The implementation baseline at `9bed1c33` collects nominal constants before
+function signatures and bodies establish their concrete nominal instances.
+`collect_constant` reads the declared type without first ensuring its instance;
+`parse_const_construction` separately stops on every written argument list.
+These are implementation gaps under the existing rule, not a proposed language
+extension. Ordinary struct constants and ordinary generic construction already
+provide the type, field and static-layout mechanisms.
+
+The minimal positive must need no unrelated declaration to establish its type:
+
+```wf
+struct Pair<T: copy> {
+  left: T;
+  right: T;
+}
+
+const origin: Pair<u64> = Pair<u64>(left: 3_u64, right: 2_u64);
+```
+
+The implementation criterion is to prepare the declared concrete type through
+the existing nominal machinery, then check the complete written constructor
+instance against that type before recursively checking its fields. Reuse the
+current static aggregate representation; do not infer missing generic arguments
+from the declared type, compare only template names, or make initializer values
+select an instance. No new constant evaluator, runtime initialization or proof
+family is needed.
+
+Discriminating evidence must cover type and integer arguments, nested generic
+fields and arrays, phantom arguments that do not affect layout, and ordinary
+static field/reference reads. Wrong argument kinds, arities, bounds, concrete
+instances, field order/types/counts and ineligible storage remain source
+rejections. Check both a first-use instance and an already established instance:
+neither may fail internally or depend on an unrelated declaration. Preserve
+declaration-before-use, earlier scalar constants used as extents, non-generic
+constants and symbolic generic validation. A complete native conformance case
+must observe the selected fields and array contents through the ordinary path.
+Tests belong in the maintained compiler/conformance suites; this record retains
+the reasoning and observed outcomes rather than supplying daily test inputs.
+
+The repair uses `ensure_nominals_in_node` when collecting a constant, before
+the existing read-only type and value checks. Constructor checking resolves
+the written argument list through `nominal_generic_substitution` and compares
+the complete substitution with the declared instance, including arguments
+absent from its fields. Nested constants retain `CheckedValue::Struct` and
+the ordinary readonly aggregate lowering. This extends the existing collection
+path without another instance inventory or evaluator.
+
+Instantiated field eligibility also exposed obsolete support for treating
+`Slots` constants as dense arrays. CONST-2 excludes `Slots` and `Ring`; both
+are now rejected recursively even when a generic field introduces them. The
+old normalization and flat-element helper are removed. A phantom argument
+alone does not make storage ineligible: an empty `Phantom<Box<u64>>` contains
+no Box, while `Cell<Box<u64>>` does.
+
+The pre-repair compiler stopped with `InvalidResolution` on each new
+conformance source: the nested positive, mismatched phantom arguments, and
+the ineligible generic field. The maintained cases now distinguish those
+obligations: the positive observes type and integer substitutions, nested
+array contents and reference reads in a native program; the two negatives
+require CONST-2 source diagnostics. Compiler tests additionally inspect the
+checked aggregate, compare first-use and pre-established instances, and cover
+argument arity, kinds, bounds, field order/types/counts, hidden ineligible
+storage and interface-bound function arguments. No specification or design
+decision changes are required; the existing generic and constant rules
+select the behavior.
+
 ## Reserved names and declaration roles
 
 OP-1's exhaustive reservation list excludes invariant declarations, but DIAG-1
