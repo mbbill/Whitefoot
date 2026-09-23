@@ -450,9 +450,10 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
     // its null check, instead of a calloc. The provenance/control-flow oracle
     // permits one such fill per allocation and refuses repeated fills, fills
     // reached again without allocation, and fills through incoming pointers.
-    // Owned aggregate destinations also make LLVM retain memset
-    // initializations of 40-byte inactive Options, 236-byte inactive Results
-    // and 16-byte frame metadata. These do not refill a run's heap payload.
+    // Aggregate or frame initialization may also become a memset, without
+    // refilling a run's heap payload. Inactive enum fields need no constructor
+    // stores, but the no-refill oracle must not depend on which other stores
+    // this optimizer combines.
     // Keep the no-refill claim on pointer provenance, rather than forbidding
     // the unrelated aggregate initialization instruction by name.
     for forbidden in ["@realloc(", "@reallocf(", "bzero"] {

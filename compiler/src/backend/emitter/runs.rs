@@ -159,25 +159,30 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             .map(|pointer| format!("%{pointer}"))
     }
 
-    /// [BLK-2] `fixed_vector`: the empty window over `n` raw slots.
+    /// [OP-13] a frame-resident empty window over its constant-capacity slots.
     ///
-    /// The value is the zero aggregate, so both descriptor words start at
-    /// zero, which is exactly the row's four published relations.
+    /// Only the descriptor holds values [WIN-1]: `len` and a Ring's `head`
+    /// start at zero. The slots hold nothing until a placement initializes
+    /// one; constructing the empty owner does not write those bytes.
     pub(super) fn emit_fixed_vector(
         &mut self,
         result: IrValueId,
         ty: IrType,
     ) -> Result<(), BackendFailure> {
-        let Some(_) = RunShape::of(ty) else {
+        let Some(shape) = RunShape::of(ty) else {
             return Err(BackendFailure::InvalidIr);
         };
-        let run_type = llvm_type(self.program, ty)?;
         let destination = self.value_place(result)?;
-        writeln!(
-            self.output,
-            "  store {run_type} zeroinitializer, ptr {destination}",
-        )
-        .map_err(|_| BackendFailure::TextEmission)
+        let length_address =
+            self.aggregate_field_pointer(ty, &destination, shape.length_field() as usize)?;
+        writeln!(self.output, "  store i64 0, ptr {length_address}")
+            .map_err(|_| BackendFailure::TextEmission)?;
+        if let Some(head) = shape.head_field() {
+            let head_address = self.aggregate_field_pointer(ty, &destination, head as usize)?;
+            writeln!(self.output, "  store i64 0, ptr {head_address}")
+                .map_err(|_| BackendFailure::TextEmission)?;
+        }
+        Ok(())
     }
 
     /// [MSR-1] one measure of a storage shape, read at run time.

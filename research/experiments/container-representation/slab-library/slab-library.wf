@@ -7,27 +7,27 @@ nocopy struct SlabRecord {
 }
 
 interface SlabElement<T: drop> {
-  fn make(seed: own u64) -> value: own T pure;
-  fn visit(env: &SlabDigest, value: &T) -> result: own unit reads(value), writes(env);
-  fn consume(env: &SlabDigest, value: own T) -> result: own unit writes(env);
+  fn make(seed: u64) -> value: T pure;
+  fn visit(env: &SlabDigest, value: &T) -> result: unit reads(value), writes(env);
+  fn consume(env: &SlabDigest, value: T) -> result: unit writes(env);
 }
 
-fn slab_word_make(seed: own u64) -> value: own u64 pure {
+fn slab_word_make(seed: u64) -> value: u64 pure {
   return seed;
 }
 
-fn slab_word_consume(env: &SlabDigest, value: own u64) -> result: own unit writes(env) {
+fn slab_word_consume(env: &SlabDigest, value: u64) -> result: unit writes(env) {
   let prefix = deref(env).value *wrap 131_u64;
   set deref(env).value = prefix +wrap value;
   return unit;
 }
 
-fn slab_word_visit(env: &SlabDigest, value: &u64) -> result: own unit reads(value), writes(env) {
+fn slab_word_visit(env: &SlabDigest, value: &u64) -> result: unit reads(value), writes(env) {
   slab_word_consume(env: env, value: deref(value));
   return unit;
 }
 
-fn slab_record_make(seed: own u64) -> value: own SlabRecord pure {
+fn slab_record_make(seed: u64) -> value: SlabRecord pure {
   let words = array_filled::<u64, 32>(value: 0_u64);
   for (index in 0_u64..32_u64) {
     set words[index] = seed +wrap index;
@@ -35,7 +35,7 @@ fn slab_record_make(seed: own u64) -> value: own SlabRecord pure {
   return SlabRecord(words: words);
 }
 
-fn slab_record_visit(env: &SlabDigest, value: &SlabRecord) -> result: own unit reads(value), writes(env) {
+fn slab_record_visit(env: &SlabDigest, value: &SlabRecord) -> result: unit reads(value), writes(env) {
   for (index in 0_u64..32_u64) {
     let prefix = deref(env).value *wrap 131_u64;
     set deref(env).value = prefix +wrap deref(value).words[index];
@@ -43,7 +43,7 @@ fn slab_record_visit(env: &SlabDigest, value: &SlabRecord) -> result: own unit r
   return unit;
 }
 
-fn slab_record_consume(env: &SlabDigest, value: own SlabRecord) -> result: own unit writes(env) {
+fn slab_record_consume(env: &SlabDigest, value: SlabRecord) -> result: unit writes(env) {
   for (index in 0_u64..32_u64) {
     let prefix = deref(env).value *wrap 131_u64;
     set deref(env).value = prefix +wrap value.words[index];
@@ -63,7 +63,7 @@ binding SlabRecordElement : SlabElement<SlabRecord> {
   consume = slab_record_consume;
 }
 
-fn slab_library_trace<interface SlabElement<T>>(count: own u64, rounds: own u64, seed: own u64, path: own u64) -> result: own u64 pure contract {
+fn slab_library_trace<interface SlabElement<T>>(count: u64, rounds: u64, seed: u64, path: u64) -> result: u64 pure contract {
   requires count <= 8192_u64;
 } {
   let slab = slab_new::<T, 8192, 18446744073709551615>(capacity: count);
@@ -152,19 +152,19 @@ fn slab_library_trace<interface SlabElement<T>>(count: own u64, rounds: own u64,
   return digest.value;
 }
 
-fn slab_library_word_trace(count: own u64, rounds: own u64, seed: own u64, path: own u64) -> result: own u64 pure contract {
+fn slab_library_word_trace(count: u64, rounds: u64, seed: u64, path: u64) -> result: u64 pure contract {
   requires count <= 8192_u64;
 } {
   return slab_library_trace::<SlabWordElement>(count: count, rounds: rounds, seed: seed, path: path);
 }
 
-fn slab_library_record_trace(count: own u64, rounds: own u64, seed: own u64, path: own u64) -> result: own u64 pure contract {
+fn slab_library_record_trace(count: u64, rounds: u64, seed: u64, path: u64) -> result: u64 pure contract {
   requires count <= 8192_u64;
 } {
   return slab_library_trace::<SlabRecordElement>(count: count, rounds: rounds, seed: seed, path: path);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let words = slab_library_word_trace(count: 3_u64, rounds: 2_u64, seed: 17_u64, path: 1_u64);
   let records = slab_library_record_trace(count: 3_u64, rounds: 2_u64, seed: 17_u64, path: 0_u64);
   return exit_status(code: 0_u8);

@@ -16,18 +16,18 @@ struct SparseOwnerLedger {
   visits: u64;
 }
 
-fn sparse_owned_make(id: own u64, serial: own u64) -> result: own SparseOwnedNode pure {
+fn sparse_owned_make(id: u64, serial: u64) -> result: SparseOwnedNode pure {
   let record = SparseOwnedRecord(id: id, serial: serial);
   let child = box_new::<SparseOwnedRecord>(value: record);
   return SparseOwnedNode(child: move child);
 }
 
-fn sparse_owned_fail(ledger: &SparseOwnerLedger) -> result: own unit writes(ledger) {
+fn sparse_owned_fail(ledger: &SparseOwnerLedger) -> result: unit writes(ledger) {
   set deref(ledger).failures = deref(ledger).failures +wrap 1_u64;
   return unit;
 }
 
-fn sparse_owned_release(value: own SparseOwnedNode, ledger: &SparseOwnerLedger) -> result: own unit writes(ledger) {
+fn sparse_owned_release(value: SparseOwnedNode, ledger: &SparseOwnerLedger) -> result: unit writes(ledger) {
   let SparseOwnedNode(child: owned_child) = move value;
   let serial = owned_child.inner.serial;
   if serial < deref(ledger).releases.len {
@@ -38,21 +38,21 @@ fn sparse_owned_release(value: own SparseOwnedNode, ledger: &SparseOwnerLedger) 
   return unit;
 }
 
-fn sparse_owned_consume(env: &SparseOwnerLedger, key: own SparseOwnedNode, value: own SparseOwnedNode) -> result: own unit writes(env) {
+fn sparse_owned_consume(env: &SparseOwnerLedger, key: SparseOwnedNode, value: SparseOwnedNode) -> result: unit writes(env) {
   sparse_owned_release(value: move key, ledger: env);
   sparse_owned_release(value: move value, ledger: env);
   return unit;
 }
 
-fn sparse_owned_hash(env: &SparseOwnerEnv, key: &SparseOwnedNode) -> result: own u64 reads(key) {
+fn sparse_owned_hash(env: &SparseOwnerEnv, key: &SparseOwnedNode) -> result: u64 reads(key) {
   return deref(key).child.inner.id % 1_u64;
 }
 
-fn sparse_owned_equal(env: &SparseOwnerEnv, left: &SparseOwnedNode, right: &SparseOwnedNode) -> result: own Bool reads(left), reads(right) {
+fn sparse_owned_equal(env: &SparseOwnerEnv, left: &SparseOwnedNode, right: &SparseOwnedNode) -> result: Bool reads(left), reads(right) {
   return deref(left).child.inner.id == deref(right).child.inner.id;
 }
 
-fn sparse_owned_read(env: &SparseOwnerLedger, key: &SparseOwnedNode, value: &SparseOwnedNode) -> result: own u64 reads(key), reads(value), writes(env) {
+fn sparse_owned_read(env: &SparseOwnerLedger, key: &SparseOwnedNode, value: &SparseOwnedNode) -> result: u64 reads(key), reads(value), writes(env) {
   if deref(key).child.inner.serial != 4_u64 {
     sparse_owned_fail(ledger: env);
   }
@@ -63,7 +63,7 @@ fn sparse_owned_read(env: &SparseOwnerLedger, key: &SparseOwnedNode, value: &Spa
   return deref(value).child.inner.id;
 }
 
-fn sparse_owned_increment(env: &SparseOwnerLedger, key: &SparseOwnedNode, value: &SparseOwnedNode) -> result: own u64 reads(key), writes(env), writes(value) {
+fn sparse_owned_increment(env: &SparseOwnerLedger, key: &SparseOwnedNode, value: &SparseOwnedNode) -> result: u64 reads(key), writes(env), writes(value) {
   if deref(key).child.inner.serial != 4_u64 {
     sparse_owned_fail(ledger: env);
   }
@@ -84,7 +84,7 @@ binding SparseOwnedConsume : SparseConsume<SparseOwnedNode, SparseOwnedNode, Spa
   consume = sparse_owned_consume;
 }
 
-fn sparse_owned_check_pair(pair: &SparsePair<SparseOwnedNode, SparseOwnedNode>, key: own u64, value: own u64, ledger: &SparseOwnerLedger) -> result: own unit reads(pair), writes(ledger) {
+fn sparse_owned_check_pair(pair: &SparsePair<SparseOwnedNode, SparseOwnedNode>, key: u64, value: u64, ledger: &SparseOwnerLedger) -> result: unit reads(pair), writes(ledger) {
   if deref(pair).key.child.inner.id != key {
     sparse_owned_fail(ledger: ledger);
   }
@@ -94,7 +94,7 @@ fn sparse_owned_check_pair(pair: &SparsePair<SparseOwnedNode, SparseOwnedNode>, 
   return unit;
 }
 
-fn sparse_owned_outcome(outcome: own SparsePut<SparseOwnedNode, SparseOwnedNode>, expected: own u64, key: own u64, value: own u64, ledger: &SparseOwnerLedger) -> result: own unit writes(ledger) {
+fn sparse_owned_outcome(outcome: SparsePut<SparseOwnedNode, SparseOwnedNode>, expected: u64, key: u64, value: u64, ledger: &SparseOwnerLedger) -> result: unit writes(ledger) {
   match outcome {
     SparseInserted() => {
       if expected != 0_u64 {
@@ -125,7 +125,7 @@ fn sparse_owned_outcome(outcome: own SparsePut<SparseOwnedNode, SparseOwnedNode>
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Own-child ledger: ten distinct Record allocations, serials 1..4, 11..14, 21 and 22. Each must be consumed once. One initial map backing plus two copy-plan allocations and one grown map backing give four storage allocations, fourteen allocations/frees in total before an observer's own storage. Query nodes 21 and 22 are included. This is an instantiation over optional owned children, not a requirement of SparseMap.";
   let releases = array_filled::<u64, 32>(value: 0_u64);
   let ledger = SparseOwnerLedger(releases: releases, failures: 0_u64, visits: 0_u64);

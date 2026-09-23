@@ -1,8 +1,9 @@
 //! Conservative textual LLVM emission for the active Whitefoot specification.
 //!
-//! Emission consumes only target-independent IR. It preserves every retained
-//! check, emits no overflow or alias promises, initializes complete aggregate
-//! representations, and keeps a defensive abort edge for enum discriminants.
+//! Emission consumes only target-independent IR. Source aggregate constructors
+//! initialize active fields, and empty windows initialize only their headers.
+//! Enum discriminants keep a defensive abort edge. Target promises are supplied
+//! only by the retained facts that establish their contracts.
 
 mod array;
 mod boxes;

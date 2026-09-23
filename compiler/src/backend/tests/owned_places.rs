@@ -1500,26 +1500,45 @@ void wf_test_release(void *allocation) {{
     )
 }
 
-/// A front removal and back placement wrap the runtime Ring, whose logical
+/// A front removal and back placement wrap a Ring, whose logical
 /// reads and drain must yield 20, 30, and 40 [TYPE-9, WIN-1, OP-10]. The helper
 /// consumes each whole Box while returning its copy scalar, so scope cleanup
 /// frees that cell before the next source step [WIN-3]. The process-tag trace
 /// checks that the removed owner leaves before A5, the remaining owners leave
-/// in drain order, and the empty outer cell leaves last [OP-14].
+/// in logical order, and the outer cell leaves last. The runtime shape drains
+/// explicitly; a boxed inline shape leaves a wrapped partial window to cleanup.
 #[test]
 fn boxed_runtime_ring_wraps_and_releases_each_owner_in_order() {
-    let source = include_bytes!("../../../../tests/programs/runtime_ring_wrap.wf");
-    let module = compile(source);
-    let observed = retain_calls(&module)
-        .replace("@malloc(", "@wf_test_allocate(")
-        .replace("@free(", "@wf_test_release(");
-    let output = compile_link_and_run(&observed, Some(&allocation_observer(5, 0)), &[]);
-    assert_eq!(output.status.code(), Some(0), "{output:?}");
-    assert_eq!(
-        output.stdout, b"A1;A2;A3;A4;F2;A5;F3;F4;F5;F1;",
-        "{output:?}"
+    let source = include_str!("../../../../tests/programs/runtime_ring_wrap.wf");
+    let fixed = source.replace(
+        "  let ring = box_ring_new::<Box<u64>>(capacity: 3_u64);",
+        "  let empty = ring_new::<Box<u64>, 3>();\n  \
+         let ring = box_new::<Ring<Box<u64>, 3>>(value: move empty);\n  \
+         if ring.inner.len != 0_u64 { return exit_status(code: 12_u8); }\n  \
+         if ring.inner.head != 0_u64 { return exit_status(code: 13_u8); }",
     );
-    assert!(output.stderr.is_empty(), "{output:?}");
+    assert_ne!(fixed, source);
+    let (partial, _) = fixed
+        .split_once("  let second_owner = take_front(window: &ring.inner);")
+        .expect("the original control drains a second element");
+    let partial = format!("{partial}  return exit_status(code: 0_u8);\n}}\n");
+    let host = allocation_observer(5, 0).replace(
+        "held[id] = allocation;",
+        "memset(allocation, 0xa5, size);\n    held[id] = allocation;",
+    );
+    for source in [source, partial.as_str()] {
+        let module = compile(source.as_bytes());
+        let observed = retain_calls(&module)
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(");
+        let output = compile_link_and_run(&observed, Some(&host), &[]);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(
+            output.stdout, b"A1;A2;A3;A4;F2;A5;F3;F4;F5;F1;",
+            "{output:?}"
+        );
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
 }
 
 /// A full bounded append returns its input rather than overwriting an element.
@@ -1606,6 +1625,9 @@ fn exercise(storage: Box<Slots<Box<u64>, 2>>) -> result: Checked pure {
 fn main() -> status: ExitStatus pure {
   let empty = slots_new::<Box<u64>, 2>();
   let cell = box_new::<Slots<Box<u64>, 2>>(value: move empty);
+  if cell.inner.len != 0_u64 {
+    return exit_status(code: 8_u8);
+  }
   let result = exercise(storage: move cell);
   let Checked(storage: storage, code: code) = move result;
   if code != 0_u8 {
@@ -1621,7 +1643,10 @@ fn main() -> status: ExitStatus pure {
         let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
             .replace("@free(", "@wf_test_release(");
-        let host = allocation_observer(4, 0);
+        let host = allocation_observer(4, 0).replace(
+            "held[id] = allocation;",
+            "memset(allocation, 0xa5, size);\n    held[id] = allocation;",
+        );
         let output = compile_link_and_run(&observed, Some(&host), &[]);
         assert_eq!(output.status.code(), Some(0), "{output:?}");
         // The refused element leaves first. Moving the content out of the cell

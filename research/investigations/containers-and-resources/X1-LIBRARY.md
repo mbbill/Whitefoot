@@ -1753,8 +1753,9 @@ maintained TODO keeps the remaining scalar gap and cost attribution open.
 The maintained owning map selected the enum-bucket representation, compact
 returned-pair result and shared exchange helper. Its optimized construction
 and rebuild still initialize inactive payload storage, while the native
-controls initialize occupancy only. Starting from merged main `45ef2d53e`,
-the next question is whether the compiler can omit that work while preserving
+controls initialize occupancy only. The trial was framed on merged main
+`45ef2d53e` and rebased onto v0.68 main `345e2966a` before measurement. The
+question is whether the compiler can omit that work while preserving
 defined active values and the same ordinary ownership and call semantics.
 
 The experiment keeps the actual library source, representation, ABI,
@@ -1769,3 +1770,46 @@ stopping criteria, correctness boundaries and execution budgets are recorded
 once in the existing [map comparison](../../experiments/container-representation/map-library/RESULTS.md#same-source-inactive-storage-lowering-comparison),
 before compiler implementation or timing. That record owns the detailed
 measurement evidence; instruction counts alone will not establish a speedup.
+
+### Initialized-state and representation boundary
+
+WIN-1 and WIN-2 admit element access only within the initialized window;
+PROV-6 visits that window and the active enum variant during cleanup. Enum
+payload projection requires the selected-variant refinement. Array differs:
+every declared element is a value and still requires initialization. STOR-7
+permits relocating the representation, without exposing an owner's address
+or inactive storage as source data. These existing rules support omitting
+writes to inactive storage; no acceptance rule or new initialized-state
+analysis is proposed.
+
+The bounded candidate changes destination construction only: write an enum's
+tag and selected fields, every struct field, and an empty inline window's
+length plus Ring head. Runtime-capacity windows already initialize their
+header without filling their free slots. Keep capacity and reference
+descriptors defined, including empty and zero-size cases. Retain complete
+aggregate transfers, existing indirect calls and return placement, and the
+current zero-based SSA constructors. All active state must be initialized
+before an ordinary return or parallel publication; join still precedes
+consumption.
+
+Inactive payload fields are LLVM value fields, not ABI padding. The
+[LLVM 21 memory rules](https://releases.llvm.org/21.1.0/docs/LangRef.html#memory-access-and-addressing-operations)
+allow loads of uninitialized storage to produce undefined parts; transporting
+them is different from using them as an active value, condition or address.
+The existing aggregate ABI has no whole-value
+[`noundef` promise](https://releases.llvm.org/21.1.0/docs/LangRef.html#parameter-attributes).
+`dereferenceable` concerns the pointer and accessible storage, not complete
+pointee initialization. This is a qualified argument for leaving bytes
+unwritten, not for inserting poison or freezing a missing active field.
+The same ordinary-value contract applies to linked bodies: there is no
+native-origin exception or requirement that an inactive representation be
+zero. Future ABI attributes or representation-wide observations must revisit
+this argument.
+
+The shared constructor change may also remove clears from the stable-scatter
+consumer recorded in the maintained TODO. Its staging copies, packing costs
+and whole-call performance remain outside this bounded comparison; neither
+the historical profile nor a map improvement closes that question. Broader
+SSA construction, aggregate forwarding and overlay layouts remain separate
+opportunities because they change more paths or require distinct interference
+and ABI evidence. First establish this smaller unchanged-source comparison.

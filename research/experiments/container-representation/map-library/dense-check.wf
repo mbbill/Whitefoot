@@ -15,16 +15,16 @@ nodrop struct DenseTicket {
   id: u64;
 }
 
-fn dense_test_fail(seen: &DenseTestSeen) -> result: own unit writes(seen) {
+fn dense_test_fail(seen: &DenseTestSeen) -> result: unit writes(seen) {
   set deref(seen).failures = deref(seen).failures +wrap 1_u64;
   return unit;
 }
 
-fn dense_scalar_hash(env: &DenseHashEnv, key: &u64) -> result: own u64 reads(key) {
+fn dense_scalar_hash(env: &DenseHashEnv, key: &u64) -> result: u64 reads(key) {
   return deref(key) % 1_u64;
 }
 
-fn dense_scalar_equal(env: &DenseHashEnv, left: &u64, right: &u64) -> result: own Bool reads(env), reads(left), reads(right) {
+fn dense_scalar_equal(env: &DenseHashEnv, left: &u64, right: &u64) -> result: Bool reads(env), reads(left), reads(right) {
   if deref(env).hostile {
     return False();
   }
@@ -36,11 +36,11 @@ binding DenseScalarKey : DenseKey<u64, DenseHashEnv> {
   equal = dense_scalar_equal;
 }
 
-fn dense_ticket_hash(env: &DenseHashEnv, key: &DenseTicket) -> result: own u64 reads(key) {
+fn dense_ticket_hash(env: &DenseHashEnv, key: &DenseTicket) -> result: u64 reads(key) {
   return deref(key).id % 1_u64;
 }
 
-fn dense_ticket_equal(env: &DenseHashEnv, left: &DenseTicket, right: &DenseTicket) -> result: own Bool reads(env), reads(left), reads(right) {
+fn dense_ticket_equal(env: &DenseHashEnv, left: &DenseTicket, right: &DenseTicket) -> result: Bool reads(env), reads(left), reads(right) {
   if deref(env).hostile {
     return False();
   }
@@ -52,30 +52,30 @@ binding DenseTicketKey : DenseKey<DenseTicket, DenseHashEnv> {
   equal = dense_ticket_equal;
 }
 
-fn dense_scalar_read(env: &DenseTestSeen, key: &u64, value: &u64) -> result: own u64 reads(value), writes(env) {
+fn dense_scalar_read(env: &DenseTestSeen, key: &u64, value: &u64) -> result: u64 reads(value), writes(env) {
   set deref(env).visits = deref(env).visits +wrap 1_u64;
   set deref(env).observed = deref(env).observed +wrap deref(value);
   return deref(value);
 }
 
-fn dense_scalar_visit(env: &DenseTestSeen, key: &u64, value: &u64) -> result: own unit reads(value), writes(env) {
+fn dense_scalar_visit(env: &DenseTestSeen, key: &u64, value: &u64) -> result: unit reads(value), writes(env) {
   let observed = dense_scalar_read(env: env, key: key, value: value);
   return unit;
 }
 
-fn dense_scalar_increment(env: &DenseTestSeen, key: &u64, value: &u64) -> result: own u64 writes(env), writes(value) {
+fn dense_scalar_increment(env: &DenseTestSeen, key: &u64, value: &u64) -> result: u64 writes(env), writes(value) {
   set deref(env).visits = deref(env).visits +wrap 1_u64;
   set deref(value) = deref(value) +wrap 1_u64;
   return deref(value);
 }
 
-fn dense_ticket_read(env: &DenseTestSeen, key: &DenseTicket, value: &DenseTicket) -> result: own u64 reads(value), writes(env) {
+fn dense_ticket_read(env: &DenseTestSeen, key: &DenseTicket, value: &DenseTicket) -> result: u64 reads(value), writes(env) {
   set deref(env).visits = deref(env).visits +wrap 1_u64;
   set deref(env).observed = deref(env).observed +wrap deref(value).id;
   return deref(value).id;
 }
 
-fn dense_ticket_visit(env: &DenseTestSeen, key: &DenseTicket, value: &DenseTicket) -> result: own unit reads(value), writes(env) {
+fn dense_ticket_visit(env: &DenseTestSeen, key: &DenseTicket, value: &DenseTicket) -> result: unit reads(value), writes(env) {
   let observed = dense_ticket_read(env: env, key: key, value: value);
   return unit;
 }
@@ -88,14 +88,14 @@ binding DenseTicketVisit : DenseVisit<DenseTicket, DenseTicket, DenseTestSeen, u
   visit = dense_ticket_read;
 }
 
-fn dense_scalar_consume(env: &DenseTestSeen, key: own u64, value: own u64) -> result: own unit writes(env) {
+fn dense_scalar_consume(env: &DenseTestSeen, key: u64, value: u64) -> result: unit writes(env) {
   set deref(env).consumed = deref(env).consumed +wrap 1_u64;
   set deref(env).key_sum = deref(env).key_sum +wrap key;
   set deref(env).value_sum = deref(env).value_sum +wrap value;
   return unit;
 }
 
-fn dense_ticket_consume(env: &DenseTestSeen, key: own DenseTicket, value: own DenseTicket) -> result: own unit writes(env) {
+fn dense_ticket_consume(env: &DenseTestSeen, key: DenseTicket, value: DenseTicket) -> result: unit writes(env) {
   let DenseTicket(id: key_id) = move key;
   let DenseTicket(id: value_id) = move value;
   dense_scalar_consume(env: env, key: key_id, value: value_id);
@@ -110,7 +110,7 @@ binding DenseTicketConsume : DenseConsume<DenseTicket, DenseTicket, DenseTestSee
   consume = dense_ticket_consume;
 }
 
-fn dense_scalar_outcome(outcome: own DensePut<u64, u64>, expected: own u64, key: own u64, value: own u64, seen: &DenseTestSeen) -> result: own unit writes(seen) {
+fn dense_scalar_outcome(outcome: DensePut<u64, u64>, expected: u64, key: u64, value: u64, seen: &DenseTestSeen) -> result: unit writes(seen) {
   match outcome {
     DenseInserted() => {
       if expected != 0_u64 {
@@ -145,7 +145,7 @@ fn dense_scalar_outcome(outcome: own DensePut<u64, u64>, expected: own u64, key:
   return unit;
 }
 
-fn dense_ticket_outcome(outcome: own DensePut<DenseTicket, DenseTicket>, expected: own u64, key: own u64, value: own u64, seen: &DenseTestSeen) -> result: own unit writes(seen) {
+fn dense_ticket_outcome(outcome: DensePut<DenseTicket, DenseTicket>, expected: u64, key: u64, value: u64, seen: &DenseTestSeen) -> result: unit writes(seen) {
   match outcome {
     DenseInserted() => {
       if expected != 0_u64 {
@@ -180,7 +180,7 @@ fn dense_ticket_outcome(outcome: own DensePut<DenseTicket, DenseTicket>, expecte
   return unit;
 }
 
-fn dense_check_reserve(outcome: own Result<unit, unit>, expected: own Bool, seen: &DenseTestSeen) -> result: own unit writes(seen) {
+fn dense_check_reserve(outcome: Result<unit, unit>, expected: Bool, seen: &DenseTestSeen) -> result: unit writes(seen) {
   match outcome {
     Ok(value: success) => {
       if expected {
@@ -197,7 +197,7 @@ fn dense_check_reserve(outcome: own Result<unit, unit>, expected: own Bool, seen
   return unit;
 }
 
-fn dense_test_tickets() -> result: own u64 pure {
+fn dense_test_tickets() -> result: u64 pure {
   let seen = DenseTestSeen(failures: 0_u64, consumed: 0_u64, key_sum: 0_u64, value_sum: 0_u64, visits: 0_u64, observed: 0_u64);
   let false_value = False();
   let true_value = True();
@@ -307,7 +307,7 @@ fn dense_test_tickets() -> result: own u64 pure {
   return seen.failures;
 }
 
-fn dense_test_scalars() -> result: own u64 pure {
+fn dense_test_scalars() -> result: u64 pure {
   let seen = DenseTestSeen(failures: 0_u64, consumed: 0_u64, key_sum: 0_u64, value_sum: 0_u64, visits: 0_u64, observed: 0_u64);
   let true_value = True();
   let env = DenseHashEnv(hostile: true_value);
@@ -397,7 +397,7 @@ fn dense_test_scalars() -> result: own u64 pure {
   return seen.failures;
 }
 
-fn dense_identity_hash(env: &DenseHashEnv, key: &u64) -> result: own u64 reads(key) {
+fn dense_identity_hash(env: &DenseHashEnv, key: &u64) -> result: u64 reads(key) {
   return deref(key);
 }
 
@@ -406,7 +406,7 @@ binding DenseIdentityKey : DenseKey<u64, DenseHashEnv> {
   equal = dense_scalar_equal;
 }
 
-fn dense_scalar_expect(map: &DenseMap<u64, u64, 8>, key: own u64, expected: own u64, env: &DenseHashEnv, seen: &DenseTestSeen) -> result: own unit reads(map), reads(env), writes(seen) {
+fn dense_scalar_expect(map: &DenseMap<u64, u64, 8>, key: u64, expected: u64, env: &DenseHashEnv, seen: &DenseTestSeen) -> result: unit reads(map), reads(env), writes(seen) {
   let observed = dense_map_lookup::<DenseIdentityKey, u64, DenseTestSeen, u64, fn dense_scalar_read, 8>(map: map, key: &key, key_env: env, visit_env: seen);
   match observed {
     Ok(value: found_value) => {
@@ -421,7 +421,7 @@ fn dense_scalar_expect(map: &DenseMap<u64, u64, 8>, key: own u64, expected: own 
   return unit;
 }
 
-fn dense_test_wrapping() -> result: own u64 pure {
+fn dense_test_wrapping() -> result: u64 pure {
   let seen = DenseTestSeen(failures: 0_u64, consumed: 0_u64, key_sum: 0_u64, value_sum: 0_u64, visits: 0_u64, observed: 0_u64);
   let false_value = False();
   let true_value = True();
@@ -477,7 +477,7 @@ fn dense_test_wrapping() -> result: own u64 pure {
   return seen.failures;
 }
 
-fn dense_test_counted_contract() -> result: own u64 pure {
+fn dense_test_counted_contract() -> result: u64 pure {
   let seen = DenseTestSeen(failures: 0_u64, consumed: 0_u64, key_sum: 0_u64, value_sum: 0_u64, visits: 0_u64, observed: 0_u64);
   let false_value = False();
   let env = DenseHashEnv(hostile: false_value);
@@ -523,7 +523,7 @@ fn dense_test_counted_contract() -> result: own u64 pure {
   return seen.failures;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let scalar_failures = dense_test_scalars();
   let ticket_failures = dense_test_tickets();
   let wrapping_failures = dense_test_wrapping();

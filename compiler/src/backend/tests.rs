@@ -732,6 +732,19 @@ fn nominal_lowering_keeps_selected_tag_widths_and_initialized_payloads() {
 enum Payload {
   Empty();
   Value(number: i32);
+  Wide(first: u64, last: u8);
+}
+
+fn empty_payload() -> result: Payload pure {
+  return Empty();
+}
+
+fn number_payload() -> result: Payload pure {
+  return Value(number: 42_i32);
+}
+
+fn wide_payload() -> result: Payload pure {
+  return Wide(first: 511_u64, last: 127_u8);
 }
 
 fn main() -> status: ExitStatus pure {
@@ -743,7 +756,7 @@ fn main() -> status: ExitStatus pure {
     On() => {
     }
   }
-  let payload = Value(number: 42_i32);
+  let payload = number_payload();
   match payload {
     Empty() => {
       return exit_status(code: 2_u8);
@@ -753,39 +766,78 @@ fn main() -> status: ExitStatus pure {
         return exit_status(code: 3_u8);
       }
     }
+    Wide(first: first, last: last) => {
+      return exit_status(code: 4_u8);
+    }
+  }
+  match empty_payload() {
+    Empty() => {
+    }
+    Value(number: value) => {
+      return exit_status(code: 5_u8);
+    }
+    Wide(first: first, last: last) => {
+      return exit_status(code: 6_u8);
+    }
+  }
+  match wide_payload() {
+    Empty() => {
+      return exit_status(code: 7_u8);
+    }
+    Value(number: value) => {
+      return exit_status(code: 8_u8);
+    }
+    Wide(first: first, last: last) => {
+      if first != 511_u64 {
+        return exit_status(code: 9_u8);
+      }
+      if last != 127_u8 {
+        return exit_status(code: 10_u8);
+      }
+    }
   }
   return exit_status(code: 0_u8);
 }
 "#;
     let llvm = emit(source);
-    let main = emitted_function(&llvm, "main");
     assert!(llvm.contains("switch i1"));
     assert!(llvm.contains("switch i32"));
-    let payload = main
-        .lines()
-        .find_map(|line| {
-            line.trim()
-                .strip_prefix("store %wf.t1 zeroinitializer, ptr ")
-        })
-        .expect("the payload enum starts in initialized typed destination storage");
-    for field in [0, 1] {
-        let projection =
-            format!("getelementptr inbounds %wf.t1, ptr {payload}, i32 0, i32 {field}");
-        let address = main
-            .lines()
-            .find_map(|line| {
+    let constructors: [(&str, u32, &[usize]); 3] = [
+        ("empty_payload", 0, &[]),
+        ("number_payload", 1, &[1]),
+        ("wide_payload", 2, &[2, 3]),
+    ];
+    for (name, tag, selected) in constructors {
+        let body = emitted_function(&llvm, name);
+        assert!(!body.contains("zeroinitializer"), "{body}");
+        assert!(!body.contains("poison"), "{body}");
+        assert!(!body.contains("undef"), "{body}");
+        for (field, field_type) in ["i32", "i32", "i64", "i8"].iter().enumerate() {
+            let address = body.lines().find_map(|line| {
                 let (address, operation) = line.trim().split_once(" = ")?;
-                (operation == projection).then_some(address)
-            })
-            .expect("the enum destination exposes its tag and selected payload fields");
-        let stored = main
-            .lines()
-            .find(|line| {
-                line.trim().starts_with("store i32 ") && line.ends_with(&format!(", ptr {address}"))
-            })
-            .expect("the tag and payload are both stored in that destination");
-        if field == 0 {
-            assert_eq!(stored.trim(), format!("store i32 1, ptr {address}"));
+                (operation.starts_with("getelementptr inbounds %wf.t1, ptr ")
+                    && operation.ends_with(&format!(", i32 0, i32 {field}")))
+                .then_some(address)
+            });
+            if field != 0 && !selected.contains(&field) {
+                assert!(
+                    address.is_none(),
+                    "inactive fields need no construction write: {body}"
+                );
+                continue;
+            }
+            let address =
+                address.expect("the tag and each selected payload field have a destination");
+            let stored = body
+                .lines()
+                .find(|line| {
+                    line.trim().starts_with(&format!("store {field_type} "))
+                        && line.ends_with(&format!(", ptr {address}"))
+                })
+                .expect("the tag and each selected payload field are initialized");
+            if field == 0 {
+                assert_eq!(stored.trim(), format!("store i32 {tag}, ptr {address}"));
+            }
         }
     }
     assert!(llvm.contains("call void @abort()"));
@@ -929,8 +981,10 @@ fn main() -> status: ExitStatus pure {
     let llvm = emit(source);
     let main = emitted_function(&llvm, "main");
     assert!(main.contains(" = phi i32 "));
-    assert!(main.contains("store %wf.t1 zeroinitializer, ptr "));
-    assert!(main.contains("store %wf.t0 zeroinitializer, ptr "));
+    // Constructors initialize every field directly. The former whole-struct
+    // zero stores were redundant, not part of the source assignment contract.
+    assert!(!main.contains("store %wf.t1 zeroinitializer, ptr "));
+    assert!(!main.contains("store %wf.t0 zeroinitializer, ptr "));
     let mut value_addresses = Vec::new();
     for line in main.lines() {
         let Some((address, operation)) = line.trim().split_once(" = ") else {

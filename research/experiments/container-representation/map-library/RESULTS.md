@@ -1131,7 +1131,9 @@ gap cannot be assigned solely to the compiler or to layout.
 ## Same-source inactive-storage lowering comparison
 
 This prospective criterion is fixed before implementing or timing the next
-compiler candidate. The baseline is merged main `45ef2d53e`. The question is
+compiler candidate. Following the requested rebase, the baseline is merged
+main `345e2966a`; this baseline update precedes every timing sample and leaves
+the workload and selection criteria below unchanged. The question is
 whether omitting initialization of inactive storage improves the maintained
 owning map without changing its source contract, active-value semantics or
 representation. The earlier source comparisons identify retained stores but
@@ -1284,3 +1286,32 @@ than promise current durations. Guard heavy commands, separate construction
 from execution, and record Rust compiler construction and the final canonical
 gate separately from these program budgets. No new script, experiment
 directory, library copy or daily-gate dependency is needed.
+
+### Syntax migration and preparation
+
+Main's v0.68 grammar writes value parameters and results as `name: T`, replacing
+the earlier `name: own T` source annotation without changing their value mode.
+The existing executable Map, Slab and Vector research inputs, together with
+the three Map replay patches, received only that token removal. Their line
+counts, bodies, contracts, call shapes and trace sizes are unchanged. Each
+migrated file is byte-identical to its earlier contents after replacing
+`: own ` with `: `, and the staged, compact and inline replay patches apply
+with zero fuzz. The baseline and candidate will consume the same migrated
+sources; the old compiler cannot serve as a v0.68 baseline. Earlier dated
+measurements and their compiler/source conditions remain unchanged.
+
+The driver's new `inactive` set implements the fourteen cells and thirty-two
+cell/implementation combinations above. `make measure-inactive` selects it
+through the existing measurement caller and records each mode's minimum
+positive monotonic-clock delta across 10,000 consecutive probes. That observed
+quantum supplies the preselected timer envelope; it neither changes the
+seventeen-column samples nor replaces the unchanged trace and allocation
+oracles. All earlier measurement sets retain their selection.
+
+Before the rebase, a baseline using compiler SHA-256
+`c57f989b1b0073769d4999266f3353143d758b2f400c26a74e8d260b684afe33`
+completed Map construction in 20.01 seconds and the full cached correctness
+target in 14.34 seconds. These are obsolete preparation costs, retained in
+the investigation's construction/execution accounting; they are not timings
+of the program comparison and establish no post-rebase result. No performance
+samples were collected from that image.

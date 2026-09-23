@@ -16,18 +16,18 @@ struct DenseOwnerLedger {
   visits: u64;
 }
 
-fn dense_owned_make(id: own u64, serial: own u64) -> result: own DenseOwnedNode pure {
+fn dense_owned_make(id: u64, serial: u64) -> result: DenseOwnedNode pure {
   let record = DenseOwnedRecord(id: id, serial: serial);
   let child = box_new::<DenseOwnedRecord>(value: record);
   return DenseOwnedNode(child: move child);
 }
 
-fn dense_owned_fail(ledger: &DenseOwnerLedger) -> result: own unit writes(ledger) {
+fn dense_owned_fail(ledger: &DenseOwnerLedger) -> result: unit writes(ledger) {
   set deref(ledger).failures = deref(ledger).failures +wrap 1_u64;
   return unit;
 }
 
-fn dense_owned_release(value: own DenseOwnedNode, ledger: &DenseOwnerLedger) -> result: own unit writes(ledger) {
+fn dense_owned_release(value: DenseOwnedNode, ledger: &DenseOwnerLedger) -> result: unit writes(ledger) {
   let DenseOwnedNode(child: owned_child) = move value;
   let serial = owned_child.inner.serial;
   if serial < deref(ledger).releases.len {
@@ -38,21 +38,21 @@ fn dense_owned_release(value: own DenseOwnedNode, ledger: &DenseOwnerLedger) -> 
   return unit;
 }
 
-fn dense_owned_consume(env: &DenseOwnerLedger, key: own DenseOwnedNode, value: own DenseOwnedNode) -> result: own unit writes(env) {
+fn dense_owned_consume(env: &DenseOwnerLedger, key: DenseOwnedNode, value: DenseOwnedNode) -> result: unit writes(env) {
   dense_owned_release(value: move key, ledger: env);
   dense_owned_release(value: move value, ledger: env);
   return unit;
 }
 
-fn dense_owned_hash(env: &DenseOwnerEnv, key: &DenseOwnedNode) -> result: own u64 reads(key) {
+fn dense_owned_hash(env: &DenseOwnerEnv, key: &DenseOwnedNode) -> result: u64 reads(key) {
   return deref(key).child.inner.id % 1_u64;
 }
 
-fn dense_owned_equal(env: &DenseOwnerEnv, left: &DenseOwnedNode, right: &DenseOwnedNode) -> result: own Bool reads(left), reads(right) {
+fn dense_owned_equal(env: &DenseOwnerEnv, left: &DenseOwnedNode, right: &DenseOwnedNode) -> result: Bool reads(left), reads(right) {
   return deref(left).child.inner.id == deref(right).child.inner.id;
 }
 
-fn dense_owned_read(env: &DenseOwnerLedger, key: &DenseOwnedNode, value: &DenseOwnedNode) -> result: own u64 reads(key), reads(value), writes(env) {
+fn dense_owned_read(env: &DenseOwnerLedger, key: &DenseOwnedNode, value: &DenseOwnedNode) -> result: u64 reads(key), reads(value), writes(env) {
   if deref(key).child.inner.serial != 4_u64 {
     dense_owned_fail(ledger: env);
   }
@@ -63,7 +63,7 @@ fn dense_owned_read(env: &DenseOwnerLedger, key: &DenseOwnedNode, value: &DenseO
   return deref(value).child.inner.id;
 }
 
-fn dense_owned_increment(env: &DenseOwnerLedger, key: &DenseOwnedNode, value: &DenseOwnedNode) -> result: own u64 reads(key), writes(env), writes(value) {
+fn dense_owned_increment(env: &DenseOwnerLedger, key: &DenseOwnedNode, value: &DenseOwnedNode) -> result: u64 reads(key), writes(env), writes(value) {
   if deref(key).child.inner.serial != 4_u64 {
     dense_owned_fail(ledger: env);
   }
@@ -84,7 +84,7 @@ binding DenseOwnedConsume : DenseConsume<DenseOwnedNode, DenseOwnedNode, DenseOw
   consume = dense_owned_consume;
 }
 
-fn dense_owned_check_pair(pair: &DensePair<DenseOwnedNode, DenseOwnedNode>, key: own u64, value: own u64, ledger: &DenseOwnerLedger) -> result: own unit reads(pair), writes(ledger) {
+fn dense_owned_check_pair(pair: &DensePair<DenseOwnedNode, DenseOwnedNode>, key: u64, value: u64, ledger: &DenseOwnerLedger) -> result: unit reads(pair), writes(ledger) {
   if deref(pair).key.child.inner.id != key {
     dense_owned_fail(ledger: ledger);
   }
@@ -94,7 +94,7 @@ fn dense_owned_check_pair(pair: &DensePair<DenseOwnedNode, DenseOwnedNode>, key:
   return unit;
 }
 
-fn dense_owned_outcome(outcome: own DensePut<DenseOwnedNode, DenseOwnedNode>, expected: own u64, key: own u64, value: own u64, ledger: &DenseOwnerLedger) -> result: own unit writes(ledger) {
+fn dense_owned_outcome(outcome: DensePut<DenseOwnedNode, DenseOwnedNode>, expected: u64, key: u64, value: u64, ledger: &DenseOwnerLedger) -> result: unit writes(ledger) {
   match outcome {
     DenseInserted() => {
       if expected != 0_u64 {
@@ -125,7 +125,7 @@ fn dense_owned_outcome(outcome: own DensePut<DenseOwnedNode, DenseOwnedNode>, ex
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Own-child ledger: ten distinct Record allocations, serials 1..4, 11..14, 21 and 22. Each must be consumed once. Two initial map backings plus one sparse plan and one dense grow allocation give four backing allocations, fourteen allocations/frees in total before an observer's own storage. Query nodes 21 and 22 are included. This is an instantiation over optional owned children, not a requirement of DenseMap.";
   let releases = array_filled::<u64, 32>(value: 0_u64);
   let ledger = DenseOwnerLedger(releases: releases, failures: 0_u64, visits: 0_u64);

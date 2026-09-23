@@ -1079,13 +1079,10 @@ pub enum IrOperation {
     BufferMeasure {
         buffer: IrValueId,
     },
-    /// [BLK-2] `fixed_vector`: one frame-resident run of the defined type's own
-    /// capacity, whose window is empty. Every slot is raw and the two
-    /// descriptor words are zero.
-    /// [OP-13] `slots_new` and `ring_new`: the empty window over `N` raw
-    /// slots. The value is the zero aggregate, so `len` and, on a `Ring`,
-    /// `head` both start at zero, which is exactly what the two records'
-    /// `ensures` publish.
+    /// [OP-13] `slots_new` and `ring_new`: one frame-resident window over
+    /// the type's constant capacity of raw slots. Only its descriptor holds
+    /// values [WIN-1]: `len` and, on a `Ring`, `head` start at zero, exactly
+    /// as the records' `ensures` publish. No element is initialized yet.
     Window,
     /// [MSR-1] one measure of a window, read as its [OP-15] member reader
     /// loads it. A cell the measure table fixes as a constant never reaches

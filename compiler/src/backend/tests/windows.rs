@@ -42,6 +42,38 @@ use crate::backend::target::{
 use super::system::with_ir;
 use super::*;
 
+/// Empty window construction initializes the complete descriptor, without
+/// touching the element region. This checks the shared row, not its callers.
+fn assert_empty_window_header_only(module: &str, row: &str, header_fields: usize) {
+    let body = emitted_prelude_row(module, row);
+    assert!(!body.contains("zeroinitializer"), "{body}");
+    assert!(!body.contains("poison"), "{body}");
+    assert!(!body.contains("undef"), "{body}");
+    assert_eq!(
+        body.lines()
+            .filter(|line| line.trim_start().starts_with("store "))
+            .count(),
+        header_fields,
+        "only the descriptor words are initialized: {body}"
+    );
+    for field in 0..header_fields {
+        let address = body
+            .lines()
+            .find_map(|line| {
+                let (address, operation) = line.trim().split_once(" = ")?;
+                (operation.starts_with("getelementptr inbounds ")
+                    && operation.ends_with(&format!(", i32 0, i32 {field}")))
+                .then_some(address)
+            })
+            .expect("each descriptor word has a destination");
+        assert!(
+            body.lines()
+                .any(|line| line.trim() == format!("store i64 0, ptr {address}")),
+            "each descriptor word starts at zero: {body}"
+        );
+    }
+}
+
 const AFFINE_INVARIANT_BOUNDED_ALLOCATION: &[u8] =
     br#"fn allocate(n: u64, half: u64) -> result: unit pure contract {
   requires half <= 500_u64;
@@ -151,6 +183,32 @@ fn slots_addresses_use_proved_offsets_and_ring_addresses_still_wrap() {
             }
         }
     }
+}
+
+#[test]
+fn empty_fixed_windows_initialize_only_their_headers() {
+    let source = br#"fn main() -> status: ExitStatus pure {
+  let slots = slots_new::<Array<u64, 32>, 4>();
+  let ring = ring_new::<Array<u64, 32>, 4>();
+  if slots.len != 0_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if ring.len != 0_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if ring.head != 0_u64 {
+    return exit_status(code: 3_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let module = compile(source);
+    assert_empty_window_header_only(&module, "slots_new", 1);
+    assert_empty_window_header_only(&module, "ring_new", 2);
+    let output = compile_and_run(&module);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
 }
 
 /// A take changes the descriptor even when no element bytes exist. Ring's
@@ -297,6 +355,9 @@ fn main() -> status: ExitStatus pure {
   if ring.head != 0_u64 {
     return exit_status(code: 3_u8);
   }
+  if ring.len != 0_u64 {
+    return exit_status(code: 7_u8);
+  }
   let length = empty_length(values: &slots[0_u64..0_u64]);
   if length != 0_u64 {
     return exit_status(code: 4_u8);
@@ -362,6 +423,8 @@ fn main() -> status: ExitStatus pure {
         );
         module
     });
+    assert_empty_window_header_only(&module, "slots_new", 1);
+    assert_empty_window_header_only(&module, "ring_new", 2);
     let observed = super::owned_places::retain_calls(&module)
         .replace("@malloc(", "@wf_observe_window_allocate(");
     let observer = r#"

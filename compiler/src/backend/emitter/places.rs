@@ -294,12 +294,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         fields: Vec<(usize, IrValueId)>,
     ) -> Result<(), BackendFailure> {
         let destination = self.value_place(result)?;
-        writeln!(
-            self.output,
-            "  store {} zeroinitializer, ptr {destination}",
-            llvm_type(self.program, ty)?
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
+        // Every struct field, or the enum's tag and selected payload, is
+        // initialized below. Other variant fields hold no source value and
+        // need no write, even when this destination reuses old storage.
+        // Complete representation transfers may carry those inactive bytes;
+        // source operations and cleanup observe only initialized active state.
         if let Some(tag) = tag {
             let address = self.aggregate_field_pointer(ty, &destination, 0)?;
             writeln!(self.output, "  store i32 {tag}, ptr {address}")
