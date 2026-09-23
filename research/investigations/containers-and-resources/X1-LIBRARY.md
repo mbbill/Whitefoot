@@ -417,6 +417,34 @@ growth split the result; then compare both growth and same-capacity rebuild,
 scalar and wide values, with retained helpers. Do not reject it as
 inexpressible or infer a smaller peak from fewer allocations.
 
+The first matched timings trigger that additional comparison. At capacity
+4096 and seven-eighths occupancy, the first cohort's wide growth trace takes
+about 0.70 of the sparse time for dense storage under normal optimization,
+and 0.74 with retained helpers, while ordinary sparse lookup and edit win
+elsewhere. The same sparse growth is about 1.78 times its direct native
+control but 1.21/1.04 times its planned-algorithm C control. The
+[comparison record](../../experiments/container-representation/map-library/RESULTS.md)
+owns the complete paired samples and both cohorts; these particular results
+motivate a discriminator, not a layout selection. Implement the ordinary
+one-slot route only far enough to compare its admitted owning operation chain
+and matched growth/rehash traces. Count its larger cells and double-backing
+peak, as well as actual transfer work. Select it only if the observed benefit
+justifies those costs for the exposed contract; do not extend the full timing
+matrix merely because a third representation exists.
+
+The direct route exposes a separate contract boundary. After extending a
+fresh `previous` backing to `capacity`, it publishes that owner with
+`swap(first: &deref(map).cells, second: &previous)`. PRE-1 declares only
+`writes(first), writes(second)` for swap. OP-11 exchanges both values and
+keeps their ownership live, but MSR-3 does not define swap as a measure-fact
+placement, and CALL-6 has no declared postcondition to publish. Consequently
+the previous `previous.inner.len == capacity` proof does not establish
+`deref(map).cells.inner.len == capacity` afterward. Re-reading the actual
+extent permits bounded migration; it does not establish an entry/exit
+monotonicity promise. This is the current proof contract, not a lost owner or
+an observed lowering defect. Keep that limitation in the existing contract
+backlog rather than add a runtime branch solely to satisfy an ensures.
+
 Result layout is a separate source choice. The initial common result has three
 variants, `Inserted`, `Replaced(previous: Pair<K,V>)`, and
 `Full(offered: Pair<K,V>)`. Current product layout reserves both Pair regions.

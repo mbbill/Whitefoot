@@ -33,7 +33,7 @@
 
 enum { EMPTY, DELETED, LIVE };
 enum { INSERTED, REPLACED, REFUSED };
-enum { HIT, MISS, REPLACE, CHURN, GROW, REHASH, SETUP, PATH_COUNT };
+enum { HIT, MISS, REPLACE, CHURN, GROW, REHASH, SETUP, EDIT, PATH_COUNT };
 enum { WORDS = 32, CEILING = 16384 };
 #define EMPTY_INDEX UINT64_MAX
 #define DELETED_INDEX (UINT64_MAX - UINT64_C(1))
@@ -145,6 +145,8 @@ static uint64_t record_content(uint64_t key, Record value) {
     for (size_t i = 0; i < WORDS; ++i) key = key * UINT64_C(131) + value.words[i];
     return key;
 }
+static uint64_t word_increment(uint64_t *value) { return ++*value; }
+static uint64_t record_increment(Record *value) { return ++value->words[0]; }
 
 #define CALLBACKS(B, T)                                                   \
 static HELPER uint64_t B##_observe(Digest *env, const uint64_t *key, const T *value) { \
@@ -152,6 +154,9 @@ static HELPER uint64_t B##_observe(Digest *env, const uint64_t *key, const T *va
 }                                                                         \
 static HELPER void B##_consume(Digest *env, uint64_t key, T value) {       \
     final_value(env, B##_content(key, value));                            \
+}                                                                         \
+static HELPER uint64_t B##_edit(Digest *env, const uint64_t *key, T *value) { \
+    (void)env; (void)key; return B##_increment(value);                     \
 }
 CALLBACKS(word, uint64_t)
 CALLBACKS(record, Record)
@@ -256,6 +261,12 @@ static HELPER Lookup P##_lookup(const P##_Map *map, const HashEnv *env,      \
     if (!probe.found) return (Lookup){false, 0};                            \
     const B##_Pair *pair = &map->slots->cells[probe.index].pair;            \
     return (Lookup){true, B##_observe(digest, &pair->key, &pair->value)};   \
+}                                                                          \
+static HELPER Lookup P##_edit(P##_Map *map, const HashEnv *env, const uint64_t *key, Digest *digest) { \
+    Probe probe = P##_probe(map, env, key);                                \
+    if (!probe.found) return (Lookup){false, 0};                           \
+    B##_Pair *pair = &map->slots->cells[probe.index].pair;                  \
+    return (Lookup){true, B##_edit(digest, &pair->key, &pair->value)};       \
 }                                                                          \
 static HELPER void P##_free(P##_Map map, Digest *digest) {                  \
     for (uint64_t i = 0; i < map.slots->capacity; ++i)                      \
@@ -391,6 +402,13 @@ static HELPER Lookup P##_lookup(const P##_Map *map, const HashEnv *env, const ui
     uint64_t index = READ(&map->index->slots[probe.index]);                 \
     const B##_Pair *pair = &map->entries->entries[index].pair;             \
     return (Lookup){true, B##_observe(digest, &pair->key, &pair->value)};   \
+}                                                                          \
+static HELPER Lookup P##_edit(P##_Map *map, const HashEnv *env, const uint64_t *key, Digest *digest) { \
+    Probe probe = P##_probe(map, env, key);                                \
+    if (!probe.found) return (Lookup){false, 0};                           \
+    uint64_t index = READ(&map->index->slots[probe.index]);                 \
+    B##_Pair *pair = &map->entries->entries[index].pair;                    \
+    return (Lookup){true, B##_edit(digest, &pair->key, &pair->value)};       \
 }                                                                          \
 static HELPER void P##_free(P##_Map map, Digest *digest) {                  \
     for (uint64_t i = 0; i < map.entries->length; ++i)                      \
@@ -599,6 +617,13 @@ static HELPER Lookup P##_lookup(const P##_Map *map, const HashEnv *env, const ui
     if (slot->tag != LIVE) return (Lookup){false, 0};                      \
     return (Lookup){true, B##_observe(digest, &slot->pair.key, &slot->pair.value)}; \
 }                                                                         \
+static HELPER Lookup P##_edit(P##_Map *map, const HashEnv *env, const uint64_t *key, Digest *digest) { \
+    Probe found = P##_find(map, env, key);                                \
+    if (!found.found) return (Lookup){false, 0};                           \
+    P##_Cell *slot = &map->slots->cells[found.index];                       \
+    if (slot->tag != LIVE) return (Lookup){false, 0};                      \
+    return (Lookup){true, B##_edit(digest, &slot->pair.key, &slot->pair.value)}; \
+}                                                                         \
 static HELPER void P##_free(P##_Map map, Digest *digest) {                 \
     while (map.slots->length != 0) {                                     \
         P##_Cell slot; memcpy(&slot, &map.slots->cells[--map.slots->length], sizeof slot); \
@@ -720,6 +745,12 @@ static HELPER Lookup P##_lookup(const P##_Map *map, const HashEnv *env, const ui
     const B##_Pair *pair = &map->entries->entries[found.index].pair;        \
     return (Lookup){true, B##_observe(digest, &pair->key, &pair->value)};    \
 }                                                                         \
+static HELPER Lookup P##_edit(P##_Map *map, const HashEnv *env, const uint64_t *key, Digest *digest) { \
+    Probe found = P##_find(map, env, key);                                \
+    if (!found.found) return (Lookup){false, 0};                           \
+    B##_Pair *pair = &map->entries->entries[found.index].pair;             \
+    return (Lookup){true, B##_edit(digest, &pair->key, &pair->value)};        \
+}                                                                         \
 static HELPER void P##_free(P##_Map map, Digest *digest) {                 \
     while (map.entries->length != 0) {                                   \
         P##_Entry removed;                                                \
@@ -808,6 +839,10 @@ static NOINLINE uint64_t P##_trace(uint64_t capacity, uint64_t count,        \
                 ordered(&digest, result.kind);                            \
                 if (result.kind != INSERTED)                              \
                     ordered(&digest, B##_content(result.owner.key, result.owner.value)); \
+            } else if (path == EDIT) {                                    \
+                Lookup edited = P##_edit(&map, &env, &key, &digest);       \
+                ordered(&digest, edited.found);                           \
+                if (edited.found) ordered(&digest, edited.identity);      \
             }                                                              \
         }                                                                  \
     }                                                                      \
@@ -841,6 +876,10 @@ static void P##_policy_check(void) {                                      \
     }                                                                      \
     B##_Put reused = P##_put(&map, &env, (B##_Pair){key_at(3), B##_make(13)}); \
     require(reused.kind == INSERTED, "tombstone reuse at ceiling");       \
+    key = key_at(0); Lookup absent_edit = P##_edit(&map, &env, &key, &digest); \
+    require(!absent_edit.found, "edit does not construct a missing value"); \
+    key = key_at(3); Lookup edited = P##_edit(&map, &env, &key, &digest);   \
+    require(edited.found && edited.identity == 14, "borrowed in-place edit"); \
     require(!P##_reserve(&map, &env, 4), "over-ceiling reserve refused"); \
     require(P##_rehash(&map, &env), "same-capacity rehash");              \
     require(P##_reserve(&map, &env, 1), "smaller reserve is a no-op");    \
@@ -877,6 +916,15 @@ static uint64_t oracle_content(bool wide, uint64_t key, uint64_t seed) {
     for (unsigned i = 0; i < words; ++i) key = key * UINT64_C(131) + seed + i;
     return key;
 }
+static uint64_t oracle_edited_content(bool wide, uint64_t key, uint64_t seed, uint64_t rounds) {
+    unsigned words = wide ? WORDS : 1;
+    for (unsigned i = 0; i < words; ++i) {
+        uint64_t word = seed + i;
+        if (i == 0) word += rounds;
+        key = key * UINT64_C(131) + word;
+    }
+    return key;
+}
 static uint64_t oracle(bool wide, uint64_t count, uint64_t rounds,
                        uint64_t seed, unsigned path) {
     Digest digest = {seed, 0, 0, 0};
@@ -909,13 +957,18 @@ static uint64_t oracle(bool wide, uint64_t count, uint64_t rounds,
                 ordered(&digest, true);
                 ordered(&digest, oracle_content(wide, key, seed + round * count + i));
                 ordered(&digest, false); ordered(&digest, INSERTED);
+            } else if (path == EDIT) {
+                ordered(&digest, true);
+                ordered(&digest, seed + i + round + 1);
             }
         }
     }
     for (uint64_t i = 0; i < count; ++i) {
         uint64_t generation = path == REPLACE || path == CHURN
             || (path == REHASH && i % 2 == 0) ? rounds : 0;
-        final_value(&digest, oracle_content(wide, key_at(i), seed + generation * count + i));
+        final_value(&digest, path == EDIT
+            ? oracle_edited_content(wide, key_at(i), seed + i, rounds)
+            : oracle_content(wide, key_at(i), seed + generation * count + i));
     }
     return finish(digest);
 }
@@ -1034,20 +1087,36 @@ static uint64_t nanoseconds(void) {
 /* Timings are complete, independently checked traces. Growth is one real
  * reserve; rehash includes deletion, verification and reinsertion. No setup
  * baseline is subtracted to invent an isolated operation latency. */
-static void measure(unsigned cohort) {
+enum { PRIMARY_SET, BOUNDARY_SET, EDIT_SET };
+static bool selected_cohort(unsigned set, bool wide, uint64_t capacity,
+                            unsigned occupancy, bool collide, unsigned path) {
+    if (set == EDIT_SET) return capacity == 64 && !collide && path == EDIT;
+    if (set == BOUNDARY_SET)
+        return capacity == 64 && occupancy == 1 && !collide
+            && (path == REPLACE || path == CHURN);
+    if (path == EDIT) return false;
+    if (collide)
+        return !wide && capacity == 64 && occupancy == 1
+            && (path == MISS || path == CHURN || path == REHASH);
+    if (capacity == 64 && occupancy == 1) return true;
+    if (capacity == 4096 && occupancy == 1)
+        return path == HIT || path == MISS || path == GROW || path == REHASH || path == SETUP;
+    return capacity == 64 && occupancy == 0 && (path == MISS || path == CHURN);
+}
+
+static void measure(unsigned cohort, unsigned set, const char *source_shape) {
     const uint64_t capacities[] = {64, 4096};
-    const char *paths[] = {"hit", "miss", "replace", "churn", "grow", "rehash", "setup-cleanup"};
+    const char *paths[] = {"hit", "miss", "replace", "churn", "grow", "rehash", "setup-cleanup", "edit-first-word"};
     const size_t variant_count = sizeof variants / sizeof variants[0];
-    puts("contract,cohort,element_bytes,path,capacity,count,hash,variant,sample,rounds,traces,elapsed_ns,checksum,requests,requested_bytes,peak_bytes");
+    puts("contract,cohort,element_bytes,path,capacity,count,hash,variant,source_shape,sample,rounds,traces,elapsed_ns,checksum,requests,requested_bytes,peak_bytes");
     for (unsigned wide = 0; wide < 2; ++wide)
             for (size_t n = 0; n < sizeof capacities / sizeof capacities[0]; ++n)
                 for (unsigned occupancy = 0; occupancy < 2; ++occupancy)
                     for (unsigned collide = 0; collide < 2; ++collide) {
-                        if (collide && (wide || n != 0)) continue;
                         uint64_t capacity = capacities[n];
                         uint64_t count = occupancy ? capacity * 7 / 8 : capacity / 2;
                         for (unsigned path = 0; path < PATH_COUNT; ++path) {
-                            if (collide && path == SETUP) continue;
+                            if (!selected_cohort(set, wide != 0, capacity, occupancy, collide != 0, path)) continue;
                             uint64_t rounds = path == SETUP ? 0
                                 : (path == GROW ? 1 : UINT64_C(8192) / count);
                             uint64_t traces = path == SETUP || path == GROW
@@ -1074,9 +1143,10 @@ static void measure(unsigned cohort) {
                                     accounting.bytes *= traces;
                                     check_ledger(accounting);
                                     observed ^= checksum;
-                                    printf("%s,%u,%zu,%s,%" PRIu64 ",%" PRIu64 ",%s,%s,%u,%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%zu,%zu,%zu\n",
+                                    printf("%s,%u,%zu,%s,%" PRIu64 ",%" PRIu64 ",%s,%s,%s,%u,%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%zu,%zu,%zu\n",
                                            CONTRACT, cohort, wide ? sizeof(Record) : sizeof(uint64_t), paths[path],
-                                           capacity, count, collide ? "colliding" : "mixed", variant->name, sample,
+                                           capacity, count, collide ? "colliding" : "mixed", variant->name,
+                                           variant->policy_check ? "c-shared" : source_shape, sample,
                                            rounds, traces, elapsed, checksum, ledger.requests, ledger.bytes, ledger.peak);
                                 }
                             }
@@ -1086,15 +1156,21 @@ static void measure(unsigned cohort) {
 #endif
 
 int main(int argc, char **argv) {
-    require(argc >= 2, "usage: map-costs check | measure 0|1");
+    require(argc >= 2, "usage: map-costs check | measure 0|1 primary|boundary|edit original|compact");
     if (strcmp(argv[1], "check") == 0) {
         require(argc == 2, "check takes no arguments"); check();
     }
 #if defined(WITH_WF)
     else if (strcmp(argv[1], "measure") == 0) {
-        require(argc == 3 && (strcmp(argv[2], "0") == 0 || strcmp(argv[2], "1") == 0),
-                "measure requires cohort 0 or 1");
-        measure((unsigned)(argv[2][0] - '0'));
+        require(argc == 5 && (strcmp(argv[2], "0") == 0 || strcmp(argv[2], "1") == 0),
+                "measure requires cohort 0 or 1, a named set and source shape");
+        unsigned set = PRIMARY_SET;
+        if (strcmp(argv[3], "boundary") == 0) set = BOUNDARY_SET;
+        else if (strcmp(argv[3], "edit") == 0) set = EDIT_SET;
+        else require(strcmp(argv[3], "primary") == 0, "unknown measurement set");
+        require(strcmp(argv[4], "original") == 0 || strcmp(argv[4], "compact") == 0,
+                "unknown source shape");
+        measure((unsigned)(argv[2][0] - '0'), set, argv[4]);
     }
 #endif
     else require(false, "unknown mode");

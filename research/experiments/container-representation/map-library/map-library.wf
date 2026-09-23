@@ -18,6 +18,7 @@ interface MapCostElement<T: drop> {
   fn make(seed: own u64) -> value: own T pure;
   fn content(key: own u64, value: own T) -> result: own u64 pure;
   fn observe(env: &MapCostDigest, key: &u64, value: &T) -> result: own u64 reads(key), reads(value), writes(env);
+  fn edit(env: &MapCostDigest, key: &u64, value: &T) -> result: own u64 reads(key), writes(env), writes(value);
   fn consume(env: &MapCostDigest, key: own u64, value: own T) -> result: own unit writes(env);
 }
 
@@ -95,6 +96,11 @@ fn map_cost_word_observe(env: &MapCostDigest, key: &u64, value: &u64) -> result:
   return deref(value);
 }
 
+fn map_cost_word_edit(env: &MapCostDigest, key: &u64, value: &u64) -> result: own u64 writes(value) {
+  set deref(value) = deref(value) +wrap 1_u64;
+  return deref(value);
+}
+
 fn map_cost_word_consume(env: &MapCostDigest, key: own u64, value: own u64) -> result: own unit writes(env) {
   let content = map_cost_word_content(key: key, value: value);
   map_cost_final(env: env, value: content);
@@ -122,6 +128,11 @@ fn map_cost_record_observe(env: &MapCostDigest, key: &u64, value: &MapCostRecord
   return deref(value).words[0_u64];
 }
 
+fn map_cost_record_edit(env: &MapCostDigest, key: &u64, value: &MapCostRecord) -> result: own u64 writes(value) {
+  set deref(value).words[0_u64] = deref(value).words[0_u64] +wrap 1_u64;
+  return deref(value).words[0_u64];
+}
+
 fn map_cost_record_consume(env: &MapCostDigest, key: own u64, value: own MapCostRecord) -> result: own unit writes(env) {
   let content = map_cost_record_content(key: key, value: move value);
   map_cost_final(env: env, value: content);
@@ -132,6 +143,7 @@ binding MapCostWord : MapCostElement<u64> {
   make = map_cost_word_make;
   content = map_cost_word_content;
   observe = map_cost_word_observe;
+  edit = map_cost_word_edit;
   consume = map_cost_word_consume;
 }
 
@@ -139,6 +151,7 @@ binding MapCostWide : MapCostElement<MapCostRecord> {
   make = map_cost_record_make;
   content = map_cost_record_content;
   observe = map_cost_record_observe;
+  edit = map_cost_record_edit;
   consume = map_cost_record_consume;
 }
 
@@ -340,6 +353,9 @@ fn map_cost_dense_trace<interface MapCostElement<T>>(capacity: own u64, count: o
               map_cost_ordered(env: &digest, value: content);
             }
           }
+        } else if path == 7_u64 {
+          let edited = dense_map_edit::<MapCostDenseKey, T, MapCostDigest, u64, fn MapCostElement::edit, 16384>(map: &map, key: &key, key_env: &env, edit_env: &digest);
+          map_cost_lookup_result(found: edited, digest: &digest);
         }
       }
     }
@@ -535,6 +551,9 @@ fn map_cost_sparse_trace<interface MapCostElement<T>>(capacity: own u64, count: 
               map_cost_ordered(env: &digest, value: content);
             }
           }
+        } else if path == 7_u64 {
+          let edited = sparse_map_edit::<MapCostSparseKey, T, MapCostDigest, u64, fn MapCostElement::edit, 16384>(map: &map, key: &key, key_env: &env, edit_env: &digest);
+          map_cost_lookup_result(found: edited, digest: &digest);
         }
       }
     }

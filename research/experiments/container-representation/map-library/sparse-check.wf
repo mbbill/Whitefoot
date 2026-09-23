@@ -336,6 +336,42 @@ fn sparse_test_scalars() -> result: own u64 pure {
   sparse_scalar_outcome(outcome: first, expected: 0_u64, key: 7_u64, value: 70_u64, seen: &seen);
   let second = sparse_map_put::<SparseScalarKey, u64, 8>(map: &map, key: 7_u64, value: 71_u64, env: &env);
   sparse_scalar_outcome(outcome: second, expected: 0_u64, key: 7_u64, value: 71_u64, seen: &seen);
+  if map.length != 2_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if map.cells.inner.len != 2_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  let hostile_key = 7_u64;
+  let missing = sparse_map_lookup::<SparseScalarKey, u64, SparseTestSeen, u64, fn sparse_scalar_read, 8>(map: &map, key: &hostile_key, key_env: &env, visit_env: &seen);
+  match missing {
+    Ok(value: unexpected_value) => {
+      sparse_test_fail(seen: &seen);
+    }
+    Err(error: absent) => {
+    }
+  }
+  let removed = sparse_map_remove::<SparseScalarKey, u64, 8>(map: &map, key: &hostile_key, env: &env);
+  match removed {
+    Some(value: unexpected_pair) => {
+      sparse_test_fail(seen: &seen);
+      sparse_pair_consume::<SparseScalarConsume>(pair: unexpected_pair, env: &seen);
+    }
+    None() => {
+    }
+  }
+  if seen.visits != 0_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if seen.observed != 0_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if seen.consumed != 0_u64 {
+    sparse_test_fail(seen: &seen);
+  }
+  if map.length != 2_u64 {
+    sparse_test_fail(seen: &seen);
+  }
   let larger = sparse_map_reserve::<SparseScalarKey, u64, 8>(map: &map, capacity: 4_u64, env: &env);
   sparse_check_reserve(outcome: larger, expected: true_value, seen: &seen);
   let compacted = sparse_map_rehash::<SparseScalarKey, u64, 8>(map: &map, env: &env);

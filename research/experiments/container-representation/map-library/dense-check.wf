@@ -316,6 +316,42 @@ fn dense_test_scalars() -> result: own u64 pure {
   dense_scalar_outcome(outcome: first, expected: 0_u64, key: 7_u64, value: 70_u64, seen: &seen);
   let second = dense_map_put::<DenseScalarKey, u64, 8>(map: &map, key: 7_u64, value: 71_u64, env: &env);
   dense_scalar_outcome(outcome: second, expected: 0_u64, key: 7_u64, value: 71_u64, seen: &seen);
+  if map.entries.inner.len != 2_u64 {
+    dense_test_fail(seen: &seen);
+  }
+  if map.indexes.inner.len != 2_u64 {
+    dense_test_fail(seen: &seen);
+  }
+  let hostile_key = 7_u64;
+  let missing = dense_map_lookup::<DenseScalarKey, u64, DenseTestSeen, u64, fn dense_scalar_read, 8>(map: &map, key: &hostile_key, key_env: &env, visit_env: &seen);
+  match missing {
+    Ok(value: unexpected_value) => {
+      dense_test_fail(seen: &seen);
+    }
+    Err(error: absent) => {
+    }
+  }
+  let removed = dense_map_remove::<DenseScalarKey, u64, 8>(map: &map, key: &hostile_key, env: &env);
+  match removed {
+    Some(value: unexpected_pair) => {
+      dense_test_fail(seen: &seen);
+      dense_pair_consume::<DenseScalarConsume>(pair: unexpected_pair, env: &seen);
+    }
+    None() => {
+    }
+  }
+  if seen.visits != 0_u64 {
+    dense_test_fail(seen: &seen);
+  }
+  if seen.observed != 0_u64 {
+    dense_test_fail(seen: &seen);
+  }
+  if seen.consumed != 0_u64 {
+    dense_test_fail(seen: &seen);
+  }
+  if map.entries.inner.len != 2_u64 {
+    dense_test_fail(seen: &seen);
+  }
   let larger = dense_map_reserve::<DenseScalarKey, u64, 8>(map: &map, capacity: 4_u64, env: &env);
   dense_check_reserve(outcome: larger, expected: true_value, seen: &seen);
   let compacted = dense_map_rehash::<DenseScalarKey, u64, 8>(map: &map, env: &env);

@@ -581,6 +581,18 @@ condition under which it is taken up.
   negative goals, alias invalidation and deterministic checking cost. Defer
   a rule change while the exact paired-bound interface supplies the needed
   proof without runtime or ownership cost.
+- **Whole-owner swap does not publish exchanged descriptor facts.** PRE-1's
+  `swap` declares writes to both referents and no postcondition; MSR-3's
+  placement rules do not include swap. Exchanging two boxed windows therefore
+  kills their supported length/capacity facts without connecting the incoming
+  descriptor to the new place. Actual values and unique ownership still move
+  correctly. The direct map-migration trial can re-read bounds, but cannot
+  derive its promised nondecreasing extent merely from the pre-swap facts.
+  Reopen with the contract-publication work: retain scalar-only and nested
+  owner controls, alias invalidation and input/output swaps, and compare the
+  source/proof benefit with checking cost before selecting a general relation.
+  Defer a language extension while ordinary reads suffice for the map;
+  do not manufacture an impossible branch to satisfy a postcondition.
 - **Open-addressing tables with non-Copy payloads.** The recorded extra null
   check per hit versus hashbrown is a hypothesis to test on a real table,
   not an established universal cost. The native
@@ -595,11 +607,13 @@ condition under which it is taken up.
   append, avoiding the enum candidate's planning/permutation, but adds a word
   per bucket and retains a second payload backing. Its complete source and
   transfer costs are unverified. The [map trial](../research/investigations/containers-and-resources/X1-LIBRARY.md#generic-owning-map-trial-after-the-ring-comparison)
-  records the algorithm and peak-memory tradeoff. Defer a third implementation
-  while the first two candidates are measured; reopen if copying/permutation
-  materially determines growth costs or their lookup/growth results split.
-  Validate actual admission, zero capacity, hostile hash/equality, exact owner
-  cleanup and scalar/wide growth and same-capacity costs before selecting it.
+  records the algorithm, peak-memory tradeoff and measured lookup/growth
+  split that motivates the bounded comparison. Validate actual admission,
+  zero capacity, hostile hash/equality, exact owner cleanup and scalar/wide
+  growth and same-capacity costs before selecting it. Leave broader policy
+  and layout variants deferred unless these costs reveal a further concrete
+  consumer; success on one map representation does not establish a general
+  projected-storage benefit.
 - **Channel primitive.** An ownership-transfer queue in the trusted base for
   producer/consumer pipelines and work stealing; lock-free rings are not
   expressible without it and batched fork-join is the available form. Research

@@ -4,14 +4,19 @@ EXE := $(if $(filter Windows_NT,$(OS)),.exe,)
 WHITEFOOTC ?= $(ROOT)/compiler/target/gate/whitefootc$(EXE)
 CLANG ?= clang
 BUILD ?= .build
+MEASURE_SET ?= primary
+SOURCE_SHAPE ?= original
+SAMPLES ?= $(BUILD)/measurements-$(MEASURE_SET)-$(SOURCE_SHAPE).csv
 SOURCES := dense-map.wf sparse-map.wf map-library.wf
+COMPACT_SOURCE_DIR := $(abspath $(BUILD)/compact-source)
+COMPACT_SOURCES := $(addprefix $(COMPACT_SOURCE_DIR)/,dense-map.wf sparse-map.wf map-library.wf)
 OBSERVER := $(ROOT)/tests/programs/containers/container-allocation-observer.c
 .DELETE_ON_ERROR:
 .DEFAULT_GOAL := check
 
 include $(ROOT)/compiler/runtime.mk
 
-.PHONY: native-check build-candidates check-candidates build-costs check-costs check measure clean
+.PHONY: native-check build-candidates check-candidates build-costs check-costs compact-source build-compact check-compact check measure summarize clean
 
 $(BUILD):
 	mkdir -p $@
@@ -94,8 +99,8 @@ $(BUILD)/map-library-normal.ll: $(BUILD)/map-library.raw.ll Makefile
 	  awk '/^define .* @wf_map_cost_(dense|sparse)_(word|record)_trace\(/ { if (sub(/ #0 [{]$$/, " noinline #0 {") != 1) exit 1; traces++ } { print } END { if (traces != 4) exit 1 }' > $@
 
 $(BUILD)/map-library-retained.ll: $(BUILD)/map-library-normal.ll Makefile
-	awk '/^define .* @wf_(dense|sparse)_map_(new|put|remove|lookup|reserve|rehash|free)[$$(]/ || \
-	     /^define .* @wf_map_cost_(hash|equal|word_observe|record_observe|word_consume|record_consume)\(/ \
+	awk '/^define .* @wf_(dense|sparse)_map_(new|put|remove|lookup|edit|reserve|rehash|free)[$$(]/ || \
+	     /^define .* @wf_map_cost_(hash|equal|word_observe|record_observe|word_consume|record_consume|word_edit|record_edit)\(/ \
 	     { if (sub(/ #0 [{]$$/, " noinline #0 {") != 1) exit 1; retained++ } \
 	     { print } END { if (retained == 0) exit 1; print "Retained public map/callback definitions: " retained > "/dev/stderr" }' $< > $@
 
@@ -118,31 +123,68 @@ check-costs: build-costs
 	@grep -Eq '^declare noalias nonnull ptr @wf_cost_allocate\(i64\)' $(BUILD)/map-library-normal.ll
 	$(BUILD)/map-costs-normal$(EXE) check
 	$(BUILD)/map-costs-retained$(EXE) check
-	@set -eu; for operation in new put remove lookup reserve rehash free; do \
+	@set -eu; for operation in new put remove lookup edit reserve rehash free; do \
 	  grep -Eq "call .*@\"?wf_(dense|sparse)_map_$${operation}"'[$$(]' $(BUILD)/map-library-retained.opt.ll; \
 	  grep -Eq "call .*@(word|record)_[a-z]+_$${operation}[.(]" $(BUILD)/control-retained.opt.ll; \
 	done; \
-	for callback in hash equal word_observe record_observe word_consume record_consume; do \
+	for callback in hash equal word_observe record_observe word_consume record_consume word_edit record_edit; do \
 	  grep -Eq "call .*@wf_map_cost_$${callback}[(]" $(BUILD)/map-library-retained.opt.ll; \
 	done; \
-	for callback in key_hash key_equal word_observe record_observe word_consume record_consume; do \
+	for callback in key_hash key_equal word_observe record_observe word_consume record_consume word_edit record_edit; do \
 	  grep -Eq "call .*@$${callback}[.(]" $(BUILD)/control-retained.opt.ll; \
 	done; \
 	echo 'Public map operations and supplied callbacks survive in both retained modules'
 
 check: native-check check-candidates check-costs
 
+# A reproducible source-shape control, kept separate from the original result
+# and from ordinary correctness gates. It reuses the same build and oracle.
+$(COMPACT_SOURCE_DIR)/.patched: dense-map.wf sparse-map.wf map-library.wf compact-put.patch
+	mkdir -p $(COMPACT_SOURCE_DIR)
+	cp dense-map.wf sparse-map.wf map-library.wf $(COMPACT_SOURCE_DIR)/
+	patch -s -f -F 0 -p1 -d $(COMPACT_SOURCE_DIR) < compact-put.patch
+	touch $@
+
+compact-source: $(COMPACT_SOURCE_DIR)/.patched
+
+build-compact: compact-source
+	$(MAKE) build-costs BUILD=$(BUILD)/compact-build SOURCES='$(COMPACT_SOURCES)'
+
+check-compact: build-compact
+	$(MAKE) check-costs BUILD=$(BUILD)/compact-build SOURCES='$(COMPACT_SOURCES)'
+
 measure: check
-	@set -eu; output=$(BUILD)/measurements.csv; first=yes; \
+	@set -eu; output='$(SAMPLES)'; first=yes; \
 	  for cohort in 0 1; do \
 	    if test "$$cohort" = 0; then modes='normal retained'; else modes='retained normal'; fi; \
 	    for mode in $$modes; do \
-	      $(BUILD)/map-costs-$$mode$(EXE) measure $$cohort > $(BUILD)/cohort-$$cohort-$$mode.csv; \
-	      if test "$$first" = yes; then head -n 1 $(BUILD)/cohort-$$cohort-$$mode.csv > "$$output"; first=no; fi; \
-	      awk 'NR > 1' $(BUILD)/cohort-$$cohort-$$mode.csv >> "$$output"; \
+	      sample_file='$(BUILD)/$(MEASURE_SET)-$(SOURCE_SHAPE)-cohort-'$$cohort-$$mode.csv; \
+	      $(BUILD)/map-costs-$$mode$(EXE) measure $$cohort $(MEASURE_SET) $(SOURCE_SHAPE) > "$$sample_file"; \
+	      if test "$$first" = yes; then head -n 1 "$$sample_file" > "$$output"; first=no; fi; \
+	      awk 'NR > 1' "$$sample_file" >> "$$output"; \
 	    done; \
 	  done; \
 	  echo "Raw samples: $$output"
+
+# One median per mode, reversed cohort, workload, implementation and source
+# shape. Keep those distinctions; this is not a weighted application score.
+summarize:
+	@set -eu; \
+	  awk -F, 'NR == 1 { if ($$1 != "contract" || $$17 != "peak_bytes") exit 1; next } NF != 17 { exit 1 } { print }' "$(SAMPLES)" > $(BUILD)/summary-input.csv; \
+	  LC_ALL=C sort -t, -k1,9 -k13,13n $(BUILD)/summary-input.csv > $(BUILD)/summary-sorted.csv; \
+	  awk -F, 'BEGIN { OFS=","; print "contract,cohort,element_bytes,path,capacity,count,hash,variant,source_shape,rounds,traces,median_elapsed_ns,unit,median_units,min_elapsed_ns,max_elapsed_ns" } \
+	    function emit() { if (count != 11) { print "expected eleven samples: " key > "/dev/stderr"; exit 1 } \
+	      unit = (path == "grow" || path == "setup-cleanup") ? "ns/trace" : "ns/item-round"; \
+	      denominator = unit == "ns/trace" ? traces : rounds * population; \
+	      print key, rounds, traces, median, unit, median / denominator, minimum, maximum } \
+	    { nextkey = $$1; for (i=2; i<=9; i++) nextkey=nextkey OFS $$i; \
+	      if (NR > 1 && nextkey != key) emit(); \
+	      if (NR == 1 || nextkey != key) { key=nextkey; count=0; path=$$4; population=$$6; rounds=$$11; traces=$$12; minimum=$$13 } \
+	      if ($$11 != rounds || $$12 != traces) { print "inconsistent trace sizes: " key > "/dev/stderr"; exit 1 } \
+	      count++; if (count == 6) median=$$13; maximum=$$13 } \
+	    END { if (NR > 0) emit() }' $(BUILD)/summary-sorted.csv > $(BUILD)/medians-$(MEASURE_SET)-$(SOURCE_SHAPE).csv; \
+	  rm $(BUILD)/summary-input.csv $(BUILD)/summary-sorted.csv; \
+	  echo "Grouped medians: $(BUILD)/medians-$(MEASURE_SET)-$(SOURCE_SHAPE).csv"
 
 clean:
 	rm -rf $(BUILD)
