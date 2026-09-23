@@ -76,6 +76,19 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   query for now and reopen when measuring target-emission cost or extending its
   layout consumers.
 
+- **Expose a failed callee proof behind an unavailable summary.** The
+  [partially concrete reserve probe](../research/investigations/containers-and-resources/X1-LIBRARY.md#partially-concrete-reserve-diagnostic)
+  reports INV-1 at `room` after `priority_queue_make_room<ProbeDue, ceiling>`.
+  Adding the 32-byte allocation bound only to the caller still fails; literal
+  `8192` admits. Read-only diagnosis identifies reserve's missing local OP-9
+  bound under ENT-2, not a demonstrated publication defect. First validate
+  the bound in both reserve and caller, propagated through intervening helpers,
+  then require the intended OP-9 rejection one element above it. Improve the
+  diagnostic to identify the failed callee obligation and unavailable summary
+  without changing acceptance. Its benefit and exact attribution remain
+  unverified; defer this diagnostic work while the admitted generic standalone
+  control serves the experiment, and reopen when improving call-proof reports.
+
 - **Validate a shared Ring wrap calculation independent of layout bounds.**
   The corrected front predecessor handles every admitted capacity. Remaining
   address-only modular additions are justified by the positive-stride target
@@ -181,6 +194,26 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   interference obligations; reopen for the indexed heap composition or an
   application dominated by these paths. Do not report universal native parity
   from the large scalar queue results.
+
+- **Indexed small-payload costs with retained boundaries need attribution.**
+  The [native-cost record](../research/experiments/container-representation/indexed-library/RESULTS.md#remaining-native-costs)
+  puts 4096-record growth/cleanup at 1.354--1.368 times swap C and
+  1.392--1.408 times hole C across policies, cohorts and both series. The
+  standalone/shared indexed executables are identical, so this is separate
+  from the sharing choice. Wide mixed traces instead favor WF. The position
+  reporter retains a 32-byte Due snapshot and a separate 16-byte handle
+  snapshot in 48 stack bytes; its native frame is 80 bytes versus C's 32.
+  Successful insertion also clears a 40-byte result before writing the active
+  fields. Both implementations retain the same handle-validity checks; these
+  observed snapshots and stores do not establish their elapsed-time shares.
+  Validate which snapshots or result stores general compiler handling can
+  avoid using unchanged source, matched public boundaries, emitted code,
+  complete ownership/expiry oracles and unchanged controls. Preserve callback
+  effects and all validity checks; add no container-specific compiler path.
+  Defer optimization selection until that discriminator identifies a benefit;
+  reopen for a consumer dominated by retained small-record growth or a measured
+  toolchain change. No general interface, storage or compiler mechanism is
+  selected by these ratios.
 
 - **Short Vector cycles retain unresolved lowering costs.** The paired
   consumption experiment improves the large-record paths but slows the
@@ -579,16 +612,16 @@ each is resolved by a discussion and a tree change.
   until the syntax review reaches this group; close it only with an explicit
   disposition supported by these comparisons.
 
-- **Independent retention authority remains unestablished; coordinated membership costs remain open.**
+- **Independent retention authority remains unestablished.**
   The [multi-object result](../research/investigations/containers-and-resources/X1-LIBRARY.md#maintained-composite-correctness)
   establishes a coordinated Slab/HashMap/indexed-heap protocol for both weak
   expiry and retained deletion after both memberships retire. Its independent
   dictionary, expiry-order and owner ledgers cover wrong-store/stale handles,
   both removal orders, reuse and final cleanup; sequential/parallel observed
-  images each release all 129 allocations exactly once. The registered
-  shared/standalone/plain-no-op and matched C comparisons still need to
-  establish validation/storage costs before selecting the heap core or making
-  a native-performance claim. The protocol does not protect bookkeeping from
+  images each release all 129 allocations exactly once. The
+  [matched comparison](../research/experiments/container-representation/indexed-library/RESULTS.md#measured-result)
+  supports qualified shared-core reuse on maintenance grounds, not a proven
+  speedup or native parity. The protocol does not protect bookkeeping from
   independently authored mutations: ordinary handles and nodrop tickets do
   not authenticate a Slab or make membership unforgeable, and stable slots do
   not supply surviving references. Defer stronger authority while consumers

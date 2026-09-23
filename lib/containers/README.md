@@ -66,7 +66,7 @@ progress and ownership preservation hold for every returning comparator. Equal
 priorities have no stability guarantee, and no operation promises stable slot
 identity or an escaping reference.
 
-The indexed candidate uses the same `PriorityQueue<T, ceiling>` and shared
+The indexed operations use the same `PriorityQueue<T, ceiling>` and shared
 sifts. `priority_queue_push_indexed` and `priority_queue_heapify_indexed` have
 the ordinary ownership outcomes and additionally report initial placements
 and every exchanged resident position. `priority_queue_remove_at_indexed`
@@ -95,10 +95,13 @@ library checks each supplied position's bound, while the application owns the
 entry-identity and membership protocol.
 
 Plain operations retain their existing public signatures and use the shared
-sifts with a no-op reporter. The indexed-composite
-[trial](../../research/investigations/containers-and-resources/X1-LIBRARY.md#indexed-composite-trial)
-compares that specialization with the preserved plain queue and a standalone
-indexed control; source reuse alone is not evidence of unchanged executable cost.
+sifts with a no-op reporter. The [matched comparison](../../research/experiments/container-representation/indexed-library/RESULTS.md#measured-result)
+supports sharing on maintenance grounds: indexed cells stay within control
+variation, and the plain path shows no repeatable material regression.
+The measured plain code erases the no-op calls. A remaining single-cohort
+possible benefit is not a proven speedup, and the result establishes no native
+parity. The [trial](../../research/investigations/containers-and-resources/X1-LIBRARY.md#indexed-composite-trial)
+records the exact operation and comparison boundaries.
 
 From the repository root, after building `whitefootc`:
 

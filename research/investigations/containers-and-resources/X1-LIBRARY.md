@@ -887,9 +887,9 @@ ownership chain described below; it establishes neither arbitrary-position
 updates nor reverse-position repair. Preserve that source and its public
 contracts as the plain-queue comparison baseline. The following criteria were
 recorded before composite implementation or timings. The maintained composite
-now establishes the complete operation and ownership chain below; shared-core
-selection and its matched cost comparison remain open. No new language
-mechanism is selected.
+now establishes the complete operation and ownership chain below. The completed
+comparison supports the qualified shared-core proposal recorded below; it does
+not establish a speedup or native parity. No new language mechanism is selected.
 
 The minimum consumer is a coordinated record store with several simultaneously
 live records. One Slab owns each record and its payload, one HashMap maps IDs
@@ -1122,7 +1122,46 @@ classifier or instance-selection rule is introduced. The focused
 `nominal_formal_contract_queries_survive_scratch_rollback` regressions cover
 mixed symbolic/concrete raw and named formals, result lists, concrete contract
 queries and both lowering modes. These reduced compiler cases do not substitute
-for the full consumer execution recorded next.
+for the full consumer execution recorded below.
+
+#### Partially concrete reserve diagnostic
+
+A separate standalone-control attempt fixes the element to a four-u64
+`ProbeDue` while retaining a symbolic capacity ceiling. Bundled with the
+preserved plain queue at `c3c2a50fd`, compiler image `c71aaf16` reports INV-1
+`UndischargedLocalInvariant` at `room`:
+
+```wf
+fn probe_room<const ceiling: u64>(queue: &PriorityQueue<ProbeDue, ceiling>, value: ProbeDue) -> result: unit writes(queue.storage) contract {
+  requires deref(queue).storage.inner.len < ceiling;
+  requires ceiling <= 576460752303423487_u64;
+} {
+  priority_queue_make_room::<ProbeDue, ceiling>(queue: queue);
+  invariant room: deref(queue).storage.inner.len < deref(queue).storage.inner.cap;
+  place_back(window: &deref(queue).storage.inner, value: value);
+  return unit;
+}
+```
+
+The caller without the second requirement also fails; replacing the symbolic
+ceiling with literal `8192` admits. This does not demonstrate a publication
+defect. The called reserve body has only `requires total <= ceiling`, then
+passes `total` to `grow`. Once its element layout is known, OP-9 requires
+`total <= 576460752303423487` there. ENT-2 gives the callee only its own
+requirements, not the caller's additional premise. The existing
+`transitive_known_layouts_do_not_take_the_direct_opaque_deferral` regression
+covers withholding a summary when a partially concrete callee's allocation
+proof fails. This is a read-only diagnosis; no scratch-proof trace confirmed
+the particular withheld summary.
+
+The remaining opportunity is diagnostic attribution. Validate a bounded
+reserve/caller pair, propagating the same extent bound through any intervening
+helper, and an intended OP-9 rejection one element above the bound. A useful
+diagnostic would expose the failed callee allocation obligation and its
+unavailable summary instead of only the downstream invariant. No acceptance
+rule changes are justified by this probe. The admitted standalone comparison
+retains generic element opacity and uses the same comparison/reporting formals
+as the shared core; it is the viable control used for measurement.
 
 #### Maintained composite correctness
 
@@ -1156,11 +1195,11 @@ ownership boundary. Weak memberships may outlive their object and expire;
 retained deletion stays busy until both memberships retire. It does not make
 bookkeeping unforgeable, authenticate caller-selected store IDs, provide
 independently held retention tickets, or preserve references across mutation.
-The old one-object caller retains its narrower evidence. Native parity,
-validation/storage cost and the shared-core choice still require the registered
-comparisons below.
+The old one-object caller retains its narrower evidence. The registered
+comparison below owns the measured validation/storage costs and shared-core
+proposal; this correctness result alone establishes no native parity.
 
-#### Pending cost comparison
+#### Registered cost comparison
 
 | Candidate or control | Discriminating property |
 | --- | --- |
@@ -1248,16 +1287,57 @@ fixture only when equivalent maintained coverage replaces it. A packed byte-page
 payload, full ordered tree, externally held retention tickets and concurrent
 reclamation remain separate consumers rather than added variants of this trial.
 
+#### Measured shared-core proposal
+
+The [complete comparison](../../experiments/container-representation/indexed-library/RESULTS.md#measured-result)
+retains 36,288 rows from the initial series and its sole permitted complete
+repeat. All 48 indexed cells are within their control-variation bands in both
+series. Each plain-queue series has 59 equivalent cells and one single-cohort
+excursion. The initial apparent loss, normal scalar growth at 4096 entries,
+has normalized ratios 1.035093/0.997795 against a 3% band; its raw first-cohort
+ratio is 1.001912. The complete repeat places both cohorts inside the band.
+The repeat's only excursion is a possible benefit for retained scalar
+pop/push at 16 entries, 0.969773/0.990951 against a 3% band. It establishes
+neither a repeated benefit nor a remaining regression. The result is not
+"all cells equivalent"; every initial and repeated sample remains evidence.
+
+The recommendation is shared-core reuse on maintenance grounds, with that
+uncertainty retained. Indexed costs stay within the registered comparison
+bands, and the independently built standalone/shared indexed executables are
+byte-identical in normal and retained modes with the same runtime objects and
+link order, using Apple Clang 21.0.0 (`clang-2100.3.34.2`), `-O2`, target
+`arm64-apple-darwin25.6.0`. There is no repeatable material plain-queue
+regression. Common native instruction counts match there; the rise-test spelling
+difference is equivalent. Plain no-op reporting calls disappear in the measured
+code without imposing an artificial retained callback boundary. Actual indexed
+callbacks retain the selected boundary and the complete ownership/position
+validation protocol. One core avoids a second maintained sift implementation;
+this selects neither a demonstrated speedup nor uniform native parity. The
+proposal extends the inherited priority-queue amendment rather than adding
+a new language mechanism or design node.
+
+The native comparison still has operation-specific costs. Retained small
+payload growth/cleanup at 4096 records costs 1.354--1.368 times swap C and
+1.392--1.408 times hole C across policies, cohorts and both series. Wide mixed
+traces favor WF against swap C: 0.640--0.710 in normal mode and 0.846--0.888
+with retained boundaries. Native hole sifting reduces assignments, reports
+and Slab validations without changing comparisons, hash probes or allocation
+counts; those algorithm-level counts do not isolate elapsed-time causes.
+The shared/standalone executable identity separates these native costs from
+the sharing choice. The maintained TODO keeps their attribution open.
+Construction, native correctness and timing took 27.46, 14.49 and 51.57 seconds
+against the separate 120/40/60-second budgets; compiler construction and the
+canonical gate remain separate stages.
+
 **Design suitability.** Small heap entries separate scheduling movement from
 payload ownership, and ordinary Slab edit addresses a concrete reusable access
-need. The shared notification core is a candidate whose benefit and no-op cost
-must be established against the standalone and preserved plain-queue controls.
-The complete multi-object protocol and independent identity/allocation ledgers
-now establish the selected correctness boundary. The remaining discriminator
-is the cost of repeated validation and callback boundaries, including the
-plain no-op path. Broader membership authority and surviving references remain
-outside the demonstrated protocol; correctness alone selects no heap core or
-native-performance claim.
+need. The complete multi-object protocol and independent identity/allocation
+ledgers establish the selected correctness boundary. The shared core is
+recommended because the comparison supports source reuse without a repeatable
+material regression, while preserving the single-cohort uncertainty and native
+cost qualifications above. Independent retention authority and surviving
+references remain outside this protocol. No broader mechanism follows from
+the container experiment.
 
 ## Findings rechecked against merged PR #70
 
@@ -1312,33 +1392,38 @@ Vector trial below supplies the expanded ownership and current cost evidence.
 
 ## Current completion boundary at v0.68
 
-This assessment starts from main `345e2966a`, kernel v0.68, and includes the
-subsequent branch evidence recorded below. It supersedes the earlier
-implementation-order recommendation; later sections retain their original
-experimental revisions. The rows distinguish complete operation/ownership
-chains from pending cost choices and the full ordered operation chain.
-Completing a chain does not close every performance or language question in
+This PR #104 branch contains Vector, Deque, Slab, HashMap, PriorityQueue and
+the complete indexed consumer. The completed OrderedMap has separate pinned
+work-branch evidence below; its absence from this branch's source bundle is
+not an unimplemented operation claim. This matrix supersedes the earlier
+implementation-order recommendation. Later sections retain their original
+experimental revisions. Completing an operation/ownership chain does not
+close its performance or language questions in
 [the maintained TODO](../../../docs/todo.md).
 
-| Family or consumer | Established operation chain | Remaining delivery and cost boundary |
+| Family or consumer | Established operation chain and source scope | Remaining cost boundary |
 | --- | --- | --- |
 | [Vector](../../../lib/containers/grow-vector.wf) | Reserve/growing append, insert, ordered and swap removal, truncate, ordered drain and release; copy/drop/nodrop callers | Selected library chain complete. Extra drain movement and short-cycle lowering costs remain measured questions. |
 | [Deque](../../../lib/containers/deque.wf) | Both endpoints, wrap, logical visitation, consuming grow/shrink rebase, drain and release | Selected endpoint/rebase chain complete. Automatic reference-based growth and Ring two-span access are separate interfaces; scalar costs remain unresolved. |
 | [Slab](../../../lib/containers/slab.wf) | Lazy bounded slots, validated visit/edit with owned results, returned-owner exhaustion, removal, reuse, expiry, generation retirement and consumption | Selected stable-slot chain complete; the indexed composite below exercises multi-object memberships. Aggregate transfers, the extra cell word, independent retention tickets and surviving references remain separate questions. |
-| [HashMap](../../../lib/containers/hash-map.wf) | Generic owning collision/replacement/removal/reuse, lookup/edit, growth/rehash, visitation and consumption | Selected map chain complete. Inactive-storage lowering is the separate PR #101 trial; wide result/migration costs and double-backing peaks remain qualified by its eventual evidence. |
-| [PriorityQueue](../../../lib/containers/priority-queue.wf) | Arbitrary-T growth, peek/pop/replace-top, heapify, ordered drain and physical cleanup; copy/drop/nodrop callers and exact release ledgers | Plain chain and [matched comparison](../../experiments/container-representation/priority-library/RESULTS.md) complete, with qualified result-boundary and wide-sift costs. The shared no-op path introduced by the indexed candidate still needs comparison with that preserved baseline. |
-| Indexed composite | [Multi-object weak/retained caller](../../../tests/programs/containers/indexed-membership-program.wf): Slab ownership, HashMap ID lookup/replacement, indexed reschedule/removal with reverse-position repair, expiry/reuse and complete owner cleanup | Complete coordinated correctness chain passes both lowering modes and exact 129-allocation ledgers. Shared versus standalone core, plain no-op cost and matched C comparisons remain pending. Independent tickets, unforgeable membership and surviving references are not established. |
-| Ordered container | [One u64 B+ leaf split](../../../tests/programs/containers/ordered.wf) and owned-link traversal | Still required: generic find/insert/replace, split/promotion, delete/borrow/merge/root contraction, ordered/range traversal and complete cleanup, with a same-contract cost comparison. |
+| [HashMap](../../../lib/containers/hash-map.wf) | Generic owning collision/replacement/removal/reuse, lookup/edit, growth/rehash, visitation and consumption | Selected map chain complete. Inactive-storage lowering is the separate PR #101 comparison; wide result/migration costs and double-backing peaks retain their own evidence. |
+| [PriorityQueue](../../../lib/containers/priority-queue.wf) | Arbitrary-T growth, peek/pop/replace-top, heapify, ordered drain and physical cleanup; copy/drop/nodrop callers and exact release ledgers | Plain chain and [matched comparison](../../experiments/container-representation/priority-library/RESULTS.md) complete, with qualified result-boundary and wide-sift costs. The [shared no-op comparison](#measured-shared-core-proposal) shows no repeatable material regression; its remaining single-cohort possible benefit is not a speedup claim. |
+| Indexed composite | [Multi-object weak/retained caller](../../../tests/programs/containers/indexed-membership-program.wf): Slab ownership, HashMap ID lookup/replacement, indexed reschedule/removal with reverse-position repair, expiry/reuse and complete owner cleanup | Complete correctness chain passes both lowering modes and exact 129-allocation ledgers. The [matched comparison](../../experiments/container-representation/indexed-library/RESULTS.md#measured-result) supports qualified shared-core reuse: all 48 indexed cells stay within variation in both series, while native costs depend on payload and operation. Independent tickets, unforgeable membership and surviving references remain unestablished; this is no native-parity claim. |
+| OrderedMap | External [PR #103 library at 44ea33691](https://github.com/mbbill/Whitefoot/blob/44ea33691f42c82c76f03819fe09ac8619fc4faa/lib/containers/ordered-map.wf): arbitrary owning keys/values, find/edit/insert/replace, split/promotion, delete/borrow/merge/root contraction, ordered/range visitation and complete cleanup; the [maintained caller](https://github.com/mbbill/Whitefoot/blob/44ea33691f42c82c76f03819fe09ac8619fc4faa/tests/programs/containers/ordered-map-program.wf) checks 103 allocations and each owner identity. | The [complete baseline comparison and two rejected insertion trials](https://github.com/mbbill/Whitefoot/blob/44ea33691f42c82c76f03819fe09ac8619fc4faa/research/experiments/container-representation/ordered-library/RESULTS.md) preserve replacement, node-transfer and occupancy costs; no default tree or native-parity claim. |
 
 The maintained library and composite callers are registered through
 [`compiler/tests/programs/containers.rs`](../../../compiler/tests/programs/containers.rs)
 with sequential/parallel lowering and exact allocation-release ledgers. Those
 checks establish their stated operation/ownership coverage, not native parity.
+The pinned OrderedMap links are evidence only: this branch imports none of
+that branch's source or gate wiring. No research experiment is a correctness-gate
+dependency.
+
 The composite exposed three compiler defects repaired under existing rules:
 FN-4 read-under-write refinement, transitive nominal allocation layouts and
 symbolic formal nominal inventory, as recorded above. Ring spans, richer
-contract publication and whole-owner swap
-facts are specified limits; the full sparse-map conditional-preservation
+contract publication and whole-owner swap facts are specified limits; the full
+sparse-map conditional-preservation
 refusal above remains unclassified. Header-plus-tail storage, compact byte
 pages, generic construction placement and concurrent reclamation remain
 independent research consumers, not additional requirements on this slice.
