@@ -1,8 +1,10 @@
 //! Program results and host-visible parallel behavior. Compiler permissions,
 //! private IR and controlled worker observations live in backend tests.
 
-use super::support::{build_program, compile_program, compile_program_with_overlap};
-use whitefoot::module_requires_parallel_runtime;
+use super::support::{
+    build_program, build_program_from_fragments, compile_program, compile_program_with_overlap,
+};
+use whitefoot::{FragmentGranularity, module_requires_parallel_runtime};
 
 /// The recursive corpus program publishes one byte sequence whatever the
 /// recursion budget cuts, and whatever width it was cut for.
@@ -258,6 +260,34 @@ fn range_fold_preserves_bytes_and_ordinary_runtime_reports() {
             "configuration must be refused before WF output"
         );
         assert_eq!(String::from_utf8_lossy(&output.stderr), expected_error);
+    }
+}
+
+/// The parallel lowering linked from the link fragments a modular build
+/// splits it into [MOD-8] publishes the same results: its thunks, recursion
+/// budget entries and runtime fallbacks each keep one definition across the
+/// fragment boundaries.
+#[test]
+fn layout_linked_from_its_fragments_preserves_both_results() {
+    let expected = b"420a993efa7437a1 41fa962893d45299\n";
+    let llvm = compile_program_with_overlap("par_layout.wf");
+    for granularity in [FragmentGranularity::Function, FragmentGranularity::Module] {
+        let program = build_program_from_fragments(&llvm, granularity);
+        for workers in [None, Some("1"), Some("2")] {
+            let output = program.run_with_workers(workers);
+            assert!(
+                output.status.success(),
+                "{granularity:?} workers={workers:?}: {output:?}"
+            );
+            assert_eq!(
+                output.stdout, expected,
+                "{granularity:?} workers={workers:?}"
+            );
+            assert!(
+                output.stderr.is_empty(),
+                "{granularity:?} workers={workers:?}"
+            );
+        }
     }
 }
 

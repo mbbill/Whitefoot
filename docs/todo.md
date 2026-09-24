@@ -20,10 +20,7 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   the whole composition, 375 ms of a 550 ms body-edit rebuild of a 32-module
   chain, a cold build without a cache checks each module and then the whole
   closure, and the impact report finds each further failing body by checking
-  its module again with the earlier ones set aside); a native or parallel
-  fragment split (one `llvm-extract` process per fragment costs 445 to
-  460 ms there); stable LLVM names for nominal types, which still carry an
-  ordinal, so that adding a type does not rename unchanged fragments;
+  its module again with the earlier ones set aside);
   interface keys that ignore `doc` entries, so a documentation edit does not
   recheck every dependent; a full-LTO comparator including the runtime units
   and a workload whose hot path crosses many fragments; an executable runner
@@ -809,9 +806,7 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   boundary suffices.
 - **The driver's clang lookup is a fixed path.** `clang_executable()` in
   `compiler/src/bin/whitefootc.rs` hard-codes `/usr/bin/clang` on Linux/macOS
-  (`clang` on PATH on Windows), and `llvm_extract_executable()`, which
-  `--fragments` builds use, hard-codes `/usr/bin/llvm-extract` the same way,
-  so a host whose clang lives only elsewhere — a versioned-only `clang-18`, a
+  (`clang` on PATH on Windows), so a host whose clang lives only elsewhere — a versioned-only `clang-18`, a
   Nix profile, or Homebrew LLVM — cannot run the driver even with clang
   installed. Validate whether to accept an
   explicit override, for example an environment variable, without changing

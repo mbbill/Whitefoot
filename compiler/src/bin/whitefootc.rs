@@ -9,14 +9,14 @@ use whitefoot::{
     COMPLETION_CONTRACT_HEADER, COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
     COMPLETION_FILE_POSIX_HEADER, COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_RUNTIME_SOURCE,
     COMPLETION_SOCKET_ADDRESS_HEADER, COMPLETION_WINDOWS_IOCP_HEADER, CheckOutcome, CheckVerdict,
-    CompilerLimits, FLOOR_STACK_BYTES, GRAPH_FILE_NAME, HOST_OPTIMIZATION_ARGUMENTS, ModuleEntry,
-    ORDINARY_VALUES_HEADER, ORDINARY_VALUES_LLVM, ORDINARY_VALUES_SOURCE, OverlapLowering,
-    RecursionBudget, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
-    SCHED_PRIM_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER, build_module_entry, check,
-    check_module_program, check_with_cache, compile_with_cache, compile_with_overlap,
-    compile_with_permission_ledger, content_digest, discover_module_sources, entry_verdict,
-    form_module_graph, module_verdict, read_graph_record, render_module_interface,
-    running_compiler_identity, stack_ledger,
+    CompilerLimits, FLOOR_STACK_BYTES, FragmentGranularity, GRAPH_FILE_NAME,
+    HOST_OPTIMIZATION_ARGUMENTS, ModuleEntry, ORDINARY_VALUES_HEADER, ORDINARY_VALUES_LLVM,
+    ORDINARY_VALUES_SOURCE, OverlapLowering, RecursionBudget, SCHED_CORE_HEADER, SCHED_CORE_SOURCE,
+    SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER,
+    build_module_entry, check, check_module_program, check_with_cache, compile_with_cache,
+    compile_with_overlap, compile_with_permission_ledger, content_digest, discover_module_sources,
+    entry_verdict, form_module_graph, module_verdict, read_graph_record, render_module_interface,
+    running_compiler_identity, split_module, stack_ledger,
 };
 
 // `HOST_LINK_LIBRARIES` is here rather than above because its one reader is
@@ -191,6 +191,23 @@ const COMPLETION_COMPILE_UNITS: &[&str] = &[
 const TARGET_COMPILE_ARGUMENTS: &[&str] = &["-pthread"];
 #[cfg(target_os = "windows")]
 const TARGET_COMPILE_ARGUMENTS: &[&str] = &[];
+
+/// The linker a ThinLTO link of fragments runs on this host, and the
+/// argument prefix naming the directory where it keeps the optimized objects
+/// it produces: the host's own linker on macOS, whose LTO support ships with
+/// its toolchain, and LLD elsewhere.
+#[cfg(target_os = "macos")]
+const THIN_LINKER: &[&str] = &[];
+#[cfg(target_os = "macos")]
+const THIN_LINK_CACHE: &str = "-Wl,-cache_path_lto,";
+#[cfg(target_os = "windows")]
+const THIN_LINKER: &[&str] = &["-fuse-ld=lld"];
+#[cfg(target_os = "windows")]
+const THIN_LINK_CACHE: &str = "-Wl,/lldltocache:";
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+const THIN_LINKER: &[&str] = &["-fuse-ld=lld"];
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+const THIN_LINK_CACHE: &str = "-Wl,--thinlto-cache-dir=";
 
 /// The libraries this host's link needs. The ordinary Windows library uses
 /// Winsock and the shell's Unicode command-line conversion. The build launcher
@@ -788,7 +805,7 @@ fn compile_executable(
     llvm: &str,
     output: &Path,
     cache: Option<&BuildCache>,
-    fragments: Option<Fragments>,
+    fragments: Option<FragmentGranularity>,
     report: &mut BuildReport,
 ) -> Result<(), String> {
     // The ordinary prelude implementation library links its private engine.
@@ -874,7 +891,7 @@ fn link_cached_objects(
     compiled: &[&str],
     llvm: &str,
     output: &Path,
-    fragments: Option<Fragments>,
+    fragments: Option<FragmentGranularity>,
     report: &mut BuildReport,
 ) -> Result<(), String> {
     let host = host_compiler_identity()?;
@@ -922,24 +939,24 @@ fn link_cached_objects(
         report.count_object(reused);
         objects.push(object);
     }
-    let program = directory.join("program.ll");
-    std::fs::write(&program, llvm)
-        .map_err(|error| format!("cannot write {}: {error}", program.display()))?;
     let splitting = std::time::Instant::now();
     let parts = match fragments {
         Some(granularity) => {
-            cached_fragments(cache, &host, directory, &program, llvm, granularity)?
+            split_module(llvm, granularity).map_err(|failure| failure.to_string())?
         }
-        None => vec![program],
+        None => vec![llvm.to_owned()],
     };
     report.fragments = parts.len();
     report.split = splitting.elapsed();
-    for (index, part) in parts.iter().enumerate() {
-        let text = std::fs::read(part)
-            .map_err(|error| format!("cannot read {}: {error}", part.display()))?;
+    for (index, text) in parts.iter().enumerate() {
+        // Relative names keep the staging directory, which differs per
+        // invocation, out of the compiler's inputs.
+        let part = directory.join(format!("fragment-{index}.ll"));
+        std::fs::write(&part, text)
+            .map_err(|error| format!("cannot write {}: {error}", part.display()))?;
         let mut material = b"program-object 1\n".to_vec();
         material.extend_from_slice(&host);
-        material.extend_from_slice(&content_digest(&text));
+        material.extend_from_slice(&content_digest(text.as_bytes()));
         material.extend_from_slice(
             format!("\n{TARGET_COMPILE_ARGUMENTS:?} {HOST_OPTIMIZATION_ARGUMENTS:?} {thin:?}\n")
                 .as_bytes(),
@@ -978,10 +995,10 @@ fn link_cached_objects(
         let optimized = cache
             .area("thinlto")
             .map_err(|error| format!("cannot open the ThinLTO cache: {error}"))?;
-        let mut cache_argument = std::ffi::OsString::from("-Wl,--thinlto-cache-dir=");
+        let mut cache_argument = std::ffi::OsString::from(THIN_LINK_CACHE);
         cache_argument.push(&optimized);
         command
-            .arg("-fuse-ld=lld")
+            .args(THIN_LINKER)
             .arg("-flto=thin")
             .arg(cache_argument);
     }
@@ -997,186 +1014,6 @@ fn link_cached_objects(
     }
     std::fs::rename(&partial, output)
         .map_err(|error| format!("cannot write {}: {error}", output.display()))
-}
-
-/// The fragments of an emitted module, written into `directory`: the split
-/// a cache records for exactly this module text, granularity and host
-/// compiler, or a fresh split, which is then recorded.
-fn cached_fragments(
-    cache: &BuildCache,
-    host: &[u8; 32],
-    directory: &Path,
-    program: &Path,
-    llvm: &str,
-    granularity: Fragments,
-) -> Result<Vec<PathBuf>, String> {
-    let mut material = b"fragments 1\n".to_vec();
-    material.extend_from_slice(host);
-    material.extend_from_slice(&content_digest(llvm.as_bytes()));
-    material.extend_from_slice(format!("\n{granularity:?}\n").as_bytes());
-    if let Some(payload) = cache.load("fragments", &material) {
-        let mut parts = Vec::new();
-        let mut rest = payload.as_slice();
-        while !rest.is_empty() {
-            let (length, tail) = rest
-                .split_at_checked(8)
-                .ok_or_else(|| "a fragment record is truncated".to_owned())?;
-            let length = u64::from_le_bytes(
-                length
-                    .try_into()
-                    .map_err(|_| "a fragment record is truncated".to_owned())?,
-            );
-            let length =
-                usize::try_from(length).map_err(|_| "a fragment record is too long".to_owned())?;
-            let (text, tail) = tail
-                .split_at_checked(length)
-                .ok_or_else(|| "a fragment record is truncated".to_owned())?;
-            let part = directory.join(format!("fragment-{}.ll", parts.len()));
-            std::fs::write(&part, text)
-                .map_err(|error| format!("cannot write {}: {error}", part.display()))?;
-            parts.push(part);
-            rest = tail;
-        }
-        return Ok(parts);
-    }
-    let parts = split_fragments(directory, program, llvm, granularity)?;
-    let mut payload = Vec::new();
-    for part in &parts {
-        let text = std::fs::read(part)
-            .map_err(|error| format!("cannot read {}: {error}", part.display()))?;
-        payload.extend_from_slice(&(text.len() as u64).to_le_bytes());
-        payload.extend_from_slice(&text);
-    }
-    // A failed publication costs only a later split.
-    let _ = cache.store("fragments", &material, &payload);
-    Ok(parts)
-}
-
-/// How a cached build splits its emitted module into link fragments.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Fragments {
-    /// One fragment per source module; instances of prelude and root generic
-    /// templates share one, and the build caller has its own.
-    Module,
-    /// One fragment per defined function.
-    Function,
-}
-
-fn llvm_extract_executable() -> &'static str {
-    if cfg!(target_os = "windows") {
-        "llvm-extract"
-    } else {
-        "/usr/bin/llvm-extract"
-    }
-}
-
-/// Splits the emitted module into fragments with LLVM's own extraction: each
-/// fragment defines its functions and declares every other one, and a last
-/// fragment owns the private helpers and constants the others now reach as
-/// hidden symbols. Every function has exactly one prevailing definition.
-fn split_fragments(
-    directory: &Path,
-    program: &Path,
-    llvm: &str,
-    granularity: Fragments,
-) -> Result<Vec<PathBuf>, String> {
-    let mut groups: Vec<(String, Vec<String>)> = Vec::new();
-    for line in llvm.lines() {
-        let Some(definition) = line.strip_prefix("define ") else {
-            continue;
-        };
-        if definition.starts_with("private ") || definition.starts_with("internal ") {
-            continue;
-        }
-        let Some(symbol) = defined_symbol(definition) else {
-            continue;
-        };
-        let key = match granularity {
-            Fragments::Function => symbol.clone(),
-            Fragments::Module => fragment_module(&symbol),
-        };
-        match groups.iter_mut().find(|(group, _)| *group == key) {
-            Some((_, symbols)) => symbols.push(symbol),
-            None => groups.push((key, vec![symbol])),
-        }
-    }
-    groups.sort();
-    // Relative names keep the staging directory, which differs per
-    // invocation, out of every fragment's text, so an unchanged fragment is
-    // byte-identical across builds and its object is reused.
-    let program = program
-        .file_name()
-        .ok_or_else(|| "the emitted module has no file name".to_owned())?;
-    let extract = |command: &mut Command, output: &str| -> Result<(), String> {
-        let status = command
-            .current_dir(directory)
-            .arg("-S")
-            .arg(program)
-            .arg("-o")
-            .arg(output)
-            .status()
-            .map_err(|error| format!("cannot start {}: {error}", llvm_extract_executable()))?;
-        if status.success() {
-            Ok(())
-        } else {
-            Err(format!("llvm-extract exited with {status}"))
-        }
-    };
-    let mut parts = Vec::with_capacity(groups.len() + 1);
-    for (index, (_, symbols)) in groups.iter().enumerate() {
-        let part = format!("fragment-{index}.ll");
-        let mut command = Command::new(llvm_extract_executable());
-        for symbol in symbols {
-            command.arg(format!("--func={symbol}"));
-        }
-        extract(&mut command, &part)?;
-        parts.push(directory.join(part));
-    }
-    // The helpers' fragment is named like the others, so a split read back
-    // from the cache and a fresh one name every fragment alike.
-    let helpers = format!("fragment-{}.ll", groups.len());
-    let mut command = Command::new(llvm_extract_executable());
-    command.arg("--delete");
-    for symbol in groups.iter().flat_map(|(_, symbols)| symbols) {
-        command.arg(format!("--func={symbol}"));
-    }
-    extract(&mut command, &helpers)?;
-    parts.push(directory.join(helpers));
-    Ok(parts)
-}
-
-/// The symbol a `define` line defines, unquoted, from the text after
-/// `define `.
-fn defined_symbol(definition: &str) -> Option<String> {
-    let at = definition.find('@')?;
-    let rest = &definition[at + 1..];
-    if let Some(quoted) = rest.strip_prefix('"') {
-        return quoted.find('"').map(|end| quoted[..end].to_owned());
-    }
-    let end = rest.find('(')?;
-    Some(rest[..end].to_owned())
-}
-
-/// The module fragment a symbol belongs to: its module path for a module's
-/// function or an instance of one of its templates, the build caller's own
-/// fragment for the launcher, and one shared fragment for instances of
-/// prelude and root generic templates.
-fn fragment_module(symbol: &str) -> String {
-    let Some(name) = symbol.strip_prefix("wf_") else {
-        return "caller".to_owned();
-    };
-    if name.starts_with('_') {
-        return "caller".to_owned();
-    }
-    let (base, instance) = match name.split_once("$instance$") {
-        Some((base, _)) => (base, true),
-        None => (name, false),
-    };
-    match base.rsplit_once('.') {
-        Some((module, _)) => format!("module {module}"),
-        None if instance => "instances".to_owned(),
-        None => "module pkg".to_owned(),
-    }
 }
 
 /// The phases and reuse of one build, reported by `--report`.
@@ -1459,7 +1296,7 @@ struct Options {
     /// reference for a cached run.
     cache: Option<PathBuf>,
     /// Split the emitted module into ThinLTO link fragments.
-    fragments: Option<Fragments>,
+    fragments: Option<FragmentGranularity>,
     /// Print this module's resolved public interface [MOD-6, MOD-8].
     render_interface: Option<String>,
     /// The other revision's graph the rendered interface is compared with.
@@ -1570,8 +1407,8 @@ impl Options {
                 "--fragments" => {
                     cursor += 1;
                     let granularity = match arguments.get(cursor).map(String::as_str) {
-                        Some("module") => Fragments::Module,
-                        Some("function") => Fragments::Function,
+                        Some("module") => FragmentGranularity::Module,
+                        Some("function") => FragmentGranularity::Function,
                         _ => return Err("--fragments requires module or function".to_owned()),
                     };
                     if fragments.replace(granularity).is_some() {
@@ -2364,7 +2201,10 @@ mod tests {
             "function",
         ])
         .expect("a cached fragment build");
-        assert_eq!(build.fragments, Some(super::Fragments::Function));
+        assert_eq!(
+            build.fragments,
+            Some(whitefoot::FragmentGranularity::Function)
+        );
         // A source bundle's build reports its phases and its proof reuse too.
         let bundle = parse(&["--cache", "cache", "--report", "value.wf"])
             .expect("a reported source-bundle build");
@@ -2406,41 +2246,68 @@ mod tests {
         }
     }
 
-    /// A fragment groups a module's functions and the instances of its
-    /// templates, keeps the build caller apart, and puts instances of the
-    /// prelude's and the root module's templates together.
+    /// [MOD-8] a cached build links the emitted module's native fragments
+    /// with ThinLTO: the executable runs as the program says, a warm build
+    /// compiles no object, and an edit to one function's body recompiles
+    /// exactly one fragment, in either granularity.
     #[test]
-    fn a_fragment_follows_the_module_that_owns_its_functions() {
-        use super::fragment_module;
-        assert_eq!(
-            fragment_module("wf_runtime.queue.push"),
-            "module runtime.queue"
-        );
-        assert_eq!(
-            fragment_module("wf_runtime.run_two$instance$37"),
-            "module runtime"
-        );
-        assert_eq!(fragment_module("wf_start"), "module pkg");
-        assert_eq!(fragment_module("wf_box_new$instance$39"), "instances");
-        assert_eq!(fragment_module("wf__main_body"), "caller");
-        assert_eq!(fragment_module("main"), "caller");
-    }
-
-    #[test]
-    fn a_defined_symbol_is_read_quoted_or_bare() {
-        use super::defined_symbol;
-        assert_eq!(
-            defined_symbol("void @wf_runtime.queue.new(ptr %wf.result) #0 {").as_deref(),
-            Some("wf_runtime.queue.new")
-        );
-        assert_eq!(
-            defined_symbol("ptr @\"wf_box_new$instance$39\"(ptr %wf.arg.v0) #0 {").as_deref(),
-            Some("wf_box_new$instance$39")
-        );
-        assert_eq!(
-            defined_symbol("weak i32 @wf__floor_run(i32 %argc, ptr %argv) #0 {").as_deref(),
-            Some("wf__floor_run")
-        );
+    fn a_fragment_build_recompiles_only_the_edited_fragment() {
+        use whitefoot::{CompilerLimits, FragmentGranularity, SourceInput, compile};
+        let emitted = |fallback: u64| {
+            let source = format!(
+                "const lookup: Array<u8, 8> =[0_u8, 1_u8, 2_u8, 3_u8, 4_u8, 5_u8, 6_u8, 7_u8];\n\n\
+                 fn clamp(value: u64) -> result: u64 pure contract {{\n  ensures result <= 7_u64;\n}} {{\n  if value <= 7_u64 {{\n    return value;\n  }}\n  return {fallback}_u64;\n}}\n\n\
+                 fn select(index: u64) -> result: u8 pure {{\n  let bounded = clamp(value: index);\n  return lookup[bounded];\n}}\n\n\
+                 fn main() -> status: ExitStatus pure {{\n  let code = select(index: 9_u64);\n  return exit_status(code: code);\n}}\n"
+            );
+            compile(
+                &[SourceInput::new("fragments.wf", source.as_bytes())],
+                CompilerLimits::default(),
+            )
+            .expect("the program compiles")
+        };
+        let root =
+            std::env::temp_dir().join(format!("whitefootc-fragment-build-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create the test directory");
+        let executable = root.join("program");
+        for granularity in [FragmentGranularity::Function, FragmentGranularity::Module] {
+            let cache =
+                super::open_cache(&root.join(format!("{granularity:?}"))).expect("open the cache");
+            let build = |llvm: &str| {
+                let mut report = super::BuildReport::default();
+                super::compile_executable(
+                    llvm,
+                    &executable,
+                    Some(&cache),
+                    Some(granularity),
+                    &mut report,
+                )
+                .expect("the fragments link");
+                (report.objects_compiled, report.objects_reused)
+            };
+            let status = || {
+                std::process::Command::new(&executable)
+                    .status()
+                    .expect("run the program")
+                    .code()
+            };
+            let (compiled, reused) = build(&emitted(5));
+            assert_eq!(reused, 0, "{granularity:?}");
+            assert_eq!(status(), Some(5), "{granularity:?}");
+            assert_eq!(
+                build(&emitted(5)),
+                (0, compiled),
+                "{granularity:?}: a warm build compiles nothing"
+            );
+            assert_eq!(
+                build(&emitted(6)),
+                (1, compiled - 1),
+                "{granularity:?}: an edit to one body"
+            );
+            assert_eq!(status(), Some(6), "{granularity:?}");
+        }
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

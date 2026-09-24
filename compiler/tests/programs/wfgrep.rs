@@ -19,8 +19,11 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::process::Command;
 
+use whitefoot::FragmentGranularity;
+
 use super::support::{
-    CompiledProgram, build_program, close_path, compile_program, fixture_directory, reopen_path,
+    CompiledProgram, build_program, build_program_from_fragments, close_path, compile_program,
+    fixture_directory, reopen_path,
 };
 
 /// The reusable input run length in `tests/programs/wfgrep.wf`.
@@ -204,6 +207,22 @@ fn wfgrep_searches_a_real_tree_and_agrees_with_grep() {
         grep_rn(fixture.path(), "tree", b"needle"),
         "wfgrep and grep -rn disagree about the hit set"
     );
+}
+
+/// wfgrep linked from the link fragments a modular build splits it into
+/// [MOD-8], in both granularities, publishes what the reference search
+/// publishes: its constants and runtime helpers each keep one definition,
+/// named across the fragment boundaries.
+#[test]
+fn wfgrep_linked_from_its_fragments_searches_as_the_whole_module() {
+    let fixture = search_tree();
+    for granularity in [FragmentGranularity::Function, FragmentGranularity::Module] {
+        let program = build_program_from_fragments(wfgrep_module(), granularity);
+        assert_reference(&program, fixture.path(), "tree", b"needle");
+        let absent = program.run(fixture.path(), &[b"absent-pattern", b"tree"]);
+        assert_eq!(absent.status.code(), Some(1), "{granularity:?}");
+        assert!(absent.stdout.is_empty(), "{granularity:?}");
+    }
 }
 
 /// The same cross-check with a pattern that matches nothing, so the empty
