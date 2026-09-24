@@ -28,8 +28,7 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   and a workload whose hot path crosses many fragments; an executable runner
   for entries that take other parameters than `Inputs` or return other
   results than `ExitStatus` or `unit`, which build only as libraries
-  (`--emit-llvm`); qualified groups in `gparam` and `binding_decl` (an alias
-  works today); and the GrowVector wrapper/function-kind witness.
+  (`--emit-llvm`); and the GrowVector wrapper/function-kind witness.
   Extract useful cases into formal test ownership as each finer mechanism
   lands; no daily gate depends on the research probe or specimen. Compare
   clean/warm verdicts and executables across edits, including changed

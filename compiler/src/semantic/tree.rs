@@ -231,10 +231,33 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
                 .is_none())
     }
 
+    /// The group application a `gparam` or `binding_decl` writes: its
+    /// `pack_use`, or the `type_path` of a qualified group, whose `targs`
+    /// follow it in the same parent [GRAM-2, MOD-5].
+    pub(super) fn group_application(
+        &self,
+        node: NodeId,
+    ) -> Result<Option<NodeId>, SemanticCompilerFailure> {
+        match self.first_child_with(node, Production::PackUse)? {
+            Some(application) => Ok(Some(application)),
+            None => self.first_child_with(node, Production::TypePath),
+        }
+    }
+
     pub(super) fn argument_list(
         &self,
         node: NodeId,
     ) -> Result<Option<NodeId>, SemanticCompilerFailure> {
+        // A qualified group's `targs` are its parent's, after the path.
+        if self.production(node)? == Production::TypePath
+            && let Some(parent) = self.parent(node)?
+            && matches!(
+                self.production(parent)?,
+                Production::Gparam | Production::BindingDecl
+            )
+        {
+            return self.first_child_with(parent, Production::Targs);
+        }
         if self.is_constructor_call(node)? {
             let callee = self
                 .first_child_with(node, Production::Callee)?

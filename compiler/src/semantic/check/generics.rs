@@ -2180,7 +2180,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 });
                 continue;
             }
-            if let Some(application) = self.tree.first_child_with(node, Production::PackUse)? {
+            if let Some(application) = self.tree.group_application(node)? {
                 parameters.extend(self.expand_formal_parameters(application)?);
                 continue;
             }

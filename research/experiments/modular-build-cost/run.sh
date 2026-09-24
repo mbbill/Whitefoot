@@ -127,7 +127,7 @@ generate() {
         previous=$name
     done
     printf 'pkg: [pkg::%s];\n\nentry app = pkg::main;\n' "$previous" >> "$graph"
-    printf 'public fn main() -> status: ExitStatus pure;\n' > "$root/module.wfm"
+    printf 'public fn main() -> status: ExitStatus pure doc "Runs the chain.";\n' > "$root/module.wfm"
     {
         printf 'fn main() -> status: ExitStatus pure {\n'
         printf '  let total = pkg::%s::f0(value: 1_u64);\n' "$previous"

@@ -527,10 +527,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             for parameter in
                                 self.tree.children_with(generics, Production::Gparam)?
                             {
-                                if self
-                                    .tree
-                                    .first_child_with(parameter, Production::PackUse)?
-                                    .is_some()
+                                if self.tree.group_application(parameter)?.is_some()
                                     || self
                                         .tree
                                         .first_child_with(parameter, Production::FnSig)?
@@ -577,7 +574,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         let declaration = self.declaration_at(node, DeclarationRole::Binding)?.id();
                         let application = self
                             .tree
-                            .first_child_with(node, Production::PackUse)?
+                            .group_application(node)?
                             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
                         let usage = self.use_at(application, LexicalUseRole::FormalGroup)?;
                         let ResolvedTarget::Source {
@@ -891,7 +888,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     fn application_formal(&self, node: NodeId) -> Result<DeclarationId, CheckStop> {
-        let usage = if self.tree.production(node)? == Production::PackUse {
+        let usage = if matches!(
+            self.tree.production(node)?,
+            Production::PackUse | Production::TypePath
+        ) {
             self.use_at(node, LexicalUseRole::FormalGroup)?
         } else {
             self.use_at(node, LexicalUseRole::TypeArgument)?
@@ -949,8 +949,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut candidates = Vec::new();
         if let Some(generics) = self.tree.first_child_with(owner, Production::Generics)? {
             for parameter in self.tree.children_with(generics, Production::Gparam)? {
-                if let Some(application) =
-                    self.tree.first_child_with(parameter, Production::PackUse)?
+                if let Some(application) = self.tree.group_application(parameter)?
                     && self.application_formal(application)? == formal
                 {
                     candidates.push(application);
