@@ -60,8 +60,9 @@ A finished task is not evidence: a claim cites the specification, a
 conformance case, a measured result under `research/experiments/`, a design
 under `research/investigations/`, or a design-tree decision where the
 [citation boundaries](docs/workflow.md#citation-boundaries) permit. `archive/`
-is frozen historical evidence and rationale that is not written to, and its
-retired per-batch record `archive/done/` is not cited. Process wording in any
+keeps superseded material, such as retired research, as frozen historical
+evidence and rationale instead of deleting it; its retired per-batch record
+`archive/done/` is not written to again and not cited. Process wording in any
 historical artifact is superseded by the rules below. Words such as
 *validation* or *ratification* in language and design artifacts describe
 evidence, not a workflow step.

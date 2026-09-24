@@ -88,7 +88,7 @@ or self-description merely to satisfy this table.
 | `docs/ideas.md`; `docs/why-whitefoot.md` | Candidate mechanisms, open questions and experiment sketches; explanatory essays and dated rationale respectively | A live work queue, invented present-day measurements, contributor process inserted into an essay |
 | `research/`; `governance/spec-evolution/` | Questions, alternatives, designs, change proposals, reproducible experiments, results and limitations; the research README provides navigation | Task completion as technical evidence, a proposal presented as an implemented rule, daily test implementations or inputs retained in research |
 | `design/` | Live design decisions with their reasons and refused alternatives, one log entry per ruling, and the procedure that maintains them | Module inventories, implementation transcripts, task progress, history |
-| `archive/` | Frozen historical evidence and rationale | New material; anything an active source, build, test or tool depends on |
+| `archive/` | Superseded material, such as retired research, moved here instead of deleted and kept as frozen historical evidence and rationale | Edits to archived content; anything an active source, build, test or tool depends on |
 | PR description | This change's problem, resulting behavior, selection grounds, validation and limitations | An obsolete description of an earlier diff, a new permanent source of project rules |
 
 ### Citation boundaries
