@@ -109,7 +109,7 @@ noise.
 
 ## Status
 
-Whitefoot is about three months old and is a research compiler, not a
+Whitefoot started in July 2026 and is a research compiler, not a
 product. One person makes the design rulings; most of the code is written by
 AI agents and checked against the specification, the conformance suite and
 review. Do not use it for anything that matters.
@@ -144,7 +144,7 @@ prints it as JSON.
 
 - [Specification](spec/kernel-spec.md): 121 numbered rules. Every rejection
   cites one rule and one location.
-- [Conformance suite](tests/conformance/): 1,214 cases, 568 of which must be
+- [Conformance suite](tests/conformance/): 1,203 cases, 568 of which must be
   rejected under a named rule (61 distinct rules).
 - [Programs](tests/programs/) built and run by the test gate.
 - [Known defects and follow-up work](docs/todo.md), including compiler bugs.
