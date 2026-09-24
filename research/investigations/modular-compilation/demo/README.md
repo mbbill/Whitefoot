@@ -1,15 +1,15 @@
-# Two targets over one module graph
+# Two entries over one module graph
 
 This is a complete **source design specimen** for the proposed module system:
 every declared function has an implementation, both entries have complete
 bodies, and all application dependencies are present. It is not currently an
 executable Whitefoot project. The active compiler does not accept `.wfg`,
-`.wfm`, qualified module paths, file-local aliases or role-specific field visibility.
-The proposed forms are identified below; no build
+`.wfm`, qualified module paths, file-local aliases, `public` or
+module-relative `readonly`. The proposed forms are identified below; no build
 command, successful compiler run or incremental timing is implied.
 
 The application processes two jobs through a four-slot FIFO. The `kernel`
-target keeps everything by value and requires `no_heap`. The `inspect` target
+entry keeps everything by value and requires `no_heap`. The `inspect` entry
 runs the same batch and copies its report into a heap cell. Both entries check
 the resulting fields and return an `ExitStatus`; neither prints output. The
 kernel entry is a small allocation-free workload, not an operating-system
@@ -17,20 +17,20 @@ boot image or a target-runtime qualification.
 
 The specimen belongs to the [modular-compilation investigation](../DESIGN.md).
 Its reader is evaluating source organization, interface completeness, proof
-composition and edit impact. Keep the sources and this walkthrough together;
-replace them when the selected syntax or application changes, and remove them
-when they no longer expose a useful design question. If this becomes a formal
-compiler regression, extract the needed cases into the maintained test system.
-It is not a daily CI input.
+composition and edit impact under the architect/implementer workflow. Keep the
+sources and this walkthrough together; replace them when the selected syntax
+or application changes, and remove them when they no longer expose a useful
+design question. If this becomes a formal compiler regression, extract the
+needed cases into the maintained test system. It is not a daily CI input.
 
 ## Read the project in this order
 
 1. [modules.wfg](modules.wfg): the entire dependency architecture and both
-   target declarations.
+   named entries.
 2. [data/module.wfm](data/module.wfm): two public data records and one generic
-   allocating function. No field-access wrappers are required for these records.
+   allocating function. Every field is public, so no accessor is needed.
 3. [runtime/queue/module.wfm](runtime/queue/module.wfm): the complete queue
-   definition with private storage, its getter and every operation's bounds.
+   definition with its published readonly ring and every operation's bounds.
 4. [runtime/module.wfm](runtime/module.wfm): a client of that API which states
    its own precondition and accepts a function-kind argument with the queue's
    contract.
@@ -79,7 +79,7 @@ source root. No root declaration or project nickname is needed. The fixed
 `pkg::` prefix means the current source package, whether it builds a library
 or an executable. It does not mean the current directory of the compiler
 process or the directory of the individual `.wf` file. This demo has one
-source package containing five modules and two executable targets.
+source package containing five modules and two named entries.
 
 The five rows register five exact `module.wfm` interfaces. The filename is
 always the same; the containing directory supplies the module name. An arrow
@@ -112,15 +112,9 @@ no private-field access. `tools` has no `module.wfm` and is only a namespace
 prefix. The demo root likewise has no `module.wfm` and is not an extra module.
 
 For example, `pkg::runtime::queue` always starts at `demo/` in these sources.
-An external dependency would have its own explicit name, such as `std` or
-`math`; source inside that selected dependency would use `pkg::` for its
-own root. The compiler must retain that source ownership when checking an
-imported library. It must not reinterpret a library's internal `pkg::`
-paths against `demo/`, search for another active graph or infer missing edges.
-This single-package specimen does not select the external dependency-binding
-format or demonstrate cross-package reuse. External-library binding and
-library-to-library dependencies are deferred beyond the next implementation;
-this demo exercises one package's module DAG.
+This single-package specimen does not select an external dependency-binding
+format or demonstrate cross-package reuse; external libraries are deferred
+beyond the next implementation.
 
 The tool reaches across directories to `runtime::queue` without moving that
 module to a common ancestor. It lists both `runtime` and `runtime::queue`
@@ -129,12 +123,16 @@ though the former still reaches the queue transitively. A future edge from
 the queue back to its parent would fail the earlier-row check; retaining both
 directions would be a cycle, and row reordering cannot make that legal.
 
+The graph's entries reuse the existing `entry` and `no_heap` words. An
+implementer can also run any function of its module as an unnamed entry for
+its own tests without editing this file or the module's interface.
+
 ## The public boundary and the private implementation
 
 | Module | What the caller can read in its `.wfm` | Implementation ownership |
 |---|---|---|
-| `pkg::data` | All `Job` and `Report` fields; `boxed_copy`'s complete generic signature | `heap.wf` implements the callable and reuses the interface's record declarations |
-| `pkg::runtime::queue` | Public capacity, the one complete `Queue` definition with private storage, ordinary runtime `len`, constructor, push and pop contracts | `storage.wf` owns the private constructor helper and getter body; `operations.wf` owns the other public bodies; both reuse the interface's type definition |
+| `pkg::data` | All `Job` and `Report` fields; `boxed_copy`'s complete generic signature and description | `heap.wf` implements the callable and reuses the interface's record declarations |
+| `pkg::runtime::queue` | Public capacity, the one complete `Queue` definition with its `public readonly` ring, and the constructor, push and pop contracts | `storage.wf` owns the private ring constructor; `operations.wf` owns the public bodies; both reuse the interface's type definition |
 | `pkg::runtime` | `run_two` and the complete required contract of its `take` argument | `batch.wf` calls the private `summarize` in `report.wf` through the shared module inventory |
 | `pkg::kernel` | The selected `start` callable | `start.wf` constructs jobs and a stack-resident queue |
 | `pkg::tools::inspect` | The selected `run` callable | `run.wf` also invokes the shared heap helper |
@@ -144,62 +142,76 @@ and only `.wfm` permits that modifier. Neither aliases nor implementation files
 can publish a name. `Job` and `Report` explicitly publish both their types and
 each field; their complete schemas make them copyable and droppable. Callers
 construct them and inspect their fields directly. The interface schemas are
-reused inside their owning module; implementation files
-do not declare another `Job` or `Report`.
+reused inside their owning module; implementation files do not declare another
+`Job` or `Report`. Each declaration in a `.wfm` carries a `doc` entry: in the
+workflow this is how the architect tells callers and the implementer what a
+function is for beyond its checked contract.
 
-`Queue` has its one complete definition in `.wfm`: the type is public and its
-unmarked `storage: Ring<Job, capacity>` field is private. The ordinary component
-rules make this nongeneric type droppable, and `nocopy` forbids copying. There
-is no second definition in `storage.wf` and no separate abstract capability
-declaration to match. The representation is readable in the interface but
-inaccessible to external source expressions. Callers may own it by value and
-borrow it, but cannot construct it by fields or name
-`storage`. There is no implicit allocation, handle, type invariant or
-reference-returning getter. The existing `opaque` modifier is not used as
-a privacy mechanism.
+`Queue` has its one complete definition in `.wfm`, and its ring is published
+as `public readonly storage: Ring<Job, capacity>`. Every module with an edge
+to the queue can read the ring in code and in contracts, for example
+`deref(queue).storage.len`, exactly as it reads any prelude window's length.
+Only the queue module writes it: outside the module the field is never a `set`
+target, never passed to a writing parameter such as `place_back`'s window, and
+never supplied by construction, so `new` remains the only way to build a
+queue. The ordinary component rules make this nongeneric type droppable, and
+`nocopy` forbids copying. There is no second definition in `storage.wf`, no
+separate capability declaration, no getter and no implicit handle. The
+existing `opaque` modifier is not used as a privacy mechanism.
 
 `new_storage` is called from a different implementation file without being
 declared in `runtime/queue/module.wfm`. Likewise `summarize` is absent from
-`runtime/module.wfm`.
-All declarations in a module share its inventory, regardless of source-file
-order. `capacity`, although declared in the interface, is reused by the
-private storage field and implementation helpers; no duplicated constant can drift.
+`runtime/module.wfm`. All declarations in a module share its inventory,
+regardless of source-file order. `capacity`, although declared in the
+interface, is reused by the ring's type and the implementation helper; no
+duplicated constant can drift.
 
 Each public callable's implementation repeats its full header and contract
-without the interface-only `public` modifier.
-In `runtime/queue/module.wfm` the job type is called `Job`; in `operations.wf`
-it is called `Work`. Both aliases resolve directly to `pkg::data::Job`, so the declarations
-must match after resolution. `runtime/module.wfm` uses an alias for `len`, while
-`batch.wf` uses the module alias `fifo`; these also resolve to one callable.
-Result and named-argument labels remain the same.
+without the interface-only `public` modifier; the `doc` entries are not
+compared. In `runtime/queue/module.wfm` the job type is called `Job`; in
+`operations.wf` it is called `Work`. Both aliases resolve directly to
+`pkg::data::Job`, so the declarations must match after resolution. Likewise
+`runtime/module.wfm` names the queue type through its `Queue` alias, while
+`batch.wf` writes `fifo::Queue` through the module alias `fifo`; both resolve to
+one nominal. Result and named-argument labels remain the same.
 
 Every file declares its own aliases. An interface alias is not inherited by
-its implementations, and `runtime` does not re-export `Queue`, `Job` or `len`.
+its implementations, and `runtime` does not re-export `Queue` or `Job`.
 Clients need their own direct graph edges and aliases. A canonical declaration
 identity does not change when one local abbreviation changes.
 
-For concurrent work, one agent can own the queue's interface and implementation
-while another owns the batch consumer. An implementation-only edit with the
-same checked boundary need not change the other agent's source. API changes
-still require coordination with actual consumers; architectural edge changes
-meet in `modules.wfg`. The small module sizes here expose those relationships
-for reading and are not a recommendation to split production work this finely.
-The parent's assigned files exclude its child module's directory. The fixed
-interface basename keeps a module's own work together, but makes relative
-paths important when several `module.wfm` files are open. Neither sibling
-`data.wfm` nor repeated-name `data/data.wfm` is an alternative interface form.
+## The architect and implementer view
 
-This ownership boundary also does not prescribe one LLVM module or object
-per source module. Body proofs and backend partitions have their own tracked
+An architect agent owns `modules.wfg` and the five `.wfm` files; implementer
+agents own the `.wf` files. The queue's implementer can check the queue module
+while nothing else is implemented, and the runtime's implementer can check
+`batch.wf` and `report.wf` against the queue's interface before `push` or
+`pop` has a body. Neither check reads the other module's `.wf`, and an edit to
+`operations.wf` cannot change the runtime module's verdict. A declaration with
+no definition yet is reported as pending rather than failing the rest of the
+module.
+
+An interface edit reaches its implementation and callers explicitly. If the
+architect added a requirement to `pop`, `operations.wf` would fail
+correspondence until its header repeats the new clause, and the impact report
+would name the two entry bodies: their `run_two::<fn fifo::pop>` arguments
+would no longer refine the `take` formal under FN-4. Representation choices that callers' contracts rely on, such as
+the ring, are part of the interface; an implementer who needs another field
+asks the architect for an interface edit.
+
+This ownership boundary does not prescribe one LLVM module or object per
+source module. Body proofs and backend partitions have their own tracked
 dependencies. Moving a private helper between source files creates no
 writer-managed internal link boundary, and final native linking may run in
-full. The edit scenarios below describe the desired finer reuse.
+full. The small module sizes here expose these relationships for reading and
+are not a recommendation to split production work this finely.
 
 ## The proof and execution story
 
 The following is the **intended argument**, not a compiler verification result.
-The selected erased private-field and state-transfer judgments are described
-in the next section; their compiler implementation remains outstanding.
+The selected visibility, readonly and result-projection rules are described
+in [LANGUAGE.md](../LANGUAGE.md); their compiler implementation remains
+outstanding.
 
 | Point in either entry | Queue length known from the public contracts | Why the next operation is permitted |
 |---|---|---|
@@ -212,25 +224,23 @@ in the next section; their compiler implementation remains outstanding.
 `pop` satisfies the function-kind formal's exact type, effect and length
 contract. Supplying `fn fifo::pop` is an ordinary compile-time argument under
 the proposed module names; it does not allocate a function object or introduce
-dynamic dispatch. Both targets select the same concrete
-`runtime::run_two<fn runtime::queue::pop>` instance.
+dynamic dispatch. Both entries select the same concrete
+`runtime::run_two<fn runtime::queue::pop>` instance. Because `pop` does not
+reach back into the entry functions, no recursive component joins the
+entries with that instance, and each entry may use `run_two`'s postcondition.
 
-Inside the queue, `push` and `pop` directly name the private Ring length in
-requires/ensures, just as their bodies use the ordinary window operations.
-The Ring has capacity 4. The external `run_two` interface and its function-kind
-formal repeat the same private paths under erased annotation visibility; no
-executable access to Queue's storage is granted.
-
-`len` is an ordinary getter with a written `result == private length`
-postcondition proved by its body. Its call in `runtime/batch.wf` after both
-removals supplies the report's `remaining` field. Normal-return substitution
-carries that relation to the caller; there are no getter calls in contracts.
-The `writes(queue.storage)` row kills overlapping live facts before the verified
-postcondition supplies the new state's facts. An old runtime getter result
-remains an integer, not a reference to the future length.
+Inside the queue, `push` and `pop` name the published ring's length in
+requires/ensures and change it through the ordinary window operations. The
+external `run_two` interface and its function-kind formal repeat the same
+paths; this is ordinary access to a public field, not a special visibility
+rule. `batch.wf` reads `deref(queue).storage.len` directly for the report's
+`remaining` field. The `writes(queue.storage)` rows kill overlapping facts
+before the verified postconditions supply the new state's facts.
 `deref(entry(queue)).storage.len` is the frozen entry datum in an `ensures`,
 with no runtime snapshot. `made.storage.len` describes the constructor's
-returned value and is transported through construction, return and binding.
+returned value; stating it uses the proposed CALL-4 result-projection
+admission, and MSR-3's construction and binding placements carry it to the
+caller.
 
 The FIFO bodies select jobs `(tag: 7, payload: 250)` and
 `(tag: 9, payload: 10)` in that order. The private report helper computes an
@@ -244,22 +254,25 @@ Both entries should return exit code **0**. Codes 1, 2, 3 and 4 denote a
 mismatched first tag, second tag, digest or remaining count respectively.
 These checks test application results; they do not repair a failed source
 proof. The written contracts state occupancy safety, not a formal sequence
-model of FIFO contents or the exact report fields. The latter expectations
-follow from these complete bodies and the ring operations and still need
-execution tests once the module path exists.
+model of FIFO contents or the exact report fields; the `pop` description states
+the ordering for its implementer. The report expectations follow from these
+complete bodies and the ring operations and still need execution tests once the
+module path exists.
 
 The kernel's source composition includes `data`, the queue, `runtime` and
 `kernel`. Every definition in those modules receives ordinary checking,
 including the allocating generic helper's schema. Its conservative execution
 closure never selects `boxed_copy`, `Box<Report>` or their release path, so
-that helper does not impose a heap requirement on this target. The separate
+that helper does not impose a heap requirement on this entry. The separate
 tool module is not part of the kernel's selected source composition.
 
-The inspect target selects the same three library modules and its own entry.
-It instantiates `boxed_copy<Report>`, allocates one report cell and releases it
-on every return edge. Both `boxed_copy` and the entry write `pure`, which in
-WF does not mean allocation-free. `no_heap` belongs to the kernel target in
-the graph, not to any of these reusable modules or functions.
+The inspect entry selects the same three library modules and its own entry
+module. It instantiates `boxed_copy<Report>`, allocates one report cell and
+releases it on every return edge. Both `boxed_copy` and the entry write `pure`,
+which in WF does not mean allocation-free. `no_heap` belongs to the kernel
+entry in the graph, not to any of these reusable modules or functions. If the
+kernel ever reached an allocation, the failure would name the allocating
+function and its module, with the call path from `start`.
 
 Generated object selection and native/runtime supplies must respect that
 distinction as well. An object emitted for the shared module must not force
@@ -275,27 +288,18 @@ the specimen or establish a compiler implementation.
 
 | Form | Meaning |
 |---|---|
-| `pkg::`, ordered graph rows and named targets | One implicit source root, exact earlier dependencies and target requirements |
-| `directory/module.wfm` | Complete declarations, one complete public representation, explicit `public`, no executable function bodies |
+| `pkg::`, ordered graph rows and named entries | One implicit source root, exact earlier dependencies and entry requirements |
+| `directory/module.wfm` | Complete declarations with their `doc` entries, one complete public representation, explicit `public`, no executable function bodies |
 | File-local `alias` headers | Abbreviations with the original identities and direct-edge checks |
-| `deref(queue).storage.len` in an annotation | A typed private-field path; it adds no runtime access or effect |
-| `reads(queue.storage.len)` / `writes(queue.storage)` | Exact structural effects, also writable in external wrapper/formal annotations |
-| Ordinary `fn len(...)` with a result-to-field `ensures` | Runtime getter; its verified postcondition is available after normal return |
+| `public readonly storage` | A field every module with an edge may read, in code and annotations, and only the declaring module writes or constructs |
+| `reads(...)` / `writes(queue.storage)` | Exact structural effects over accessible paths, repeatable in external wrapper and formal rows |
 | `deref(entry(queue)).storage.len` | Frozen mathematical entry value, independent of later mutation |
-| `made.storage.len` | Aggregate result projection transported through construction, return and caller binding |
+| `made.storage.len` | Result projection admitted by the proposed CALL-4 extension and carried by construction and binding |
 
-Executable callers still cannot read, write, borrow, construct or destructure
-private Queue storage. A caller may name it in requires/ensures, invariants,
-explicit proof premises and effect rows. That distinction lets a wrapper or
-manual proof state its own obligations without a runtime getter solely for
-proof naming. An annotation still checks path types, domains, state validity
-and direct module edges; it cannot assume its own conclusion.
-
-Private paths mentioned by a contract or client proof become semantic
-dependencies. A relevant representation edit may require changing that proof,
-while an ordinary getter body edit with unchanged verified claims need not
-reprove its callers. No `observe`, `use view`, footprint declaration, trusted
-axiom, implicit type invariant, runtime snapshot or mandatory box is needed.
+Callers still cannot write, pass to a writing parameter or construct the
+queue's ring, and they cannot name a private field in any role. No `observe`,
+`use view`, footprint declaration, getter in a contract, trusted axiom,
+implicit type invariant, runtime snapshot or mandatory box is needed.
 
 Implementing these rules must make both entries check and execute, qualify the
 rejection probes below, and include the larger GrowVector wrapper/function-kind
@@ -312,31 +316,34 @@ not measured invalidation results. Each experiment starts from this specimen.
 | Rewrite `summarize`'s body with equivalent operations and unchanged header | Public APIs and permissions remain unchanged | Recheck that helper and any affected private summary users; update code importing its implementation, then link. Do not reprove every library solely because one file changed |
 | Move `summarize` to another direct `runtime/*.wf` file, preserving its resolved aliases | Same private declaration identity; still callable from `batch.wf` | Refresh file membership and locations; reuse semantic work only when the resolved declaration/context and dependencies are unchanged |
 | Rename the `Work` alias in `report.wf`, updating its uses | Same canonical type, no change in other files | Refresh that file's formation/resolution; normalized semantic results may remain reusable |
-| Change the private `Queue.storage` declaration in `.wfm` | Executable access stays private; contracts/client proofs naming its paths, derived capabilities or layout can change | Recheck actual path/contract, capability/ownership, getter, body, layout/release/ABI and optimizer consumers; source proofs reuse only when their consumed facts are unchanged, not merely because the field is private |
+| Change the published `Queue.storage` field | An interface change: `runtime/module.wfm`, `batch.wf` and every client proof over the ring may need edits | Recheck the consumers of the field, its capabilities, layout, release, ABI and optimized code; the impact report lists the affected declarations and bodies |
+| Add a private field to `Queue` | Other modules' source and proofs are unaffected unless capabilities or residual release change | Recheck the queue module and layout/release/codegen consumers of `Queue` |
 | Change `Report`'s public field schema | Callers may need source changes | Revalidate schema, field/type/ownership users and layout/codegen consumers; publication is a real dependency |
 | Delete `pkg::kernel`'s direct queue edge while keeping its runtime edge | Reject the kernel's queue aliases/uses | Revalidate the edge/lookup consumers; transitive reachability grants no source permission |
-| Change only the tool's aliases or body | Kernel source proofs are unchanged when their actual inputs are unchanged | Recheck tool consumers and its changed specialization/optimizer dependencies; no blanket graph-file or target key should reprove all shared bodies |
-| Add `no_heap;` to `target inspect` | Reject its reachable `boxed_copy<Report>`/`Box<Report>` heap requirement | Recheck target composition against shared heap summaries; do not reinterpret every function's ordinary proof |
+| Change only the tool's aliases or body | Kernel source proofs are unchanged when their actual inputs are unchanged | Recheck tool consumers and its changed specialization/optimizer dependencies; no blanket graph-file or entry key should reprove all shared bodies |
+| Add `no_heap` to the `inspect` entry | Reject its reachable `boxed_copy<Report>`/`Box<Report>` heap requirement at `boxed_copy` | Recheck target composition against shared heap summaries; do not reinterpret every function's ordinary proof |
 | Add the same storing call to `kernel/start.wf` | Reject the kernel's reachable allocation before optimization | Recheck the changed body, concrete execution closure and target requirement; optimizer deletion is not permission |
 | Change an unselected allocating helper to contain an unproved partial operation | Reject the selected module's ordinary source checking | No-heap reachability is not an exemption from source safety |
+| Delete the body of `pop` from `operations.wf` | The queue module reports `pop` as pending; `runtime` and both entry modules still check against the queue's interface | Composition, lowering and both entries wait for the definition |
 
 For additional rejection probes, try calling `fifo::new_storage` externally,
-reading `pending.storage` in an executable expression, changing only `push`'s implementation contract,
-placing the getter body in `.wfm`, adding `public` to any `.wf` declaration,
-removing `public` from `Job.tag` while its external uses remain, repeating the
-`Queue` definition in `.wf`, rebinding `pkg`, moving an interface to
-the former sibling location, or adding an edge to a later graph row.
-Each should fail for that specific boundary; an unrelated earlier syntax
-failure is not evidence for it. These are review exercises until the real
-compiler implements the proposed forms.
+writing `pending.storage` or passing `&pending.storage` to `place_back` from
+`kernel/start.wf`, constructing `Queue(storage: ...)` outside the queue module,
+changing only `push`'s implementation contract, placing a function body in
+`.wfm`, adding `public` to any `.wf` declaration, removing `public` from
+`Job.tag` while its external uses remain, repeating the `Queue` definition in
+`.wf`, rebinding `pkg`, moving an interface to the former sibling location, or
+adding an edge to a later graph row. Each should fail for that specific
+boundary; an unrelated earlier syntax failure is not evidence for it. These
+are review exercises until the real compiler implements the proposed forms.
 
-A future CI review aid should compare the resolved public API, not only changed
-lines containing `public`. Changing a published field type or a getter contract
-without editing its modifier must still be reported. Private storage changes
-that alter public capabilities or proof paths also matter; layout-only effects can be reported
+A future review aid should compare the resolved public API, not only changed
+lines containing `public`. Changing a published field type or a contract
+without editing its modifier must still be reported. Private field changes
+that alter public capabilities also matter; layout-only effects can be reported
 separately. No comparison script or new review gate is implemented here.
 
-The eventual executable qualification must check both targets, the rejection
+The eventual executable qualification must check both entries, the rejection
 probes, no allocator dependency in the kernel artifact, and cold/incremental
 agreement for these edits. The current validation is source/design review
 and repository structural checks only. There are no module compilation,

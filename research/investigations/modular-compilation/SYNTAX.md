@@ -1,19 +1,39 @@
 # Proposed module syntax
 
-This is the complete grammar candidate over this investigation's v0.62 base,
-not the active language. The compiler's own grammar generator qualifies it
-through `qualify.rs`; semantic restrictions are in [LANGUAGE.md](LANGUAGE.md).
-Keep this input until the grammar is integrated into the active specification,
-then remove it and use the specification's ordinary generator tests.
+This is the complete grammar candidate over the active v0.69 grammar, not the
+active language. [LANGUAGE.md](LANGUAGE.md) states the semantic restrictions;
+the compiler's own grammar generator qualifies these productions through
+[qualify.rs](qualify.rs). Keep this input until the grammar is integrated into
+the active specification, then remove it with its adapter and use the
+specification's ordinary generator tests.
 
-The source start is `program`; graph qualification substitutes `graph_file`
-for that start. File role is an explicit parser input. The shared source grammar
-admits a function declaration or definition; formation requires declarations in
-`.wfm`, definitions in `.wf`, and `public` only in `.wfm`. No symbol-table lookup
-selects a grammar arm. A parsed `operand` containing a call cannot have an
-ordinary `infix_tail`; contract affine expressions retain their own admission.
-`heap_decl` is retained solely for the existing source-bundle entry mode. Graph
-module files reject it and use target requirements; it cannot be public.
+## Differences from the v0.69 grammar
+
+- A source file starts with file-local `alias_decl` headers. Items, struct
+  fields and payload fields may carry `public`; formation admits it only in
+  `.wfm` and only where LANGUAGE.md gives it a meaning.
+- A function ends in `fn_tail`. A `.wfm` declaration ends in `;` or in its
+  `doc` entry, so the interface can document every declared function; a `.wf`
+  definition keeps its body with the body's own optional `doc`.
+- Types, callees, constructors, values, constants, destructuring targets and
+  group applications admit `pkg`-rooted or alias-rooted qualified paths. The
+  forms are factored through `operand`, `type_name`, `callee_path` and
+  `qualified_arg` so every decision stays strong-LL(2).
+- `affine_factor` is `operand`. Contract clauses keep the constructor calls
+  and domain-query rows that v0.69 admits through `call`; INV-1 and MSR-5
+  still decide which operands each position accepts.
+- A match arm may end its bindings with `..` (`destruct_bindings`).
+- The separate `graph_file` start lists module rows and named entries using
+  the existing `entry` and `no_heap` atoms; the graph adds no keyword.
+
+File role is an explicit parser input: `program` is the start for `.wfm` and
+`.wf`, `graph_file` for `modules.wfg`. The shared source grammar admits both a
+function declaration and a definition; formation requires declarations in
+`.wfm`, definitions in `.wf`, and `public` only in `.wfm`. No symbol-table
+lookup selects a grammar arm. A parsed `operand` containing a call cannot
+take an ordinary `infix_tail`. `heap_decl` is retained solely for the existing
+source-bundle entry mode; graph module files reject it and use entry
+requirements.
 
 ```wf-ebnf GRAM-2
 program := alias_decl* item*
@@ -26,11 +46,11 @@ heap_decl := "program" "no_heap" ";"
 struct_decl := "opaque"? ("nocopy" | "nodrop")? "struct" TYPEID generics? "{" doc? field* "}"
 field := "public"? "readonly"? IDENT ":" type ";"
 enum_decl := ("nocopy" | "nodrop")? "enum" TYPEID generics? "{" doc? variant* "}"
-variant := "public"? TYPEID "(" vfield_list? ")" ";"
+variant := TYPEID "(" vfield_list? ")" ";"
 vfield_list := vfield ("," vfield)*
 vfield := "public"? IDENT ":" type
 fn_decl := "fn" IDENT generics? "(" param_list? ")" "->" (result_binding | "(" result_binding ("," result_binding)+ ")") effects contract_block? fn_tail
-fn_tail := ";" | "{" doc? stmt* "}"
+fn_tail := ";" | doc | "{" doc? stmt* "}"
 result_binding := IDENT ":" rtype
 contract_block := "contract" "{" contract_define* requires_clause* ensures_clause* "}"
 contract_define := "define" IDENT "=" expr ";"
@@ -49,11 +69,12 @@ generics := "<" gparam ("," gparam)* ">"
 gparam := TYPEID (":" (TYPEID | capability_bound))? | "const" IDENT ":" type | fn_sig | "interface" pack_use
 capability_bound := "copy" | "drop"
 param_list := param ("," param)*
-param := IDENT ":" (mode type | "&" "[" type "]")
-graph_file := module_row+ target_decl*
+param := IDENT ":" (type | "&" (type | "[" type "]"))
+graph_file := module_row+ entry_decl*
 module_row := module_path ":" "[" (module_path ("," module_path)*)? "]" ";"
 module_path := "pkg" ("::" IDENT)*
-target_decl := "target" IDENT "{" "entry" value_name ";" ("no_heap" ";")? "}"
+entry_decl := "entry" IDENT "=" module_path entry_tail
+entry_tail := ";" | "{" "no_heap" ";" "}"
 ```
 
 ```wf-ebnf GRAM-3
@@ -61,8 +82,7 @@ type := primitive_type | type_name targs?
 primitive_type := "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" | "f32" | "f64" | "unit"
 type_name := TYPEID | ("pkg" "::")? IDENT "::" type_name_tail
 type_name_tail := TYPEID | IDENT "::" type_name_tail
-rtype := "own" type
-mode := "own" | "&"
+rtype := type
 targs := "<" targ ("," targ)* ">"
 targ := primitive_type | TYPEID targs? | function_arg | "[0-9]+" const_tail? | qualified_arg
 qualified_arg := ("pkg" "::")? IDENT qualified_arg_tail
@@ -89,7 +109,7 @@ proof_use := "use" (("[0-9]+" | IDENT) "times")? use_premise ";"
 use_premise := IDENT | "(" affine_expr compare_op affine_expr ")"
 affine_expr := affine_term (affine_add_op affine_term)*
 affine_term := affine_factor ("*" affine_factor)?
-affine_factor := atom | "(" affine_expr ")"
+affine_factor := operand | "(" affine_expr ")"
 affine_add_op := "+" | "-"
 break_stmt := "break" LABEL? ";"
 give_stmt := "give" expr ";"
@@ -151,9 +171,36 @@ epsuffix := "." IDENT | "." TYPEID "." IDENT | "[" IDENT erange? "]"
 erange := ".." IDENT
 ```
 
-The reserved spellings added to this base are `public`, `alias`, `pkg`,
-and `target`. `entry` and `no_heap` already
-exist. There is no new punctuation or comment syntax. `use_premise` is a real
-production already present in the base grammar, despite the base generator's
-older production-count assertion. Qualification derives the count from the
-candidate and never presents it as the final META-5 delta.
+## Reserved spellings
+
+`public`, `alias` and `pkg` become fixed atoms. Raw lexical formation does not
+consult grammar position [GRAM-1], so each is reserved in every `.wfm`, `.wf`
+and graph file. `alias` is an ordinary binding name in some current test
+sources; integration renames those bindings. The graph reuses the existing
+`entry` and `no_heap` atoms, so `target`, a common binding name in current
+sources, stays an identifier. There is no new punctuation or comment syntax.
+
+## Qualification
+
+Run from the repository root under the ordinary construction guard:
+
+```sh
+perl .github/run-check.pl module-grammar sh -c 'rustc --edition=2024 research/investigations/modular-compilation/qualify.rs -o /tmp/wf-module-qualify && /tmp/wf-module-qualify'
+```
+
+The adapter builds a temporary copy of the compiler's grammar generator with
+the candidate production inventory and the three new fixed atoms, then checks:
+
+1. strong-LL(2) and overlapping-token-predicate decisions for the source start
+   and the graph start;
+2. that every production of the active specification still exists and keeps
+   every two-token prefix it derives there, a necessary condition for not
+   dropping an existing form;
+3. two negative controls: restoring the unfactored qualified call/value
+   alternatives must fail the strong-LL(2) check, and the earlier
+   `affine_factor := atom | "(" affine_expr ")"` candidate must fail the
+   prefix check.
+
+Passing establishes those grammar properties only, not lexer/parser
+integration, formation, resolution, proofs or execution. It modifies no
+compiler or specification file and is not a daily gate input.

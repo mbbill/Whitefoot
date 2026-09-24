@@ -6,7 +6,7 @@ checking through optimized object generation, ordinary final linking, and
 runtime optimization that is not
 artificially limited by source module boundaries. The active specification and
 live design tree remain authoritative until amended. The inspected baseline is
-`f3cf41d42cf6324a83c1de0b28e6c0d4e6ff9da8` (kernel v0.62).
+`0f22b026b062c36ef2f8ce9c725ee4307e1fda64` (kernel v0.69).
 
 This investigation owns the architecture, its alternatives, external evidence,
 and selection criteria. Keep it as the grounds for the eventual compiler and
@@ -25,10 +25,36 @@ The [complete source specimen](demo/README.md) makes this direction concrete:
 five modules form a fixed-capacity job queue, a function-kind batch consumer,
 an allocation-free entry and a heap-using tool. It includes every interface
 and body, the root graph, a reading order, expected behavior and predicted
-edit effects. The selected declaration, annotation-visibility and state rules are in
+edit effects. The selected declaration, visibility and contract rules are in
 [LANGUAGE.md](LANGUAGE.md), and [SYNTAX.md](SYNTAX.md) contains the complete
 strong-LL(2) candidate. The specimen is not an executable project or evidence
 that the compiler implements those judgments.
+
+## Purpose
+
+Modules serve two goals. Whitefoot must compile large projects, which cannot
+live in one source bundle or repeat all checking after every edit; they need
+separately checked modules, incremental rebuilds and parallel compilation.
+And Whitefoot is written by AI agents in a planned division of labor: an
+architect agent owns the module interfaces (`.wfm`) and the module graph, and
+many implementer agents write the module bodies (`.wf`) concurrently. A
+requirement touching ten modules is designed once as interface edits and then
+implemented by ten agents in parallel; when an implementer finds the interface
+insufficient, the architect edits it again. Modules are not selected here for
+information hiding, version management or distribution.
+
+These goals set three properties the design must keep:
+
+1. **Interfaces first, bodies in parallel.** Checking a module's bodies waits
+   only for the interfaces of its dependencies, never for their bodies, so a
+   cold build forms interfaces in dependency order and then checks every body
+   of every module in parallel.
+2. **Separate responsibilities.** A module's source verdict depends only on its
+   own files and its dependencies' interfaces. An edit to one module's `.wf`
+   changes no other module's verdict, and a failure caused by a module's body
+   is reported against that module.
+3. **Explicit interface changes.** An interface edit reaches exactly the
+   implementations and callers it affects, and the toolchain can list them.
 
 ## Required outcome
 
@@ -75,9 +101,14 @@ the objective rather than providing alternative completion levels.
   [LLVM emitter](../../../compiler/src/backend/emitter.rs) currently build one
   checked inventory and one LLVM module. This design changes those boundaries;
   splitting LLVM output alone does not meet the required outcome.
-- [GrowVector](../../../lib/containers/grow-vector.wf) exposes representation
-  paths in both contracts and effects. Source privacy, proof visibility, and
-  physical layout visibility need separate definitions.
+- [GrowVector](../../../lib/containers/grow-vector.wf) states its contracts and
+  effects over its storage field. As a module it publishes that field as
+  `public readonly`, so clients can state the same conditions.
+- [TYPE-2](../../../spec/kernel-spec.md#4-types) forbids writing a readonly
+  field anywhere, including in the declaring program's own operations, and
+  [CALL-4](../../../spec/kernel-spec.md#8-functions-generics-contracts) admits
+  a result's measures only on the bare result or its `Box` content. Both are
+  revised in [LANGUAGE.md](LANGUAGE.md).
 
 ## Architectural direction
 
@@ -127,10 +158,12 @@ still does not select incremental checking or LLVM partition size.
 Retain a declaration-only `.wfm` so that public-contract reading and review
 remain separate from executable body edits. Putting public function
 bodies there would remove header duplication but mix those changes in the same
-file. For the current discussion, assume one agent implements each module;
-coordination among that module's `.wf` authors is outside scope and supplies no
-ground for field-access rules. Agent assignments are workflow assumptions,
-not compiler-visible identities or language-enforced editing permissions.
+file. The file split follows the workflow in [Purpose](#purpose): the architect
+agent edits `.wfm` files and the graph, and implementer agents edit `.wf` files.
+Agent assignments remain workflow conventions, not compiler-visible identities
+or language-enforced editing permissions; the compiler supports them through
+module verdicts that depend only on interfaces (see
+[the workflow section](#architect-and-implementer-workflow)).
 
 | Candidate | Benefit | Cost and disposition |
 |---|---|---|
@@ -139,6 +172,7 @@ not compiler-visible identities or language-enforced editing permissions.
 | Complete public declarations in one `.wfm`, with checked ordinary implementations | A caller or agent can read and hold the written contract fixed independently of implementation | Selected; the compiler must enforce declaration correspondence and the implementation must prove the declared obligations |
 | Complete public function definitions in `.wfm`, private definitions in `.wf` | One written signature and contract per function, with centralized publication | Not selected: implementation edits would enter the public-contract file; fine-grained incrementality does not itself require either placement |
 | Complete interface with body-only implementation bindings | Avoids repeated function headers | Not selected: ordinary complete definitions remain locally readable and avoid a second body-binding form; repeated declarations are mechanically checked |
+| Definitions that refine their declarations (FN-4 style) | An implementation may keep a weaker requirement, stronger guarantee or narrower row | Not selected: callers read only the declaration and gain nothing, and an interface edit must reach its implementation explicitly |
 | Canonical module directory with direct implementation-file membership | Filesystem and module ownership have one spelling | Selected under the path-based namespace requirement; snapshot and track the directory inventory, while complete .wfm declarations still exclusively control publication |
 | Recursive directory collection or automatic export | Few written entries | Refused: recursively collecting a child implementation confuses ownership, and adding a private definition must not publish it |
 
@@ -164,10 +198,11 @@ modifier, on declarations and struct fields at their publication sites;
 separate export list or implementation-side publication switch. An alias is
 still only a file-local abbreviation and cannot carry `public`.
 Public function declarations
-include generic parameters and bounds, parameter/result labels and modes,
-types, capabilities, effects, and complete `requires`/`ensures` clauses.
-No executable function body belongs in `.wfm`, including an ordinary getter.
-Its public declaration and written contract are here and its checked body is in
+include generic parameters and bounds, parameter/result labels and kinds,
+types, capabilities, effects, complete `requires`/`ensures` clauses, and an
+optional `doc` entry that is the architect's description for callers and the
+implementer. No executable function body belongs in `.wfm`.
+Its declaration and written contract are here and its checked body is in
 `.wf`, without repeating `public`. Every public source-defined struct has its
 one complete definition here, including unmarked private fields; its field
 schema is a data declaration, not an executable body.
@@ -189,9 +224,9 @@ there is no separately editable module-name or member-file map. Neither
 dependency therefore need not rewrite the public interface.
 
 One direct-dependency set applies to both the public interface and private
-implementation. An edge permits reference to the target's public declarations;
-it does not re-export them or grant private executable access. Erased annotations
-may select interface-private fields under the role-specific rule below. Whether an edge is used by
+implementation. An edge permits reference to the target's public declarations
+and fields, in executable code and annotations alike; it does not re-export
+them or grant private access. Whether an edge is used by
 a public signature, an implementation, both, or neither is determined from
 checked references, not a second writer-maintained `api`/`impl` classification.
 A dependency used only in implementation remains absent from the handwritten
@@ -204,10 +239,10 @@ Proposed contents of `counters/module.wfm`, not yet accepted by the compiler. Th
 already declares the module, so no second written module name is needed:
 
 ```text
-public fn advance(value: own u64) -> next: own u64 pure contract {
+public fn advance(value: u64) -> next: u64 pure contract {
   requires value < 18446744073709551615_u64;
   ensures next == value + 1_u64;
-};
+} doc "Returns the successor of a counter that has not reached the u64 maximum.";
 ```
 
 An ordinary implementation in one selected `.wf` repeats that function's
@@ -234,15 +269,27 @@ duplicate and mismatched implementations reject at the related declarations.
 An unlisted ordinary function is private even when another source file uses it.
 
 Require equality of the normalized declaration: generic arity/kinds and bounds,
-named-call labels, parameter/result modes and types, capabilities, effect row
-and contract clauses. Normalization follows the specified deterministic rules;
-it may identify permitted bound-variable renamings while retaining every
-caller-visible name. It is not arbitrary logical equivalence or a solver for
-whether one contract refines another. The body is checked against this same
-declaration. A stronger local fact does not silently enlarge the public
-postcondition; a different public contract requires an explicit interface edit.
-Internal calls to a public function use the matched contract and normal
-summary availability, not a second private strengthening.
+named-call labels, parameter kinds, result and parameter types, capabilities,
+effect row and contract clauses. Normalization follows the specified
+deterministic rules; it may identify permitted bound-variable renamings while
+retaining every caller-visible name. It is not arbitrary logical equivalence or
+a solver for whether one contract refines another. Documentation is not
+compared. The body is checked against this same declaration. A stronger local
+fact does not silently enlarge the public postcondition; a different public
+contract requires an explicit interface edit. Internal calls to a public
+function use the matched contract and normal summary availability, not a second
+private strengthening.
+
+Exact equality is chosen over refinement for three reasons. An interface edit
+is a change the implementer must see, so it must fail the implementation until
+the implementation is updated in the same written form. Refinement would admit
+only a weaker requirement, a stronger guarantee or a narrower effect row in the
+definition, none of which a caller can use, because callers read only the
+declaration; signatures, generics and types could not differ anyway. And
+repeating a checked header costs a writer little. The effect row is the one
+place where exactness asks the interface to follow the implementation; an
+interface keeps that cost low by declaring a covering path such as
+`writes(queue.storage)`, which EFF-2 treats as exhibited by any write below it.
 
 Type, constant and group definitions in `.wfm`, including private support, are
 directly available to the owning implementation inventory. A struct is defined
@@ -302,12 +349,12 @@ with qualified names in the candidate strong-LL(2) grammar. The existing
 generator checks those productions; source-role and semantic implementation
 still require the integration cases below.
 
-The root graph has one architecture and may declare multiple build targets.
-Each executable target pairs an entry with its environment requirements,
-including an optional no-heap requirement. Neither a reusable module interface
-nor the whole architecture graph owns that requirement. The target-selection
-and checked heap-closure rules below separate source correctness from whether
-one particular executable requires the heap.
+The root graph has one architecture and may declare multiple named entries.
+Each entry is an executable target that pairs an entry function with its
+environment requirements, including an optional no-heap requirement. Neither a
+reusable module interface nor the whole architecture graph owns that
+requirement. The target-selection and checked heap-closure rules below separate
+source correctness from whether one particular executable requires the heap.
 
 ### File-local name aliases
 
@@ -516,28 +563,26 @@ pkg::vector: [pkg::shared::memory, pkg::vector::other];
 pkg::kernel: [pkg::shared::memory];
 pkg::tools::image: [pkg::shared::memory, pkg::vector];
 
-target kernel {
-  entry pkg::kernel::start;
+entry kernel = pkg::kernel::start {
   no_heap;
 }
-
-target image_tool {
-  entry pkg::tools::image::run;
-}
+entry image_tool = pkg::tools::image::run;
 ```
 
 The selected schema is one or more module rows followed by zero or more named
-targets, with the complete formation rules in LANGUAGE.md. No source-root
-binding is written. A target names one entry and optionally `no_heap;`; it
-cannot change module edges. Target names are build labels, not source aliases.
+entries, with the complete formation rules in LANGUAGE.md. No source-root
+binding is written. An entry names one function and optionally `no_heap;`; it
+cannot change module edges. Entry names are build labels, not source aliases.
+The graph reuses the existing `entry` and `no_heap` atoms, so it reserves no
+new word.
 The graph directory and normalized paths determine one unambiguous module
 inventory independently of host enumeration or invocation directory.
 
 All rows belong to one architecture graph, including disconnected modules.
 Its canonical identities, namespace inventory, exact permissions and order
 certificate do not vary by target. Checking a library graph needs no target
-or entry. Building an executable selects exactly one declared target; its
-entry is a public ordinary function in a registered module. Ordinary generic
+or entry. Building a deliverable executable selects exactly one named entry;
+its function is a public ordinary function in a registered module. Ordinary generic
 and runtime argument binding and result interpretation still belong to the
 build invocation under FN-7/PROG-3, with the ordinary startup obligations and
 no new entry-signature restriction. The entry is not a source-file alias.
@@ -567,9 +612,11 @@ One graph serves the kernel and the heap-using image tool in the example.
 Separate graph files per executable would duplicate architecture and could
 make individually acyclic permissions cyclic in their union. Separate
 independent projects may have separate graphs; several outputs of this project
-do not require that split. A target declaration in the same file makes the
-entry/requirement pairing inspectable without creating another dependency
+do not require that split. A named entry in the same file makes the
+function/requirement pairing inspectable without creating another dependency
 authority. Its complete proposed syntax is qualified in SYNTAX.md; target semantics are in LANGUAGE.md.
+A build may also run any function of a registered module as an unnamed entry
+under FN-7, so an implementer's test entry needs no graph or interface edit.
 
 Distinguish three sets. The architecture graph contains every registered
 module and is always validated structurally. A target's source composition
@@ -595,7 +642,10 @@ select whether the requirement passes. The finite closure and summary rules
 must be specified, deterministic and complete for their admitted family;
 selected compiler-owned native/runtime supplies must account for their heap
 requirements under the existing SCOPE-3 trust boundary. A writer's `pure`
-annotation or an absent body does not establish those requirements.
+annotation or an absent body does not establish those requirements. A failure
+is reported at the function whose body or layout introduces the heap
+requirement, with the call path from the entry, so the task goes to the module
+that owns that source rather than to the entry's module.
 
 This intentionally revises STOR-8's compilation-unit-wide spelling ban into
 a target requirement over checked composition; it is not merely relocating
@@ -631,14 +681,14 @@ Validate the graph against the selected canonical source snapshot:
    Every selected module has one canonical identity and exactly one graph
    declaration, resolving to its directory's `module.wfm`;
    canonical aliases cannot create distinct positions for one module.
-2. Each dependency list names exact modules without duplicates. Every target
-   must already have a valid declaration in this same graph. Self, forward
-   and unknown references reject at the row and offending edge.
+2. Each dependency list names exact modules without duplicates. Every listed
+   dependency must already have a valid declaration in this same graph. Self,
+   forward and unknown references reject at the row and offending edge.
 3. Every external source reference, after file-local alias resolution, must
    obey its name role and the explicitly listed direct dependency. Top-level
-   references require public declarations; erased member paths may select
-   interface-private fields under the annotation rule. Both interface and
-   implementation references obey these rules. A missing
+   references and field selections require public declarations and fields, in
+   executable code and annotations alike. Both interface and implementation
+   references obey these rules. A missing
    edge rejects even if the target row
    occurs earlier or is transitively reachable.
 4. The selected program is closed over declared dependencies and all selected
@@ -721,11 +771,12 @@ interface and proof edits. Removing an edge with remaining source uses must
 reject those uses rather than silently admitting an undeclared dependency.
 
 One file is not a constant-size diff. Existing edges may require multiple rows
-to move, and concurrent agents can edit the same graph. Keep one explicit row
-per module, no hand-written numeric ranks, and preserve unrelated ordering
-rather than globally sorting the file after each edit. Textual merges still
-require ordinary graph validation. These choices reduce avoidable churn; their
-effect on collaboration has not been measured.
+to move. In the selected workflow the architect alone edits the graph, so
+implementers never contend for it. Keep one explicit row per module, no
+hand-written numeric ranks, and preserve unrelated ordering rather than
+globally sorting the file after each edit. Textual merges still require
+ordinary graph validation. These choices reduce avoidable churn; their effect
+on collaboration has not been measured.
 
 A source-path rename still changes its canonical identity and affected source
 references. The graph cannot act as a namespace alias or prevent that ordinary
@@ -758,25 +809,26 @@ a future resolver, collaboration costs or performance. The new candidate
 rests on the strict declaration-position argument above and needs its own
 grammar/resolver and edit-locality qualification.
 
-### Public semantic closure, representation and proof paths
+### Published vocabulary and representation
 
-A public declaration must be understandable from its `.wfm`, explicit dependency
-interfaces and ordinary language/prelude rules. Callable types, generic bounds,
-public fields and named contract constants retain accessible public vocabulary.
-Field visibility is role-specific: executable code needs ordinary public access,
-while requires/ensures, contract definitions, invariants, written proof premises
-and effect rows may select private fields described in the complete interface.
+A public declaration must be understandable from its `.wfm`, explicit
+dependency interfaces and ordinary language/prelude rules. Callable types,
+generic bounds, public fields, named contract constants, and every field that a
+public contract, effect row or function-kind formal selects must be accessible
+to the module's clients. One visibility rule serves executable code and
+annotations: a private field is invisible outside its module in both.
+[LANGUAGE.md](LANGUAGE.md#visibility) defines the boundary and its negative
+cases.
 
-The checker may also carry already resolved private-path facts from verified
-callee contracts. It never needs to grant runtime access or infer additional
-public guarantees from `.wf` bodies. Allowing only checker-internal hidden terms
-would leave external wrappers, generic formal contracts and explicit invariants
-without source names for needed conditions, so written erased paths are admitted
-as well. Paths retain ordinary type/domain/state validity and direct member-owner
-edge checks. Private top-level functions/types/constants are not promoted;
-traversal through private support obtains its type from the preceding field.
-[LANGUAGE.md](LANGUAGE.md#runtime-access-and-annotation-visibility) defines the
-complete boundary and negative cases.
+A field that callers' contracts must name is therefore published, normally as
+`public readonly`: every module with an edge may read it, in code and in
+annotations, and only the declaring module writes it. The queue publishes its
+ring this way, and callers read `deref(queue).storage.len` directly, so neither
+a getter nor a separate specification name is needed. Publication exposes the
+field's whole type and every member reachable through it. A change to it is an
+interface change that reaches callers' code and proofs, which is the intended
+property: the interface states what its contracts depend on. Private fields
+remain for representation that no other module's contract needs.
 
 Every nominal that a caller must name belongs in `.wfm`, even when its fields
 are private. Type publication and field publication are separate choices:
@@ -784,161 +836,101 @@ are private. Type publication and field publication are separate choices:
 | Record form | Definition location | Implementation and caller access |
 |---|---|---|
 | Module-private implementation struct | One complete definition in `.wf`, without a visibility modifier | Available to the module's shared private inventory; cannot supply missing type information to `.wfm` |
-| Private supporting struct needed by an interface field | One complete unmarked definition in `.wfm` | Available throughout the owning module; external annotations may traverse its interface fields through an available value, but cannot name the private type or execute its fields |
-| Public struct with private fields | One complete `public struct` definition in `.wfm`, with only externally accessible fields marked `public` | The owning module uses all fields; external executable access requires public, while erased annotations may name all interface fields |
+| Private supporting struct needed by an interface field | One complete unmarked definition in `.wfm` | Available throughout the owning module; invisible to other modules and never the type of a public field |
+| Public struct with private fields | One complete `public struct` definition in `.wfm`, with fields marked `public` or `public readonly` where other modules need them | The owning module uses all fields; other modules access only published fields, in code and annotations alike |
 | Fully public data record | One complete `public struct` definition in `.wfm`, with every field marked `public` | Ordinary field operations and construction remain subject to existing rules |
 
 The type itself being public is enough to require its full source definition
 in `.wfm`, even if every field is private. A public name-only declaration with
-a separate `.wf` representation is no longer selected. Every field and its
-order occur once; no public-field repetition, private field extension or
-complete-versus-projected-schema marker is needed. Existing fieldless native
-and prelude opaque types retain their own rules, not a new source construction
-route.
+a separate `.wf` representation is not selected: capabilities, residual-release
+obligations and by-value layout then come from one readable definition. Every
+field and its order occur once. Existing fieldless native and prelude opaque
+types retain their own rules, not a new source construction route.
 
-For example, a public buffer may declare a public caller-controlled `tag` and
-unmarked private storage in the same definition. A private storage helper used
-by that field also needs its complete definition in `.wfm`, without `public`,
-with any private supporting constants. Resolve this type-declaration closure
-from the same interface, the ordinary prelude and permitted public dependency
-interfaces, never from `.wf` or another module's private top-level names. A public field or callable
-signature cannot expose that private helper type. Marking a field `public`
-inside a private type does not publish the enclosing type or create an external
-access route; effective access also requires an accessible enclosing type.
-
-Use private fields for state maintained through operations and public fields
-for independently usable data. A struct with all fields private provides the
-abstract API without a second representation definition. Existing `readonly`
-and `opaque` retain their meanings; neither is an access-visibility modifier.
-Public enum, payload, constant and group rules are selected in LANGUAGE.md; their compiler qualification remains implementation work.
-
-One authoritative type definition with explicit publication replaces both the
-whole-record-only choice and the split public-projection candidate. A public
-projection plus full `.wf` definition duplicated fields and required a
-correspondence rule; private-only extensions required a merge/layout rule.
-Both are superseded. Default-private also makes adding representation detail
-and expanding the public API distinct edits; default-public with `private`
-would publish an unmarked addition. The cost is more markers on public data,
-and private representation edits now change `.wfm`; private support can make
-that file larger. Privacy restricts executable access, not erased field
-annotations or whether a reader sees representation text. A private field
-referenced by a contract or client proof is a real semantic dependency. Reading and incremental costs remain unmeasured; one
-agent per module remains the authoring assumption.
+Default-private makes adding representation detail and expanding the public
+API distinct edits; default-public with `private` would publish an unmarked
+addition. The costs are more markers on public data and a `.wfm` that also
+carries private representation, so a private representation edit is an
+interface-file edit even when no other module can observe it. In the selected
+workflow the architect owns that file; an implementer that needs a new private
+field asks for it like any other interface change.
 
 Universal getter/setter mediation is not selected. A setter for each private
 field does not by itself preserve a multi-field invariant; operations such as
-append or reserve can preserve it as one checked change. For public records,
-ordinary projections also express component ownership and disjoint borrows
-directly. Under REF-3 a getter cannot return a reference, so an all-accessors
-policy would need different consuming/callback APIs, not a mechanical rewrite
-of field access. Hiding representation still needs useful precise public
-effects; treating every operation as touching the whole object can lose
-independence. No new type-invariant assumption follows merely from privacy.
+append or reserve can preserve it as one checked change. Under REF-3 a getter
+cannot return a reference, so an all-accessors policy would need different
+consuming/callback APIs. Published readonly fields give read access without
+getters, and precise effects keep independence between published substates.
+No type-invariant assumption follows from privacy.
 
-Field publication is a compatibility and incremental-dependency choice:
-changing a public schema can affect caller source proofs and ABI consumers;
-changing a private field in `.wfm` with unchanged consumed capability, ownership
-and contract facts can preserve source proofs while invalidating layout,
-release and codegen consumers. A private-field edit may also change capabilities
-or residual-release eligibility and then must recheck those source consumers.
-Do not key every client by the whole `.wfm` digest. Private access does not
-guarantee an unchanged ABI or that every accessor call will inline. These
-effects need the consumer evidence below.
-
-The contract-composition gap is addressed by ordinary private-path contracts,
-role-specific annotation visibility, and checked current/entry/owned-result
-projection transport in [LANGUAGE.md](LANGUAGE.md). A runtime getter publishes
-its written normal-return relation, such as result equals the private length;
-proof expressions name that length directly and never execute the getter.
-The queue constructor and external function-kind consumer, plus the GrowVector
-wrapper/invariant witnesses, exercise that boundary. No `observe`, `use view`,
-logical-call termination mechanism or named `footprint` declaration is selected.
-This supersedes the earlier abstraction machinery because its requirement to
-hide all private paths from public annotations has been removed. It closes the
-specified design gap; compiler implementation and executable evidence remain
-required, and this argument is not a soundness proof of a compiler.
+Field publication is a compatibility and incremental-dependency choice.
+Changing a published field can affect callers' code, proofs and ABI consumers.
+Changing a private field can change the owning module's proofs, the type's
+derived capabilities and residual-release eligibility, and layout, release and
+code generation. Capability and release changes are visible to callers' source
+checks and are rechecked through those consumers; layout changes reach only
+codegen consumers. Do not key every client by the whole `.wfm` digest.
 
 Self-containment concerns the source API, not all compiler information.
 Compiler-owned artifacts retain checked implementation evidence, generic
 bodies and private layout/release descriptions for specialization, by-value
 representation and optimization. A client author need not read those bodies.
 Source privacy creates no mandatory boxing, dynamic dispatch, runtime checks
-or destructor escape. A layout change may invalidate code generation even
-when the publicly usable API is unchanged; dependency interface changes can
-also alter resolved API meaning without editing this module's `.wfm`.
-Composition validates those actual identities and inputs.
+or destructor escape. Composition validates the actual identities and inputs.
 
-### Selected representation boundary
-
-[LANGUAGE.md](LANGUAGE.md) owns the complete proposed rules for field access,
-construction, residual release, derived capabilities, closed public enums,
-constants/groups, annotation visibility, exact private-path effects, state, and
-absence of implicit type invariants. The examples below explain the already
-selected field/capability choices. Their acceptance cases belong to the
-implementation matrix, not a remaining menu of undecided language alternatives.
-
-
-### Field visibility and structural operations
-
-The publication and single-definition choices above supersede the earlier
-split-definition discussion. The selected operation policy separates access
-permission from ordinary ownership obligations; it introduces no new `readonly`
-meaning or object-invariant assumption. This is proposed module behavior, still
-requiring specification and executable qualification.
+### Field access and structural operations
 
 Direct public fields have the existing field semantics for copy reads,
-references, writes and in-place operations, with ordinary
-ownership, effects and `readonly` restrictions. Expose independent user data,
-such as a buffer's caller-controlled tag, this way. A changing length related
-to hidden storage can remain private and be read at runtime through an ordinary
-public getter. Contracts and other erased proofs use the private structural
-path directly; ordinary getter calls remain excluded from proof expressions.
-Existing TYPE-2 `readonly` forbids ordinary source writes inside the module
-as well as outside it, so it cannot quietly become an external-only access
-restriction. A public writable field does not establish a private invariant.
+references, writes and in-place operations, with ordinary ownership, effects
+and `readonly` restrictions. Expose independent caller data, such as a
+buffer's caller-controlled tag, as plain `public`. Expose state that the
+module's operations maintain and that callers' contracts mention as
+`public readonly`.
 
-For a struct with every field public, ordinary construction retains its existing
-rules. If any field is private, external construction goes through declared
-ordinary functions, not aggregate construction with guessed
-or defaulted private fields. Inside the defining module the complete definition
-permits normal construction. This does not repurpose TYPE-2 `opaque`, whose
-constructor restriction also applies in the defining scope.
+`readonly` becomes module-relative. TYPE-2 forbids writing a readonly field
+anywhere, so a source type whose operations update a published member in place
+could never be written by those operations. Under the revision only the
+declaring module writes it: outside that module a path through the field is
+never a `set` target or a written-reference argument, and construction cannot
+supply it. The prelude declares the storage-shape measures readonly and stays
+their only writer, so existing measure behavior is unchanged. This is the
+purpose the readonly decision already states, a member every holder may read
+that only the type's own operations change. Because a private field is already
+unreachable from other modules, `readonly` requires `public`.
 
-Under OWN-1/WIN-3, a field move consumes its whole owner, releases the other affine parts and
-rejects if a remaining linear part cannot be consumed. The whole type's
-copy/drop pair alone does not describe the remainder: a non-droppable type
-could owe that property to the extracted public field, a hidden field, or an
-explicit modifier. Previously, a private definition outside `.wfm` could change
-that remainder without a readable interface change. That ground for banning
-every external extraction no longer holds: all fields and their type support
-are now declared in `.wfm`; external executable code cannot name private paths,
-while erased annotations may do so.
+Construction outside the declaring module requires every field to be public
+and not readonly; otherwise it goes through the module's ordinary functions,
+never aggregate construction with guessed or defaulted fields. Inside the
+defining module the complete definition permits normal construction. This
+does not repurpose TYPE-2 `opaque`, whose constructor restriction also applies
+in the defining scope.
 
-Permit direct public-field moves and consuming destructuring when ordinary
-residual-release checks pass. An external consume can bind only accessible
-fields; every unbound part, private or public, must satisfy the existing release
-rules. A final `..` covers omitted private fields without granting access or
-waiving their consumption obligations. A private linear remainder rejects;
-a public consuming function can handle it inside the module. Changing a private
-field's capability changes a tracked source-operation dependency, not an
-invisible implementation fact. This retains useful consuming access without
-a separate readable/writable/movable visibility family or a blanket ban on
-mixed-field types. Whole-value moves, permitted release, ordinary updates and
-swaps keep their existing rules. A copy field is read bare, not moved, and all
-existing borrow, effect, opacity and capability-modifier checks still apply.
+Under OWN-1/WIN-3, a field move consumes its whole owner, releases the other
+affine parts and rejects if a remaining linear part cannot be consumed.
+Because every field and its type support are declared in `.wfm`, those
+remainder obligations are readable from the interface. Permit direct
+public-field moves and consuming destructuring when ordinary residual-release
+checks pass. An external consume can bind only accessible fields; every
+unbound part, private or public, must satisfy the existing release rules. A
+final `..` covers omitted private fields without granting access or waiving
+their consumption obligations. A private linear remainder rejects; a public
+consuming function can handle it inside the module. Whole-value moves,
+permitted release, ordinary updates and swaps keep their existing rules. A
+copy field is read bare, not moved, and all existing borrow, effect, opacity
+and capability-modifier checks still apply.
 
 A minimal witness owns a public affine queue and a private `u64` tag. Moving
 the queue consumes the containing owner and can discard the tag; replacing
 that tag with a private linear resource makes the same extraction reject.
 A reference into the consumed owner becomes invalid; using it later rejects
 under REF-2. Destructuring an opaque operand still rejects under TYPE-2.
-Validate these distinctions, ordinary construction
-only when every field is accessible, and corresponding incremental invalidation
-before claiming compiler support.
+Validate these distinctions, the construction rules and the corresponding
+incremental invalidation before claiming compiler support.
 
 ### Public capabilities
 
-Modules do not add a second handwritten copy/drop contract. Reuse TYPE-2/OWN-1/PROV-6 derivation from owned components and declaration
+Modules do not add a second handwritten copy/drop contract. Reuse
+TYPE-2/OWN-1/PROV-6 derivation from owned components and declaration
 modifiers, and export checked derived facts rather than repeat a capability
 pair in source. This extends existing rules to the proposed boundary; no new
 capability family or module-dependent ownership class is proposed.
@@ -973,8 +965,7 @@ type's derived capabilities or residual-release conditions, requiring public
 surface reporting and precise invalidation. Compare concrete and generic
 instances across a dependency before choosing any additional capability
 annotation; a derived API display can improve readability without becoming a
-second source definition. Erased private-path visibility and explicit operation
-contracts are specified in LANGUAGE.md.
+second source definition.
 
 ### Public interface and generated compiler projections
 
@@ -984,8 +975,8 @@ generate distinct projections:
 
 | Projection | Content | Readers |
 |---|---|---|
-| Name surface | Public declaration identities, kinds and signatures; role-indexed interface member lookup | External lookup and annotation/executable access checks |
-| Semantic boundary | Modes/types, capabilities, effects, normalized contracts, constants and bounds | Source checking and proofs |
+| Name surface | Public declaration identities, kinds, signatures and published fields | External lookup and access checks |
+| Semantic boundary | Parameter kinds/types, capabilities, effects, normalized contracts, constants and bounds | Source checking and proofs |
 | Verification evidence | Matched interface, checked implementation, obligations, derivations and proof dependencies | Composition and audit |
 | Generic template | Resolved implementation body, symbolic check and explicit parameters | Concrete instantiation |
 | Physical description | Target layout, ABI, release shape and target obligations | Lowering and code generation |
@@ -1003,53 +994,73 @@ complete handwritten API rather than supplying its missing clauses. Compare
 the same metadata that incremental checking consumes; use conservative
 structural comparison, not a semantic equivalence oracle or checked-in API
 lockfile. Changing only an implementation header to strengthen a requirement
-now fails correspondence instead of silently changing the exported API.
+fails correspondence instead of silently changing the exported API.
 
-Explicit publication also gives CI a useful review signal. Compare resolved
+Explicit publication also gives review a useful signal. Compare resolved
 public surfaces between the reviewed base and head: added/removed declarations,
-effective visibility, field types, generic bounds, callable labels/modes/types,
-effects, normalized contracts, and public constant meanings. Include changes to
-resolved dependency identities and derived capability or permitted-operation
-facts even when no line containing `public` changes. A keyword-only diff can
-draw attention to edits but cannot establish API stability: changing a public
-field's type, a contract on following lines, or a referenced constant can leave
-the modifier untouched.
+effective visibility, published fields and their types, generic bounds, callable
+labels/kinds/types, effects, normalized contracts, and public constant meanings.
+Include changes to resolved dependency identities and derived capability or
+permitted-operation facts even when no line containing `public` changes. A
+keyword-only diff can draw attention to edits but cannot establish API
+stability: changing a public field's type, a contract on following lines, or a
+referenced constant can leave the modifier untouched.
 
 Report representation/layout/release changes separately when they preserve
 the usable source API, since they still affect backend consumers. A private
-field edit can also change a consumed proof path, source capabilities or extraction rights and then
-belongs in the semantic report. Qualification needs witnesses for both cases,
-plus alias renaming with unchanged identity and alias retargeting with changed
-identity. The expected benefit is focused review without flagging every private
-body edit; the cost and completeness of a resolved comparison are unmeasured.
-Defer CI wiring until the module frontend supplies the checked metadata. This
-is a review aid, not a new language acceptance or repository approval rule, and
-this design does not add a CI script or a checked-in API snapshot.
+field edit that changes derived capabilities or extraction rights belongs in
+the semantic report. Qualification needs witnesses for both cases, plus alias
+renaming with unchanged identity and alias retargeting with changed identity.
+The same comparison is the architect's impact input below. Defer CI wiring
+until the module frontend supplies the checked metadata. This is a review aid,
+not a new language acceptance or repository approval rule, and this design
+does not add a CI script or a checked-in API snapshot.
 
-### Module collaboration and incremental ownership
+### Architect and implementer workflow
 
-An implementation task can hold the public `.wfm` fixed while changing several
-files in the module's shared namespace. Public signature changes edit both
-interface and corresponding function definition; implementation-only helper/file
-changes need not edit it, while a public struct's private fields live there.
-Direct directory membership is a tracked source input; dependency declaration
-changes touch the root graph file, where
-concurrent edits can conflict. Neither duplication checks
-nor a flat namespace proves improved
-multi-agent throughput. Cohesive contracts and independent changes remain
-better module boundaries than a fixed file/line count or an exclusive agent lock.
+The workflow in [Purpose](#purpose) needs four toolchain outputs, all derived
+from the queries that incremental checking already maintains:
 
-Cache interface declarations, implementation declarations, correspondence,
-body checks and lookup results separately. Adding a private file checks its
-definitions and affected lookup/scope consumers, not all module bodies.
-Reordering the canonical source inventory changes no semantic identity. Moving
-a definition between files in the same module preserves its declaration
-identity. Proof reuse additionally requires the same resolved body, including
-its new file's alias bindings; source maps and debug-information consumers may
-still change. Track used aliases, missing-name results and collision checks,
-not one whole-file alias-table hash in every body key. An added unused alias
-can still change a collision/no-shadowing result and must not bypass that check.
-Never key every body or object by the entire `.wfm` or build-file digest.
+| Output | Reads | Produces |
+|---|---|---|
+| Interface check | The graph and every `.wfm`, no `.wf` | Graph, alias, visibility, closure and contract-formation diagnostics: the architect's check before handing out work |
+| Module check | One module's `.wfm` and `.wf` files and its dependencies' interfaces | That module's source verdict, listing declared but undefined functions as pending; an implementer is done when the verdict is clean with nothing pending |
+| Impact report | An interface or graph revision against the current checked state | Declarations whose definitions no longer correspond (implementation tasks) and bodies in other modules whose checks now fail (caller tasks), grouped by module |
+| Composition check | All selected modules, instances and targets | Program acceptance, with template-instance and target-requirement failures reported against the module that owns the failing source |
+
+A module check never reads another module's `.wf` (see
+[LANGUAGE.md](LANGUAGE.md#module-verdicts-and-proof-availability)). The one
+rule that would otherwise make a verdict depend on a dependency's body is
+recursive-component formation through function-kind actuals; LANGUAGE.md makes
+that formation conservative, so component membership follows from interfaces.
+A dependency whose implementation is absent, incomplete or failing therefore
+does not block its clients' implementers, and an implementer's `.wf` edit
+changes no other module's verdict. Concrete template instances and target
+requirements are the composition judgments that read bodies; their failures
+name the owning template or allocating function and the requesting site, so
+the task reaches the module whose source must change.
+
+An interface edit fails its implementation until the definition repeats it,
+and fails exactly those callers whose consumed claims changed. The impact
+report computes that set before implementers start, instead of leaving each
+implementer to discover it in a build. It is the dispatch input: one
+implementation task per module with failing definitions and one caller task
+per module with failing bodies. An implementer can run any function of its
+module as an unnamed entry [FN-7] for its own tests; graph entries remain for
+deliverable executables.
+
+Within one module, the files form one namespace. Cache interface declarations,
+implementation declarations, correspondence, body checks and lookup results
+separately. Adding a private file checks its definitions and affected
+lookup/scope consumers, not all module bodies. Reordering the canonical source
+inventory changes no semantic identity. Moving a definition between files in
+the same module preserves its declaration identity. Proof reuse additionally
+requires the same resolved body, including its new file's alias bindings;
+source maps and debug-information consumers may still change. Track used
+aliases, missing-name results and collision checks, not one whole-file
+alias-table hash in every body key. An added unused alias can still change a
+collision/no-shadowing result and must not bypass that check. Never key every
+body or object by the entire `.wfm` or build-file digest.
 
 Validate each external reference against the source module's normalized
 direct-dependency row and the graph's earlier-target checks. Inserting or
@@ -1060,6 +1071,12 @@ position or whole graph-file digest into every body-check key. Listed edges
 are the declared dependencies, while consumed semantic and optimizer inputs
 remain separately tracked. File order does not force serial compilation of
 modules that do not actually depend on one another.
+
+No collaboration trial has been run. Before claiming the workflow's benefit,
+record for a real multi-module change: the interface edits, the pending and
+failing sets reported to each implementer, the implementer tasks that needed
+another interface change, and any module verdict that changed without an edit
+to that module or to its dependencies' interfaces, which would be a defect.
 
 ## Compilation units and file boundaries
 
@@ -1127,9 +1144,11 @@ These families name responsibilities, not a proposed public Rust API:
 | Query | Relevant inputs | Reusable output |
 |---|---|---|
 | Source formation | Interface/source bytes, selected canonical roots, direct directory inventory, grammar/spec identity | Tokens, canonical trees, source maps |
-| Module surface / lookup | Owning-package identity, path components, public/private inventories, relevant file aliases, direct dependency paths, executable/annotation lookup role and spelling | Stable resolved declaration or diagnostic |
-| Graph formation / edge validation | Root graph bytes, canonical module inventory, exact adjacency rows and earlier-target relations | Resolved roots, stable per-module dependency sets, target declarations and valid order certificate, or located graph diagnostic |
-| Target composition / heap requirement | Selected target, bound entry, declared module closure, concrete call/layout/release/native summaries and target requirement | Checked source composition, current execution closure and satisfied environment requirement, or diagnostic |
+| Module surface / lookup | Owning-package identity, path components, public/private inventories and published fields, relevant file aliases, direct dependency paths and spelling | Stable resolved declaration or diagnostic |
+| Graph formation / edge validation | Root graph bytes, canonical module inventory, exact adjacency rows and earlier-target relations | Resolved roots, stable per-module dependency sets, entry declarations and valid order certificate, or located graph diagnostic |
+| Module verdict | One module's source queries and its dependencies' interface queries | The module's source verdict and pending declarations; never reads another module's bodies |
+| Interface impact | Previous and current interface/graph query values and their recorded consumers | Failing definitions and failing consumer bodies, grouped by module |
+| Target composition / heap requirement | Selected entry, its function binding, declared module closure, concrete call/layout/release/native summaries and target requirement | Checked source composition, current execution closure and satisfied environment requirement, or a diagnostic attributed to the introducing function |
 | Module dependency permission | Canonical source/target identities and membership in the source's normalized adjacency row | Allowed direct dependency or missing-edge diagnostic |
 | Interface correspondence | Resolved public declaration and selected implementation declaration | Matching identity and checked normalized declaration, or diagnostic |
 | Contract / type shape | Resolved declaration, arguments, capabilities and projections | Normalized semantic boundary |
@@ -1149,7 +1168,7 @@ edited file can be reparsed while unchanged item values stop downstream
 invalidation. Token-level editor parsing is not necessary to avoid checking
 untouched files and bodies.
 
-Graph parsing projects roots, per-module edges and individual target records
+Graph parsing projects roots, per-module edges and individual entry records
 separately. The selected package input namespace is a tracked input: identical
 text such as `pkg::vector::Vector` in two separate checkouts must not select one
 cache identity. External library bindings are outside this implementation.
@@ -1271,16 +1290,27 @@ graph while preserving that requirement.
 An acyclic module graph does not make actual calls acyclic. Functions inside
 a module may recurse, and binding a function-kind parameter can create
 cross-module concrete call cycles without a reverse source import. Use the
-actual template/binding graph for FN-6 and the concrete call graph for FN-9;
-a proof component need not coincide with a module. Header
-formation still checks constant/group dependency cycles, finite nominal
-instantiation and finite layout. Name availability is not evidence for those
-judgments.
+actual template/binding graph for FN-6; a proof component need not coincide
+with a module. Header formation still checks constant/group dependency cycles,
+finite nominal instantiation and finite layout. Name availability is not
+evidence for those judgments.
 
 Retain FN-9's rule: same-component postcondition summaries are unavailable
 during checking, and each component publishes its clauses atomically. Imported
 declarations are not exempt. Old cached summaries cannot let A and B prove each
 other's postconditions after an edit makes them recursive.
+
+Form components so that a module's verdict depends only on interfaces
+([LANGUAGE.md](LANGUAGE.md#module-verdicts-and-proof-availability)). Within a
+module, the concrete call graph comes from that module's own bodies. A call to
+another module's generic instance adds, besides the call edge, one edge from
+that instance to every function-kind actual and bundle member supplied to it,
+whether or not the callee's body calls them. The callee's body therefore never
+decides which summaries the caller may use, and a caller's check can start
+before that body is even parsed. The rule only enlarges components, so it
+withholds more summaries and never admits a circular proof; it costs a
+postcondition only where a module passes an actual that reaches back into the
+calling component.
 
 Persist adjacency and reverse adjacency by stable node identity. An inserted
 edge between components updates the condensation graph; when it closes a
@@ -1299,10 +1329,13 @@ affected component's derived values to the specified initial state, recompute
 using current predecessors, and compare the result. Every admitted automatic
 family still runs to its specified completion without an acceptance budget.
 
-For example, B's proof initially uses A's established postcondition. An A body
-edit adds a call back to B without changing either signature. The new SCC makes
-A's summary unavailable to B, which must be rechecked. Signature equality
-alone is therefore insufficient: summary availability is a semantic dependency.
+For example, B passes its own function `b` to A's generic `apply` and `b`
+reaches the call site. With the real concrete graph, B's proof could use
+`apply<b>`'s postcondition while A's body never calls its parameter, and lose
+it when an A body edit adds that call without changing either signature. With
+the interface-derived edge, B's component contains `b` and `apply<b>` from the
+start, so the A edit changes nothing for B. Summary availability remains a
+semantic dependency, but only on interfaces and the caller's own bodies.
 
 ### Specialization is a shared build computation
 
@@ -1325,7 +1358,10 @@ FN-6 checks the written template/function-binding graph before permitting
 expansion. Newly selected bindings update that finite graph first. Concrete
 checking, uninhabited-body judgments, postcondition availability and target
 layout remain instance-specific. A symbolic check is not a blanket proof of
-all future instances. Demand discovery closes deterministically over admitted
+all future instances. Instance checks read the template's body, so they are
+composition judgments rather than part of the requesting module's verdict: a
+failure is reported at the template's definition, naming the requesting
+instantiation site. Demand discovery closes deterministically over admitted
 instance keys. Symbolic and concrete checking retain distinct context keys;
 stable declaration IDs alone do not authorize promoting a symbolic scratch
 analysis into a concrete proof. The current generic-validation-scope refusal
@@ -1425,14 +1461,28 @@ invalidation, so actual module granularity and cache behavior need measurement
 on the selected LLVM release.
 
 Stock ThinLTO does not make WF checking incremental, and its combined summary
-analysis does not promise persistent incremental planning. Complete this design
-with dependency-tracked optimization planning: persist function summaries,
-graph components, resolution results and per-backend decisions. Recompute dirty
-analyses from their specified initial states; materialize changed backend plans
-and retain objects when the plan and imported content are unchanged.
+analysis does not promise persistent incremental planning. The optimized
+modular build starts with that stock analysis rerun on every build over
+current summaries, while unchanged backend work is reused through the object
+cache. Where measurement shows the rerun analysis to matter, extend it with
+dependency-tracked optimization planning: persist function summaries, graph
+components, resolution results and per-backend decisions; recompute dirty
+analyses from their specified initial states; materialize changed backend
+plans and retain objects when the plan and imported content are unchanged.
 Whole-program facts can legitimately invalidate many plans when their values
-change. Rebuilding all optimizer analysis on every local edit is a comparison
-implementation, not the endpoint.
+change.
+
+An exploratory observation orders this work; it selects no design. With the
+compiler at the v0.69 baseline, a release build on one four-core Linux
+container, and one or two runs each, checking `tests/programs/wfgrep.wf` (1363
+lines) through LLVM IR emission took about 1.6 s, `clang -O2 -c` on that IR
+about 0.5 s, and the complete native build about 3.2 s, of which about 1.2 s was
+the fixed runtime compile and link that an empty program also pays. A
+2713-line container bundle took about 3.7 s to IR and 1.7 s in clang. Source
+checking and runtime construction dominate at this scale, so query
+persistence, parallel body checking and cached runtime objects come before a
+persistent optimization planner. A controlled measurement under the
+performance method replaces this observation before any claim.
 
 The integration must expose each enabled analysis's complete read set and
 its result. Global reachability, cost thresholds, exports, symbol resolution
@@ -1536,14 +1586,15 @@ must update the affected rules together, not merely remove PROG-1's prohibition.
 |---|---|---|
 | PROG-1/2/3, FN-7 | One ordered bundle, no modules, build-selected unqualified entry | One graph's directory fixes the sole package root; ordered adjacency and named entry targets share that graph; source composition follows declared module closure while ordinary startup obligations remain required |
 | FORM-2/3, GRAM-1/2/3/4/5, DIAG-1 | One root and unqualified name roles | Complete interface/source and root-graph forms, file alias headers, qualified names and diagnostics joining graph rows, aliases, declarations and definitions |
-| TYPE-6, CONST-2, FN-3 | Whole-unit identity; non-function top-level visibility follows source order | Directory-named modules with fixed module.wfm interfaces and shared local names; pkg resolves to the package root and only permitted direct interfaces are source-visible; ordinary privacy, dependency validity and lexical local scope retained |
-| Public declaration correspondence / type representation | No separate interface or public/private source boundary | Declarations and struct fields default private; only .wfm permits public. Every public source struct has one complete definition there, with private support; functions retain declaration-only interfaces and exact normalized body correspondence without repeating public |
+| TYPE-6, CONST-2, FN-3 | Whole-unit identity; non-function top-level visibility follows source order; source variants are program-wide constructors | Directory-named modules with fixed module.wfm interfaces and shared local names; pkg resolves to the package root and only permitted direct interfaces are source-visible; one visibility rule for code and annotations; type-owned variant constructors with scrutinee-typed arm labels; lexical local scope retained |
+| Public declaration correspondence / type representation | No separate interface or public/private source boundary | Declarations and struct fields default private; only .wfm permits public. Every public source struct has one complete definition there, with private support; functions retain declaration-only interfaces with an optional doc entry and exact normalized body correspondence without repeating public |
+| TYPE-2 | A readonly field is never a write target anywhere in the program | Only the declaring module writes a readonly field; outside it the field is never a write target or a construction argument; readonly requires public; prelude measures unchanged |
 | Type/ownership/release consumers | Descriptions in one inventory | Same judgments over imported descriptions; privacy grants no storage or release exemption |
-| FN-2/4/6/9, ENT-3.S12 | Whole-unit instances and summary identities | Same instance and SCC rules across modules, with current cached claims and availability |
+| FN-2/4/6/9, ENT-3.S12 | Whole-unit instances and summary identities | Same instance and SCC rules across modules, with current cached claims and availability; components treat another module's generic instance as calling its function-kind actuals; instance failures reported at the template |
 | DIAG-2 | One exact-program value owns/discards all evidence | Checked component fragments and assembled receipt; failed composition grants no authority, unrelated valid entries survive |
-| STOR-8 | A no-heap unit rejects forbidden type/call spellings throughout its source | An entry target withdraws heap capability from its conservative concrete call/value/layout/release/native closure; ordinary checking still covers every definition in selected modules |
+| STOR-8 | A no-heap unit rejects forbidden type/call spellings throughout its source | An entry target withdraws heap capability from its conservative concrete call/value/layout/release/native closure, reporting the introducing function; ordinary checking still covers every definition in selected modules |
 | STOR-6, EFF-3, PAR-1/2 | Whole-program target/allocation/parallel metadata | Same rules over complete tracked layout, allocation and call-summary dependencies |
-| FN-8/9, ENT-2/3, EFF-1/3 | Ordinary function calls are excluded from contracts; pure is not a termination guarantee | Erased annotations may name interface-private fields; owned input/result projections and state transport carry written contracts; ordinary calls remain excluded from logic and pure keeps its existing meaning |
+| CALL-4, FN-9 | A result's measures are admitted only on the bare result place or through one `Box` `inner` step | Admit measures reached from a result place through struct-field and `Box` `inner` owned descendant projections; MSR-3 placements already carry them; calls remain excluded from contracts and pure keeps its existing meaning |
 | PRE-1 / native binding | Compiler-owned declarations and linked bodies | Bind selected prelude, runtime and target identity into composition/codegen inputs |
 
 The candidate uses each directory's fixed module.wfm as its module declaration
@@ -1553,23 +1604,32 @@ There is no second module-name declaration, source import list,
 implementation-side `pub` or namespace block. Direct directory membership
 determines implementation records. The one project-root graph file fixes the
 primary root by its location and lists ordered modules
-with their exact direct dependencies and named entry targets. Current-package
+with their exact direct dependencies and named entries. Current-package
 references use the fixed `pkg::` qualifier in the owning source context.
 The graph is named `modules.wfg`. LANGUAGE.md specifies its formation,
-namespace/privacy, correspondence, erased field paths, state transport and target rules;
-SYNTAX.md supplies the qualified complete grammar. External bindings remain
-outside the single-package scope. META-5 deltas and the active version are
-computed against the actual integration base; no count is invented here.
+namespace/visibility, correspondence, readonly, contract, module-verdict and
+target rules; SYNTAX.md supplies the qualified complete grammar. External
+bindings remain outside the single-package scope. Rule and token deltas and
+the active version are computed against the actual integration base; no count
+is invented here.
+
+Integration changes some current single-bundle inputs, and each change is a
+stated rule rather than an accident of the new implementation: user variant
+constructors become type-owned (the worked example's `Neg()` becomes
+`Sign::Neg()`); `readonly` on a source field requires `public`, so the TYPE-2
+conformance cases over source structs move to module form while the prelude
+measure cases keep their verdicts; and `public`, `alias` and `pkg` become
+reserved, so current bindings named `alias` are renamed.
 
 | Current implementation owner | Required structural change |
 |---|---|
 | `source.rs`, syntax/canonical rendering | One canonical package root, direct directory snapshots, interface/source and graph grammar roots, stable path/item identity and source maps |
-| `resolution/engine*` | Owning-package resolution, canonical path namespaces, root-graph adjacency and earlier-target validation, file-local aliases, direct-dependency permission checks, shared local inventories, public closure, correspondence and positive/negative lookup dependencies |
+| `resolution/engine*` | Owning-package resolution, canonical path namespaces, root-graph adjacency and earlier-target validation, file-local aliases, direct-dependency permission checks, shared local inventories, public closure over declarations and fields, type-owned variants, correspondence and positive/negative lookup dependencies |
 | `semantic/check.rs`, `check/generics*` | Query-owned body/instance checking and reusable owned results instead of whole-unit borrow chains |
-| `semantic/entailment*`, `postcondition.rs` | Stable claims, retained derivations, current SCC availability and composition |
+| `semantic/entailment*`, `postcondition.rs` | Stable claims, retained derivations, interface-derived SCC availability, CALL-4 result projections and composition |
 | `semantic/model.rs`, allocation/permission consumers | Stable identities and tracked fixed-point/target dependencies |
 | `lowering*`, `backend/emitter*` | Owned IR fragments, external declarations, helper ownership and reusable plans |
-| `driver.rs`, `bin/whitefootc.rs` | Interface/build selection, supplementary interface comparison, persistent scheduling, file-independent backend tasks, cached runtime objects and ordinary final linking |
+| `driver.rs`, `bin/whitefootc.rs` | Interface check, module check, impact report, entry selection including unnamed entries, supplementary interface comparison, persistent scheduling, file-independent backend tasks, cached runtime objects and ordinary final linking |
 | Diagnostics, stack/parallel ledgers, conformance adapter | Current locations, composition-wide reports and one cold/incremental checker entry |
 
 Do not retain the old whole-program checker as a second semantic path.
@@ -1579,9 +1639,10 @@ Implementation may land in reviewable slices, but a split-only backend or
 object-only cache is not the completed capability.
 
 Completion requires a real multi-module consumer exercising imported
-contracts, an independently edited implementation, generic specialization,
-a cross-module proof-cycle edit, optimized body import and ordinary final
-linking through that same pipeline. Public artifact stability is unnecessary;
+contracts, an independently edited implementation, a module checked while its
+dependency's implementation is absent, generic specialization, a cross-module
+proof-cycle edit, optimized body import and ordinary final linking through that
+same pipeline. Public artifact stability is unnecessary;
 correct composition and complete dependency tracking are required.
 
 ## External evidence
@@ -1652,10 +1713,10 @@ and expose limits; they are not measurements of WF or proofs of this design.
   implementation files. Repeated interface basenames remain a navigation cost.
 
 - **E15 — [OpenJML specification visibility](https://www.openjml.org/tutorial/Visibility).**
-  Executable and specification visibility are separate dimensions; direct
-  specification fields can couple clients to representation. WF selects
-  role-based visibility for interface fields, without JML's extra field
-  modifier, solver or logical method-call mechanism.
+  Executable and specification visibility are separate dimensions there, and
+  specification-visible fields couple clients to representation. WF keeps one
+  visibility for code and annotations and publishes the fields contracts need,
+  without JML's extra field modifier, solver or logical method-call mechanism.
 
 ## Implementation contract and sequence
 
@@ -1674,12 +1735,12 @@ Read the corresponding live compiler nodes before implementing their structure.
 
 | Owner | Inputs and outputs | First existing consumer to change |
 |---|---|---|
-| Source/graph session | Immutable input snapshot, `ModuleKey`, direct source inventory, graph rows/targets | `compiler/src/driver.rs` and source formation |
+| Source/graph session | Immutable input snapshot, `ModuleKey`, direct source inventory, graph rows/entries | `compiler/src/driver.rs` and source formation |
 | Syntax and resolution | Role-aware `.wfm`/`.wf` trees, factored qualified syntax, file aliases, canonical `DeclKey` | `compiler/src/syntax` and semantic declaration formation |
-| Interface index | Public claims, complete nominal schemas, role-indexed member paths, derived capability projections, correspondence result | Nominal/call formation and visibility checks |
-| Annotation and state checking | Erased private-field access, typed projection/support keys, owned input/result and current/entry substitutions | `semantic/check/requires.rs`, `ensures.rs`, `support.rs`, calls and result transfer |
+| Interface index | Public claims, complete nominal schemas, published fields, derived capability projections, correspondence result | Nominal/call formation and visibility checks |
+| Visibility and contract checking | One accessibility check for code and annotations, module-relative readonly, CALL-4 result projections over MSR-3 placements | Name resolution, TYPE-2 write-target checks, `semantic/check/ensures.rs` and result transfer |
 | Dependency query store | Stable keys, canonical values, recorded reads, reverse edges, status and receipts | Existing checker entry points called by the driver |
-| Component scheduler | Current ordinary-call SCCs and generic/function-binding closure, predecessor availability | `semantic/check/publication.rs` and generic finiteness |
+| Component scheduler | Current ordinary-call SCCs with interface-derived edges to supplied function actuals, generic/function-binding closure, predecessor availability | `semantic/check/publication.rs` and generic finiteness |
 | Proof fragment store | Local proof nodes plus imported claim slots; checked composition map | Current checked-program publication and audit/remapping |
 | Lowering/backend | Per-instance checked IR, layout/release keys, stable symbols and fragment plans | `compiler/src/backend/emitter.rs`, ABI and generated helpers |
 | Native construction | Pinned LLVM planner/worker process, optimized objects, final link manifest | Existing launcher/native build path |
@@ -1691,7 +1752,6 @@ ModuleKey = (package input namespace, normalized module components)
 DeclKey = (ModuleKey, declaration domain, optional type owner, declared name)
 InstanceKey = (DeclKey, ordered resolved type/const/function argument vector)
 ClaimKey = (InstanceKey, clause role/ordinal, normalized relation)
-ViewKey = (proof context, value/state image, canonical projection path, support versions)
 QueryKey = (query family/schema, subject key, explicit configuration inputs)
 Receipt = (producer QueryKey, canonical result, dependency results, local evidence)
 ObjectKey = (fragment identity, IR, backend plan, imported bodies, target/toolchain)
@@ -1741,21 +1801,23 @@ linear input-validation I/O while doing zero unchanged parsing/proof/backend
 work. Report that I/O separately instead of calling the entire no-op build
 constant-time.
 
-An ordinary getter's written claims and checked body have separate dependencies.
-A caller reads the public contract's resolved field identities, projections,
-state support and current proof availability. Editing only the getter body
-rechecks that implementation; unchanged claims and availability permit caller
-proof reuse. Optimized consumers of the old body must still regenerate.
-A private field mentioned by a consumed contract or explicit client annotation
-is part of that consumer's semantic input, so relevant representation changes
-may require source-proof edits and rechecking. Unused private fields do not
-become all-body dependencies through a whole-interface hash. There is no
-observation realization, logical-call bridge or footprint-expansion query.
+A callable's written claims and checked body have separate dependencies. A
+caller reads the public contract's resolved field identities, projections and
+current proof availability. Editing only the body rechecks that implementation;
+unchanged claims and availability permit caller proof reuse. Optimized
+consumers of the old body must still regenerate. A published field that a
+consumed contract or client annotation mentions is part of that consumer's
+semantic input, so changing it may require source-proof edits and rechecking.
+Private fields are never another module's proof input; unused fields do not
+become all-body dependencies through a whole-interface hash.
 
 ### LLVM construction protocol
 
 Start with one concrete function plus inseparable local helpers per bitcode
-fragment, with private constants/release helpers assigned explicit owners.
+fragment, with private constants/release helpers assigned explicit owners,
+and compare that granularity with one fragment per module before relying on it:
+the finest fragments give the best reuse and the greatest risk of lost
+optimization and per-object overhead.
 Use the same optimized path on cold and warm builds. A persistent planner
 consumes LLVM summaries and symbol resolution through a pinned LLVM-version
 backend process. A worker request names its own bitcode, exact imports,
@@ -1772,11 +1834,15 @@ read inputs; a truly global analysis gets an honest global query with result
 comparison. Cross-module import and specialization are enabled from the first
 native modular experiment. Never cache solely by the previous import list.
 
-The implementation includes an LLVM-version-specific planner adapter where
-upstream APIs do not expose the required read set/state. Stock ThinLTO's full
-index rebuild is useful as a differential oracle, not the delivered endpoint
-for incremental optimization planning. No stable cross-LLVM protocol or remote
-worker service is selected. Changing LLVM invalidates its artifacts.
+The first optimized modular build uses stock ThinLTO planning, a full thin
+link over summaries on every build, with LLVM's backend object cache. It
+already reuses unchanged optimized objects. An LLVM-version-specific planner
+adapter that persists planning state is added where upstream APIs do not
+expose the required read set, once warm-build measurements show thin-link
+planning to be a material share of edit latency; until then the stock full
+index rebuild is both the delivered planner and the differential oracle for
+any later adapter. No stable cross-LLVM protocol or remote worker service is
+selected. Changing LLVM invalidates its artifacts.
 
 Full-LTO is a runtime-quality comparator. If a representative workload loses
 an optimization because a fragment boundary hides information, improve the
@@ -1792,11 +1858,11 @@ Do not mark the full work finished after merely generating several objects.
 
 | Slice | Implement | Required discriminating evidence |
 |---|---|---|
-| 1. Normative boundary | Reconcile this branch's v0.62 grammar with the exact integration base, amend/archive the active spec once, implement graph/source roles, names, publication, correspondence, complete nominal ownership | Grammar and parser cases; wrong-role, missing-edge, private access, duplicate definition and graph-order negatives; all existing single-bundle cases retain their stated behavior under the selected entry path |
-| 2. Checked interfaces | Erased private-field visibility, owned/current/entry/result projections and transport, exact structural effects, public enum/group rules | Queue factory/client; GrowVector external wrapper, function-kind actual and explicit invariant/certificate; executable-private-access, stale-state, hidden linear remainder, exact-effect and unproved postcondition negatives |
-| 3. Query and proof persistence | Canonical keys, recorded read sets, local proof fragments, current SCC availability, atomic receipts and source-map remapping | Cold/warm edit sequences with equal verdicts, changed cycle/edge deletions, failed producer and corrupted cache miss; same source observations with optional optimizer facts disabled |
-| 4. Shared specialization and targets | Build-wide instance ownership, layout/release projections, entry binding, target heap closure and runtime selection | One instance requested by several modules; kernel/tool shared module including unused allocating helper; hidden heap and called generic actual negatives; no allocator symbol required by kernel output |
-| 5. Optimized fragments | Stable symbols, one prevailing definition, cross-module imports, complete persistent plans and cached optimized objects | Inline-body and formerly rejected import edits; layout/ABI changes; recursive helper and scheduler/runtime ownership; clean/warm executable equivalence |
+| 1. Normative boundary | Reconcile this branch's v0.69 grammar with the exact integration base, amend/archive the active spec once, implement graph/source roles, names, publication, correspondence, complete nominal ownership, type-owned variants | Grammar and parser cases; wrong-role, missing-edge, private access, duplicate definition and graph-order negatives; existing single-bundle cases keep their behavior under the selected entry path except for the stated changes to variant construction, source readonly fields and the three reserved words |
+| 2. Checked interfaces and module verdicts | One visibility rule for code and annotations, module-relative readonly, CALL-4 result projections, exact structural effects, public enum/group rules, interface-derived proof components, interface check and module check with pending declarations | Queue factory/client; GrowVector external wrapper, function-kind actual and explicit invariant/certificate; private-field, readonly write/construction, stale-state, hidden linear remainder, exact-effect and unproved postcondition negatives; a module checked with a missing dependency implementation; an unchanged caller verdict after a callee body starts calling a supplied actual |
+| 3. Query and proof persistence | Canonical keys, recorded read sets, local proof fragments, current SCC availability, atomic receipts, source-map remapping, impact report and cached runtime objects | Cold/warm edit sequences with equal verdicts, changed cycle/edge deletions, failed producer and corrupted cache miss; impact reports that equal the failures a cold check finds after the same interface edit; same source observations with optional optimizer facts disabled |
+| 4. Shared specialization and targets | Build-wide instance ownership, layout/release projections, named and unnamed entry binding, target heap closure, attribution of instance and target failures, runtime selection | One instance requested by several modules; kernel/tool shared module including unused allocating helper; hidden heap and called generic actual negatives reported at the introducing function or template; no allocator symbol required by kernel output |
+| 5. Optimized fragments | Stable symbols, one prevailing definition, cross-module imports with stock ThinLTO planning, cached optimized objects, and a persistent planner once measurement justifies it | Inline-body and formerly rejected import edits; layout/ABI changes; recursive helper and scheduler/runtime ownership; clean/warm executable equivalence; fragment-granularity comparison |
 | 6. Cost and quality | Explicit paired experiments on real programs plus controlled scaling | Separate input/check/proof/plan/backend/link costs, affected queries and object counts, peak memory/cache size; account for each repeatable runtime loss against the same-image and full-LTO comparisons |
 
 Preserve a legacy source-bundle CLI as a driver-formed synthetic single module
@@ -1807,13 +1873,18 @@ from that same input inventory and grants no cross-module source exports. The
 legacy `program no_heap` input keeps its current source-wide formation rule
 in this entry mode; graph sources reject that spelling. This is an explicit
 input compatibility rule feeding the same checker, not an alternate cache or
-proof path. It does not permit `.wfm` bodies. Retire this compatibility entry only as a separately
+proof path; the stated language changes, such as type-owned variant
+constructors, apply to it as well. It does not permit `.wfm` bodies. Retire this compatibility entry only as a separately
 explained interface change, not by weakening existing conformance coverage.
 
-The implementation must also provide an explicit `check` operation over all
-registered modules without requiring an executable target, a named-target
-build operation, a way to disable cache reuse for differential verification,
-and a machine-readable query/phase report. CLI spellings belong to the driver;
+The implementation must also provide the interface check, module check,
+impact report and composition check of the
+[workflow section](#architect-and-implementer-workflow), a `check` over all
+registered modules without requiring an executable target, a build of one
+named entry or of an unnamed entry function, a way to disable cache reuse for
+differential verification, and a machine-readable query/phase report. The
+module check and impact report are structured outputs an orchestrating agent
+can read, not only rendered diagnostics. CLI spellings belong to the driver;
 source acceptance and graph meaning cannot depend on them. No daemon, package
 server, installation manager or distributed build service is required.
 
@@ -1826,20 +1897,26 @@ perl .github/run-check.pl module-grammar sh -c 'rustc --edition=2024 research/in
 ```
 
 `qualify.rs` copies the current grammar generator into a temporary directory,
-changes only its declared production inventory/count and new keyword mapping,
-and runs its existing FIRST/FOLLOW, strong-LL(2) and overlapping-token-predicate
-checks for source and graph starts. A mutation restoring the unfactored
-qualified call/value alternatives must fail the same check. It removes the temporary copies; it changes
-no compiler/specification files and is not a daily gate input. The source and
-graph candidate passed these checks. This proves the grammar decisions tested,
-not lexer/parser implementation, role-specific formation, proofs or execution.
+changes only its declared production inventory, production-count check and
+keyword table, and runs its existing FIRST/FOLLOW, strong-LL(2) and
+overlapping-token-predicate checks for the source and graph starts. It then
+compares FIRST(2) sets: every production of the active specification must still
+exist in the candidate and keep every two-token prefix, which catches a
+candidate that silently drops an existing form. Two negative controls must
+fail: restoring the unfactored qualified call/value alternatives fails the
+strong-LL(2) check, and the earlier `affine_factor := atom | "(" affine_expr ")"`
+candidate fails the prefix check. It removes the temporary copies; it changes
+no compiler/specification files and is not a daily gate input. The candidate
+passes all of these checks. This proves the grammar properties tested, not
+lexer/parser implementation, role-specific formation, proofs or execution.
 Delete the adapter when the active specification supplies these productions.
 
 
 ## Discriminating validation criteria
 
-These criteria precede any experiment for selecting this design. No performance
-measurements have been made for this proposal.
+These criteria precede any experiment for selecting this design. No controlled
+performance measurement has been made for this proposal; the exploratory
+baseline above only orders the work.
 
 ### Interface, module and collaboration qualification
 
@@ -1848,15 +1925,26 @@ and proof clause from the handwritten interface and explicit dependency
 interfaces, without implementation browsing or generated missing clauses.
 Every alias used by that interface must be declared in its own header.
 Use ordinary complete declarations, including generic/function-kind APIs.
-Preserve GrowVector's actual proof requirements when evaluating an abstract
-interface through the selected erased structural paths, without weakening
-the library contract. Record declaration-edit costs, reading errors, interface
-and root-graph editing conflicts and cross-module coordination before
-claiming collaboration benefits. No such trial has been performed.
+Preserve GrowVector's actual proof requirements through its published storage
+field, without weakening the library contract. Record declaration-edit costs,
+reading errors, interface and root-graph editing conflicts and cross-module
+coordination before claiming collaboration benefits. No such trial has been
+performed.
+
+For the workflow, check a module whose dependency has declarations without
+definitions, a failing body and a body under edit: the module's verdict and
+diagnostics must equal those obtained with the dependency complete. Edit a
+callee body to start calling a function actual supplied by a caller in another
+module and confirm the caller's verdict and proof reuse are unchanged. After an
+interface edit, the impact report must list exactly the definitions and bodies
+that a clean check then rejects. An interface check must succeed or fail
+without reading any `.wf`, and a module check must report every pending
+declaration while still checking the module's other definitions.
 
 Require negative witnesses for absent/duplicate implementations, mismatched
-labels, modes, bounds, effects or contracts, executable private access, private
-top-level names in public signatures, conflicting dependency roots and cycles involving private
+labels, parameter kinds, bounds, effects or contracts, private access from
+another module in any role, private top-level names or fields in public
+signatures and contracts, conflicting dependency roots and cycles involving private
 dependencies. Changing only an implementation requirement must diagnose a
 correspondence failure. Interface-only declaration checking must not authorize
 lowering without a checked implementation. A private helper in one file must
@@ -1872,22 +1960,23 @@ wrong-case/domain aliases, private targets, shadowing and attempted re-export.
 An alias in `.wfm` must not become a public member or silently enter a `.wf`.
 Owner-dependent field/argument/payload labels must keep their declared spelling.
 
-Reject executable bodies in `.wfm`, including getter bodies, and reject `public`
-anywhere in `.wf`. Exercise a public record whose fields are individually public,
-a mixed-field struct and a public struct whose complete field list is private.
-Keep private support in `.wfm`; reject missing support in `.wf`, inaccessible
-types in public signatures/fields, a `public` alias and duplicate/extended struct
-definitions. A public field of a private enclosing type must not publish it.
-Qualify direct reads, writes, disjoint field borrows and the selected consuming
-operations, including droppable and linear private remainders. Reject executable
-private field access and external construction needing private fields; accept
-well-formed private paths in erased contracts, invariants and effect rows. Derive and check
-all capabilities rather than trusting a type's publication modifier.
-Retain ordinary `opaque`/`readonly` behavior and REF-3 rather than synthesizing
-reference-returning getters. Compare private layout changes against public
-field-schema changes for semantic, layout, release and codegen invalidation.
-Qualify by-value allocation-free use instead of forcing handles or claiming
-unmeasured accessor inlining. The getter/contract witness below remains required.
+Reject executable bodies in `.wfm` and `public` anywhere in `.wf`. Exercise a
+public record whose fields are individually public, a mixed-field struct, a
+struct with a `public readonly` field, and a public struct whose complete field
+list is private. Keep private support in `.wfm`; reject missing support in
+`.wf`, inaccessible types in public signatures/fields, a `public` alias,
+`public` on a member of a private type, `readonly` on a private field and
+duplicate/extended struct definitions. Qualify direct reads, writes, disjoint
+field borrows and the selected consuming operations, including droppable and
+linear private remainders. Accept in-module writes of a readonly field; reject
+external `set`, written-reference arguments and construction through it, and
+reject a private field in another module's code, contract, invariant, `use`
+premise, effect row or formal. Derive and check all capabilities rather than
+trusting a type's publication modifier. Retain ordinary `opaque` behavior and
+REF-3 rather than synthesizing reference-returning getters. Compare private
+layout changes against published-field changes for semantic, layout, release
+and codegen invalidation. Qualify by-value allocation-free use instead of
+forcing handles or claiming unmeasured accessor inlining.
 
 Permute directory enumeration and top-level item order; preserve local lexical scope
 and reject constant/group cycles and invalid recursive layouts by their actual
@@ -1895,9 +1984,8 @@ rules. Move a function between files, add a private file, and change one public
 declaration with its implementation. Compare checking, correspondence and
 backend query counts plus current-source diagnostics. A whole-interface or
 build-file fingerprint invalidating all bodies fails precision. Verify public
-concrete type identity is shared with implementation uses, then separately
-qualify imported capability/release facts and public logical
-expressions before claiming a representation-hiding API.
+concrete type identity is shared with implementation uses, and separately
+qualify imported capability/release facts.
 
 Compare an indivisible LLVM module per WF module with compiler-owned backend
 partitions on the same source and optimization policy. Count frontend/proof
@@ -2007,12 +2095,12 @@ diagnostic locations; accepted executables must have the same independently
 checked results. Report diagnostic ordering separately where DIAG-1 permits
 implementation choices.
 
-Include private-body changes, contract changes, nominal-layout changes,
-unused and newly visible declarations, generic body and argument changes,
-function-kind bindings, new and deleted dependency edges, recursive-component
-merges and splits, no-heap propagation, optimizer imports, and linker inputs.
-Cold and incremental runs must agree even when a newly formed recursive
-component removes a previously usable postcondition.
+Include private-body changes, contract changes, published-field and
+nominal-layout changes, unused and newly visible declarations, generic body and
+argument changes, function-kind bindings, new and deleted dependency edges,
+recursive-component merges and splits, no-heap propagation, optimizer imports,
+and linker inputs. Cold and incremental runs must agree even when a newly
+formed recursive component removes a previously usable postcondition.
 
 Count query execution and invalidation by phase. A repeated no-change build
 executes no body checking, proof derivation, LLVM optimization, or object
@@ -2022,11 +2110,13 @@ callers reuse source proofs. Optimizer consumers that imported the old body
 must be rebuilt. Invalidating every importer solely because a whole module's
 source hash changed fails the precision criterion.
 
-Cross-module privacy also needs executable/annotation pairs: executable private
-field selection rejects while the same valid path is permitted in a public
-contract, invariant or effect row. No private top-level type/function becomes
-public. Interface capabilities must match checked representations, and construction/destructuring
-cannot bypass linear release or existing opacity. Cache eviction and an unrelated failed module
+Cross-module privacy needs paired witnesses: a private field selected from
+another module rejects identically in executable code and in a contract,
+invariant, `use` premise or effect row, while the same path through a published
+field is accepted in every role. No private top-level type/function becomes
+public. Interface capabilities must match checked representations, and
+construction/destructuring cannot bypass linear release, readonly or existing
+opacity. Cache eviction and an unrelated failed module
 never grant authority to an unverified component. Keep normative cold conformance
 execution and targeted incremental edit sequences distinct; do not replace
 conformance execution with shared cached test verdicts.
@@ -2055,29 +2145,33 @@ are reported as such; a small source edit is not a promise of constant work.
 
 ## Design suitability and implementation evidence
 
-The final proposed boundary is one explicit source DAG, self-contained
-interfaces with one representation definition, executable privacy with erased
-field visibility, finer-grained source/proof/codegen queries, and ordinary
-native linking. Ordinary getter postconditions and direct structural annotations
-cover the selected container, wrapper and explicit-proof witnesses. They avoid
-new logical function kinds, termination admission and effect-alias expansion.
-The deliberate cost is representation-dependent proofs: a private path used by
-an interface or client proof is a semantic dependency, not an invisible change.
-Representation-independent models remain a deferred opportunity with concrete
-reopening criteria in LANGUAGE.md and the maintained TODO. Implicit type
-invariants remain unselected; operations state and prove their own boundaries.
+The proposed boundary is one explicit source DAG, self-contained interfaces
+with one representation definition, one visibility rule for code and
+annotations, module verdicts that depend only on interfaces, finer-grained
+source/proof/codegen queries, and ordinary native linking. Published
+`public readonly` fields and direct structural annotations cover the selected
+container, wrapper and explicit-proof witnesses without getters in contracts,
+logical function kinds, termination admission or effect-alias expansion. The
+deliberate cost is that a field a contract needs is part of the interface, so
+changing it is an explicit interface change; that is the property the
+architect/implementer workflow wants. Representation-independent models remain
+a deferred opportunity with reopening criteria in LANGUAGE.md and the
+maintained TODO. Implicit type invariants remain unselected; operations state
+and prove their own boundaries.
 
 The main engineering risks are complete dependency tracking, safe claim
-rebinding after component changes, result-view ownership transport, and the
-LLVM planner adapter. Their consumers and qualification controls are specified
+rebinding after component changes, the conservative component rule's cost in
+real higher-order code, the fidelity of impact reports, and optimization
+quality across fragments. Their consumers and qualification controls are specified
 above. Runtime and build-time superiority are not established by this design;
 the paired experiments are implementation acceptance work. A stable artifact
 ABI, remote cache service, package resolution and incremental native linker
 remain outside the selected scope.
 
-The grammar candidate has been qualified using the existing compiler generator.
-The source demo, abstract-container argument and cold/warm transition matrix
-are design evidence; no execution or performance measurements are claimed.
+The grammar candidate has been qualified using the existing compiler
+generator, including a prefix check that it keeps every active form. The source
+demo, container argument and cold/warm transition matrix are design evidence;
+no execution or controlled performance measurement is claimed.
 The live specification and live trees are unchanged. Pending amendments name
 the root/name/effect/proof and compiler decisions that implementation must
 replace or extend. Exact spec rule/token deltas and new version identity are

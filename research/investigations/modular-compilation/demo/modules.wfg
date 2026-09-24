@@ -4,11 +4,8 @@ pkg::runtime: [pkg::data, pkg::runtime::queue];
 pkg::kernel: [pkg::data, pkg::runtime::queue, pkg::runtime];
 pkg::tools::inspect: [pkg::data, pkg::runtime::queue, pkg::runtime];
 
-target kernel {
-  entry pkg::kernel::start;
+entry kernel = pkg::kernel::start {
   no_heap;
 }
 
-target inspect {
-  entry pkg::tools::inspect::run;
-}
+entry inspect = pkg::tools::inspect::run;

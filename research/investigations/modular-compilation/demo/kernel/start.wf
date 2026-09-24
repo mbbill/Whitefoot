@@ -2,7 +2,7 @@ alias model = pkg::data;
 alias fifo = pkg::runtime::queue;
 alias run_two = pkg::runtime::run_two;
 
-fn start() -> status: own ExitStatus pure {
+fn start() -> status: ExitStatus pure {
   doc "An allocation-free entry workload, not a bootable operating system. Its queue owns fixed-capacity storage by value.";
   let pending = fifo::new();
   let first = model::Job(tag: 7_u8, payload: 250_u8);

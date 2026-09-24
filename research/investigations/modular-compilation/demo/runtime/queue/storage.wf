@@ -1,19 +1,9 @@
 alias Task = pkg::data::Job;
 
-fn new_storage() -> storage: own Ring<Task, capacity> pure contract {
+fn new_storage() -> storage: Ring<Task, capacity> pure contract {
   ensures storage.len == 0_u64;
-  ensures storage.cap == capacity;
-  ensures storage.head == 0_u64;
 } {
-  doc "A module-private constructor used by operations.wf. No declaration in this directory's module.wfm is needed for this internal call.";
+  doc "A module-private constructor used by operations.wf. No declaration in this directory's module.wfm is needed for this internal call, and the ring's capacity equals the constant capacity as a standing fact of its type.";
   let built = ring_new::<Task, capacity>();
   return move built;
-}
-
-fn len(queue: &Queue) -> result: own u64 reads(queue.storage.len) contract {
-  ensures result == deref(queue).storage.len;
-  ensures result <= capacity;
-} {
-  doc "The executable getter reads one built-in Ring measure. Its ordinary postcondition relates the returned integer to that private measure; no logical function admission is needed.";
-  return deref(queue).storage.len;
 }

@@ -13,42 +13,57 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   [syntax candidate](../research/investigations/modular-compilation/SYNTAX.md)
   and [complete specimen](../research/investigations/modular-compilation/demo/README.md)
   are research proposals, not compiler capability. The native grammar probe
-  checks source/graph strong-LL(2) decisions; it does not implement formation,
-  proof or execution. Follow the design's ordered implementation slices and
-  discriminating acceptance matrix: graph/alias/privacy and correspondence;
-  complete representations and imported capability/release; erased private-field
-  visibility, exact structural effects and frozen entry/owned-result projections;
-  query/receipt persistence and deletion-sensitive proof SCCs; shared generic
-  instances and target no-heap closure; incremental optimized LLVM plans and
+  checks source/graph strong-LL(2) decisions and that every active form keeps
+  its two-token prefixes; it does not implement formation, proof or execution.
+  Follow the design's ordered implementation slices and discriminating
+  acceptance matrix: graph/alias/visibility and correspondence; complete
+  representations, module-relative readonly and imported capability/release;
+  CALL-4 result projections and interface-derived proof components; module and
+  interface checks with pending declarations; query/receipt persistence,
+  impact reports and deletion-sensitive proof SCCs; shared generic instances,
+  target no-heap closure and failure attribution; optimized LLVM fragments and
   native objects. Extract useful cases into formal test ownership as each
   mechanism lands; no daily gate depends on the research probe or specimen.
   Compare clean/warm verdicts and executables across edits, including changed
-  summary availability with unchanged headers, getter-body versus written-contract
-  or private-path changes, hidden layout/heap changes, killed versus transported value
-  views, rejected import candidates becoming profitable, and failed builds.
-  Measure input-validation I/O, source/proof/planning/backend/link work, runtime
-  quality and peak memory separately on the queue, GrowVector, wfgrep, SHA-256,
-  a generic-heavy consumer and controlled dependency scaling. A source module
-  is not a compulsory body/proof/object unit. Benefit: independent verified
-  modules without losing runtime optimization; persistence correctness, LLVM
-  integration cost and real build/runtime gains remain unverified. Reopen
-  structural choices when a discriminating control or matched workload fails;
-  remove this entry when the complete implementation evidence lands.
-  Defer resolved-public-surface CI reporting until interface query values exist;
-  its benefit is detecting capability/contract changes that a `public` keyword
-  diff misses. Validate same-identity alias renames, retargeting and private
-  representation edits before wiring a report, with no additional approval
-  gate. Representation-independent model properties and mathematical functions
-  remain deferred: they could reduce proof-source churn or express algorithmic
-  models, but introduce abstraction and potentially termination/proof machinery
-  beyond direct structural annotations. Reopen for a concrete representation
+  summary availability with unchanged headers, a callee body that starts
+  calling a supplied actual, published-field versus private-field changes,
+  hidden layout/heap changes, rejected import candidates becoming profitable,
+  and failed builds. Measure input-validation I/O, source/proof/planning/
+  backend/link work, runtime quality and peak memory separately on the queue,
+  GrowVector, wfgrep, SHA-256, a generic-heavy consumer and controlled
+  dependency scaling; an exploratory run found source checking and runtime
+  construction ahead of LLVM work at current sizes. A source module is not a
+  compulsory body/proof/object unit. Benefit: independently verified modules
+  for large projects and parallel architect/implementer agents without losing
+  runtime optimization; persistence correctness, LLVM integration cost and real
+  build/runtime and collaboration gains remain unverified. Reopen structural
+  choices when a discriminating control or matched workload fails; remove this
+  entry when the complete implementation evidence lands.
+  Integration changes current single-bundle inputs by stated rules: user
+  variant constructors become type-owned, source `readonly` fields require
+  `public` so their TYPE-2 conformance cases move to module form, and bindings
+  named `alias` are renamed. Defer resolved-public-surface CI reporting until
+  interface query values exist; its benefit is detecting capability/contract
+  changes that a `public` keyword diff misses. Validate same-identity alias
+  renames, retargeting and published or private representation edits before
+  wiring a report, with no additional approval gate. Named specification
+  projections, effect regions, representation-independent model properties
+  and mathematical functions remain deferred: they could keep client source
+  unchanged across representation edits or express algorithmic models, but add
+  abstraction and possibly termination/proof machinery. Reopen for a type that
+  must publish a quantity without publishing its storage, or a representation
   migration or contract that makes this cost worthwhile; compare source edits,
-  invalidation, interface size and proof cost with the direct-path design,
-  retaining deterministic polynomial checking and no runtime proof work. External-package resolution
-  and library composition remain deferred by scope; reopen only when selected
-  by the owner, with package identity/version/renaming cases. Subtree-private
-  independently compiled modules remain unselected; reconsider for a concrete
-  privacy consumer that cannot use one module's private implementation files.
+  invalidation, interface size and proof cost with published fields, retaining
+  deterministic polynomial checking and no runtime proof work. Measure the
+  conservative cross-module component rule on real higher-order code; reopen
+  it if it withholds postconditions that ordinary programs need. A persistent
+  LLVM planning adapter waits for warm-build measurements that show stock
+  ThinLTO planning to be a material share of edit latency. External-package
+  resolution and library composition remain deferred by scope; reopen only
+  when selected by the owner, with package identity/version/renaming cases.
+  Subtree-private independently compiled modules remain unselected; reconsider
+  for a concrete privacy consumer that cannot use one module's private
+  implementation files.
 
 - **Select the modular conversion companion.** The
   [conversion comparison](../research/investigations/numeric-conversions/DESIGN.md#companion-operations-and-explicit-deferrals)

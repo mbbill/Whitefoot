@@ -49,14 +49,18 @@ they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge bounda
   keep fact states' closed cores and insert fresh edges instead of recomputing
   the cubic closure, relaxing only which equal-bound L0 derivation is retained.
 - [Modular compilation](investigations/modular-compilation/DESIGN.md):
-  self-contained `module.wfm` interfaces beside their implementation files,
-  a fixed `pkg::` root qualifier, file-local name aliases, one root file for
-  ordered module dependencies, persistent proof dependencies, and incremental
-  cross-module optimization through object generation, with ordinary final
-  linking. Its [source boundary rules](investigations/modular-compilation/LANGUAGE.md)
-  and [qualified grammar](investigations/modular-compilation/SYNTAX.md) select
-  erased private-field contracts, exact structural effects and complete
-  formation rules for implementation. A [complete source demo](investigations/modular-compilation/demo/README.md)
+  modules for large projects and for an architect agent that owns module
+  interfaces while implementer agents write bodies in parallel. Self-contained
+  `module.wfm` interfaces sit beside their implementation files, with a fixed
+  `pkg::` root qualifier, file-local name aliases, one root file for ordered
+  module dependencies, module verdicts that depend only on interfaces,
+  persistent proof dependencies, and incremental cross-module optimization
+  through object generation, with ordinary final linking. Its
+  [source boundary rules](investigations/modular-compilation/LANGUAGE.md) and
+  [qualified grammar](investigations/modular-compilation/SYNTAX.md) select one
+  visibility rule for code and annotations, module-relative `readonly`,
+  result-projection contracts and complete formation rules for implementation.
+  A [complete source demo](investigations/modular-compilation/demo/README.md)
   follows a queue through shared libraries, a no-heap entry and a heap-using
   tool; its graph, interfaces and bodies illustrate proposed syntax, not
   currently executable compiler behavior.

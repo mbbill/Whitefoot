@@ -1,8 +1,8 @@
 # Module boundary rules selected for implementation
 
 This companion to [DESIGN.md](DESIGN.md) closes its source-language choices.
-It is a proposed amendment over this branch's active specification, not a
-claim that the compiler implements these rules. [SYNTAX.md](SYNTAX.md) is the
+It is a proposed amendment over the active v0.69 specification, not a claim
+that the compiler implements these rules. [SYNTAX.md](SYNTAX.md) is the
 complete grammar input. Existing rules apply unless a change is stated here.
 Retain this document during implementation; fold its normative content into
 the active specification and retire it when that specification owns the whole
@@ -15,15 +15,19 @@ Its directory is the package root; the process working directory is irrelevant.
 There is no graph search, nested graph activation, external package binding,
 version resolution, glob import, namespace declaration, or public re-export
 through an alias in this design. External packages are deliberately outside
-the user's selected scope, not an unresolved prerequisite for implementation.
+the selected scope, not an unresolved prerequisite for implementation.
 
-A graph consists of one or more module rows followed by zero or more targets:
+A graph consists of one or more module rows followed by zero or more named
+entries:
 
 ```text
 pkg::data: [];
 pkg::runtime::queue: [pkg::data];
 pkg::runtime: [pkg::data, pkg::runtime::queue];
-target tool { entry pkg::runtime::run; }
+entry tool = pkg::runtime::run;
+entry small = pkg::runtime::run_small {
+  no_heap;
+}
 ```
 
 Each row registers one directory and lists its exact permitted direct
@@ -73,27 +77,32 @@ An unrooted qualified module path begins with an explicit file-local module
 alias; directory proximity is not an implicit alias. Ordinary type-owned
 group/variant qualification remains a distinct name domain.
 
-Canonical rendering extends the existing source renderer: one space after
-`public`, ordinary declaration indentation, `;` on a bodyless function,
-`alias name = pkg::path;`. A graph row renders as
-`pkg::path: [pkg::dependency, pkg::other];`, preserving written row and edge
-order, with one row per line. Targets use ordinary two-space block indentation,
-entry first and optional no_heap second. Semantic dependency sets normalize
-independently of written edge order. No formatter infers an order or changes
-the user's dependency architecture. Existing no-comment/doc rules remain.
+Canonical rendering extends the existing source renderer [FORM-2]: one space
+after `public`, ordinary declaration indentation, and `alias name = pkg::path;`
+with one alias per line, no empty line between aliases and one empty line
+before the first item. A `.wfm` function declaration ends in `;` directly after
+its header or its contract's closing brace, or in its `doc` entry, which stays
+on that same line after one space: `} doc "Appends one job.";`. A graph row
+renders as `pkg::path: [pkg::dependency, pkg::other];`, preserving written row
+and edge order, with rows on consecutive lines. An entry without requirements
+renders on one line as `entry name = pkg::path;`; an entry with requirements
+renders its block with ordinary two-space indentation. One empty line separates
+the last row from the first entry and each entry from the next. Semantic
+dependency sets normalize independently of written edge order. No formatter
+infers an order or changes the user's dependency architecture. Existing
+no-comment/doc rules remain [FORM-4].
 
 Source-qualified references require an edge; compiler metadata traversals do
 not grant one. For example, A may return B's public type and C may consume that
 inferred value through A's API with only C -> A -> B. C cannot explicitly name
-`pkg::b::T`, alias it, access a B member, or call B without C -> B. The compiler
+`pkg::b::T`, alias it, select a B field, or call B without C -> B. The compiler
 still loads B's semantic/layout descriptions and records those actual query
 dependencies. Passing an inferred value does not publish B's source namespace.
 
 ## Interface ownership and correspondence
 
 Only `.wfm` accepts `public`; unmarked declarations and data members are
-private to the module. There is no `private` keyword. `public` inside a private
-type does not make that type or an access route public. Aliases, parameter
+private to the module. There is no `private` keyword. Aliases, parameter
 labels and local binders are never export declarations.
 
 Every public source nominal has one complete definition in `.wfm`, including
@@ -104,15 +113,19 @@ The `.wfm` must form using its own declarations, prelude and allowed dependency
 interfaces; it never searches `.wf` for a missing type, constant, contract,
 member path or callable signature.
 
-All `.wfm` function items, public or private, are declarations ending in `;`.
-Every one requires exactly one ordinary `.wf` definition. Definitions repeat
-the entire signature and contract without `public`; ordinary private helpers
-need no `.wfm` declaration. There are no executable bodies, generated property
-bodies or trusted external source declarations in `.wfm`. Constants, complete
-type schemas, groups and binding maps are declarative definitions.
+All `.wfm` function items, public or private, are declarations ending in `;` or
+in their `doc` entry. Every one requires exactly one ordinary `.wf` definition.
+Definitions repeat the entire signature and contract without `public`; ordinary
+private helpers need no `.wfm` declaration. There are no executable bodies,
+generated property bodies or trusted external source declarations in `.wfm`.
+Constants, complete type schemas, groups and binding maps are declarative
+definitions. The declaration's `doc` states what the function is for and what
+its callers and implementer need beyond the checked contract; the definition's
+body `doc` describes the implementation. Documentation takes no part in
+correspondence.
 
 Compare declaration and definition after resolving aliases and canonical
-identities. Equality covers parameter order/names/modes/types, result
+identities. Equality covers parameter order/names/kinds/types, result
 order/names/types, generic order/kinds/bounds, normalized
 effects, and ordered normalized requires/ensures. Alpha-normalize generic and
 contract-local binders; retain public argument/result labels because callers
@@ -123,20 +136,87 @@ implementation requirement, weaker guarantee, extra effect, missing definition
 or duplicate definition rejects. Internal invariants may prove additional
 facts; those facts do not silently augment the public contract.
 
+Correspondence is exact equality rather than FN-4-style refinement. An edited
+declaration is an interface change: its implementation must acknowledge it in
+the same written form, so no check can pass an interface edit by leaving the
+implementation text behind. Refinement would let an implementation keep a
+weaker requirement, a stronger guarantee or a narrower effect row, and callers
+could use none of these because they read only the declaration; parameters,
+results, generics and types cannot differ in any case. Repeating a checked
+header costs a writer little. The one place where exactness asks the interface
+to track the implementation is the effect row, and a row entry may cover the
+accesses below its path [EFF-2]: an interface that declares `writes(queue.storage)`
+admits every implementation writing parts of that storage.
+
 Interface formation can run before implementation checking. It produces a
 well-formed claim, never permission to trust that claim. Current body evidence,
 generic-instance checks and current proof-component availability are required
 before any composed program or executable is published.
 
-## Types, fields, variants, constants and groups
+## Visibility
 
-`public` permits executable field access; erased annotations also admit private
-interface fields under the rules below. Ordinary ownership, effects, `readonly`,
-`opaque`, reference validity and release rules determine its operations.
-External field construction requires every field accessible. There are no
-default private values or hidden constructor writes. A factory is an ordinary
-public function implemented inside the module. Whole-value ownership and
-replacement remain ordinary operations and do not require private field access.
+One visibility rule serves executable code and annotations. Every name and
+field selection in a body, a contract clause or `define`, a loop or local
+invariant, a `use` premise, an effect row and a function-kind formal must be
+accessible where it is written. A private declaration or field is accessible
+only inside its declaring module; a public one is accessible to modules with a
+direct graph edge to its declaring module. The prelude's declarations and
+members keep their ordinary availability.
+
+Public signatures close over accessible vocabulary. A public function's
+parameter and result types, bounds, effect row, contract clauses and
+function-kind formals, a public field's type and a public constant's type may
+name only declarations and fields that the module's clients can access: public
+declarations of the module and of its permitted dependency interfaces, and
+public fields along every written path. This is the existing requirement that
+public contracts not name private constants or nominals, applied to fields as
+well. A private function's contract may name private fields, since only the
+module's own code calls it.
+
+A field that a public contract or effect row must name is therefore public,
+usually `public readonly`. A queue whose operations are stated over its ring's
+length publishes that ring:
+
+```text
+public nocopy struct Queue {
+  public readonly storage: Ring<Job, capacity>;
+}
+
+public fn push(queue: &Queue, job: Job) -> result: unit writes(queue.storage) contract {
+  requires deref(queue).storage.len < capacity;
+  ensures deref(queue).storage.len == deref(entry(queue)).storage.len + 1_u64;
+} doc "Appends one job at the back of the ring.";
+```
+
+Any caller may then read `deref(queue).storage.len` in executable code and in
+annotations, exactly as it reads a prelude window's measure; no getter is
+needed. Publication exposes the whole field, its type and every member reachable
+through it, so a change to a published representation is an interface change
+that callers see. That is the intended cost: the interface states what its
+contracts depend on.
+
+`readonly` restricts writers to the declaring module. Outside the module that
+declares a readonly field, a path that ends at or passes through that field is
+never a `set` target and never the argument at a reference parameter whose
+callee row writes that parameter, and construction cannot supply its value.
+Inside the declaring module it is an ordinary field. Every other TYPE-2 clause
+is unchanged: a whole-value assignment still replaces the field together with
+its owner, and a declared row may name it in `writes` because the row reports
+what callees change. The prelude declares the storage shapes' `len`, `cap`
+and `head`, so only prelude operations write them, as today. This fulfills the
+existing readonly decision's stated purpose, a member every holder may read
+that only the type's own operations change, which a program-wide prohibition
+cannot provide for a source type whose operations update it in place.
+`readonly` is admitted only on a public field, since a private field is already
+unreachable from other modules. Ordinary copy reads, borrows, reads through
+references and consuming extraction of a readonly field remain available to
+every module that can access it.
+
+Construction from outside the declaring module requires every field to be
+public and not readonly; otherwise the module's own functions construct the
+value. There are no default private values or hidden constructor writes.
+Whole-value ownership and replacement remain ordinary operations and need no
+field access.
 
 An extraction names only accessible fields. A consuming field move kills the
 whole owner; no holes remain. Unbound parts, including private parts covered
@@ -144,8 +224,15 @@ by `..`, must have a legal ordinary release. A private linear remainder makes
 that extraction illegal; consume it through an operation in the owning module.
 Moved-owner references become invalid and later use rejects. Their mere
 existence is not a new prohibition on the move. Copy fields are read without
-`move`. `readonly` and source `opaque` retain their existing inside/outside
-meaning; neither is a privacy synonym or a new construction escape.
+`move`. Source `opaque` retains its existing meaning and is not a privacy
+synonym.
+
+`public` on a field or payload field of a private type, and `public` in `.wf`,
+reject: neither creates an access route. A public field of a public type is
+reachable only through a value of that type, so effective access also requires
+an accessible enclosing type.
+
+## Types, capabilities, variants, constants and groups
 
 Copy/drop capabilities are derived from every owning component, including
 private support, under existing modifiers and generic substitution. `nocopy`
@@ -155,17 +242,17 @@ a generic body's written bounds permit. Hidden linear ownership remains an
 obligation; `nodrop` requires lawful explicit consumption, not a specially
 named finalizer. No user-defined destructor or hidden runtime callback is added.
 
-A public enum is a **closed case API**: every variant must be explicitly
-`public`; leaving one private is a formation error. A private enum may have
-unmarked variants. Payload members remain default-private and can be published
-individually. Constructors require access to all their payload fields;
-patterns bind accessible payloads and use the existing residual-release rule
-for `..` (extended to enum arms by this proposal). Match coverage still includes
-every variant, independently of payload access. There is no wildcard hiding a
-case or unproved disposal of a private linear payload. An API that hides its
-cases uses a public struct containing a private enum and ordinary operations.
-This selects a closed sum rather than adding non-exhaustive enums and opaque
-case matching to the module mechanism.
+A public enum is a closed case API: all of its variants are public, and a
+private enum's variants are private. Variants carry no modifier, since a
+per-variant marker could only restate its enum's visibility. Payload fields
+default private and can be published individually. Constructors require access
+to all their payload fields; patterns bind accessible payloads and use the
+existing residual-release rule for `..`, which this proposal extends to enum
+arms. Match coverage still includes every variant, independently of payload
+access. There is no wildcard hiding a case or unproved disposal of a private
+linear payload. An API that hides its cases uses a public struct containing a
+private enum and ordinary operations. This selects a closed sum rather than
+adding non-exhaustive enums and opaque case matching to the module mechanism.
 
 User enum constructors are type-owned: `Choice<T>::Some(value: x)` or
 `pkg::data::Choice<T>::Some(value: x)`. A direct alias may abbreviate an
@@ -174,7 +261,12 @@ retain the explicit owner and its arguments. Pattern and result-route labels
 remain unqualified and resolve against the known scrutinee/result type, not a
 module-wide variant inventory. Compiler-prelude constructor spellings such as
 `Ok<T,E>` retain their existing declarations. Type and enum member lookup
-therefore need explicit owner identity in persistent keys.
+therefore need explicit owner identity in persistent keys. This changes v0.69,
+where each source variant is a constructor in the program-wide inventory and an
+arm or route label first resolves globally [TYPE-6]: a current unqualified
+construction such as the worked example's `Neg()` becomes `Sign::Neg()`, and
+arm resolution reads the already typed scrutinee. The legacy source-bundle mode
+feeds the same checker and follows the same rule.
 
 A public constant has its exact type and initializer in `.wfm`. Its value,
 including private helper-constant evaluation, must be determined there.
@@ -196,87 +288,22 @@ formal calls still apply; no runtime dictionary or implicit implementation is
 introduced. A public bundle is an explicit API choice in the sole interface,
 unlike an alias that cannot publish anything.
 
-## Runtime access and annotation visibility
+## Effects
 
-Field privacy restricts executable source access. A field declared in a
-complete `.wfm` representation may also be named in the following erased
-annotation contexts, whether or not that field is `public`:
+Effect rows keep their structural paths [EFF-1]. Under the visibility rule, a
+row in a public declaration, in a function-kind formal, or anywhere outside the
+declaring module names only accessible fields; prelude measure and window-part
+names remain available. An operation can declare `writes(values.storage)` while
+leaving a public `values.tag` independent, and a caller can repeat that row in
+a wrapper or formal. There are no named footprint declarations, mapping
+expansion, extra disjointness axioms or new path syntax.
 
-- `requires`, `ensures` and their contract-local `define` expressions;
-- loop-header and local invariants, including relation premises in `use`;
-- declared `reads` and `writes` paths, including function-kind signatures.
-
-This rule applies both to the defining module and to other modules. It allows
-an external wrapper, generic formal or explicit certificate to state the same
-condition as an imported operation. Restricting hidden terms to the checker's
-internal fact store would support some automatic call chains but leave those
-written boundaries inexpressible. A module interface is self-contained because
-its complete representations and the dependency interfaces contain every
-structural component these annotations use.
-
-The exception is for structural field/member selection, not general access to
-private declarations. The root value and its type must already be
-legally available in the writer's context. A path may traverse private supporting records in the
-complete interface closure; their types are obtained from the preceding
-field, not named as new public types. Ordinary type, variant-refinement,
-initialization, domain, reference-validity and proof-expression restrictions
-still apply at every step. A proof cannot inspect an uninitialized element or
-an inactive enum payload simply because the path is erased.
-
-Private top-level functions, constants and nominal names do not become public.
-Public callable types, generic bounds and named constants used by its public
-contracts must retain accessible vocabulary. Private constants needed only to
-evaluate a representation or public constant remain allowed under interface
-closure. No alias publishes private names or grants annotation privileges to
-executable uses. Representations defined only in `.wf` remain inaccessible
-outside their module; an annotation cannot make the interface read a body file.
-
-Every field selector written by an external author still requires the direct
-graph edge to that member's defining source module. Crossing into a dependency's
-record may therefore require another explicit edge; prelude members keep their
-ordinary availability. In contrast, consuming an already resolved callee
-contract is a metadata traversal, not a newly written source reference. The
-checker can carry its private-path facts without granting the caller new names
-or graph permissions. The query engine records those metadata dependencies.
-
-Executable field reads, writes, borrows, construction and consuming extraction
-continue to require ordinary public access. An ordinary `let`, branch condition,
-return expression or constant initializer is not an annotation merely because
-its value will later help a proof. An annotation produces no runtime value,
-borrow, memory read, instruction or effect, and cannot feed a value back into
-executable code. The source role is fixed before resolution; later dead-code
-elimination never changes which visibility rule applies. Diagnostic locations
-and messages must distinguish inaccessible executable access from an unproved
-or ill-formed annotation.
-
-This deliberately permits representation-dependent proofs. Changing a private
-field named by a public contract or client invariant can require client proof
-edits and rechecking. Unrelated private fields do not become dependencies just
-because their definition shares a file. Runtime encapsulation is preserved;
-representation-independent specification vocabulary is not promised by privacy.
-
-## Exact effects over private representation
-
-Effects use their ordinary structural paths directly:
-
-```text
-public struct GrowVector<T, const ceiling: u64> {
-  storage: Box<Slots<T>>;
-  public tag: u64;
-}
-
-public fn len<T, const ceiling: u64>(values: &GrowVector<T, ceiling>)
-  -> result: own u64 reads(values.storage.inner.len) contract {
-  ensures result == deref(values).storage.inner.len;
-};
-```
-
-An operation can declare `writes(values.storage)` while leaving `values.tag`
-independent. A caller can repeat that row in a wrapper or function-kind formal,
-but cannot execute a private `storage` selection. There are no named footprint
-declarations, mapping expansion, extra disjointness axioms or new path syntax.
-Ordinary field, enum-payload, prelude-window, parameter-index and range steps
-retain their existing rules. Multiple substates use multiple ordinary row items.
+A public operation whose body writes private state declares the nearest
+accessible path that covers it, which may be the whole parameter. EFF-2 already
+counts a declared entry as exhibited by any access at or below its path, so the
+covering row is exact in the existing sense; it only loses the independence a
+finer published path would show. When callers need that independence, the
+interface publishes the finer field.
 
 Resolve each path to canonical member identities, then check declared versus
 exhibited effects in both directions using EFF-2. An annotation mentioning a
@@ -284,144 +311,126 @@ field exhibits no runtime access and cannot justify a padded effect row.
 Every declared effect still needs its ordinary body witness; `writes` retains
 its existing coverage of reads. Aliases, prefixes, ranges and actual storage
 identity decide overlap. Different spellings never imply independence.
-
 `pure` retains its existing meaning: no state reads/writes and no promise of
-termination. A runtime getter over a reference declares its actual reads. Proof
-field mentions create support dependencies for fact validity but no runtime
-effect or scheduling edge. Layout/member changes revalidate the precise path,
-overlap, function-kind-refinement and fact-kill consumers that read them.
+termination.
 
-## Ordinary getters and private contract facts
+## Contracts across modules
 
-There is no `observe` modifier, logical function call or `use view` step in
-this proposal. An ordinary getter has a declaration in `.wfm`, a body in `.wf`,
-and a written postcondition such as the `len` declaration above. Its body must
-prove that postcondition under the ordinary checker. No automatic body-derived
-equation is added to the caller's contract boundary.
+A caller uses only a callee's written declaration: its requirements are
+discharged at the call and its verified postconditions are established after a
+real normal return [FN-8, FN-9, CALL-6]. Because a public contract names only
+accessible paths, a caller can restate any condition it needs in its own
+contract, loop invariant or `use` premise. Calls remain excluded from contract
+expressions; an ordinary getter keeps its runtime call and its written
+normal-return postconditions, and a published readonly field makes a getter
+unnecessary where executable code only needs to read state.
 
-After a real normal-returning call, the checker substitutes the selected
-arguments/result into its verified postconditions, including private paths.
-For example, `n = len(q)` establishes a relation between n and q's current
-private length. A later branch `n < ceiling`, with no intervening overlapping
-write, can discharge append's private-length requirement through the existing
-integer proof rules. Caller executable source need not read the private field.
-A call that never returns reaches no such continuation; getter termination is
-not an added prerequisite. Getters may use ordinary control flow and arithmetic
-subject to existing safety, effect and contract rules.
+The existing denotations carry across modules unchanged [MSR-3]: a requirement
+reads entry state, an unqualified reference-parameter path in `ensures` reads
+the exit state of a written parameter, `deref(entry(parameter))` names the
+frozen entry datum, and an own parameter's projections denote its entry value.
+Call, entry and placement datums, including CONSTRUCT and REBIND placements
+over owned descendant projections, and ENT-5 kills apply to fields of every
+module alike. There is no runtime snapshot and no new datum family.
 
-An erased contract cannot call this getter. It directly names the relevant
-field path instead. This retains FN-8's exclusion of ordinary callable execution
-and avoids introducing a second class of executable functions or a termination
-checker. Calling a getter solely to obtain a proof fact is unnecessary when an
-erased structural assertion can express the same obligation. When executable
-code needs the value, it uses the ordinary getter and its normal codegen path;
-no accessor-inlining or zero runtime cost is assumed without evidence.
-
-## State, contracts, ownership transfer and proofs
-
-A projected proof datum has the key
-`(proof context, value/state image, canonical projection path, support versions)`.
-Images are scoped to their body/instance and proof context, including separate
-hypothetical refinement contexts; dense local IDs are not global identities.
-Support includes the selected storage, holders needed to reach it, index/range
-datums and live evidence needed for path formation. Aliased references resolve
-to the same storage identity. Field privacy does not change that identity or
-turn a mutable projection into a timeless value.
-
-In a `requires`, a reference parameter's projected path denotes entry state.
-In an `ensures`, its ordinary path denotes post-state immediately before return
-transfer; `deref(entry(parameter)).field` selects its frozen entry image.
-The explicit entry former retains its existing restriction to ensures and a
-reference parameter whose selected path overlaps the enclosing function's
-declared writes. Entry of a local or owned parameter, nested entry and runtime
-entry remain rejected. A disjoint/read-only projection uses its bare path.
-
-An owned parameter's contract path denotes its entry value even if the body
-later consumes it. A named aggregate result's path, for example
-`made.storage.len`, denotes the returned value before ownership transfer.
-Extend the admitted FN-8/FN-9 operand forms to well-formed structural projections
-from those owned input/result roots whose final type belongs to the existing
-integer proof fragment. Retain the existing relation shapes and selected-result
-rules: no arbitrary aggregate equality, new general enum result route or
-proof-only borrow expression is introduced. Ordinary scalar result clauses
-continue unchanged.
-
-Each projection must satisfy the existing type, validity, refinement and
-partial-operation-domain judgments in the relevant state before becoming a
-datum. A requirement cannot assume itself to establish its own formation.
-Frozen entry paths are formed from entry facts; returning-value paths are
-checked against the actual returned value. Clause order supplies no circular
-domain proof. Representation shape determines legal projections, never an
-unstated relation between arbitrary fields.
-
-Writes kill facts whose live support overlaps under ENT-5; disjoint writes
-preserve them. Frozen entry datums are immutable mathematical values and do not
-follow later writes. Capture only the projections referenced by the contract or
-proof; no runtime snapshot or object copy is introduced. An old getter result
-continues to exist as a scalar after a write, but its equality with the current
-field no longer follows. Reference validity is checked independently: a retained
-integer fact cannot make a stale borrowed holder valid again.
-
-Construction, call-result binding and whole-owner transfer transport relevant
-projection facts by structural substitution of the transferred value image.
-Construction maps field values/measures into the constructed owner's image;
-return maps that owner to the result ordinal; the caller maps the result to its
-new destination. Move invalidates old live paths, then carries only relevant
-facts whose affected support moves with that value and whose other support
-remains live. Private fields participate exactly as public fields do.
-
-This is not transport of the entire local proof context. Across calls, only
-written verified relations and existing normative type facts are available.
-An unrelated local fact or an implementation-inferred stronger theorem does not
-cross the interface. Effect roots still belong to the current destination;
-proof transport introduces no owned-value effect ancestry. References into the
-old owner stay invalid. Copy creates a distinct storage identity with the copied
-value facts; later writes separate the live states. Replacement kills the old
-destination evidence. Multi-result transport is ordinal-local and failure-atomic.
-The queue constructor therefore states `ensures made.storage.len == 0_u64;`
-without a logical getter, hidden identity field or mandatory boxing.
+One admission is extended. CALL-4 admits a measure member of a result place
+only at the bare result or through one `inner` step of a `Box` result. Admit a
+measure member reached from a result place through any owned descendant
+projection [MSR-3] made of struct-field selections and `Box` `inner` steps, so
+a constructor can state `ensures made.storage.len == 0_u64;`. The measure is
+queried at the selected return over the place that return hands back and
+instantiated at the result destination, exactly as CALL-4 already does for the
+bare result; MSR-3's CONSTRUCT and REBIND placements carry the measures into
+that place. Enum-payload steps are excluded because no route selects a variant
+of an unrouted result. The extension is independent of modules: a single-bundle
+constructor such as `grow_vector_new` cannot state that its vector is empty
+today.
 
 There is no implicit source type invariant. Privacy alone establishes no
 relation between fields. Public operations state their requirements and
-guarantees; callbacks obey their ordinary boundaries even while an implementation
-temporarily changes private state. A public mutable field linked to private
-storage cannot rely on an unstated preserved invariant.
+guarantees; callbacks obey their ordinary boundaries even while an
+implementation temporarily changes private state. A public mutable field linked
+to private storage cannot rely on an unstated preserved invariant.
+
+## Module verdicts and proof availability
+
+A module's source verdict covers every judgment on its `.wfm` and direct `.wf`
+files. It depends only on those files, the graph rows, the prelude, and the
+resolved interfaces of its direct dependencies with the interfaces they close
+over. It never depends on another module's `.wf`. Consequently a module can be
+checked while a dependency's implementation is absent, incomplete or failing,
+and an edit to one module's `.wf` changes no other module's source verdict.
+This is the property the architect/implementer workflow in DESIGN.md relies on.
+
+Recursive proof availability is the one rule that needs adjusting for this.
+FN-9 forms the concrete ordinary-call graph and withholds same-component
+summaries. Across modules the real edges from a generic callee's instance to
+the function-kind actuals it calls are known only from the callee's body. So
+when a module's bodies call an instance of another module's generic callable,
+that module's component formation treats the instance as calling every
+function-kind actual and bundle member supplied to it, whether or not the
+callee's body calls them. Components can only grow under this rule, so it
+withholds more summaries and never admits a circular proof. It costs a
+postcondition only in the rare case where a module passes an actual that
+reaches back into the calling component. An edit to the callee's body then
+cannot change which summaries the caller's proofs may use.
+
+Two judgments are about composition rather than one module's sources, and each
+is reported against the module that owns the failing source:
+
+- A concrete instance of a generic template is checked with the template's body
+  and the requester's actual arguments [FN-2, FN-6, FN-8, FN-9]. A failure is
+  reported at the template's definition, naming the requesting instantiation
+  site.
+- A target requirement such as `no_heap` is checked over the target's execution
+  closure. A failure is reported at the function whose body or layout
+  introduces the heap requirement, with the call path from the entry.
+
+A composed program is accepted only when every selected module's verdict holds,
+every declared function has its definition, every required instance checks, and
+every target requirement holds. A module whose `.wfm` declares a function that
+no `.wf` defines yet is reported with that declaration pending; its other
+definitions are still checked, and pending declarations block only
+composition, lowering and publication.
 
 ## Composition argument and its implementation obligations
 
 This argument assumes the existing primitive, ownership and proof judgments;
 it is a design argument, not a verification of an implementation.
 
-First, annotation visibility adds names for already described structural
-components. Formation still checks each term's type/domain/state. Naming a
-private field establishes no fact and authorizes no runtime access. An erased
-annotation has the same primitive meaning inside and outside the type's module.
+First, visibility adds no proof rule: every annotation is formed, typed and
+state-checked exactly as the same text inside the declaring module would be,
+and naming a field establishes no fact and authorizes no runtime access.
 
 Second, each body proves exactly its declared requirements/effects/guarantees
-under the existing recursive-component restrictions. Exported clauses are
-resolved expressions with member identities, not strings reparsed with the
-caller's runtime privileges. Only normal-returning calls publish those verified
+under the existing recursive-component restrictions, with components formed as
+above. Exported clauses are resolved expressions with member identities, not
+strings reparsed in the caller. Only normal-returning calls publish verified
 postconditions. A declaration or an unverified implementation supplies no axiom.
 
 Third, substitution preserves the referenced state/value image. Actual writes
 remove overlapping facts before postconditions describe the new state; entry
-images remain frozen; checked ownership transfer renames only carried value
-facts. Current proof availability and dependency equality are required when a
-cached caller derivation is rebound to a changed implementation. Private-member
-identity and meaning are dependencies when the consumed clause uses them.
+datums remain frozen; checked ownership transfer carries only the measures MSR-3
+places. Current proof availability and dependency equality are required when a
+cached caller derivation is rebound to a changed implementation.
 
-Finally, composition validates every selected source obligation and current
-dependency/availability edge before publication. Native symbol resolution is
+Finally, composition validates every selected source obligation, instance and
+target requirement before publication. Native symbol resolution is
 insufficient. Cold/warm differential and mutation tests exercise these rules;
 agreement between two executions of the checker is not a general soundness proof.
 
-## Container, wrapper and explicit-proof qualification
+## Qualification witnesses
 
-The GrowVector boundary uses its existing algorithms and direct private paths:
+The GrowVector boundary uses its existing algorithms with a published storage
+field and an independent public tag:
 
 ```text
-public fn append<T, const ceiling: u64>(values: &GrowVector<T, ceiling>, value: own T)
-  -> length: own u64 writes(values.storage) contract {
+public struct GrowVector<T, const ceiling: u64> {
+  public readonly storage: Box<Slots<T>>;
+  public tag: u64;
+}
+
+public fn append<T, const ceiling: u64>(values: &GrowVector<T, ceiling>, value: T) -> length: u64 writes(values.storage) contract {
   requires deref(values).storage.inner.len < ceiling;
   ensures length == deref(values).storage.inner.len;
   ensures deref(values).storage.inner.len == deref(entry(values)).storage.inner.len + 1_u64;
@@ -429,40 +438,40 @@ public fn append<T, const ceiling: u64>(values: &GrowVector<T, ceiling>, value: 
 };
 ```
 
-An external wrapper can repeat those clauses and the precise effect row without
-executing a private selection. A function-kind formal can state the same complete
-boundary; actual refinement and calls use ordinary FN-4/FN-5. A consuming
-`free_empty(values: own GrowVector<T, ceiling>)` can require
-`values.storage.inner.len == 0_u64` using its owned entry value. The queue demo
-supplies the constructor/result-transport case and an external function-kind
-consumer that writes private paths in both its `.wfm` and `.wf` contracts.
+An external wrapper repeats those clauses and the row. A function-kind formal
+states the same boundary; actual refinement and calls use ordinary FN-4/FN-5.
+A consuming `free_empty(values: GrowVector<T, ceiling>)` requires
+`values.storage.inner.len <= 0_u64` over its owned entry value, as the current
+library already does. A caller loop keeps a header relation between its counter
+and `deref(values).storage.inner.len`, and an explicit multi-premise `use`
+certificate names that length beyond the automatic family. The queue demo
+supplies the constructor/result projection case and an external function-kind
+consumer.
 
-Use a caller loop with a header relation between its iteration counter and a
-private length to qualify writer-visible erased access. Also require an
-explicit multi-premise `use` certificate mentioning that length, beyond AUTO's
-automatic family, so merely carrying hidden checker terms cannot pass this
-criterion. Neither witness may insert runtime getter calls solely to name a
-proof datum. Each written private selector must receive the same direct-edge,
-type and state-formation checks as the equivalent public selector.
+Required positive controls: module-internal `set` and written-argument uses of
+a readonly field; external copy reads, borrows and consuming extraction of a
+public readonly field; a public contract, invariant and effect row over public
+fields; a private function contract over private fields; a module checked while
+its dependency's `.wf` is missing; and an unchanged caller verdict after a
+callee body edit that starts calling a function actual supplied by that caller.
 
-Positive/negative controls must distinguish the same private path in an
-invariant from an executable `let`, branch, borrow, write, constructor or
-destructure; only the erased uses get the visibility exception. Reject an
-ordinary getter call in a contract, an unproved getter postcondition, use of
-private top-level names, missing member-owner edges, uninitialized projections,
-inactive payloads and stale references. Invalidate a saved live length relation
-after append but preserve it across a tag-only write; keep its entry datum;
-distinguish aliasing objects from independent ones; reject `free_empty` after a
-nonempty transfer and declared effects without a body witness. Recheck consumed
-private-path changes, but reuse source proofs after a getter body edit whose
-written claims and current availability remain equal. These are implementation
-acceptance obligations, not executed test results.
-
+Required negative controls: external `set`, written-argument and construction
+through a readonly field; `readonly` on a private field; `public` on a member of
+a private type; a private field named in a public contract, public effect row,
+formal or external annotation, each with the same diagnostic role as the
+equivalent executable selection; an unproved postcondition; a missing
+member-owner edge; uninhabited projections; inactive payloads; stale references;
+a CALL-4 result projection through an enum payload; an invalidated saved length
+relation after `append` that survives a tag-only write; `free_empty` after a
+nonempty transfer; and declared effects without a body witness. Recheck consumed
+field changes, and reuse source proofs after a body edit whose written claims
+and current availability remain equal. These are implementation acceptance
+obligations, not executed test results.
 
 ## Target requirements
 
-A named target selects exactly one public ordinary entry function by a full
-`pkg` path. It does not change FN-7/PROG-3: the build must establish a complete
+A named entry selects exactly one public ordinary function by a full `pkg`
+path. It does not change FN-7/PROG-3: the build must establish a complete
 ordinary call binding, including explicit generic actuals, argument types,
 ownership and requirements, and ordinary result handling. That checked binding
 is a target-composition input, not permission to assume requirements from a
@@ -472,14 +481,21 @@ supported binding shapes, using the selected identity instead of a hardcoded
 name; a nongeneric wrapper is the direct source route to a different instance
 or argument adaptation. Unsupported launcher binding is a compiler capability
 diagnostic, not rejection of an otherwise valid source function or graph.
-Duplicate targets and missing/private/wrong-kind entries reject. A graph may
-have no targets for check-only use. Check-only formation does not execute an
+Duplicate entry names and missing/private/wrong-kind functions reject. A graph
+may have no entries for check-only use. Check-only formation does not execute an
 entry or demand that a native launcher support every valid callable signature.
+
+The build invocation may also run any ordinary function of a registered module,
+public or private, as an unnamed entry under the same FN-7/PROG-3 binding [FN-7].
+Graph entries name deliverable executables and their environment requirements;
+an implementer's module-local test entry needs neither a graph edit nor a public
+declaration.
 
 All graph rows are structurally checked for every invocation. A target checks
 every source definition/template in its entry module's declared dependency
-closure, not just called bodies. Check-only may select one module closure or
-all graph modules. Required concrete instances still receive ordinary checking.
+closure, not just called bodies. Check-only may select one module, one module
+closure or all graph modules. Required concrete instances still receive
+ordinary checking.
 
 `no_heap` is a target requirement over the conservative concrete execution
 closure, seeded by the entry and platform startup. Include all syntactic calls
@@ -489,8 +505,9 @@ runtime supplies. Include calls in branches regardless of constant conditions;
 exclude erased proof annotations and uncalled declarations. Phantom type
 arguments contribute only through their actual value/layout/release uses.
 An allocation, required heap-bearing value, heap release or runtime heap need
-rejects that target. Private representation is not an exemption. Fixed-point
-summaries retract on edge/body deletion and are evaluated before optimization.
+rejects that target at the function that introduces it. Private representation
+is not an exemption. Fixed-point summaries retract on edge/body deletion and are
+evaluated before optimization.
 
 An unused allocating helper in a selected source module remains fully checked
 but does not impose a heap need on this target. Objects and runtime selection
@@ -499,24 +516,39 @@ STOR-8's compilation-unit spelling ban; merely moving `program no_heap` into
 the graph without changing its judgment is insufficient. Ordinary module
 proofs are shared between heap-enabled and no-heap targets.
 
-## Sources and rejected extensions
+## Sources and rejected alternatives
 
 [OpenJML's visibility explanation](https://www.openjml.org/tutorial/Visibility)
 separates executable access from specification visibility and describes the
-representation coupling of directly exposed specification fields. WF selects
-one role-based rule for interface fields rather than another per-field
-visibility modifier. This is a comparison, not adoption of JML's solver or
-logical method calls. [Why3's type-invariant rules](https://why3.org/doc/syntaxref.html#record-types)
+representation coupling of directly exposed specification fields. WF does not
+select a separate specification visibility: fields that contracts need are
+published, and privacy means the same in code and annotations. This is a
+comparison, not adoption of JML's solver or logical method calls.
+[Why3's type-invariant rules](https://why3.org/doc/syntaxref.html#record-types)
 illustrate the extra construction and call-boundary obligations of implicit
 invariants; WF retains explicit operation contracts.
 
-The earlier finite `observe` / `use view` and named `footprint` candidate is
-superseded: its premise that public annotations must hide every private path
-is no longer selected. Direct erased paths cover the queue, wrapper, generic
-formal, explicit-certificate and precise-effect requirements with existing
-proof/effect families. Checker-only hidden facts were considered and rejected
-as the complete authoring boundary because they leave external contracts and
-manual invariants without names for required conditions.
+- Letting annotations name private fields of complete interface definitions
+  while executable code could not: rejected because contracts would depend on
+  fields the interface does not mark as API, and the checker would need a
+  second, role-dependent lookup. Publishing the field states the dependency
+  where the interface is reviewed.
+- Named specification projections and effect regions in `.wfm` that clients use
+  instead of field paths: deferred. They would let a representation change
+  leave client source untouched, which the module goals do not require; the
+  field path is already the explicit interface. Reopen for a concrete type that
+  must publish one quantity without publishing the storage that holds it.
+- A program-wide `readonly` for source fields: rejected because the declaring
+  module could not update its own published state in place, and a type whose
+  operations maintain a readable member is the purpose the readonly decision
+  states.
+- Refinement correspondence between declaration and definition: rejected for
+  the reasons in the correspondence section.
+- A per-variant `public` marker: rejected because it can only repeat its enum's
+  visibility.
+- Getter functions in contract expressions, logical observation functions and
+  `use view` steps: not selected. Published fields name the state directly and
+  keep FN-8's exclusion of callable execution in contracts.
 
 Representation-independent model properties and mathematical functions remain
 possible separate extensions. Reopen them for a concrete consumer whose
