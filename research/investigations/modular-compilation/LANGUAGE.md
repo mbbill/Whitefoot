@@ -364,7 +364,7 @@ checked while a dependency's implementation is absent, incomplete or failing,
 and an edit to one module's `.wf` changes no other module's source verdict.
 This is the property the architect/implementer workflow in DESIGN.md relies on.
 
-Recursive proof availability is the one rule that needs adjusting for this.
+Recursive proof availability needs two adjustments for this.
 FN-9 forms the concrete ordinary-call graph and withholds same-component
 summaries. Across modules the real edges from a generic callee's instance to
 the function-kind actuals it calls are known only from the callee's body. So
@@ -373,9 +373,21 @@ that module's component formation treats the instance as calling every
 function-kind actual and bundle member supplied to it, whether or not the
 callee's body calls them. Components can only grow under this rule, so it
 withholds more summaries and never admits a circular proof. It costs a
-postcondition only in the rare case where a module passes an actual that
-reaches back into the calling component. An edit to the callee's body then
-cannot change which summaries the caller's proofs may use.
+postcondition only where a module passes an actual that reaches back into the
+calling component. An edit to the callee's body then cannot change which
+summaries the caller's proofs may use.
+
+FN-9 also publishes a component's summaries atomically, only after every member
+verifies. A component formed under this rule can contain another module's
+instance, whose body only composition checks, so atomic publication would hold
+the calling module's own summaries, and with them its verdict, until
+composition. Publication is therefore per module: once every member that a
+module contributes to a component verifies, those members' summaries are
+available to the module's other proofs, and composition still requires every
+member of the component to verify. Same-component summaries stay unavailable
+during checking, so no member's proof depends on another member's result, and
+publishing one module's verified members admits no circular proof. For a
+component within one module this is FN-9's existing rule.
 
 Two judgments are about composition rather than one module's sources, and each
 is reported against the module that owns the failing source:
@@ -405,8 +417,8 @@ state-checked exactly as the same text inside the declaring module would be,
 and naming a field establishes no fact and authorizes no runtime access.
 
 Second, each body proves exactly its declared requirements/effects/guarantees
-under the existing recursive-component restrictions, with components formed as
-above. Exported clauses are resolved expressions with member identities, not
+under the existing recursive-component restrictions, with components formed and
+published as above. Exported clauses are resolved expressions with member identities, not
 strings reparsed in the caller. Only normal-returning calls publish verified
 postconditions. A declaration or an unverified implementation supplies no axiom.
 

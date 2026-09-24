@@ -7,18 +7,21 @@ criterion for deciding whether to pursue it. Entries do not select a design.
 Remove an item when its implementation and checks land, or its validation
 concludes with a recorded disposition; retain any selected follow-up work here.
 
-- **Implement and qualify the modular incremental design.** The selected
+- **Implement and qualify the modular incremental design.** The module
+  decisions in the [language](../design/language.md) and
+  [compiler](../design/compiler.md) design trees rest on the
   [architecture](../research/investigations/modular-compilation/DESIGN.md),
   [source rules](../research/investigations/modular-compilation/LANGUAGE.md),
   [syntax candidate](../research/investigations/modular-compilation/SYNTAX.md)
-  and [complete specimen](../research/investigations/modular-compilation/demo/README.md)
-  are research proposals, not compiler capability. The native grammar probe
+  and [complete specimen](../research/investigations/modular-compilation/demo/README.md),
+  which are research records, not compiler capability. The native grammar probe
   checks source/graph strong-LL(2) decisions and that every active form keeps
   its two-token prefixes; it does not implement formation, proof or execution.
   Follow the design's ordered implementation slices and discriminating
   acceptance matrix: graph/alias/visibility and correspondence; complete
   representations, module-relative readonly and imported capability/release;
-  CALL-4 result projections and interface-derived proof components; module and
+  CALL-4 result projections and interface-derived proof components with
+  per-module summary publication; module and
   interface checks with pending declarations; query/receipt persistence,
   impact reports and deletion-sensitive proof SCCs; shared generic instances,
   target no-heap closure and failure attribution; optimized LLVM fragments and

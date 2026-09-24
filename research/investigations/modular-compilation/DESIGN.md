@@ -1,16 +1,19 @@
 # Modular compilation with incremental verification and optimization
 
-This is a proposed architecture, not implemented language behavior. Its
+This is the architecture behind the modular decisions in the live
+[language](../../../design/language.md) and [compiler](../../../design/compiler.md)
+design trees, not implemented language behavior. Its
 requirements are independent module compilation, incremental work from source
 checking through optimized object generation, ordinary final linking, and
 runtime optimization that is not
-artificially limited by source module boundaries. The active specification and
-live design tree remain authoritative until amended. The inspected baseline is
+artificially limited by source module boundaries. The active specification
+remains authoritative until it is amended. The inspected baseline is
 `0f22b026b062c36ef2f8ce9c725ee4307e1fda64` (kernel v0.69).
 
 This investigation owns the architecture, its alternatives, external evidence,
-and selection criteria. Keep it as the grounds for the eventual compiler and
-language decisions; revise it in place when evidence changes the proposal.
+and selection criteria. Keep it as the grounds for those decisions and the
+eventual specification amendment; revise it in place when evidence changes the
+proposal.
 Remove it only after its grounds are superseded or preserved elsewhere and it
 contains no unique useful evidence.
 
@@ -1162,8 +1165,9 @@ These families name responsibilities, not a proposed public Rust API:
 | Final link action | Selected objects, runtime, linker/options and entry | Executable; ordinary full link when inputs change |
 
 Module is the source/distribution boundary; a function or concrete instance is
-the ordinary body-check boundary; a recursive component is an atomic proof
-publication boundary. Query granularity is not forced to whole modules. An
+the ordinary body-check boundary; one module's members of a recursive component
+form an atomic proof publication boundary. Query granularity is not forced to
+whole modules. An
 edited file can be reparsed while unchanged item values stop downstream
 invalidation. Token-level editor parsing is not necessary to avoid checking
 untouched files and bodies.
@@ -1295,10 +1299,10 @@ with a module. Header formation still checks constant/group dependency cycles,
 finite nominal instantiation and finite layout. Name availability is not
 evidence for those judgments.
 
-Retain FN-9's rule: same-component postcondition summaries are unavailable
-during checking, and each component publishes its clauses atomically. Imported
-declarations are not exempt. Old cached summaries cannot let A and B prove each
-other's postconditions after an edit makes them recursive.
+Retain FN-9's rule that same-component postcondition summaries are unavailable
+during checking. Imported declarations are not exempt. Old cached summaries
+cannot let A and B prove each other's postconditions after an edit makes them
+recursive.
 
 Form components so that a module's verdict depends only on interfaces
 ([LANGUAGE.md](LANGUAGE.md#module-verdicts-and-proof-availability)). Within a
@@ -1311,6 +1315,14 @@ before that body is even parsed. The rule only enlarges components, so it
 withholds more summaries and never admits a circular proof; it costs a
 postcondition only where a module passes an actual that reaches back into the
 calling component.
+
+Such a component can contain another module's instance, which only composition
+checks, so FN-9's atomic publication applies to each module's members rather
+than to the whole component: a module publishes its own members' clauses for
+its verdict once all of them verify, and composition requires every member of
+the component to verify. Because no member's proof uses a same-component
+summary, publishing one module's verified members admits no circular proof;
+within one module this is FN-9's existing rule.
 
 Persist adjacency and reverse adjacency by stable node identity. An inserted
 edge between components updates the condensation graph; when it closes a
@@ -1590,7 +1602,7 @@ must update the affected rules together, not merely remove PROG-1's prohibition.
 | Public declaration correspondence / type representation | No separate interface or public/private source boundary | Declarations and struct fields default private; only .wfm permits public. Every public source struct has one complete definition there, with private support; functions retain declaration-only interfaces with an optional doc entry and exact normalized body correspondence without repeating public |
 | TYPE-2 | A readonly field is never a write target anywhere in the program | Only the declaring module writes a readonly field; outside it the field is never a write target or a construction argument; readonly requires public; prelude measures unchanged |
 | Type/ownership/release consumers | Descriptions in one inventory | Same judgments over imported descriptions; privacy grants no storage or release exemption |
-| FN-2/4/6/9, ENT-3.S12 | Whole-unit instances and summary identities | Same instance and SCC rules across modules, with current cached claims and availability; components treat another module's generic instance as calling its function-kind actuals; instance failures reported at the template |
+| FN-2/4/6/9, ENT-3.S12 | Whole-unit instances and summary identities; a component publishes its summaries only after every member verifies | Same instance and SCC rules across modules, with current cached claims and availability; components treat another module's generic instance as calling its function-kind actuals; each module publishes its own component members' summaries once all of them verify, and composition requires every member to verify; instance failures reported at the template |
 | DIAG-2 | One exact-program value owns/discards all evidence | Checked component fragments and assembled receipt; failed composition grants no authority, unrelated valid entries survive |
 | STOR-8 | A no-heap unit rejects forbidden type/call spellings throughout its source | An entry target withdraws heap capability from its conservative concrete call/value/layout/release/native closure, reporting the introducing function; ordinary checking still covers every definition in selected modules |
 | STOR-6, EFF-3, PAR-1/2 | Whole-program target/allocation/parallel metadata | Same rules over complete tracked layout, allocation and call-summary dependencies |
@@ -1859,7 +1871,7 @@ Do not mark the full work finished after merely generating several objects.
 | Slice | Implement | Required discriminating evidence |
 |---|---|---|
 | 1. Normative boundary | Reconcile this branch's v0.69 grammar with the exact integration base, amend/archive the active spec once, implement graph/source roles, names, publication, correspondence, complete nominal ownership, type-owned variants | Grammar and parser cases; wrong-role, missing-edge, private access, duplicate definition and graph-order negatives; existing single-bundle cases keep their behavior under the selected entry path except for the stated changes to variant construction, source readonly fields and the three reserved words |
-| 2. Checked interfaces and module verdicts | One visibility rule for code and annotations, module-relative readonly, CALL-4 result projections, exact structural effects, public enum/group rules, interface-derived proof components, interface check and module check with pending declarations | Queue factory/client; GrowVector external wrapper, function-kind actual and explicit invariant/certificate; private-field, readonly write/construction, stale-state, hidden linear remainder, exact-effect and unproved postcondition negatives; a module checked with a missing dependency implementation; an unchanged caller verdict after a callee body starts calling a supplied actual |
+| 2. Checked interfaces and module verdicts | One visibility rule for code and annotations, module-relative readonly, CALL-4 result projections, exact structural effects, public enum/group rules, interface-derived proof components with per-module summary publication, interface check and module check with pending declarations | Queue factory/client; GrowVector external wrapper, function-kind actual and explicit invariant/certificate; private-field, readonly write/construction, stale-state, hidden linear remainder, exact-effect and unproved postcondition negatives; a module checked with a missing dependency implementation; an unchanged caller verdict after a callee body starts calling a supplied actual; a module verdict that uses a summary of its own member of a component containing another module's instance before that instance is checked |
 | 3. Query and proof persistence | Canonical keys, recorded read sets, local proof fragments, current SCC availability, atomic receipts, source-map remapping, impact report and cached runtime objects | Cold/warm edit sequences with equal verdicts, changed cycle/edge deletions, failed producer and corrupted cache miss; impact reports that equal the failures a cold check finds after the same interface edit; same source observations with optional optimizer facts disabled |
 | 4. Shared specialization and targets | Build-wide instance ownership, layout/release projections, named and unnamed entry binding, target heap closure, attribution of instance and target failures, runtime selection | One instance requested by several modules; kernel/tool shared module including unused allocating helper; hidden heap and called generic actual negatives reported at the introducing function or template; no allocator symbol required by kernel output |
 | 5. Optimized fragments | Stable symbols, one prevailing definition, cross-module imports with stock ThinLTO planning, cached optimized objects, and a persistent planner once measurement justifies it | Inline-body and formerly rejected import edits; layout/ABI changes; recursive helper and scheduler/runtime ownership; clean/warm executable equivalence; fragment-granularity comparison |
@@ -2172,9 +2184,11 @@ The grammar candidate has been qualified using the existing compiler
 generator, including a prefix check that it keeps every active form. The source
 demo, container argument and cold/warm transition matrix are design evidence;
 no execution or controlled performance measurement is claimed.
-The live specification and live trees are unchanged. Pending amendments name
-the root/name/effect/proof and compiler decisions that implementation must
-replace or extend. Exact spec rule/token deltas and new version identity are
+The live specification is unchanged. The owner approved the module, name,
+visibility, readonly, proof, effect and compiler decisions into the live design
+trees; three amendments, for retained evidence, the legacy source-bundle entry
+and per-module summary publication, await their own ruling. Exact spec
+rule/token deltas and new version identity are
 computed against the integration revision, not copied from this branch after
 other language work has merged. The maintained TODO records the implementation
 and measurement obligations rather than leaving these choices undecided.

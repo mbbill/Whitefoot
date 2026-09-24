@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-24 Adopt modular compilation for large projects and parallel agent work
+
+Nodes: language, language/name-resolution, language/checks-and-proofs, language/effects, language/data-model/readonly-field, compiler, compiler/incremental-compilation
+
+Owner-approved: After the DCR handoff for PR #85 at c2d8a37d, the owner explicitly agreed to all seven pending amendments and to the recommended responses to all four review findings, including removing the duplicate upper-bound rejection from the effects amendment.
+
+Summary: Apply the seven reviewed amendments unchanged apart from that removal and relative links corrected for their live-node locations. A program becomes an explicit ordered graph of interface-defined modules whose source verdicts depend only on their dependencies' interfaces, while composition checks concrete instances and target requirements and reports each failure at its source. `module.wfm` interfaces carry complete public contracts under one visibility rule for code and annotations, with exact declaration correspondence and type-owned variants. `readonly` becomes module-relative, ensures clauses may name result measures through owned descendant projections, cross-module components treat a called generic instance as calling its supplied actuals, and effect rows name accessible paths. The compiler keeps one checker over version-private persistent results, and the new incremental-compilation node records its query, evidence, instance, optimization and workflow decisions. The replaced closed-unit, whole-unit visibility, program-wide readonly and first compiler decisions move to rejected lists with their reasons. The [modular-compilation design](../research/investigations/modular-compilation/DESIGN.md) and its [language boundary](../research/investigations/modular-compilation/LANGUAGE.md) supply the grounds. The other recommended responses, recording the retained-evidence rule and the legacy source-bundle entry in compiler/incremental-compilation and per-module summary publication in language/checks-and-proofs, add decision text the owner has not yet seen, so they remain amendments awaiting their own ruling. The specification and compiler are unchanged; this ruling does not authorize a merge.
+
 ## 2026-09-23 Adopt the measured priority queue and ordered-map baselines
 
 Nodes: language/data-model/priority-queue-storage, language/data-model/ordered-map-storage
