@@ -151,6 +151,17 @@ fn link_module_with_driver_arguments(
     }
 }
 
+/// The LLVM type name the emitter gives the nominal whose stable spelling is
+/// `spelling` [MOD-8]: the first sixteen hexadecimal digits of its SHA-256.
+pub fn nominal_type(spelling: &str) -> String {
+    let digest = whitefoot::content_digest(spelling.as_bytes());
+    let hex = digest[..8]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    format!("%wf.t.{hex}")
+}
+
 pub fn compile_program(name: &str) -> String {
     compile_programs(&[name])
 }

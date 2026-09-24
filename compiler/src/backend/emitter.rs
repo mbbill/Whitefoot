@@ -655,7 +655,7 @@ fn emit_global_constants(
         write!(
             output,
             "{} = private unnamed_addr constant {} {}",
-            constant_symbol(constant.id()),
+            constant_symbol(constant),
             llvm_type(program, constant.ty())?,
             global_constant_value(program, constant.value(), constant.ty())?
         )
@@ -751,7 +751,7 @@ fn emit_nominal_declarations(
             continue;
         }
         emitted = true;
-        write!(output, "{} = type {{ ", nominal_symbol(nominal.id()))
+        write!(output, "{} = type {{ ", nominal_symbol(nominal))
             .map_err(|_| BackendFailure::TextEmission)?;
         match nominal.kind() {
             IrNominalKind::Struct { fields } => {
@@ -1946,7 +1946,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     "  {} = getelementptr inbounds {}, ptr {}, i64 0",
                     self.value_name(result),
                     llvm_type(self.program, global.ty())?,
-                    constant_symbol(*constant)
+                    constant_symbol(global)
                 )
                 .map_err(|_| BackendFailure::TextEmission)
             }
@@ -2385,7 +2385,7 @@ pub(crate) fn llvm_type(
                 };
                 Ok(if variants.len() <= 2 { "i1" } else { "i32" }.to_owned())
             } else {
-                Ok(nominal_symbol(id))
+                Ok(nominal_symbol(nominal))
             }
         }
     }
@@ -2562,12 +2562,15 @@ fn value_name(value: IrValueId) -> String {
     format!("%v{}", value.ordinal())
 }
 
-fn nominal_symbol(nominal: IrNominalId) -> String {
-    format!("%wf.t{}", nominal.ordinal())
+/// A nominal's LLVM type name, by its stable link name, so an unchanged
+/// function's fragment keeps its text when another type is added [MOD-8].
+fn nominal_symbol(nominal: &crate::IrNominal) -> String {
+    format!("%wf.t.{}", nominal.link_name())
 }
 
-fn constant_symbol(constant: crate::IrConstantId) -> String {
-    format!("@.wf_const.{}", constant.ordinal())
+/// A constant's LLVM global, by its stable link name [MOD-8].
+fn constant_symbol(constant: &crate::IrGlobalConstant) -> String {
+    format!("@.wf_const.{}", constant.link_name())
 }
 
 fn integer_safe_label(value: IrValueId) -> String {

@@ -303,20 +303,59 @@ fn lower_global_value(value: &CheckedValue) -> Result<IrGlobalValue, LoweringFai
     }
 }
 
+/// [MOD-8] the stable link names of a table of entities: each the first
+/// sixteen hexadecimal digits of the SHA-256 of its stable spelling, the
+/// order of first occurrence appended where two spellings agree, and its
+/// ordinal where it has no stable spelling.
+fn link_names<'spelling>(spellings: impl Iterator<Item = Option<&'spelling str>>) -> Vec<String> {
+    use std::fmt::Write as _;
+    let mut used = std::collections::HashMap::<String, usize>::new();
+    spellings
+        .enumerate()
+        .map(|(index, spelling)| {
+            let base = spelling.map_or_else(
+                || format!("n{index}"),
+                |spelling| {
+                    let digest = crate::spec::sha256::digest(spelling.as_bytes());
+                    let mut hex = String::with_capacity(16);
+                    for byte in &digest[..8] {
+                        let _ = write!(hex, "{byte:02x}");
+                    }
+                    hex
+                },
+            );
+            let count = used.entry(base.clone()).or_insert(0);
+            let name = if *count == 0 {
+                base
+            } else {
+                format!("{base}.{count}")
+            };
+            *count += 1;
+            name
+        })
+        .collect()
+}
+
 fn lower_constants(
     erasure: TypeLowering<'_>,
     data: &CheckedProgramData,
 ) -> Result<Vec<IrGlobalConstant>, LoweringFailure> {
+    let names = link_names(
+        (0..data.constants.len())
+            .map(|index| data.constant_spellings.get(index).map(String::as_str)),
+    );
     data.constants
         .iter()
+        .zip(names)
         .enumerate()
-        .map(|(index, constant)| {
+        .map(|(index, (constant, link_name))| {
             if constant.id.0 as usize != index || constant.value.ty() != constant.ty {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }
             Ok(IrGlobalConstant {
                 id: IrConstantId(constant.id.0),
                 name: constant.name.clone(),
+                link_name,
                 ty: lower_type(erasure, constant.ty)?,
                 value: lower_global_value(&constant.value)?,
             })
@@ -328,12 +367,17 @@ fn lower_nominals(
     erasure: TypeLowering<'_>,
     data: &CheckedProgramData,
 ) -> Result<Vec<IrNominal>, LoweringFailure> {
+    let names = link_names(
+        (0..data.executable_nominal_count)
+            .map(|index| data.nominal_spellings.get(index).and_then(Option::as_deref)),
+    );
     data.nominals
         .get(..data.executable_nominal_count)
         .ok_or(LoweringFailure::InvalidCheckedProgram)?
         .iter()
+        .zip(names)
         .enumerate()
-        .map(|(index, nominal)| {
+        .map(|(index, (nominal, link_name))| {
             if nominal.id.0 as usize != index {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }
@@ -377,6 +421,7 @@ fn lower_nominals(
             };
             Ok(IrNominal {
                 name: nominal.name.clone(),
+                link_name,
                 id: IrNominalId(
                     u32::try_from(index).map_err(|_| LoweringFailure::CounterOverflow)?,
                 ),

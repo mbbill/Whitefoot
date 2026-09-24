@@ -1713,6 +1713,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             nominal_lowering_alias: self.nominal_lowering_aliases()?,
             nominal_physical_alias: self.nominal_physical_aliases()?,
             constants: self.checked_constants.clone(),
+            nominal_spellings: (0..self.nominals.len())
+                .map(|index| {
+                    u32::try_from(index).ok().and_then(|index| {
+                        self.stable_type_spelling(CheckedType::Nominal(NominalId(index)))
+                    })
+                })
+                .collect(),
+            constant_spellings: self
+                .checked_constants
+                .iter()
+                .map(|constant| self.module_symbol_base(constant.declaration, &constant.name))
+                .collect(),
             derived_consts,
             functions,
             contract_queries: self.contract_queries.borrow().clone(),

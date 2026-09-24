@@ -82,11 +82,6 @@ impl IrBlockId {
 pub struct IrNominalId(u32);
 
 impl IrNominalId {
-    #[must_use]
-    pub const fn ordinal(self) -> u32 {
-        self.0
-    }
-
     pub(crate) const fn index(self) -> usize {
         self.0 as usize
     }
@@ -96,11 +91,6 @@ impl IrNominalId {
 pub struct IrConstantId(u32);
 
 impl IrConstantId {
-    #[must_use]
-    pub const fn ordinal(self) -> u32 {
-        self.0
-    }
-
     const fn index(self) -> usize {
         self.0 as usize
     }
@@ -520,6 +510,8 @@ pub enum IrNominalKind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IrNominal {
     name: String,
+    /// The stable part of the type's link-visible name [MOD-8].
+    link_name: String,
     id: IrNominalId,
     kind: IrNominalKind,
 }
@@ -528,6 +520,13 @@ impl IrNominal {
     /// The ordinary declaration name retained for debug and link descriptions.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// The stable part of this type's link-visible name: the digest of its
+    /// module-qualified spelling, so an unchanged fragment keeps its text
+    /// when another type is added or removed [MOD-8].
+    pub fn link_name(&self) -> &str {
+        &self.link_name
     }
 
     pub const fn id(&self) -> IrNominalId {
@@ -797,6 +796,8 @@ pub enum IrGlobalValue {
 pub struct IrGlobalConstant {
     id: IrConstantId,
     name: String,
+    /// The stable part of the constant's link-visible name [MOD-8].
+    link_name: String,
     ty: IrType,
     value: IrGlobalValue,
 }
@@ -808,6 +809,11 @@ impl IrGlobalConstant {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// The stable part of this constant's link-visible name [MOD-8].
+    pub fn link_name(&self) -> &str {
+        &self.link_name
     }
 
     pub const fn ty(&self) -> IrType {

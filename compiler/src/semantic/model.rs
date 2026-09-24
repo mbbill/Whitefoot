@@ -2627,6 +2627,13 @@ pub(crate) struct CheckedProgramData {
     /// physical function specialization. Loan regions do not become
     /// specialization axes merely by occurring in this table.
     pub(crate) constants: Vec<CheckedConstant>,
+    /// [MOD-8] each nominal's stable spelling, by module-qualified
+    /// declaration names and arguments, when it has one; lowering names its
+    /// link-visible type by it, so a type keeps its name in every build that
+    /// has it, whatever other types that build has.
+    pub(crate) nominal_spellings: Vec<Option<String>>,
+    /// Each constant's module-qualified name, for the same purpose.
+    pub(crate) constant_spellings: Vec<String>,
     /// Immutable structural table for every symbolic const expression named
     /// by retained schema metadata. `DerivedConstId` is meaningful only
     /// relative to this checked-program-owned table.
