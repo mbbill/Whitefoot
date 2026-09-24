@@ -1674,6 +1674,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(Some(stable))
     }
 
+    /// One type's spelling by module-qualified declaration names and its
+    /// arguments, the identity a [MOD-8] proof receipt key names it by;
+    /// symbolic parameters keep their written position. `None` for a type
+    /// with no such spelling.
+    pub(super) fn stable_type_spelling(&self, ty: CheckedType) -> Option<String> {
+        let stable = self
+            .stabilize_type(ty, 0, &mut HashSet::new(), true)
+            .ok()??;
+        let mut spelled = String::new();
+        self.spell_stable_type(&stable, &mut spelled).ok()?;
+        Some(spelled)
+    }
+
     /// The digest part of an instance symbol: the first eight bytes of the
     /// SHA-256 of its arguments' canonical spelling, or `None` when an
     /// argument has no concrete spelling.

@@ -9,12 +9,15 @@ mod linearity;
 mod nominal_instances;
 mod nominals;
 pub(crate) mod publication;
+mod receipts;
 mod references;
 mod requires;
 mod support;
 mod tail_calls;
 mod type_regions;
 mod types;
+
+pub(crate) use receipts::ProofReceipts;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -633,6 +636,15 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// `active_postcondition`.
     active_result_datums: RefCell<Vec<(String, u32, CheckedType)>>,
     behavior: behavior::BehaviorInventory,
+    /// [MOD-8] where this check finds and keeps proof receipts; without one
+    /// every function is analyzed.
+    receipts: Option<&'unit dyn receipts::ProofReceipts>,
+    /// Per concrete function: whether its analysis stands on a receipt
+    /// rather than a fresh run [FN-9].
+    reused_analyses: RefCell<Vec<bool>>,
+    /// The receipt key of each function analyzed afresh, recorded once its
+    /// analysis is accepted.
+    receipt_keys: RefCell<Vec<(usize, Vec<u8>)>>,
 }
 
 /// Checks the currently implemented active-specification semantic family.
@@ -643,7 +655,23 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
 pub fn check_semantics<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(resolved, true)
+    check_semantics_with(resolved, true, None)
+}
+
+/// [`check_semantics`] with proof receipts [MOD-8]: a function whose
+/// analysis would read exactly what a recorded accepted analysis read takes
+/// that analysis's conclusions instead of running it again, and every
+/// function analyzed afresh and accepted is recorded. The judgments are the
+/// same; only the work differs. The checked program keeps no entailment
+/// detail for a reused function, so a caller that reads more than acceptance,
+/// publication, body dispositions and allocation ceilings, such as the
+/// permission table, checks without receipts.
+#[must_use]
+pub(crate) fn check_semantics_with_receipts<'classified, 'lexed, 'source>(
+    resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
+    receipts: &dyn receipts::ProofReceipts,
+) -> SemanticOutcome<'classified, 'lexed, 'source> {
+    check_semantics_with(resolved, true, Some(receipts))
 }
 
 /// [`check_semantics`] with entailment rejection disabled, so unit tests can
@@ -656,7 +684,7 @@ pub fn check_semantics<'classified, 'lexed, 'source>(
 pub(crate) fn check_semantics_dark<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(resolved, false)
+    check_semantics_with(resolved, false, None)
 }
 
 /// Legacy test helper selecting the one shipped semantic judgment. It remains
@@ -666,7 +694,7 @@ pub(crate) fn check_semantics_dark<'classified, 'lexed, 'source>(
 pub(crate) fn check_semantics_arithmetic_obligations<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(resolved, true)
+    check_semantics_with(resolved, true, None)
 }
 
 /// Legacy test helper selecting the one shipped semantic judgment. It remains
@@ -676,23 +704,24 @@ pub(crate) fn check_semantics_arithmetic_obligations<'classified, 'lexed, 'sourc
 pub(crate) fn check_semantics_division_obligations<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
-    check_semantics_with(resolved, true)
+    check_semantics_with(resolved, true, None)
 }
 
 fn check_semantics_with<'classified, 'lexed, 'source>(
     resolved: ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
     reject_entailment: bool,
+    receipts: Option<&dyn receipts::ProofReceipts>,
 ) -> SemanticOutcome<'classified, 'lexed, 'source> {
     let preflight = if resolved.postconditions().is_empty() {
         Ok(())
     } else {
-        Checker::new(&resolved, reject_entailment).and_then(|mut checker| {
+        Checker::new(&resolved, reject_entailment, None).and_then(|mut checker| {
             let items = checker.item_declarations()?;
             checker.preflight_postcondition_selectors(&items)
         })
     };
     let result = preflight.and_then(|()| {
-        Checker::new(&resolved, reject_entailment).and_then(|mut checker| {
+        Checker::new(&resolved, reject_entailment, receipts).and_then(|mut checker| {
             let result = checker.check_program();
             checker.finish_musttail_checks(result)
         })
@@ -1418,6 +1447,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn new(
         resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
         reject_entailment: bool,
+        receipts: Option<&'unit dyn receipts::ProofReceipts>,
     ) -> Result<Self, CheckStop> {
         // A semantic unit includes the fixed PRE-1 declarations before resolution.
         // A source-only parse is useful to tools but is not a complete compiler input.
@@ -1480,6 +1510,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             writing_module: Cell::new(None),
             active_result_datums: RefCell::new(Vec::new()),
             behavior: behavior::BehaviorInventory::default(),
+            receipts,
+            reused_analyses: RefCell::new(Vec::new()),
+            receipt_keys: RefCell::new(Vec::new()),
         })
     }
 
@@ -1579,13 +1612,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .collect::<Vec<_>>();
         if self.reject_entailment {
             let mut rejections = Vec::new();
-            for function in &baseline_functions {
+            let mut rejected = vec![false; baseline_functions.len()];
+            for (index, function) in baseline_functions.iter().enumerate() {
+                // A receipt stands for an accepted analysis of exactly these
+                // inputs [MOD-8].
+                if self.analysis_reused(index) {
+                    continue;
+                }
                 match self
                     .entailment_rejection(function)
                     .map_err(|stop| self.attribute_to_request(function.id, stop))
                 {
                     Ok(()) => {}
                     Err(CheckStop::Issue(issue)) => {
+                        rejected[index] = true;
                         let path = Self::source_issue_path(&issue)?.clone();
                         rejections.push((
                             path,
@@ -1597,6 +1637,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     Err(stop) => return Err(stop),
                 }
             }
+            // Every accepted fresh analysis is kept, whether or not another
+            // function's rejection fails this check [MOD-8].
+            self.record_receipts(&baseline_functions, &rejected);
             rejections.sort_by(|left, right| {
                 left.0
                     .components()
@@ -1614,8 +1657,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .map(|checked| checked.function)
             .collect::<Vec<_>>();
         if optimistic_batch {
-            for function in &mut functions {
-                finalize_function_entailment(&mut function.entailment);
+            for (index, function) in functions.iter_mut().enumerate() {
+                // A receipt's analysis retains no derivation to prune.
+                if !self.analysis_reused(index) {
+                    finalize_function_entailment(&mut function.entailment);
+                }
             }
         }
         for function in &mut functions {
@@ -2596,16 +2642,40 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let selected = |index: usize| analyzed.is_none_or(|analyzed| analyzed[index]);
         let contract_queries = self.contract_queries.borrow().clone();
         let const_parameter_types = self.const_generic_types().collect();
+        // [MOD-8] the concrete inventory's analyses may stand on receipts;
+        // the symbolic validation of generic templates always runs afresh.
+        let receipts = self
+            .receipts
+            .filter(|_| analyzed.is_none() && self.reject_entailment);
+        let items = receipts.map(|_| self.receipt_items()).transpose()?;
+        if receipts.is_some() {
+            *self.reused_analyses.borrow_mut() = vec![false; functions.len()];
+        }
         // ENT is the single acceptance-bearing proof path for ordinary
         // obligations, call requirements, invariants and postconditions.
         let mut schedule =
             postcondition_schedule(functions.iter().map(|checked| &checked.function))
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         if schedule.components.is_empty() {
-            for (index, checked) in functions.iter_mut().enumerate() {
+            for index in 0..functions.len() {
                 if !selected(index) {
                     continue;
                 }
+                if let (Some(store), Some(items)) = (receipts, &items)
+                    && let Some(entailment) = self.recorded_analysis(
+                        store,
+                        items,
+                        functions,
+                        index,
+                        callees,
+                        &[],
+                        &const_parameter_types,
+                    )
+                {
+                    functions[index].function.entailment = entailment;
+                    continue;
+                }
+                let checked = &mut functions[index];
                 let context = EntailmentContext {
                     declarations: self.resolved.declarations(),
                     callees,
@@ -2680,20 +2750,36 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .get(function_index)
                         .filter(|checked| checked.function.id == *function)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    let context = EntailmentContext {
-                        declarations: self.resolved.declarations(),
-                        callees,
-                        constants: &self.checked_constants,
-                        constant_ids: &self.constants,
-                        const_parameter_types: &const_parameter_types,
-                        nominals: &self.nominals,
-                        elements: &self.elements.borrow(),
-                        contract_queries: &contract_queries,
-                        verified_postconditions: &verified_postconditions,
-                        verified_postcondition_proofs: &verified_postcondition_proofs,
-                        binding_names: &checked.binding_names,
+                    let recorded = match (receipts, &items) {
+                        (Some(store), Some(items)) => self.recorded_analysis(
+                            store,
+                            items,
+                            functions,
+                            function_index,
+                            callees,
+                            &verified_postconditions,
+                            &const_parameter_types,
+                        ),
+                        _ => None,
                     };
-                    let entailment = analyze_function_candidate(&checked.function, &context);
+                    let entailment = if let Some(entailment) = recorded {
+                        entailment
+                    } else {
+                        let context = EntailmentContext {
+                            declarations: self.resolved.declarations(),
+                            callees,
+                            constants: &self.checked_constants,
+                            constant_ids: &self.constants,
+                            const_parameter_types: &const_parameter_types,
+                            nominals: &self.nominals,
+                            elements: &self.elements.borrow(),
+                            contract_queries: &contract_queries,
+                            verified_postconditions: &verified_postconditions,
+                            verified_postcondition_proofs: &verified_postcondition_proofs,
+                            binding_names: &checked.binding_names,
+                        };
+                        analyze_function_candidate(&checked.function, &context)
+                    };
                     drop(verified_postconditions);
                     drop(verified_postcondition_proofs);
                     functions[function_index].function.entailment = entailment;

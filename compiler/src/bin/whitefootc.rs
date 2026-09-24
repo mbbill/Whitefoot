@@ -13,9 +13,10 @@ use whitefoot::{
     ORDINARY_VALUES_HEADER, ORDINARY_VALUES_LLVM, ORDINARY_VALUES_SOURCE, OverlapLowering,
     RecursionBudget, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
     SCHED_PRIM_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER, build_module_entry, check,
-    check_module_program, compile_with_overlap, compile_with_permission_ledger, content_digest,
-    discover_module_sources, entry_verdict, form_module_graph, module_verdict, read_graph_record,
-    render_module_interface, running_compiler_identity, stack_ledger,
+    check_module_program, check_with_cache, compile_with_cache, compile_with_overlap,
+    compile_with_permission_ledger, content_digest, discover_module_sources, entry_verdict,
+    form_module_graph, module_verdict, read_graph_record, render_module_interface,
+    running_compiler_identity, stack_ledger,
 };
 
 // `HOST_LINK_LIBRARIES` is here rather than above because its one reader is
@@ -266,12 +267,22 @@ fn run() -> Result<(), String> {
         }
         module
     } else {
+        let front_end = std::time::Instant::now();
         if options.check {
-            check(&inputs, CompilerLimits::default()).map_err(|failure| failure.to_string())?;
+            match &cache {
+                Some(cache) => check_with_cache(&inputs, CompilerLimits::default(), cache),
+                None => check(&inputs, CompilerLimits::default()),
+            }
+            .map_err(|failure| failure.to_string())?;
             return Ok(());
         }
-        compile_with_overlap(&inputs, CompilerLimits::default(), overlap)
-            .map_err(|failure| failure.to_string())?
+        let module = match &cache {
+            Some(cache) => compile_with_cache(&inputs, CompilerLimits::default(), overlap, cache),
+            None => compile_with_overlap(&inputs, CompilerLimits::default(), overlap),
+        }
+        .map_err(|failure| failure.to_string())?;
+        report.front_end = front_end.elapsed();
+        module
     };
     finish(&options, &module, cache.as_ref(), &mut report)
 }
@@ -323,19 +334,21 @@ fn run_module_program(
         let mut verdicts = Vec::new();
         for record in graph.modules() {
             let module = record.qualified_name();
+            let (verdict, analyses) = counting_analyses(cache, || {
+                module_verdict(&graph, &inputs, &module, false, limits, cache)
+            });
             verdicts.push((
                 "module",
-                module_verdict(&graph, &inputs, &module, false, limits, cache)
-                    .map_err(|failure| failure.to_string())?,
+                verdict.map_err(|failure| failure.to_string())?,
+                analyses,
             ));
         }
         let modules = verdicts
             .iter()
-            .map(|(_, verdict)| verdict.clone())
+            .map(|(_, verdict, _)| verdict.clone())
             .collect::<Vec<_>>();
         for entry in graph.entries() {
-            verdicts.push((
-                "entry",
+            let (verdict, analyses) = counting_analyses(cache, || {
                 entry_verdict(
                     &graph,
                     &inputs,
@@ -344,23 +357,35 @@ fn run_module_program(
                     cache,
                     &modules,
                 )
-                .map_err(|failure| failure.to_string())?,
+            });
+            verdicts.push((
+                "entry",
+                verdict.map_err(|failure| failure.to_string())?,
+                analyses,
             ));
         }
         publish_verdicts(options, &verdicts)?;
         return Ok(None);
     }
     if let Some(module) = &options.check_module {
-        let verdict = module_verdict(
-            &graph,
-            &inputs,
-            module,
-            options.interface_only,
-            limits,
-            cache,
-        )
-        .map_err(|failure| failure.to_string())?;
-        publish_verdicts(options, &[("module", verdict)])?;
+        let (verdict, analyses) = counting_analyses(cache, || {
+            module_verdict(
+                &graph,
+                &inputs,
+                module,
+                options.interface_only,
+                limits,
+                cache,
+            )
+        });
+        publish_verdicts(
+            options,
+            &[(
+                "module",
+                verdict.map_err(|failure| failure.to_string())?,
+                analyses,
+            )],
+        )?;
         return Ok(None);
     }
     let entry = if let Some(name) = &options.entry {
@@ -378,9 +403,17 @@ fn run_module_program(
         // one, it is that entry's composition check [MOD-8, MOD-9].
         match entry {
             Some(entry) => {
-                let verdict = entry_verdict(&graph, &inputs, entry, limits, cache, &[])
-                    .map_err(|failure| failure.to_string())?;
-                publish_verdicts(options, &[("entry", verdict)])?;
+                let (verdict, analyses) = counting_analyses(cache, || {
+                    entry_verdict(&graph, &inputs, entry, limits, cache, &[])
+                });
+                publish_verdicts(
+                    options,
+                    &[(
+                        "entry",
+                        verdict.map_err(|failure| failure.to_string())?,
+                        analyses,
+                    )],
+                )?;
             }
             None => check_module_program(&graph, &inputs, limits)
                 .map_err(|failure| failure.to_string())?,
@@ -438,15 +471,37 @@ fn open_cache(directory: &Path) -> Result<BuildCache, String> {
         .map_err(|error| format!("cannot open the cache {}: {error}", directory.display()))
 }
 
+/// How many function analyses one check took from proof receipts and how
+/// many it recorded, with a cache [MOD-8].
+type Analyses = Option<(u64, u64)>;
+
+/// The result of `check` and how many function analyses it took from proof
+/// receipts and recorded, with a cache [MOD-8].
+fn counting_analyses<T>(cache: Option<&BuildCache>, check: impl FnOnce() -> T) -> (T, Analyses) {
+    let before = cache.map(BuildCache::receipt_counts);
+    let result = check();
+    let after = cache.map(BuildCache::receipt_counts);
+    let analyses = before
+        .zip(after)
+        .map(|((reused, recorded), (now_reused, now_recorded))| {
+            (now_reused - reused, now_recorded - recorded)
+        });
+    (result, analyses)
+}
+
 /// Prints each verdict, as one line of text or one JSON object per line, and
 /// fails the invocation when any is a rejection. The text is the same
 /// whether a verdict was reused or recomputed, so a cached run and a run
-/// without a cache can be compared line for line; the JSON reports which.
-fn publish_verdicts(options: &Options, verdicts: &[(&str, CheckVerdict)]) -> Result<(), String> {
+/// without a cache can be compared line for line; the JSON reports which,
+/// and how many function analyses a recomputed one took from proof receipts.
+fn publish_verdicts(
+    options: &Options,
+    verdicts: &[(&str, CheckVerdict, Analyses)],
+) -> Result<(), String> {
     let mut rejected = Vec::new();
-    for (kind, verdict) in verdicts {
+    for (kind, verdict, analyses) in verdicts {
         if options.report {
-            println!("{}", verdict_json(kind, verdict));
+            println!("{}", verdict_json(kind, verdict, *analyses));
         }
         match verdict.outcome() {
             CheckOutcome::Accepted { pending } => {
@@ -505,7 +560,7 @@ fn publish_verdicts(options: &Options, verdicts: &[(&str, CheckVerdict)]) -> Res
 }
 
 /// One verdict as a JSON object.
-fn verdict_json(kind: &str, verdict: &CheckVerdict) -> String {
+fn verdict_json(kind: &str, verdict: &CheckVerdict, analyses: Analyses) -> String {
     let mut fields = vec![format!("\"{kind}\":{}", json_string(verdict.subject()))];
     match verdict.outcome() {
         CheckOutcome::Accepted { pending } => {
@@ -554,6 +609,11 @@ fn verdict_json(kind: &str, verdict: &CheckVerdict) -> String {
         }
     }
     fields.push(format!("\"reused\":{}", verdict.reused()));
+    if let Some((reused, recorded)) = analyses {
+        fields.push(format!(
+            "\"analyses_reused\":{reused},\"analyses_recorded\":{recorded}"
+        ));
+    }
     format!("{{{}}}", fields.join(","))
 }
 
@@ -609,6 +669,7 @@ fn finish(
         report,
     )?;
     if options.report {
+        report.analyses = cache.map(BuildCache::receipt_counts);
         println!("{}", report.json());
     }
     Ok(())
@@ -1130,6 +1191,9 @@ struct BuildReport {
     objects_reused: usize,
     compile: std::time::Duration,
     link: std::time::Duration,
+    /// Function analyses the front end took from proof receipts and
+    /// recorded, with a cache [MOD-8].
+    analyses: Option<(u64, u64)>,
 }
 
 impl BuildReport {
@@ -1144,10 +1208,14 @@ impl BuildReport {
     fn json(&self) -> String {
         let milliseconds = |duration: std::time::Duration| duration.as_secs_f64() * 1000.0;
         format!(
-            "{{\"build\":{{\"module_reused\":{},\"front_end_ms\":{:.1},\"fragments\":{},\"split_ms\":{:.1},\"objects_compiled\":{},\"objects_reused\":{},\"compile_ms\":{:.1},\"link_ms\":{:.1}}}}}",
+            "{{\"build\":{{\"module_reused\":{},\"front_end_ms\":{:.1},\"analyses_reused\":{},\"analyses_recorded\":{},\"fragments\":{},\"split_ms\":{:.1},\"objects_compiled\":{},\"objects_reused\":{},\"compile_ms\":{:.1},\"link_ms\":{:.1}}}}}",
             self.module_reused
                 .map_or_else(|| "null".to_owned(), |reused| reused.to_string()),
             milliseconds(self.front_end),
+            self.analyses
+                .map_or_else(|| "null".to_owned(), |(reused, _)| reused.to_string()),
+            self.analyses
+                .map_or_else(|| "null".to_owned(), |(_, recorded)| recorded.to_string()),
             self.fragments,
             milliseconds(self.split),
             self.objects_compiled,
@@ -1582,8 +1650,8 @@ impl Options {
         {
             return Err("--check-modules checks every module and entry of a --graph program and selects none".to_owned());
         }
-        if report && graph.is_none() {
-            return Err("--report reports a --graph check or build".to_owned());
+        if report && graph.is_none() && (check || par_ledger) {
+            return Err("--report reports a --graph check or a build".to_owned());
         }
         if report && emit_llvm && output.is_none() {
             return Err(
@@ -2263,7 +2331,7 @@ mod tests {
                 "--entry",
                 "app",
             ][..],
-            &["--report", "value.wf"][..],
+            &["--report", "--check", "value.wf"][..],
             &[
                 "--graph",
                 "modules.wfg",
@@ -2297,6 +2365,10 @@ mod tests {
         ])
         .expect("a cached fragment build");
         assert_eq!(build.fragments, Some(super::Fragments::Function));
+        // A source bundle's build reports its phases and its proof reuse too.
+        let bundle = parse(&["--cache", "cache", "--report", "value.wf"])
+            .expect("a reported source-bundle build");
+        assert!(bundle.report && bundle.graph.is_none());
         for option in [
             "--cache",
             "--fragments",

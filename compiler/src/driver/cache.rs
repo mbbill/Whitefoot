@@ -12,6 +12,7 @@
 //! Deleting the directory, or a failed write, changes only the work a later
 //! invocation performs, never a verdict.
 
+use std::cell::Cell;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -24,11 +25,17 @@ const MAGIC: &[u8; 8] = b"WFCACHE1";
 /// process.
 static PUBLICATIONS: AtomicU64 = AtomicU64::new(0);
 
+/// The cache family of proof receipts [MOD-8].
+const PROOF_RECEIPTS: &str = "proof-receipts";
+
 /// One cache directory, scoped to the compiler that reads and writes it.
 #[derive(Clone, Debug)]
 pub struct BuildCache {
     root: PathBuf,
     compiler: [u8; 32],
+    /// Proof receipts this handle found and recorded, for the build report.
+    receipts_reused: Cell<u64>,
+    receipts_recorded: Cell<u64>,
 }
 
 impl BuildCache {
@@ -43,7 +50,16 @@ impl BuildCache {
         Ok(Self {
             root: root.to_path_buf(),
             compiler,
+            receipts_reused: Cell::new(0),
+            receipts_recorded: Cell::new(0),
         })
+    }
+
+    /// How many function analyses this handle's checks took from proof
+    /// receipts, and how many accepted analyses they recorded [MOD-8].
+    #[must_use]
+    pub fn receipt_counts(&self) -> (u64, u64) {
+        (self.receipts_reused.get(), self.receipts_recorded.get())
     }
 
     /// The payload of the complete record of `family` whose key material is
@@ -106,6 +122,25 @@ impl BuildCache {
 
     fn record_path(&self, family: &str, scoped: &[u8]) -> PathBuf {
         self.root.join(family).join(hex(&digest(scoped)))
+    }
+}
+
+/// [MOD-8] a check's proof receipts live in its build cache, each record
+/// keyed by the complete canonical inputs of one function's analysis.
+impl crate::semantic::ProofReceipts for BuildCache {
+    fn load(&self, key: &[u8]) -> Option<Vec<u8>> {
+        let receipt = BuildCache::load(self, PROOF_RECEIPTS, key);
+        if receipt.is_some() {
+            self.receipts_reused.set(self.receipts_reused.get() + 1);
+        }
+        receipt
+    }
+
+    fn store(&self, key: &[u8], receipt: &[u8]) {
+        // A failed publication costs only a later analysis.
+        if BuildCache::store(self, PROOF_RECEIPTS, key, receipt).is_ok() {
+            self.receipts_recorded.set(self.receipts_recorded.get() + 1);
+        }
     }
 }
 

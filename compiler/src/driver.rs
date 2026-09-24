@@ -411,6 +411,62 @@ pub fn compile_with_overlap(
     compile_reporting(inputs, limits, overlap).map(|reported| reported.module)
 }
 
+/// [`check`] reusing and recording proof receipts in `cache` [MOD-8]: a
+/// function whose analysis would read exactly what a recorded accepted
+/// analysis read is not analyzed again. The verdict is the one [`check`]
+/// reaches.
+///
+/// # Errors
+///
+/// Returns the check's failure, which no cache record ever stands in for.
+pub fn check_with_cache(
+    inputs: &[SourceInput<'_>],
+    limits: CompilerLimits,
+    cache: &BuildCache,
+) -> Result<(), CompilationFailure> {
+    with_checked_program_using(inputs, None, limits, Some(cache), |_, _| Ok(()))
+}
+
+/// [`compile_with_overlap`] reusing and recording proof receipts in `cache`
+/// [MOD-8]. An overlap lowering reads the permission table, which a receipt
+/// does not retain, so it analyzes every function afresh.
+///
+/// # Errors
+///
+/// Returns the compilation's failure, which no cache record ever stands in
+/// for.
+pub fn compile_with_cache(
+    inputs: &[SourceInput<'_>],
+    limits: CompilerLimits,
+    overlap: crate::OverlapLowering,
+    cache: &BuildCache,
+) -> Result<String, CompilationFailure> {
+    compile_selected(
+        inputs,
+        None,
+        limits,
+        overlap,
+        &Selection {
+            module: crate::ModuleId::BUNDLE_ROOT,
+            name: "main",
+            no_heap: false,
+            public: false,
+            written: None,
+        },
+        receipts_for(overlap, Some(cache)),
+    )
+    .map(|reported| reported.module)
+}
+
+/// The proof receipts a compilation may use: none for an overlap lowering,
+/// whose permission table a receipt does not retain [MOD-8].
+fn receipts_for(
+    overlap: crate::OverlapLowering,
+    cache: Option<&BuildCache>,
+) -> Option<&BuildCache> {
+    cache.filter(|_| overlap == crate::OverlapLowering::Off)
+}
+
 /// [`compile_with_overlap`] plus the non-normative permission ledger for the
 /// same compilation.
 ///
@@ -761,10 +817,10 @@ pub fn module_verdict(
         cache,
         MODULE_VERDICTS,
         (&check.material, &check.reading),
-        || match check.run(graph, limits) {
+        || match check.run(graph, limits, cache) {
             Ok(pending) => Ok(CheckOutcome::Accepted { pending }),
             Err(failure) if failure.kind() == CompilationFailureKind::Source => {
-                module_rejection(graph, &check, &failure, limits)
+                module_rejection(graph, &check, &failure, limits, cache)
             }
             Err(failure) => Err(failure),
         },
@@ -785,6 +841,7 @@ fn module_rejection(
     check: &ModuleCheck<'_>,
     first: &CompilationFailure,
     limits: CompilerLimits,
+    cache: Option<&BuildCache>,
 ) -> Result<CheckOutcome, CompilationFailure> {
     let mut texts = check
         .selected
@@ -846,7 +903,13 @@ fn module_rejection(
             .zip(&texts)
             .map(|(input, text)| input.with_bytes(text))
             .collect::<Vec<_>>();
-        match with_checked_program(&rechecked, Some(graph.modules()), limits, |_, _| Ok(())) {
+        match with_checked_program_using(
+            &rechecked,
+            Some(graph.modules()),
+            limits,
+            cache,
+            |_, _| Ok(()),
+        ) {
             Ok(()) => break true,
             Err(next) if next.kind() == CompilationFailureKind::Source => {
                 if written_line(next.location(), &check.selected, &origins) == Some(0) {
@@ -1071,11 +1134,13 @@ impl<'input> ModuleCheck<'input> {
         &self,
         graph: &crate::ModuleGraph,
         limits: CompilerLimits,
+        cache: Option<&BuildCache>,
     ) -> Result<Vec<String>, CompilationFailure> {
-        with_checked_program(
+        with_checked_program_using(
             &self.selected,
             Some(graph.modules()),
             limits,
+            cache,
             |checked, _| Ok(pending_declarations(&checked, self.target)),
         )
     }
@@ -1103,7 +1168,7 @@ fn require_module_verdicts(
         }
         // A rejection is left to a module check, which records it with its
         // impact report; a build needs only its first failure.
-        let pending = check.run(graph, limits)?;
+        let pending = check.run(graph, limits, cache)?;
         if let Some(cache) = cache {
             // A failed publication costs only a later recomputation.
             let _ = cache.store(
@@ -1286,10 +1351,11 @@ pub fn entry_verdict(
                 }
             }
             outcome_of(
-                with_checked_program(
+                with_checked_program_using(
                     &selected,
                     Some(graph.modules()),
                     limits,
+                    cache,
                     |checked, bundle| admit_entry(&checked, bundle, &selection),
                 )
                 .map(|()| Vec::new()),
@@ -1676,6 +1742,7 @@ pub fn build_module_entry(
         limits,
         overlap,
         &selection,
+        receipts_for(overlap, cache),
     )?
     .module;
     if let Some(cache) = cache {
@@ -1711,6 +1778,7 @@ fn compile_reporting(
             public: false,
             written: None,
         },
+        None,
     )
 }
 
@@ -1733,12 +1801,19 @@ fn compile_selected(
     limits: CompilerLimits,
     overlap: crate::OverlapLowering,
     selection: &Selection<'_>,
+    receipts: Option<&BuildCache>,
 ) -> Result<Reported, CompilationFailure> {
-    with_checked_program(inputs, modules, limits, |checked, bundle| {
+    with_checked_program_using(inputs, modules, limits, receipts, |checked, bundle| {
         if modules.is_some() {
             admit_entry(&checked, bundle, selection)?;
         }
-        lower_selected(inputs, modules, limits, overlap, selection, bundle, checked)
+        lower_selected(
+            inputs,
+            (modules, limits, overlap, receipts),
+            selection,
+            bundle,
+            checked,
+        )
     })
 }
 
@@ -2045,6 +2120,26 @@ where
         &SourceBundle,
     ) -> Result<T, CompilationFailure>,
 {
+    with_checked_program_using(inputs, modules, limits, None, continuation)
+}
+
+/// [`with_checked_program`] whose checker takes and keeps proof receipts in
+/// `receipts` [MOD-8]. The checked program is the same one, apart from the
+/// entailment detail a reused analysis does not retain, which only the
+/// permission table reads.
+fn with_checked_program_using<T, F>(
+    inputs: &[SourceInput<'_>],
+    modules: Option<&[crate::ModuleRecord]>,
+    limits: CompilerLimits,
+    receipts: Option<&BuildCache>,
+    continuation: F,
+) -> Result<T, CompilationFailure>
+where
+    F: for<'classified, 'lexed, 'source> FnOnce(
+        CheckedProgram<'classified, 'lexed, 'source>,
+        &SourceBundle,
+    ) -> Result<T, CompilationFailure>,
+{
     let bundle = match modules {
         Some(modules) => {
             SourceBundle::with_prelude_and_modules(inputs, modules.to_vec(), limits.source)
@@ -2074,7 +2169,11 @@ where
                 ));
             }
         };
-        let checked = match check_semantics(resolved) {
+        let outcome = match receipts {
+            Some(receipts) => crate::semantic::check_semantics_with_receipts(resolved, receipts),
+            None => check_semantics(resolved),
+        };
+        let checked = match outcome {
             SemanticOutcome::Complete(complete) => *complete,
             SemanticOutcome::SourceIssue { issue, .. } => {
                 // A semantic rejection carries the richest payload in the
@@ -2126,9 +2225,12 @@ where
 
 fn lower_selected(
     inputs: &[SourceInput<'_>],
-    modules: Option<&[crate::ModuleRecord]>,
-    limits: CompilerLimits,
-    overlap: crate::OverlapLowering,
+    (modules, limits, overlap, receipts): (
+        Option<&[crate::ModuleRecord]>,
+        CompilerLimits,
+        crate::OverlapLowering,
+        Option<&BuildCache>,
+    ),
     selection: &Selection<'_>,
     bundle: &SourceBundle,
     checked: CheckedProgram<'_, '_, '_>,
@@ -2167,7 +2269,14 @@ fn lower_selected(
             public: false,
             written: selection.written,
         };
-        match compile_selected(&with_caller, modules, limits, overlap, &caller_selection) {
+        match compile_selected(
+            &with_caller,
+            modules,
+            limits,
+            overlap,
+            &caller_selection,
+            receipts,
+        ) {
             Ok(reported) => return Ok(reported),
             Err(failure) if failure.kind() == CompilationFailureKind::Source => {
                 caller_failure = Some(failure.to_string());
@@ -2794,6 +2903,66 @@ mod tests {
         // rendering, though the client's own file is unchanged.
         let widened: &[u8] = b"public struct Point {\n  public x: u8;\n  hidden: u16;\n}\n";
         assert_ne!(render(widened, client), rendered);
+    }
+
+    /// A source bundle whose `select` indexes a table through `relay`'s
+    /// verified bound, which `relay` in turn proves from `clamp`'s.
+    fn receipt_program(clamp_bound: u64, kept: u64, clamp_fallback: u64) -> String {
+        format!(
+            "const lookup: Array<u8, 8> =[0_u8, 1_u8, 2_u8, 3_u8, 4_u8, 5_u8, 6_u8, 7_u8];\n\n\
+             fn clamp(value: u64) -> result: u64 pure contract {{\n  ensures result <= {clamp_bound}_u64;\n}} {{\n  if value <= {kept}_u64 {{\n    return value;\n  }}\n  return {clamp_fallback}_u64;\n}}\n\n\
+             fn relay(value: u64) -> result: u64 pure contract {{\n  ensures result <= 7_u64;\n}} {{\n  let clamped = clamp(value: value);\n  return clamped;\n}}\n\n\
+             fn select(index: u64) -> result: u8 pure {{\n  let bounded = relay(value: index);\n  return lookup[bounded];\n}}\n\n\
+             fn main() -> status: ExitStatus pure {{\n  let code = select(index: 3_u64);\n  return exit_status(code: code);\n}}\n"
+        )
+    }
+
+    /// [MOD-8, FN-9] proof receipts change which analyses a check runs and
+    /// never its verdict. A body edit that keeps a function's boundary
+    /// reanalyzes that function alone; a changed `ensures` also reanalyzes
+    /// the callers whose proofs read it, and no caller further out; a
+    /// boundary a caller's proof no longer admits is rejected as a check
+    /// without receipts rejects it; and reverting reuses every receipt.
+    #[test]
+    fn a_proof_receipt_is_reused_exactly_while_its_analysis_inputs_are_unchanged() {
+        let directory = CacheDirectory::new("receipts");
+        let cache = directory.open();
+        let analyzed = |source: &str| -> (Result<(), String>, u64) {
+            let inputs = [SourceInput::new("receipts.wf", source.as_bytes())];
+            let fresh = super::check(&inputs, CompilerLimits::default())
+                .map_err(|failure| failure.to_string());
+            let (_, recorded) = cache.receipt_counts();
+            let cached = super::check_with_cache(&inputs, CompilerLimits::default(), &cache)
+                .map_err(|failure| failure.to_string());
+            assert_eq!(cached, fresh, "receipts change no verdict");
+            (cached, cache.receipt_counts().1 - recorded)
+        };
+        let original = receipt_program(7, 7, 7);
+        let (verdict, _) = analyzed(&original);
+        assert_eq!(verdict, Ok(()));
+        assert_eq!(
+            analyzed(&original),
+            (Ok(()), 0),
+            "a warm check analyzes nothing"
+        );
+        // `clamp`'s body changes and its boundary does not.
+        assert_eq!(analyzed(&receipt_program(7, 7, 6)), (Ok(()), 1));
+        // `clamp`'s boundary changes: it and `relay`, whose proof reads it,
+        // are analyzed; `select` reads only `relay`'s unchanged boundary.
+        assert_eq!(analyzed(&receipt_program(6, 6, 6)), (Ok(()), 2));
+        // A boundary `relay`'s proof no longer admits.
+        let (verdict, _) = analyzed(&receipt_program(8, 7, 7));
+        assert!(
+            verdict
+                .as_ref()
+                .is_err_and(|failure| failure.contains("[FN-9]")),
+            "{verdict:?}"
+        );
+        assert_eq!(
+            analyzed(&original),
+            (Ok(()), 0),
+            "reverting reuses every receipt"
+        );
     }
 
     /// [MOD-9] an entry build is reused for an unchanged composition and

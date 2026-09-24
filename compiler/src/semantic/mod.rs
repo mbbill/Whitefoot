@@ -27,6 +27,7 @@ pub use check::check_semantics;
 pub(crate) use check::check_semantics_arithmetic_obligations;
 #[cfg(test)]
 pub(crate) use check::check_semantics_division_obligations;
+pub(crate) use check::{ProofReceipts, check_semantics_with_receipts};
 
 /// The permission table the overlap lowering reads. It is the same table the
 /// ledger renders; nothing derives a second judgment from it.
