@@ -94,7 +94,7 @@ _check-runtime:
 # second copy of the list is a copy that goes stale, and did — retiring two
 # stages left the workflow naming targets that no longer exist.
 static:
-	@for stage in repository-invariants spec-append-only spec-prose-integrity design-lint; do \
+	@for stage in repository-invariants spec-archives spec-prose-integrity guidance design-lint; do \
 		$(CHECK_RUN) "$$stage" $(MAKE) --no-print-directory "$$stage" || exit 1; \
 	done
 
@@ -142,17 +142,20 @@ repository-invariants:
 		exit 1; \
 	fi
 
-# Released version archives are never edited. Comparing with main makes this a
-# property of the exact merge candidate rather than a hook or human process.
-spec-append-only:
-	@git rev-parse --verify --quiet refs/heads/main >/dev/null || { echo "spec append-only: local main ref is required" >&2; exit 1; }
-	@changes="$$(git diff --name-status --diff-filter=MDRCT main -- 'spec/kernel-spec-v*.md')" || exit 1; \
-	if test -n "$$changes"; then \
-		echo "spec append-only violation: released specifications changed:" >&2; \
-		echo "$$changes" >&2; \
-		exit 1; \
-	fi
-	@echo "spec append-only: no released kernel specification was modified or removed"
+# Released version archives are never edited, and an amendment archives the
+# outgoing bytes under their version and advances the title. The script
+# compares with the merge base of main, which is what a merge would change in
+# main; a branch behind main is not charged with main's newer archives.
+spec-archives:
+	@git rev-parse --verify --quiet refs/heads/main >/dev/null || { echo "spec archives: local main ref is required" >&2; exit 1; }
+	@sh .github/check-spec-archives.sh --self-test
+	@sh .github/check-spec-archives.sh main
+
+# Cited review items, entry-document paths and the two agents' skill links
+# resolve; this reads references only, never the guidance's meaning.
+guidance:
+	@$(PY) .github/check-guidance.py --self-test
+	@$(PY) .github/check-guidance.py
 
 spec-append-only-staged:
 	@changes="$$(git diff --cached --name-status --diff-filter=MDRCT -- 'spec/kernel-spec-v*.md')" || exit 1; \
@@ -220,4 +223,4 @@ install-hooks:
 	git config core.hooksPath governance/hooks
 	@echo "installed governance/hooks (pre-commit, pre-merge-commit)"
 
-.PHONY: historical-tool-tests _historical-tool-tests check _check check-groups check-group static repository-invariants spec-append-only spec-append-only-staged spec-prose-integrity design-lint design-ready conformance compiler performance-instrument conformance-run install-hooks
+.PHONY: historical-tool-tests _historical-tool-tests check _check check-groups check-group static repository-invariants spec-archives guidance spec-append-only-staged spec-prose-integrity design-lint design-ready conformance compiler performance-instrument conformance-run install-hooks

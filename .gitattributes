@@ -8,3 +8,8 @@ governance/spec-evolution/grammar/evidence/*.patch whitespace=-blank-at-eol,-bla
 
 # Generated TSV rows may end with an empty final field represented by a terminal tab.
 research/implementation/minimal-systems-capability/RUST-1.97.0-API-INVENTORY.tsv whitespace=-blank-at-eol
+
+# Log entries are whole blocks inserted newest first and never edited, so two
+# branches that each add one conflict only textually: the union driver keeps
+# both blocks, and design lint rejects a heading the union kept twice.
+design/log.md merge=union

@@ -180,9 +180,11 @@ comparing the updated main ref with itself checks no changes.
 
 In Whitefoot, `make design-lint` checks form during draft work. The separate
 `make design-ready` uses `--require-no-amendments` and fails if
-`design/amendments/` exists, even empty. CI runs this readiness check alongside
-correctness jobs; its failure while proposals await ruling does not block
-draft implementation or DCR. It must pass before the PR becomes ready.
+`design/amendments/` exists, even empty. CI runs this readiness check on
+pull requests that are ready for review and on main
+(`.github/workflows/design-readiness.yml`); a draft shows it skipped, so
+pending proposals never turn draft CI red. It must pass before the PR
+becomes ready.
 
 ## Design checks
 

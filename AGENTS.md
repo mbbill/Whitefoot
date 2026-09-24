@@ -232,7 +232,7 @@ one-time cleanup.
   to current guidance and replaceable implementation artifacts; frozen
   archives and useful dated evidence retain history under their own rules.
 - Keep important folders as clean as the root. The same discipline applies
-  inside `spec/`, `compiler/`, `tools/`, `conformance/`, and the research
+  inside `spec/`, `compiler/`, `tests/`, and the research
   directories. An important folder turning into a junk drawer is the same
   defect as a messy root.
 - Reorganizing is not the goal; advancing the compiler is. Do not undertake
@@ -247,7 +247,7 @@ one-time cleanup.
 
 Follow this by judgment and keep moving; it is a standing rule, not a reason to
 pause on every file. Canonical `make check` enforces append-only versioned
-specification archives; the optional hook installed by `make install-hooks`
+specification archives and each amendment's archive and title; the optional hook installed by `make install-hooks`
 only reports the same class of mistake earlier.
 
 ## Specification and test integrity

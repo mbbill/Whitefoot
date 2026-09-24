@@ -36,7 +36,7 @@ Scale the reasoning to uncertainty, impact, error cost, and reversibility.
 |---|---|---|
 | Start or resume | Read the requested outcome and scope, then the affected current owner: the specification for language behavior, the compiler design tree and code for implementation, or document role for prose. Newly found issues do not expand the task's scope. For a material choice, read the relevant constitutional clauses and the relevant design subtree with its ancestors and refused alternatives. On resumption, verify the actual working tree and PR state. | The work follows the relevant requirements and accounts for prior objections. No reading log or task document. A1, D3, R1. |
 | Choose | State required properties, facts, assumptions, actual alternatives, the selection reason, and what could change it. Use deduction only for conclusions the stated premises entail; otherwise state the empirical or provisional ground. Before an experiment intended to select a design, record what result would distinguish the candidates; keep later exploration identifiable. | A concise reason in the existing investigation, or the PR for a small choice; experimental criteria and results at their source. R1, R2. |
-| Update | When a choice is settled or its grounds change, update the standing owner and record the design revision under the design-tree procedure: owner-ruled changes enter the tree, and choices the agent makes on its own remain amendments while work continues. Follow references and material dependencies into consumers, reconsidering each affected choice. Continue if its conclusion or grounds change; stop at an unaffected dependency. Keep unresolved grounds explicit, with a concrete question and affected rows marked `revisit`. Do this when the conclusion is reached, including during long tasks. | Current guidance, recorded reasons, and the tree or pending amendments agree. State the affected set and any unresolved reason in the existing explanation. R3, R4, M1–M3. |
+| Update | When a choice is settled or its grounds change, update the standing owner and record the design revision under the design-tree procedure: owner-ruled changes enter the tree, and choices the agent makes on its own remain amendments while work continues. Follow references and material dependencies into consumers, reconsidering each affected choice. Continue if its conclusion or grounds change; stop at an unaffected dependency. Keep unresolved grounds explicit, with a concrete question and affected rows marked `revisit`. Do this when the conclusion is reached, including during long tasks. | Current guidance, recorded reasons, and the tree or pending amendments agree. State the affected set and any unresolved reason in the existing explanation. R3, R4, M1. |
 | Finish | At the completion checklist's triggers, run applicable checks and give an independent reviewer the agreed scope, design commitments, full diff and results. Handle findings under the checklist and publish the changes and compact report to the PR; DCR findings go to the owner with the primary agent's assessment before action. | Results and limitations at the review surface. Publishing progress needs no completion review. No separate review file. V1–V4. |
 
 For a choice without an existing rule or design node, use the nearest relevant
@@ -113,8 +113,8 @@ while the compiler design tree changes.
 
 ## Feedback and implementation boundaries
 
-Use the compiler README's focused development commands for the part being
-changed; run the complete root `make check` for the exact merge revision.
+Use the README's focused verification commands for the part being changed;
+run the complete root `make check` for the exact merge revision.
 Choose additional checks for a concrete uncertainty, not merely to repeat a
 successful run. A documentation edit needs relevant reference and example
 checks; it does not need a test that mirrors its prose.
