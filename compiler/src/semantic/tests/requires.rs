@@ -1831,7 +1831,7 @@ fn inspect(holder: Holder) -> result: unit pure contract {
 }
 
 fn main() -> status: ExitStatus pure {
-  let holder = Value();
+  let holder = Holder::Value();
   let held = inspect(holder: move holder);
   return exit_status(code: 0_u8);
 }

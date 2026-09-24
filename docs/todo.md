@@ -11,12 +11,19 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   decisions in the [language](../design/language.md) and
   [compiler](../design/compiler.md) design trees rest on the
   [architecture](../research/investigations/modular-compilation/DESIGN.md),
-  [source rules](../research/investigations/modular-compilation/LANGUAGE.md),
-  [syntax candidate](../research/investigations/modular-compilation/SYNTAX.md)
-  and [complete specimen](../research/investigations/modular-compilation/demo/README.md),
-  which are research records, not compiler capability. The native grammar probe
-  checks source/graph strong-LL(2) decisions and that every active form keeps
-  its two-token prefixes; it does not implement formation, proof or execution.
+  [source rules](../research/investigations/modular-compilation/LANGUAGE.md)
+  and [complete specimen](../research/investigations/modular-compilation/demo/README.md).
+  Specification v0.70 and the compiler now implement the module grammar, graph
+  formation and record discovery, module inventories with forward visibility,
+  file aliases, qualified references with edge and access checks, publication
+  and its public-signature closure, interface/definition correspondence,
+  pending declarations, type-owned variants, module-relative `readonly`,
+  named and unnamed entries with the per-entry no-heap closure, and module
+  program conformance cases (`whitefootc --graph`). Remaining: field access
+  across modules in code and annotations, CALL-4 result projections,
+  per-module summary publication over conservative components, the module
+  check against dependency interfaces alone, qualified groups in `gparam` and
+  `binding_decl` (an alias works today), and slices 3, 5 and 6.
   Follow the design's ordered implementation slices and discriminating
   acceptance matrix: graph/alias/visibility and correspondence; complete
   representations, module-relative readonly and imported capability/release;

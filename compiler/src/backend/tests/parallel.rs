@@ -1543,17 +1543,17 @@ fn transform(owner: Owner, value: u64) -> result: Owner pure {
       let values = slots_new::<Box<u64>, 3>();
       let cell = box_new::<u64>(value: value);
       place_back(window: &values, value: move cell);
-      return Full(values: move values);
+      return Owner::Full(values: move values);
     }
     Full(values: carried_values) => {
       if carried_values.len != 1_u64 {
-        return Full(values: move carried_values);
+        return Owner::Full(values: move carried_values);
       }
       let cell = take_back(window: &carried_values);
       if cell.inner != value {
-        return Full(values: move carried_values);
+        return Owner::Full(values: move carried_values);
       }
-      return Empty();
+      return Owner::Empty();
     }
   }
 }
@@ -1562,13 +1562,13 @@ fn main() -> status: ExitStatus pure {
   let left_values = slots_new::<Box<u64>, 3>();
   let left_cell = box_new::<u64>(value: 17_u64);
   place_back(window: &left_values, value: move left_cell);
-  let left = Full(values: move left_values);
-  let empty_left = Empty();
+  let left = Owner::Full(values: move left_values);
+  let empty_left = Owner::Empty();
   let right_values = slots_new::<Box<u64>, 3>();
   let right_cell = box_new::<u64>(value: 29_u64);
   place_back(window: &right_values, value: move right_cell);
-  let right = Full(values: move right_values);
-  let empty_right = Empty();
+  let right = Owner::Full(values: move right_values);
+  let empty_right = Owner::Empty();
   let first = transform(owner: move left, value: 17_u64);
   let second = transform(owner: move empty_left, value: 41_u64);
   let third = transform(owner: move empty_right, value: 53_u64);

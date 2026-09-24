@@ -605,6 +605,9 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     postcondition_selectors: Vec<CheckedPostconditionSelector>,
     postcondition_unavailable_declarations: Vec<DeclarationId>,
     active_postcondition: Cell<Option<PostconditionCheckContext>>,
+    /// The module of the function body under check: a readonly field is a
+    /// write target only inside the module that declares it [TYPE-2].
+    writing_module: Cell<Option<crate::ModuleId>>,
     /// The result datums admitted in the [FN-9] clause currently being
     /// checked: each written spelling with the result ordinal it names and
     /// the type that datum has [CALL-4]. A declaration writing one result
@@ -1084,6 +1087,64 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         written
     }
 
+    /// The symbol base of one source function [MOD-3]: its plain name in the
+    /// root module, and its module path joined by `.` before the name in
+    /// every other module, so equal names of different modules stay distinct.
+    pub(in crate::semantic::check) fn module_symbol_base(
+        &self,
+        declaration: DeclarationId,
+        name: &str,
+    ) -> String {
+        let path = self
+            .resolved
+            .declaration(declaration)
+            .and_then(crate::DeclarationRecord::module)
+            .and_then(|module| {
+                self.resolved
+                    .syntax()
+                    .classified_bundle()
+                    .source_bundle()
+                    .module(module)
+            })
+            .map_or(&[][..], crate::ModuleRecord::path);
+        if path.is_empty() {
+            name.to_owned()
+        } else {
+            format!("{}.{name}", path.join("."))
+        }
+    }
+
+    /// The module whose inventory declares a source nominal; `None` for a
+    /// PRE-1 or compiler-owned nominal [MOD-3].
+    pub(in crate::semantic::check) fn nominal_module(
+        &self,
+        nominal: super::model::NominalId,
+    ) -> Option<crate::ModuleId> {
+        let (template, _) = self
+            .source_nominal_instances
+            .get(nominal.0 as usize)?
+            .as_ref()?;
+        let declaration = self.nominal_templates.get(*template)?.declaration;
+        self.resolved
+            .declaration(declaration)
+            .and_then(crate::DeclarationRecord::module)
+    }
+
+    /// [TYPE-2] whether a readonly field withholds writes from the body under
+    /// check: a PRE-1 field's from every body, and a source field's from
+    /// every module except the one that declares its nominal.
+    pub(in crate::semantic::check) fn field_withholds_writes(
+        &self,
+        nominal: super::model::NominalId,
+        field: &super::model::CheckedField,
+    ) -> bool {
+        field.readonly
+            && match self.nominal_module(nominal) {
+                Some(module) => self.writing_module.get() != Some(module),
+                None => true,
+            }
+    }
+
     /// [GRAM-2, STOR-8] whether this unit wrote `program no_heap;`.
     ///
     /// Resolution has already refused a second `heap_decl` and one at any
@@ -1166,6 +1227,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             postcondition_selectors: Vec::new(),
             postcondition_unavailable_declarations: Vec::new(),
             active_postcondition: Cell::new(None),
+            writing_module: Cell::new(None),
             active_result_datums: RefCell::new(Vec::new()),
             behavior: behavior::BehaviorInventory::default(),
         })
@@ -1362,13 +1424,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
+    /// Every item's declaration node the checker reads. An alias binds names
+    /// only [MOD-4], and an interface function declaration whose definition
+    /// exists is that definition's claim, checked for correspondence and not
+    /// a second function [MOD-7].
     fn item_declarations(&self) -> Result<Vec<NodeId>, CheckStop> {
+        let defined = self
+            .resolved
+            .interface_functions()
+            .iter()
+            .filter(|function| function.definition().is_some())
+            .filter_map(|function| self.resolved.declaration(function.declaration()))
+            .map(|declaration| declaration.origin().node().clone())
+            .collect::<Vec<_>>();
         let mut declarations = Vec::new();
         for item in self.tree.children(self.tree.root())? {
             if self.tree.production(*item)? != Production::Item {
                 return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
             }
-            declarations.push(self.tree.only_child(*item)?);
+            let declaration = self.tree.only_child(*item)?;
+            match self.tree.production(declaration)? {
+                Production::AliasDecl => continue,
+                Production::FnDecl if defined.contains(self.tree.path(declaration)?) => continue,
+                _ => {}
+            }
+            declarations.push(declaration);
         }
         Ok(declarations)
     }
@@ -1385,15 +1465,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// need completed field inventories and are collected by the second pass
     /// below.
     fn collect_constants(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
-        let nodes = items
-            .iter()
-            .copied()
-            .filter(|node| {
-                self.tree
-                    .production(*node)
-                    .is_ok_and(|production| production == Production::ConstDecl)
-            })
-            .collect::<Vec<_>>();
+        let nodes = self.constant_order(items)?;
         for node in nodes {
             if self.constant_declaration_is_deferred(node)? {
                 continue;
@@ -1410,6 +1482,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// containing a nominal type (a cvalue reference has the exact expected
     /// type), so the two passes never reorder a legal dependency.
     fn collect_deferred_nominal_constants(&mut self, items: &[NodeId]) -> Result<(), CheckStop> {
+        let nodes = self.constant_order(items)?;
+        for node in nodes {
+            if self.constant_declaration_is_deferred(node)? {
+                self.collect_constant(node)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Every const item in dependency order [CONST-2]: a const's value
+    /// follows the values of the consts it names, whatever their item order,
+    /// since a module's consts are visible throughout it [MOD-3]. A const
+    /// whose value depends on itself is rejected at the first const in item
+    /// order that lies on the cycle.
+    fn constant_order(&self, items: &[NodeId]) -> Result<Vec<NodeId>, CheckStop> {
         let nodes = items
             .iter()
             .copied()
@@ -1419,12 +1506,90 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .is_ok_and(|production| production == Production::ConstDecl)
             })
             .collect::<Vec<_>>();
-        for node in nodes {
-            if self.constant_declaration_is_deferred(node)? {
-                self.collect_constant(node)?;
+        let mut declarations = HashMap::new();
+        for (index, node) in nodes.iter().enumerate() {
+            declarations.insert(
+                self.declaration_at(*node, DeclarationRole::NamedConst)?
+                    .id(),
+                index,
+            );
+        }
+        let mut dependencies = vec![Vec::new(); nodes.len()];
+        for (index, node) in nodes.iter().enumerate() {
+            let owner = self.tree.path(*node)?.components().to_vec();
+            for usage in self.resolved.lexical_uses() {
+                let path = usage.origin().node().components();
+                if path.len() < owner.len() || !path.starts_with(&owner) {
+                    continue;
+                }
+                if let crate::ResolvedTarget::Source {
+                    declaration,
+                    class: crate::DeclarationClass::NamedConst,
+                } = usage.target()
+                    && let Some(target) = declarations.get(&declaration)
+                    && !dependencies[index].contains(target)
+                {
+                    dependencies[index].push(*target);
+                }
             }
         }
-        Ok(())
+        // 0: unvisited, 1: on the current path, 2: ordered.
+        let mut state = vec![0_u8; nodes.len()];
+        let mut order = Vec::with_capacity(nodes.len());
+        for root in 0..nodes.len() {
+            if state[root] != 0 {
+                continue;
+            }
+            let mut stack = vec![(root, 0_usize)];
+            state[root] = 1;
+            while let Some((current, next)) = stack.last_mut() {
+                let current = *current;
+                if let Some(&dependency) = dependencies[current].get(*next) {
+                    *next += 1;
+                    match state[dependency] {
+                        0 => {
+                            state[dependency] = 1;
+                            stack.push((dependency, 0));
+                        }
+                        1 => {
+                            let start = stack
+                                .iter()
+                                .position(|(member, _)| *member == dependency)
+                                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                            let members = stack[start..]
+                                .iter()
+                                .map(|(member, _)| *member)
+                                .collect::<Vec<_>>();
+                            let first = members
+                                .iter()
+                                .copied()
+                                .min()
+                                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                            let at = members
+                                .iter()
+                                .position(|member| *member == first)
+                                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                            let cycle = members[at..]
+                                .iter()
+                                .chain(&members[..at])
+                                .map(|member| self.identifier(nodes[*member]))
+                                .collect::<Result<Vec<_>, _>>()?;
+                            return self.issue_node(
+                                SemanticRule::Const2,
+                                nodes[first],
+                                SemanticIssueKind::ConstantCycle { cycle },
+                            );
+                        }
+                        _ => {}
+                    }
+                } else {
+                    state[current] = 2;
+                    order.push(nodes[current]);
+                    stack.pop();
+                }
+            }
+        }
+        Ok(order)
     }
 
     fn constant_declaration_is_deferred(&self, node: NodeId) -> Result<bool, CheckStop> {
@@ -1434,12 +1599,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let mut pending = vec![ty];
         while let Some(node) = pending.pop() {
-            if self.tree.production(node)? == Production::Type
-                && self
-                    .tree
-                    .direct_token_with(node, crate::TerminalPredicate::TypeIdentifier)?
-                    .is_some()
-            {
+            if self.tree.production(node)? == Production::Type && self.tree.names_nominal(node)? {
                 return Ok(true);
             }
             pending.extend(self.tree.children(node)?.iter().copied());
@@ -1451,15 +1611,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &mut self,
         items: &[NodeId],
     ) -> Result<(), CheckStop> {
-        let nodes = items
-            .iter()
-            .copied()
-            .filter(|node| {
-                self.tree
-                    .production(*node)
-                    .is_ok_and(|production| production == Production::ConstDecl)
-            })
-            .collect::<Vec<_>>();
+        let nodes = self.constant_order(items)?;
         for node in nodes {
             let declaration = self.declaration_at(node, DeclarationRole::NamedConst)?.id();
             if !self.postcondition_constant_has_links(node)? {
@@ -1519,11 +1671,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(false);
         }
         for ty in self.tree.descendants_with(node, Production::Type)? {
-            if self
-                .tree
-                .direct_token_with(ty, crate::TerminalPredicate::TypeIdentifier)?
-                .is_some()
-            {
+            if self.tree.names_nominal(ty)? {
                 let path = self.tree.path(ty)?;
                 if !self.resolved.lexical_uses().iter().any(|usage| {
                     usage.role() == crate::LexicalUseRole::Type && usage.origin().node() == path
@@ -1736,6 +1884,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // boundary.
         self.deferred_loop_reference_uses.borrow_mut().clear();
         self.reference_origins.borrow_mut().clear();
+        self.writing_module.set(
+            self.resolved
+                .declaration(signature.declaration)
+                .and_then(crate::DeclarationRecord::module),
+        );
         self.check_musttail_callees(signature)?;
         self.check_entry_formers(signature)?;
         let mut bindings = HashMap::new();
@@ -1833,7 +1986,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if !self.deferred_loop_reference_uses.borrow().is_empty() {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
-        let declaration_only = self.tree.production(signature.node)? == Production::FnSig;
+        // A function-kind formal and a pending interface declaration
+        // [MOD-8] are body-less leaves: their written boundary is what their
+        // callers use, and nothing is checked below it.
+        let declaration_only = self.tree.is_body_less(signature.node)?;
         if declaration_only {
             checked.can_continue = false;
             checked.effects = signature.declared_effects.clone();
@@ -1910,6 +2066,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             formal_hypothesis: signature.formal_parameter.is_some(),
             id: signature.id,
             declaration: signature.declaration,
+            module: self
+                .resolved
+                .declaration(signature.declaration)
+                .and_then(crate::DeclarationRecord::module)
+                .unwrap_or(crate::ModuleId::BUNDLE_ROOT),
             name: signature.name.clone(),
             symbol: signature.symbol.clone(),
             region_parameters: signature.region_parameters.clone(),

@@ -2731,14 +2731,17 @@ fn main() -> status: ExitStatus pure {
 
 #[test]
 fn a_successfully_resolved_foreign_variant_is_an_fn9_source_issue() {
+    // [TYPE-6] a route label resolves against its result ordinal's enum, so
+    // the resolved variant here belongs to the result's own source enum;
+    // FN-9 then admits only the prelude `Ok` route.
     let source = br#"enum Foreign {
   ForeignCase(value: i32);
 }
 
-fn selected(value: i32) -> result: Result<i32, Overflow> pure contract {
+fn selected(value: i32) -> result: Foreign pure contract {
   ensures when ForeignCase(value: payload): payload == value;
 } {
-  return Ok<i32, Overflow>(value: value);
+  return Foreign::ForeignCase(value: value);
 }
 
 fn main() -> status: ExitStatus pure {

@@ -2464,6 +2464,9 @@ pub(crate) struct CheckedFunction {
     pub(crate) formal_hypothesis: bool,
     pub(crate) id: FunctionId,
     pub(crate) declaration: DeclarationId,
+    /// The module whose inventory declares it; the synthetic root module for
+    /// a PRE-1 function [MOD-3].
+    pub(crate) module: crate::ModuleId,
     pub(crate) name: String,
     pub(crate) symbol: String,
     /// Formal regions in the same declaration order `UserCall::goal_regions`

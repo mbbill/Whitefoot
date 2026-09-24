@@ -1,12 +1,17 @@
 # Two entries over one module graph
 
-This is a complete **source design specimen** for the proposed module system:
-every declared function has an implementation, both entries have complete
-bodies, and all application dependencies are present. It is not currently an
-executable Whitefoot project. The active compiler does not accept `.wfg`,
-`.wfm`, qualified module paths, file-local aliases, `public` or
-module-relative `readonly`. The proposed forms are identified below; no build
-command, successful compiler run or incremental timing is implied.
+This is a complete **source design specimen** for the module system: every
+declared function has an implementation, both entries have complete bodies,
+and all application dependencies are present. The compiler checks it and
+builds and runs both entries, each exiting 0:
+
+```sh
+whitefootc --graph modules.wfg --check
+whitefootc --graph modules.wfg --entry kernel -o kernel
+whitefootc --graph modules.wfg --entry inspect -o inspect
+```
+
+No incremental timing is implied: persistent reuse is a later slice.
 
 The application processes two jobs through a four-slot FIFO. The `kernel`
 entry keeps everything by value and requires `no_heap`. The `inspect` entry
@@ -284,9 +289,8 @@ demonstrate a linker or backend achieving it.
 
 ## Proposed notation used here
 
-These sources follow the selected [boundary rules](../LANGUAGE.md) and
-[qualified syntax](../SYNTAX.md). The grammar qualification does not execute
-the specimen or establish a compiler implementation.
+These sources follow the selected [boundary rules](../LANGUAGE.md) and the
+active specification's module grammar [GRAM-2, GRAM-3, GRAM-5].
 
 | Form | Meaning |
 |---|---|

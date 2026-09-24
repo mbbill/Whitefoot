@@ -190,11 +190,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if self.has_fixed(node, FixedTerminal::F64)? {
             return Ok(CheckedType::Float(FloatType::F64));
         }
-        if self
-            .tree
-            .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
-            .is_some()
-        {
+        if self.tree.names_nominal(node)? {
             let usage = self.use_at(node, LexicalUseRole::Type)?;
             match usage.target() {
                 ResolvedTarget::Prelude(id) if id == BuiltinPreludeId::BOOL => {
@@ -535,11 +531,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if self.tree.production(owner)? != Production::Type {
             return Ok(false);
         }
-        if self
-            .tree
-            .direct_token_with(owner, TerminalPredicate::TypeIdentifier)?
-            .is_none()
-        {
+        if !self.tree.names_nominal(owner)? {
             return Ok(false);
         }
         let usage = self.use_at(owner, LexicalUseRole::Type)?;
@@ -1190,11 +1182,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // The construction shape is decided first: its direct tokens include
         // the field-label IDENTs, so the single-identifier reference reader
         // below must never see it.
-        if self
-            .tree
-            .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
-            .is_some()
-        {
+        if self.tree.names_nominal(node)? {
             return self.parse_const_construction(node, expected);
         }
         if let Some(literal) = self
@@ -1455,11 +1443,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         node: NodeId,
     ) -> Result<Option<crate::ContainerShape>, CheckStop> {
-        if self
-            .tree
-            .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
-            .is_none()
-        {
+        if !self.tree.names_nominal(node)? {
             return Ok(None);
         }
         let ResolvedTarget::Container(id) = self.use_at(node, LexicalUseRole::Type)?.target()

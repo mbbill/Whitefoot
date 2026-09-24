@@ -4946,7 +4946,7 @@ fn source(flag: Bool) -> result: Result<u64, Fail> pure {
   if flag {
     return Ok<u64, Fail>(value: 1_u64);
   } else {
-    let bad = Bad();
+    let bad = Fail::Bad();
     return Err<u64, Fail>(error: bad);
   }
 }
@@ -5179,7 +5179,7 @@ enum Fail {
 
 fn source(fail: Bool) -> result: Result<u64, Fail> pure {
   if fail {
-    let bad = Bad();
+    let bad = Fail::Bad();
     return Err<u64, Fail>(error: bad);
   }
   return Ok<u64, Fail>(value: 1_u64);
@@ -5629,7 +5629,7 @@ fn counted_roots_cover_mixed_control_edges_and_unused_s11_facts() {
 
 fn maybe(fail: Bool) -> result: Result<unit, Stop> pure {
   if fail {
-    let stopped = Failed();
+    let stopped = Stop::Failed();
     return Err<unit, Stop>(error: stopped);
   }
   return Ok<unit, Stop>(value: unit);

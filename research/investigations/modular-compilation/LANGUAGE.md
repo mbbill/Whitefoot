@@ -1,12 +1,15 @@
 # Module boundary rules selected for implementation
 
 This companion to [DESIGN.md](DESIGN.md) closes its source-language choices.
-It is a proposed amendment over the active v0.69 specification, not a claim
-that the compiler implements these rules. [SYNTAX.md](SYNTAX.md) is the
-complete grammar input. Existing rules apply unless a change is stated here.
-Retain this document during implementation; fold its normative content into
-the active specification and retire it when that specification owns the whole
-boundary. The source demo remains an unexecuted design specimen.
+It was written as an amendment over the v0.69 specification. The active
+specification v0.70 now owns the grammar and the formation, name, alias,
+access, publication, correspondence, module-verdict, readonly, entry and
+no-heap rules below [PROG-1 to PROG-3, MOD-1 to MOD-9, TYPE-2, TYPE-6,
+STOR-8, CALL-4]; where the two differ, the specification governs. Retain this
+document while its remaining sections (per-module summary publication,
+conservative cross-module components, effect rows over accessible paths)
+have no specification text, and retire it when the specification owns the
+whole boundary.
 
 ## Formation and names
 

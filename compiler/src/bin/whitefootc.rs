@@ -8,11 +8,12 @@ use whitefoot::{
     Architecture, COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_FILE_POSIX_HEADER,
     COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
-    COMPLETION_WINDOWS_IOCP_HEADER, CompilerLimits, FLOOR_STACK_BYTES, HOST_OPTIMIZATION_ARGUMENTS,
-    ORDINARY_VALUES_HEADER, ORDINARY_VALUES_LLVM, ORDINARY_VALUES_SOURCE, OverlapLowering,
-    RecursionBudget, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
-    SCHED_PRIM_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER, compile_with_overlap,
-    compile_with_permission_ledger, stack_ledger,
+    COMPLETION_WINDOWS_IOCP_HEADER, CompilerLimits, FLOOR_STACK_BYTES, GRAPH_FILE_NAME,
+    HOST_OPTIMIZATION_ARGUMENTS, ModuleEntry, ORDINARY_VALUES_HEADER, ORDINARY_VALUES_LLVM,
+    ORDINARY_VALUES_SOURCE, OverlapLowering, RecursionBudget, SCHED_CORE_HEADER, SCHED_CORE_SOURCE,
+    SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER,
+    check, check_module_program, compile_module_program, compile_with_overlap,
+    compile_with_permission_ledger, discover_module_sources, form_module_graph, stack_ledger,
 };
 
 // `HOST_LINK_LIBRARIES` is here rather than above because its one reader is
@@ -32,7 +33,7 @@ use whitefoot::{
 };
 
 const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-scalar-leaf-limit N|off] [--par-sequential-refusal] [--par-recursive-frontier auto|N|off] [--no-overlap] [--par-ledger] \
-[--stack-ledger] [-o OUTPUT] SOURCE...";
+[--stack-ledger] [--check] [-o OUTPUT] (SOURCE... | --graph modules.wfg [--entry NAME | --function pkg::module::name])";
 
 // The compiler walks typed source and lowering trees recursively. Windows
 // gives the process's primary thread a 1 MiB stack by default, which is small
@@ -224,6 +225,12 @@ fn main() {
 fn run() -> Result<(), String> {
     let arguments: Vec<_> = std::env::args().skip(1).collect();
     let options = Options::parse(&arguments)?;
+    if let Some(graph) = &options.graph {
+        let Some(module) = run_module_program(&options, graph)? else {
+            return Ok(());
+        };
+        return finish(&options, &module);
+    }
     let mut paths = Vec::with_capacity(options.sources.len());
     let mut bytes = Vec::with_capacity(options.sources.len());
     for (index, source) in options.sources.iter().enumerate() {
@@ -255,17 +262,75 @@ fn run() -> Result<(), String> {
         }
         module
     } else {
+        if options.check {
+            check(&inputs, CompilerLimits::default()).map_err(|failure| failure.to_string())?;
+            return Ok(());
+        }
         compile_with_overlap(&inputs, CompilerLimits::default(), overlap)
             .map_err(|failure| failure.to_string())?
     };
+    finish(&options, &module)
+}
+
+/// Reads a module program's graph and every registered module's records
+/// below the graph's directory, then checks it or compiles its entry
+/// [MOD-1, MOD-2, MOD-9]. `None` is a completed check.
+fn run_module_program(options: &Options, graph_path: &Path) -> Result<Option<String>, String> {
+    let graph_bytes = std::fs::read(graph_path)
+        .map_err(|error| format!("cannot read {}: {error}", graph_path.display()))?;
+    let display = graph_path.display().to_string();
+    let graph = form_module_graph(
+        SourceInput::from_host_path(GRAPH_FILE_NAME, &display, &graph_bytes),
+        CompilerLimits::default(),
+    )
+    .map_err(|failure| failure.to_string())?;
+    let root = graph_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let sources = discover_module_sources(root, &graph).map_err(|failure| failure.to_string())?;
+    let inputs: Vec<_> = sources
+        .iter()
+        .map(|source| {
+            SourceInput::from_host_path(&source.logical_path, &source.display_path, &source.bytes)
+                .in_module(source.module, source.role)
+        })
+        .collect();
+    if options.check {
+        check_module_program(&graph, &inputs, CompilerLimits::default())
+            .map_err(|failure| failure.to_string())?;
+        return Ok(None);
+    }
+    let entry = if let Some(name) = &options.entry {
+        ModuleEntry::Named(name)
+    } else {
+        let written = options.function.as_deref().unwrap_or_default();
+        let (module, function) = written
+            .rsplit_once("::")
+            .ok_or_else(|| format!("--function names pkg::module::name, not {written}"))?;
+        ModuleEntry::Function { module, function }
+    };
+    compile_module_program(
+        &graph,
+        &inputs,
+        entry,
+        CompilerLimits::default(),
+        options.overlap(),
+    )
+    .map(Some)
+    .map_err(|failure| failure.to_string())
+}
+
+/// Writes or links one emitted module as the options select.
+fn finish(options: &Options, module: &str) -> Result<(), String> {
     if options.stack_ledger {
-        for line in print_stack_ledger(&module)? {
+        for line in print_stack_ledger(module)? {
             println!("{line}");
         }
     }
     if options.emit_llvm {
-        if let Some(output) = options.output {
-            std::fs::write(&output, &module)
+        if let Some(output) = &options.output {
+            std::fs::write(output, module)
                 .map_err(|error| format!("cannot write {}: {error}", output.display()))?;
         } else {
             print!("{module}");
@@ -273,7 +338,7 @@ fn run() -> Result<(), String> {
         return Ok(());
     }
     compile_executable(
-        &module,
+        module,
         options.output.as_deref().unwrap_or(Path::new("a.out")),
     )
 }
@@ -564,6 +629,14 @@ struct Options {
     /// which the runtime's own stack holds six hundred thousand of. The bound
     /// was not careful, it was blind, and this report is what replaced it.
     stack_ledger: bool,
+    /// Check the sources through complete source acceptance and stop.
+    check: bool,
+    /// The module program's graph file [MOD-1], instead of source records.
+    graph: Option<PathBuf>,
+    /// The graph entry to build [MOD-9].
+    entry: Option<String>,
+    /// The function to build as an unnamed entry, `pkg::module::name` [MOD-9].
+    function: Option<String>,
     output: Option<PathBuf>,
     sources: Vec<PathBuf>,
 }
@@ -578,6 +651,10 @@ impl Options {
         let mut no_overlap = false;
         let mut par_ledger = false;
         let mut stack_ledger = false;
+        let mut check = false;
+        let mut graph = None;
+        let mut entry = None;
+        let mut function = None;
         let mut output = None;
         let mut sources = Vec::new();
         let mut cursor = 0;
@@ -632,6 +709,23 @@ impl Options {
                     sequential_refusal = true;
                 }
                 "--no-overlap" => no_overlap = true,
+                "--check" => check = true,
+                "--graph" | "--entry" | "--function" => {
+                    let option = arguments[cursor].clone();
+                    cursor += 1;
+                    let value = arguments
+                        .get(cursor)
+                        .ok_or_else(|| format!("{option} requires a value"))?
+                        .clone();
+                    let slot = match option.as_str() {
+                        "--graph" => graph.replace(PathBuf::from(&value)).is_some(),
+                        "--entry" => entry.replace(value).is_some(),
+                        _ => function.replace(value).is_some(),
+                    };
+                    if slot {
+                        return Err(format!("{option} may be written only once"));
+                    }
+                }
                 "--par-ledger" => par_ledger = true,
                 "--stack-ledger" => stack_ledger = true,
                 "-o" => {
@@ -653,8 +747,22 @@ impl Options {
             }
             cursor += 1;
         }
-        if sources.is_empty() {
+        if graph.is_some() == !sources.is_empty() {
             return Err(USAGE.to_owned());
+        }
+        if graph.is_none() && (entry.is_some() || function.is_some()) {
+            return Err(
+                "--entry and --function select a module program's entry: write --graph".to_owned(),
+            );
+        }
+        if entry.is_some() && function.is_some() {
+            return Err("--entry and --function each select one entry: write one".to_owned());
+        }
+        if graph.is_some() && !check && entry.is_none() && function.is_none() {
+            return Err("a module program build selects an entry: write --entry NAME, --function pkg::module::name or --check".to_owned());
+        }
+        if graph.is_some() && par_ledger {
+            return Err("--par-ledger reports a source bundle build".to_owned());
         }
         // Two streams, one stdout. The emitted module is the payload of
         // `--emit-llvm` without `-o`, so the ledger may not be interleaved
@@ -699,6 +807,10 @@ impl Options {
             no_overlap,
             par_ledger,
             stack_ledger,
+            check,
+            graph,
+            entry,
+            function,
             output,
             sources,
         })

@@ -2,13 +2,13 @@ use std::collections::{HashMap, HashSet};
 
 use crate::syntax::NodeId;
 use crate::{
-    DeclarationId, DeclarationRole, DeferredUseRole, LexicalUseRole, Production, ResolvedTarget,
-    SemanticCompilerFailure, SemanticIssueKind, SemanticRule, UnsupportedSemanticFeature,
+    DeclarationId, DeclarationRole, DeferredUseRole, Production, SemanticCompilerFailure,
+    SemanticIssueKind, SemanticRule, UnsupportedSemanticFeature,
 };
 
 use super::super::super::model::{
-    CheckedConstructor, CheckedEnumType, CheckedExpression, CheckedField, CheckedMatchArm,
-    CheckedMatchBinder, CheckedMode, CheckedNominalKind, CheckedStatement, CheckedType,
+    CheckedEnumType, CheckedExpression, CheckedField, CheckedMatchArm, CheckedMatchBinder,
+    CheckedMode, CheckedNominalKind, CheckedStatement, CheckedType,
 };
 use super::super::super::places::PlaceStep;
 use super::super::super::tree::ConditionalAlternative;
@@ -23,7 +23,6 @@ struct VariantDescriptor {
     name: String,
     tag: u32,
     fields: Vec<CheckedField>,
-    constructor: CheckedConstructor,
 }
 
 struct MatchDescriptor {
@@ -581,13 +580,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     name: "True".to_owned(),
                     tag: 1,
                     fields: Vec::new(),
-                    constructor: CheckedConstructor::Prelude(crate::BuiltinPreludeId::TRUE),
                 },
                 VariantDescriptor {
                     name: "False".to_owned(),
                     tag: 0,
                     fields: Vec::new(),
-                    constructor: CheckedConstructor::Prelude(crate::BuiltinPreludeId::FALSE),
                 },
             ],
         }
@@ -629,7 +626,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         name: variant.name.clone(),
                         tag: variant.tag,
                         fields: variant.fields.clone(),
-                        constructor: variant.constructor,
                     })
                     .collect();
                 Ok(MatchDescriptor {
@@ -648,25 +644,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
+    /// [TYPE-6] an arm label resolves against the scrutinee's already known
+    /// enum type: it names one of that enum's variants, whatever other enum
+    /// declares a variant of the same spelling.
     fn match_variant<'descriptor>(
         &self,
         descriptor: &'descriptor MatchDescriptor,
         arm: NodeId,
     ) -> Result<&'descriptor VariantDescriptor, CheckStop> {
-        let usage = self.use_at(arm, LexicalUseRole::ArmVariant)?;
+        let label = self.deferred_use_at(arm, DeferredUseRole::ArmVariant)?;
         descriptor
             .variants
             .iter()
-            .find(|variant| match usage.target() {
-                ResolvedTarget::Source { declaration, .. } => {
-                    variant.constructor == CheckedConstructor::Source(declaration)
-                }
-                ResolvedTarget::Prelude(id) => {
-                    variant.constructor == CheckedConstructor::Prelude(id)
-                }
-
-                _ => false,
-            })
+            .find(|variant| variant.name == label.spelling())
             .ok_or_else(|| {
                 self.issue_value(
                     SemanticRule::Type6,

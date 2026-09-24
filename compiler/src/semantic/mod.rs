@@ -523,6 +523,12 @@ pub enum SemanticIssueKind {
     InvalidFloatLiteral,
     /// A named constant value does not exactly inhabit its written type.
     InvalidConstValue,
+    /// A named const's value depends on itself through the listed consts,
+    /// in dependency order [CONST-2].
+    ConstantCycle {
+        /// The consts on the cycle, beginning at the rejected one.
+        cycle: Vec<String>,
+    },
     /// A const-expression's compile-time evaluation has no u64 result: the
     /// mathematical result lies outside the domain or the divisor is zero.
     /// This is the const-eval overflow policy's rejection [CONST-1]; it is
@@ -1170,6 +1176,73 @@ pub struct CheckedProgram<'classified, 'lexed, 'source> {
 }
 
 impl CheckedProgram<'_, '_, '_> {
+    /// [STOR-8, MOD-9] the call path from an entry to the first function of
+    /// its execution closure that introduces a heap requirement, when one
+    /// does.
+    ///
+    /// The closure is every function the entry's checked body reaches through
+    /// its calls, in every branch. A function introduces the requirement when
+    /// it allocates and none of the source functions it calls does, so the
+    /// path ends at the source function whose own body calls an allocating
+    /// operation. Uncalled definitions stay outside the closure and impose
+    /// nothing on the entry.
+    pub(crate) fn heap_introducer(&self, entry: FunctionId) -> Option<Vec<FunctionId>> {
+        let functions = &self.data.functions;
+        let callees = |function: FunctionId| {
+            let mut calls = Vec::new();
+            if let Some(body) = functions
+                .get(function.0 as usize)
+                .and_then(|checked| checked.body.as_deref())
+            {
+                entailment::collect_statement_calls(function, body, &mut calls);
+            }
+            calls
+                .into_iter()
+                .map(|call| call.callee)
+                .collect::<Vec<_>>()
+        };
+        let allocates = |function: FunctionId| {
+            functions
+                .get(function.0 as usize)
+                .is_some_and(|checked| checked.allocates)
+        };
+        let has_body = |function: FunctionId| {
+            functions
+                .get(function.0 as usize)
+                .is_some_and(|checked| checked.body.is_some())
+        };
+        if !allocates(entry) {
+            return None;
+        }
+        let mut parents: std::collections::HashMap<FunctionId, FunctionId> =
+            std::collections::HashMap::new();
+        let mut queue = std::collections::VecDeque::from([entry]);
+        let mut seen = std::collections::HashSet::from([entry]);
+        while let Some(function) = queue.pop_front() {
+            let next = callees(function)
+                .into_iter()
+                .filter(|callee| allocates(*callee) && has_body(*callee))
+                .collect::<Vec<_>>();
+            if next.is_empty() {
+                let mut path = vec![function];
+                let mut current = function;
+                while let Some(parent) = parents.get(&current) {
+                    path.push(*parent);
+                    current = *parent;
+                }
+                path.reverse();
+                return Some(path);
+            }
+            for callee in next {
+                if seen.insert(callee) {
+                    parents.insert(callee, function);
+                    queue.push_back(callee);
+                }
+            }
+        }
+        None
+    }
+
     #[cfg(test)]
     pub(crate) fn element_type(&self, element: CheckedElement) -> Option<CheckedType> {
         self.data.elements.get(element.0 as usize).copied()

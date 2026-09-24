@@ -225,6 +225,8 @@ pub struct SourceInput<'input> {
     logical_path: &'input str,
     display_path: &'input str,
     bytes: &'input [u8],
+    module: ModuleId,
+    role: SourceRole,
 }
 
 impl fmt::Debug for SourceInput<'_> {
@@ -251,6 +253,23 @@ impl<'input> SourceInput<'input> {
             logical_path,
             display_path: logical_path,
             bytes,
+            module: ModuleId::BUNDLE_ROOT,
+            role: SourceRole::Implementation,
+        }
+    }
+
+    /// Places this input in one module of a module program with its role
+    /// [MOD-2]. An input made by [`SourceInput::new`] or
+    /// [`SourceInput::from_host_path`] is an implementation record of a source
+    /// bundle's synthetic root module until this is called.
+    #[must_use]
+    pub const fn in_module(self, module: ModuleId, role: SourceRole) -> Self {
+        Self {
+            logical_path: self.logical_path,
+            display_path: self.display_path,
+            bytes: self.bytes,
+            module,
+            role,
         }
     }
 
@@ -273,7 +292,87 @@ impl<'input> SourceInput<'input> {
             logical_path,
             display_path,
             bytes,
+            module: ModuleId::BUNDLE_ROOT,
+            role: SourceRole::Implementation,
         }
+    }
+}
+
+/// One module's dense identity within a program: its graph row position, or
+/// the synthetic root module that one source bundle forms [MOD-1, MOD-9].
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ModuleId(u32);
+
+impl ModuleId {
+    /// The synthetic root module every source bundle forms, and the first
+    /// row of a module graph.
+    pub const BUNDLE_ROOT: Self = Self(0);
+
+    /// Returns the dense row index.
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self.0 as usize
+    }
+
+    /// Builds the identity of the module at this row index.
+    #[must_use]
+    pub fn from_index(index: usize) -> Option<Self> {
+        u32::try_from(index).ok().map(Self)
+    }
+}
+
+/// The part a writer source plays in its module [MOD-2]: the module's one
+/// interface record, `module.wfm`, or one of its implementation records.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum SourceRole {
+    /// The module's interface, `module.wfm`.
+    Interface,
+    /// A direct `.wf` implementation record, or a source bundle's record.
+    Implementation,
+}
+
+/// One registered module: its path components after `pkg` (none for the root
+/// module) and its direct dependencies in written order [MOD-1].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModuleRecord {
+    path: Vec<String>,
+    dependencies: Vec<ModuleId>,
+}
+
+impl ModuleRecord {
+    /// Creates one module record.
+    #[must_use]
+    pub const fn new(path: Vec<String>, dependencies: Vec<ModuleId>) -> Self {
+        Self { path, dependencies }
+    }
+
+    /// Returns the path components after `pkg`.
+    #[must_use]
+    pub fn path(&self) -> &[String] {
+        &self.path
+    }
+
+    /// Returns the direct dependencies in written order.
+    #[must_use]
+    pub fn dependencies(&self) -> &[ModuleId] {
+        &self.dependencies
+    }
+
+    /// Reports whether this module lists `target` as a direct dependency.
+    #[must_use]
+    pub fn depends_on(&self, target: ModuleId) -> bool {
+        self.dependencies.contains(&target)
+    }
+
+    /// Renders the module's qualified name, `pkg` or `pkg::a::b`.
+    #[must_use]
+    pub fn qualified_name(&self) -> String {
+        let mut name = String::from("pkg");
+        for component in &self.path {
+            name.push_str("::");
+            name.push_str(component);
+        }
+        name
     }
 }
 
@@ -285,6 +384,8 @@ pub struct SourceFile {
     bytes: Vec<u8>,
     byte_len: u64,
     prelude: Option<PreludeSource>,
+    module: ModuleId,
+    role: SourceRole,
 }
 
 impl fmt::Debug for SourceFile {
@@ -309,6 +410,18 @@ pub(crate) enum PreludeSource {
 impl SourceFile {
     pub(crate) const fn prelude(&self) -> Option<PreludeSource> {
         self.prelude
+    }
+
+    /// Returns the module this writer source belongs to [MOD-2].
+    #[must_use]
+    pub const fn module(&self) -> ModuleId {
+        self.module
+    }
+
+    /// Returns this writer source's role in its module [MOD-2].
+    #[must_use]
+    pub const fn role(&self) -> SourceRole {
+        self.role
     }
 
     /// Returns the portable logical source name.
@@ -422,6 +535,8 @@ impl SourceLimits {
 pub struct SourceBundle {
     files: Vec<SourceFile>,
     total_bytes: u64,
+    modules: Vec<ModuleRecord>,
+    module_program: bool,
 }
 
 fn try_reserve_exact<T>(
@@ -640,10 +755,58 @@ impl SourceBundle {
                 bytes,
                 byte_len: source_len,
                 prelude: None,
+                module: input.module,
+                role: input.role,
             });
         }
 
-        Ok(Self { files, total_bytes })
+        Ok(Self {
+            files,
+            total_bytes,
+            modules: vec![ModuleRecord::new(Vec::new(), Vec::new())],
+            module_program: false,
+        })
+    }
+
+    /// Builds a module program's bundle: `inputs` are the selected modules'
+    /// interface and implementation records, each placed by
+    /// [`SourceInput::in_module`], and `modules` the graph rows they name
+    /// [MOD-1, MOD-2]. The PRE-1 records follow as for every bundle.
+    pub fn with_prelude_and_modules(
+        inputs: &[SourceInput<'_>],
+        modules: Vec<ModuleRecord>,
+        limits: SourceLimits,
+    ) -> Result<Self, SourceBundleError> {
+        if inputs
+            .iter()
+            .any(|input| input.module.index() >= modules.len())
+        {
+            return Err(SourceBundleError::UnknownModule);
+        }
+        let mut bundle = Self::with_prelude(inputs, limits)?;
+        bundle.modules = modules;
+        bundle.module_program = true;
+        Ok(bundle)
+    }
+
+    /// Returns every registered module in graph row order; a source bundle
+    /// has exactly its synthetic root module [MOD-9].
+    #[must_use]
+    pub fn modules(&self) -> &[ModuleRecord] {
+        &self.modules
+    }
+
+    /// Returns one registered module.
+    #[must_use]
+    pub fn module(&self, id: ModuleId) -> Option<&ModuleRecord> {
+        self.modules.get(id.index())
+    }
+
+    /// Reports whether this bundle is a module program rather than a source
+    /// bundle forming one synthetic root module [MOD-9].
+    #[must_use]
+    pub const fn is_module_program(&self) -> bool {
+        self.module_program
     }
 
     /// Returns the number of ordered source files.
@@ -749,6 +912,8 @@ pub enum SourceBundleError {
     },
     /// A byte count cannot be represented without wrapping.
     ArithmeticOverflow,
+    /// A module program placed a source in a module its graph does not register.
+    UnknownModule,
 }
 
 impl fmt::Display for SourceBundleError {
@@ -756,6 +921,9 @@ impl fmt::Display for SourceBundleError {
         match self {
             Self::EmptySourceSequence => {
                 formatter.write_str("compilation requires at least one source record")
+            }
+            Self::UnknownModule => {
+                formatter.write_str("a source record names a module the graph does not register")
             }
             Self::LogicalPath(error) => write!(formatter, "{error}"),
             Self::DuplicateLogicalPath {

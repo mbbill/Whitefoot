@@ -1,0 +1,4 @@
+pkg::util: [];
+pkg: [pkg::util];
+
+entry main = pkg::main;

@@ -685,11 +685,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(false);
         }
         for ty in self.tree.descendants_with(targs, Production::Type)? {
-            if self
-                .tree
-                .direct_token_with(ty, crate::TerminalPredicate::TypeIdentifier)?
-                .is_some()
-            {
+            if self.tree.names_nominal(ty)? {
                 let path = self.tree.path(ty)?;
                 if !self.resolved.lexical_uses().iter().any(|usage| {
                     matches!(
@@ -1005,11 +1001,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return Ok(false);
             }
             for ty in self.tree.descendants_with(node, Production::Type)? {
-                if self
-                    .tree
-                    .direct_token_with(ty, crate::TerminalPredicate::TypeIdentifier)?
-                    .is_some()
-                {
+                if self.tree.names_nominal(ty)? {
                     let path = self.tree.path(ty)?;
                     if !self.resolved.lexical_uses().iter().any(|usage| {
                         matches!(
@@ -1142,10 +1134,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // call graph by the ordinary effect walk.
         declared_effects.allocates |=
             HEAP_ALLOCATING_PRELUDE_FUNCTIONS.contains(&template.name.as_str());
+        // [MOD-3] functions of different modules may share a name, so a
+        // module other than the root prefixes its path; a source bundle's
+        // root-module symbols keep their plain names.
+        let base = self.module_symbol_base(template.declaration, &template.name);
         let symbol = if template.generic_parameters.is_empty() {
-            template.name.clone()
+            base
         } else {
-            format!("{}$instance${}", template.name, id.0)
+            format!("{base}$instance${}", id.0)
         };
         Ok(FunctionSignature {
             id,

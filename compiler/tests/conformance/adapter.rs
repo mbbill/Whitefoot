@@ -40,8 +40,10 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use whitefoot::{
-    CompilationFailureKind, CompilerLimits, HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS,
-    SourceInput, check, compile,
+    CompilationFailure, CompilationFailureKind, CompilerLimits, HOST_LINK_LIBRARIES,
+    HOST_OPTIMIZATION_ARGUMENTS, ModuleEntry, SourceInput, check, check_module_entry,
+    check_module_program, compile, compile_module_program, discover_module_sources,
+    form_module_graph,
 };
 
 use crate::support::append_runtime_objects;
@@ -60,22 +62,69 @@ struct Reached {
     note: Option<String>,
 }
 
+/// Drives a module-form case through the ordinary module program path
+/// [MOD-1, MOD-2, MOD-9]: its graph is formed, its modules' records are read
+/// from its directory, and a source verdict checks every module and admits
+/// every named entry, while an executed case builds the entry named `main`.
+fn reach_module_program(case: &Case, root: &Path) -> Result<Option<String>, CompilationFailure> {
+    let graph_bytes = std::fs::read(root.join("modules.wfg")).expect("read the case's graph");
+    let graph = form_module_graph(
+        SourceInput::new("modules.wfg", &graph_bytes),
+        CompilerLimits::default(),
+    )?;
+    let sources = discover_module_sources(root, &graph)
+        .unwrap_or_else(|failure| panic!("{}: {failure}", case.id));
+    let inputs: Vec<_> = sources
+        .iter()
+        .map(|source| {
+            SourceInput::new(&source.logical_path, &source.bytes)
+                .in_module(source.module, source.role)
+        })
+        .collect();
+    match &case.expect {
+        Expectation::Accept | Expectation::Reject(_) => {
+            check_module_program(&graph, &inputs, CompilerLimits::default())?;
+            for entry in graph.entries() {
+                check_module_entry(
+                    &graph,
+                    &inputs,
+                    ModuleEntry::Named(entry.name()),
+                    CompilerLimits::default(),
+                )?;
+            }
+            Ok(None)
+        }
+        Expectation::Run(_) | Expectation::Unsupported => compile_module_program(
+            &graph,
+            &inputs,
+            ModuleEntry::Named("main"),
+            CompilerLimits::default(),
+            whitefoot::OverlapLowering::Off,
+        )
+        .map(Some),
+    }
+}
+
 /// Drives one case to its corpus verdict through the ordinary compiler path.
 fn reach(case: &Case) -> Reached {
-    let source = case.source();
-    let path = case.logical_path();
-    let inputs = [SourceInput::new(&path, &source)];
     // `accept` and `reject` are source-language verdicts. [STOR-6] begins only
     // after their complete semantic boundary, so target qualification cannot
     // change either one. A runtime or unsupported expectation still needs the
     // complete toolchain: the former executes its module, while the latter may
     // name a capability first encountered during lowering.
-    let module = match &case.expect {
-        Expectation::Accept | Expectation::Reject(_) => {
-            check(&inputs, CompilerLimits::default()).map(|()| None)
-        }
-        Expectation::Run(_) | Expectation::Unsupported => {
-            compile(&inputs, CompilerLimits::default()).map(Some)
+    let module = if let Some(root) = case.module_root() {
+        reach_module_program(case, &root)
+    } else {
+        let source = case.source();
+        let path = case.logical_path();
+        let inputs = [SourceInput::new(&path, &source)];
+        match &case.expect {
+            Expectation::Accept | Expectation::Reject(_) => {
+                check(&inputs, CompilerLimits::default()).map(|()| None)
+            }
+            Expectation::Run(_) | Expectation::Unsupported => {
+                compile(&inputs, CompilerLimits::default()).map(Some)
+            }
         }
     };
     let module = match module {

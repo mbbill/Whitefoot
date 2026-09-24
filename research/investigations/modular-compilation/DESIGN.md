@@ -29,9 +29,10 @@ five modules form a fixed-capacity job queue, a function-kind batch consumer,
 an allocation-free entry and a heap-using tool. It includes every interface
 and body, the root graph, a reading order, expected behavior and predicted
 edit effects. The selected declaration, visibility and contract rules are in
-[LANGUAGE.md](LANGUAGE.md), and [SYNTAX.md](SYNTAX.md) contains the complete
-strong-LL(2) candidate. The specimen is not an executable project or evidence
-that the compiler implements those judgments.
+[LANGUAGE.md](LANGUAGE.md); the active specification v0.70 carries the
+complete grammar [GRAM-2, GRAM-3, GRAM-5, CONST-2] and the module rules it now
+states [MOD-1 to MOD-9], and the grammar generator checks that grammar
+strong-LL(2) at every compiler build.
 
 ## Purpose
 
@@ -553,8 +554,8 @@ through simple consistency and per-edge checks. The dependency graph is now
 independent of the namespace tree. Keep canonical path-derived names, but
 declare all source-module edges in one file at the project root.
 
-Use `modules.wfg` as the project-root filename. SYNTAX.md qualifies the
-complete proposed grammar. The graph has an implicit primary root and one
+Use `modules.wfg` as the project-root filename. Its grammar is the active
+specification's `graph_file` [GRAM-2]. The graph has an implicit primary root and one
 ordered declaration for each module in the selected graph. Each declaration lists exact direct dependencies, all of which
 must have been declared earlier. The following is illustrative notation,
 not accepted build grammar:
@@ -617,7 +618,7 @@ make individually acyclic permissions cyclic in their union. Separate
 independent projects may have separate graphs; several outputs of this project
 do not require that split. A named entry in the same file makes the
 function/requirement pairing inspectable without creating another dependency
-authority. Its complete proposed syntax is qualified in SYNTAX.md; target semantics are in LANGUAGE.md.
+authority. Its syntax is the active specification's `graph_file` [GRAM-2]; its rules are [MOD-1] and [MOD-9].
 A build may also run any function of a registered module as an unnamed entry
 under FN-7, so an implementer's test entry needs no graph or interface edit.
 
@@ -1620,7 +1621,7 @@ with their exact direct dependencies and named entries. Current-package
 references use the fixed `pkg::` qualifier in the owning source context.
 The graph is named `modules.wfg`. LANGUAGE.md specifies its formation,
 namespace/visibility, correspondence, readonly, contract, module-verdict and
-target rules; SYNTAX.md supplies the qualified complete grammar. External
+target rules; the active specification v0.70 carries the grammar and the rules it now states. External
 bindings remain outside the single-package scope. Rule and token deltas and
 the active version are computed against the actual integration base; no count
 is invented here.
@@ -1733,8 +1734,8 @@ and expose limits; they are not measurements of WF or proofs of this design.
 ## Implementation contract and sequence
 
 The source-language design is selected in [LANGUAGE.md](LANGUAGE.md); its
-complete [syntax candidate](SYNTAX.md) is checked by the native grammar
-qualification below. No source-package resolver, general termination prover,
+grammar is now the active specification's, checked by the grammar generator
+at every build. No source-package resolver, general termination prover,
 implicit type-invariant mechanism or incremental native linker is needed to
 start. They are not missing pieces of this implementation contract.
 
@@ -1902,26 +1903,11 @@ server, installation manager or distributed build service is required.
 
 ### Grammar qualification
 
-Run explicitly from the repository root under the ordinary construction guard:
-
-```sh
-perl .github/run-check.pl module-grammar sh -c 'rustc --edition=2024 research/investigations/modular-compilation/qualify.rs -o /tmp/wf-module-qualify && /tmp/wf-module-qualify'
-```
-
-`qualify.rs` copies the current grammar generator into a temporary directory,
-changes only its declared production inventory, production-count check and
-keyword table, and runs its existing FIRST/FOLLOW, strong-LL(2) and
-overlapping-token-predicate checks for the source and graph starts. It then
-compares FIRST(2) sets: every production of the active specification must still
-exist in the candidate and keep every two-token prefix, which catches a
-candidate that silently drops an existing form. Two negative controls must
-fail: restoring the unfactored qualified call/value alternatives fails the
-strong-LL(2) check, and the earlier `affine_factor := atom | "(" affine_expr ")"`
-candidate fails the prefix check. It removes the temporary copies; it changes
-no compiler/specification files and is not a daily gate input. The candidate
-passes all of these checks. This proves the grammar properties tested, not
-lexer/parser implementation, role-specific formation, proofs or execution.
-Delete the adapter when the active specification supplies these productions.
+The candidate grammar and its standalone qualification adapter were retired
+when the active specification v0.70 took the productions. The generator's
+FIRST/FOLLOW, strong-LL(2) and overlapping-predicate checks now run over them,
+for the `program` and `graph_file` starts, at every compiler build, and the
+parser's production-coverage test derives every production.
 
 
 ## Discriminating validation criteria

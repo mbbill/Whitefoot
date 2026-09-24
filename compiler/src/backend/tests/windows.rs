@@ -1315,10 +1315,10 @@ fn main() -> status: ExitStatus pure {
     invariant grown: slots.inner.len >= at,
     invariant spare: slots.inner.cap + at >= slots.inner.len + 4_u64
   ) {
-    let empty = Missing();
+    let empty = Maybe::Missing();
     place_back(window: &slots.inner, value: move empty);
   }
-  let occupied = Present(value: 7_u32);
+  let occupied = Maybe::Present(value: 7_u32);
   set slots.inner[2_u64] = move occupied;
   return exit_status(code: 0_u8);
 }

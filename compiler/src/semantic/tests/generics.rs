@@ -1287,7 +1287,7 @@ fn source_generic_enums_use_the_concrete_instance_member_table() {
 }
 
 fn main() -> status: ExitStatus pure {
-  let small = Present<u8>(value: 3_u8);
+  let small = Choice<u8>::Present(value: 3_u8);
   match small {
     Missing() => {
       let ignored = unit;
@@ -1296,7 +1296,7 @@ fn main() -> status: ExitStatus pure {
       let retained = observed;
     }
   }
-  let wide = Present<i64>(value: -5_i64);
+  let wide = Choice<i64>::Present(value: -5_i64);
   match wide {
     Missing() => {
       let ignored = unit;

@@ -773,19 +773,19 @@ enum Payload {
 }
 
 fn empty_payload() -> result: Payload pure {
-  return Empty();
+  return Payload::Empty();
 }
 
 fn number_payload() -> result: Payload pure {
-  return Value(number: 42_i32);
+  return Payload::Value(number: 42_i32);
 }
 
 fn wide_payload() -> result: Payload pure {
-  return Wide(first: 511_u64, last: 127_u8);
+  return Payload::Wide(first: 511_u64, last: 127_u8);
 }
 
 fn main() -> status: ExitStatus pure {
-  let flag = On();
+  let flag = Flag::On();
   match flag {
     Off() => {
       return exit_status(code: 1_u8);
@@ -946,7 +946,7 @@ fn cleanup_match(value: Holder, flag: Bool) -> result: i32 pure {
 fn main() -> status: ExitStatus pure {
   cleanup();
   let cell = Cell(value: 8_i32);
-  let holder = Held(cell: move cell);
+  let holder = Holder::Held(cell: move cell);
   let flag = True();
   cleanup_match(value: move holder, flag: flag);
   return exit_status(code: 0_u8);
@@ -1105,7 +1105,7 @@ struct Envelope {
 
 fn step(value: i32) -> result: Result<i32, StepError> pure {
   if value < 0_i32 {
-    let error = Failed();
+    let error = StepError::Failed();
     return Err<i32, StepError>(error: error);
   } else {
     return Ok<i32, StepError>(value: value);

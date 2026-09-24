@@ -153,20 +153,21 @@ fn is_block_bearing(record: &crate::syntax::parser::finalize::topology::NodeReco
     ) && record.body_open.is_some();
     braced
         || matches!(
-        record.production,
-        Production::StructDecl
-            | Production::EnumDecl
-            | Production::InterfaceDecl
-            | Production::BindingDecl
-            | Production::ContractBlock
-            | Production::LoopStmt
-            | Production::ForStmt
-            | Production::MatchStmt
-            | Production::ValueMatch
-            | Production::Arm
-            | Production::IfStmt
-            | Production::ValueIf
-    ) || (record.production == Production::InvariantStmt && record.body_open.is_some())
+            record.production,
+            Production::StructDecl
+                | Production::EnumDecl
+                | Production::InterfaceDecl
+                | Production::BindingDecl
+                | Production::ContractBlock
+                | Production::LoopStmt
+                | Production::ForStmt
+                | Production::MatchStmt
+                | Production::ValueMatch
+                | Production::Arm
+                | Production::IfStmt
+                | Production::ValueIf
+        )
+        || (record.production == Production::InvariantStmt && record.body_open.is_some())
 }
 
 fn same_source(topology: &FinalizedTopology, left: u64, right: u64) -> bool {

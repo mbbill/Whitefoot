@@ -60,7 +60,7 @@
 
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
-use super::{assert_accepts, assert_rule_kind};
+use super::{assert_accepts, assert_rule_kind, check_case_directory, check_module_sources};
 
 fn assert_op9_allocation_fit(source: &[u8], context: &str) {
     super::with_semantics(source, |outcome| match outcome {
@@ -148,27 +148,23 @@ fn member_spellings_reserve_nothing() {
 /// naming such a path at a written reference parameter is refused with it.
 #[test]
 fn a_readonly_field_is_never_a_write_target() {
-    for source in [
-        include_bytes!(
-            "../../../../tests/conformance/cases/type2-neg-readonly-field-set-target.wf"
-        )
-        .as_slice(),
-        include_bytes!(
-            "../../../../tests/conformance/cases/type2-neg-readonly-path-passes-through.wf"
-        )
-        .as_slice(),
-        include_bytes!(
-            "../../../../tests/conformance/cases/type2-neg-readonly-field-written-argument.wf"
-        )
-        .as_slice(),
+    // [TYPE-2, MOD-6] a source readonly field is public and withholds writes
+    // only from the modules that do not declare it, so these cases are
+    // module programs.
+    for case in [
+        "type2-neg-readonly-field-set-target",
+        "type2-neg-readonly-path-passes-through",
+        "type2-neg-readonly-field-written-argument",
     ] {
-        assert_rule_kind(source, SemanticRule::Type2, |kind| {
-            matches!(kind, SemanticIssueKind::ReadonlyWriteTarget { .. })
-        });
+        let failure = check_case_directory(case).expect_err("an external readonly write rejects");
+        assert_eq!(failure.rule_id(), Some("TYPE-2"), "{case}: {failure}");
+        assert!(
+            failure.detail().contains("ReadonlyWriteTarget"),
+            "{case}: {failure}"
+        );
     }
-    assert_accepts(include_bytes!(
-        "../../../../tests/conformance/cases/type2-pos-readonly-field-read-and-whole-replace.wf"
-    ));
+    check_case_directory("type2-pos-readonly-field-read-and-whole-replace")
+        .expect("reads, whole replacement and module-internal writes are accepted");
 }
 
 /// [TYPE-2] readonly provenance follows references and reborrows. A written
@@ -176,62 +172,32 @@ fn a_readonly_field_is_never_a_write_target() {
 /// through a reference to the enclosing value.
 #[test]
 fn readonly_provenance_survives_reference_aliases_and_reborrows() {
-    for source in [
-        br#"struct Record {
-  readonly value: u8;
-}
-
-fn put(cell: &u8) -> result: unit writes(cell) {
-  set deref(cell) = 9_u8;
-  return unit;
-}
-
-fn main() -> status: ExitStatus pure {
-  let record = Record(value: 1_u8);
-  let p = &record.value;
-  put(cell: p);
-  return exit_status(code: 0_u8);
-}
-"#
-        .as_slice(),
-        br#"struct Record {
-  readonly value: u8;
-}
-
-fn put(cell: &u8) -> result: unit writes(cell) {
-  set deref(cell) = 9_u8;
-  return unit;
-}
-
-fn main() -> status: ExitStatus pure {
-  let record = Record(value: 1_u8);
-  let p = &record;
-  put(cell: &deref(p).value);
-  return exit_status(code: 0_u8);
-}
-"#
-        .as_slice(),
-        br#"struct Record {
-  readonly value: u8;
-}
-
-fn put(cell: &u8) -> result: unit writes(cell) {
-  set deref(cell) = 9_u8;
-  return unit;
-}
-
-fn main() -> status: ExitStatus pure {
-  let record = Record(value: 1_u8);
-  let p = &record.value;
-  put(cell: &deref(p));
-  return exit_status(code: 0_u8);
-}
-"#
-        .as_slice(),
+    let graph = b"pkg::records: [];\npkg: [pkg::records];\n";
+    let interface = b"public struct Record {\n  public readonly value: u8;\n}\n\npublic fn make() -> record: Record pure;\n";
+    let definition = b"fn make() -> record: Record pure {\n  return Record(value: 1_u8);\n}\n";
+    for writer in [
+        b"  let p = &record.value;\n  put(cell: p);\n".as_slice(),
+        b"  let p = &record;\n  put(cell: &deref(p).value);\n".as_slice(),
+        b"  let p = &record.value;\n  put(cell: &deref(p));\n".as_slice(),
     ] {
-        assert_rule_kind(source, SemanticRule::Type2, |kind| {
-            matches!(kind, SemanticIssueKind::ReadonlyWriteTarget { .. })
-        });
+        let mut main = b"alias records = pkg::records;\n\nfn put(cell: &u8) -> result: unit writes(cell) {\n  set deref(cell) = 9_u8;\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  let record = records::make();\n".to_vec();
+        main.extend_from_slice(writer);
+        main.extend_from_slice(b"  return exit_status(code: 0_u8);\n}\n");
+        let failure = check_module_sources(
+            graph,
+            &[
+                ("records/module.wfm", interface.as_slice()),
+                ("records/record.wf", definition.as_slice()),
+                ("module.wfm", b"\n".as_slice()),
+                ("main.wf", main.as_slice()),
+            ],
+        )
+        .expect_err("an external readonly write through a reference rejects");
+        assert_eq!(failure.rule_id(), Some("TYPE-2"), "{failure}");
+        assert!(
+            failure.detail().contains("ReadonlyWriteTarget"),
+            "{failure}"
+        );
     }
 }
 
@@ -813,7 +779,7 @@ fn free_empty_uses_the_current_length_for_every_window_shape() {
 
 fn main() -> status: ExitStatus pure {
   let window = box_slots_new::<Ticket>(capacity: 2_u64);
-  let ticket = Mark();
+  let ticket = Ticket::Mark();
   place_back(window: &window.inner, value: move ticket);
   let taken = take_back(window: &window.inner);
   match move taken {

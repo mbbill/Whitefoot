@@ -16792,6 +16792,7 @@ mod indexed_goal_kill_tests {
             formal_hypothesis: false,
             id: crate::semantic::model::FunctionId(0),
             declaration: crate::DeclarationId::from_index(0).unwrap(),
+            module: crate::ModuleId::BUNDLE_ROOT,
             name: String::new(),
             symbol: String::new(),
             region_parameters: Vec::new(),

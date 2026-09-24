@@ -17,11 +17,12 @@ use rejection::Located;
 
 use crate::backend::{emitter::emit_llvm_with_layout, target::TargetLayout};
 use crate::{
-    ACTIVE_KERNEL_SPEC_HASH, BackendFailure, CanonicalLimits, CanonicalOutcome, CheckedProgram,
-    FinalizeLimits, FinalizeOutcome, LexLimits, LexOutcome, LoweringFailure, ParseLimits,
-    ParseOutcome, ResolutionOutcome, SemanticLocation, SemanticOutcome, SourceBundle, SourceInput,
-    SourceLimits, TerminalLimits, TerminalOutcome, audit_canonical, check_semantics,
-    classify_terminals, finalize, lex, lower_checked_with_layout, parse, resolve,
+    ACTIVE_KERNEL_SPEC_HASH, BackendFailure, CanonicalLimits, CanonicalOutcome,
+    CanonicalSyntaxUnit, CheckedProgram, FinalizeLimits, FinalizeOutcome, LexLimits, LexOutcome,
+    LoweringFailure, ParseLimits, ParseOutcome, ResolutionOutcome, SemanticLocation,
+    SemanticOutcome, SourceBundle, SourceInput, SourceLimits, TerminalLimits, TerminalOutcome,
+    audit_canonical, check_semantics, classify_terminals, finalize, lex, lower_checked_with_layout,
+    parse, parse_graph, resolve,
 };
 
 /// Host-compiler optimization arguments for every Whitefoot executable.
@@ -131,6 +132,8 @@ impl Default for CompilerLimits {
 pub enum CompilationStage {
     /// PROG-2 source envelope.
     SourceEnvelope,
+    /// Module graph formation and entry selection [MOD-1, MOD-9].
+    ModuleGraph,
     /// Raw lossless lexing.
     Lexing,
     /// Context-free terminal membership.
@@ -202,7 +205,8 @@ impl CompilationFailure {
                 | LogicalPathError::DotComponent
                 | LogicalPathError::InvalidByte { .. },
             )
-            | SourceBundleError::DuplicateLogicalPath { .. } => CompilationFailureKind::Invocation,
+            | SourceBundleError::DuplicateLogicalPath { .. }
+            | SourceBundleError::UnknownModule => CompilationFailureKind::Invocation,
         };
         Self::new(CompilationStage::SourceEnvelope, kind, failure)
     }
@@ -337,7 +341,7 @@ pub fn compile(
 /// executable-caller construction, so a later target or backend failure cannot
 /// become a source rejection or erase successful source acceptance [STOR-6].
 pub fn check(inputs: &[SourceInput<'_>], limits: CompilerLimits) -> Result<(), CompilationFailure> {
-    with_checked_program(inputs, limits, |_, _| Ok(()))
+    with_checked_program(inputs, None, limits, |_, _| Ok(()))
 }
 
 /// [`compile`] with the [PAR-1 candidate] overlap lowering named explicitly.
@@ -374,6 +378,132 @@ pub fn compile_with_permission_ledger(
     compile_reporting(inputs, limits, overlap).map(|reported| (reported.module, reported.ledger))
 }
 
+/// What one module program invocation runs [MOD-9, PROG-3].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ModuleEntry<'a> {
+    /// A named entry of the graph, with its requirements.
+    Named(&'a str),
+    /// Any ordinary function of a registered module, run as an unnamed entry
+    /// with no requirement: `module` is `pkg` or `pkg::a::b`.
+    Function {
+        /// The module's qualified name.
+        module: &'a str,
+        /// The function's name.
+        function: &'a str,
+    },
+}
+
+/// Forms the module graph one `modules.wfg` record writes [MOD-1].
+///
+/// The record passes the ordinary syntax stages under the `graph_file` start
+/// and then graph formation; any rejection cites its rule at the record.
+pub fn form_module_graph(
+    graph: SourceInput<'_>,
+    limits: CompilerLimits,
+) -> Result<crate::ModuleGraph, CompilationFailure> {
+    let bundle = SourceBundle::with_limits(&[graph], limits.source)
+        .map_err(CompilationFailure::source_envelope)?;
+    with_canonical_syntax(
+        &bundle,
+        limits,
+        true,
+        |canonical| match crate::graph::form_graph(&canonical) {
+            Ok(Ok(graph)) => Ok(graph),
+            Ok(Err(issue)) => {
+                let coordinate = issue.coordinate();
+                Err(CompilationFailure::at_source(
+                    CompilationStage::ModuleGraph,
+                    issue.rule_id(),
+                    Located::new(issue, &bundle, coordinate),
+                    &bundle,
+                    coordinate.source(),
+                ))
+            }
+            Err(failure) => Err(CompilationFailure::new(
+                CompilationStage::ModuleGraph,
+                CompilationFailureKind::Compiler,
+                failure,
+            )),
+        },
+    )
+}
+
+/// Checks every registered module of a module program through complete
+/// source acceptance, without selecting an entry [MOD-8].
+///
+/// `inputs` are the modules' interface and implementation records, each
+/// placed with [`SourceInput::in_module`].
+pub fn check_module_program(
+    graph: &crate::ModuleGraph,
+    inputs: &[SourceInput<'_>],
+    limits: CompilerLimits,
+) -> Result<(), CompilationFailure> {
+    with_checked_program(inputs, Some(graph.modules()), limits, |_, _| Ok(()))
+}
+
+/// Checks a module program through complete source acceptance and admits
+/// one of its entries [MOD-9, STOR-8], stopping before lowering.
+pub fn check_module_entry(
+    graph: &crate::ModuleGraph,
+    inputs: &[SourceInput<'_>],
+    entry: ModuleEntry<'_>,
+    limits: CompilerLimits,
+) -> Result<(), CompilationFailure> {
+    let selection = entry_selection(graph, entry)?;
+    with_checked_program(inputs, Some(graph.modules()), limits, |checked, bundle| {
+        admit_entry(&checked, bundle, &selection)
+    })
+}
+
+/// The function a module program entry names [MOD-9].
+fn entry_selection<'graph>(
+    graph: &'graph crate::ModuleGraph,
+    entry: ModuleEntry<'graph>,
+) -> Result<Selection<'graph>, CompilationFailure> {
+    let invocation = |detail: String| {
+        CompilationFailure::new(
+            CompilationStage::ModuleGraph,
+            CompilationFailureKind::Invocation,
+            detail,
+        )
+    };
+    Ok(match entry {
+        ModuleEntry::Named(name) => {
+            let entry = graph
+                .entry(name)
+                .ok_or_else(|| invocation(format!("the graph has no entry named `{name}`")))?;
+            Selection {
+                module: entry.module(),
+                name: entry.function(),
+                no_heap: entry.no_heap(),
+                public: true,
+            }
+        }
+        ModuleEntry::Function { module, function } => Selection {
+            module: graph
+                .module_named(module)
+                .ok_or_else(|| invocation(format!("the graph registers no module `{module}`")))?,
+            name: function,
+            no_heap: false,
+            public: false,
+        },
+    })
+}
+
+/// Compiles a module program for one named or unnamed entry to textual LLVM
+/// [MOD-9, PROG-3].
+pub fn compile_module_program(
+    graph: &crate::ModuleGraph,
+    inputs: &[SourceInput<'_>],
+    entry: ModuleEntry<'_>,
+    limits: CompilerLimits,
+    overlap: crate::OverlapLowering,
+) -> Result<String, CompilationFailure> {
+    let selection = entry_selection(graph, entry)?;
+    compile_selected(inputs, Some(graph.modules()), limits, overlap, &selection)
+        .map(|reported| reported.module)
+}
+
 /// One compilation's module and the developer-channel text it produced.
 struct Reported {
     module: String,
@@ -388,44 +518,156 @@ fn compile_reporting(
     limits: CompilerLimits,
     overlap: crate::OverlapLowering,
 ) -> Result<Reported, CompilationFailure> {
-    compile_selected(inputs, limits, overlap, "main")
+    compile_selected(
+        inputs,
+        None,
+        limits,
+        overlap,
+        &Selection {
+            module: crate::ModuleId::BUNDLE_ROOT,
+            name: "main",
+            no_heap: false,
+            public: false,
+        },
+    )
+}
+
+/// The function one invocation runs [PROG-3]: a source bundle's `main`, or a
+/// module program's named or unnamed entry [MOD-9].
+struct Selection<'a> {
+    module: crate::ModuleId,
+    name: &'a str,
+    /// The entry states the no-heap requirement [STOR-8].
+    no_heap: bool,
+    /// A named entry, which must select a public function [MOD-9].
+    public: bool,
 }
 
 fn compile_selected(
     inputs: &[SourceInput<'_>],
+    modules: Option<&[crate::ModuleRecord]>,
     limits: CompilerLimits,
     overlap: crate::OverlapLowering,
-    selected: &str,
+    selection: &Selection<'_>,
 ) -> Result<Reported, CompilationFailure> {
-    with_checked_program(inputs, limits, |checked, bundle| {
-        lower_selected(inputs, limits, overlap, selected, bundle, checked)
+    with_checked_program(inputs, modules, limits, |checked, bundle| {
+        if modules.is_some() {
+            admit_entry(&checked, bundle, selection)?;
+        }
+        lower_selected(inputs, modules, limits, overlap, selection, bundle, checked)
     })
+}
+
+/// [MOD-9, STOR-8] a module program's entry selects one ordinary function of
+/// its module, public for a named entry; a no-heap entry's execution closure
+/// introduces no heap requirement, and a closure that does is rejected at
+/// the function that introduces it.
+fn admit_entry(
+    checked: &CheckedProgram<'_, '_, '_>,
+    bundle: &SourceBundle,
+    selection: &Selection<'_>,
+) -> Result<(), CompilationFailure> {
+    // [MOD-8] composition needs every declared function's definition; a
+    // pending interface declaration blocks it at the declaration.
+    if let Some(pending) = checked
+        ._resolved
+        .interface_functions()
+        .iter()
+        .find(|function| function.definition().is_none())
+        .and_then(|function| checked._resolved.declaration(function.declaration()))
+    {
+        let coordinate = pending.origin().coordinate();
+        let detail = format!(
+            "the interface declares `{}`, and no implementation record of its module defines it yet; a module with a pending declaration checks, but no entry composes until the definition exists",
+            pending.spelling()
+        );
+        return Err(CompilationFailure::at_source(
+            CompilationStage::Semantics,
+            "MOD-8",
+            Located::new(detail, bundle, coordinate),
+            bundle,
+            coordinate.source(),
+        ));
+    }
+    let entry_failure =
+        |detail: String| CompilationFailure::source(CompilationStage::Semantics, "MOD-9", detail);
+    let Some(function) = checked.data.functions.iter().find(|function| {
+        !function.formal_hypothesis
+            && function.module == selection.module
+            && function.name == selection.name
+    }) else {
+        return Err(entry_failure(format!(
+            "the entry names `{}`, which is no ordinary nongeneric function of its module",
+            selection.name
+        )));
+    };
+    let declaration = checked._resolved.declaration(function.declaration);
+    if selection.public && !declaration.is_some_and(crate::DeclarationRecord::is_public) {
+        return Err(entry_failure(format!(
+            "a named entry runs a public function, and `{}` is private to its module",
+            selection.name
+        )));
+    }
+    if selection.no_heap
+        && let Some(path) = checked.heap_introducer(function.id)
+    {
+        let names = path
+            .iter()
+            .filter_map(|id| checked.data.functions.get(id.0 as usize))
+            .map(|function| function.symbol.clone())
+            .collect::<Vec<_>>()
+            .join(" -> ");
+        let introducer = path
+            .last()
+            .and_then(|id| checked.data.functions.get(id.0 as usize))
+            .and_then(|function| checked._resolved.declaration(function.declaration));
+        let detail = format!(
+            "the entry states no_heap, and its execution closure reaches a heap allocation along {names}; the last function on that path introduces it"
+        );
+        return Err(match introducer {
+            Some(declaration) => {
+                let coordinate = declaration.origin().coordinate();
+                CompilationFailure::at_source(
+                    CompilationStage::Semantics,
+                    "STOR-8",
+                    Located::new(detail, bundle, coordinate),
+                    bundle,
+                    coordinate.source(),
+                )
+            }
+            None => CompilationFailure::source(CompilationStage::Semantics, "STOR-8", detail),
+        });
+    }
+    Ok(())
 }
 
 /// Runs the one source front end and lends its checked program to one
 /// projection while every borrowed stage input remains alive. Both `check`
 /// and `compile` enter here; neither reconstructs a source verdict.
-fn with_checked_program<T, F>(
-    inputs: &[SourceInput<'_>],
+/// Runs the syntax stages over one bundle, from raw lexical formation through
+/// the canonical [FORM-2] audit, and lends the canonical unit to one
+/// continuation while every borrowed stage input remains alive. A module
+/// graph file takes the `graph_file` start and every source bundle the
+/// `program` start [GRAM-2, MOD-1]; the stages are otherwise one path.
+fn with_canonical_syntax<'bundle, T, F>(
+    bundle: &'bundle SourceBundle,
     limits: CompilerLimits,
+    graph: bool,
     continuation: F,
 ) -> Result<T, CompilationFailure>
 where
-    F: for<'classified, 'lexed, 'source> FnOnce(
-        CheckedProgram<'classified, 'lexed, 'source>,
-        &SourceBundle,
+    F: for<'classified, 'lexed> FnOnce(
+        CanonicalSyntaxUnit<'classified, 'lexed, 'bundle>,
     ) -> Result<T, CompilationFailure>,
 {
-    let bundle = SourceBundle::with_prelude(inputs, limits.source)
-        .map_err(CompilationFailure::source_envelope)?;
-    let lexed = match lex(&bundle, limits.lexer) {
+    let lexed = match lex(bundle, limits.lexer) {
         LexOutcome::Complete(complete) => complete,
         LexOutcome::SourceIssue(issue) => {
             return Err(CompilationFailure::at_source(
                 CompilationStage::Lexing,
                 issue.kind().rule_id(),
                 issue,
-                &bundle,
+                bundle,
                 issue.span().source(),
             ));
         }
@@ -451,7 +693,7 @@ where
                 CompilationStage::TerminalClassification,
                 issue.owner().id(),
                 issue,
-                &bundle,
+                bundle,
                 issue.token().source(),
             ));
         }
@@ -477,7 +719,11 @@ where
             ));
         }
     };
-    let parsed = match parse(&classified, limits.parser) {
+    let parsed = match if graph {
+        parse_graph(&classified, limits.parser)
+    } else {
+        parse(&classified, limits.parser)
+    } {
         ParseOutcome::Complete(complete) => complete,
         ParseOutcome::SourceIssue(issue) => {
             let coordinate = issue.coordinate();
@@ -485,7 +731,7 @@ where
                 CompilationStage::Parsing,
                 issue.rule().id(),
                 Located::new(issue, classified.source_bundle(), coordinate),
-                &bundle,
+                bundle,
                 coordinate.source(),
             ));
         }
@@ -539,7 +785,7 @@ where
                 CompilationStage::CanonicalSource,
                 issue.rule().id(),
                 Located::in_gap(issue, classified.source_bundle(), coordinate),
-                &bundle,
+                bundle,
                 coordinate.source(),
             ));
         }
@@ -558,92 +804,123 @@ where
             ));
         }
     };
-    let resolved = match resolve(canonical) {
-        ResolutionOutcome::Complete(complete) => complete,
-        ResolutionOutcome::SourceIssue { issue, .. } => {
-            let coordinate = issue.origin().coordinate();
-            return Err(CompilationFailure::at_source(
-                CompilationStage::Resolution,
-                issue.rule().id(),
-                Located::new(issue, classified.source_bundle(), coordinate),
-                &bundle,
-                coordinate.source(),
-            ));
+    continuation(canonical)
+}
+
+fn with_checked_program<T, F>(
+    inputs: &[SourceInput<'_>],
+    modules: Option<&[crate::ModuleRecord]>,
+    limits: CompilerLimits,
+    continuation: F,
+) -> Result<T, CompilationFailure>
+where
+    F: for<'classified, 'lexed, 'source> FnOnce(
+        CheckedProgram<'classified, 'lexed, 'source>,
+        &SourceBundle,
+    ) -> Result<T, CompilationFailure>,
+{
+    let bundle = match modules {
+        Some(modules) => {
+            SourceBundle::with_prelude_and_modules(inputs, modules.to_vec(), limits.source)
         }
-        ResolutionOutcome::CompilerFailure { failure, .. } => {
-            return Err(CompilationFailure::new(
-                CompilationStage::Resolution,
-                CompilationFailureKind::Compiler,
-                failure,
-            ));
-        }
-    };
-    let checked = match check_semantics(resolved) {
-        SemanticOutcome::Complete(complete) => *complete,
-        SemanticOutcome::SourceIssue { issue, .. } => {
-            // A semantic rejection carries the richest payload in the
-            // toolchain and, until now, the poorest location: `SourceId(0)`
-            // and a byte offset. The coordinate the rule already selected
-            // names a line of the file the caller named, so it is printed the
-            // same way a syntax rejection's is.
-            let rule_id = issue.rule_id();
-            let SemanticLocation::SourceNode(_, coordinate) = issue.location();
-            let coordinate = *coordinate;
-            return Err(CompilationFailure::at_source(
-                CompilationStage::Semantics,
-                rule_id,
-                Located::new(issue, classified.source_bundle(), coordinate),
-                &bundle,
-                coordinate.source(),
-            ));
-        }
-        SemanticOutcome::ResolutionIssue { issue, .. } => {
-            let coordinate = issue.origin().coordinate();
-            return Err(CompilationFailure::at_source(
-                CompilationStage::Resolution,
-                issue.rule().id(),
-                Located::new(issue, classified.source_bundle(), coordinate),
-                &bundle,
-                coordinate.source(),
-            ));
-        }
-        SemanticOutcome::Unsupported { unsupported, .. } => {
-            return Err(CompilationFailure::new(
-                CompilationStage::Semantics,
-                CompilationFailureKind::Unsupported,
-                unsupported,
-            ));
-        }
-        SemanticOutcome::CompilerFailure { failure, .. } => {
-            return Err(CompilationFailure::new(
-                CompilationStage::Semantics,
-                CompilationFailureKind::Compiler,
-                failure,
-            ));
-        }
-    };
-    continuation(checked, &bundle)
+        None => SourceBundle::with_prelude(inputs, limits.source),
+    }
+    .map_err(CompilationFailure::source_envelope)?;
+    with_canonical_syntax(&bundle, limits, false, |canonical| {
+        let classified = canonical.classified_bundle();
+        let resolved = match resolve(canonical) {
+            ResolutionOutcome::Complete(complete) => complete,
+            ResolutionOutcome::SourceIssue { issue, .. } => {
+                let coordinate = issue.origin().coordinate();
+                return Err(CompilationFailure::at_source(
+                    CompilationStage::Resolution,
+                    issue.rule().id(),
+                    Located::new(issue, classified.source_bundle(), coordinate),
+                    &bundle,
+                    coordinate.source(),
+                ));
+            }
+            ResolutionOutcome::CompilerFailure { failure, .. } => {
+                return Err(CompilationFailure::new(
+                    CompilationStage::Resolution,
+                    CompilationFailureKind::Compiler,
+                    failure,
+                ));
+            }
+        };
+        let checked = match check_semantics(resolved) {
+            SemanticOutcome::Complete(complete) => *complete,
+            SemanticOutcome::SourceIssue { issue, .. } => {
+                // A semantic rejection carries the richest payload in the
+                // toolchain and, until now, the poorest location: `SourceId(0)`
+                // and a byte offset. The coordinate the rule already selected
+                // names a line of the file the caller named, so it is printed the
+                // same way a syntax rejection's is.
+                let rule_id = issue.rule_id();
+                let SemanticLocation::SourceNode(_, coordinate) = issue.location();
+                let coordinate = *coordinate;
+                return Err(CompilationFailure::at_source(
+                    CompilationStage::Semantics,
+                    rule_id,
+                    Located::new(issue, classified.source_bundle(), coordinate),
+                    &bundle,
+                    coordinate.source(),
+                ));
+            }
+            SemanticOutcome::ResolutionIssue { issue, .. } => {
+                let coordinate = issue.origin().coordinate();
+                return Err(CompilationFailure::at_source(
+                    CompilationStage::Resolution,
+                    issue.rule().id(),
+                    Located::new(issue, classified.source_bundle(), coordinate),
+                    &bundle,
+                    coordinate.source(),
+                ));
+            }
+            SemanticOutcome::Unsupported { unsupported, .. } => {
+                return Err(CompilationFailure::new(
+                    CompilationStage::Semantics,
+                    CompilationFailureKind::Unsupported,
+                    unsupported,
+                ));
+            }
+            SemanticOutcome::CompilerFailure { failure, .. } => {
+                return Err(CompilationFailure::new(
+                    CompilationStage::Semantics,
+                    CompilationFailureKind::Compiler,
+                    failure,
+                ));
+            }
+        };
+        continuation(checked, &bundle)
+    })
 }
 
 fn lower_selected(
     inputs: &[SourceInput<'_>],
+    modules: Option<&[crate::ModuleRecord]>,
     limits: CompilerLimits,
     overlap: crate::OverlapLowering,
-    selected: &str,
+    selection: &Selection<'_>,
     bundle: &SourceBundle,
     checked: CheckedProgram<'_, '_, '_>,
 ) -> Result<Reported, CompilationFailure> {
-    let launcher_contract_ready = checked
-        .data
-        .functions
-        .iter()
-        .find(|function| function.name == selected)
-        .is_some_and(|main| main.requirements.is_empty());
+    let entry = checked.data.functions.iter().find(|function| {
+        !function.formal_hypothesis
+            && function.module == selection.module
+            && function.name == selection.name
+    });
+    let selected = entry
+        .map_or(selection.name, |function| function.symbol.as_str())
+        .to_owned();
+    let selected = selected.as_str();
+    let launcher_contract_ready = entry.is_some_and(|main| main.requirements.is_empty());
     // This is a build caller, checked by the same pipeline as user-written
     // callers. No precondition fact is manufactured from native initialization.
     let mut caller_failure = None;
     if !launcher_contract_ready
-        && let Some((name, source)) = launcher::caller_source(&checked, selected)
+        && let Some(function) = entry
+        && let Some((name, source)) = launcher::caller_source(&checked, function)
     {
         let bundle_name = (0_u64..)
             .map(|index| format!("executable-caller-{index}.wf"))
@@ -655,8 +932,17 @@ fn lower_selected(
             })
             .expect("a finite bundle leaves a caller source name");
         let mut with_caller = inputs.to_vec();
-        with_caller.push(SourceInput::new(&bundle_name, source.as_bytes()));
-        match compile_selected(&with_caller, limits, overlap, &name) {
+        with_caller.push(
+            SourceInput::new(&bundle_name, source.as_bytes())
+                .in_module(selection.module, crate::SourceRole::Implementation),
+        );
+        let caller_selection = Selection {
+            module: selection.module,
+            name: &name,
+            no_heap: selection.no_heap,
+            public: false,
+        };
+        match compile_selected(&with_caller, modules, limits, overlap, &caller_selection) {
             Ok(reported) => return Ok(reported),
             Err(failure) if failure.kind() == CompilationFailureKind::Source => {
                 caller_failure = Some(failure.to_string());
@@ -1152,12 +1438,12 @@ fn main() -> status: ExitStatus pure {
 }
 
 fn boxed_leaf(w: u64) -> result: Box<BoxNode> pure {
-  let leaf = Leaf(w: w);
+  let leaf = BoxNode::Leaf(w: w);
   return box_new::<BoxNode>(value: move leaf);
 }
 
 fn boxed_branch(left: Box<BoxNode>, right: Box<BoxNode>) -> result: Box<BoxNode> pure {
-  let branch = Branch(left: move left, right: move right, w: 0_u64);
+  let branch = BoxNode::Branch(left: move left, right: move right, w: 0_u64);
   return box_new::<BoxNode>(value: move branch);
 }
 
@@ -2224,6 +2510,7 @@ fn main() -> status: ExitStatus pure {
             .with_address_index_max_for_test(255);
         let failure = super::with_checked_program(
             &[SourceInput::new("frame.wf", source)],
+            None,
             CompilerLimits::default(),
             |checked, _| {
                 crate::lower_checked_with_layout(checked, crate::OverlapLowering::On, target)

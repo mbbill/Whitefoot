@@ -468,7 +468,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(call, Production::Callee)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        if let Some(application) = self.tree.first_child_with(callee, Production::PackUse)? {
+        if let Some(application) = self.tree.callee_application(callee)? {
             if self.tree.is_constructor_call(call)? {
                 return Ok(None);
             }
@@ -833,7 +833,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, Production::Callee)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        if let Some(application) = self.tree.first_child_with(callee, Production::PackUse)? {
+        if let Some(application) = self.tree.callee_application(callee)? {
             if self.tree.argument_list(node)?.is_some() {
                 return self.behavior_mismatch(
                     SemanticRule::Fn2,
@@ -1117,10 +1117,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 expanded.push(WrittenArgument::Source(*argument));
                 continue;
             };
-            let Some(_) = self
-                .tree
-                .direct_token_with(ty, crate::TerminalPredicate::TypeIdentifier)?
-            else {
+            if !self.tree.names_nominal(ty)? {
                 expanded.push(WrittenArgument::Source(*argument));
                 continue;
             };
@@ -1201,11 +1198,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ty: NodeId,
         visiting: &mut Vec<DeclarationId>,
     ) -> Result<Vec<NodeId>, CheckStop> {
-        if self
-            .tree
-            .direct_token_with(ty, crate::TerminalPredicate::TypeIdentifier)?
-            .is_none()
-        {
+        if !self.tree.names_nominal(ty)? {
             return Ok(vec![ty]);
         }
         let application = match self.use_at(ty, LexicalUseRole::Type)?.target() {

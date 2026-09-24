@@ -56,14 +56,13 @@ they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge bounda
   module dependencies, module verdicts that depend only on interfaces,
   persistent proof dependencies, and incremental cross-module optimization
   through object generation, with ordinary final linking. Its
-  [source boundary rules](investigations/modular-compilation/LANGUAGE.md) and
-  [qualified grammar](investigations/modular-compilation/SYNTAX.md) select one
-  visibility rule for code and annotations, module-relative `readonly`,
-  result-projection contracts and complete formation rules for implementation.
-  A [complete source demo](investigations/modular-compilation/demo/README.md)
+  [source boundary rules](investigations/modular-compilation/LANGUAGE.md)
+  select one visibility rule for code and annotations, module-relative
+  `readonly`, result-projection contracts and complete formation rules; the
+  active specification v0.70 now carries the module grammar and most of those
+  rules. A [complete source demo](investigations/modular-compilation/demo/README.md)
   follows a queue through shared libraries, a no-heap entry and a heap-using
-  tool; its graph, interfaces and bodies illustrate proposed syntax, not
-  currently executable compiler behavior.
+  tool.
 
 Open research questions and evidence links are in [ideas](../docs/ideas.md);
 known compiler defects and implementation costs are in [todo](../docs/todo.md).

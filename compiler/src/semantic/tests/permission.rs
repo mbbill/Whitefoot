@@ -1313,7 +1313,7 @@ fn a_match_statement_is_no_member_of_any_adjacency() {
 fn main() -> status: ExitStatus pure {
   let cell = Cell(value: 1_u64);
   let other = Cell(value: 2_u64);
-  let which = Low(w: 3_u64);
+  let which = Choice::Low(w: 3_u64);
   let a = peek(slot: &other);
   match which {
     Low(w: lw) => {

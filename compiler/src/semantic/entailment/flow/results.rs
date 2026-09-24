@@ -493,6 +493,7 @@ mod tests {
             formal_hypothesis: false,
             id: FunctionId(0),
             declaration: crate::DeclarationId::from_index(0).unwrap(),
+            module: crate::ModuleId::BUNDLE_ROOT,
             name: String::new(),
             symbol: String::new(),
             region_parameters: Vec::new(),

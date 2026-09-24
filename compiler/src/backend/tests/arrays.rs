@@ -306,7 +306,7 @@ fn main() -> status: ExitStatus pure {
   let cell = box_slots_new::<u8>(capacity: 4_u64);
   place_back(window: &cell.inner, value: 7_u8);
   place_back(window: &cell.inner, value: 11_u8);
-  let spilled = Spilled<4>(values: move cell);
+  let spilled = SmallBytes<4>::Spilled(values: move cell);
   let observed = read::<4>(bytes: &spilled);
   if observed != 228_u64 {
     return exit_status(code: 1_u8);
@@ -316,7 +316,7 @@ fn main() -> status: ExitStatus pure {
   place_back(window: &inline_window, value: 23_u8);
   let rotated = remove_at(window: &inline_window, index: 0_u64);
   place_back(window: &inline_window, value: rotated);
-  let small = Inline<4>(values: move inline_window);
+  let small = SmallBytes<4>::Inline(values: move inline_window);
   let local = read::<4>(bytes: &small);
   if local != 732_u64 {
     return exit_status(code: 2_u8);

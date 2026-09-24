@@ -153,8 +153,67 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
         Ok(None)
     }
 
-    /// Uppercase callees without a member selector are constructions. The
-    /// grammar shares their prefix with qualified member calls (strong LL(2)).
+    /// Whether a callable node writes no body: a function-kind formal's
+    /// `fn_sig`, a PRE-1 record, or an interface `fn_decl` that ends in `;`
+    /// or its `doc` entry [MOD-7].
+    pub(super) fn is_body_less(&self, node: NodeId) -> Result<bool, SemanticCompilerFailure> {
+        Ok(match self.production(node)? {
+            Production::FnSig => true,
+            Production::FnDecl => self
+                .direct_terminals
+                .get(node.index())
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?
+                .iter()
+                .all(|terminal| {
+                    self.resolved
+                        .syntax()
+                        .classified_bundle()
+                        .tokens()
+                        .get(*terminal)
+                        .is_none_or(|token| {
+                            !token
+                                .terminals()
+                                .contains(TerminalPredicate::Fixed(crate::FixedTerminal::LeftBrace))
+                        })
+                }),
+            _ => false,
+        })
+    }
+
+    /// Whether a `type`, `cvalue` or destructuring target names a nominal:
+    /// directly by its TYPEID, or through a qualified `type_path` [MOD-5].
+    pub(super) fn names_nominal(&self, node: NodeId) -> Result<bool, SemanticCompilerFailure> {
+        Ok(self
+            .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
+            .is_some()
+            || self.first_child_with(node, Production::TypePath)?.is_some())
+    }
+
+    /// The innermost node of a callee's qualified chain [GRAM-5, MOD-5]: the
+    /// callee itself when it is unqualified, otherwise its last
+    /// `callee_path`. The tail writes the final function name, or the
+    /// `pack_use` and member that every unqualified callee writes directly.
+    pub(super) fn callee_tail(&self, callee: NodeId) -> Result<NodeId, SemanticCompilerFailure> {
+        let mut node = callee;
+        while let Some(next) = self.first_child_with(node, Production::CalleePath)? {
+            node = next;
+        }
+        Ok(node)
+    }
+
+    /// The `pack_use` a callee's tail writes, when it writes one.
+    pub(super) fn callee_application(
+        &self,
+        callee: NodeId,
+    ) -> Result<Option<NodeId>, SemanticCompilerFailure> {
+        let tail = self.callee_tail(callee)?;
+        self.first_child_with(tail, Production::PackUse)
+    }
+
+    /// Uppercase callees without an IDENT member selector are constructions:
+    /// a struct or prelude constructor, or a type-owned variant written
+    /// after its owner [TYPE-6]. The grammar shares their prefix with
+    /// qualified member calls (strong LL(2)).
     pub(super) fn is_constructor_call(
         &self,
         node: NodeId,
@@ -165,11 +224,10 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
         let Some(callee) = self.first_child_with(node, Production::Callee)? else {
             return Ok(false);
         };
-        Ok(self
-            .first_child_with(callee, Production::PackUse)?
-            .is_some()
+        let tail = self.callee_tail(callee)?;
+        Ok(self.first_child_with(tail, Production::PackUse)?.is_some()
             && self
-                .direct_token_with(callee, TerminalPredicate::Identifier)?
+                .direct_token_with(tail, TerminalPredicate::Identifier)?
                 .is_none())
     }
 
@@ -182,7 +240,7 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
                 .first_child_with(node, Production::Callee)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let head = self
-                .first_child_with(callee, Production::PackUse)?
+                .callee_application(callee)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             self.first_child_with(head, Production::Targs)
         } else {
