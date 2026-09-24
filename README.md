@@ -101,8 +101,10 @@ participation; `WF_STACKS` is inert.
 
 ## Verification
 
-The guarded wrapper `.github/run-check.pl`, used below and throughout this
-section, additionally needs `/usr/bin/time` (Debian/Ubuntu package `time`).
+`make check` also needs `python3` (design lint, repository invariants and the
+conformance runner), and the guarded wrapper `.github/run-check.pl`, used
+below and throughout this section, needs `/usr/bin/time` (Debian/Ubuntu
+package `time`).
 
 From the repository root:
 
