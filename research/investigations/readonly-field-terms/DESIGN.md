@@ -42,7 +42,10 @@ argument at a written parameter. The complete set of events that change it:
 A write to a sibling field `P[i].g` or to an element at a proved-distinct
 offset overlaps none of these and correctly keeps the fact. Measures over
 subscripted places already relied on exactly this table, so the extension adds
-no kill rule. The specification now states the ground once, in [ENT-2]'s
+no kill rule to the language. That every event in the table is an [ENT-5]
+overlap kill is a statement about the specification; the compiler did not
+implement two rows of it until this change and the repair below, which are
+the kill-coverage results of this investigation. The specification now states the ground once, in [ENT-2]'s
 clause (b) paragraph, and [ENT-5]'s support sentence covers every clause (b)
 term: the storage of its readonly field and the support of every offset in its
 place.
@@ -55,15 +58,20 @@ not a defect before; a subscripted place term without it would have survived
 `set i = 2` and discharged a subscript at the new element (reproduced before
 the fix). The arm now also applies `event_kills_offset_support`.
 
-The independent review of this change (about sixty probes) found one further
-compiler gap, which existing measure terms share: a call whose `&[T]`
-parameter is written kills nothing when its actual is an inline range such as
-`&rows[1_u64..3_u64]`, because the flow's argument-referent walk returns no
-place for a range formation. The language rule is unaffected (the projected
-write overlaps the element storage under [EFF-2] and [CALL-3]); the compiler
-does not implement it. A measure term over such an actual already reads out of
-bounds on main, and the new terms inherit the gap. It is being repaired on
-main separately, with negative cases for measure and readonly-field terms.
+The independent review of this change (about sixty probes) found a second
+compiler gap, which existing measure terms shared: a call whose `&[T]`
+parameter is written killed nothing when its actual was a range formed at the
+argument, such as `&rows[1_u64..3_u64]` or `&deref(view)[1_u64..3_u64]`,
+because the flow's argument-referent walk returned no place for a range
+formation. The language rule was unaffected (the projected write overlaps the
+element storage under [EFF-2] and [CALL-3]); the compiler did not implement it,
+and a measure term over such an actual let an accepted program read out of
+bounds on main. The repair (branch `fix/range-argument-kill`, merged here)
+gives that walk, the holder chain, the permission argument places and the
+PAR-2 range recording the formed range's place. Its `call3-*-inline-*` cases
+cover measure terms; `ent5-neg-readonly-field-inline-range-callee-write` and
+`ent5-neg-readonly-field-inline-reslice-callee-write` cover the new terms, and
+every review probe that read out of bounds is now rejected.
 
 The same review found that a requirement over an element that does not exist
 yet is now admitted and that its fact survives `place_back` in the callee;
