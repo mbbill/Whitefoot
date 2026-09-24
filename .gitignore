@@ -20,7 +20,6 @@ experiments/frequency-study/results/raw/
 # and search tools that honor ignore files (ripgrep, and agent search built on
 # it) skip it by default; git grep and `rg --no-ignore` still read it.
 /archive/
-/mcts_mem/
 
 # OS/editor litter
 .DS_Store

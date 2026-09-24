@@ -72,6 +72,23 @@ rarely insert at the same place.
 
 ## Checker precision and proof cost
 
+- **Some ENT-3 sources read no measure operand.** S7's constant-offset,
+  checked-offset, exact-division, remainder and unsigned `iand` rows read an
+  operand the specification calls an admitted term or constant through the
+  flow's tracked-place and constant reader, which omits ENT-2 clause (b)
+  measure terms; S5/S6 copies, S1 comparisons and S11 counted captures do
+  read measures. So `let r = x % deref(src).len;` establishes no
+  `r < deref(src).len`, and a following `deref(src)[r]` is rejected under
+  OP-4 although binding the length first is accepted. Other flow readers of
+  the same shape (subscript offset terms, S13 index captures, allocation
+  lengths, range-formation operands, integer-domain operands, the ENT-5 `Ok`
+  payload) are unverified; affine images already cover some of them. Repair
+  with one complete ENT-2 term reader, and validate it with paired direct and
+  let-bound cases for each source, including a write that kills the measure,
+  requiring no other verdict change. Deferred from the counted-endpoint
+  repair, which changed only S11's reading; reopen with the next entailment
+  change or when a program needs the direct form.
+
 - **Joined reference proofs lose useful target-relative information.** A
   reference selecting either of two freshly empty Slots cannot establish the
   append precondition from both constructors' facts; captured disjoint ranges
@@ -181,6 +198,24 @@ rarely insert at the same place.
   emitted-code size; faster duplicate lookup alone cannot close the bound.
   The broader admission or sharing question remains deferred to an explicit
   choice supported by those controls and a complexity argument.
+
+- **Acceptance and check removal are trusted to the whole checker.** Every
+  lowering authorization (a subscript without a check, an exact operation, a
+  discharged call goal) is issued by the same entailment engine that decides
+  acceptance, so the trusted base for "no unproved partial operation" is the
+  full front end plus entailment. The
+  [certificate packet](../research/investigations/proof-certificate-architecture/PACKET.md)
+  (v0.26, before the x1 ownership redesign) selects a staged route: the engine
+  records a positive derivation for every discharged obligation, and a small
+  verifier over a trusted proof-flow extraction checks them and jointly issues
+  the lowering capability, while rejections stay with the engine because a
+  missing certificate does not prove non-derivability. The compiler keeps a
+  derivation ledger; no verifier, extraction boundary or joint issuer exists.
+  Re-derive the packet's Envelope B against the current specification, then
+  prototype the verifier on `tests/programs/` and measure its size, proof size
+  and added compile time; a corrupted or missing certificate must never
+  authorize lowering. Close when a verifier jointly issues the capability, or
+  when the packet's stop gates record why the unified engine remains.
 
 ## Containers and storage lowering
 
@@ -715,6 +750,21 @@ rarely insert at the same place.
   concurrent one has no helper and queues with no timeout. The readiness-
   driven adapter that would lift this, one poll over every queued descriptor
   from inside the park, was never built.
+
+- **There is no source-level foreign-function boundary.** C enters only as a
+  trusted linked definition of an ordinary declaration [PRE-1, SCOPE-3], which
+  the checker cannot inspect, and a C program cannot call Whitefoot code
+  through a stated ABI. A real systems program needs both directions: calling
+  an existing C library and exporting a Whitefoot component. The
+  [C ABI capsule idea](ideas.md#safe-c-abi-capsules) sketches export through
+  opaque validated handles; import needs an explicit contract for ownership,
+  layout, callbacks, foreign threads and failure, and a statement of what the
+  compiler trusts. Validate on one real dependency in each direction, starting
+  with the capsule experiment's misuse tests (stale handles, double drop,
+  overlapping buffers, short outputs, allocation failure). This interacts with
+  the module design for separate compilation. Close when a specified boundary
+  and its conformance cases land, or the owner records why a narrower
+  boundary suffices.
 
 ## Open language questions
 

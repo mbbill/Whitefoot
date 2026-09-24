@@ -62,9 +62,8 @@ A finished task is not evidence: a claim cites the specification, a
 conformance case, a measured result under `research/experiments/`, a design
 under `research/investigations/`, or a design-tree decision where the
 checklist's citation boundaries permit. `archive/` is frozen historical
-evidence and rationale, and its retired per-batch record `archive/done/` is
-not cited. `mcts_mem/` is the frozen decision record the design trees
-replaced. Neither is written to, and process wording in any historical
+evidence and rationale that is not written to, and its retired per-batch
+record `archive/done/` is not cited. Process wording in any historical
 artifact is superseded by the rules below. Words such as *validation* or
 *ratification* in language and design artifacts describe evidence, not a
 workflow step.
