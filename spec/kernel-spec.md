@@ -1579,7 +1579,7 @@ An absent registered directory, a missing `module.wfm`, a symbolic link at the p
 
 [MOD-3] Each module has one declaration inventory.
 Every top-level declaration of the module's interface and implementation records other than an alias enters it. A declaration of the interface record is visible in every record of the module, and a declaration of an implementation record in every implementation record, independently of record and item order, so the interface closes over its own declarations, the public declarations of the modules it may name and PRE-1 [MOD-8]; local declarations keep their lexical scopes [TYPE-6].
-The inventory declares each spelling once in each domain [TYPE-6], except that an interface declaration of a function and its one definition are one function [MOD-7].
+The inventory declares each spelling once in each domain [TYPE-6], and an interface declaration of a function together with its one definition is one declaration of that function [MOD-7].
 A lowercase top-level declaration whose spelling extends the declaring module's path to the path of a registered module is a hard error citing MOD-3 at the declaration: the two would occupy one qualified name.
 Visibility grants no value, proof or layout: constant dependencies, group expansion, finite instantiation and layout are judged by their own rules [CONST-2, FN-3, FN-6, STOR-6].
 

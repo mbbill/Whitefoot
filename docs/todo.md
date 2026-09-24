@@ -17,11 +17,12 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   record what the module-granular implementation costs. Remaining, each with
   the measurement or limit that shows it: declaration- and component-granular
   queries and proof fragments with remapping (an edit rechecks and relowers
-  the whole composition, 320 ms of a 500 ms body-edit rebuild of a 32-module
-  chain, and the impact report finds each further failing body by checking
+  the whole composition, 375 ms of a 550 ms body-edit rebuild of a 32-module
+  chain, a cold build without a cache checks each module and then the whole
+  closure, and the impact report finds each further failing body by checking
   its module again with the earlier ones set aside); a native or parallel
-  fragment split (one `llvm-extract` process per fragment costs 430 to
-  490 ms there); stable LLVM names for nominal types, which still carry an
+  fragment split (one `llvm-extract` process per fragment costs 445 to
+  460 ms there); stable LLVM names for nominal types, which still carry an
   ordinal, so that adding a type does not rename unchanged fragments;
   interface keys that ignore `doc` entries, so a documentation edit does not
   recheck every dependent; a full-LTO comparator including the runtime units
