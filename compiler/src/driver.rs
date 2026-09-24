@@ -5,8 +5,10 @@
 //! failures distinct while returning owned LLVM assembly to callers.
 
 use core::fmt;
+use std::collections::{BTreeMap, BTreeSet};
 
 mod cache;
+mod reads;
 mod rejection;
 
 pub(crate) mod launcher;
@@ -812,19 +814,42 @@ pub fn module_verdict(
 ) -> Result<CheckVerdict, CompilationFailure> {
     let target = registered_module(graph, module)?;
     let check = ModuleCheck::new(graph, inputs, target, interface_only);
-    recorded_verdict(
+    if let Some(cache) = cache
+        && let Some(pending) = validated_acceptance(graph, inputs, &check, limits, cache)?
+    {
+        return Ok(CheckVerdict {
+            subject: module.to_owned(),
+            outcome: CheckOutcome::Accepted { pending },
+            reused: true,
+        });
+    }
+    let mut judged = Vec::new();
+    let verdict = recorded_verdict(
         module,
         cache,
         MODULE_VERDICTS,
         (&check.material, &check.reading),
         || match check.run(graph, limits, cache) {
-            Ok(pending) => Ok(CheckOutcome::Accepted { pending }),
+            Ok(checked) => {
+                judged = checked;
+                let pending = judged
+                    .first()
+                    .map(|judged| judged.pending.clone())
+                    .unwrap_or_default();
+                Ok(CheckOutcome::Accepted { pending })
+            }
             Err(failure) if failure.kind() == CompilationFailureKind::Source => {
                 module_rejection(graph, &check, &failure, limits, cache)
             }
             Err(failure) => Err(failure),
         },
-    )
+    )?;
+    if let Some(cache) = cache
+        && !judged.is_empty()
+    {
+        record_acceptances(graph, inputs, &check, &judged, limits, cache);
+    }
+    Ok(verdict)
 }
 
 /// [MOD-8] a rejected module's impact report: one task per failing
@@ -1094,8 +1119,12 @@ fn item_removal(text: &[u8], item: core::ops::Range<usize>) -> core::ops::Range<
 struct ModuleCheck<'input> {
     target: crate::ModuleId,
     selected: Vec<SourceInput<'input>>,
-    /// What the verdict depends on, whatever it concludes.
+    /// What the verdict depends on, whatever it concludes: every record it
+    /// reads, exactly.
     material: Vec<u8>,
+    /// What an acceptance depends on beyond its read set: the module's own
+    /// records and the graph facts its check reads [MOD-8].
+    own: Vec<u8>,
     /// What a rejection depends on beyond `material`.
     reading: Vec<u8>,
 }
@@ -1111,39 +1140,319 @@ impl<'input> ModuleCheck<'input> {
         let mut modules = graph.dependency_closure(target);
         modules.push(target);
         modules.sort();
-        let mut material = b"module-verdict 2\n".to_vec();
-        material.extend_from_slice(if interface_only {
-            b"interface-only\n".as_slice()
+        // What every record of this check shares: the check's kind, its
+        // module and the graph facts it reads.
+        let mut facts = if interface_only {
+            b"interface-only\n".to_vec()
         } else {
-            b"complete\n".as_slice()
-        });
-        push_module_line(&mut material, "module", graph, target);
-        push_graph_facts(&mut material, graph, &modules);
+            b"complete\n".to_vec()
+        };
+        push_module_line(&mut facts, "module", graph, target);
+        push_graph_facts(&mut facts, graph, &modules);
+        let mut material = b"module-verdict 2\n".to_vec();
+        material.extend_from_slice(&facts);
         push_records(&mut material, graph, &selected, RecordOrder::Sorted);
+        let mut own = b"module-acceptance 1\n".to_vec();
+        own.extend_from_slice(&facts);
+        let own_records = selected
+            .iter()
+            .copied()
+            .filter(|input| input.module() == target)
+            .collect::<Vec<_>>();
+        push_records(&mut own, graph, &own_records, RecordOrder::Sorted);
         let reading = rejection_reading(graph, &selected);
         Self {
             target,
             selected,
             material,
+            own,
             reading,
         }
     }
 
-    /// The pending declarations of an accepted module, or its failure.
+    /// The pending declarations of an accepted module and what its check
+    /// read of other modules, then the same for the interface of every
+    /// module of its dependency closure, whose judgments the accepted check
+    /// also made; or the check's failure.
     fn run(
         &self,
         graph: &crate::ModuleGraph,
         limits: CompilerLimits,
         cache: Option<&BuildCache>,
-    ) -> Result<Vec<String>, CompilationFailure> {
+    ) -> Result<Vec<Judged>, CompilationFailure> {
         with_checked_program_using(
             &self.selected,
             Some(graph.modules()),
             limits,
             cache,
-            |checked, _| Ok(pending_declarations(&checked, self.target)),
+            |checked, _| {
+                Ok(std::iter::once(self.target)
+                    .chain(graph.dependency_closure(self.target))
+                    .map(|module| Judged {
+                        module,
+                        pending: pending_declarations(&checked, module),
+                        read: reads::read_declarations(&checked, module),
+                    })
+                    .collect())
+            },
         )
     }
+
+    /// Records an acceptance under the module's own records and graph facts,
+    /// with what the check read of other modules: the digest of every
+    /// closure module's interface record, and the digest of every
+    /// declaration it reached [MOD-8]. Without a read set, or when a
+    /// reached declaration has no digest, only the exact record stands.
+    fn record_acceptance(
+        &self,
+        graph: &crate::ModuleGraph,
+        pending: &[String],
+        read: Option<&ReadSet>,
+        limits: CompilerLimits,
+        cache: &BuildCache,
+    ) {
+        let Some(read) = read else {
+            return;
+        };
+        let mut interfaces = Vec::new();
+        for module in graph.dependency_closure(self.target) {
+            let Some(bytes) = interface_record(&self.selected, module) else {
+                return;
+            };
+            interfaces.push((module_name(graph, module), content_digest(bytes)));
+        }
+        let mut digests = BTreeMap::new();
+        let mut reads = Vec::new();
+        for (module, item) in read {
+            let parsed = digests.entry(*module).or_insert_with(|| {
+                interface_record(&self.selected, *module)
+                    .and_then(|bytes| reads::declaration_digests(bytes, limits))
+            });
+            let Some(digest) = parsed.as_ref().and_then(|parsed| parsed.get(item)) else {
+                return;
+            };
+            reads.push((module_name(graph, *module), item.clone(), *digest));
+        }
+        let acceptance = Acceptance {
+            pending: pending.to_vec(),
+            interfaces,
+            reads,
+        };
+        // A failed publication costs only a later recomputation.
+        let _ = cache.store(MODULE_VERDICTS, &self.own, &acceptance.encode());
+    }
+}
+
+/// What one check read of other modules: each reached declaration by its
+/// module, role and spelling [MOD-8].
+type ReadSet = BTreeSet<(crate::ModuleId, reads::ItemName)>;
+
+/// One module whose records an accepted check judged: its pending
+/// declarations and what its records read of other modules.
+struct Judged {
+    module: crate::ModuleId,
+    pending: Vec<String>,
+    read: Option<ReadSet>,
+}
+
+/// [MOD-8] records the acceptances one accepted check establishes: the
+/// checked module's own, and the interface verdict of every module of its
+/// closure, since the check judged each of those interfaces against the
+/// interfaces of that module's own closure, exactly as its interface check
+/// does. A later check whose dependency changed then finds the interface
+/// verdicts it needs recorded instead of checking every interface again.
+fn record_acceptances(
+    graph: &crate::ModuleGraph,
+    inputs: &[SourceInput<'_>],
+    check: &ModuleCheck<'_>,
+    judged: &[Judged],
+    limits: CompilerLimits,
+    cache: &BuildCache,
+) {
+    for (index, judged) in judged.iter().enumerate() {
+        let owner;
+        let check = if index == 0 {
+            check
+        } else {
+            owner = ModuleCheck::new(graph, inputs, judged.module, true);
+            &owner
+        };
+        check.record_acceptance(graph, &judged.pending, judged.read.as_ref(), limits, cache);
+    }
+}
+
+/// The interface record of `module` among `inputs`.
+fn interface_record<'input>(
+    inputs: &[SourceInput<'input>],
+    module: crate::ModuleId,
+) -> Option<&'input [u8]> {
+    inputs
+        .iter()
+        .find(|input| input.module() == module && input.role() == crate::SourceRole::Interface)
+        .map(|input| input.bytes())
+}
+
+/// A registered module's qualified name.
+fn module_name(graph: &crate::ModuleGraph, module: crate::ModuleId) -> String {
+    graph
+        .modules()
+        .get(module.index())
+        .map_or_else(String::new, crate::ModuleRecord::qualified_name)
+}
+
+/// A module acceptance recorded with its read set [MOD-8].
+struct Acceptance {
+    pending: Vec<String>,
+    /// Each closure module's interface record digest, when it was read.
+    interfaces: Vec<(String, [u8; 32])>,
+    /// Each reached declaration: its module, role and spelling, and digest.
+    reads: Vec<(String, reads::ItemName, [u8; 32])>,
+}
+
+impl Acceptance {
+    fn encode(&self) -> Vec<u8> {
+        let mut fields = Fields::default();
+        fields.push(b"acceptance 1");
+        fields.push(self.pending.len().to_string().as_bytes());
+        for name in &self.pending {
+            fields.push(name.as_bytes());
+        }
+        fields.push(self.interfaces.len().to_string().as_bytes());
+        for (module, digest) in &self.interfaces {
+            fields.push(module.as_bytes()).push(digest);
+        }
+        fields.push(self.reads.len().to_string().as_bytes());
+        for (module, (role, spelling), digest) in &self.reads {
+            fields
+                .push(module.as_bytes())
+                .push(role.as_bytes())
+                .push(spelling.as_bytes())
+                .push(digest);
+        }
+        fields.into_bytes()
+    }
+
+    fn decode(payload: &[u8]) -> Option<Self> {
+        let fields = Fields::parse(payload)?;
+        let mut fields = fields.into_iter();
+        if fields.next()? != b"acceptance 1" {
+            return None;
+        }
+        let count = |fields: &mut std::vec::IntoIter<&[u8]>| -> Option<usize> {
+            std::str::from_utf8(fields.next()?).ok()?.parse().ok()
+        };
+        let text = |field: &[u8]| std::str::from_utf8(field).ok().map(str::to_owned);
+        let digest = |field: &[u8]| <[u8; 32]>::try_from(field).ok();
+        let mut pending = Vec::new();
+        for _ in 0..count(&mut fields)? {
+            pending.push(text(fields.next()?)?);
+        }
+        let mut interfaces = Vec::new();
+        for _ in 0..count(&mut fields)? {
+            interfaces.push((text(fields.next()?)?, digest(fields.next()?)?));
+        }
+        let mut reads = Vec::new();
+        for _ in 0..count(&mut fields)? {
+            let module = text(fields.next()?)?;
+            let role = text(fields.next()?)?;
+            let spelling = text(fields.next()?)?;
+            reads.push((module, (role, spelling), digest(fields.next()?)?));
+        }
+        fields.next().is_none().then_some(Self {
+            pending,
+            interfaces,
+            reads,
+        })
+    }
+}
+
+/// [MOD-8] the pending declarations of an acceptance a cache recorded for
+/// `check`'s own records and graph facts, when it still holds: every
+/// closure module's interface record still holds its own judgments, and
+/// every declaration the recorded check reached still has the digest it
+/// read. Only an interface record whose bytes changed is parsed again, and
+/// only a module whose interface or dependency closure changed is checked
+/// again, through its own interface verdict.
+fn validated_acceptance(
+    graph: &crate::ModuleGraph,
+    inputs: &[SourceInput<'_>],
+    check: &ModuleCheck<'_>,
+    limits: CompilerLimits,
+    cache: &BuildCache,
+) -> Result<Option<Vec<String>>, CompilationFailure> {
+    let Some(recorded) = cache
+        .load(MODULE_VERDICTS, &check.own)
+        .and_then(|payload| Acceptance::decode(&payload))
+    else {
+        return Ok(None);
+    };
+    let closure = graph.dependency_closure(check.target);
+    if recorded.interfaces.len() != closure.len() {
+        return Ok(None);
+    }
+    let mut changed = BTreeSet::new();
+    for module in &closure {
+        let name = module_name(graph, *module);
+        let digest = interface_record(&check.selected, *module).map(content_digest);
+        let unchanged = recorded
+            .interfaces
+            .iter()
+            .any(|(recorded, recorded_digest)| {
+                *recorded == name && Some(*recorded_digest) == digest
+            });
+        if !unchanged {
+            changed.insert(*module);
+        }
+    }
+    if changed.is_empty() {
+        return Ok(Some(recorded.pending));
+    }
+    for module in &closure {
+        let affected = changed.contains(module)
+            || graph
+                .dependency_closure(*module)
+                .iter()
+                .any(|dependency| changed.contains(dependency));
+        if !affected {
+            continue;
+        }
+        let interface = ModuleCheck::new(graph, inputs, *module, true);
+        let accepted = if let Some(accepted) = cache.settled(&interface.material) {
+            accepted
+        } else {
+            let verdict = module_verdict(
+                graph,
+                inputs,
+                &module_name(graph, *module),
+                true,
+                limits,
+                Some(cache),
+            )?;
+            let accepted = matches!(verdict.outcome, CheckOutcome::Accepted { .. });
+            cache.settle(&interface.material, accepted);
+            accepted
+        };
+        if !accepted {
+            return Ok(None);
+        }
+    }
+    let mut digests = BTreeMap::new();
+    for (name, item, digest) in &recorded.reads {
+        let Some(module) = graph.module_named(name) else {
+            return Ok(None);
+        };
+        if !changed.contains(&module) {
+            continue;
+        }
+        let parsed = digests.entry(module).or_insert_with(|| {
+            interface_record(&check.selected, module)
+                .and_then(|bytes| reads::declaration_digests(bytes, limits))
+        });
+        if parsed.as_ref().and_then(|parsed| parsed.get(item)) != Some(digest) {
+            return Ok(None);
+        }
+    }
+    Ok(Some(recorded.pending))
 }
 
 /// [MOD-8] a composition holds only while every selected module's own
@@ -1159,6 +1468,11 @@ fn require_module_verdicts(
 ) -> Result<(), CompilationFailure> {
     for module in modules {
         let check = ModuleCheck::new(graph, inputs, *module, false);
+        if let Some(cache) = cache
+            && validated_acceptance(graph, inputs, &check, limits, cache)?.is_some()
+        {
+            continue;
+        }
         let reading = content_digest(&check.reading);
         let recorded = cache
             .and_then(|cache| cache.load(MODULE_VERDICTS, &check.material))
@@ -1168,8 +1482,13 @@ fn require_module_verdicts(
         }
         // A rejection is left to a module check, which records it with its
         // impact report; a build needs only its first failure.
-        let pending = check.run(graph, limits, cache)?;
+        let judged = check.run(graph, limits, cache)?;
         if let Some(cache) = cache {
+            record_acceptances(graph, inputs, &check, &judged, limits, cache);
+            let pending = judged
+                .first()
+                .map(|judged| judged.pending.clone())
+                .unwrap_or_default();
             // A failed publication costs only a later recomputation.
             let _ = cache.store(
                 MODULE_VERDICTS,
@@ -1331,7 +1650,22 @@ pub fn entry_verdict(
         reading.extend_from_slice(&fields.into_bytes());
         reading.push(b'\n');
     }
-    recorded_verdict(
+    // [MOD-8] an acceptance stands while every implementation record is
+    // unchanged and every interface record means what it meant: an edited
+    // `doc` string decides nothing a composition concludes.
+    let acceptance = composition_acceptance(graph, &selection, (&modules, &selected), limits);
+    if let Some(cache) = cache
+        && cache.load(COMPOSITION_VERDICTS, &acceptance).is_some()
+    {
+        return Ok(CheckVerdict {
+            subject,
+            outcome: CheckOutcome::Accepted {
+                pending: Vec::new(),
+            },
+            reused: true,
+        });
+    }
+    let verdict = recorded_verdict(
         &subject,
         cache,
         COMPOSITION_VERDICTS,
@@ -1362,7 +1696,71 @@ pub fn entry_verdict(
                 &selected,
             )
         },
-    )
+    )?;
+    if let Some(cache) = cache
+        && matches!(verdict.outcome, CheckOutcome::Accepted { .. })
+    {
+        // A failed publication costs only a later recomputation.
+        let _ = cache.store(COMPOSITION_VERDICTS, &acceptance, b"accepted");
+    }
+    Ok(verdict)
+}
+
+/// [MOD-8] the key material of an accepted composition: the selection and
+/// its requirement, the graph facts its modules read, every implementation
+/// record exactly, and every interface record by the digests of its
+/// declarations, which a reworded `doc` string leaves unchanged. An
+/// interface record the syntax stages refuse enters exactly.
+fn composition_acceptance(
+    graph: &crate::ModuleGraph,
+    selection: &Selection<'_>,
+    (modules, selected): (&[crate::ModuleId], &[SourceInput<'_>]),
+    limits: CompilerLimits,
+) -> Vec<u8> {
+    let mut material = b"composition-acceptance 1\n".to_vec();
+    push_module_line(&mut material, "entry-module", graph, selection.module);
+    material.extend_from_slice(
+        format!(
+            "function {}\nno_heap {}\nnamed {}\n",
+            selection.name, selection.no_heap, selection.public
+        )
+        .as_bytes(),
+    );
+    push_graph_facts(&mut material, graph, modules);
+    let mut records = selected
+        .iter()
+        .map(|input| {
+            let mut fields = Fields::default();
+            fields
+                .push(module_name(graph, input.module()).as_bytes())
+                .push(input.logical_path().as_bytes());
+            let digests = (input.role() == crate::SourceRole::Interface)
+                .then(|| reads::declaration_digests(input.bytes(), limits))
+                .flatten();
+            match digests {
+                Some(digests) => {
+                    fields.push(b"interface");
+                    for ((role, spelling), digest) in &digests {
+                        fields
+                            .push(role.as_bytes())
+                            .push(spelling.as_bytes())
+                            .push(digest);
+                    }
+                }
+                None => {
+                    fields.push(b"exact").push(input.bytes());
+                }
+            }
+            fields.into_bytes()
+        })
+        .collect::<Vec<_>>();
+    records.sort();
+    for record in records {
+        material.extend_from_slice(b"record ");
+        material.extend_from_slice(&record);
+        material.push(b'\n');
+    }
+    material
 }
 
 /// [MOD-8] the interface function declarations of `module` that no
@@ -2554,12 +2952,14 @@ mod tests {
         );
         // An interface edit that its client's call no longer satisfies: the
         // implementation fails correspondence, the client fails its call,
-        // and the cached report equals the cold one.
+        // and the cached report equals the cold one. The root module reads
+        // `pkg::base`'s interface only to hold its judgments, never `half`,
+        // so its verdict stands [MOD-8].
         let interface = b"public fn half(value: u8) -> result: u8 pure contract {\n  requires value > 9_u8;\n} doc \"Halves a value above nine.\";\n";
         let edited = records(interface, BASE_BODY, TOOL_BODY);
         assert_eq!(
             recomputed(PROGRAM_GRAPH, &edited, &cache),
-            ["pkg::base", "pkg::user", "pkg", "app"]
+            ["pkg::base", "pkg::user", "app"]
                 .map(str::to_owned)
                 .to_vec()
         );
@@ -2586,6 +2986,70 @@ mod tests {
         // Reverting restores every earlier record without recomputing.
         assert_eq!(
             recomputed(PROGRAM_GRAPH, &original, &cache),
+            Vec::<String>::new()
+        );
+    }
+
+    /// [MOD-8] a verdict reads of another module's interface that it holds
+    /// its judgments and the declarations its check reached, nothing more:
+    /// a reworded `doc` string or a declaration no importer reaches recomputes
+    /// only the edited module, while a defect in any declaration of an
+    /// interface an importer reads recomputes and rejects the importer, as a
+    /// check without a cache does.
+    #[test]
+    fn an_importer_reads_only_what_its_check_reached_of_an_interface() {
+        let directory = CacheDirectory::new("reads");
+        let cache = directory.open();
+        let records = |base_interface: &'static [u8],
+                       base_body: &'static [u8]|
+         -> Vec<(&'static str, &'static [u8])> {
+            vec![
+                ("base/module.wfm", base_interface),
+                ("base/half.wf", base_body),
+                ("user/module.wfm", USER_INTERFACE),
+                ("user/use.wf", USER_BODY),
+                ("tool/module.wfm", TOOL_INTERFACE),
+                ("tool/spare.wf", TOOL_BODY),
+                ("module.wfm", ROOT_INTERFACE),
+                ("main.wf", ROOT_BODY),
+            ]
+        };
+        let _ = recomputed(PROGRAM_GRAPH, &records(BASE_INTERFACE, BASE_BODY), &cache);
+        // A reworded documentation string: only the edited module.
+        let reworded = b"public fn half(value: u8) -> result: u8 pure contract {\n  requires value > 1_u8;\n} doc \"Divides a value above one by two.\";\n";
+        assert_eq!(
+            recomputed(PROGRAM_GRAPH, &records(reworded, BASE_BODY), &cache),
+            ["pkg::base"].map(str::to_owned).to_vec()
+        );
+        // A declaration no importer reaches, with its definition: the edited
+        // module and the compositions whose implementation records changed.
+        let widened = b"public fn half(value: u8) -> result: u8 pure contract {\n  requires value > 1_u8;\n} doc \"Halves a value above one.\";\n\npublic fn third(value: u8) -> result: u8 pure doc \"Divides a value by three.\";\n";
+        let widened_body = b"fn half(value: u8) -> result: u8 pure contract {\n  requires value > 1_u8;\n} {\n  let result = value / 2_u8;\n  return result;\n}\n\nfn third(value: u8) -> result: u8 pure {\n  let result = value / 3_u8;\n  return result;\n}\n";
+        assert_eq!(
+            recomputed(PROGRAM_GRAPH, &records(widened, widened_body), &cache),
+            ["pkg::base", "app"].map(str::to_owned).to_vec()
+        );
+        // The unreached declaration names a type no module declares: every
+        // importer of the interface is rejected, cached as cold.
+        let broken = b"public fn half(value: u8) -> result: u8 pure contract {\n  requires value > 1_u8;\n} doc \"Halves a value above one.\";\n\npublic fn third(value: Missing) -> result: u8 pure doc \"Divides a value by three.\";\n";
+        let edited = records(broken, widened_body);
+        let changed = recomputed(PROGRAM_GRAPH, &edited, &cache);
+        assert_eq!(
+            changed,
+            ["pkg::base", "pkg::user", "pkg", "app"]
+                .map(str::to_owned)
+                .to_vec()
+        );
+        assert!(
+            verdicts(PROGRAM_GRAPH, &edited, Some(&cache))
+                .iter()
+                .filter(|(subject, _, _)| changed.contains(subject))
+                .all(|(_, outcome, _)| matches!(outcome, super::CheckOutcome::Rejected { .. })),
+            "every importer of the broken interface is rejected"
+        );
+        // Restoring it reuses every recorded verdict.
+        assert_eq!(
+            recomputed(PROGRAM_GRAPH, &records(widened, widened_body), &cache),
             Vec::<String>::new()
         );
     }

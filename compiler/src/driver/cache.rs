@@ -12,7 +12,8 @@
 //! Deleting the directory, or a failed write, changes only the work a later
 //! invocation performs, never a verdict.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -36,6 +37,11 @@ pub struct BuildCache {
     /// Proof receipts this handle found and recorded, for the build report.
     receipts_reused: Cell<u64>,
     receipts_recorded: Cell<u64>,
+    /// Whether each verdict this handle already settled for exact inputs
+    /// was an acceptance, by the digest of its key material: one
+    /// invocation's checks consult each module's interface verdict once for
+    /// every module whose closure holds it [MOD-8].
+    settled: RefCell<HashMap<[u8; 32], bool>>,
 }
 
 impl BuildCache {
@@ -52,7 +58,19 @@ impl BuildCache {
             compiler,
             receipts_reused: Cell::new(0),
             receipts_recorded: Cell::new(0),
+            settled: RefCell::new(HashMap::new()),
         })
+    }
+
+    /// Whether the verdict this handle settled for exactly `material` was
+    /// an acceptance, when it settled one.
+    pub(crate) fn settled(&self, material: &[u8]) -> Option<bool> {
+        self.settled.borrow().get(&digest(material)).copied()
+    }
+
+    /// Notes the verdict settled for exactly `material`.
+    pub(crate) fn settle(&self, material: &[u8], accepted: bool) {
+        self.settled.borrow_mut().insert(digest(material), accepted);
     }
 
     /// How many function analyses this handle's checks took from proof
