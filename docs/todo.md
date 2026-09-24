@@ -809,9 +809,11 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   boundary suffices.
 - **The driver's clang lookup is a fixed path.** `clang_executable()` in
   `compiler/src/bin/whitefootc.rs` hard-codes `/usr/bin/clang` on Linux/macOS
-  (`clang` on PATH on Windows), so a host whose clang lives only elsewhere —
-  a versioned-only `clang-18`, a Nix profile, or Homebrew LLVM — cannot run
-  the driver even with clang installed. Validate whether to accept an
+  (`clang` on PATH on Windows), and `llvm_extract_executable()`, which
+  `--fragments` builds use, hard-codes `/usr/bin/llvm-extract` the same way,
+  so a host whose clang lives only elsewhere — a versioned-only `clang-18`, a
+  Nix profile, or Homebrew LLVM — cannot run the driver even with clang
+  installed. Validate whether to accept an
   explicit override, for example an environment variable, without changing
   which clang CI uses. Close when the owner decides for or against the
   override and, if accepted, its implementation lands.
