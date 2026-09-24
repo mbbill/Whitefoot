@@ -717,6 +717,31 @@ rarely insert at the same place.
   need the lowering to join the hand-out before the `Err` return; a future
   investigation, taken up when a real program shows the gap.
 
+- **Alias facts for worker-run loop chunks.** A synthesized loop-split chunk
+  or splitter has no source signature, so its range and reference captures
+  carry no `noalias`. The sequential world inlines the chunk into its source
+  function, which has the facts; a chunk run as a worker lane does not, so a
+  vectorizable chunk loop may keep a runtime overlap check. The facts would
+  need their own derivation from PAR-2 independence and the enclosing call's
+  EFF-5 result, since sibling chunks write other parts of the same captured
+  range concurrently. Impact and whether any current kernel pays such a check
+  are unmeasured. Validate by inspecting the optimized worker chunks of the
+  formal compute kernels for `vector.memcheck` and, where one appears,
+  comparing chunk time with and without a hand-added fact. Deferred because
+  the range-reference change covers source signatures only; reopen when a
+  measured parallel kernel shows the check.
+
+- **Compute-bench private adapters still pass aggregate ranges.**
+  `research/experiments/compute-bench/array_reference_host.ll`,
+  `first_index_host.ll`, `dag_fanin_host.ll` and the first-index observation
+  rewrite in that Makefile spell a range argument as one `{ ptr, i64 }`
+  aggregate. The compiler now passes it as pointer and count; the machine code
+  is identical on the admitted targets, but LLVM text bound into a WF module
+  must use the split form, and the first-index rewrite no longer matches the
+  emitted head and refuses. These dated research inputs were left unchanged;
+  update them before running those experiments with a compiler that includes
+  the split, keeping an older baseline arm on its own adapter.
+
 ## Platforms and host interfaces
 
 - **Upstream LLVM on Darwin does not yet support the selected stack-probe
@@ -1103,29 +1128,6 @@ condition under which it is taken up.
   alias metadata and `llvm.loop.parallel_accesses` (the emitter has no
   metadata table). Build the metadata subsystem as its own step with a
   before/after benchmark.
-- **Alias facts for worker-run loop chunks.** A synthesized loop-split chunk
-  or splitter has no source signature, so its range and reference captures
-  carry no `noalias`. The sequential world inlines the chunk into its source
-  function, which has the facts; a chunk run as a worker lane does not, so a
-  vectorizable chunk loop may keep a runtime overlap check. The facts would
-  need their own derivation from PAR-2 independence and the enclosing call's
-  EFF-5 result, since sibling chunks write other parts of the same captured
-  range concurrently. Impact and whether any current kernel pays such a check
-  are unmeasured. Validate by inspecting the optimized worker chunks of the
-  formal compute kernels for `vector.memcheck` and, where one appears,
-  comparing chunk time with and without a hand-added fact. Deferred because
-  the range-reference change covers source signatures only; reopen when a
-  measured parallel kernel shows the check.
-- **Compute-bench private adapters still pass aggregate ranges.**
-  `research/experiments/compute-bench/array_reference_host.ll`,
-  `first_index_host.ll`, `dag_fanin_host.ll` and the first-index observation
-  rewrite in that Makefile spell a range argument as one `{ ptr, i64 }`
-  aggregate. The compiler now passes it as pointer and count; the machine code
-  is identical on the admitted targets, but LLVM text bound into a WF module
-  must use the split form, and the first-index rewrite no longer matches the
-  emitted head and refuses. These dated research inputs were left unchanged;
-  update them before running those experiments with a compiler that includes
-  the split, keeping an older baseline arm on its own adapter.
 - **Subscripted integer places as terms.** Today a place with subscripts is
   a term only when its last step is a readonly field. The kill machinery
   (offset support, overlapping element writes) already serves measure terms
