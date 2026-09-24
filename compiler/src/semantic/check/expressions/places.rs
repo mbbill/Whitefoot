@@ -675,9 +675,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ),
                 );
             };
+            let field_type = field.ty;
+            self.reject_inaccessible_field(nominal, None, index, &name, suffix)?;
             let field_index =
                 u32::try_from(index).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
-            let field_type = field.ty;
             place.expression = CheckedExpression::ProjectValue {
                 carrier: self.tree.path(carrier)?.clone(),
                 value: Box::new(place.expression),

@@ -2469,6 +2469,11 @@ pub(crate) struct CheckedFunction {
     pub(crate) module: crate::ModuleId,
     pub(crate) name: String,
     pub(crate) symbol: String,
+    /// The concrete function-kind actuals this instance was built with, in
+    /// binding order; empty for a function without function-kind parameters.
+    /// [FN-9] forms a caller's component as though an instance of another
+    /// module's generic callable calls every one of them.
+    pub(crate) function_actuals: Vec<FunctionId>,
     /// Formal regions in the same declaration order `UserCall::goal_regions`
     /// uses. Retained for post-acceptance physical release specialization;
     /// semantic identity remains the canonical [`FunctionId`].

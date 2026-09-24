@@ -268,6 +268,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let field = fields
                 .get(ordinal)
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            // [MOD-5] outside the declaring module a destructuring consume
+            // binds only published fields; `..` covers the rest.
+            if !cell {
+                self.reject_inaccessible_field(
+                    nominal,
+                    None,
+                    ordinal,
+                    &field.name,
+                    written_binder,
+                )?;
+            }
             let declaration = self.declaration_at(written_binder, crate::DeclarationRole::Let)?;
             let binding = Self::allocate_binding(counters.next_binding)?;
             counters

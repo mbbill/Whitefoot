@@ -168,6 +168,19 @@ enum StablePreludeType {
 }
 
 impl GenericSubstitution {
+    /// Every function-kind argument this substitution supplies, in binding
+    /// order.
+    pub(super) fn function_arguments(
+        &self,
+    ) -> impl Iterator<Item = super::behavior::FunctionArgument> + '_ {
+        self.bindings
+            .iter()
+            .filter_map(|(_, argument)| match argument {
+                GenericArgument::Function(function) => Some(*function),
+                _ => None,
+            })
+    }
+
     pub(super) fn from_bindings(
         bindings: Vec<(GenericParameterKey, GenericArgument)>,
     ) -> Result<Self, SemanticCompilerFailure> {
@@ -1040,6 +1053,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         substitution: GenericSubstitution,
         id: super::super::model::FunctionId,
     ) -> Result<FunctionSignature, CheckStop> {
+        let _module = self.enter_module(template.declaration);
         // [GRAM-2, FORM-3] no declaration carries a region parameter in
         // v0.60: a reference is a name for a path [REF-1] and its validity is
         // the [REF-2] flow fact, not a brand on the signature.

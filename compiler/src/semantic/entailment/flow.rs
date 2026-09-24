@@ -16795,6 +16795,7 @@ mod indexed_goal_kill_tests {
             module: crate::ModuleId::BUNDLE_ROOT,
             name: String::new(),
             symbol: String::new(),
+            function_actuals: Vec::new(),
             region_parameters: Vec::new(),
             parameters: Vec::new(),
             result_mode: CheckedMode::Own,

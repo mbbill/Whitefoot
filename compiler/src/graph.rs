@@ -91,6 +91,29 @@ impl ModuleGraph {
         self.entries.iter().find(|entry| entry.name == name)
     }
 
+    /// Returns every module a module may name through its dependencies'
+    /// interfaces: its direct dependencies and, because an interface closes
+    /// over the interfaces it names, theirs in turn [MOD-8].
+    #[must_use]
+    pub fn dependency_closure(&self, module: ModuleId) -> Vec<ModuleId> {
+        let mut closure = Vec::new();
+        let mut pending = self
+            .modules
+            .get(module.index())
+            .map_or_else(Vec::new, |record| record.dependencies().to_vec());
+        while let Some(next) = pending.pop() {
+            if closure.contains(&next) {
+                continue;
+            }
+            closure.push(next);
+            if let Some(record) = self.modules.get(next.index()) {
+                pending.extend(record.dependencies().iter().copied());
+            }
+        }
+        closure.sort();
+        closure
+    }
+
     /// Returns the module registered at this qualified name, `pkg` or
     /// `pkg::a::b`.
     #[must_use]

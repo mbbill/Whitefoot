@@ -217,6 +217,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 give_context: local_give_context.as_ref().or(scope.give_context),
             };
             let mut arm_bindings = base_bindings.clone();
+            // [MOD-5] outside the enum's declaring module an arm binds only
+            // published payload fields.
+            if let CheckedEnumType::Nominal(owner) = descriptor.enum_type
+                && let Some(ordinal) = descriptor
+                    .variants
+                    .iter()
+                    .position(|candidate| candidate.name == variant.name)
+            {
+                for (index, field) in variant.fields.iter().enumerate() {
+                    self.reject_inaccessible_field(
+                        owner,
+                        Some(ordinal),
+                        index,
+                        &field.name,
+                        arm_node,
+                    )?;
+                }
+            }
             let binders = self.check_match_binders(
                 variant,
                 arm_node,

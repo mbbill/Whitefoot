@@ -69,6 +69,10 @@ pub enum SemanticRule {
     Gram11,
     /// Composite-type formation and element eligibility.
     Type2,
+    /// Cross-module access to a declaration's field [MOD-5].
+    Mod5,
+    /// A public signature naming an unpublished field [MOD-6].
+    Mod6,
     /// Exact mode/type agreement.
     Type5,
     /// Constructor/variant owner agreement.
@@ -209,6 +213,8 @@ impl SemanticRule {
             Self::Gram10 => "GRAM-10",
             Self::Gram11 => "GRAM-11",
             Self::Type2 => "TYPE-2",
+            Self::Mod5 => "MOD-5",
+            Self::Mod6 => "MOD-6",
             Self::Type5 => "TYPE-5",
             Self::Type6 => "TYPE-6",
             Self::Type9 => "TYPE-9",
@@ -328,7 +334,9 @@ impl SemanticRule {
             Self::Eff2 => Self::Eff5,
             Self::Eff5 => Self::Err2,
             Self::Err2 => Self::Err3,
-            Self::Err3 => Self::Ent2,
+            Self::Err3 => Self::Mod5,
+            Self::Mod5 => Self::Mod6,
+            Self::Mod6 => Self::Ent2,
             Self::Ent2 => Self::Msr3,
             Self::Msr3 => Self::Call6,
             Self::Call6 => Self::Inv1,
@@ -399,11 +407,13 @@ impl SemanticRule {
             Self::Eff5 => 48,
             Self::Err2 => 49,
             Self::Err3 => 50,
-            Self::Ent2 => 51,
-            Self::Msr3 => 52,
-            Self::Call6 => 53,
-            Self::Inv1 => 54,
-            Self::Prf1 => 55,
+            Self::Mod5 => 51,
+            Self::Mod6 => 52,
+            Self::Ent2 => 53,
+            Self::Msr3 => 54,
+            Self::Call6 => 55,
+            Self::Inv1 => 56,
+            Self::Prf1 => 57,
         }
     }
 }
@@ -523,6 +533,15 @@ pub enum SemanticIssueKind {
     InvalidFloatLiteral,
     /// A named constant value does not exactly inhabit its written type.
     InvalidConstValue,
+    /// Code or an annotation of another module selects, constructs or binds
+    /// a field its declaring module does not publish, or constructs a value
+    /// with a readonly field [MOD-5, TYPE-2].
+    InaccessibleField {
+        /// The field's spelling.
+        field: String,
+        /// What access the module lacks.
+        reason: &'static str,
+    },
     /// A named const's value depends on itself through the listed consts,
     /// in dependency order [CONST-2].
     ConstantCycle {

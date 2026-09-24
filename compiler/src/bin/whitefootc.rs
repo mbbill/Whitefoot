@@ -12,7 +12,7 @@ use whitefoot::{
     HOST_OPTIMIZATION_ARGUMENTS, ModuleEntry, ORDINARY_VALUES_HEADER, ORDINARY_VALUES_LLVM,
     ORDINARY_VALUES_SOURCE, OverlapLowering, RecursionBudget, SCHED_CORE_HEADER, SCHED_CORE_SOURCE,
     SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER,
-    check, check_module_program, compile_module_program, compile_with_overlap,
+    check, check_module, check_module_program, compile_module_program, compile_with_overlap,
     compile_with_permission_ledger, discover_module_sources, form_module_graph, stack_ledger,
 };
 
@@ -33,7 +33,7 @@ use whitefoot::{
 };
 
 const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-scalar-leaf-limit N|off] [--par-sequential-refusal] [--par-recursive-frontier auto|N|off] [--no-overlap] [--par-ledger] \
-[--stack-ledger] [--check] [-o OUTPUT] (SOURCE... | --graph modules.wfg [--entry NAME | --function pkg::module::name])";
+[--stack-ledger] [--check] [-o OUTPUT] (SOURCE... | --graph modules.wfg [--entry NAME | --function pkg::module::name | --check-module pkg::module | --check-interface pkg::module])";
 
 // The compiler walks typed source and lowering trees recursively. Windows
 // gives the process's primary thread a 1 MiB stack by default, which is small
@@ -296,6 +296,17 @@ fn run_module_program(options: &Options, graph_path: &Path) -> Result<Option<Str
                 .in_module(source.module, source.role)
         })
         .collect();
+    if let Some(module) = &options.check_module {
+        check_module(
+            &graph,
+            &inputs,
+            module,
+            options.interface_only,
+            CompilerLimits::default(),
+        )
+        .map_err(|failure| failure.to_string())?;
+        return Ok(None);
+    }
     if options.check {
         check_module_program(&graph, &inputs, CompilerLimits::default())
             .map_err(|failure| failure.to_string())?;
@@ -637,6 +648,10 @@ struct Options {
     entry: Option<String>,
     /// The function to build as an unnamed entry, `pkg::module::name` [MOD-9].
     function: Option<String>,
+    /// The module to check against its dependencies' interfaces [MOD-8].
+    check_module: Option<String>,
+    /// Check only that module's interface, before any body exists.
+    interface_only: bool,
     output: Option<PathBuf>,
     sources: Vec<PathBuf>,
 }
@@ -655,6 +670,8 @@ impl Options {
         let mut graph = None;
         let mut entry = None;
         let mut function = None;
+        let mut check_module = None;
+        let mut interface_only = false;
         let mut output = None;
         let mut sources = Vec::new();
         let mut cursor = 0;
@@ -710,6 +727,21 @@ impl Options {
                 }
                 "--no-overlap" => no_overlap = true,
                 "--check" => check = true,
+                "--check-module" | "--check-interface" => {
+                    let option = arguments[cursor].clone();
+                    cursor += 1;
+                    let value = arguments
+                        .get(cursor)
+                        .ok_or_else(|| format!("{option} requires a module path"))?
+                        .clone();
+                    if check_module.replace(value).is_some() {
+                        return Err(
+                            "--check-module and --check-interface select one module: write one"
+                                .to_owned(),
+                        );
+                    }
+                    interface_only = option == "--check-interface";
+                }
                 "--graph" | "--entry" | "--function" => {
                     let option = arguments[cursor].clone();
                     cursor += 1;
@@ -750,6 +782,9 @@ impl Options {
         if graph.is_some() == !sources.is_empty() {
             return Err(USAGE.to_owned());
         }
+        if check_module.is_some() && (graph.is_none() || entry.is_some() || function.is_some()) {
+            return Err("--check-module and --check-interface check one module of a --graph program and select no entry".to_owned());
+        }
         if graph.is_none() && (entry.is_some() || function.is_some()) {
             return Err(
                 "--entry and --function select a module program's entry: write --graph".to_owned(),
@@ -758,7 +793,12 @@ impl Options {
         if entry.is_some() && function.is_some() {
             return Err("--entry and --function each select one entry: write one".to_owned());
         }
-        if graph.is_some() && !check && entry.is_none() && function.is_none() {
+        if graph.is_some()
+            && !check
+            && check_module.is_none()
+            && entry.is_none()
+            && function.is_none()
+        {
             return Err("a module program build selects an entry: write --entry NAME, --function pkg::module::name or --check".to_owned());
         }
         if graph.is_some() && par_ledger {
@@ -811,6 +851,8 @@ impl Options {
             graph,
             entry,
             function,
+            check_module,
+            interface_only,
             output,
             sources,
         })

@@ -258,6 +258,18 @@ impl<'input> SourceInput<'input> {
         }
     }
 
+    /// Returns the module this input belongs to.
+    #[must_use]
+    pub const fn module(&self) -> ModuleId {
+        self.module
+    }
+
+    /// Returns this input's role in its module.
+    #[must_use]
+    pub const fn role(&self) -> SourceRole {
+        self.role
+    }
+
     /// Places this input in one module of a module program with its role
     /// [MOD-2]. An input made by [`SourceInput::new`] or
     /// [`SourceInput::from_host_path`] is an implementation record of a source

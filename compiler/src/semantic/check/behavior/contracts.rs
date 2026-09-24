@@ -282,6 +282,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .unwrap_or(crate::ModuleId::BUNDLE_ROOT),
             name: signature.name.clone(),
             symbol: signature.symbol.clone(),
+            function_actuals: Vec::new(),
             region_parameters: Vec::new(),
             parameters,
             result_mode: signature.result_mode,

@@ -441,6 +441,43 @@ pub fn check_module_program(
     with_checked_program(inputs, Some(graph.modules()), limits, |_, _| Ok(()))
 }
 
+/// Checks one module against the interfaces it may name [MOD-8]: the
+/// module's own interface and implementation records, and the interface
+/// records of every module in its dependency closure. No other module's
+/// implementation record is read, so the verdict holds while a dependency's
+/// implementation is absent, incomplete or failing, and an edit to another
+/// module's implementation cannot change it. With `interface_only`, the
+/// module's own implementation records are left out as well, which checks
+/// the interface an architect writes before any body exists.
+pub fn check_module(
+    graph: &crate::ModuleGraph,
+    inputs: &[SourceInput<'_>],
+    module: &str,
+    interface_only: bool,
+    limits: CompilerLimits,
+) -> Result<(), CompilationFailure> {
+    let target = graph.module_named(module).ok_or_else(|| {
+        CompilationFailure::new(
+            CompilationStage::ModuleGraph,
+            CompilationFailureKind::Invocation,
+            format!("the graph registers no module `{module}`"),
+        )
+    })?;
+    let closure = graph.dependency_closure(target);
+    let selected: Vec<_> = inputs
+        .iter()
+        .copied()
+        .filter(|input| {
+            if input.module() == target {
+                !interface_only || input.role() == crate::SourceRole::Interface
+            } else {
+                input.role() == crate::SourceRole::Interface && closure.contains(&input.module())
+            }
+        })
+        .collect();
+    with_checked_program(&selected, Some(graph.modules()), limits, |_, _| Ok(()))
+}
+
 /// Checks a module program through complete source acceptance and admits
 /// one of its entries [MOD-9, STOR-8], stopping before lowering.
 pub fn check_module_entry(

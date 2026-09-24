@@ -432,7 +432,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
-    fn function_reference_instance(
+    pub(super) fn function_reference_instance(
         &self,
         id: FunctionReferenceId,
     ) -> Result<Option<FunctionId>, CheckStop> {

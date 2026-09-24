@@ -87,6 +87,19 @@ struct ResultSignature {
     rtype: NodeId,
 }
 
+/// Restores the module under check when one declaration's judgments end
+/// [MOD-5].
+pub(in crate::semantic::check) struct ModuleContext<'checker> {
+    cell: &'checker Cell<Option<crate::ModuleId>>,
+    previous: Option<crate::ModuleId>,
+}
+
+impl Drop for ModuleContext<'_> {
+    fn drop(&mut self) {
+        self.cell.set(self.previous);
+    }
+}
+
 #[derive(Clone)]
 struct FunctionSignature {
     id: FunctionId,
@@ -1114,6 +1127,45 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
+    /// The concrete function ids of a substitution's function-kind actuals
+    /// [FN-2]; an actual not yet instantiated as a signature contributes none.
+    fn function_actual_ids(
+        &self,
+        substitution: &generics::GenericSubstitution,
+    ) -> Result<Vec<super::model::FunctionId>, CheckStop> {
+        let mut actuals = Vec::new();
+        for argument in substitution.function_arguments() {
+            if let behavior::FunctionArgument::Source {
+                reference,
+                concrete: true,
+            } = argument
+                && let Some(id) = self.function_reference_instance(reference)?
+            {
+                actuals.push(id);
+            }
+        }
+        Ok(actuals)
+    }
+
+    /// Enters the module of one declaration for the judgments written in it
+    /// [MOD-5, TYPE-2]: every field access and readonly write is judged from
+    /// the module that writes it. The previous module is restored when the
+    /// returned guard drops, so a signature built while a body is checked
+    /// does not change the body's module.
+    pub(in crate::semantic::check) fn enter_module(
+        &self,
+        declaration: DeclarationId,
+    ) -> ModuleContext<'_> {
+        let module = self
+            .resolved
+            .declaration(declaration)
+            .and_then(crate::DeclarationRecord::module);
+        ModuleContext {
+            cell: &self.writing_module,
+            previous: self.writing_module.replace(module),
+        }
+    }
+
     /// The module whose inventory declares a source nominal; `None` for a
     /// PRE-1 or compiler-owned nominal [MOD-3].
     pub(in crate::semantic::check) fn nominal_module(
@@ -1128,6 +1180,123 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.resolved
             .declaration(declaration)
             .and_then(crate::DeclarationRecord::module)
+    }
+
+    /// Whether a field of a source nominal carries `public` in its
+    /// declaration: a struct field when `variant` is `None`, or a payload
+    /// field of that variant [MOD-6].
+    pub(in crate::semantic::check) fn field_declared_public(
+        &self,
+        nominal: super::model::NominalId,
+        variant: Option<usize>,
+        field: usize,
+    ) -> Result<bool, CheckStop> {
+        let Some((template, _)) = self
+            .source_nominal_instances
+            .get(nominal.0 as usize)
+            .and_then(Option::as_ref)
+        else {
+            return Ok(true);
+        };
+        let node = self
+            .nominal_templates
+            .get(*template)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            .node;
+        let field_node = match variant {
+            None => self
+                .tree
+                .children_with(node, Production::Field)?
+                .get(field)
+                .copied(),
+            Some(variant) => {
+                let variants = self.tree.children_with(node, Production::Variant)?;
+                let Some(variant) = variants.get(variant) else {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                };
+                match self
+                    .tree
+                    .first_child_with(*variant, Production::VfieldList)?
+                {
+                    Some(list) => self
+                        .tree
+                        .children_with(list, Production::Vfield)?
+                        .get(field)
+                        .copied(),
+                    None => None,
+                }
+            }
+        };
+        let field_node = field_node.ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        self.has_fixed(field_node, crate::FixedTerminal::Public)
+    }
+
+    /// [MOD-5] refuses a field selection, binding or construction written in
+    /// a module other than the field's declaring module when that module
+    /// does not publish the field. PRE-1 and compiler-owned fields keep their
+    /// ordinary availability.
+    pub(in crate::semantic::check) fn reject_inaccessible_field(
+        &self,
+        nominal: super::model::NominalId,
+        variant: Option<usize>,
+        field: usize,
+        name: &str,
+        node: NodeId,
+    ) -> Result<(), CheckStop> {
+        let Some(module) = self.nominal_module(nominal) else {
+            return Ok(());
+        };
+        if self.field_declared_public(nominal, variant, field)? {
+            return Ok(());
+        }
+        // [MOD-6] a public function's contract, effect row and formals are
+        // read by every client, so they name only published fields even in
+        // the declaring module.
+        if self.in_published_header(node)? {
+            return self.issue_node(
+                SemanticRule::Mod6,
+                node,
+                SemanticIssueKind::InaccessibleField {
+                    field: name.to_owned(),
+                    reason: "a public function's contract, effect row and formals name only fields its clients can access; publish the field, usually as public readonly",
+                },
+            );
+        }
+        if self
+            .writing_module
+            .get()
+            .is_none_or(|writer| writer == module)
+        {
+            return Ok(());
+        }
+        self.issue_node(
+            SemanticRule::Mod5,
+            node,
+            SemanticIssueKind::InaccessibleField {
+                field: name.to_owned(),
+                reason: "the field is private to its declaring module; publish it in that module's interface, or use one of its operations",
+            },
+        )
+    }
+
+    /// Whether a node lies in the header of a public function: its
+    /// parameters, results, effect row, contract or function-kind formals,
+    /// and not its body [MOD-6].
+    fn in_published_header(&self, node: NodeId) -> Result<bool, CheckStop> {
+        let mut current = Some(node);
+        while let Some(candidate) = current {
+            match self.tree.production(candidate)? {
+                Production::Stmt | Production::Doc => return Ok(false),
+                Production::FnDecl => {
+                    return Ok(self
+                        .optional_declaration_at(candidate, DeclarationRole::Function)?
+                        .is_some_and(crate::DeclarationRecord::is_public));
+                }
+                _ => {}
+            }
+            current = self.tree.parent(candidate)?;
+        }
+        Ok(false)
     }
 
     /// [TYPE-2] whether a readonly field withholds writes from the body under
@@ -1700,7 +1869,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(true)
     }
 
+    /// Checks one const in its declaring module [MOD-5]: a construction of
+    /// another module's struct in its value obeys that module's publication.
     fn collect_constant(&mut self, node: NodeId) -> Result<(), CheckStop> {
+        let module = self
+            .declaration_at(node, DeclarationRole::NamedConst)?
+            .module();
+        let previous = self.writing_module.replace(module);
+        let result = self.collect_constant_in_module(node);
+        self.writing_module.set(previous);
+        result
+    }
+
+    fn collect_constant_in_module(&mut self, node: NodeId) -> Result<(), CheckStop> {
         let declaration = self.declaration_at(node, DeclarationRole::NamedConst)?;
         let declaration_id = declaration.id();
         let name = declaration.spelling().to_owned();
@@ -1884,11 +2065,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // boundary.
         self.deferred_loop_reference_uses.borrow_mut().clear();
         self.reference_origins.borrow_mut().clear();
-        self.writing_module.set(
-            self.resolved
-                .declaration(signature.declaration)
-                .and_then(crate::DeclarationRecord::module),
-        );
+        let _module = self.enter_module(signature.declaration);
         self.check_musttail_callees(signature)?;
         self.check_entry_formers(signature)?;
         let mut bindings = HashMap::new();
@@ -2073,6 +2250,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .unwrap_or(crate::ModuleId::BUNDLE_ROOT),
             name: signature.name.clone(),
             symbol: signature.symbol.clone(),
+            function_actuals: self.function_actual_ids(&signature.substitution)?,
             region_parameters: signature.region_parameters.clone(),
             parameters,
             result_mode: signature.result_mode,
