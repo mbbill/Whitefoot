@@ -80,6 +80,19 @@ impl BuildCache {
         written
     }
 
+    /// A directory of this cache for a tool that keeps its own
+    /// content-addressed store, such as LLVM's ThinLTO object cache, created
+    /// when absent.
+    ///
+    /// # Errors
+    ///
+    /// Returns the I/O error that prevented creating the directory.
+    pub fn area(&self, name: &str) -> std::io::Result<PathBuf> {
+        let area = self.root.join(name);
+        std::fs::create_dir_all(&area)?;
+        Ok(area)
+    }
+
     /// The key material with the compiler identity in front of it: every
     /// record is the product of one exact compiler.
     fn scoped(&self, material: &[u8]) -> Vec<u8> {

@@ -29,13 +29,21 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   allocator), instance failures that name the requesting call, and a
   content-addressed build cache (`whitefootc --cache DIR`) reusing module and
   composition verdicts, entry modules, runtime objects and program objects,
-  with `--check-modules --report` as the impact report. Remaining:
+  with `--check-modules --report` as the impact report, and ThinLTO link
+  fragments (`--fragments module|function`) split by `llvm-extract`, compiled
+  to cached bitcode and linked by LLD with its ThinLTO object cache; the
+  [build-cost measurements](../research/experiments/modular-build-cost/RESULTS.md)
+  record their costs. Remaining, each with the measurement that shows it:
   declaration- and component-granular queries and proof fragments with
-  remapping (today an edit rechecks every body of the module it touches and
-  of each composition containing it), stable instance symbols, optimized LLVM
-  fragments with stock ThinLTO planning and its object cache (slice 5), the
-  cost and quality measurements (slice 6), qualified groups in `gparam` and
-  `binding_decl` (an alias works today), and the GrowVector
+  remapping (today an edit rechecks and relowers the whole composition, 320 ms
+  of a 500 ms body-edit rebuild of a 32-module chain); a native or parallel
+  fragment split (one `llvm-extract` process per fragment costs 430 to 490 ms
+  there); stable instance and nominal type names, so that adding an instance
+  or type does not rename unchanged fragments; interface keys that ignore
+  `doc` entries, so a documentation edit does not recheck every dependent;
+  a full-LTO comparator including the runtime units and a workload whose hot
+  path crosses many fragments; qualified groups in `gparam` and
+  `binding_decl` (an alias works today); and the GrowVector
   wrapper/function-kind witness.
   Follow the design's ordered implementation slices and discriminating
   acceptance matrix: graph/alias/visibility and correspondence; complete

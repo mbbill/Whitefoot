@@ -205,6 +205,15 @@ completion criterion were refused.
   which is 612x below 1% of this program's 1.76 ms empty-input process floor,
   so no input size makes it material. Dossier §11's stop condition did not
   fire.
+- [modular-build-cost/](modular-build-cost/RESULTS.md) — slice 6 of the
+  [modular compilation design](../investigations/modular-compilation/DESIGN.md):
+  check and build cost of module programs across `whitefootc --cache` and its
+  ThinLTO link fragments, per edit kind, on the specimen and generated module
+  chains, and the runtime of one cross-module loop per build mode. Warm checks
+  and builds cost input validation and the final link; a body edit recompiles
+  one object in every mode, with the whole-composition front end and the
+  fragment split as the remaining edit costs; no build mode shows a repeatable
+  runtime loss at the measured noise level.
 
 ## Frozen v0.17 floor studies
 
