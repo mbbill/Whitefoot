@@ -58,7 +58,7 @@
 
 use crate::{SemanticIssueKind, SemanticRule};
 
-use super::{assert_accepts, assert_rule_kind};
+use super::{assert_accepts, assert_rule_at, assert_rule_kind};
 
 /// [OWN-1] one consuming use kills the whole binding that rooted the place, so
 /// a proved-distinct candidate index pair does not keep a later subscript
@@ -88,7 +88,7 @@ fn a_field_step_on_a_scalar_element_selects_no_declared_field() {
         "  set values[0_u64].missing = 1_u8;\n",
     ] {
         let source = format!(
-            "fn main() -> status: own ExitStatus pure {{\n  let values = array_filled::<u8, 2>(value: 0_u8);\n{body}  return exit_status(code: 0_u8);\n}}\n"
+            "fn main() -> status: ExitStatus pure {{\n  let values = array_filled::<u8, 2>(value: 0_u8);\n{body}  return exit_status(code: 0_u8);\n}}\n"
         );
         assert_rule_kind(source.as_bytes(), SemanticRule::Type5, |kind| {
             matches!(kind, SemanticIssueKind::TypeMismatch { .. })
@@ -105,7 +105,7 @@ fn runtime_array_element_suffixes_retain_source_diagnostics() {
   left: u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let seed = Row(left: 3_u64);
   let rows = box_array_filled::<Row>(count: 1_u64, value: seed);
   let bad = rows.inner[0_u64].missing;
@@ -120,11 +120,11 @@ fn main() -> status: own ExitStatus pure {
   left: u64;
 }
 
-fn read(rows: &Box<Array<Row>>, index: own u64) -> result: own u64 reads(rows) {
+fn read(rows: &Box<Array<Row>>, index: u64) -> result: u64 reads(rows) {
   return deref(rows).inner[index].left;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -170,11 +170,11 @@ struct Pair {
   spare: Token;
 }
 
-fn split(pair: own Pair) -> result: own Token pure {
+fn split(pair: Pair) -> result: Token pure {
   return move pair.kept;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -192,7 +192,7 @@ fn a_field_consume_judges_only_its_unselected_residual() {
         "  before: Box<u64>;\n  value: T;\n  after: Box<u64>;\n",
     ] {
         let source = format!(
-            "struct Holder<T> {{\n{fields}}}\n\nfn take<T>(holder: own Holder<T>) -> value: own T pure {{\n  return move holder.value;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+            "struct Holder<T> {{\n{fields}}}\n\nfn take<T>(holder: Holder<T>) -> value: T pure {{\n  return move holder.value;\n}}\n\nfn main() -> status: ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
         );
         assert_accepts(source.as_bytes());
     }
@@ -208,10 +208,61 @@ fn a_field_consume_cannot_hide_a_linear_residual_without_a_drop_action() {
         ("nodrop struct Token {\n}\n\n", "", "Token"),
     ] {
         let source = format!(
-            "{declarations}struct Holder{generic} {{\n  value: Box<u64>;\n  residual: {residual};\n}}\n\nfn take{generic}(holder: own Holder{generic}) -> value: own Box<u64> pure {{\n  return move holder.value;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+            "{declarations}struct Holder{generic} {{\n  value: Box<u64>;\n  residual: {residual};\n}}\n\nfn take{generic}(holder: Holder{generic}) -> value: Box<u64> pure {{\n  return move holder.value;\n}}\n\nfn main() -> status: ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
         );
         assert_rule_kind(source.as_bytes(), SemanticRule::Prov6, |kind| {
             matches!(kind, SemanticIssueKind::LinearValuePartiallyConsumed { .. })
+        });
+    }
+}
+
+/// [PROV-6, DIAG-1] the complete consumed `place` excludes its `move`
+/// wrapper, even when the checked expression retains that wrapper's carrier.
+#[test]
+fn boxed_field_consumes_judge_linear_residuals_before_empty_releases() {
+    for (declaration, residual) in [
+        ("nodrop enum Token {\n  Live();\n}\n\n", "Token"),
+        ("nodrop struct Token {\n}\n\n", "Token"),
+        ("nodrop struct Token {\n  value: u64;\n}\n\n", "Token"),
+    ] {
+        let source = format!(
+            "{declaration}struct Holder {{\n  value: Box<u64>;\n  residual: {residual};\n}}\n\nfn take(holder: Box<Holder>) -> value: Box<u64> pure {{\n  return move holder.inner.value;\n}}\n\nfn main() -> status: ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        assert_rule_at(source.as_bytes(), SemanticRule::Prov6, "holder.inner.value");
+        assert_rule_kind(source.as_bytes(), SemanticRule::Prov6, |kind| {
+            matches!(
+                kind,
+                SemanticIssueKind::LinearValuePartiallyConsumed {
+                    mechanical_fix: "destructure the whole value with let N(f: a, ...) = move v;",
+                    ..
+                }
+            )
+        });
+    }
+}
+
+/// [WIN-3, DIAG-1] the refused element move cites its `place` operand and
+/// offers the boundary operations that preserve initialized storage.
+#[test]
+fn moving_an_array_or_window_element_still_reports_a_hole() {
+    for (ty, requires) in [
+        ("Array<Box<u64>, 1>", ""),
+        (
+            "Slots<Box<u64>, 1>",
+            " contract {\n  requires values.len > 0_u64;\n}",
+        ),
+    ] {
+        let source = format!(
+            "fn take(values: {ty}) -> value: Box<u64> pure{requires} {{\n  return move values[0_u64];\n}}\n\nfn main() -> status: ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        assert_rule_at(source.as_bytes(), SemanticRule::Win3, "values[0_u64]");
+        assert_rule_kind(source.as_bytes(), SemanticRule::Win3, |kind| {
+            matches!(
+                kind,
+                SemanticIssueKind::MoveOutOfSlot {
+                    mechanical_fix: "use take_back, remove_at, or swap [OP-10, OP-11]",
+                }
+            )
         });
     }
 }

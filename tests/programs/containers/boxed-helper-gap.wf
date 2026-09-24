@@ -2,7 +2,7 @@ struct Entry {
   payload: Box<u64>;
 }
 
-fn build(first: own Box<u64>, replacement: own Box<u64>) -> (slots: own Slots<Option<Entry>, 1>, returned: own Box<u64>) pure contract {
+fn build(first: Box<u64>, replacement: Box<u64>) -> (slots: Slots<Option<Entry>, 1>, returned: Box<u64>) pure contract {
   ensures slots.len == 1_u64;
 } {
   let stored_entry = Entry(payload: move first);
@@ -12,7 +12,7 @@ fn build(first: own Box<u64>, replacement: own Box<u64>) -> (slots: own Slots<Op
   return move slots, move replacement;
 }
 
-fn replace_one(slots: &Slots<Option<Entry>, 1>, replacement: own Entry) -> previous: own Option<Entry> writes(slots) contract {
+fn replace_one(slots: &Slots<Option<Entry>, 1>, replacement: Entry) -> previous: Option<Entry> writes(slots) contract {
   requires 1_u64 <= deref(slots).len;
   ensures deref(slots).len == deref(entry(slots)).len;
 } {
@@ -22,7 +22,7 @@ fn replace_one(slots: &Slots<Option<Entry>, 1>, replacement: own Entry) -> previ
   return move offered;
 }
 
-fn compose(first: own Box<u64>, replacement: own Box<u64>) -> (updated: own Slots<Option<Entry>, 1>, previous: own Option<Entry>) pure contract {
+fn compose(first: Box<u64>, replacement: Box<u64>) -> (updated: Slots<Option<Entry>, 1>, previous: Option<Entry>) pure contract {
   ensures updated.len == 1_u64;
 } {
   let (slots, returned) = build(first: move first, replacement: move replacement);
@@ -31,7 +31,7 @@ fn compose(first: own Box<u64>, replacement: own Box<u64>) -> (updated: own Slot
   return move slots, move previous;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Allocation is total, so the cells are built without a failure arm and the program either reports the observed contents or exits zero.";
   let first = box_new::<u64>(value: 11_u64);
   let replacement = box_new::<u64>(value: 22_u64);

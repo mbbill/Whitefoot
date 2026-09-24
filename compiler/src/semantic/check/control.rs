@@ -15,8 +15,8 @@ use crate::{
 };
 
 use super::super::model::{
-    BindingId, CheckedDrop, CheckedLoopId, CheckedMode, CheckedStatement, CheckedType,
-    ValueInitializerKind,
+    BindingId, CheckedDrop, CheckedLoopId, CheckedMode, CheckedProjectedDrop, CheckedStatement,
+    CheckedType, ValueInitializerKind,
 };
 use super::references::{InvalidationEvent, REF3_RETURN_AN_INDEX, ReferenceInfo};
 use super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
@@ -213,8 +213,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 {
                     CheckedStatement::Evaluate(value.expression)
                 } else {
+                    self.validate_scope_release(value.expression.ty(), "discarded result", node)?;
+                    let drops = self
+                        .drop_paths(value.expression.ty(), Vec::new())?
+                        .into_iter()
+                        .map(|(fields, ty)| CheckedProjectedDrop { fields, ty })
+                        .collect();
                     CheckedStatement::DropExpression {
                         value: value.expression,
+                        drops,
                     }
                 };
                 Ok(Self::continuing_statement(statement, value.effects))
@@ -500,6 +507,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 None
             };
             if matched.can_continue
+                && let Some(reference) = &reference
+            {
+                self.record_reference_origins(binding, &reference.paths);
+            }
+            if matched.can_continue
                 && bindings
                     .insert(
                         declaration_id,
@@ -558,7 +570,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 scope,
             );
         }
-        let expression_owner = if self.tree.production(node)? == Production::ContractDefine {
+        let contract_definition = self.tree.production(node)? == Production::ContractDefine;
+        let expression_owner = if contract_definition {
             node
         } else {
             self.tree
@@ -582,6 +595,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let reference = value.reference.clone();
         if mode.is_reference() && reference.is_none() {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        // Contract definitions use temporary binding namespaces and are
+        // erased, so they do not contribute to the executable body's map.
+        if !contract_definition && let Some(reference) = &reference {
+            self.record_reference_origins(binding, &reference.paths);
         }
         if bindings
             .insert(

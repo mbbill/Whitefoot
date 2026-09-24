@@ -51,6 +51,14 @@ Apply three filters to every proposed tree revision:
 3. Normalize upward. State a shared rule once at its common ancestor instead
    of repeating it in children.
 
+Keep each decision concise: retain the choice, its decisive reason or refused
+alternative (or both), and the qualifications needed to preserve its meaning.
+Put detailed derivations, measurements, comparisons and implementation
+mechanics in the relevant existing `research/` record and link directly to
+that section. A long `Decision:` line is still a long explanation. The tree
+must explain the choice without requiring the reader to open the link;
+the linked record supplies the supporting detail.
+
 Every tree diff review reports node count, depth, and net change; the lint
 prints them against the review base.
 

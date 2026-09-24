@@ -64,7 +64,7 @@ fn invariant_bounded_runtime_allocation(
     count_ceiling: u64,
 ) -> Vec<u8> {
     format!(
-        r#"fn allocate(n: own u64, half: own u64) -> result: own unit pure contract {{
+        r#"fn allocate(n: u64, half: u64) -> result: unit pure contract {{
   requires half <= {half_ceiling}_u64;
 }} {{
   let doubled = half * 2_u64;
@@ -76,7 +76,7 @@ fn invariant_bounded_runtime_allocation(
   return unit;
 }}
 
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   return exit_status(code: 0_u8);
 }}
 "#
@@ -141,16 +141,16 @@ fn structural_copy_aggregates_keep_independent_storage_after_generic_substitutio
   tag: u8;
 }
 
-fn pass<T>(value: own T) -> result: own T pure {
+fn pass<T>(value: T) -> result: T pure {
   return move value;
 }
 
-fn change(pair: &Pair) -> result: own unit writes(pair.values) {
+fn change(pair: &Pair) -> result: unit writes(pair.values) {
   set deref(pair).values[0_u64] = 9_u8;
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let seed = array_filled::<u8, 2>(value: 3_u8);
   let original = Pair(values: seed, tag: 5_u8);
   let twin = pass::<Pair>(value: original);
@@ -203,19 +203,19 @@ fn referenced_aggregate_writes_remain_typed_storage_copies() {
   bytes: Array<u8, 64>;
 }
 
-fn replace(target: &Record, value: own Record) -> result: own unit writes(target) {
+fn replace(target: &Record, value: Record) -> result: unit writes(target) {
   set deref(target) = value;
   return unit;
 }
 
-fn append_record(target: &Slots<Record, 2>, value: own Record) -> result: own unit writes(target) contract {
+fn append_record(target: &Slots<Record, 2>, value: Record) -> result: unit writes(target) contract {
   requires deref(target).len < deref(target).cap;
 } {
   place_back(window: target, value: value);
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let old_bytes = array_filled::<u8, 64>(value: 1_u8);
   let target = Record(bytes: old_bytes);
   let new_bytes = array_filled::<u8, 64>(value: 2_u8);
@@ -273,7 +273,7 @@ fn ordinary_generic_readers_execute_inline_and_boxed_window_values() {
   Spilled(values: Box<Slots<u8>>);
 }
 
-fn checksum<const n: u64>(bytes: &SmallBytes<n>) -> result: own u64 reads(bytes) {
+fn checksum<const n: u64>(bytes: &SmallBytes<n>) -> result: u64 reads(bytes) {
   let result = 0_u64;
   match deref(bytes) {
     Inline(values: run) => {
@@ -298,11 +298,11 @@ fn checksum<const n: u64>(bytes: &SmallBytes<n>) -> result: own u64 reads(bytes)
   return result;
 }
 
-fn read<const n: u64>(bytes: &SmallBytes<n>) -> result: own u64 reads(bytes) {
+fn read<const n: u64>(bytes: &SmallBytes<n>) -> result: u64 reads(bytes) {
   return checksum::<n>(bytes: bytes);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let cell = box_slots_new::<u8>(capacity: 4_u64);
   place_back(window: &cell.inner, value: 7_u8);
   place_back(window: &cell.inner, value: 11_u8);
@@ -363,7 +363,7 @@ const entries: Array<Entry, 2> =[Entry(tag: 17_u64, samples:[[19_u64, 23_u64],[2
 
 const stored_entry: Entry = Entry(tag: 59_u64, samples:[[61_u64, 67_u64],[71_u64, 73_u64]]);
 
-fn read(values: &Array<Entry, 2>, outer: own u64, row: own u64, column: own u64) -> result: own u64 reads(values) contract {
+fn read(values: &Array<Entry, 2>, outer: u64, row: u64, column: u64) -> result: u64 reads(values) contract {
   requires outer < 2_u64;
   requires row < 2_u64;
   requires column < 2_u64;
@@ -371,17 +371,17 @@ fn read(values: &Array<Entry, 2>, outer: own u64, row: own u64, column: own u64)
   return deref(values)[outer].samples[row][column];
 }
 
-fn read_row(values: &Array<u64, 2>, index: own u64) -> result: own u64 reads(values) contract {
+fn read_row(values: &Array<u64, 2>, index: u64) -> result: u64 reads(values) contract {
   requires index < 2_u64;
 } {
   return deref(values)[index];
 }
 
-fn read_entry(value: &Entry) -> result: own u64 reads(value.tag) {
+fn read_entry(value: &Entry) -> result: u64 reads(value.tag) {
   return deref(value).tag;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   if entries[1_u64].samples[1_u64][1_u64] != 53_u64 {
     return exit_status(code: 1_u8);
   }
@@ -469,7 +469,7 @@ const rows: Array<Array<u64, 2>, 2> =[[7_u64, 9_u64],[11_u64, 13_u64]];
 
 const entries: Array<Entry, 2> =[Entry(tag: 17_u64, samples:[19_u64, 23_u64]), Entry(tag: 29_u64, samples:[31_u64, 37_u64])];
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -517,36 +517,36 @@ fn full_owning_arrays_preserve_insert_order_exchange_and_exact_cleanup() {
   owner: Box<u64>;
 }
 
-fn make_record(tag: own u64) -> result: own Record pure {
+fn make_record(tag: u64) -> result: Record pure {
   let payload = array_filled::<u64, 16>(value: tag);
   let owner = box_new::<u64>(value: tag);
   return Record(payload: payload, owner: move owner);
 }
 
-fn seal(values: own Slots<Record, 3>) -> result: own Array<Record, 3> pure contract {
+fn seal(values: Slots<Record, 3>) -> result: Array<Record, 3> pure contract {
   requires values.len == 3_u64;
 } {
   return slots_into_array::<Record, 3>(values: move values);
 }
 
-fn reopen(values: own Array<Record, 3>) -> result: own Slots<Record, 3> pure contract {
+fn reopen(values: Array<Record, 3>) -> result: Slots<Record, 3> pure contract {
   ensures result.len == 3_u64;
 } {
   let full = slots_from_array::<Record, 3>(values: move values);
   return move full;
 }
 
-fn relay<T: drop>(values: own T) -> result: own T pure {
+fn relay<T: drop>(values: T) -> result: T pure {
   return move values;
 }
 
-fn read(values: &Array<Record, 3>, index: own u64) -> result: own u64 reads(values) contract {
+fn read(values: &Array<Record, 3>, index: u64) -> result: u64 reads(values) contract {
   requires index < 3_u64;
 } {
   return deref(values)[index].payload[7_u64];
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let first = make_record(tag: 11_u64);
   let second_tag = first.payload[0_u64] +wrap 11_u64;
   let second = make_record(tag: second_tag);
@@ -634,11 +634,11 @@ fn abandoned_full_array_construction_releases_each_initialized_prefix_once() {
   owner: Box<u64>;
 }
 
-fn relay<T: drop>(value: own T) -> result: own T pure {
+fn relay<T: drop>(value: T) -> result: T pure {
   return move value;
 }
 
-fn build(stop: own u64) -> result: own Result<Array<Record, 3>, u64> pure {
+fn build(stop: u64) -> result: Result<Array<Record, 3>, u64> pure {
   let empty = slots_new::<Record, 3>();
   let first_owner = box_new::<u64>(value: 11_u64);
   let first_record = Record(tag: 11_u64, owner: move first_owner);
@@ -663,7 +663,7 @@ fn build(stop: own u64) -> result: own Result<Array<Record, 3>, u64> pure {
   return Ok<Array<Record, 3>, u64>(value: move passed);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let one = build(stop: 1_u64);
   match move one {
     Ok(value: unexpected_one) => {
@@ -781,24 +781,24 @@ fn full_arrays_preserve_boxed_element_ownership_through_generic_helpers() {
   owner: Box<u64>;
 }
 
-fn pass<T>(value: own T) -> result: own T pure {
+fn pass<T>(value: T) -> result: T pure {
   return move value;
 }
 
-fn make(owner: own Box<u64>, tag: own u64) -> result: own Array<Record, 1> pure {
+fn make(owner: Box<u64>, tag: u64) -> result: Array<Record, 1> pure {
   let record = Record(tag: tag, owner: move owner);
   let empty = slots_new::<Record, 1>();
   place_back(window: &empty, value: move record);
   return slots_into_array::<Record, 1>(values: move empty);
 }
 
-fn relay(values: own Array<Record, 1>) -> result: own Array<Record, 1> pure {
+fn relay(values: Array<Record, 1>) -> result: Array<Record, 1> pure {
   let passed = pass::<Array<Record, 1>>(value: move values);
   let full = slots_from_array::<Record, 1>(values: move passed);
   return slots_into_array::<Record, 1>(values: move full);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let owner = box_new::<u64>(value: 17_u64);
   let held = make(owner: move owner, tag: 17_u64);
   let returned = relay(values: move held);
@@ -835,15 +835,20 @@ fn full_array_zero_extents_and_zero_byte_elements_execute_without_payload_access
     let source = br#"struct Empty {
 }
 
+struct Mixed {
+  tag: u64;
+  empty: Empty;
+}
+
 struct Recursive {
   children: Array<Recursive, 0>;
 }
 
-fn relay<T: drop>(value: own T) -> result: own T pure {
+fn relay<T: drop>(value: T) -> result: T pure {
   return move value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let none = slots_new::<Box<u64>, 0>();
   let zero_owners = slots_into_array::<Box<u64>, 0>(values: move none);
   let zero_returned = relay::<Array<Box<u64>, 0>>(value: move zero_owners);
@@ -863,6 +868,18 @@ fn main() -> status: own ExitStatus pure {
   let children = slots_into_array::<Recursive, 0>(values: move recursion);
   let node = Recursive(children: children);
   let carried = relay::<Recursive>(value: node);
+  let mixed_empty_seed = Empty();
+  let mixed_seed = Mixed(tag: 7_u64, empty: mixed_empty_seed);
+  let mixed = array_filled::<Mixed, 2>(value: mixed_seed);
+  set mixed[1_u64].tag = 19_u64;
+  set mixed[1_u64].empty = Empty();
+  let mixed_empty = mixed[1_u64].empty;
+  if mixed[0_u64].tag != 7_u64 {
+    return exit_status(code: 3_u8);
+  }
+  if mixed[1_u64].tag != 19_u64 {
+    return exit_status(code: 4_u8);
+  }
   let zero_length = zero_again.len;
   let empty_length = empty_again.len;
   if zero_length != 0_u64 {
@@ -876,6 +893,43 @@ fn main() -> status: own ExitStatus pure {
 "#;
     for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
         let module = retain_calls(&super::emit_lowered(source, overlap));
+        // Empty fields touch no bytes, so the native tag observations alone
+        // cannot detect wrongly collapsing their nonzero-stride outer step.
+        let mixed_type = module
+            .lines()
+            .find_map(|line| line.split_once(" = type { i64, %wf.t"))
+            .map(|(name, _)| name)
+            .expect("Mixed has a tag and an Empty field");
+        let field_step = format!("getelementptr inbounds {mixed_type}, ptr ");
+        let mut empty_element_steps = 0;
+        for line in module.lines().filter(|line| line.ends_with("i32 1")) {
+            let Some((_, operands)) = line.split_once(&field_step) else {
+                continue;
+            };
+            let (parent, _) = operands.split_once(',').expect("field pointer operand");
+            // ProjectAddress gives the selected element an ordinary i8-GEP
+            // identity before the following field projection uses it.
+            let alias = format!("{parent} = getelementptr i8, ptr ");
+            let parent = module
+                .lines()
+                .find_map(|line| line.trim_start().strip_prefix(&alias))
+                .and_then(|operands| operands.split_once(','))
+                .map_or(parent, |(pointer, _)| pointer);
+            let element_step = format!("{parent} = getelementptr inbounds [2 x {mixed_type}],");
+            if let Some(step) = module
+                .lines()
+                .find(|line| line.trim_start().starts_with(&element_step))
+            {
+                let (_, index) = step.rsplit_once("i64 ").expect("element index");
+                let one = format!("{index} = select i1 true, i64 1, i64 1");
+                assert!(
+                    index == "1" || module.lines().any(|line| line.trim() == one),
+                    "Mixed[1].empty must retain element one: {step}"
+                );
+                empty_element_steps += 1;
+            }
+        }
+        assert!(empty_element_steps > 0, "observe an indexed Empty field");
         let output = compile_and_run(&module);
         assert_eq!(output.status.code(), Some(0), "{output:?}");
         assert!(output.stdout.is_empty(), "{output:?}");
@@ -913,11 +967,11 @@ fn const_runs_are_immutable_globals_and_execute_through_index_and_len() {
 /// full-window conversion `slots_into_array`.
 #[test]
 fn filled_arrays_cross_function_boundaries_and_keep_a_checked_read() {
-    let source = br#"fn make() -> result: own Array<u16, 4> pure {
+    let source = br#"fn make() -> result: Array<u16, 4> pure {
   return array_filled::<u16, 4>(value: 42_u16);
 }
 
-fn clamp_three(value: own u64) -> result: own u64 pure contract {
+fn clamp_three(value: u64) -> result: u64 pure contract {
   ensures result < 4_u64;
 } {
   if value < 4_u64 {
@@ -927,13 +981,13 @@ fn clamp_three(value: own u64) -> result: own u64 pure contract {
   }
 }
 
-fn read(values: own Array<u16, 4>, offset: own u64) -> result: own u16 pure {
+fn read(values: Array<u16, 4>, offset: u64) -> result: u16 pure {
   let bounded = clamp_three(value: offset);
   let value = values[bounded];
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let values = make();
   let length = values.len;
   if length != 4_u64 {
@@ -972,7 +1026,7 @@ fn an_out_of_bounds_run_read_is_an_op4_compile_rejection() {
     // [ENT-6] residual, rendered in [OP-15]'s measure member form.
     let source = br#"const values: Array<u8, 2> =[7_u8, 7_u8];
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let value = values[2_u64];
   return exit_status(code: 0_u8);
 }
@@ -984,11 +1038,11 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn indexed_set_checks_before_rhs_and_updates_the_run() {
-    let source = br#"fn replacement() -> result: own u8 pure {
+    let source = br#"fn replacement() -> result: u8 pure {
   return 9_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let values = slots_new::<u8, 2>();
   place_back(window: &values, value: 0_u8);
   place_back(window: &values, value: 0_u8);
@@ -1031,11 +1085,11 @@ fn main() -> status: own ExitStatus pure {
 fn an_out_of_bounds_indexed_set_is_an_op4_compile_rejection() {
     // A target whose obligation is underivable cannot reach runtime: the
     // program rejects at the subscript with the residual [OP-4, ENT-6].
-    let source = br#"fn replacement() -> result: own u8 pure {
+    let source = br#"fn replacement() -> result: u8 pure {
   return 9_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let values = slots_new::<u8, 2>();
   place_back(window: &values, value: 0_u8);
   place_back(window: &values, value: 0_u8);
@@ -1063,7 +1117,7 @@ fn a_long_loop_over_a_dynamically_indexed_run_keeps_the_frame_bounded() {
     // third v0.59 invariant, `head_of(built) <= 0_u64`, retired with the
     // measure: [MSR-1] gives `Slots` no `head` cell at all, and the window it
     // would have pinned to zero begins at slot zero by [WIN-1].
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   doc "Nested counted loops read and write one fixed run for two hundred thousand iterations.";
   let built = slots_new::<u64, 8>();
   for @fill (
@@ -1130,11 +1184,11 @@ struct Outer {
   inner: Inner;
 }
 
-fn replacement() -> result: own u8 pure {
+fn replacement() -> result: u8 pure {
   return 9_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let base = array_filled::<u8, 2>(value: 0_u8);
   let values = slots_from_array::<u8, 2>(values: base);
   let inner = Inner(values: move values, sibling: 77_u16);
@@ -1209,7 +1263,7 @@ fn main() -> status: own ExitStatus pure {
 /// `len` observation this case keeps, over the same element writes and reads.
 #[test]
 fn general_run_elements_preserve_array_places_and_standing_extents() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let row = array_filled::<u64, 2>(value: 7_u64);
   let rows = slots_new::<Array<u64, 2>, 2>();
   place_back(window: &rows, value: row);
@@ -1241,11 +1295,11 @@ fn general_run_elements_preserve_array_places_and_standing_extents() {
 /// rather than only whether a deeply nested type can be named.
 #[test]
 fn general_run_elements_preserve_nested_owners_across_generic_calls() {
-    let source = br#"fn pass<T>(value: own T) -> result: own T pure {
+    let source = br#"fn pass<T>(value: T) -> result: T pure {
   return move value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let first = box_new::<u64>(value: 17_u64);
   let second = box_new::<u64>(value: 29_u64);
   let leaf = slots_new::<Box<u64>, 2>();
@@ -1302,7 +1356,7 @@ fn general_run_elements_close_recursive_descriptor_layout_and_cleanup() {
   children: Box<Slots<Tree>>;
 }
 
-fn build() -> result: own Tree pure {
+fn build() -> result: Tree pure {
   let empty_children = box_slots_new::<Tree>(capacity: 1_u64);
   let child = Tree(children: move empty_children);
   let parent_children = box_slots_new::<Tree>(capacity: 1_u64);
@@ -1311,7 +1365,7 @@ fn build() -> result: own Tree pure {
   return move root;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let tree = build();
   return exit_status(code: 0_u8);
 }
@@ -1349,34 +1403,34 @@ fn heap_full_arrays_preserve_elements_across_calls_and_exchange() {
   owner: Box<u64>;
 }
 
-fn make_record(tag: own u64) -> result: own Record pure {
+fn make_record(tag: u64) -> result: Record pure {
   let payload = array_filled::<u64, 16>(value: tag);
   let owner = box_new::<u64>(value: tag);
   return Record(payload: payload, owner: move owner);
 }
 
-fn relay<T: drop>(value: own T) -> result: own T pure {
+fn relay<T: drop>(value: T) -> result: T pure {
   return move value;
 }
 
-fn read(storage: &Box<Array<Record, 2>>, index: own u64) -> result: own u64 reads(storage) contract {
+fn read(storage: &Box<Array<Record, 2>>, index: u64) -> result: u64 reads(storage) contract {
   requires index < 2_u64;
 } {
   return deref(storage).inner[index].payload[7_u64];
 }
 
-fn pass_box(value: own Box<Array<Record, 2>>) -> result: own Box<Array<Record, 2>> pure {
+fn pass_box(value: Box<Array<Record, 2>>) -> result: Box<Array<Record, 2>> pure {
   return relay::<Box<Array<Record, 2>>>(value: move value);
 }
 
-fn update(storage: &Box<Array<Record, 2>>, index: own u64, replacement: &Record) -> result: own unit writes(storage.inner[index]), writes(replacement) contract {
+fn update(storage: &Box<Array<Record, 2>>, index: u64, replacement: &Record) -> result: unit writes(storage.inner[index]), writes(replacement) contract {
   requires index < 2_u64;
 } {
   swap(first: &deref(storage).inner[index], second: replacement);
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let first = make_record(tag: 11_u64);
   let second_tag = first.payload[0_u64] +wrap 11_u64;
   let second = make_record(tag: second_tag);
@@ -1425,5 +1479,245 @@ fn main() -> status: own ExitStatus pure {
             "{overlap:?}: {output:?}"
         );
         assert!(output.stderr.is_empty(), "{overlap:?}: {output:?}");
+    }
+}
+
+/// Runtime-capacity arrays carry complete inline element types through generic
+/// construction, typed ranges, whole-element copies, and nested writes.
+#[test]
+fn runtime_arrays_preserve_nested_fixed_array_storage_and_release() {
+    let source = br#"fn make<T: copy>(value: T) -> result: Box<Array<T>> pure contract {
+  ensures result.inner.len == 2_u64;
+} {
+  let rows = box_array_filled::<T>(count: 2_u64, value: value);
+  return move rows;
+}
+
+fn read(rows: &[Array<u64, 2>], index: u64) -> result: u64 reads(rows) contract {
+  requires index < deref(rows).len;
+} {
+  return deref(rows)[index][1_u64];
+}
+
+fn update(row: &Array<u64, 2>) -> result: unit writes(row) {
+  set deref(row)[1_u64] = 19_u64;
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  let seed = array_filled::<u64, 2>(value: 7_u64);
+  let rows = make::<Array<u64, 2>>(value: seed);
+  set rows.inner[1_u64][0_u64] = 11_u64;
+  update(row: &rows.inner[1_u64]);
+  if rows.inner[0_u64][0_u64] != 7_u64 {
+    return exit_status(code: 8_u8);
+  }
+  if rows.inner[0_u64][1_u64] != 7_u64 {
+    return exit_status(code: 9_u8);
+  }
+  let snapshot = rows.inner[1_u64];
+  set rows.inner[0_u64] = snapshot;
+  set snapshot[1_u64] = 23_u64;
+  if rows.inner[0_u64][0_u64] != 11_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if rows.inner[0_u64][1_u64] != 19_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if rows.inner[1_u64][0_u64] != 11_u64 {
+    return exit_status(code: 3_u8);
+  }
+  let observed = read(rows: &rows.inner[0_u64..2_u64], index: 1_u64);
+  if observed != 19_u64 {
+    return exit_status(code: 4_u8);
+  }
+  if seed[0_u64] != 7_u64 {
+    return exit_status(code: 5_u8);
+  }
+  let empty = box_array_filled::<Array<u64, 2>>(count: 0_u64, value: seed);
+  if empty.inner.len != 0_u64 {
+    return exit_status(code: 6_u8);
+  }
+  let empty_seed = array_filled::<u64, 0>(value: 0_u64);
+  let zero_width = box_array_filled::<Array<u64, 0>>(count: 3_u64, value: empty_seed);
+  if zero_width.inner[2_u64].len != 0_u64 {
+    return exit_status(code: 7_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let module = retain_calls(&compile(source))
+        .replace("@malloc(", "@wf_test_allocate(")
+        .replace("@free(", "@wf_test_release(");
+    let observer = super::owned_places::allocation_observer(3, 0);
+    let output = super::compile_link_and_run(&module, Some(&observer), &[]);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(output.stdout, b"A1;A2;A3;F3;F2;F1;", "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
+/// An ordinary callable receives the same header-first runtime owner from the
+/// native host. This exercises affine element cleanup independently of the
+/// copy-only fill constructor.
+#[test]
+fn runtime_arrays_release_nested_fixed_array_owners_in_element_order() {
+    let source =
+        br#"fn release_rows(values: Box<Array<Array<Box<u64>, 2>>>) -> result: u64 pure contract {
+  requires values.inner.len == 2_u64;
+} {
+  return values.inner[1_u64][1_u64].inner;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let module = retain_calls(&compile(source))
+        .replace("@malloc(", "@wf_test_allocate(")
+        .replace("@free(", "@wf_test_release(");
+    let observer = format!(
+        "{}\n{}",
+        super::owned_places::allocation_observer(5, 0),
+        r#"#include <stdint.h>
+struct Rows { uint64_t len; uint64_t *items[2][2]; };
+extern uint64_t wf_release_rows(struct Rows *);
+__attribute__((constructor)) static void check_nested_cleanup(void) {
+    struct Rows *rows = wf_test_allocate(sizeof(*rows));
+    rows->len = 2;
+    const uint64_t payloads[4] = {17, 19, 23, 29};
+    for (unsigned i = 0; i < 4; ++i) {
+        uint64_t *cell = wf_test_allocate(sizeof(*cell));
+        *cell = payloads[i];
+        rows->items[i / 2][i % 2] = cell;
+    }
+    if (wf_release_rows(rows) != 29) abort();
+}
+"#
+    );
+    let output = super::compile_link_and_run(&module, Some(&observer), &[]);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(
+        output.stdout, b"A1;A2;A3;A4;A5;F2;F3;F4;F5;F1;",
+        "{output:?}"
+    );
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
+/// Inspect ordinary, pre-optimization address operands. The enormous logical
+/// count is never executed; zero stride must be handled before LLVM can erase
+/// the fill loop, and the range retains its independent logical length.
+#[test]
+fn zero_stride_large_logical_indices_use_representable_address_operands() {
+    let source = br#"struct Empty {
+}
+
+fn inspect(values: &[Empty]) -> result: Empty reads(values) contract {
+  requires deref(values).len == 1_u64;
+} {
+  return deref(values)[0_u64];
+}
+
+fn main() -> status: ExitStatus pure {
+  let empty = Empty();
+  let values = box_array_filled::<Empty>(count: 9223372036854775809_u64, value: empty);
+  let last = values.inner[9223372036854775808_u64];
+  set values.inner[9223372036854775808_u64] = Empty();
+  let observed = inspect(values: &values.inner[9223372036854775808_u64..9223372036854775809_u64]);
+  let fixed = array_filled::<Empty, 9223372036854775809>(value: empty);
+  let fixed_last = fixed[9223372036854775808_u64];
+  let nested_seed = array_filled::<u64, 0>(value: 0_u64);
+  let nested = box_array_filled::<Array<u64, 0>>(count: 9223372036854775809_u64, value: nested_seed);
+  let nested_length = nested.inner[9223372036854775808_u64].len;
+  let window = slots_from_array::<Empty, 9223372036854775809>(values: fixed);
+  let returned = slots_into_array::<Empty, 9223372036854775809>(values: move window);
+  return exit_status(code: 0_u8);
+}
+"#;
+    let llvm = compile(source);
+    assert!(
+        llvm.contains("9223372036854775809"),
+        "logical count survives"
+    );
+    // Each family must actually be present, and every element operand must
+    // be literal zero. Checking only for a large literal would miss the
+    // ordinary SSA register carrying that same logical index.
+    for (family, marker) in [
+        (
+            "runtime buffer and nested zero array",
+            "getelementptr inbounds { i64, [0 x ",
+        ),
+        (
+            "fixed fill and indexed place",
+            "getelementptr inbounds [9223372036854775809 x ",
+        ),
+        (
+            "range adjustment and range element",
+            "getelementptr inbounds %wf.t",
+        ),
+        ("whole-element transfer size", "getelementptr %wf.t"),
+    ] {
+        let steps: Vec<_> = llvm
+            .lines()
+            .filter(|line| line.contains(" = ") && line.contains(marker))
+            // Header-only projections end in i32; the element step has an
+            // i64 final operand, including its generated loop register.
+            .filter(|line| {
+                line.rsplit_once(", ")
+                    .is_some_and(|(_, last)| last.starts_with("i64 "))
+            })
+            .collect();
+        assert!(!steps.is_empty(), "missing {family} address coverage");
+        for step in steps {
+            assert!(step.ends_with("i64 0"), "{family} must use zero: {step}");
+        }
+    }
+    let out_of_bounds = std::str::from_utf8(source).expect("source text").replace(
+        "let last = values.inner[9223372036854775808_u64];",
+        "let last = values.inner[9223372036854775809_u64];",
+    );
+    assert_eq!(
+        compile_rejection(out_of_bounds.as_bytes()).rule_id(),
+        Some("OP-4")
+    );
+}
+
+#[test]
+fn zero_stride_allocation_still_qualifies_headers_and_nonzero_controls() {
+    let host = TargetLayout::host().expect("supported target");
+    for (element, value, header) in [("Empty", "Empty()", 8_u64), ("u8", "0_u8", 8_u64)] {
+        let source = format!(
+            "struct Empty {{\n}}\n\nfn allocate() -> result: unit pure {{\n  let seed = {value};\n  let values = box_array_filled::<{element}>(count: 9223372036854775809_u64, value: seed);\n  return unit;\n}}\n"
+        );
+        with_ir(source.as_bytes(), |program| {
+            if element == "Empty" {
+                assert_eq!(validate_program(host, program), Ok(()));
+                let exact = host.with_runtime_allocation_limits_for_test(header, 8);
+                assert_eq!(validate_program(exact, program), Ok(()));
+                let short = host.with_runtime_allocation_limits_for_test(header - 1, 8);
+                assert!(matches!(
+                    validate_program(short, program),
+                    Err(TargetLayoutFailure::Unrepresentable(_))
+                ));
+                // Narrow only the address domain, retaining enough space for
+                // the ordinary prelude's concrete nominal representations.
+                let narrow = host.with_address_index_max_for_test(i32::MAX as u64);
+                let llvm = crate::backend::emitter::emit_llvm_with_layout(program, narrow)
+                    .expect("logical count does not occupy the address domain")
+                    .into_string();
+                let element_steps: Vec<_> = llvm
+                    .lines()
+                    .filter(|line| line.contains("getelementptr") && line.contains("i32 1, i64"))
+                    .collect();
+                assert!(!element_steps.is_empty(), "observe narrow-target addresses");
+                assert!(element_steps.iter().all(|line| line.ends_with("i64 0")));
+            } else {
+                assert_eq!(
+                    validate_program(host, program),
+                    Err(TargetLayoutFailure::Unrepresentable(
+                        TargetObject::RuntimeSizedAllocation
+                    ))
+                );
+            }
+        });
     }
 }

@@ -1,9 +1,9 @@
-fn release_now(cell: own Box<Slots<u8>>) -> result: own unit pure {
+fn release_now(cell: Box<Slots<u8>>) -> result: unit pure {
   doc "Consuming the value here runs, at this call, the same release walk the caller's scope exit would have run for it.";
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "PROV-6: an affine value is released early by moving it into a function that consumes it and ends, and there is no release operation. The two windows are reclaimed one after the other rather than both at the entry's own exit edge, which is the difference between a peak of one window and a peak of two.";
   let first = box_slots_new::<u8>(capacity: 4_u64);
   let size = first.inner.len;

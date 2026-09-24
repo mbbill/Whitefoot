@@ -6,7 +6,7 @@ enum Outer {
   Wrap(inner: Inner);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A nested match through a reference extends the payload path one step further, and each arm's refinement fact keeps its own binder valid.";
   let leaf = Leaf(value: 7_i32);
   let packet = Wrap(inner: leaf);

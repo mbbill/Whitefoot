@@ -20,19 +20,19 @@ struct Wrapped<T: Int> {
   value: Option<T>;
 }
 
-fn duplicate<T: Int>(value: own T) -> result: own Pair<T> pure {
+fn duplicate<T: Int>(value: T) -> result: Pair<T> pure {
   return Pair<T>(left: value, right: value);
 }
 
-fn present<T: Int>(value: own T) -> result: own Choice<T> pure {
+fn present<T: Int>(value: T) -> result: Choice<T> pure {
   return Present<T>(value: value);
 }
 
-fn checked_sum<T: Int>(left: own T, right: own T) -> result: own Result<T, Overflow> pure {
+fn checked_sum<T: Int>(left: T, right: T) -> result: Result<T, Overflow> pure {
   return left +checked right;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let small = duplicate::<u8>(value: 7_u8);
   let wide = duplicate::<i64>(value: -9_i64);
   let small_left = small.left;

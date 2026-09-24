@@ -1,4 +1,4 @@
-fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+fn factory_refusal(error: &IoError) -> result: Bool reads(error) {
   match deref(error) {
     NotFound(code: native_code, origin: native_origin) => {
       return False();
@@ -87,7 +87,7 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
   }
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "The selected TcpConnection is an ordinary public nodrop struct. Moving one direction as a proper partial consume fails ordinary ownership; a later use cannot recover the original binding. No special system-struct constructor or close_connection rule exists.";
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: handles, stdin: unused_stdin) = move inputs;
   close_directory(factory: &handles, directory: move unused_cwd);

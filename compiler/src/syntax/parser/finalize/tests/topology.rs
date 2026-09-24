@@ -15,13 +15,10 @@ use super::support::{FINALIZE_LIMITS, source_offsets, with_parsed};
 fn one_finalizer_proves_bundle_root_counts_and_ordered_source_extents() {
     let inputs = [
         SourceInput::new("empty.wf", b"\n"),
-        SourceInput::new(
-            "main.wf",
-            b"fn main() -> status: own ExitStatus pure {\n}\n",
-        ),
+        SourceInput::new("main.wf", b"fn main() -> status: ExitStatus pure {\n}\n"),
         SourceInput::new("constant.wf", b"const answer: i32 = 42_i32;\n"),
     ];
-    let source_lengths = [1_u64, 45, 28];
+    let source_lengths = [1_u64, 41, 28];
     with_parsed(&inputs, |parsed| {
         let token_count = parsed.terminal_count();
         let production_count = parsed.production_count();
@@ -60,7 +57,7 @@ fn assert_mutant(
 
 #[test]
 fn inconsistent_postorder_root_shape_and_extent_are_rejected() {
-    let source = b"fn main() -> status: own ExitStatus pure {\n}\n";
+    let source = b"fn main() -> status: ExitStatus pure {\n}\n";
     assert_mutant(
         source,
         |parsed| {
@@ -121,7 +118,7 @@ fn inconsistent_postorder_root_shape_and_extent_are_rejected() {
 
 #[test]
 fn inconsistent_token_identity_and_predicate_are_rejected() {
-    let source = b"fn probe() -> result: own unit pure {\n  return unit;\n}\n";
+    let source = b"fn probe() -> result: unit pure {\n  return unit;\n}\n";
     assert_mutant(
         source,
         |parsed| {
@@ -183,7 +180,7 @@ fn inconsistent_token_identity_and_predicate_are_rejected() {
 
 #[test]
 fn exact_finalizer_resource_families_are_observable() {
-    let source = b"fn main() -> status: own ExitStatus pure {\n}\n";
+    let source = b"fn main() -> status: ExitStatus pure {\n}\n";
     let cases = [
         (
             FinalizeLimit::Work,

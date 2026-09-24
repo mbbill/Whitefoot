@@ -1,0 +1,34 @@
+--- a/hash-map.wf
++++ b/hash-map.wf
+@@ -274,7 +274,7 @@
+ }
+
+ fn hash_map_rebuild<interface HashMapKey<K, E>, V, const ceiling: u64>(map: &HashMap<K, V, ceiling>, capacity: u64, env: &E) -> result: Result<unit, unit> reads(env), writes(map) {
+-  doc "Direct migration keeps the original enum buckets and uses one temporary inline one-slot window for a pending pair. Refusal precedes owner mutation. Every exchange result has useful behavior: Inserted empties the staging window; Replaced and Full restore their complete returned owner for retry. Each attempt hashes the current staged key and probes only occupancy, never equality. With at most the old bucket count of owners and at least that many fresh destinations, each retained owner reaches a vacant bucket in one capacity-bounded scan. No global occupancy fact authorizes a discard or a partial operation. A zero-capacity rebuild is allocation-free. The backing swap does not publish an extent relation under the current proof rules, so this function promises no monotone extent postcondition; subsequent operations read their current bounds.";
++  doc "Direct migration keeps the original enum buckets and uses one temporary inline one-slot window for a pending pair. Refusal precedes owner mutation. Every displaced slot is consumed: Vacant and Deleted leave the staging window empty, while Filled restores its complete pair for retry. Each attempt hashes the current staged key and probes only occupancy, never equality. With at most the old bucket count of owners and at least that many fresh destinations, each retained owner reaches a vacant bucket in one capacity-bounded scan. No global occupancy fact authorizes a discard or a partial operation. A zero-capacity rebuild is allocation-free. The backing swap does not publish an extent relation under the current proof rules, so this function promises no monotone extent postcondition; subsequent operations read their current bounds.";
+   if capacity > ceiling {
+     return Err<unit, unit>(error: unit);
+   }
+@@ -315,13 +315,17 @@
+             if available {
+               let offered = take_back(window: &pending);
+               let HashMapPair(key: offered_key, value: offered_value) = move offered;
+-              let exchanged = hash_map_exchange::<K, V>(cells: &deref(map).cells, index: index, key: move offered_key, value: move offered_value);
+-              match exchanged {
+-                HashMapInserted() => {
++              let incoming = HashMapFilled<K, V>(key: move offered_key, value: move offered_value);
++              swap(first: &deref(map).cells.inner[index], second: &incoming);
++              match incoming {
++                HashMapVacant() => {
+                 }
+-                HashMapReturned(reason: returned_reason, pair: returned_pair) => {
+-                  place_back(window: &pending, value: move returned_pair);
++                HashMapDeleted() => {
+                 }
++                HashMapFilled(key: displaced_key, value: displaced_value) => {
++                  let displaced_pair = HashMapPair<K, V>(key: move displaced_key, value: move displaced_value);
++                  place_back(window: &pending, value: move displaced_pair);
++                }
+               }
+               break @vacancy;
+             }

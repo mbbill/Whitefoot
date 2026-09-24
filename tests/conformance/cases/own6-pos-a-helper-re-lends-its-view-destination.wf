@@ -1,4 +1,4 @@
-fn inner(destination: &[u8], value: own u8) -> written: own u64 writes(destination) contract {
+fn inner(destination: &[u8], value: u8) -> written: u64 writes(destination) contract {
   requires 2_u64 <= deref(destination).len;
   ensures written == 2_u64;
 } {
@@ -8,7 +8,7 @@ fn inner(destination: &[u8], value: own u8) -> written: own u64 writes(destinati
   return 2_u64;
 }
 
-fn outer(destination: &[u8], value: own u8) -> written: own u64 writes(destination) contract {
+fn outer(destination: &[u8], value: u8) -> written: u64 writes(destination) contract {
   requires 2_u64 <= deref(destination).len;
   ensures written == 2_u64;
 } {
@@ -17,7 +17,7 @@ fn outer(destination: &[u8], value: own u8) -> written: own u64 writes(destinati
   return 2_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A helper handed a range reference passes that same destination to a second helper of the same parameter shape; the callee's write reaches the range's storage, the origin window keeps its own length, and the outer caller reads back what the innermost helper wrote.";
   let table = slots_new::<u8, 4>();
   place_back(window: &table, value: 3_u8);

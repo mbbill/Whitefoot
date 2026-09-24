@@ -1,10 +1,10 @@
-fn measure(cell: own Slots<u8, 4>) -> size: own u64 pure {
+fn measure(cell: Slots<u8, 4>) -> size: u64 pure {
   doc "Consumes the window it is handed and reports its length.";
   let n = cell.len;
   return n;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "LIV-1: one branch consumes the window and the other does not, so the two predecessors of the join disagree about whether it is live there.";
   let values = array_filled::<u8, 4>(value: 0_u8);
   let c = slots_from_array::<u8, 4>(values: values);

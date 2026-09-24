@@ -3,7 +3,7 @@ struct Pair<L, R> {
   right: Box<R>;
 }
 
-fn build<L, R>(left: own Box<L>, right: own Box<R>) -> slots: own Slots<Option<Pair<L, R>>, 1> pure {
+fn build<L, R>(left: Box<L>, right: Box<R>) -> slots: Slots<Option<Pair<L, R>>, 1> pure {
   let pair = Pair<L, R>(left: move left, right: move right);
   let occupied = Some<Pair<L, R>>(value: move pair);
   let slots = slots_new::<Option<Pair<L, R>>, 1>();
@@ -11,16 +11,16 @@ fn build<L, R>(left: own Box<L>, right: own Box<R>) -> slots: own Slots<Option<P
   return move slots;
 }
 
-fn pass<L, R>(slots: own Slots<Option<Pair<L, R>>, 1>) -> result: own Slots<Option<Pair<L, R>>, 1> pure {
+fn pass<L, R>(slots: Slots<Option<Pair<L, R>>, 1>) -> result: Slots<Option<Pair<L, R>>, 1> pure {
   return move slots;
 }
 
-fn compose<L, R>(left: own Box<L>, right: own Box<R>) -> slots: own Slots<Option<Pair<L, R>>, 1> pure {
+fn compose<L, R>(left: Box<L>, right: Box<R>) -> slots: Slots<Option<Pair<L, R>>, 1> pure {
   doc "Nested aggregate and run results preserve two distinct written type arguments across composition [FN-1, FN-2].";
   let slots = build::<L, R>(left: move left, right: move right);
   return pass::<L, R>(slots: move slots);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

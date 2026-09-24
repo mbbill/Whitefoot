@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::backend::target::TargetLayout;
+
 mod buffers;
 mod loops;
 mod prelude;
@@ -27,9 +29,20 @@ use loops::LoopTarget;
 use split::{Synthesis, SynthesisCell};
 use storage::collect_addressed_bindings;
 
+#[cfg(test)]
 pub fn lower_checked<'classified, 'lexed, 'source>(
     checked: CheckedProgram<'classified, 'lexed, 'source>,
     overlap: OverlapLowering,
+) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
+    lower_checked_with_layout(checked, overlap, TargetLayout::host()?)
+}
+
+/// Select optional target-fitting loop shapes after semantic acceptance, using
+/// the same target that will qualify and emit their transported signatures.
+pub(crate) fn lower_checked_with_layout<'classified, 'lexed, 'source>(
+    checked: CheckedProgram<'classified, 'lexed, 'source>,
+    overlap: OverlapLowering,
+    target: TargetLayout,
 ) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
     let sequential_compute_refusal = matches!(
         overlap,
@@ -166,6 +179,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         .map(|(index, variant)| {
             let function = &checked.data.functions[variant.source.0 as usize];
             let context = LoweringContext {
+                target,
                 erasure: TypeLowering {
                     nominals: &maps[index].nominals,
                     elements: &maps[index].elements,
@@ -188,6 +202,8 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
+    #[cfg(test)]
+    let loop_candidate_constructions = synthesis.borrow().candidate_constructions;
     let (synthesized, mut actualization) = synthesis.into_inner().finish()?;
     functions.extend(synthesized);
     split::assign_weights(&mut functions);
@@ -203,6 +219,8 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         actualization,
         sequential_compute_refusal,
         recursion_budget,
+        #[cfg(test)]
+        loop_candidate_constructions,
     })
 }
 
@@ -215,6 +233,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
 /// growing an argument list at every level.
 #[derive(Clone, Copy)]
 struct LoweringContext<'program> {
+    target: TargetLayout,
     /// [S20, PROV-1] each nominal's lowered identity, with its region axis
     /// erased.
     erasure: TypeLowering<'program>,
@@ -395,6 +414,14 @@ fn lower_function<'program>(
     for parameter in &function.parameters {
         let ty = lower_parameter_type(context.erasure, parameter, context.nominals)?;
         let value = builder.new_parameter(ty)?;
+        if parameter.mode == CheckedMode::Reference
+            && !function
+                .declared_state_writes
+                .iter()
+                .any(|path| path.root == parameter.declaration)
+        {
+            builder.readonly_reference_parameters.push(value);
+        }
         if builder.bindings.insert(parameter.binding, value).is_some() {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
@@ -559,6 +586,7 @@ struct BuildingBlock {
 }
 
 struct IrBuilder<'program> {
+    target: TargetLayout,
     /// [S20, PROV-1] each nominal's lowered identity, with its region axis
     /// erased.
     erasure: TypeLowering<'program>,
@@ -568,6 +596,7 @@ struct IrBuilder<'program> {
     constants: &'program [IrGlobalConstant],
     bindings: HashMap<BindingId, IrValueId>,
     parameters: Vec<(IrValueId, IrType)>,
+    readonly_reference_parameters: Vec<IrValueId>,
     source_calls: Vec<IrSourceCall>,
     values: Vec<IrType>,
     blocks: Vec<BuildingBlock>,
@@ -627,6 +656,7 @@ impl<'program> IrBuilder<'program> {
         function_name: &'program str,
     ) -> Result<Self, LoweringFailure> {
         let LoweringContext {
+            target,
             erasure,
             physical_calls,
             nominals,
@@ -636,6 +666,7 @@ impl<'program> IrBuilder<'program> {
             synthesis,
         } = context;
         let mut builder = Self {
+            target,
             erasure,
             physical_calls,
             nominals,
@@ -643,6 +674,7 @@ impl<'program> IrBuilder<'program> {
             constants,
             bindings: HashMap::new(),
             parameters: Vec::new(),
+            readonly_reference_parameters: Vec::new(),
             source_calls: Vec::new(),
             values: Vec::new(),
             blocks: Vec::new(),
@@ -680,6 +712,7 @@ impl<'program> IrBuilder<'program> {
     /// This builder's own shared half, for the builders it creates.
     const fn context(&self) -> LoweringContext<'program> {
         LoweringContext {
+            target: self.target,
             erasure: self.erasure,
             physical_calls: self.physical_calls,
             nominals: self.nominals,
@@ -710,6 +743,7 @@ impl<'program> IrBuilder<'program> {
         Ok(IrFunction {
             name,
             parameters: self.parameters,
+            readonly_reference_parameters: self.readonly_reference_parameters,
             source_signature: None,
             source_calls: self.source_calls,
             result: self.result,
@@ -1031,14 +1065,15 @@ impl<'program> IrBuilder<'program> {
                     self.expression(expression)?;
                 }
                 CheckedStatement::DropExpression {
-                    value: expression, ..
+                    value: expression,
+                    drops,
                 } => {
                     let value = self.expression(expression)?;
-                    let drop = IrDrop {
-                        subject: IrDropSubject::Value(value),
-                        ty: self.value_type(value)?,
-                    };
-                    self.append_drops(vec![drop])?;
+                    let mut lowered = Vec::with_capacity(drops.len());
+                    for drop in drops {
+                        lowered.push(self.lower_projected_drop(value, drop)?);
+                    }
+                    self.append_drops(lowered)?;
                 }
                 // PRF-1 proof statements have already contributed their
                 // checked fact to semantic flow. They have no runtime value,
@@ -1093,7 +1128,6 @@ impl<'program> IrBuilder<'program> {
                     invariants: _,
                     body,
                     backedge_drops,
-                    carried_references: _,
                 } => self.lower_loop(*id, body, backedge_drops, give_target.clone())?,
                 CheckedStatement::CountedRange {
                     id,
@@ -1107,7 +1141,6 @@ impl<'program> IrBuilder<'program> {
                     invariants: _,
                     body,
                     backedge_drops,
-                    carried_references: _,
                 } => self.lower_counted_range(
                     *id,
                     node_path,
@@ -1518,6 +1551,7 @@ impl<'program> IrBuilder<'program> {
                 )
             }
             CheckedExpression::NumericConversion {
+                mode,
                 source,
                 destination,
                 value,
@@ -1527,8 +1561,9 @@ impl<'program> IrBuilder<'program> {
                 self.define(
                     lower_type(self.erasure, expression.ty())?,
                     IrOperation::NumericConversion {
-                        source_type: lower_numeric_type(*source),
-                        destination_type: lower_numeric_type(*destination),
+                        mode: (*mode).into(),
+                        source_type: lower_numeric_type(*source)?,
+                        destination_type: lower_numeric_type(*destination)?,
                         value,
                     },
                 )
@@ -1541,10 +1576,10 @@ impl<'program> IrBuilder<'program> {
             } => {
                 let value = self.expression(value)?;
                 self.define(
-                    lower_numeric_type(*destination),
+                    lower_numeric_type(*destination)?,
                     IrOperation::Reinterpret {
-                        source_type: lower_numeric_type(*source),
-                        destination_type: lower_numeric_type(*destination),
+                        source_type: lower_numeric_type(*source)?,
+                        destination_type: lower_numeric_type(*destination)?,
                         value,
                     },
                 )

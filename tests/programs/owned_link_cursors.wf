@@ -3,7 +3,7 @@ struct Link {
   next: Option<Box<Link>>;
 }
 
-fn list(count: own u64) -> result: own Option<Box<Link>> pure {
+fn list(count: u64) -> result: Option<Box<Link>> pure {
   let head = None<Box<Link>>();
   for (i in 0_u64..count) {
     let node = Link(value: i, next: move head);
@@ -13,7 +13,7 @@ fn list(count: own u64) -> result: own Option<Box<Link>> pure {
   return move head;
 }
 
-fn sum(head: &Option<Box<Link>>) -> result: own u64 reads(head) {
+fn sum(head: &Option<Box<Link>>) -> result: u64 reads(head) {
   let cursor = head;
   let total = 0_u64;
   loop {
@@ -30,7 +30,7 @@ fn sum(head: &Option<Box<Link>>) -> result: own u64 reads(head) {
   return total;
 }
 
-fn without_first(head: own Option<Box<Link>>) -> result: own Option<Box<Link>> pure {
+fn without_first(head: Option<Box<Link>>) -> result: Option<Box<Link>> pure {
   match head {
     Some(value: cell) => {
       let node = move cell.inner;
@@ -42,7 +42,7 @@ fn without_first(head: own Option<Box<Link>>) -> result: own Option<Box<Link>> p
   }
 }
 
-fn remove_even(head: &Option<Box<Link>>) -> result: own unit writes(head) {
+fn remove_even(head: &Option<Box<Link>>) -> result: unit writes(head) {
   doc "A single link-slot cursor removes nodes by atomic owned transformation, preserving the occupied slot and releasing each removed cell.";
   let cursor = head;
   loop {
@@ -63,7 +63,7 @@ fn remove_even(head: &Option<Box<Link>>) -> result: own unit writes(head) {
   return unit;
 }
 
-fn raise_values(head: &Option<Box<Link>>) -> result: own unit writes(head) {
+fn raise_values(head: &Option<Box<Link>>) -> result: unit writes(head) {
   let cursor = head;
   loop {
     match deref(cursor) {
@@ -84,7 +84,7 @@ enum Tree {
   Fork(left: Box<Tree>, right: Box<Tree>);
 }
 
-fn tree() -> result: own Tree pure {
+fn tree() -> result: Tree pure {
   let left = Leaf(value: 13_u64);
   let right = Leaf(value: 29_u64);
   let left_cell = box_new::<Tree>(value: move left);
@@ -100,7 +100,7 @@ fn tree() -> result: own Tree pure {
   return Fork(left: move first_cell, right: move second_cell);
 }
 
-fn edge(root: &Tree, right: own Bool) -> result: own u64 reads(root) {
+fn edge(root: &Tree, right: Bool) -> result: u64 reads(root) {
   let cursor = root;
   loop {
     match deref(cursor) {
@@ -119,7 +119,7 @@ fn edge(root: &Tree, right: own Bool) -> result: own u64 reads(root) {
   return 0_u64;
 }
 
-fn repeated_sum(head: &Option<Box<Link>>) -> result: own u64 reads(head) {
+fn repeated_sum(head: &Option<Box<Link>>) -> result: u64 reads(head) {
   doc "Nested loops reset the same cursor to its root between complete walks.";
   let cursor = head;
   let total = 0_u64;
@@ -140,7 +140,7 @@ fn repeated_sum(head: &Option<Box<Link>>) -> result: own u64 reads(head) {
   return total;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let head = list(count: 64_u64);
   let before = sum(head: &head);
   if before != 2016_u64 {

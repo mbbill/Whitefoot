@@ -4,14 +4,14 @@ enum ClauseEq {
   ClauseThird();
 }
 
-fn guarded(left: own ClauseEq, right: own ClauseEq) -> result: own unit pure contract {
+fn guarded(left: ClauseEq, right: ClauseEq) -> result: unit pure contract {
   define same = eeq(left, right);
   requires same;
 } {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let left = ClauseSecond();
   let right = ClauseSecond();
   let same = eeq(left, right);

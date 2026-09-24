@@ -1,4 +1,4 @@
-fn nested_length(values: &[u8], lo: own u64, hi: own u64) -> function_result: own u64 reads(values[lo..hi].len) contract {
+fn nested_length(values: &[u8], lo: u64, hi: u64) -> function_result: u64 reads(values[lo..hi].len) contract {
   requires lo <= hi;
   requires hi <= deref(values).len;
 } {
@@ -8,13 +8,13 @@ fn nested_length(values: &[u8], lo: own u64, hi: own u64) -> function_result: ow
   return width;
 }
 
-fn exchange(rows: &[Array<Box<u64>, 2>]) -> result: own unit writes(rows) contract {
+fn exchange(rows: &[Array<Box<u64>, 2>]) -> result: unit writes(rows) contract {
   requires deref(rows).len == 2_u64;
 } {
   swap(first: &deref(rows)[0_u64], second: &deref(rows)[1_u64]);
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

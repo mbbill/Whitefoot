@@ -19,7 +19,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         else {
             return Err(BackendFailure::InvalidIr);
         };
-        if self.program.element(element) != Some(buffer_element.ty()) {
+        if element != buffer_element {
             return Err(BackendFailure::InvalidIr);
         }
         let block_type = llvm_type(
@@ -74,6 +74,13 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let adjusted = self.next_temporary()?;
         let length = self.next_temporary()?;
         let partial = self.next_temporary()?;
+        let logical_start = self.value_name(start);
+        let address_start = self.element_address_index(
+            self.program
+                .element(element)
+                .ok_or(BackendFailure::InvalidIr)?,
+            &logical_start,
+        )?;
         // [REF-4] discharged both domain conjuncts, `lo <= hi` and
         // `hi <= x.len`, before this descriptor exists, so the adjusted
         // address stays inside the extent the original descriptor names and
@@ -83,7 +90,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         writeln!(
             self.output,
             "  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{adjusted} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 {}\n  %{length} = sub nuw i64 {}, {}\n  %{partial} = insertvalue {descriptor_type} zeroinitializer, ptr %{adjusted}, 0\n  {} = insertvalue {descriptor_type} %{partial}, i64 %{length}, 1",
-            self.value_name(slice), self.value_name(start), self.value_name(end),
+            self.value_name(slice), address_start, self.value_name(end),
             self.value_name(start), self.value_name(result),
         ).map_err(|_| BackendFailure::TextEmission)
     }
@@ -152,7 +159,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             self.output,
             "  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 {}\n  {} = load {element_type}, ptr %{element_pointer}",
             self.value_name(slice),
-            self.value_name(offset),
+            self.element_address_index(ty, &self.value_name(offset))?,
             self.value_name(result),
         )
         .map_err(|_| BackendFailure::TextEmission)
@@ -193,7 +200,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             self.output,
             "  %{pointer} = extractvalue {descriptor_type} {}, 0\n  %{element_pointer} = getelementptr inbounds {element_type}, ptr %{pointer}, i64 {}",
             self.value_name(slice),
-            self.value_name(index),
+            self.element_address_index(
+                self.program.element(element).ok_or(BackendFailure::InvalidIr)?,
+                &self.value_name(index),
+            )?,
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         self.store_value_at(value, &format!("%{element_pointer}"))
@@ -254,7 +264,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             "  %{pointer} = extractvalue {descriptor_type} {}, 0\n  {} = getelementptr inbounds {llvm_element_type}, ptr %{pointer}, i64 {}",
             self.value_name(slice),
             self.value_name(result),
-            self.value_name(offset),
+            self.element_address_index(element_type, &self.value_name(offset))?,
         )
         .map_err(|_| BackendFailure::TextEmission)
     }

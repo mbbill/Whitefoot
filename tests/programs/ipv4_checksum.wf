@@ -1,6 +1,6 @@
 const ipv4_header: Array<u8, 20> =[69_u8, 0_u8, 0_u8, 84_u8, 0_u8, 0_u8, 64_u8, 0_u8, 64_u8, 1_u8, 0_u8, 0_u8, 192_u8, 168_u8, 0_u8, 1_u8, 192_u8, 168_u8, 0_u8, 199_u8];
 
-fn ipv4_checksum(header: &[u8]) -> result: own u16 reads(header) contract {
+fn ipv4_checksum(header: &[u8]) -> result: u16 reads(header) contract {
   define length = deref(header).len;
   define odd = iand(length, 1_u64);
   requires odd == 0_u64;
@@ -24,19 +24,10 @@ fn ipv4_checksum(header: &[u8]) -> result: own u16 reads(header) contract {
   }
   let inverted = inot(sum);
   let checksum_word = iand(inverted, 65535_u32);
-  let narrowed = cvt::<u32, u16>(checksum_word);
-  let checksum = match narrowed {
-    Ok(value: checksum_value) => {
-      give checksum_value;
-    }
-    Err(error: failure) => {
-      give 0_u16;
-    }
-  }
-  return checksum;
+  return cvt::<u32, u16>(checksum_word);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The same header is summed twice: once over a const run reached by a range reference, and once over a frame-resident window filled from it.";
   let view = &ipv4_header[0_u64..20_u64];
   let view_length = deref(view).len;

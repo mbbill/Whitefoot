@@ -2,7 +2,7 @@ nodrop struct Token {
   value: u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "WIN-3: assigning over an owned place is a hard error at the target place when the old value is linear.";
   let first = Token(value: 1_u64);
   let second = Token(value: 2_u64);

@@ -4,7 +4,7 @@ enum Val {
   Bare();
 }
 
-fn classify(v: own Val) -> function_result: own i32 pure {
+fn classify(v: Val) -> function_result: i32 pure {
   doc "Match each variant of an enum whose payload slot is sized to the widest variant (u64); each payload is copied out at its own declared width [TYPE-2, TYPE-6, GRAM-10].";
   match v {
     Small(a: n) => {
@@ -24,7 +24,7 @@ fn classify(v: own Val) -> function_result: own i32 pure {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Construct all three variants and dispatch each through a by-value cross-fn match; the pinned sum proves every payload width round-trips.";
   let small_atom_0001 = Small(a: 40_i32);
   let a = classify(v: small_atom_0001);

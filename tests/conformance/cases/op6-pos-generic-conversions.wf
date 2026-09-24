@@ -1,0 +1,74 @@
+fn convert<S: Int, D: Int>(value: S) -> result: D pure contract {
+  requires cvt.defined::<S, D>(value);
+} {
+  return cvt::<S, D>(value);
+}
+
+fn forwarded<S: Int, D: Int>(value: S) -> result: D pure contract {
+  requires cvt.defined::<S, D>(value);
+} {
+  return convert::<S, D>(value: value);
+}
+
+fn attempt<S: Int, D: Float>(value: S) -> result: Result<D, NarrowError> pure {
+  return cvt.checked::<S, D>(value);
+}
+
+fn same<T: Float>(value: T) -> result: T pure contract {
+  define copied = cvt::<T, T>(value);
+  requires cvt.defined::<T, T>(copied);
+} {
+  return cvt::<T, T>(value);
+}
+
+fn zero<T: Float, D: Int>() -> result: D pure {
+  return cvt::<T, D>(0_T);
+}
+
+fn one<T: Int, D: Float>() -> result: D pure {
+  return cvt::<T, D>(1_T);
+}
+
+fn small_integer<D: Int>() -> result: D pure {
+  return cvt::<u32, D>(1_u32);
+}
+
+fn main() -> status: ExitStatus pure {
+  doc "Symbolic Int and Float endpoints keep exact interface result types. Nested generic requirements specialize normally, and repeated symbolic endpoints are universally total even inside a contract definition.";
+  let byte = forwarded::<u32, u8>(value: 7_u32);
+  let same_byte = forwarded::<u8, u8>(value: byte);
+  if same_byte != 7_u8 {
+    return exit_status(code: 1_u8);
+  }
+  match attempt::<u8, f32>(value: 7_u8) {
+    Ok(value: converted) => {
+      let copied = same::<f32>(value: converted);
+      if fne(copied, 7.0_f32) {
+        return exit_status(code: 2_u8);
+      }
+    }
+    Err(error: refused) => {
+      return exit_status(code: 3_u8);
+    }
+  }
+  match attempt::<u32, f32>(value: 16777217_u32) {
+    Ok(value: converted) => {
+      return exit_status(code: 4_u8);
+    }
+    Err(error: refused) => {
+    }
+  }
+  let zero_value = zero::<f64, i64>();
+  let one_value = one::<i64, f32>();
+  let small_value = small_integer::<i8>();
+  if zero_value != 0_i64 {
+    return exit_status(code: 5_u8);
+  }
+  if fne(one_value, 1.0_f32) {
+    return exit_status(code: 6_u8);
+  }
+  if small_value != 1_i8 {
+    return exit_status(code: 7_u8);
+  }
+  return exit_status(code: 0_u8);
+}

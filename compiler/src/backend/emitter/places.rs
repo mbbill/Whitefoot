@@ -58,6 +58,23 @@ pub(in crate::backend) fn returned_storage_slot(
 }
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
+    /// Preserve the logical index everywhere except address formation. A
+    /// zero-stride step uses zero even in facts-off emission, so the actual
+    /// GEP operand has an exact target-domain representation [STOR-6].
+    pub(super) fn element_address_index<'index>(
+        &self,
+        element: IrType,
+        index: &'index str,
+    ) -> Result<&'index str, BackendFailure> {
+        if crate::backend::target::element_has_zero_stride(self.target, self.program, element)
+            .map_err(BackendFailure::TargetLayout)?
+        {
+            Ok("0")
+        } else {
+            Ok(index)
+        }
+    }
+
     pub(super) fn emit_place_definition(
         &mut self,
         result: IrValueId,
@@ -333,6 +350,21 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         address: IrValueId,
         projection: &crate::IrPlaceStep,
     ) -> Result<(), BackendFailure> {
+        let pointer = self.projected_address_pointer(ty, address, projection)?;
+        writeln!(
+            self.output,
+            "  {} = getelementptr i8, ptr {pointer}, i64 0",
+            value_name(result)
+        )
+        .map_err(|_| BackendFailure::TextEmission)
+    }
+
+    pub(super) fn projected_address_pointer(
+        &mut self,
+        ty: IrType,
+        address: IrValueId,
+        projection: &crate::IrPlaceStep,
+    ) -> Result<String, BackendFailure> {
         let Some(IrType::Address(base)) = self.value_type(address) else {
             return Err(BackendFailure::InvalidIr);
         };
@@ -421,7 +453,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     "  %{pointer} = getelementptr inbounds {}, ptr {}, i64 0, i64 {}",
                     llvm_type(self.program, base.ty())?,
                     self.value_name(address),
-                    self.value_name(*offset)
+                    self.element_address_index(referent.ty(), &self.value_name(*offset))?
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
                 format!("%{pointer}")
@@ -433,7 +465,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 let IrType::Buffer { element } = base.ty() else {
                     return Err(BackendFailure::InvalidIr);
                 };
-                if element.ty() != referent.ty()
+                if self.program.element(element) != Some(referent.ty())
                     || *target_domain != IrTargetDomainObligation::ElementAddress
                     || self.value_type(*offset)
                         != Some(IrType::Integer {
@@ -451,12 +483,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 )?
             }
         };
-        writeln!(
-            self.output,
-            "  {} = getelementptr i8, ptr {pointer}, i64 0",
-            value_name(result)
-        )
-        .map_err(|_| BackendFailure::TextEmission)
+        Ok(pointer)
     }
 
     /// Resolve the binding's ordinary backing storage.
@@ -530,12 +557,24 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         // Keep the checked snapshot and its ordering, but do not expand an
         // aggregate into SSA fields merely to copy it. The target's allocated
         // type size includes representation padding and is not the source
-        // layout ceiling or a run's initialized length. memmove also preserves
-        // a snapshot when the proven places overlap and is a no-op at size zero.
-        self.intrinsics.insert(IntrinsicDeclaration::MemoryMove);
+        // layout ceiling or a run's initialized length. The closed OP-11 body
+        // copies only between its equal-or-disjoint reference targets and its
+        // private snapshots. Ordinary llvm.memcpy permits equal pointers (the
+        // stricter memcpy.inline does not), so it preserves same-place swap
+        // without withholding the proved exclusion of partial overlap. This
+        // grants no noalias attribute to swap's reference parameters.
+        // Other bodies may reuse overlapping aggregate result storage and keep
+        // memmove's snapshot semantics.
+        let operation = if aliasing_admitted_row(self.function.name()) {
+            self.intrinsics.insert(IntrinsicDeclaration::MemoryCopy);
+            "memcpy"
+        } else {
+            self.intrinsics.insert(IntrinsicDeclaration::MemoryMove);
+            "memmove"
+        };
         writeln!(
             self.output,
-            "  call void @llvm.memmove.p0.p0.i64(ptr {destination}, ptr {source}, i64 ptrtoint (ptr getelementptr ({llvm}, ptr null, i32 1) to i64), i1 false)"
+            "  call void @llvm.{operation}.p0.p0.i64(ptr {destination}, ptr {source}, i64 ptrtoint (ptr getelementptr ({llvm}, ptr null, i32 1) to i64), i1 false)"
         )
         .map_err(|_| BackendFailure::TextEmission)
     }

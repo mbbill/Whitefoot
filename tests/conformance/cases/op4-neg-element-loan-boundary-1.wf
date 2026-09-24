@@ -3,7 +3,7 @@ struct Row {
   right: u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "OP-4, REF-1: a reference into a window is formed under the ordinary subscript bound, and the index expression is evaluated where the reference is formed. Two rows were placed, so offset two is outside the window and the borrow expression's own obligation is undischarged.";
   let rows = slots_new::<Row, 4>();
   let first = Row(left: 3_u64, right: 4_u64);

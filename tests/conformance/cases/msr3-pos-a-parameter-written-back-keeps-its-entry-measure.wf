@@ -1,4 +1,4 @@
-fn rebuild(vector: own Slots<u8, 4>) -> result: own Slots<u8, 4> pure contract {
+fn rebuild(vector: Slots<u8, 4>) -> result: Slots<u8, 4> pure contract {
   requires vector.len == 1_u64;
   ensures result.len == vector.len + 1_u64;
 } {
@@ -10,7 +10,7 @@ fn rebuild(vector: own Slots<u8, 4>) -> result: own Slots<u8, 4> pure contract {
   return move vector;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "MSR-3: an own parameter's measure in ensures denotes the immutable entry datum, so it keeps meaning the incoming length even after a freshly constructed value is committed into that local binding, and at the caller it denotes this call's call datum. The result carries the new length through the rebind placement; the contract still relates it to the incoming one.";
   let input = slots_new::<u8, 4>();
   place_back(window: &input, value: 3_u8);

@@ -1,4 +1,4 @@
-fn split(value: own u64) -> (low: own u64, high: own u64) pure {
+fn split(value: u64) -> (low: u64, high: u64) pure {
   doc "Two declared results, so one call has two ordinals.";
   let half = value /checked 2_u64;
   match half {
@@ -11,7 +11,7 @@ fn split(value: own u64) -> (low: own u64, high: own u64) pure {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "CALL-4, GRAM-4: a call that declares two result ordinals lands them on a parenthesized let binder list, ordinal i at binder i, each binder taking that ordinal's written mode and type and becoming visible after the complete statement. A set no longer declares anything, because SET-1 requires a target already in scope, so the binder list is the one spelling that names two results.";
   let start = 8_u64;
   let (low, high) = split(value: start);

@@ -38,7 +38,7 @@ const literal_only_dynamic_input_bytes: Array<u8, 13> =[5_u8, 192_u8, 129_u8, 8_
 
 const dynamic_expected_bytes: Array<u8, 100> =[16_u8, 15_u8, 0_u8, 0_u8, 12_u8, 9_u8, 8_u8, 3_u8, 7_u8, 7_u8, 7_u8, 1_u8, 5_u8, 4_u8, 9_u8, 18_u8, 15_u8, 6_u8, 5_u8, 2_u8, 0_u8, 0_u8, 5_u8, 3_u8, 4_u8, 13_u8, 6_u8, 6_u8, 2_u8, 0_u8, 3_u8, 1_u8, 6_u8, 19_u8, 8_u8, 1_u8, 13_u8, 11_u8, 9_u8, 14_u8, 10_u8, 11_u8, 4_u8, 17_u8, 16_u8, 1_u8, 10_u8, 9_u8, 5_u8, 6_u8, 5_u8, 14_u8, 6_u8, 12_u8, 4_u8, 13_u8, 13_u8, 5_u8, 7_u8, 14_u8, 9_u8, 5_u8, 2_u8, 3_u8, 9_u8, 1_u8, 14_u8, 2_u8, 14_u8, 3_u8, 16_u8, 9_u8, 6_u8, 6_u8, 8_u8, 7_u8, 3_u8, 2_u8, 6_u8, 15_u8, 7_u8, 0_u8, 11_u8, 9_u8, 14_u8, 2_u8, 10_u8, 0_u8, 8_u8, 3_u8, 2_u8, 13_u8, 1_u8, 6_u8, 12_u8, 2_u8, 2_u8, 13_u8, 4_u8, 9_u8];
 
-fn error_code(error: own InflateError) -> result: own u8 pure {
+fn error_code(error: InflateError) -> result: u8 pure {
   match error {
     Truncated() => {
       return 1_u8;
@@ -64,7 +64,7 @@ fn error_code(error: own InflateError) -> result: own u8 pure {
   }
 }
 
-fn check_valid() -> result: own u8 pure {
+fn check_valid() -> result: u8 pure {
   doc "Two stored blocks decode to their five bytes.";
   let valid_output = slots_new::<u8, 5>();
   for @fill_valid_output (
@@ -123,7 +123,7 @@ fn check_valid() -> result: own u8 pure {
   return 0_u8;
 }
 
-fn check_invalid_length() -> result: own u8 pure {
+fn check_invalid_length() -> result: u8 pure {
   doc "A stored block whose complement does not match the length is refused and publishes nothing.";
   let invalid_length_output = slots_new::<u8, 1>();
   for @fill_invalid_length_output (
@@ -198,7 +198,7 @@ fn check_invalid_length() -> result: own u8 pure {
   return 0_u8;
 }
 
-fn check_truncated() -> result: own u8 pure {
+fn check_truncated() -> result: u8 pure {
   doc "A stored header that ends inside itself is refused and publishes nothing.";
   let truncated_output = slots_new::<u8, 2>();
   for @fill_truncated_output (
@@ -273,7 +273,7 @@ fn check_truncated() -> result: own u8 pure {
   return 0_u8;
 }
 
-fn check_full() -> result: own u8 pure {
+fn check_full() -> result: u8 pure {
   doc "A stored block larger than the destination is refused and publishes nothing.";
   let full_output = slots_new::<u8, 1>();
   for @fill_full_output (
@@ -348,7 +348,7 @@ fn check_full() -> result: own u8 pure {
   return 0_u8;
 }
 
-fn check_fixed_literal() -> result: own u8 pure {
+fn check_fixed_literal() -> result: u8 pure {
   doc "A fixed block of literals decodes to its five bytes.";
   let fixed_literal_output = slots_new::<u8, 5>();
   for @fill_fixed_literal_output (
@@ -407,7 +407,7 @@ fn check_fixed_literal() -> result: own u8 pure {
   return 0_u8;
 }
 
-fn check_fixed_match() -> result: own u8 pure {
+fn check_fixed_match() -> result: u8 pure {
   doc "A fixed block whose match repeats one byte fills the destination.";
   let fixed_match_output = slots_new::<u8, 16>();
   for @fill_fixed_match_output (
@@ -461,7 +461,7 @@ fn check_fixed_match() -> result: own u8 pure {
   return 0_u8;
 }
 
-fn check_fixed_phrase() -> result: own u8 pure {
+fn check_fixed_phrase() -> result: u8 pure {
   doc "A fixed block whose match repeats a phrase decodes to the recorded bytes.";
   let fixed_phrase_output = slots_new::<u8, 17>();
   for @fill_fixed_phrase_output (
@@ -516,7 +516,7 @@ fn check_fixed_phrase() -> result: own u8 pure {
   return 0_u8;
 }
 
-fn check_dynamic() -> result: own u8 pure {
+fn check_dynamic() -> result: u8 pure {
   doc "A dynamic block decodes to the recorded hundred bytes.";
   let dynamic_output = slots_new::<u8, 100>();
   for @fill_dynamic_output (
@@ -571,7 +571,7 @@ fn check_dynamic() -> result: own u8 pure {
   return 0_u8;
 }
 
-fn check_literal_only() -> result: own u8 pure {
+fn check_literal_only() -> result: u8 pure {
   doc "A dynamic block whose literal tree holds one symbol decodes to that byte.";
   let literal_only_output = slots_new::<u8, 1>();
   for @fill_literal_only_output (
@@ -610,7 +610,7 @@ fn check_literal_only() -> result: own u8 pure {
   return 0_u8;
 }
 
-fn check_dynamic_match() -> result: own u8 pure {
+fn check_dynamic_match() -> result: u8 pure {
   doc "A dynamic block whose matches repeat the recorded hundred bytes four times.";
   let dynamic_match_output = slots_new::<u8, 400>();
   for @fill_dynamic_match_output (
@@ -681,7 +681,7 @@ fn check_dynamic_match() -> result: own u8 pure {
   return 0_u8;
 }
 
-fn check_mixed_block() -> result: own u8 pure {
+fn check_mixed_block() -> result: u8 pure {
   doc "A dynamic block followed by a fixed block decodes to both parts.";
   let mixed_block_output = slots_new::<u8, 105>();
   for @fill_mixed_block_output (
@@ -766,7 +766,7 @@ fn check_mixed_block() -> result: own u8 pure {
   return 0_u8;
 }
 
-fn check_invalid_tree() -> result: own u8 pure {
+fn check_invalid_tree() -> result: u8 pure {
   doc "A dynamic block whose code lengths do not form a tree is refused.";
   let invalid_tree_output = slots_new::<u8, 1>();
   for @fill_invalid_tree_output (
@@ -796,7 +796,7 @@ fn check_invalid_tree() -> result: own u8 pure {
   return 0_u8;
 }
 
-fn check_dynamic_truncated() -> result: own u8 pure {
+fn check_dynamic_truncated() -> result: u8 pure {
   doc "A dynamic block whose stream ends inside the code lengths is refused.";
   let dynamic_truncated_output = slots_new::<u8, 100>();
   for @fill_dynamic_truncated_output (
@@ -826,7 +826,7 @@ fn check_dynamic_truncated() -> result: own u8 pure {
   return 0_u8;
 }
 
-fn check_dynamic_full() -> result: own u8 pure {
+fn check_dynamic_full() -> result: u8 pure {
   doc "A dynamic block larger than the destination is refused.";
   let dynamic_full_output = slots_new::<u8, 99>();
   for @fill_dynamic_full_output (
@@ -856,7 +856,7 @@ fn check_dynamic_full() -> result: own u8 pure {
   return 0_u8;
 }
 
-fn check_reserved_block() -> result: own u8 pure {
+fn check_reserved_block() -> result: u8 pure {
   doc "The reserved block type is refused.";
   let reserved_block_output = slots_new::<u8, 1>();
   for @fill_reserved_block_output (
@@ -886,7 +886,7 @@ fn check_reserved_block() -> result: own u8 pure {
   return 0_u8;
 }
 
-fn check_fixed_truncated() -> result: own u8 pure {
+fn check_fixed_truncated() -> result: u8 pure {
   doc "A fixed block whose stream ends inside a code is refused.";
   let fixed_truncated_output = slots_new::<u8, 5>();
   for @fill_fixed_truncated_output (
@@ -916,7 +916,7 @@ fn check_fixed_truncated() -> result: own u8 pure {
   return 0_u8;
 }
 
-fn check_invalid_huffman() -> result: own u8 pure {
+fn check_invalid_huffman() -> result: u8 pure {
   doc "A fixed block holding no admissible code is refused.";
   let invalid_huffman_output = slots_new::<u8, 1>();
   for @fill_invalid_huffman_output (
@@ -946,7 +946,7 @@ fn check_invalid_huffman() -> result: own u8 pure {
   return 0_u8;
 }
 
-fn check_invalid_distance() -> result: own u8 pure {
+fn check_invalid_distance() -> result: u8 pure {
   doc "A fixed block naming a distance before the history is refused.";
   let invalid_distance_output = slots_new::<u8, 3>();
   for @fill_invalid_distance_output (
@@ -976,7 +976,7 @@ fn check_invalid_distance() -> result: own u8 pure {
   return 0_u8;
 }
 
-fn check_fixed_full() -> result: own u8 pure {
+fn check_fixed_full() -> result: u8 pure {
   doc "A fixed block larger than the destination is refused.";
   let fixed_full_output = slots_new::<u8, 4>();
   for @fill_fixed_full_output (
@@ -1006,7 +1006,7 @@ fn check_fixed_full() -> result: own u8 pure {
   return 0_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Runs the recorded raw DEFLATE vectors, one case per function: every compressed input is a const table reached through a range reference, and every destination is one inline Slots window of its own frame, written through a range reference and read back afterwards.";
   let valid_status = check_valid();
   if valid_status == 0_u8 {

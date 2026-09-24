@@ -1,4 +1,4 @@
-fn write(out: &Slots<u8, 8>) -> result: own unit writes(out) {
+fn write(out: &Slots<u8, 8>) -> result: unit writes(out) {
   doc "Writes one element behind its reference parameter; writes(out) subsumes reads(out), so the pair is never written for one path [EFF-1].";
   let spare = deref(out).len;
   let ok = 0_u64 < spare;
@@ -8,13 +8,13 @@ fn write(out: &Slots<u8, 8>) -> result: own unit writes(out) {
   return unit;
 }
 
-fn proxy(out: &Slots<u8, 8>) -> result: own unit writes(out) {
+fn proxy(out: &Slots<u8, 8>) -> result: unit writes(out) {
   doc "Forwarding the reference preserves the callee row exactly: EFF-5 substitutes the actual path and the forwarded row is the same one [EFF-2].";
   write(out: out);
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "No construction is needed to exercise the forwarded row.";
   return exit_status(code: 0_u8);
 }

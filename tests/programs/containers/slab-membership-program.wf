@@ -1,0 +1,260 @@
+struct MembershipValue {
+  id: u64;
+}
+
+struct MembershipReads {
+  calls: u64;
+}
+
+struct MembershipCleanup {
+  count: u64;
+  total: u64;
+}
+
+struct MembershipStore {
+  objects: Slab<Box<MembershipValue>, 1, 1>;
+  first: Option<SlabHandle>;
+  second: Option<SlabHandle>;
+}
+
+fn membership_visit(env: &MembershipReads, value: &Box<MembershipValue>) -> result: u64 reads(value.inner.id), writes(env.calls) {
+  set deref(env).calls = deref(env).calls +wrap 1_u64;
+  return deref(value).inner.id;
+}
+
+binding MembershipVisit : SlabVisit<Box<MembershipValue>, MembershipReads, u64> {
+  visit = membership_visit;
+}
+
+fn membership_consume(env: &MembershipCleanup, value: Box<MembershipValue>) -> result: unit writes(env.count), writes(env.total) {
+  set deref(env).count = deref(env).count +wrap 1_u64;
+  set deref(env).total = deref(env).total +wrap value.inner.id;
+  return unit;
+}
+
+binding MembershipConsume : SlabConsume<Box<MembershipValue>, MembershipCleanup> {
+  consume = membership_consume;
+}
+
+fn membership_read(slab: &Slab<Box<MembershipValue>, 1, 1>, handle: SlabHandle) -> id: u64 reads(slab) {
+  doc "The fixture uses nonzero IDs. Zero means expiry; the maximal value distinguishes an incorrect callback count from expiry or an observed ID.";
+  let env = MembershipReads(calls: 0_u64);
+  let found = slab_visit::<MembershipVisit, 1, 1>(slab: slab, handle: handle, env: &env);
+  match found {
+    Ok(value: id) => {
+      if env.calls == 1_u64 {
+        return id;
+      }
+      return 18446744073709551615_u64;
+    }
+    Err(error: absent) => {
+      if env.calls == 0_u64 {
+        return 0_u64;
+      }
+      return 18446744073709551615_u64;
+    }
+  }
+}
+
+fn membership_try_delete(store: &MembershipStore, handle: SlabHandle) -> outcome: Result<Option<Box<MembershipValue>>, unit> reads(store.first), reads(store.second), writes(store.objects) {
+  doc "This one-object composite owns both indexes and refuses deletion while either membership remains. Its ordinary fields and constructors are not unforgeable; the fixture verifies this protocol, not every separately authored mutation of MembershipStore.";
+  match deref(store).first {
+    Some(value: held) => {
+      return Err<Option<Box<MembershipValue>>, unit>(error: unit);
+    }
+    None() => {
+    }
+  }
+  match deref(store).second {
+    Some(value: held) => {
+      return Err<Option<Box<MembershipValue>>, unit>(error: unit);
+    }
+    None() => {
+    }
+  }
+  let removed = slab_remove::<Box<MembershipValue>, 1, 1>(slab: &deref(store).objects, handle: handle);
+  return Ok<Option<Box<MembershipValue>>, unit>(value: move removed);
+}
+
+fn membership_weak_indexes() -> code: u64 pure {
+  doc "Two one-entry indexes share an ordinary generational handle. Removing one index preserves the other reader, but deleting the central owner expires remaining indexes; reusing its slot never revives the old generation.";
+  let slab = slab_new::<Box<MembershipValue>, 1, 1>(capacity: 1_u64);
+  let item = MembershipValue(id: 101_u64);
+  let owner = box_new::<MembershipValue>(value: item);
+  let inserted = slab_insert::<Box<MembershipValue>, 1, 1>(slab: &slab, value: move owner);
+  let handle = match move inserted {
+    Ok(value: made) => {
+      give made;
+    }
+    Err(error: refused) => {
+      return 1_u64;
+    }
+  }
+  let first = Some<SlabHandle>(value: handle);
+  let second = first;
+  set first = None<SlabHandle>();
+  match first {
+    Some(value: unexpected) => {
+      return 2_u64;
+    }
+    None() => {
+    }
+  }
+  let remaining = match second {
+    Some(value: present) => {
+      give present;
+    }
+    None() => {
+      return 3_u64;
+    }
+  }
+  let found = membership_read(slab: &slab, handle: remaining);
+  if found != 101_u64 {
+    return 4_u64;
+  }
+  let outside = SlabHandle(index: 1_u64, generation: 0_u64);
+  let outside_value = membership_read(slab: &slab, handle: outside);
+  if outside_value != 0_u64 {
+    return 5_u64;
+  }
+  let wrong_generation = SlabHandle(index: handle.index, generation: 1_u64);
+  let wrong_value = membership_read(slab: &slab, handle: wrong_generation);
+  if wrong_value != 0_u64 {
+    return 6_u64;
+  }
+  let removed = slab_remove::<Box<MembershipValue>, 1, 1>(slab: &slab, handle: handle);
+  match move removed {
+    Some(value: old) => {
+      if old.inner.id != 101_u64 {
+        return 7_u64;
+      }
+    }
+    None() => {
+      return 8_u64;
+    }
+  }
+  let expired = membership_read(slab: &slab, handle: remaining);
+  if expired != 0_u64 {
+    return 9_u64;
+  }
+  let next_item = MembershipValue(id: 202_u64);
+  let next_owner = box_new::<MembershipValue>(value: next_item);
+  let replacement = slab_insert::<Box<MembershipValue>, 1, 1>(slab: &slab, value: move next_owner);
+  let next_handle = match move replacement {
+    Ok(value: made) => {
+      give made;
+    }
+    Err(error: refused) => {
+      return 10_u64;
+    }
+  }
+  if next_handle.index != handle.index {
+    return 11_u64;
+  }
+  if next_handle.generation != 1_u64 {
+    return 12_u64;
+  }
+  let still_expired = membership_read(slab: &slab, handle: remaining);
+  if still_expired != 0_u64 {
+    return 13_u64;
+  }
+  let replacement_value = membership_read(slab: &slab, handle: next_handle);
+  if replacement_value != 202_u64 {
+    return 14_u64;
+  }
+  let cleanup = MembershipCleanup(count: 0_u64, total: 0_u64);
+  slab_free::<MembershipConsume, 1, 1>(slab: move slab, env: &cleanup);
+  if cleanup.count != 1_u64 {
+    return 15_u64;
+  }
+  if cleanup.total != 202_u64 {
+    return 16_u64;
+  }
+  return 0_u64;
+}
+
+fn membership_retained_indexes() -> code: u64 pure {
+  doc "Deleting this composite's sole object is Busy with two memberships and still Busy after removing one; the remaining index reads the same object. Deletion succeeds only after the final membership retires.";
+  let slab = slab_new::<Box<MembershipValue>, 1, 1>(capacity: 1_u64);
+  let item = MembershipValue(id: 303_u64);
+  let owner = box_new::<MembershipValue>(value: item);
+  let inserted = slab_insert::<Box<MembershipValue>, 1, 1>(slab: &slab, value: move owner);
+  let handle = match move inserted {
+    Ok(value: made) => {
+      give made;
+    }
+    Err(error: refused) => {
+      return 21_u64;
+    }
+  }
+  let index = Some<SlabHandle>(value: handle);
+  let store = MembershipStore(objects: move slab, first: index, second: index);
+  let twice_held = membership_try_delete(store: &store, handle: handle);
+  match move twice_held {
+    Ok(value: unexpected) => {
+      return 22_u64;
+    }
+    Err(error: busy) => {
+    }
+  }
+  set store.first = None<SlabHandle>();
+  let remaining = match store.second {
+    Some(value: present) => {
+      give present;
+    }
+    None() => {
+      return 23_u64;
+    }
+  }
+  let found = membership_read(slab: &store.objects, handle: remaining);
+  if found != 303_u64 {
+    return 24_u64;
+  }
+  let once_held = membership_try_delete(store: &store, handle: handle);
+  match move once_held {
+    Ok(value: unexpected) => {
+      return 25_u64;
+    }
+    Err(error: busy) => {
+    }
+  }
+  set store.second = None<SlabHandle>();
+  let unheld = membership_try_delete(store: &store, handle: handle);
+  match move unheld {
+    Ok(value: removed) => {
+      match move removed {
+        Some(value: old) => {
+          if old.inner.id != 303_u64 {
+            return 26_u64;
+          }
+        }
+        None() => {
+          return 27_u64;
+        }
+      }
+    }
+    Err(error: unexpected) => {
+      return 28_u64;
+    }
+  }
+  let expired = membership_read(slab: &store.objects, handle: remaining);
+  if expired != 0_u64 {
+    return 29_u64;
+  }
+  let MembershipStore(objects: empty, first: first, second: second) = move store;
+  let cleanup = MembershipCleanup(count: 0_u64, total: 0_u64);
+  slab_free::<MembershipConsume, 1, 1>(slab: move empty, env: &cleanup);
+  if cleanup.count != 0_u64 {
+    return 30_u64;
+  }
+  return 0_u64;
+}
+
+fn slab_membership_checks() -> code: u64 pure {
+  let weak = membership_weak_indexes();
+  if weak != 0_u64 {
+    return weak;
+  }
+  let retained = membership_retained_indexes();
+  return retained;
+}

@@ -1,0 +1,120 @@
+--- a/sparse-map.wf
++++ b/sparse-map.wf
+@@ -396,40 +396,91 @@
+     sparse_map_canonicalize::<K, V>(cells: cells, index: index);
+   }
+   return unit;
++}
++
++fn sparse_map_is_available<K, V>(slot: &SparseSlot<K, V>) -> result: Bool reads(slot) {
++  match deref(slot) {
++    SparseVacant() => {
++      return True();
++    }
++    SparseDeleted() => {
++      return True();
++    }
++    SparseFilled(key: saved_key, value: saved_value) => {
++      return False();
++    }
++  }
+ }
+
+ fn sparse_map_rebuild<interface SparseKey<K, E>, V, const ceiling: u64>(map: &SparseMap<K, V, ceiling>, capacity: u64, env: &E) -> result: Result<unit, unit> reads(env), writes(map) contract {
+   requires ceiling <= 2305843009213693951_u64;
+-  ensures deref(map).cells.inner.len >= deref(entry(map)).cells.inner.len;
+ } {
+-  doc "The conditional per-cell helper publishes a length-preserving postcondition on every loop iteration. It does not transfer a filled or already vacant payload; only actual tombstones take the canonicalization path.";
++  doc "Direct migration keeps the original enum buckets and uses one temporary inline one-slot window for a pending pair. Refusal precedes owner mutation. Every exchange result has useful behavior: Inserted empties the staging window; Replaced and Full restore their complete returned owner for retry. Each attempt hashes the current staged key and probes only occupancy, never equality. With at most the old bucket count of owners and at least that many fresh destinations, each retained owner reaches a vacant bucket in one capacity-bounded scan. No global occupancy fact authorizes a discard or a partial operation.";
+   if capacity > ceiling {
+     return Err<unit, unit>(error: unit);
+   }
+-  let count = deref(map).cells.inner.len;
+-  if capacity < count {
++  let old_count = deref(map).cells.inner.len;
++  if capacity < old_count {
+     return Err<unit, unit>(error: unit);
+   }
+-  let (plan, complete) = sparse_map_plan::<SparseKey<K, E>, V, ceiling>(cells: &deref(map).cells, capacity: capacity, env: env);
+-  if complete {
+-    sparse_map_extend::<K, V, ceiling>(cells: &deref(map).cells, target: capacity);
+-    for (
+-      index in 0_u64..count,
+-      invariant rebuilt_extent: deref(map).cells.inner.len == capacity,
+-      invariant planned_extent: plan.inner.len == capacity
+-    ) {
+-      sparse_map_clear_deleted::<K, V>(cells: &deref(map).cells, index: index);
+-    }
+-    invariant ready_extent: plan.inner.len == deref(map).cells.inner.len;
+-    sparse_map_apply::<K, V>(cells: &deref(map).cells, destinations: &plan);
++  if capacity == 0_u64 {
+     return Ok<unit, unit>(value: unit);
+   }
+-  return Err<unit, unit>(error: unit);
++  let previous = box_slots_new::<SparseSlot<K, V>>(capacity: capacity);
++  sparse_map_extend::<K, V, ceiling>(cells: &previous, target: capacity);
++  swap(first: &deref(map).cells, second: &previous);
++  loop @old_cells {
++    if previous.inner.len == 0_u64 {
++      break @old_cells;
++    }
++    let slot = take_back(window: &previous.inner);
++    match slot {
++      SparseVacant() => {
++      }
++      SparseDeleted() => {
++      }
++      SparseFilled(key: saved_key, value: saved_value) => {
++        let pending = slots_new::<SparsePair<K, V>, 1>();
++        let initial = SparsePair<K, V>(key: move saved_key, value: move saved_value);
++        place_back(window: &pending, value: move initial);
++        loop @owner {
++          if pending.len == 0_u64 {
++            break @owner;
++          }
++          let hash = SparseKey::hash(env: env, key: &pending[0_u64].key);
++          let count = deref(map).cells.inner.len;
++          for @vacancy (step in 0_u64..count) {
++            let home = hash % count;
++            let index = sparse_map_probe(home: home, step: step, count: count);
++            let available = sparse_map_is_available::<K, V>(slot: &deref(map).cells.inner[index]);
++            if available {
++              let offered = take_back(window: &pending);
++              let SparsePair(key: offered_key, value: offered_value) = move offered;
++              let exchanged = sparse_map_exchange::<K, V>(cells: &deref(map).cells, index: index, key: move offered_key, value: move offered_value);
++              match exchanged {
++                SparseInserted() => {
++                }
++                SparseReplaced(previous: displaced_pair) => {
++                  place_back(window: &pending, value: move displaced_pair);
++                }
++                SparseFull(offered: returned_pair) => {
++                  place_back(window: &pending, value: move returned_pair);
++                }
++              }
++              break @vacancy;
++            }
++          }
++        }
++        free_empty(window: move pending);
++      }
++    }
++  }
++  free_empty(window: move previous);
++  return Ok<unit, unit>(value: unit);
+ }
+
+ fn sparse_map_reserve<interface SparseKey<K, E>, V, const ceiling: u64>(map: &SparseMap<K, V, ceiling>, capacity: u64, env: &E) -> result: Result<unit, unit> reads(env), writes(map) contract {
+   requires ceiling <= 2305843009213693951_u64;
+-  ensures deref(map).cells.inner.len >= deref(entry(map)).cells.inner.len;
+ } {
+   if capacity > ceiling {
+     return Err<unit, unit>(error: unit);
+@@ -443,7 +494,6 @@
+
+ fn sparse_map_rehash<interface SparseKey<K, E>, V, const ceiling: u64>(map: &SparseMap<K, V, ceiling>, env: &E) -> result: Result<unit, unit> reads(env), writes(map) contract {
+   requires ceiling <= 2305843009213693951_u64;
+-  ensures deref(map).cells.inner.len >= deref(entry(map)).cells.inner.len;
+ } {
+   let capacity = deref(map).cells.inner.len;
+   let rebuilt = sparse_map_rebuild::<SparseKey<K, E>, V, ceiling>(map: map, capacity: capacity, env: env);

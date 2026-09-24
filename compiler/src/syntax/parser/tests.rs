@@ -48,7 +48,7 @@ fn bundle(inputs: &[SourceInput<'_>]) -> SourceBundle {
 #[test]
 fn minimal_function_and_multi_source_items_form_one_program_root() {
     let inputs = [
-        SourceInput::new("one.wf", b"fn main() -> result: own unit pure {}"),
+        SourceInput::new("one.wf", b"fn main() -> result: unit pure {}"),
         SourceInput::new("two.wf", b"const answer: i32 = 42_i32;"),
     ];
     let bundle = bundle(&inputs);
@@ -73,11 +73,11 @@ fn minimal_function_and_multi_source_items_form_one_program_root() {
 #[test]
 fn ordered_sources_report_the_first_invalid_record() {
     let inputs = [
-        SourceInput::new("first.wf", b"fn main() -> result: own unit pure {}"),
+        SourceInput::new("first.wf", b"fn main() -> result: unit pure {}"),
         SourceInput::new("second.wf", b"unknown value"),
         SourceInput::new(
             "third.wf",
-            b"fn later() -> result: own unit pure { object.member(); }",
+            b"fn later() -> result: unit pure { object.member(); }",
         ),
     ];
     let bundle = bundle(&inputs);
@@ -103,7 +103,7 @@ fn shared_prefix_expression_forms_select_without_priority_or_backtracking() {
     let source = br#"
 struct Value { field: i32; }
 enum Choice { Some(value: i32); }
-fn main() -> result: own unit pure {
+fn main() -> result: unit pure {
 let atom = 0_i32;
 let positional = user(atom);
 let named = user(arg: atom);
@@ -145,7 +145,7 @@ return unit;
 /// index or range position supplied as an argument [EFF-1], an unqualified
 /// `&place` with no permission or region marker [REF-1], and a destructuring
 /// consume's trailing rest marker [PROV-6]. The complete fixture below
-/// exercises all 86 productions at once; this case is the narrow one that
+/// exercises all 85 productions at once; this case is the narrow one that
 /// says which forms are new, so a later amendment that drops one fails here
 /// with its name rather than on a count.
 #[test]
@@ -153,8 +153,8 @@ fn every_form_the_amendment_adds_parses() {
     let source = br#"
 program no_heap;
 struct Header { readonly len: u64; head: u64; }
-fn window(run: &Slots<i32, 4>, part: &[i32], node: &Tree, lo: own u64, hi: own u64)
--> result: own unit reads(node.Some.value), writes(part[lo..hi]), writes(run[lo])
+fn window(run: &Slots<i32, 4>, part: &[i32], node: &Tree, lo: u64, hi: u64)
+-> result: unit reads(node.Some.value), writes(part[lo..hi]), writes(run[lo])
 {
 let whole = &run[lo..hi];
 let element = &run[lo];
@@ -211,7 +211,7 @@ return unit;
 #[test]
 fn bare_angle_after_a_name_is_a_comparison_and_type_application_needs_its_delimiter() {
     let source = br#"
-fn main() -> result: own unit pure {
+fn main() -> result: unit pure {
 let lt = atom < other;
 let gt = atom > other;
 let le = atom <= other;
@@ -241,7 +241,7 @@ return unit;
     );
 
     let undelimited =
-        b"fn main() -> result: own unit pure {\nlet bad = user<i32>(atom);\nreturn unit;\n}\n";
+        b"fn main() -> result: unit pure {\nlet bad = user<i32>(atom);\nreturn unit;\n}\n";
     let inputs = [SourceInput::new("undelimited.wf", undelimited)];
     let attached = bundle(&inputs);
     let LexOutcome::Complete(lexed) = lex(&attached, LEX_LIMITS) else {
@@ -316,7 +316,7 @@ fn unknown_ident_construct_uses_closed_form1_override() {
 
 #[test]
 fn dotted_call_spelling_uses_bounded_form3_override() {
-    let source = b"fn main() -> result: own unit pure { object.member(); }";
+    let source = b"fn main() -> result: unit pure { object.member(); }";
     let inputs = [SourceInput::new("dotted.wf", source)];
     let bundle = bundle(&inputs);
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
@@ -340,7 +340,7 @@ fn dotted_call_spelling_uses_bounded_form3_override() {
 
 #[test]
 fn nested_call_in_atom_only_argument_uses_gram9_override() {
-    let source = b"fn main() -> result: own unit pure { outer(inner()); }";
+    let source = b"fn main() -> result: unit pure { outer(inner()); }";
     let inputs = [SourceInput::new("nested.wf", source)];
     let bundle = bundle(&inputs);
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
@@ -367,7 +367,7 @@ fn nested_call_in_atom_only_argument_uses_gram9_override() {
 fn mandatory_name_and_numeric_pattern_mismatches_keep_their_owners() {
     for (source, expected_rule) in [
         (
-            b"fn struct() -> result: own unit pure {}".as_slice(),
+            b"fn struct() -> result: unit pure {}".as_slice(),
             SyntaxRule::Form3,
         ),
         (
@@ -410,7 +410,7 @@ fn item_head_with_a_wrong_name_shape_is_a_name_slot_mismatch() {
     // offending name token.
     for (source, name) in [
         (
-            b"fn Main() -> result: own unit pure {}".as_slice(),
+            b"fn Main() -> result: unit pure {}".as_slice(),
             b"Main".as_slice(),
         ),
         (b"enum sign { Neg(); }".as_slice(), b"sign".as_slice()),
@@ -491,7 +491,7 @@ fn fixed_word_program_leftover_is_a_grammar_shape_mismatch() {
 fn element_limit_is_explicit_and_failure_atomic() {
     let inputs = [SourceInput::new(
         "main.wf",
-        b"fn main() -> result: own unit pure {}",
+        b"fn main() -> result: unit pure {}",
     )];
     let bundle = bundle(&inputs);
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
@@ -539,7 +539,7 @@ fn envelope_and_each_control_stack_limit_are_distinct() {
 
     let inputs = [SourceInput::new(
         "main.wf",
-        b"fn main() -> result: own unit pure {}",
+        b"fn main() -> result: unit pure {}",
     )];
     let source_bundle = bundle(&inputs);
     let LexOutcome::Complete(lexed) = lex(&source_bundle, LEX_LIMITS) else {
@@ -588,7 +588,7 @@ fn envelope_and_each_control_stack_limit_are_distinct() {
 fn sufficient_limits_produce_identical_derivation_metrics() {
     let inputs = [SourceInput::new(
         "main.wf",
-        b"fn main() -> result: own unit pure { let x = unit; return x; }",
+        b"fn main() -> result: unit pure { let x = unit; return x; }",
     )];
     let bundle = bundle(&inputs);
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
@@ -634,23 +634,23 @@ nodrop struct Lease { doc "lease"; slot: u8; }
 nodrop enum Ticket { doc "ticket"; Open(value: u8); }
 interface Behavior<T: drop> {
 doc "interface";
-fn member(x: own T, part: &[u8]) -> result: own T reads(part), writes(part);
+fn member(x: T, part: &[u8]) -> result: T reads(part), writes(part);
 }
 binding Selected : Behavior<Name<T>> { doc "binding"; member = implementation::<fn other>; }
-fn forwarded<interface Behavior<K>, fn operation(value: own K) -> result: own K pure>() -> result: own unit pure {
+fn forwarded<interface Behavior<K>, fn operation(value: K) -> result: K pure>() -> result: unit pure {
 Behavior<K>::member(x: unit);
 return unit;
 }
 const zero: i32 = 0_i32;
 const alias: i32 = zero;
 const table: Array<i32, 2> =[0_i32, zero];
-fn stored_entry(arguments: own i32, directory: own i32)
--> result: own unit pure
+fn stored_entry(arguments: i32, directory: i32)
+-> result: unit pure
 {
 return unit;
 }
-fn everything<T: drop, S>(x: own i32, shared: &i32, run: &Slots<i32, 4>, part: &[i32])
--> result: own unit reads(shared), reads(handle.Some.value), writes(run[index]), writes(part[lo..hi])
+fn everything<T: drop, S>(x: i32, shared: &i32, run: &Slots<i32, 4>, part: &[i32])
+-> result: unit reads(shared), reads(handle.Some.value), writes(run[index]), writes(part[lo..hi])
 contract {
 define pre = 0_i32 +wrap 1_i32;
 define post = 0_i32 +wrap 1_i32;
@@ -695,7 +695,7 @@ let Name(value: destructured, ..) = move made;
 match ordinary { Some(value: payload) => { give payload; } }
 if compared { let then_branch = ordinary; } else if chosen { break @again; } else { return unit; }
 }
-fn main() -> result: own unit pure {}
+fn main() -> result: unit pure {}
 "#;
     let inputs = [SourceInput::new("all.wf", source)];
     let bundle = bundle(&inputs);
@@ -722,7 +722,7 @@ fn main() -> result: own unit pure {}
         });
         assert!(present, "fixture omitted {production:?}");
     }
-    assert_eq!(productions().len(), 86);
+    assert_eq!(productions().len(), 85);
     assert_eq!(
         parsed
             .tree
@@ -752,34 +752,32 @@ fn main() -> result: own unit pure {}
 }
 
 const ORDINARY_INPUTS_ENTRY: &[u8] =
-    b"fn main(inputs: own Inputs) -> status: own ExitStatus pure {\n  return unit;\n}\n";
+    b"fn main(inputs: Inputs) -> status: ExitStatus pure {\n  return unit;\n}\n";
 
-const EXTERNAL_EFFECT_ROW: &[u8] =
-    b"fn probe() -> result: own unit external {\n  return unit;\n}\n";
+const EXTERNAL_EFFECT_ROW: &[u8] = b"fn probe() -> result: unit external {\n  return unit;\n}\n";
 
-const BLOCKS_EFFECT_ROW: &[u8] = b"fn probe() -> result: own unit blocks {\n  return unit;\n}\n";
+const BLOCKS_EFFECT_ROW: &[u8] = b"fn probe() -> result: unit blocks {\n  return unit;\n}\n";
 
-const RETIRED_TRAPS_EFFECT_ROW: &[u8] =
-    b"fn probe() -> result: own unit traps {\n  return unit;\n}\n";
+const RETIRED_TRAPS_EFFECT_ROW: &[u8] = b"fn probe() -> result: unit traps {\n  return unit;\n}\n";
 
 const FREED_SPELLINGS_AS_IDENTIFIERS: &[u8] =
-    b"fn external(blocks: own unit) -> result: own unit pure {\n  return blocks;\n}\n";
+    b"fn external(blocks: unit) -> result: unit pure {\n  return blocks;\n}\n";
 
-const RETIRED_CLAIM_STATEMENT: &[u8] = b"fn probe() -> result: own unit pure {\n  let flag = True();\n  claim held: flag because \"retired\";\n  return unit;\n}\n";
+const RETIRED_CLAIM_STATEMENT: &[u8] = b"fn probe() -> result: unit pure {\n  let flag = True();\n  claim held: flag because \"retired\";\n  return unit;\n}\n";
 
-const RETIRED_SPELLINGS_AS_IDENTIFIERS: &[u8] = b"fn probe(claim: own i32, because: own i32, deny_claims: own i32, traps: own i32, trap: own i32) -> result: own i32 pure {\n  let total = claim +wrap because;\n  let staged = total +wrap deny_claims;\n  let finished = staged +wrap traps;\n  return finished +wrap trap;\n}\n";
+const RETIRED_SPELLINGS_AS_IDENTIFIERS: &[u8] = b"fn probe(claim: i32, because: i32, deny_claims: i32, traps: i32, trap: i32) -> result: i32 pure {\n  let total = claim +wrap because;\n  let staged = total +wrap deny_claims;\n  let finished = staged +wrap traps;\n  return finished +wrap trap;\n}\n";
 
 const RETIRED_DENY_CLAIMS_MARKER: &[u8] =
-    b"deny_claims fn probe() -> result: own unit pure {\n  return unit;\n}\n";
+    b"deny_claims fn probe() -> result: unit pure {\n  return unit;\n}\n";
 
 const BODY_CHECK_STATEMENT: &[u8] =
-    b"fn probe() -> result: own unit pure {\n  let flag = True();\n  check flag;\n  return unit;\n}\n";
+    b"fn probe() -> result: unit pure {\n  let flag = True();\n  check flag;\n  return unit;\n}\n";
 
-const UNIFIED_CONTRACT: &[u8] = b"fn probe(value: own i32) -> result: own i32 pure contract {\n  define admitted = value == value;\n  requires admitted;\n  ensures result == value;\n} {\n  return value;\n}\n";
+const UNIFIED_CONTRACT: &[u8] = b"fn probe(value: i32) -> result: i32 pure contract {\n  define admitted = value == value;\n  requires admitted;\n  ensures result == value;\n} {\n  return value;\n}\n";
 
-const COUNTED_RANGE_STATEMENT: &[u8] = b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (\n    index in lower..upper,\n    invariant limit: index + 1_u64 * (1_u64) <= upper\n  ) {\n    break @range;\n  }\n  return unit;\n}\n";
+const COUNTED_RANGE_STATEMENT: &[u8] = b"fn probe(lower: u64, upper: u64) -> result: unit pure {\n  for @range (\n    index in lower..upper,\n    invariant limit: index + 1_u64 * (1_u64) <= upper\n  ) {\n    break @range;\n  }\n  return unit;\n}\n";
 
-const LOCAL_INVARIANT_STATEMENT: &[u8] = b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant ordered: left + 1_i32 <= right + 1_i32 {\n    use 2 times (left <= right);\n    use prior_order;\n  }\n  return unit;\n}\n";
+const LOCAL_INVARIANT_STATEMENT: &[u8] = b"fn probe(left: i32, right: i32) -> result: unit pure {\n  invariant ordered: left + 1_i32 <= right + 1_i32 {\n    use 2 times (left <= right);\n    use prior_order;\n  }\n  return unit;\n}\n";
 
 fn parse_active(
     name: &'static str,
@@ -991,7 +989,7 @@ fn active_contract_parses_and_finalizes_a_local_invariant_certificate() {
 
 #[test]
 fn retired_prove_spelling_is_an_identifier_but_use_remains_reserved() {
-    let ordinary = b"fn prove() -> result: own unit pure {\n  return unit;\n}\n";
+    let ordinary = b"fn prove() -> result: unit pure {\n  return unit;\n}\n";
     assert!(
         matches!(
             parse_active("ordinary-prove.wf", ordinary),
@@ -1000,8 +998,7 @@ fn retired_prove_spelling_is_an_identifier_but_use_remains_reserved() {
         "the retired prove keyword must return to IDENT"
     );
 
-    let reserved =
-        b"fn probe() -> result: own unit pure {\n  let use = 0_i32;\n  return unit;\n}\n";
+    let reserved = b"fn probe() -> result: unit pure {\n  let use = 0_i32;\n  return unit;\n}\n";
     let ParseOutcome::SourceIssue(issue) = parse_active("reserved-use.wf", reserved) else {
         panic!("use must remain excluded from IDENT");
     };
@@ -1012,28 +1009,28 @@ fn retired_prove_spelling_is_an_identifier_but_use_remains_reserved() {
 fn malformed_local_invariant_certificates_stop_at_their_first_grammar_boundary() {
     for (source, boundary) in [
         (
-            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant empty: left <= right {\n  }\n  return unit;\n}\n".as_slice(),
+            b"fn probe(left: i32, right: i32) -> result: unit pure {\n  invariant empty: left <= right {\n  }\n  return unit;\n}\n".as_slice(),
             b"}".as_slice(),
         ),
         (
-            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant missing_semicolon: left <= right {\n    use (left <= right)\n  }\n  return unit;\n}\n",
+            b"fn probe(left: i32, right: i32) -> result: unit pure {\n  invariant missing_semicolon: left <= right {\n    use (left <= right)\n  }\n  return unit;\n}\n",
             b"}",
         ),
         (
             // A relation premise must be delimited: after `use IDENT` the only
             // continuations are `times` and `;`, so a bare relation stops at
             // its own operator rather than at the end of the block.
-            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant bare_relation: left <= right {\n    use left <= right;\n  }\n  return unit;\n}\n",
+            b"fn probe(left: i32, right: i32) -> result: unit pure {\n  invariant bare_relation: left <= right {\n    use left <= right;\n  }\n  return unit;\n}\n",
             b"<=",
         ),
         (
             // A relation with no operator: `left` completes an affine
             // expression and `right` can neither extend it nor open a block.
-            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant missing_operator: left right {\n    use (left <= right);\n  }\n  return unit;\n}\n",
+            b"fn probe(left: i32, right: i32) -> result: unit pure {\n  invariant missing_operator: left right {\n    use (left <= right);\n  }\n  return unit;\n}\n",
             b"right",
         ),
         (
-            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant missing_open: left <= right\n    use (left <= right);\n  }\n  return unit;\n}\n",
+            b"fn probe(left: i32, right: i32) -> result: unit pure {\n  invariant missing_open: left <= right\n    use (left <= right);\n  }\n  return unit;\n}\n",
             b"use",
         ),
         (
@@ -1042,18 +1039,18 @@ fn malformed_local_invariant_certificates_stop_at_their_first_grammar_boundary()
             // The grammar boundary here is the operator: `+wrap` is an
             // `infix_op` and is not one of the three affine operators, so it
             // can neither extend the expression nor stand as the relation.
-            b"fn probe(value: own i32, limit: own i32) -> result: own unit pure {\n  invariant affine_only: value <= limit {\n    use (value +wrap limit <= limit);\n  }\n  return unit;\n}\n",
+            b"fn probe(value: i32, limit: i32) -> result: unit pure {\n  invariant affine_only: value <= limit {\n    use (value +wrap limit <= limit);\n  }\n  return unit;\n}\n",
             b"+wrap",
         ),
         (
-            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  assert disguised: left <= right {\n    use (left <= right);\n  }\n  return unit;\n}\n",
+            b"fn probe(left: i32, right: i32) -> result: unit pure {\n  assert disguised: left <= right {\n    use (left <= right);\n  }\n  return unit;\n}\n",
             // `assert` remains a legal IDENT and therefore starts an
             // expression statement. `disguised` is the first token that
             // cannot continue that statement; the parser must stop there.
             b"disguised",
         ),
         (
-            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant disguised_premise: left <= right {\n    Bogus left <= right;\n  }\n  return unit;\n}\n",
+            b"fn probe(left: i32, right: i32) -> result: unit pure {\n  invariant disguised_premise: left <= right {\n    Bogus left <= right;\n  }\n  return unit;\n}\n",
             b"Bogus",
         ),
     ] {
@@ -1064,7 +1061,7 @@ fn malformed_local_invariant_certificates_stop_at_their_first_grammar_boundary()
         assert_eq!(issue_bytes(source, issue), boundary);
     }
 
-    let source = b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  use (left <= right);\n  return unit;\n}\n";
+    let source = b"fn probe(left: i32, right: i32) -> result: unit pure {\n  use (left <= right);\n  return unit;\n}\n";
     let outcome = parse_active("stray-use.wf", source);
     let ParseOutcome::SourceIssue(issue) = outcome else {
         panic!("a use step outside an invariant block must reject: {outcome:?}");
@@ -1077,7 +1074,7 @@ fn malformed_local_invariant_certificates_stop_at_their_first_grammar_boundary()
 fn loop_labels_and_break_labels_are_independently_optional() {
     let outcome = parse_active(
         "optional-loop-labels.wf",
-        br#"fn probe() -> result: own unit pure {
+        br#"fn probe() -> result: unit pure {
   loop {
     break;
   }
@@ -1107,8 +1104,8 @@ fn loop_labels_and_break_labels_are_independently_optional() {
 #[test]
 fn counted_range_fixed_words_are_not_identifier_spellings() {
     for source in [
-        b"fn for() -> result: own unit pure {\n  return unit;\n}\n".as_slice(),
-        b"fn probe() -> result: own unit pure {\n  let in = 0_u64;\n  return unit;\n}\n",
+        b"fn for() -> result: unit pure {\n  return unit;\n}\n".as_slice(),
+        b"fn probe() -> result: unit pure {\n  let in = 0_u64;\n  return unit;\n}\n",
     ] {
         let ParseOutcome::SourceIssue(issue) = parse_active("reserved-range.wf", source) else {
             panic!("for/in must be excluded from IDENT");
@@ -1121,35 +1118,35 @@ fn counted_range_fixed_words_are_not_identifier_spellings() {
 fn malformed_counted_ranges_stop_at_their_first_grammar_boundary() {
     for (source, boundary) in [
         (
-            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for (\n    invariant wrong_first: lower <= upper,\n  ) {\n  }\n  return unit;\n}\n".as_slice(),
+            b"fn probe(lower: u64, upper: u64) -> result: unit pure {\n  for (\n    invariant wrong_first: lower <= upper,\n  ) {\n  }\n  return unit;\n}\n".as_slice(),
             b"invariant".as_slice(),
         ),
         (
-            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (\n    index lower..upper,\n  ) {\n  }\n  return unit;\n}\n",
+            b"fn probe(lower: u64, upper: u64) -> result: unit pure {\n  for @range (\n    index lower..upper,\n  ) {\n  }\n  return unit;\n}\n",
             b"lower",
         ),
         (
-            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (\n    index in ..upper,\n  ) {\n  }\n  return unit;\n}\n",
+            b"fn probe(lower: u64, upper: u64) -> result: unit pure {\n  for @range (\n    index in ..upper,\n  ) {\n  }\n  return unit;\n}\n",
             b"..",
         ),
         (
-            b"fn probe() -> result: own unit pure {\n  for @range (\n    index in 0_u64 . 1_u64,\n  ) {\n  }\n  return unit;\n}\n",
+            b"fn probe() -> result: unit pure {\n  for @range (\n    index in 0_u64 . 1_u64,\n  ) {\n  }\n  return unit;\n}\n",
             b".",
         ),
         (
-            b"fn probe(lower: own u64) -> result: own unit pure {\n  for @range (\n    index in lower..,\n  ) {\n  }\n  return unit;\n}\n",
+            b"fn probe(lower: u64) -> result: unit pure {\n  for @range (\n    index in lower..,\n  ) {\n  }\n  return unit;\n}\n",
             b",",
         ),
         (
-            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (\n    index in lower..upper..upper,\n  ) {\n  }\n  return unit;\n}\n",
+            b"fn probe(lower: u64, upper: u64) -> result: unit pure {\n  for @range (\n    index in lower..upper..upper,\n  ) {\n  }\n  return unit;\n}\n",
             b"..",
         ),
         (
-            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (\n    index in lower..upper,\n  ) {\n  }\n  return unit;\n}\n",
+            b"fn probe(lower: u64, upper: u64) -> result: unit pure {\n  for @range (\n    index in lower..upper,\n  ) {\n  }\n  return unit;\n}\n",
             b")",
         ),
         (
-            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (\n    index in lower..upper,\n    invariant blocked: lower <= upper {\n      use (lower <= upper);\n    },\n  ) {\n  }\n  return unit;\n}\n",
+            b"fn probe(lower: u64, upper: u64) -> result: unit pure {\n  for @range (\n    index in lower..upper,\n    invariant blocked: lower <= upper {\n      use (lower <= upper);\n    },\n  ) {\n  }\n  return unit;\n}\n",
             b"{",
         ),
     ] {
@@ -1164,8 +1161,8 @@ fn malformed_counted_ranges_stop_at_their_first_grammar_boundary() {
 #[test]
 fn loop_headers_reject_a_trailing_comma_at_the_closing_delimiter() {
     for source in [
-        b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for (\n    index in lower..upper,\n    invariant stable: index <= upper,\n  ) {\n  }\n  return unit;\n}\n".as_slice(),
-        b"fn probe(value: own i32) -> result: own unit pure {\n  loop (\n    invariant stable: value <= value,\n  ) {\n    break;\n  }\n  return unit;\n}\n",
+        b"fn probe(lower: u64, upper: u64) -> result: unit pure {\n  for (\n    index in lower..upper,\n    invariant stable: index <= upper,\n  ) {\n  }\n  return unit;\n}\n".as_slice(),
+        b"fn probe(value: i32) -> result: unit pure {\n  loop (\n    invariant stable: value <= value,\n  ) {\n    break;\n  }\n  return unit;\n}\n",
     ] {
         let outcome = parse_active("trailing-loop-header-comma.wf", source);
         let ParseOutcome::SourceIssue(issue) = outcome else {
@@ -1185,11 +1182,14 @@ fn issue_bytes(source: &'static [u8], issue: super::SyntaxIssue) -> &'static [u8
 #[test]
 fn retired_entry_kind_and_input_labels_are_not_grammar() {
     for source in [
-        b"command fn main() -> status: own ExitStatus pure {\n  return unit;\n}\n".as_slice(),
-        b"fn main(command.args as args: own Args) -> status: own ExitStatus pure {\n  return unit;\n}\n",
+        b"command fn main() -> status: ExitStatus pure {\n  return unit;\n}\n".as_slice(),
+        b"fn main(command.args as args: Args) -> status: ExitStatus pure {\n  return unit;\n}\n",
     ] {
         let outcome = parse_active("retired-entry.wf", source);
-        assert!(matches!(outcome, ParseOutcome::SourceIssue(_)), "{outcome:?}");
+        assert!(
+            matches!(outcome, ParseOutcome::SourceIssue(_)),
+            "{outcome:?}"
+        );
     }
 }
 
@@ -1197,7 +1197,7 @@ fn retired_entry_kind_and_input_labels_are_not_grammar() {
 fn declaration_and_parameter_optionals_report_their_complete_expected_sets() {
     // An ordinary parameter name must be followed by its colon.
     let unresolved_param =
-        b"fn main(args own Args) -> status: own ExitStatus pure {\n  return unit;\n}\n".as_slice();
+        b"fn main(args own Args) -> status: ExitStatus pure {\n  return unit;\n}\n".as_slice();
     let outcome = parse_active("param.wf", unresolved_param);
     let ParseOutcome::SourceIssue(issue) = outcome else {
         panic!("an IDENT continuing neither param arm must reject: {outcome:?}");

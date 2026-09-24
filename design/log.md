@@ -5,6 +5,178 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-23 Adopt the measured priority queue and ordered-map baselines
+
+Nodes: language/data-model/priority-queue-storage, language/data-model/ordered-map-storage
+
+Owner-approved: The owner explicitly accepted the recommendations for PRs #102, #103 and #104, including the exact priority-queue and ordered-map amendments.
+
+Summary: Apply the three priority-queue decisions and the ordered-map decision with its rejected alternatives unchanged. Retain the owning boxed heap, distinct ordered draining and physical cleanup, and shared plain/indexed sift core under the recorded maintenance and measurement qualifications. Retain bundled boxed B-tree nodes as the reusable measured ordered-map baseline, with both exact insertion candidates rejected and no default-tree or native-parity claim. The [priority comparison](../research/experiments/container-representation/priority-library/RESULTS.md), [indexed comparison](../research/experiments/container-representation/indexed-library/RESULTS.md#measured-result) and [ordered comparison](../research/experiments/container-representation/ordered-library/RESULTS.md) supply the grounds. Remove the two accepted amendments and correct only relative evidence links for their live-node locations. No specification rule changes; this ruling does not authorize a merge.
+
+## 2026-09-23 Decline inactive-payload destination initialization
+
+Nodes: compiler/storage-representation
+
+Summary: The owner accepted the recommendation to reject PR #101's inactive-payload initialization amendment. Its [retained same-source comparison](https://github.com/mbbill/Whitefoot/blob/055ec61d12b781712de1ee3bce73e35e29bb9d70/research/experiments/container-representation/map-library/RESULTS.md#completed-comparison-gains-with-unresolved-regressions) fails the prospective selection criterion: wide-map rebuild gains accompany repeated normal wide replacement and retained scalar Slab lookup regressions. Retain the experimental evidence and the existing compiler storage-representation decisions; do not adopt the proposed omission of inactive-payload clearing. This refusal selects the existing lowering without changing source-language rules.
+
+## 2026-09-23 Adopt uniform exact numeric conversions
+
+Nodes: language/numeric-conversion, compiler/numeric-conversion-lowering
+
+Owner-approved: After the final PR #99 handoff and clean DCR at 5d29d4665, the owner explicitly agreed to the revisions: adopt the complete language and compiler proposals, retaining the independent modular-conversion proposal for later work.
+
+Summary: Apply the two reviewed proposal bodies unchanged: uniform exact, checked and domain-query interfaces, same-type bit copies, captured integer Result equality, explicit conversion modes, direct proved lowering and positive-only sufficient bounds within the existing proof machinery. Name the compiler node numeric-conversion-lowering to preserve globally unique node names. The [conversion comparison](../research/investigations/numeric-conversions/DESIGN.md#design-alternatives) records the alternatives and grounds. Defer integer `cvt.wrap` to the maintained TODO because it selects a separate result policy beyond this exact-conversion scope; do not adopt it into the language or this implementation. Remove all three resolved amendments and their directory. The specification and implementation are unchanged by this ruling; it does not authorize a merge.
+
+## 2026-09-23 Fit aggregate loop captures to the selected target
+
+Nodes: compiler/parallel-lowering/two-worlds
+
+Owner-approved: After the final handoff for PR #105 at 55e88e418829aafa8b0b707eda6f07ce7a7f6e6f and PR #100 at 6be774329ca7e585cdcd4a4f82a8efd53830c34e, the owner explicitly approved all three proposals, including this complete PR #105 amendment.
+
+Summary: Apply the reviewed decision and two rejected alternatives unchanged: after needed-capture selection, use shared selected-target layout to rescue a conservatively oversized loop whose transported frame fits, preserving already-fitting paths and direct CFG reuse on real refusal. The [target-fitting investigation](../research/investigations/compute-model/DESIGN.md#selected-target-loop-frame-fitting) supplies the consumer, qualification and limits. Remove the accepted amendment and its directory. The compiler implementation and specification are unchanged by this ruling; it does not authorize a merge.
+
+## 2026-09-23 Defer call-group bridges and DONE-before-help after the cost-control failure
+
+Nodes: compiler/parallel-lowering, compiler/parallel-lowering/parallel-runtime
+
+Owner-approved: The owner explicitly agreed to all three proposals in the final Chinese handoff, including both complete PR #100 rejection additions at revision 6be774329. This entry applies only those two additions.
+
+Summary: Apply the reviewed rejection additions unchanged, preserving every existing Decision. Recovered overlap, passing correctness and the deterministic completed-target benefit leave workload cost unqualified after the [identical-image control](../research/investigations/compute-model/DESIGN.md#amended-cost-result-identical-image-control-failure) failed before candidate or runtime-only timing. Defer both adoptions until a new prospectively qualified cost comparison, without inferring a compiler or runtime regression. Remove the two resolved amendments and their empty directory. The specification and implementation are unchanged by this ruling; it does not authorize a merge.
+
+## 2026-09-23 State the precise checking ground for named operands
+
+Nodes: language/surface-form, language/surface-form/construction-form
+
+Owner-approved: After the DCR handoff clarified that proposal 3 was only a wording correction, the owner explicitly instructed applying it alongside the already approved removal of signature `own` in proposal 1.
+
+Summary: Apply the reviewed construction-form replacement unchanged: labels and declared order detect label/order mismatches, while same-typed values exchanged under otherwise correct labels remain undetected. Retain every operand rule and the approved surface-form replacement below. This ruling resolves the DCR question about the third amendment's disposition and removes its now-resolved TODO; the [boundary comparison](../research/investigations/contract-surface/CALL-BOUNDARY.md#named-operands-remain-independent) supplies the counterexample and evidence. This ruling does not authorize a merge.
+
+## 2026-09-23 Remove written ownership qualifiers from callable signatures
+
+Nodes: language/surface-form
+
+Owner-approved: After reviewing PR #98 and the three proposed node replacements, the owner selected only the first proposal and instructed implementation: remove signature `own`, retaining result names and named operands.
+
+Summary: Apply the reviewed surface-form replacement unchanged. Value parameters write their type, reference parameters retain `&T` or `&[T]`, and result types remain explicitly owned without a written qualifier. Keep result names beside their types and keep ownership transfer, capabilities, effects and proofs unchanged. The [boundary study](../research/investigations/contract-surface/CALL-BOUNDARY.md) records the comparisons and the rejected result-alias alternative. This ruling does not authorize a merge.
+
+## 2026-09-23 Retain result names in signatures
+
+Nodes: language/checks-and-proofs/requires-entry-contract
+
+Summary: Do not adopt the contract-local `results(...)` replacement: it separates result types and names into two ordered lists that must be maintained together, while the existing named result binding keeps name, type and ordinal in one declaration. Remove the refused amendment. The DCR formatting finding concerned only the discarded result-name declaration, so that new production and its proposed formatting are not introduced.
+
+## 2026-09-23 Adopt the owning HashMap storage and result protocol
+
+Nodes: language/data-model/hash-map-storage
+
+Owner-approved: The owner explicitly adopted both complete PR #95 decisions after the Chinese handoff and clean DCR for revision 623eeebd, replying that they were adopted.
+
+Summary: Apply the reviewed decisions and rejected alternatives unchanged. Select enum buckets with occupancy-only migration through one local pending-owner window and the shared exchange helper, and a shared returned-pair payload with a replacement/refusal reason. Preserve the double-backing peak, dense wide-growth advantage, zero-sized-result cost and remaining transfer qualifications. The [matched map comparison](../research/experiments/container-representation/map-library/RESULTS.md#constant-interface-comparison-and-selected-helper-body) and [compact result control](../research/experiments/container-representation/map-library/RESULTS.md#compact-result-boundary-control) supply the selection grounds. Remove the accepted amendment and its directory. The specification and implementation are unchanged by this ruling; it does not authorize a merge.
+
+## 2026-09-23 Retain splitter entry after the zero-budget dispatch comparison
+
+Nodes: compiler/parallel-lowering
+
+Owner-approved: The owner explicitly accepted the complete PR #89 amendment after the reviewed handoff at 2e9db016a4b69346a287cd800e23e09d4a011ee9, replying that it was accepted. This ruling does not authorize a merge.
+
+Summary: Apply the reviewed decision unchanged: retain the existing runtime query and splitter entry because the general caller branch lacks demonstrated general benefit and retains a qualified regression. A replacement must demonstrate benefit and qualify both worlds while caller and placement effects remain unresolved. Remove the accepted amendment and its directory. The implementation, tests and specification are unchanged by this ruling.
+
+## 2026-09-22 Keep design decisions concise and link their supporting detail
+
+Nodes: compiler/checker-facts, compiler/closure-row-dominance, compiler/completion-runtime, compiler/incremental-closure, compiler/parallel-lowering/parallel-runtime, compiler/parallel-lowering/two-worlds, compiler/parallel-lowering, compiler/proof-query-context, compiler/tag-only-lowering, language/checks-and-proofs/obligation-discharge/loop-fact-retention, language/checks-and-proofs, language/contracts, language/data-model/kernel-minimality, language/data-model/storage-shapes, language/data-model, language/effects/call-site-check, language/effects, language/generics, language/ownership/no-stored-references, language/ownership/reference-rebinding, language/ownership, language/parallelism/loop-permission, language/parallelism/permission-judgment, language/parallelism, language/system-interface/declaration-home, language/system-interface/directory-enumeration, language/system-interface/handle-factory, language/system-interface
+
+Owner-approved: The owner explicitly approved applying all 28 complete replacements in PR #92 at revision 4c6f91c50d7c2bbc9f9bc2c70c24ed5e50435166 unchanged and removing the four resolved design-clarity TODO groups.
+
+Summary: Apply the reviewed editorial replacements unchanged: remove settled-proposal narration, keep shared grounds at their conceptual owner, and move experimental and mechanism detail behind precise research links. Preserve the selected designs, correctness qualifications, meaningful alternatives and policy constants, including the limits of historical evidence. Remove the accepted amendments and their directory and the four resolved TODO groups. The specification and implementation are unchanged by this ruling; it does not authorize a merge.
+
+## 2026-09-22 Reuse the structural checker's resolved reference origins
+
+Nodes: compiler/checker-facts
+
+Owner-approved: The owner explicitly accepted the complete PR #94 amendment and the unused-import cleanup after the DCR handoff for 5002e290, replying that both were agreed. This ruling does not authorize a merge.
+
+Summary: Apply the reviewed addition unchanged. Publish the final structural traversal's complete resolved reference-origin inventory and consume it directly in place summaries, preserving parameter entry roots and all observed alternatives without a second origin fixed point, recursive holder lookup or depth cutoff. Keep the inventory conservative rather than treating it as point-current proof authority. The [reference-summary investigation](../research/investigations/consistency-followups/DESIGN.md#reference-summary-roots-and-expansion-depth) records the source counterexamples, replacement-test evidence and validation criteria. Remove the resolved amendment and its directory, and apply the directed unused-import cleanup. The language specification is unchanged.
+
+## 2026-09-22 Rescue oversized loop frames without repeated lowering
+
+Nodes: compiler/parallel-lowering/two-worlds
+
+Owner-approved: The owner explicitly accepted the complete PR #78 amendment after the reviewed handoff at 37fb6336, replying that the amendment was agreed.
+
+Summary: Apply the two reviewed decisions and rejected alternatives unchanged. Select needed captures only to rescue a frame above the existing lane bound, preserving already-fitting interfaces and helper order. Reuse a still-oversized candidate's completed CFG to avoid exponential nested reconstruction without adding a fallback call, preserving original storage and nested parallel opportunities. Remove the accepted amendment and its directory. The compiler implementation and specification are unchanged; this ruling does not authorize a merge.
+
+## 2026-09-22 Reuse completed numeric closure during Result transport
+
+Nodes: compiler/checker-facts
+
+Owner-approved: The owner explicitly accepted the complete Result closure-reuse supplement after the Chinese PR #92 handoff and clean independent review of revision 11208959.
+
+Summary: Apply the reviewed decision and refused alternative unchanged. Reuse the larger completed ordinary numeric core, share ordinary snapshot preparation at one flow point, and preserve the unaffected core during payload substitution, while retaining isolated contexts, complete candidate sets and ordinary fallbacks. Core size chooses reuse rather than derivability or a work limit; equal-bound witnesses may change. The [Result cost investigation](../research/investigations/result-proof-transport/DESIGN.md#selected-cost-result) provides the matched measurements, correspondence argument and remaining scaling limits. Remove the accepted amendment and its directory. The language specification is unchanged by this ruling; it does not authorize a merge.
+
+## 2026-09-22 Qualify empty window storage and retain the payload-address fact
+
+Nodes: compiler/storage-representation, compiler/backend-facts
+
+Owner-approved: The owner explicitly accepted both complete PR #93 amendments and the provisional performance tradeoff after the post-DCR handoff for 3ad6b293, replying that they were accepted and work should continue.
+
+Summary: Apply both reviewed additions unchanged. Omit nonexistent element alignment from constant-capacity zero Array, Slots and Ring payloads while retaining the window descriptors. Publish the signed nonnegativity of the qualified, normalized physical payload index through portable `llvm.assume`, without changing acceptance, target qualification, logical coordinates or wrapping arithmetic. Retain that fact provisionally for its repeatable inline-path benefit while accepting the unexplained retained-reverse cost; the original selection criterion remains unmet and the reopening conditions remain in force. The [Ring address investigation](../research/investigations/containers-and-resources/X1-LIBRARY.md#ring-payload-address-qualification) and [paired Deque comparison](../research/experiments/container-representation/deque-library/RESULTS.md) supply the contract, measurements, alternatives and limitations. Preserve the existing decisions and rejections, remove the two resolved amendments and their directory, and update the affected investigation and TODO status. The specification is unchanged; this ruling does not authorize a merge.
+
+## 2026-09-22 Align counted-loop value-name reservation
+
+Nodes: language/name-resolution
+
+Owner-approved: The owner explicitly approved the complete counted-binder amendment presented after PR #90's independent review at be149728. This ruling does not authorize a merge.
+
+Summary: Apply the reviewed addition and its refused alternative unchanged. Counted-loop binders follow ordinary let bindings in the operation and mode-word reservation because both introduce ordinary value names; the proof-only invariant domain stays separate. OP-1 now includes the counted binder explicitly, matching DIAG-1 and the existing resolver. The [follow-up investigation](../research/investigations/consistency-followups/DESIGN.md#reserved-names-and-declaration-roles) records the alternatives and boundary cases. Remove the accepted amendment and its directory.
+
+## 2026-09-22 Adopt ordinary Slab and Deque library boundaries
+
+Nodes: compiler/checker-facts, language/data-model/storage-shapes, language/ownership/range-reference, language/data-model/slab-storage, language/data-model/deque-rebase
+
+Owner-approved: The owner explicitly adopted all five revisions presented for PR #86 at dcbfdc0f and directed both DCR responses: maintained multi-vacancy Slab coverage and correction plus verification of the integrated-emission evidence.
+
+Summary: Apply the five reviewed amendments unchanged. Retain a symbolic integer constant's declaration identity and exact source type through the shared read-only inventory. Correct the storage-versus-range wording and qualify source Ring growth without promising a native copy count. Retain REF-4's Ring-range exclusion as a fresh ruling, not a recovered historical decision, leaving proved-contiguous and two-span admission open to a concrete consumer. Select the ordinary one-slot Slab representation with its measured storage and transfer costs, and direct boxed Ring endpoints with an explicit consuming rebase, without claiming universal native parity or automatic reference-based growth. The [library investigation](../research/investigations/containers-and-resources/X1-LIBRARY.md#slab-and-deque-trial-over-v063), [Slab controls](../research/experiments/container-representation/slab-library/RESULTS.md) and [Deque controls](../research/experiments/container-representation/deque-library/RESULTS.md) supply the grounds and alternatives. Remove the resolved amendments and their directory. The specification is unchanged; this ruling does not authorize a merge.
+
+## 2026-09-22 Carry Result evidence through ordinary local value flow
+
+Nodes: language/checks-and-proofs/automatic-facts, compiler/checker-facts
+
+Owner-approved: The owner explicitly directed correction of all five review findings and accepted both complete Result proof-transport amendments after the Chinese PR #87 handoff for ba876003.
+
+Summary: Apply the two reviewed amendments unchanged. Local own Results with integer payloads carry isolated conditional evidence through ordinary transfers and read it only under their own success condition. Reuse the existing weakest-bound joins, support invalidation and continuing-backedge rules, with a private child of the ordinary entailment flow owning evidence operations and the walker retaining event order. The [Result investigation](../research/investigations/result-proof-transport/DESIGN.md) records the composition failures, alternatives, finite representation argument and measured costs behind these choices. Retain the sharing/projection and broader storage questions in TODO, remove the accepted amendments and their directory, and preserve the existing live decisions. This ruling does not authorize a merge.
+
+## 2026-09-22 Resolve source input, zero-stride addressing and proof-name boundaries
+
+Nodes: compiler/prelude-records, compiler/storage-representation, language/name-resolution
+
+Owner-approved: The owner explicitly accepted all three reviewed amendments and both DCR wording corrections after the complete PR #88 handoff at 86e048de, replying that all were agreed. This ruling does not authorize a merge.
+
+Summary: Apply the three reviewed additions unchanged: require caller source records before public prelude injection while preserving the internal transport and complete resource accounting; canonicalize only zero-stride element-address operands while retaining logical coordinates and all layout obligations; and admit invariant IDENT spellings in their separate proof domain without additional operation-name reservation. STOR-6 defines the zero-stride length-bound case, and OP-1/DIAG-1 consistently exclude invariant declarations from that reservation. The [follow-up investigation](../research/investigations/consistency-followups/DESIGN.md) records the discriminating examples, alternatives and remaining validation tasks. Narrow the conformance result-binding explanation and correct the PR's runtime-check claim as reviewed. Remove the three accepted amendments and their directory.
+
+## 2026-09-22 Retain Array extents through read-only Box helpers
+
+Nodes: compiler/parallel-lowering
+
+Owner-approved: The owner accepted the reviewed PR #80 contents at 1d8f838b, including its unchanged Array-reference work amendment.
+
+Summary: Apply the reviewed extension and its rejected alternatives unchanged. Preserve runtime Array-length observations through original read-only reference formals and exact direct captures, using checker-owned validity and ordinary typed header projection. Keep mutable, rebound, local-owner and unsupported projection cases on the static estimate. The [matched helper trial](../research/investigations/compute-model/DESIGN.md#matched-helper-result-2026-09-22-utc) retains the measured benefit, CPU costs and validation limits. Remove the resolved amendment and its directory. No specification or compiler implementation changes accompany this ruling; it does not authorize a merge.
+
+## 2026-09-22 Preserve references through event-site separation proofs
+
+Nodes: compiler/checker-facts
+
+Owner-approved: The owner explicitly approved the complete reference-preservation amendment and the accompanying D3 TODO wording correction after the detailed PR #84 explanation of all eight repairs and both requested rulings.
+
+Summary: Apply the reviewed amendment unchanged. Retain finite conjunctive preservation questions across reference copies, joins and loop dependencies, demand them only at reference uses, and discharge them at the original write through the existing proof ledger. Preserve assignment targets captured before right-hand-side evaluation while judging preservation at commit; failed preservation reports REF-2 without suppressing the write's effects. Record the reviewed alternatives, remove the accepted amendment and its directory, and remove the stale bystander cross-reference from the still-open joined-reference precision task. The language specification is unchanged; this ruling does not authorize a merge.
+
+## 2026-09-22 Carry owned descendant measures and reduce Vector transfer costs
+
+Nodes: compiler/checker-facts, compiler/storage-placement, language/data-model/vector-consumption
+
+Owner-approved: The owner replied that all presented revisions were accepted after the PR #82 handoff at 29516a39, approving the ENT-2/MSR-3 clarification, all three tree amendments including the measured scalar tradeoff, and both DCR responses. This ruling does not authorize a merge.
+
+Summary: Record finite measure placement through exact owned fields, payloads and Box content, keeping current-state invalidation and distinguishing descendant covers from exact identity. ENT-2 and MSR-3 explicitly carry those descendants at their existing within-body naming events and include the descendant projection in datum identity; ordinary cross-function contracts and implicit-window-slot limits remain. Record independent stack allocations only after complete target qualification permits a uniform, padding-free layout, and complete takes that capture the old element address before updating the descriptor and transferring the element. Replace the separate-reversal Vector baseline with take-first local exchange and original-order consumption, preserving the ownership and O(removed), constant-auxiliary-space contract. The [Box investigation](../research/investigations/containers-and-resources/X1-LIBRARY.md#box-placement-and-vector-consumption-follow-up) and [paired measurements](../research/experiments/container-representation/vector-library/RESULTS.md#paired-v062-source-measurements) supply the grounds and alternatives. Accept the measured large-record benefit with the short-scalar regression and remaining optimizer costs retained in TODO; claim neither uniform improvement nor native parity. Remove the three resolved amendments and their directory.
+
 ## 2026-09-21 Select eligible ordinary self calls for tail lowering
 
 Nodes: compiler/self-tail-lowering, language/self-tail-calls

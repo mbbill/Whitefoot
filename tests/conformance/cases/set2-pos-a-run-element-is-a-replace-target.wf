@@ -3,7 +3,7 @@ nocopy enum MaybeByte {
   Absent();
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A subscript of a run is a swap place, which is what carries an affine element out of a slot and its successor in at one commit. At every program point the slot holds exactly one valid owner, so the window stays the run's complete typestate.";
   let run = slots_new::<MaybeByte, 4>();
   let a = Present(value: 1_u8);

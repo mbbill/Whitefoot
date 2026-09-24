@@ -688,6 +688,43 @@ fn emitted_function<'module>(module: &'module str, name: &str) -> &'module str {
     &module[function_start..function_end]
 }
 
+/// These fixtures construct every variant of a result with scalar fields.
+/// Check its typed caller destination and field writes independently of a
+/// preliminary whole-aggregate store or the module's nominal numbering.
+fn assert_scalar_result_fields(module: &str, function: &str, fields: &[&str]) {
+    let mut initialized = vec![false; fields.len()];
+    for line in function.lines() {
+        let Some((address, operation)) = line.trim().split_once(" = ") else {
+            continue;
+        };
+        let Some(projection) = operation.strip_prefix("getelementptr inbounds ") else {
+            continue;
+        };
+        let Some((result_type, field)) = projection.split_once(", ptr %wf.result, i32 0, i32 ")
+        else {
+            continue;
+        };
+        assert!(
+            module.contains(&format!("{result_type} = type {{ {} }}", fields.join(", "))),
+            "the result destination has the expected scalar layout: {line}"
+        );
+        let field = field.parse::<usize>().expect("result field ordinal");
+        let field_type = fields.get(field).expect("declared result field");
+        assert!(
+            function.lines().any(|store| {
+                store.trim().starts_with(&format!("store {field_type} "))
+                    && store.ends_with(&format!(", ptr {address}"))
+            }),
+            "the selected result field is initialized: {line}"
+        );
+        initialized[field] = true;
+    }
+    assert!(
+        initialized.iter().all(|field| *field),
+        "the fixture writes the tag and every variant's scalar payload: {initialized:?}"
+    );
+}
+
 /// One monomorphized instance of a compiler-owned [PRE-1] record.
 ///
 /// Those records are emitted as ordinary out-of-line bodies, one per instance
@@ -732,9 +769,22 @@ fn nominal_lowering_keeps_selected_tag_widths_and_initialized_payloads() {
 enum Payload {
   Empty();
   Value(number: i32);
+  Wide(first: u64, last: u8);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn empty_payload() -> result: Payload pure {
+  return Empty();
+}
+
+fn number_payload() -> result: Payload pure {
+  return Value(number: 42_i32);
+}
+
+fn wide_payload() -> result: Payload pure {
+  return Wide(first: 511_u64, last: 127_u8);
+}
+
+fn main() -> status: ExitStatus pure {
   let flag = On();
   match flag {
     Off() => {
@@ -743,7 +793,7 @@ fn main() -> status: own ExitStatus pure {
     On() => {
     }
   }
-  let payload = Value(number: 42_i32);
+  let payload = number_payload();
   match payload {
     Empty() => {
       return exit_status(code: 2_u8);
@@ -753,39 +803,81 @@ fn main() -> status: own ExitStatus pure {
         return exit_status(code: 3_u8);
       }
     }
+    Wide(first: first_word, last: last_byte) => {
+      return exit_status(code: 4_u8);
+    }
+  }
+  match empty_payload() {
+    Empty() => {
+    }
+    Value(number: value) => {
+      return exit_status(code: 5_u8);
+    }
+    Wide(first: first_word, last: last_byte) => {
+      return exit_status(code: 6_u8);
+    }
+  }
+  match wide_payload() {
+    Empty() => {
+      return exit_status(code: 7_u8);
+    }
+    Value(number: value) => {
+      return exit_status(code: 8_u8);
+    }
+    Wide(first: first_word, last: last_byte) => {
+      if first_word != 511_u64 {
+        return exit_status(code: 9_u8);
+      }
+      if last_byte != 127_u8 {
+        return exit_status(code: 10_u8);
+      }
+    }
   }
   return exit_status(code: 0_u8);
 }
 "#;
     let llvm = emit(source);
-    let main = emitted_function(&llvm, "main");
     assert!(llvm.contains("switch i1"));
     assert!(llvm.contains("switch i32"));
-    let payload = main
-        .lines()
-        .find_map(|line| {
-            line.trim()
-                .strip_prefix("store %wf.t1 zeroinitializer, ptr ")
-        })
-        .expect("the payload enum starts in initialized typed destination storage");
-    for field in [0, 1] {
-        let projection =
-            format!("getelementptr inbounds %wf.t1, ptr {payload}, i32 0, i32 {field}");
-        let address = main
-            .lines()
-            .find_map(|line| {
+    let constructors: [(&str, u32, &[usize]); 3] = [
+        ("empty_payload", 0, &[]),
+        ("number_payload", 1, &[1]),
+        ("wide_payload", 2, &[2, 3]),
+    ];
+    for (name, tag, selected) in constructors {
+        let body = emitted_function(&llvm, name);
+        assert!(
+            body.contains("store %wf.t1 zeroinitializer, ptr %wf.result"),
+            "the baseline constructor initializes the complete result: {body}"
+        );
+        assert!(!body.contains("poison"), "{body}");
+        assert!(!body.contains("undef"), "{body}");
+        for (field, field_type) in ["i32", "i32", "i64", "i8"].iter().enumerate() {
+            let address = body.lines().find_map(|line| {
                 let (address, operation) = line.trim().split_once(" = ")?;
-                (operation == projection).then_some(address)
-            })
-            .expect("the enum destination exposes its tag and selected payload fields");
-        let stored = main
-            .lines()
-            .find(|line| {
-                line.trim().starts_with("store i32 ") && line.ends_with(&format!(", ptr {address}"))
-            })
-            .expect("the tag and payload are both stored in that destination");
-        if field == 0 {
-            assert_eq!(stored.trim(), format!("store i32 1, ptr {address}"));
+                (operation.starts_with("getelementptr inbounds %wf.t1, ptr ")
+                    && operation.ends_with(&format!(", i32 0, i32 {field}")))
+                .then_some(address)
+            });
+            if field != 0 && !selected.contains(&field) {
+                assert!(
+                    address.is_none(),
+                    "only selected fields receive writes after aggregate initialization: {body}"
+                );
+                continue;
+            }
+            let address =
+                address.expect("the tag and each selected payload field have a destination");
+            let stored = body
+                .lines()
+                .find(|line| {
+                    line.trim().starts_with(&format!("store {field_type} "))
+                        && line.ends_with(&format!(", ptr {address}"))
+                })
+                .expect("the tag and each selected payload field are initialized");
+            if field == 0 {
+                assert_eq!(stored.trim(), format!("store i32 {tag}, ptr {address}"));
+            }
         }
     }
     assert!(llvm.contains("call void @abort()"));
@@ -817,12 +909,12 @@ enum Holder {
   Empty();
 }
 
-fn make() -> result: own Cell pure {
+fn make() -> result: Cell pure {
   let cell = Cell(value: 1_i32);
   return move cell;
 }
 
-fn cleanup() -> result: own unit pure {
+fn cleanup() -> result: unit pure {
   make();
   let first = Cell(value: 2_i32);
   let second = Cell(value: 3_i32);
@@ -835,7 +927,7 @@ fn cleanup() -> result: own unit pure {
   return unit;
 }
 
-fn cleanup_match(value: own Holder, flag: own Bool) -> result: own i32 pure {
+fn cleanup_match(value: Holder, flag: Bool) -> result: i32 pure {
   match move value {
     Held(cell: item) => {
     }
@@ -851,7 +943,7 @@ fn cleanup_match(value: own Holder, flag: own Bool) -> result: own i32 pure {
   return selected;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   cleanup();
   let cell = Cell(value: 8_i32);
   let holder = Held(cell: move cell);
@@ -890,7 +982,7 @@ struct Outer {
   other: i32;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let number = 1_i32;
   let inner = Inner(value: 2_i32);
   let outer = Outer(inner: inner, other: 7_i32);
@@ -970,7 +1062,7 @@ fn main() -> status: own ExitStatus pure {
 /// is no implicit runtime fallback.
 #[test]
 fn bare_infix_overflow_is_a_static_op2_rejection() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let hi = 2147483647_i32;
   let one = 1_i32;
   let overflowed = hi + one;
@@ -1011,7 +1103,7 @@ struct Envelope {
   residue: Pair;
 }
 
-fn step(value: own i32) -> result: own Result<i32, StepError> pure {
+fn step(value: i32) -> result: Result<i32, StepError> pure {
   if value < 0_i32 {
     let error = Failed();
     return Err<i32, StepError>(error: error);
@@ -1020,13 +1112,13 @@ fn step(value: own i32) -> result: own Result<i32, StepError> pure {
   }
 }
 
-fn forward(value: own i32) -> result: own Result<i64, StepError> pure {
+fn forward(value: i32) -> result: Result<i64, StepError> pure {
   let result = step(value: value);
   let accepted = propagate result;
   return Ok<i64, StepError>(value: 42_i64);
 }
 
-fn forward_field(value: own i32) -> result: own Result<i64, StepError> pure {
+fn forward_field(value: i32) -> result: Result<i64, StepError> pure {
   let result = step(value: value);
   let residue = Pair(left: 1_i32, right: 2_i32);
   let envelope = Envelope(result: result, residue: residue);
@@ -1034,12 +1126,12 @@ fn forward_field(value: own i32) -> result: own Result<i64, StepError> pure {
   return Ok<i64, StepError>(value: 42_i64);
 }
 
-fn make_pair() -> result: own Result<Pair, StepError> pure {
+fn make_pair() -> result: Result<Pair, StepError> pure {
   let pair = Pair(left: 20_i32, right: 22_i32);
   return Ok<Pair, StepError>(value: pair);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let arithmetic_result = 2147483647_i32 +checked 1_i32;
   match arithmetic_result {
     Ok(value: sum) => {
@@ -1132,7 +1224,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn integer_overflow_has_no_op2_runtime_record_path() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let hi = 127_i8;
   let one = 1_i8;
   let overflow = hi + one;

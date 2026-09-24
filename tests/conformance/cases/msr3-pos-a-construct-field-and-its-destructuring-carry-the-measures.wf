@@ -2,7 +2,7 @@ struct Lease {
   run: Slots<u8, 8>;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "MSR-3: the construct and destructuring placements, with no branch on a measure anywhere. The field operand carries its measures into ticket.run, the placement into the field survives the consume the construct performs, and the destructuring consume carries them back out to the binder that names the field.";
   let block = slots_new::<u8, 8>();
   let ticket = Lease(run: move block);

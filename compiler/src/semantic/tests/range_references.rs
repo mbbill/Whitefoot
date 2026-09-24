@@ -75,19 +75,19 @@ fn a_range_reference_over_a_ring_is_refused() {
 /// required just to name either measure.
 #[test]
 fn a_range_element_measure_is_an_ordinary_subscripted_measure_place() {
-    let source = br#"fn direct(items: &[Slots<u64, 2>]) -> length: own u64 reads(items) contract {
+    let source = br#"fn direct(items: &[Slots<u64, 2>]) -> length: u64 reads(items) contract {
   requires 0_u64 < deref(items).len;
 } {
   return deref(items)[0_u64].len;
 }
 
-fn nested(items: &[Box<Slots<u64, 2>>]) -> length: own u64 reads(items) contract {
+fn nested(items: &[Box<Slots<u64, 2>>]) -> length: u64 reads(items) contract {
   requires 0_u64 < deref(items).len;
 } {
   return deref(items)[0_u64].inner.len;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -100,7 +100,7 @@ fn main() -> status: own ExitStatus pure {
 /// read, write and borrow all name the same final scalar storage.
 #[test]
 fn nested_range_element_subscripts_are_complete_places() {
-    let source = br#"fn exercise(rows: &[Array<u64, 2>], outer: own u64, inner: own u64) -> result: own u64 writes(rows) contract {
+    let source = br#"fn exercise(rows: &[Array<u64, 2>], outer: u64, inner: u64) -> result: u64 writes(rows) contract {
   requires outer < deref(rows).len;
   requires inner < 2_u64;
 } {
@@ -111,7 +111,7 @@ fn nested_range_element_subscripts_are_complete_places() {
   return deref(selected);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -123,13 +123,13 @@ fn main() -> status: own ExitStatus pure {
 /// considered, following the source's base-outward evaluation order.
 #[test]
 fn an_out_of_bounds_outer_nested_range_index_is_an_op4_rejection() {
-    let source = br#"fn invalid(rows: &[Array<u64, 2>]) -> result: own u64 reads(rows) contract {
+    let source = br#"fn invalid(rows: &[Array<u64, 2>]) -> result: u64 reads(rows) contract {
   requires deref(rows).len == 1_u64;
 } {
   return deref(rows)[1_u64][0_u64];
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -142,13 +142,13 @@ fn main() -> status: own ExitStatus pure {
 /// position. The inner suffix keeps its own base type and obligation.
 #[test]
 fn an_out_of_bounds_inner_nested_range_index_is_an_op4_rejection() {
-    let source = br#"fn invalid(rows: &[Array<u64, 2>]) -> result: own u64 reads(rows) contract {
+    let source = br#"fn invalid(rows: &[Array<u64, 2>]) -> result: u64 reads(rows) contract {
   requires 0_u64 < deref(rows).len;
 } {
   return deref(rows)[0_u64][2_u64];
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -163,7 +163,7 @@ fn main() -> status: own ExitStatus pure {
 /// holder or reducing the holder to one possible origin.
 #[test]
 fn a_nested_range_element_path_preserves_joined_origins() {
-    let source = br#"fn inspect(left: &[Array<u64, 2>], right: &[Array<u64, 2>], flag: own Bool) -> result: own u64 reads(left), reads(right) {
+    let source = br#"fn inspect(left: &[Array<u64, 2>], right: &[Array<u64, 2>], flag: Bool) -> result: u64 reads(left), reads(right) {
   let rows = if flag {
     give left;
   } else {
@@ -175,7 +175,7 @@ fn a_nested_range_element_path_preserves_joined_origins() {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -189,7 +189,7 @@ fn main() -> status: own ExitStatus pure {
 /// safety alone must not authorize an extra alias-based proof route.
 #[test]
 fn incoming_range_bounds_do_not_invent_a_joined_holder_length_fact() {
-    let source = br#"fn inspect(left: &[Array<u64, 2>], right: &[Array<u64, 2>], flag: own Bool) -> result: own u64 reads(left), reads(right) contract {
+    let source = br#"fn inspect(left: &[Array<u64, 2>], right: &[Array<u64, 2>], flag: Bool) -> result: u64 reads(left), reads(right) contract {
   requires 0_u64 < deref(left).len;
   requires 0_u64 < deref(right).len;
 } {
@@ -201,7 +201,7 @@ fn incoming_range_bounds_do_not_invent_a_joined_holder_length_fact() {
   return deref(rows)[0_u64][1_u64];
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -215,7 +215,7 @@ fn main() -> status: own ExitStatus pure {
 /// or dropping the suffix would incorrectly leave this reference valid.
 #[test]
 fn replacing_a_range_element_invalidates_a_nested_element_reference() {
-    let source = br#"fn invalid(rows: &[Array<u64, 2>]) -> result: own u64 writes(rows) contract {
+    let source = br#"fn invalid(rows: &[Array<u64, 2>]) -> result: u64 writes(rows) contract {
   requires 0_u64 < deref(rows).len;
 } {
   let selected = &deref(rows)[0_u64][0_u64];
@@ -224,7 +224,7 @@ fn replacing_a_range_element_invalidates_a_nested_element_reference() {
   return deref(selected);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -236,13 +236,13 @@ fn main() -> status: own ExitStatus pure {
 /// the selected element's `len` would itself be a total [OP-15] read.
 #[test]
 fn an_out_of_bounds_range_element_measure_is_an_op4_rejection() {
-    let source = br#"fn invalid(items: &[Slots<u64, 2>]) -> length: own u64 reads(items) contract {
+    let source = br#"fn invalid(items: &[Slots<u64, 2>]) -> length: u64 reads(items) contract {
   requires deref(items).len == 1_u64;
 } {
   return deref(items)[1_u64].len;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -259,13 +259,13 @@ fn main() -> status: own ExitStatus pure {
 fn a_joined_range_element_measure_checks_every_possible_target() {
     let source = |check: &str| {
         format!(
-            r#"fn needs_one(value: own u64) -> result: own unit pure contract {{
+            r#"fn needs_one(value: u64) -> result: unit pure contract {{
   requires value == 1_u64;
 }} {{
   return unit;
 }}
 
-fn examine(flag: own Bool) -> result: own unit pure {{
+fn examine(flag: Bool) -> result: unit pure {{
   let left_row = slots_new::<u64, 2>();
   place_back(window: &left_row, value: 11_u64);
   let right_row = slots_new::<u64, 2>();
@@ -282,7 +282,7 @@ fn examine(flag: own Bool) -> result: own unit pure {{
   return unit;
 }}
 
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   return exit_status(code: 0_u8);
 }}
 "#,
@@ -307,19 +307,19 @@ fn main() -> status: own ExitStatus pure {{
 /// [FN-8].
 #[test]
 fn a_range_element_measure_dies_on_a_write_through_an_alias() {
-    let source = br#"fn needs_one(value: own u64) -> result: own unit pure contract {
+    let source = br#"fn needs_one(value: u64) -> result: unit pure contract {
   requires value == 1_u64;
 } {
   return unit;
 }
 
-fn clear(window: &Slots<u64, 2>) -> result: own unit writes(window) {
+fn clear(window: &Slots<u64, 2>) -> result: unit writes(window) {
   let empty = slots_new::<u64, 2>();
   set deref(window) = move empty;
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let row = slots_new::<u64, 2>();
   place_back(window: &row, value: 17_u64);
   let outer = slots_new::<Slots<u64, 2>, 1>();
@@ -343,7 +343,7 @@ fn main() -> status: own ExitStatus pure {
 /// carries the residual and the rule's own restructuring.
 #[test]
 fn an_endpoint_above_the_length_leaves_the_formation_undischarged() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let a = array_filled::<u64, 4>(value: 0_u64);
   let hi = 9_u64;
   let part = &a[0_u64..hi];
@@ -380,21 +380,21 @@ fn a_write_through_a_range_reference_keeps_both_lengths() {
 /// by `references::a_reslice_of_a_joined_range_is_invalidated_by_either_origin_replacement`.
 #[test]
 fn overlapping_range_element_writes_preserve_each_formed_length() {
-    let source = br#"fn needs_two(part: &[u8]) -> result: own unit reads(part) contract {
+    let source = br#"fn needs_two(part: &[u8]) -> result: unit reads(part) contract {
   requires deref(part).len == 2_u64;
 } {
   let observed = deref(part).len;
   return unit;
 }
 
-fn write_first(part: &[u8]) -> result: own unit writes(part) contract {
+fn write_first(part: &[u8]) -> result: unit writes(part) contract {
   requires 0_u64 < deref(part).len;
 } {
   set deref(part)[0_u64] = 9_u8;
   return unit;
 }
 
-fn exercise(values: &Slots<u8, 4>) -> result: own unit writes(values) contract {
+fn exercise(values: &Slots<u8, 4>) -> result: unit writes(values) contract {
   requires deref(values).len == 3_u64;
 } {
   let wider = &deref(values)[0_u64..3_u64];
@@ -406,14 +406,14 @@ fn exercise(values: &Slots<u8, 4>) -> result: own unit writes(values) contract {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
     assert_accepts(source);
 }
 
-const CONDITIONAL_RANGE_SEPARATION_HELPERS: &str = r#"fn touch(left: &[Slots<u64, 2>], right: &[Slots<u64, 2>]) -> result: own unit writes(left), writes(right) contract {
+const CONDITIONAL_RANGE_SEPARATION_HELPERS: &str = r#"fn touch(left: &[Slots<u64, 2>], right: &[Slots<u64, 2>]) -> result: unit writes(left), writes(right) contract {
   requires 0_u64 < deref(left).len;
   requires 0_u64 < deref(right).len;
 } {
@@ -422,7 +422,7 @@ const CONDITIONAL_RANGE_SEPARATION_HELPERS: &str = r#"fn touch(left: &[Slots<u64
   return unit;
 }
 
-fn clear(window: &Slots<u64, 2>) -> result: own unit writes(window) {
+fn clear(window: &Slots<u64, 2>) -> result: unit writes(window) {
   let empty = slots_new::<u64, 2>();
   set deref(window) = move empty;
   return unit;
@@ -436,7 +436,7 @@ fn clear(window: &Slots<u64, 2>) -> result: own unit writes(window) {
 fn a_range_separation_is_available_in_its_dominating_guard() {
     let source = format!(
         "{CONDITIONAL_RANGE_SEPARATION_HELPERS}
-fn inspect(values: &Array<Slots<u64, 2>, 2>, hi: own u64, lo: own u64) -> result: own unit writes(values) contract {{
+fn inspect(values: &Array<Slots<u64, 2>, 2>, hi: u64, lo: u64) -> result: unit writes(values) contract {{
   requires 1_u64 <= hi;
   requires hi <= 2_u64;
   requires lo <= 1_u64;
@@ -449,7 +449,7 @@ fn inspect(values: &Array<Slots<u64, 2>, 2>, hi: own u64, lo: own u64) -> result
   return unit;
 }}
 
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   return exit_status(code: 0_u8);
 }}
 "
@@ -464,7 +464,7 @@ fn main() -> status: own ExitStatus pure {{
 fn a_conditional_range_separation_does_not_escape_its_join() {
     let source = format!(
         "{CONDITIONAL_RANGE_SEPARATION_HELPERS}
-fn inspect(values: &Array<Slots<u64, 2>, 2>, hi: own u64, lo: own u64) -> result: own u64 writes(values) contract {{
+fn inspect(values: &Array<Slots<u64, 2>, 2>, hi: u64, lo: u64) -> result: u64 writes(values) contract {{
   requires 1_u64 <= hi;
   requires hi <= 2_u64;
   requires lo <= 1_u64;
@@ -482,7 +482,7 @@ fn inspect(values: &Array<Slots<u64, 2>, 2>, hi: own u64, lo: own u64) -> result
   return 0_u64;
 }}
 
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   return exit_status(code: 0_u8);
 }}
 "
@@ -496,7 +496,7 @@ fn main() -> status: own ExitStatus pure {{
 fn a_range_separation_does_not_leak_into_a_sibling_arm() {
     let source = format!(
         "{CONDITIONAL_RANGE_SEPARATION_HELPERS}
-fn inspect(values: &Array<Slots<u64, 2>, 2>, hi: own u64, lo: own u64) -> result: own u64 writes(values) contract {{
+fn inspect(values: &Array<Slots<u64, 2>, 2>, hi: u64, lo: u64) -> result: u64 writes(values) contract {{
   requires 1_u64 <= hi;
   requires hi <= 2_u64;
   requires lo <= 1_u64;
@@ -515,7 +515,7 @@ fn inspect(values: &Array<Slots<u64, 2>, 2>, hi: own u64, lo: own u64) -> result
   return 0_u64;
 }}
 
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   return exit_status(code: 0_u8);
 }}
 "
@@ -529,7 +529,7 @@ fn main() -> status: own ExitStatus pure {{
 fn a_range_separation_does_not_escape_a_maybe_zero_trip_loop() {
     let source = format!(
         "{CONDITIONAL_RANGE_SEPARATION_HELPERS}
-fn inspect(values: &Array<Slots<u64, 2>, 2>, hi: own u64, lo: own u64, count: own u64) -> result: own u64 writes(values) contract {{
+fn inspect(values: &Array<Slots<u64, 2>, 2>, hi: u64, lo: u64, count: u64) -> result: u64 writes(values) contract {{
   requires 1_u64 <= hi;
   requires hi <= 2_u64;
   requires lo <= 1_u64;
@@ -549,7 +549,7 @@ fn inspect(values: &Array<Slots<u64, 2>, 2>, hi: own u64, lo: own u64, count: ow
   return 0_u64;
 }}
 
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   return exit_status(code: 0_u8);
 }}
 "
@@ -562,7 +562,7 @@ fn main() -> status: own ExitStatus pure {{
 /// changes the range's formed length or the bound for an element inside it.
 #[test]
 fn growing_the_backing_window_preserves_a_formed_range_length() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let values = slots_new::<u8, 4>();
   place_back(window: &values, value: 11_u8);
   let part = &values[0_u64..1_u64];
@@ -601,7 +601,7 @@ fn proved_distinct_indices_do_not_overlap() {
 /// over the length of the storage that range was formed from: the range
 /// `a[2..4]` of a four-element array has two elements, and an offset judged
 /// against `a.len` would be admitted and would read outside the range.
-const RANGE_OFFSET_CALLEE: &str = r#"fn at(part: &[u8], offset: own u64) -> result: own u8 reads(part) contract {
+const RANGE_OFFSET_CALLEE: &str = r#"fn at(part: &[u8], offset: u64) -> result: u8 reads(part) contract {
   requires offset < deref(part).len;
 } {
   return deref(part)[offset];
@@ -615,7 +615,7 @@ fn a_requirement_over_a_bound_range_is_that_ranges_length() {
     let body = |offset: &str| {
         format!(
             "{RANGE_OFFSET_CALLEE}
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   let a = array_filled::<u8, 4>(value: 1_u8);
   let view = &a[2_u64..4_u64];
   let x = at(part: view, offset: {offset});
@@ -645,7 +645,7 @@ fn a_requirement_over_a_range_formed_at_the_call_is_that_ranges_length() {
     let body = |offset: &str| {
         format!(
             "{RANGE_OFFSET_CALLEE}
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   let a = array_filled::<u8, 4>(value: 1_u8);
   let x = at(part: &a[2_u64..4_u64], offset: {offset});
   return exit_status(code: x);
@@ -669,7 +669,7 @@ fn a_requirement_over_a_reslice_is_the_inner_ranges_length() {
     let body = |offset: &str| {
         format!(
             "{RANGE_OFFSET_CALLEE}
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   let a = array_filled::<u8, 4>(value: 1_u8);
   let view = &a[0_u64..4_u64];
   let sub = &deref(view)[2_u64..4_u64];
@@ -697,13 +697,13 @@ fn a_requirement_over_a_forwarded_range_is_the_forwarded_ranges_length() {
     let body = |offset: &str| {
         format!(
             "{RANGE_OFFSET_CALLEE}
-fn forward(part: &[u8]) -> result: own u8 reads(part) contract {{
+fn forward(part: &[u8]) -> result: u8 reads(part) contract {{
   requires deref(part).len == 2_u64;
 }} {{
   return at(part: part, offset: {offset});
 }}
 
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   let a = array_filled::<u8, 4>(value: 1_u8);
   let view = &a[2_u64..4_u64];
   let x = forward(part: view);
@@ -730,13 +730,13 @@ fn main() -> status: own ExitStatus pure {{
 fn a_range_formation_establishes_its_length_equality() {
     let body = |length: &str| {
         format!(
-            "fn expects(part: &[u8]) -> result: own u64 reads(part.len) contract {{
+            "fn expects(part: &[u8]) -> result: u64 reads(part.len) contract {{
   requires deref(part).len == {length};
 }} {{
   return deref(part).len;
 }}
 
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   let table = array_filled::<u8, 32>(value: 0_u8);
   let view = &table[4_u64..24_u64];
   let n = expects(part: view);
@@ -757,13 +757,13 @@ fn main() -> status: own ExitStatus pure {{
 /// so an ordinary ordering fact proves that the formed range is nonempty.
 #[test]
 fn dynamic_inline_range_length_discharge_uses_its_endpoint_ordering() {
-    let source = br#"fn nonempty(part: &[u8]) -> result: own u64 reads(part.len) contract {
+    let source = br#"fn nonempty(part: &[u8]) -> result: u64 reads(part.len) contract {
   requires 0_u64 < deref(part).len;
 } {
   return deref(part).len;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let a = array_filled::<u8, 4>(value: 0_u8);
   let lo = 1_u64;
   let hi = 3_u64;
@@ -782,7 +782,7 @@ fn main() -> status: own ExitStatus pure {
 fn rebinding_a_range_reference_replaces_its_captured_length() {
     let source = format!(
         "{RANGE_OFFSET_CALLEE}
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   let a = array_filled::<u8, 4>(value: 0_u8);
   let part = &a[2_u64..3_u64];
   set part = &a[0_u64..4_u64];
@@ -799,7 +799,7 @@ fn main() -> status: own ExitStatus pure {{
 /// one-element length across this whole-holder write.
 #[test]
 fn rebinding_a_range_reference_does_not_retain_the_old_length() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let a = array_filled::<u8, 2>(value: 0_u8);
   let part = &a[0_u64..1_u64];
   set part = &a[0_u64..0_u64];
@@ -816,13 +816,13 @@ fn rebinding_a_range_reference_does_not_retain_the_old_length() {
 fn a_bound_range_keeps_the_endpoint_images_captured_at_formation() {
     let body = |length: &str| {
         format!(
-            "fn expects(part: &[u8]) -> result: own u64 reads(part.len) contract {{
+            "fn expects(part: &[u8]) -> result: u64 reads(part.len) contract {{
   requires deref(part).len == {length};
 }} {{
   return deref(part).len;
 }}
 
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   let a = array_filled::<u8, 6>(value: 0_u8);
   let lo = 1_u64;
   let hi = 3_u64;
@@ -847,19 +847,19 @@ fn main() -> status: own ExitStatus pure {{
 /// them at different times, so their call goals retain distinct lengths.
 #[test]
 fn inline_ranges_separated_by_endpoint_mutation_keep_distinct_lengths() {
-    let source = br#"fn below_three(part: &[u8]) -> result: own u64 reads(part.len) contract {
+    let source = br#"fn below_three(part: &[u8]) -> result: u64 reads(part.len) contract {
   requires deref(part).len < 3_u64;
 } {
   return deref(part).len;
 }
 
-fn above_three(part: &[u8]) -> result: own u64 reads(part.len) contract {
+fn above_three(part: &[u8]) -> result: u64 reads(part.len) contract {
   requires deref(part).len > 3_u64;
 } {
   return deref(part).len;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let a = array_filled::<u8, 6>(value: 0_u8);
   let lo = 1_u64;
   let hi = 3_u64;

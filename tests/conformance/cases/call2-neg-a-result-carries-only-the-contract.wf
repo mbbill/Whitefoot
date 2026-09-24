@@ -1,10 +1,10 @@
-fn shrink<const n: u64>(source: own Slots<u8, n>) -> smaller: own Slots<u8, 4> pure {
+fn shrink<const n: u64>(source: Slots<u8, n>) -> smaller: Slots<u8, 4> pure {
   doc "Consumes the run and returns a fresh empty one, declaring no relation.";
   let fresh = slots_new::<u8, 4>();
   return move fresh;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Only the contract's facts exist on the result. The callee declares no relation, so nothing the caller knew about line reaches got: the result is a fresh binding and no fact of any argument flows to it. The subscript at offset 1 of the empty run the callee actually returned is therefore rejected at OP-4 with the residual 1_u64 < got.len, and a caller that wants a relation between what it handed over and what it got back reads it from a contract or does not have it.";
   let line = slots_new::<u8, 4>();
   place_back(window: &line, value: 7_u8);

@@ -15,12 +15,13 @@ mod pinned_sentences;
 
 use rejection::Located;
 
+use crate::backend::{emitter::emit_llvm_with_layout, target::TargetLayout};
 use crate::{
     ACTIVE_KERNEL_SPEC_HASH, BackendFailure, CanonicalLimits, CanonicalOutcome, CheckedProgram,
     FinalizeLimits, FinalizeOutcome, LexLimits, LexOutcome, LoweringFailure, ParseLimits,
     ParseOutcome, ResolutionOutcome, SemanticLocation, SemanticOutcome, SourceBundle, SourceInput,
     SourceLimits, TerminalLimits, TerminalOutcome, audit_canonical, check_semantics,
-    classify_terminals, emit_llvm, finalize, lex, lower_checked, parse, resolve,
+    classify_terminals, finalize, lex, lower_checked_with_layout, parse, resolve,
 };
 
 /// Host-compiler optimization arguments for every Whitefoot executable.
@@ -144,7 +145,7 @@ pub enum CompilationStage {
     Resolution,
     /// Target-independent semantic checking.
     Semantics,
-    /// Checked-program to target-independent IR lowering.
+    /// Checked-program to typed IR lowering, including optional loop shapes.
     Lowering,
     /// Selected-target representability and target-domain discharge.
     TargetLayout,
@@ -183,6 +184,29 @@ pub struct CompilationFailure {
 }
 
 impl CompilationFailure {
+    fn source_envelope(failure: crate::SourceBundleError) -> Self {
+        use crate::{LogicalPathError, SourceBundleError};
+
+        let kind = match &failure {
+            SourceBundleError::LimitExceeded { .. }
+            | SourceBundleError::StorageUnavailable { .. }
+            | SourceBundleError::ArithmeticOverflow
+            | SourceBundleError::LogicalPath(
+                LogicalPathError::LengthOverflow | LogicalPathError::StorageUnavailable { .. },
+            ) => CompilationFailureKind::Resource,
+            SourceBundleError::EmptySourceSequence
+            | SourceBundleError::LogicalPath(
+                LogicalPathError::Empty
+                | LogicalPathError::Absolute
+                | LogicalPathError::EmptyComponent
+                | LogicalPathError::DotComponent
+                | LogicalPathError::InvalidByte { .. },
+            )
+            | SourceBundleError::DuplicateLogicalPath { .. } => CompilationFailureKind::Invocation,
+        };
+        Self::new(CompilationStage::SourceEnvelope, kind, failure)
+    }
+
     fn new(stage: CompilationStage, kind: CompilationFailureKind, detail: impl fmt::Debug) -> Self {
         Self {
             stage,
@@ -190,6 +214,25 @@ impl CompilationFailure {
             rule_id: None,
             detail: format!("{detail:?}"),
         }
+    }
+
+    fn lowering(failure: LoweringFailure) -> Self {
+        let (stage, kind) = match failure {
+            LoweringFailure::TargetLayout(_) => (
+                CompilationStage::TargetLayout,
+                CompilationFailureKind::TargetLayout,
+            ),
+            // An unavailable compiler-owned body is a capability stop after
+            // semantic acceptance, never a source verdict.
+            LoweringFailure::UnimplementedPreludeRow(_) => (
+                CompilationStage::Lowering,
+                CompilationFailureKind::Unsupported,
+            ),
+            LoweringFailure::InvalidCheckedProgram | LoweringFailure::CounterOverflow => {
+                (CompilationStage::Lowering, CompilationFailureKind::Lowering)
+            }
+        };
+        Self::new(stage, kind, failure)
     }
 
     /// One source-language rejection carrying the rule its stage attributed.
@@ -373,13 +416,8 @@ where
         &SourceBundle,
     ) -> Result<T, CompilationFailure>,
 {
-    let bundle = SourceBundle::with_prelude(inputs, limits.source).map_err(|failure| {
-        CompilationFailure::new(
-            CompilationStage::SourceEnvelope,
-            CompilationFailureKind::Invocation,
-            failure,
-        )
-    })?;
+    let bundle = SourceBundle::with_prelude(inputs, limits.source)
+        .map_err(CompilationFailure::source_envelope)?;
     let lexed = match lex(&bundle, limits.lexer) {
         LexOutcome::Complete(complete) => complete,
         LexOutcome::SourceIssue(issue) => {
@@ -627,21 +665,10 @@ fn lower_selected(
         }
     }
     let permission_ledger = checked.data.permission_ledger.clone();
-    let ir = lower_checked(checked, overlap).map_err(|failure: LoweringFailure| {
-        CompilationFailure::new(
-            CompilationStage::Lowering,
-            // A [PRE-1] record whose compiler-owned body this version does not
-            // build yet is an unimplemented capability, not a broken lowering
-            // invariant and never a source verdict.
-            match failure {
-                LoweringFailure::UnimplementedPreludeRow(_) => CompilationFailureKind::Unsupported,
-                LoweringFailure::InvalidCheckedProgram | LoweringFailure::CounterOverflow => {
-                    CompilationFailureKind::Lowering
-                }
-            },
-            failure,
-        )
-    })?;
+    let target =
+        TargetLayout::host().map_err(|failure| CompilationFailure::lowering(failure.into()))?;
+    let ir = lower_checked_with_layout(checked, overlap, target)
+        .map_err(CompilationFailure::lowering)?;
     // What this lowering did with each permission it was given, appended after
     // the judgment's own lines. The judgment reports the same verdicts with or
     // without `--par`; these lines report an actualization, which only a
@@ -651,7 +678,7 @@ fn lower_selected(
         .map(|line| line.text)
         .collect();
     ledger.extend_from_slice(ir.actualization_ledger());
-    emit_llvm(&ir)
+    emit_llvm_with_layout(&ir, target)
         .and_then(|module| {
             // Emission decides which recursive components carry a runtime
             // budget after their clone families are known.
@@ -695,8 +722,120 @@ mod tests {
     use crate::{OverlapLowering, RecursionBudget, SourceInput};
 
     #[test]
+    fn public_compilation_requires_a_source_record_before_adding_the_prelude() {
+        for failure in [
+            check(&[], CompilerLimits::default()).expect_err("no source record was supplied"),
+            compile(&[], CompilerLimits::default()).expect_err("no source record was supplied"),
+        ] {
+            assert_eq!(failure.stage(), CompilationStage::SourceEnvelope);
+            assert_eq!(failure.kind(), CompilationFailureKind::Invocation);
+            assert_eq!(failure.rule_id(), None);
+            assert_eq!(failure.detail(), "EmptySourceSequence");
+        }
+
+        let empty = check(
+            &[SourceInput::new("empty.wf", b"")],
+            CompilerLimits::default(),
+        )
+        .expect_err("a present record still needs its canonical final newline");
+        assert_eq!(empty.stage(), CompilationStage::CanonicalSource);
+        assert_eq!(empty.kind(), CompilationFailureKind::Source);
+        assert_eq!(empty.rule_id(), Some("FORM-2"));
+
+        check(
+            &[SourceInput::new("empty.wf", b"\n")],
+            CompilerLimits::default(),
+        )
+        .expect("a canonical source record may contain no declarations");
+    }
+
+    #[test]
+    fn source_envelope_limits_are_resource_failures_in_both_public_projections() {
+        let inputs = [SourceInput::new("main.wf", b"@")];
+        let mut count_limits = CompilerLimits::default();
+        count_limits.source.max_sources = 0;
+        let mut byte_limits = CompilerLimits::default();
+        byte_limits.source.max_source_bytes = 0;
+
+        for (limits, detail) in [
+            (
+                count_limits,
+                format!(
+                    "LimitExceeded {{ limit: Sources, maximum: 0, actual: {} }}",
+                    inputs.len() + crate::prelude::DECLARATIONS.len()
+                ),
+            ),
+            (
+                byte_limits,
+                "LimitExceeded { limit: SourceBytes, maximum: 0, actual: 1 }".to_owned(),
+            ),
+        ] {
+            for failure in [
+                check(&inputs, limits).expect_err("the source envelope exceeds its ceiling"),
+                compile(&inputs, limits).expect_err("the source envelope exceeds its ceiling"),
+            ] {
+                assert_eq!(failure.stage(), CompilationStage::SourceEnvelope);
+                assert_eq!(failure.kind(), CompilationFailureKind::Resource);
+                assert_eq!(failure.rule_id(), None);
+                assert_eq!(failure.detail(), detail);
+            }
+        }
+    }
+
+    #[test]
+    fn source_envelope_invalid_paths_remain_invocation_failures() {
+        let invalid = [SourceInput::new("/main.wf", b"@")];
+        let duplicate = [
+            SourceInput::new("main.wf", b"@"),
+            SourceInput::new("main.wf", b"@"),
+        ];
+        for (inputs, detail) in [
+            (invalid.as_slice(), "LogicalPath(Absolute)"),
+            (
+                duplicate.as_slice(),
+                "DuplicateLogicalPath { path: LogicalPath(\"main.wf\"), first_position: 0, duplicate_position: 1 }",
+            ),
+        ] {
+            for failure in [
+                check(inputs, CompilerLimits::default())
+                    .expect_err("the source envelope is invalid"),
+                compile(inputs, CompilerLimits::default())
+                    .expect_err("the source envelope is invalid"),
+            ] {
+                assert_eq!(failure.stage(), CompilationStage::SourceEnvelope);
+                assert_eq!(failure.kind(), CompilationFailureKind::Invocation);
+                assert_eq!(failure.rule_id(), None);
+                assert_eq!(failure.detail(), detail);
+            }
+        }
+    }
+
+    #[test]
+    fn source_envelope_storage_and_representation_failures_preserve_their_details() {
+        use crate::{LogicalPathError, SourceBundleError, SourceLimit};
+
+        // Exercise allocator failure classification without exhausting the host.
+        for error in [
+            SourceBundleError::StorageUnavailable {
+                limit: SourceLimit::Sources,
+                requested: 1,
+            },
+            SourceBundleError::ArithmeticOverflow,
+            SourceBundleError::LogicalPath(LogicalPathError::LengthOverflow),
+            SourceBundleError::LogicalPath(LogicalPathError::StorageUnavailable { requested: 7 }),
+        ] {
+            let detail = format!("{error:?}");
+            let failure = super::CompilationFailure::source_envelope(error);
+            assert_eq!(failure.stage(), CompilationStage::SourceEnvelope);
+            assert_eq!(failure.kind(), CompilationFailureKind::Resource);
+            assert_eq!(failure.rule_id(), None);
+            assert_eq!(failure.detail(), detail);
+        }
+    }
+
+    #[test]
     fn the_executable_caller_proves_the_selected_functions_contract() {
-        let source = b"fn main() -> result: own unit pure contract {\n  requires 0_u64 <= 1_u64;\n} {\n  return unit;\n}\n";
+        let source = b"fn main() -> result: unit pure contract {\n  requires 0_u64 <= 1_u64;\n} {\n  return unit;\n}\n";
         let llvm = compile(
             &[SourceInput::new("entry-contract.wf", source)],
             CompilerLimits::default(),
@@ -709,7 +848,7 @@ mod tests {
 
     #[test]
     fn an_uninhabited_function_is_a_library_without_an_unproved_executable_call() {
-        let source = b"fn main() -> result: own unit pure contract {\n  requires 1_u64 <= 0_u64;\n} {\n  return unit;\n}\n";
+        let source = b"fn main() -> result: unit pure contract {\n  requires 1_u64 <= 0_u64;\n} {\n  return unit;\n}\n";
         let llvm = compile(
             &[SourceInput::new("uninhabited-entry.wf", source)],
             CompilerLimits::default(),
@@ -747,7 +886,7 @@ mod tests {
     /// are printed here.
     #[test]
     fn a_syntax_rejection_prints_the_expected_spellings_and_the_offending_line() {
-        let source = br#"fn main() -> status: own ExitStatus pure {
+        let source = br#"fn main() -> status: ExitStatus pure {
   doc "Writes a nested call where the grammar admits an atom.";
   let dotted = 1_u8;
   let addressable = 2_u8;
@@ -786,32 +925,32 @@ mod tests {
                 // v0.60's [INV-1] admits `==` in an invariant target and
                 // refuses `!=` in either position, which is the reverse of
                 // the v0.59 row this fixture carried.
-                b"fn main() -> status: own ExitStatus pure {\n  invariant bad: 0_u64 != 0_u64;\n  return exit_status(code: 0_u8);\n}\n"
+                b"fn main() -> status: ExitStatus pure {\n  invariant bad: 0_u64 != 0_u64;\n  return exit_status(code: 0_u8);\n}\n"
                     .as_slice(),
                 CompilationStage::Semantics,
                 "INV-1",
             ),
             (
                 "local-target-unproved.wf",
-                b"fn main() -> status: own ExitStatus pure {\n  invariant bad: 1_u64 <= 0_u64;\n  return exit_status(code: 0_u8);\n}\n",
+                b"fn main() -> status: ExitStatus pure {\n  invariant bad: 1_u64 <= 0_u64;\n  return exit_status(code: 0_u8);\n}\n",
                 CompilationStage::Semantics,
                 "INV-1",
             ),
             (
                 "use-relation-formation.wf",
-                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use (value == limit);\n  }\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                b"fn check(value: u64, limit: u64) -> result: unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use (value == limit);\n  }\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
                 CompilationStage::Semantics,
                 "PRF-1",
             ),
             (
                 "use-relation-name.wf",
-                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use (value <= missing);\n  }\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                b"fn check(value: u64, limit: u64) -> result: unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use (value <= missing);\n  }\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
                 CompilationStage::Resolution,
                 "PRF-1",
             ),
             (
                 "named-use-scope.wf",
-                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use missing;\n  }\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                b"fn check(value: u64, limit: u64) -> result: unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use missing;\n  }\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
                 CompilationStage::Resolution,
                 "INV-1",
             ),
@@ -835,7 +974,7 @@ mod tests {
     /// cost a writer a compile round spent bisecting a byte offset.
     #[test]
     fn a_canonical_rejection_prints_the_expected_bytes_beside_the_found_bytes() {
-        let source = b"fn main() -> status: own ExitStatus pure {\n  doc \"One double space where canonical form admits one space.\";\n  return exit_status(code:  0_u8);\n}\n";
+        let source = b"fn main() -> status: ExitStatus pure {\n  doc \"One double space where canonical form admits one space.\";\n  return exit_status(code:  0_u8);\n}\n";
         let failure = compile(
             &[SourceInput::from_host_path(
                 "input0.wf",
@@ -861,7 +1000,7 @@ mod tests {
     /// the requirement, not by adding a scope.
     #[test]
     fn a_reference_parameter_keeps_its_later_call_requirement() {
-        let source = br#"fn walk(factory: &HandleFactory, root: &DirectoryRead, name: &[u8]) -> result: own u8 reads(root), reads(name), writes(factory) {
+        let source = br#"fn walk(factory: &HandleFactory, root: &DirectoryRead, name: &[u8]) -> result: u8 reads(root), reads(name), writes(factory) {
   match open_file(factory: factory, root: root, name: name, start: 0_u64, end: 1_u64) {
     Ok(value: handle) => {
       close_read(factory: factory, file: move handle);
@@ -911,7 +1050,7 @@ mod tests {
   lines: u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let running = Counts(lines: 0_u64);
   let totals = running;
   return exit_status(code: 0_u8);
@@ -929,7 +1068,7 @@ fn main() -> status: own ExitStatus pure {
         assert!(!detail.contains("input0.wf"), "{detail}");
 
         // [TYPE-6], reached in the resolver.
-        let collision = br#"fn main() -> status: own ExitStatus pure {
+        let collision = br#"fn main() -> status: ExitStatus pure {
   let permit = 1_u64;
   if permit == 1_u64 {
     let permit = 2_u64;
@@ -957,7 +1096,7 @@ fn main() -> status: own ExitStatus pure {
     #[test]
     fn a_lexical_rejection_names_the_host_path() {
         let host = "/absolute/path/pound.wf";
-        let source = "fn main() -> status: own ExitStatus pure {\n  let x = \u{a3};\n  return exit_status(code: 0_u8);\n}\n";
+        let source = "fn main() -> status: ExitStatus pure {\n  let x = \u{a3};\n  return exit_status(code: 0_u8);\n}\n";
         let failure = compile(
             &[SourceInput::from_host_path(
                 "input0.wf",
@@ -982,7 +1121,7 @@ fn main() -> status: own ExitStatus pure {
     /// on disk, so the output was not usable as emitted.
     #[test]
     fn a_ledger_names_the_host_path_the_source_was_read_from() {
-        let source = br#"fn main() -> status: own ExitStatus pure {
+        let source = br#"fn main() -> status: ExitStatus pure {
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     set total = total +wrap index;
@@ -1012,12 +1151,12 @@ fn main() -> status: own ExitStatus pure {
   Branch(left: Box<BoxNode>, right: Box<BoxNode>, w: u64);
 }
 
-fn boxed_leaf(w: own u64) -> result: own Box<BoxNode> pure {
+fn boxed_leaf(w: u64) -> result: Box<BoxNode> pure {
   let leaf = Leaf(w: w);
   return box_new::<BoxNode>(value: move leaf);
 }
 
-fn boxed_branch(left: own Box<BoxNode>, right: own Box<BoxNode>) -> result: own Box<BoxNode> pure {
+fn boxed_branch(left: Box<BoxNode>, right: Box<BoxNode>) -> result: Box<BoxNode> pure {
   let branch = Branch(left: move left, right: move right, w: 0_u64);
   return box_new::<BoxNode>(value: move branch);
 }
@@ -1031,7 +1170,7 @@ fn boxed_branch(left: own Box<BoxNode>, right: own Box<BoxNode>) -> result: own 
     #[test]
     fn the_permission_ledger_reports_eligible_pairs_and_their_chains() {
         let eligible = format!(
-            "{TREE_PRELUDE}fn fold(node: &Box<BoxNode>) -> result: own u64 writes(node) {{
+            "{TREE_PRELUDE}fn fold(node: &Box<BoxNode>) -> result: u64 writes(node) {{
   match deref(node).inner {{
     Leaf(w: leaf_w) => {{
       return deref(leaf_w);
@@ -1046,7 +1185,7 @@ fn boxed_branch(left: own Box<BoxNode>, right: own Box<BoxNode>) -> result: own 
   }}
 }}
 
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
@@ -1073,14 +1212,14 @@ fn main() -> status: own ExitStatus pure {{
         // `scaled` makes the fact explicit, the semantic checker verifies it,
         // and lowering erases it before the permission table is consumed.
         let proved = format!(
-            "{TREE_PRELUDE}fn scaled(values: own Array<u64, 8>, index: own u64) -> result: own u64 pure {{
+            "{TREE_PRELUDE}fn scaled(values: Array<u64, 8>, index: u64) -> result: u64 pure {{
   let size = values.len;
   let bounded = iand(index, 7_u64);
   invariant index_in_range: bounded <= 7_u64;
   return values[bounded];
 }}
 
-fn bubble(node: &Box<BoxNode>) -> result: own u64 writes(node) {{
+fn bubble(node: &Box<BoxNode>) -> result: u64 writes(node) {{
   match deref(node).inner {{
     Leaf(w: leaf_w) => {{
       let w = deref(leaf_w);
@@ -1098,7 +1237,7 @@ fn bubble(node: &Box<BoxNode>) -> result: own u64 writes(node) {{
   }}
 }}
 
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
@@ -1198,13 +1337,13 @@ fn main() -> status: own ExitStatus pure {{
         // permission marker, so what the pair rule sees is two writes of one
         // storage rather than two exclusive loans, and the overlap is
         // reported under condition 1 [REF-1, EFF-1, PAR-1].
-        let overlapping = b"fn bump(slot: &u64) -> result: own u64 writes(slot) {
+        let overlapping = b"fn bump(slot: &u64) -> result: u64 writes(slot) {
   let seen = deref(slot);
   set deref(slot) = 7_u64;
   return seen;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let cell = 1_u64;
   let lo = bump(slot: &cell);
   let hi = bump(slot: &cell);
@@ -1229,18 +1368,17 @@ fn main() -> status: own ExitStatus pure {
         );
 
         // Affine opaque values have empty release under PRE-1 and STOR-3.
-        let capability_releases =
-            b"fn release_read_file(file: own OutputStream) -> result: own unit pure {
+        let capability_releases = b"fn release_read_file(file: OutputStream) -> result: unit pure {
   return unit;
 }
 
-fn release_pair(first: own OutputStream, second: own OutputStream) -> result: own unit pure {
+fn release_pair(first: OutputStream, second: OutputStream) -> result: unit pure {
   let done_first = release_read_file(file: move first);
   let done_second = release_read_file(file: move second);
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 ";
@@ -1259,23 +1397,23 @@ fn main() -> status: own ExitStatus pure {
         // [PAR-1], and the ledger now reports its Err edge under condition 2
         // — the edge condition — once for each adjacent pair it stands in
         // rather than once for the two ordinary calls it separates.
-        let propagating = b"fn peek(slot: &u8) -> result: own u64 reads(slot) {
+        let propagating = b"fn peek(slot: &u8) -> result: u64 reads(slot) {
   return cvt::<u8, u64>(deref(slot));
 }
 
-fn stamp(slot: &u8) -> result: own u64 writes(slot) {
+fn stamp(slot: &u8) -> result: u64 writes(slot) {
   set deref(slot) = 9_u8;
   return 1_u64;
 }
 
-fn probe(outcome: own Result<u8, NarrowError>, a: &u8, b: &u8) -> result: own Result<unit, NarrowError> reads(b), writes(a) {
+fn probe(outcome: Result<u8, NarrowError>, a: &u8, b: &u8) -> result: Result<unit, NarrowError> reads(b), writes(a) {
   let seen = peek(slot: b);
   let narrowed = propagate outcome;
   let stamped = stamp(slot: a);
   return Ok<unit, NarrowError>(value: unit);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 ";
@@ -1307,7 +1445,7 @@ fn main() -> status: own ExitStatus pure {
     /// small enough to be uninteresting.
     #[test]
     fn a_counted_loop_reducing_under_an_associative_operation_is_permitted() {
-        let source = b"fn interesting(index: own u64) -> result: own Bool pure {
+        let source = b"fn interesting(index: u64) -> result: Bool pure {
   let low = iand(index, 7_u64);
   let seen = 0_u64;
   loop @spin {
@@ -1320,7 +1458,7 @@ fn main() -> status: own ExitStatus pure {
   return low == 3_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let hits = 0_u64;
   for @scan (i in 0_u64..4096_u64) {
     let escaped = interesting(index: i);
@@ -1355,7 +1493,7 @@ fn main() -> status: own ExitStatus pure {
     /// wrote.
     #[test]
     fn a_counted_loop_reducing_under_a_float_operation_is_denied_by_condition_one() {
-        let source = b"fn main() -> status: own ExitStatus pure {
+        let source = b"fn main() -> status: ExitStatus pure {
   let total = 0.0_f64;
   let step = 0.5_f64;
   for @sum (i in 0_u64..1024_u64) {
@@ -1379,7 +1517,7 @@ fn main() -> status: own ExitStatus pure {
 
         // The identical loop over an integer accumulator is permitted, so the
         // refusal above is about the operation and not about the loop.
-        let integral = b"fn main() -> status: own ExitStatus pure {
+        let integral = b"fn main() -> status: ExitStatus pure {
   let total = 0_u64;
   let step = 5_u64;
   for @sum (i in 0_u64..1024_u64) {
@@ -1405,7 +1543,7 @@ fn main() -> status: own ExitStatus pure {
     /// an eligible map with no accumulator.
     #[test]
     fn a_proven_counted_binder_buffer_map_is_permitted() {
-        let source = b"fn main() -> status: own ExitStatus pure {
+        let source = b"fn main() -> status: ExitStatus pure {
   let values = array_filled::<u64, 64>(value: 0_u64);
   let out = slots_from_array::<u64, 64>(values: values);
   for @fill (i in 0_u64..64_u64) {
@@ -1442,13 +1580,13 @@ fn main() -> status: own ExitStatus pure {
     /// only the part written in view.
     #[test]
     fn a_counted_loop_whose_callee_writes_carried_state_is_denied_by_condition_two() {
-        let source = b"fn accum(slot: &f64, x: own f64) -> result: own u64 writes(slot) {
+        let source = b"fn accum(slot: &f64, x: f64) -> result: u64 writes(slot) {
   set deref(slot) = fadd.strict(deref(slot), x);
   let bits = reinterpret::<f64, u64>(deref(slot));
   return iand(bits, 1_u64);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let total = 0.0_f64;
   let count = 0_u64;
   for @sum (i in 0_u64..8_u64) {
@@ -1477,12 +1615,12 @@ fn main() -> status: own ExitStatus pure {
 
         // The same loop over a callee that writes nothing is permitted, so the
         // refusal above is about the projected row and not about the shape.
-        let reading = b"fn weigh(x: own f64) -> result: own u64 pure {
+        let reading = b"fn weigh(x: f64) -> result: u64 pure {
   let bits = reinterpret::<f64, u64>(x);
   return iand(bits, 1_u64);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let total = 0.0_f64;
   let count = 0_u64;
   for @sum (i in 0_u64..8_u64) {
@@ -1520,8 +1658,7 @@ fn main() -> status: own ExitStatus pure {
     /// contributes 10 where a full-range fold contributes 70.
     #[test]
     fn a_counted_loop_a_give_can_leave_is_denied_by_condition_four() {
-        let source =
-            b"fn scan_until(src: &Slots<u64, 64>, needle: own u64) -> result: own u64 reads(src) {
+        let source = b"fn scan_until(src: &Slots<u64, 64>, needle: u64) -> result: u64 reads(src) {
   let count = deref(src).len;
   let acc = 0_u64;
   let always = True();
@@ -1541,7 +1678,7 @@ fn main() -> status: own ExitStatus pure {
   return answer +wrap acc;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let values = array_filled::<u64, 64>(value: 1_u64);
   let data = slots_from_array::<u64, 64>(values: values);
   set data[10_u64] = 7_u64;
@@ -1582,7 +1719,7 @@ fn main() -> status: own ExitStatus pure {
         // The same loop with the give removed is permitted, so the refusal is
         // about the exit edge and not about the shape.
         let contained =
-            b"fn scan_until(src: &Slots<u64, 64>, needle: own u64) -> result: own u64 reads(src) {
+            b"fn scan_until(src: &Slots<u64, 64>, needle: u64) -> result: u64 reads(src) {
   let count = deref(src).len;
   let acc = 0_u64;
   let always = True();
@@ -1598,7 +1735,7 @@ fn main() -> status: own ExitStatus pure {
   return answer +wrap acc;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let values = array_filled::<u64, 64>(value: 1_u64);
   let data = slots_from_array::<u64, 64>(values: values);
   set data[10_u64] = 7_u64;
@@ -1646,7 +1783,7 @@ fn main() -> status: own ExitStatus pure {
     /// row is `band`, `bor`, `bxor` [OP-1].
     #[test]
     fn a_refused_multi_accumulator_loop_keeps_advice_naming_the_boolean_combines() {
-        let source = b"fn main() -> status: own ExitStatus pure {
+        let source = b"fn main() -> status: ExitStatus pure {
   let every = True();
   let any = False();
   let parity = False();
@@ -1682,7 +1819,7 @@ fn main() -> status: own ExitStatus pure {
     /// Only ordinary counted-loop permission remains after C2 deletes PAR-3.
     #[test]
     fn a_counted_loop_reports_only_its_ordinary_permission() {
-        let source = b"fn main() -> status: own ExitStatus pure {
+        let source = b"fn main() -> status: ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..8_u64) {
     set total = total +wrap i;
@@ -1706,7 +1843,7 @@ fn main() -> status: own ExitStatus pure {
     #[test]
     fn the_permission_ledger_is_output_beside_an_unchanged_module() {
         let source =
-            b"fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+            b"fn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
         let (module, ledger) = compile_with_permission_ledger(
             &[SourceInput::new("quiet.wf", source)],
             CompilerLimits::default(),
@@ -1752,7 +1889,7 @@ fn main() -> status: own ExitStatus pure {
     #[test]
     fn the_ledger_names_every_cyclic_component_and_what_the_budget_did_with_it() {
         let recursive = format!(
-            "{TREE_PRELUDE}fn fold(node: &Box<BoxNode>) -> result: own u64 writes(node) {{
+            "{TREE_PRELUDE}fn fold(node: &Box<BoxNode>) -> result: u64 writes(node) {{
   match deref(node).inner {{
     Leaf(w: leaf_w) => {{
       return deref(leaf_w);
@@ -1767,7 +1904,7 @@ fn main() -> status: own ExitStatus pure {
   }}
 }}
 
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
@@ -1839,12 +1976,12 @@ fn main() -> status: own ExitStatus pure {{
         // A splitter calls itself to halve its range, so it is a cyclic
         // component of its own — and a synthesized one, which is why a kernel
         // that reaches the runtime through a split cannot get a family.
-        let counted = b"fn interesting(index: own u64) -> result: own Bool pure {
+        let counted = b"fn interesting(index: u64) -> result: Bool pure {
   let low = iand(index, 7_u64);
   return low == 3_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let hits = 0_u64;
   for @scan (i in 0_u64..4096_u64) {
     let escaped = interesting(index: i);
@@ -1878,7 +2015,7 @@ fn main() -> status: own ExitStatus pure {
     #[test]
     fn the_permission_ledger_does_not_depend_on_whether_the_lowering_is_taken() {
         let source = format!(
-            "{TREE_PRELUDE}fn fold(node: &Box<BoxNode>) -> result: own u64 writes(node) {{
+            "{TREE_PRELUDE}fn fold(node: &Box<BoxNode>) -> result: u64 writes(node) {{
   match deref(node).inner {{
     Leaf(w: leaf_w) => {{
       return deref(leaf_w);
@@ -1893,7 +2030,7 @@ fn main() -> status: own ExitStatus pure {
   }}
 }}
 
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
@@ -1944,7 +2081,7 @@ fn main() -> status: own ExitStatus pure {{
 
     #[test]
     fn driver_erases_empty_formal_and_actual_groups_before_lowering() {
-        let source = b"interface Empty {\n}\n\nbinding Selected : Empty {\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+        let source = b"interface Empty {\n}\n\nbinding Selected : Empty {\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
         let llvm = compile(
             &[SourceInput::new("value.wf", source)],
             CompilerLimits::default(),
@@ -1963,13 +2100,13 @@ fn main() -> status: own ExitStatus pure {{
         for (name, source, stage, rule) in [
             (
                 "comment.wf",
-                b"// nope\nfn probe() -> result: own unit pure {\n  return unit;\n}\n".as_slice(),
+                b"// nope\nfn probe() -> result: unit pure {\n  return unit;\n}\n".as_slice(),
                 CompilationStage::Lexing,
                 "FORM-4",
             ),
             (
                 "tab.wf",
-                b"fn probe() -> result: own unit pure {\n\treturn unit;\n}\n",
+                b"fn probe() -> result: unit pure {\n\treturn unit;\n}\n",
                 CompilationStage::Lexing,
                 "FORM-2",
             ),
@@ -1980,37 +2117,37 @@ fn main() -> status: own ExitStatus pure {{
             // whose `@` is not followed by the IDENT shape.
             (
                 "sigil.wf",
-                b"fn probe() -> result: own unit pure {\n  loop @Bad {\n    break @Bad;\n  }\n  return unit;\n}\n",
+                b"fn probe() -> result: unit pure {\n  loop @Bad {\n    break @Bad;\n  }\n  return unit;\n}\n",
                 CompilationStage::Lexing,
                 "FORM-3",
             ),
             (
                 "dollar.wf",
-                b"$\nfn probe() -> result: own unit pure {\n  return unit;\n}\n",
+                b"$\nfn probe() -> result: unit pure {\n  return unit;\n}\n",
                 CompilationStage::Lexing,
                 "FORM-1",
             ),
             (
                 "string.wf",
-                b"fn probe() -> result: own unit pure {\n  let text: own str = \"bad\\t\";\n  return unit;\n}\n",
+                b"fn probe() -> result: unit pure {\n  let text: str = \"bad\\t\";\n  return unit;\n}\n",
                 CompilationStage::Lexing,
                 "FORM-5",
             ),
             (
                 "numeric.wf",
-                b"fn probe() -> result: own unit pure {\n  let value: own i32 = 1e+;\n  return unit;\n}\n",
+                b"fn probe() -> result: unit pure {\n  let value: i32 = 1e+;\n  return unit;\n}\n",
                 CompilationStage::TerminalClassification,
                 "FORM-5",
             ),
             (
                 "construct.wf",
-                b"nope value;\n\nfn probe() -> result: own unit pure {\n  return unit;\n}\n",
+                b"nope value;\n\nfn probe() -> result: unit pure {\n  return unit;\n}\n",
                 CompilationStage::Parsing,
                 "FORM-1",
             ),
             (
                 "spacing.wf",
-                b"fn  main() -> result: own unit pure {\n  return unit;\n}\n",
+                b"fn  main() -> result: unit pure {\n  return unit;\n}\n",
                 CompilationStage::CanonicalSource,
                 "FORM-2",
             ),
@@ -2021,7 +2158,7 @@ fn main() -> status: own ExitStatus pure {{
                 // root is what this stage still owns: a reference expression
                 // whose place base names nothing is a resolver rejection.
                 "reference-root.wf",
-                b"fn probe() -> result: own unit pure {\n  let value = 0_i32;\n  let borrowed = &gone;\n  return unit;\n}\n",
+                b"fn probe() -> result: unit pure {\n  let value = 0_i32;\n  let borrowed = &gone;\n  return unit;\n}\n",
                 CompilationStage::Resolution,
                 "TYPE-5",
             ),
@@ -2044,7 +2181,7 @@ fn main() -> status: own ExitStatus pure {{
 
     #[test]
     fn unrepresentable_array_is_a_target_failure_without_a_source_rule() {
-        let source = b"fn main() -> status: own ExitStatus pure {\n  let values = array_filled::<u8, 18446744073709551615>(value: 0_u8);\n  return exit_status(code: 0_u8);\n}\n";
+        let source = b"fn main() -> status: ExitStatus pure {\n  let values = array_filled::<u8, 18446744073709551615>(value: 0_u8);\n  return exit_status(code: 0_u8);\n}\n";
         check(
             &[SourceInput::new("value.wf", source)],
             CompilerLimits::default(),
@@ -2062,8 +2199,61 @@ fn main() -> status: own ExitStatus pure {{
     }
 
     #[test]
+    fn a_loop_frame_outside_the_selected_address_domain_stays_a_target_failure() {
+        use crate::backend::target::{TargetLayout, TargetLayoutFailure, TargetObject};
+
+        let source = br#"fn folded(values: Array<u8, 216>) -> result: u64 pure {
+  let total = 0_u64;
+  for (i in 0_u64..2_u64) {
+    let copied = values;
+    let byte = copied[0_u64];
+    let word = cvt::<u8, u64>(byte);
+    set total = total +wrap word;
+  }
+  return total;
+}
+
+fn main() -> status: ExitStatus pure {
+  let values = array_filled::<u8, 216>(value: 17_u8);
+  let total = folded(values: values);
+  return exit_status(code: 0_u8);
+}
+"#;
+        let target = TargetLayout::host()
+            .expect("supported test target")
+            .with_address_index_max_for_test(255);
+        let failure = super::with_checked_program(
+            &[SourceInput::new("frame.wf", source)],
+            CompilerLimits::default(),
+            |checked, _| {
+                crate::lower_checked_with_layout(checked, crate::OverlapLowering::On, target)
+                    .map(|_| ())
+                    .map_err(super::CompilationFailure::lowering)
+            },
+        )
+        .expect_err("the complete 256-byte frame exceeds the selected address domain");
+        assert_eq!(failure.stage(), CompilationStage::TargetLayout);
+        assert_eq!(failure.kind(), CompilationFailureKind::TargetLayout);
+        assert_eq!(failure.rule_id(), None);
+        assert!(failure.detail().contains("ParallelLaneFrame"));
+        assert_eq!(
+            crate::LoweringFailure::from(TargetLayoutFailure::Unrepresentable(
+                TargetObject::ParallelLaneFrame
+            )),
+            crate::LoweringFailure::TargetLayout(TargetLayoutFailure::Unrepresentable(
+                TargetObject::ParallelLaneFrame
+            )),
+        );
+        assert_eq!(
+            crate::LoweringFailure::from(TargetLayoutFailure::InvalidIr),
+            crate::LoweringFailure::InvalidCheckedProgram,
+            "malformed compiler data must not be published as a target-domain failure",
+        );
+    }
+
+    #[test]
     fn u16_buffer_whose_proved_count_exceeds_the_target_byte_domain_is_a_target_failure() {
-        let source = br#"fn bounded_count(n: own u64) -> result: own u64 pure contract {
+        let source = br#"fn bounded_count(n: u64) -> result: u64 pure contract {
   ensures result <= 5000000000000000000_u64;
 } {
   if n <= 5000000000000000000_u64 {
@@ -2073,12 +2263,12 @@ fn main() -> status: own ExitStatus pure {{
   }
 }
 
-fn make(n: own u64) -> result: own Box<Array<u16>> pure {
+fn make(n: u64) -> result: Box<Array<u16>> pure {
   let bounded = bounded_count(n: n);
   return box_array_filled::<u16>(count: bounded, value: 0_u16);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let values = make(n: 4_u64);
   return exit_status(code: 0_u8);
 }
@@ -2101,7 +2291,7 @@ fn main() -> status: own ExitStatus pure {
 
     #[test]
     fn complete_frame_is_checked_after_each_slot_layout_succeeds() {
-        let source = b"fn main() -> status: own ExitStatus pure {\n  let left = array_filled::<u8, 4611686018427387904>(value: 0_u8);\n  let right = array_filled::<u8, 4611686018427387904>(value: 0_u8);\n  return exit_status(code: 0_u8);\n}\n";
+        let source = b"fn main() -> status: ExitStatus pure {\n  let left = array_filled::<u8, 4611686018427387904>(value: 0_u8);\n  let right = array_filled::<u8, 4611686018427387904>(value: 0_u8);\n  return exit_status(code: 0_u8);\n}\n";
         let failure = compile(
             &[SourceInput::new("value.wf", source)],
             CompilerLimits::default(),
@@ -2118,9 +2308,9 @@ fn main() -> status: own ExitStatus pure {
     #[test]
     fn prelude_functions_and_unit_results_use_the_normal_call_path() {
         for source in [
-            b"fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n"
+            b"fn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n"
                 .as_slice(),
-            b"fn main() -> result: own unit pure {\n  return unit;\n}\n",
+            b"fn main() -> result: unit pure {\n  return unit;\n}\n",
         ] {
             let llvm = compile(
                 &[SourceInput::new("entry.wf", source)],
@@ -2136,11 +2326,12 @@ fn main() -> status: own ExitStatus pure {
         // exactness. Both are still rejections of the same two sources.
         for (source, rule) in [
             (
-                b"fn probe(args: own Args) -> result: own unit reads(args) {\n  return unit;\n}\n".as_slice(),
+                b"fn probe(args: Args) -> result: unit reads(args) {\n  return unit;\n}\n"
+                    .as_slice(),
                 "EFF-1",
             ),
             (
-                b"fn probe(file: &ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n",
+                b"fn probe(file: &ReadFile) -> result: unit writes(file) {\n  return unit;\n}\n",
                 "EFF-2",
             ),
         ] {
@@ -2356,16 +2547,16 @@ fn main() -> status: own ExitStatus pure {
     fn a_forbidden_atom_names_the_binding_form_its_grammar_position_admits() {
         let body = rejection(
             "body.wf",
-            br#"fn double(value: own u64) -> out: own u64 pure {
+            br#"fn double(value: u64) -> out: u64 pure {
   return value +wrap value;
 }
 
-fn helper(value: own u64) -> out: own u64 pure {
+fn helper(value: u64) -> out: u64 pure {
   let a = double(value: double(value: value));
   return a;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -2380,13 +2571,13 @@ fn main() -> status: own ExitStatus pure {
 
         let contract = rejection(
             "contract.wf",
-            br#"fn count(data: &[u8], start: own u64, end: own u64) -> lines: own u64 reads(data) contract {
+            br#"fn count(data: &[u8], start: u64, end: u64) -> lines: u64 reads(data) contract {
   requires imax(start, imin(start, end)) <= end;
 } {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -2410,14 +2601,14 @@ fn main() -> status: own ExitStatus pure {
         compile(
             &[SourceInput::new(
                 "repaired.wf",
-                br#"fn count(data: &[u8], start: own u64, end: own u64) -> lines: own u64 pure contract {
+                br#"fn count(data: &[u8], start: u64, end: u64) -> lines: u64 pure contract {
   define spare = deref(data).len;
   requires end <= spare;
 } {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -2439,7 +2630,7 @@ fn main() -> status: own ExitStatus pure {
     fn an_effect_row_defect_names_its_condition_and_the_row_that_repairs_it() {
         let detail = rejection(
             "row.wf",
-            br#"fn probe(cwd: &u64, out: &u64) -> status: own ExitStatus writes(cwd), writes(cwd), writes(out) {
+            br#"fn probe(cwd: &u64, out: &u64) -> status: ExitStatus writes(cwd), writes(cwd), writes(out) {
   set deref(cwd) = 1_u64;
   set deref(out) = 2_u64;
   return exit_status(code: 0_u8);
@@ -2469,11 +2660,11 @@ fn main() -> status: own ExitStatus pure {
     fn an_effect_mismatch_publishes_both_rows_and_the_exact_difference() {
         let detail = rejection(
             "effects.wf",
-            br#"fn count(data: &[u8]) -> lines: own u64 reads(data) {
+            br#"fn count(data: &[u8]) -> lines: u64 reads(data) {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -2496,7 +2687,7 @@ fn main() -> status: own ExitStatus pure {
     fn a_type_mismatch_publishes_the_type_required_and_the_type_written() {
         let detail = rejection(
             "types.wf",
-            br#"fn main() -> status: own ExitStatus pure {
+            br#"fn main() -> status: ExitStatus pure {
   let a = 1_u64;
   let b = 2_u32;
   let c = a <= b;
@@ -2521,11 +2712,11 @@ fn main() -> status: own ExitStatus pure {
     fn a_generic_form_without_type_arguments_names_both_spellings() {
         let detail = rejection(
             "result.wf",
-            br#"fn helper(value: own u8) -> out: own Result<u8, unit> pure {
+            br#"fn helper(value: u8) -> out: Result<u8, unit> pure {
   return Ok(value: value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -2541,11 +2732,11 @@ fn main() -> status: own ExitStatus pure {
         compile(
             &[SourceInput::new(
                 "result-repaired.wf",
-                br#"fn helper(value: own u8) -> out: own Result<u8, unit> pure {
+                br#"fn helper(value: u8) -> out: Result<u8, unit> pure {
   return Ok<u8, unit>(value: value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -2574,13 +2765,18 @@ fn main() -> status: own ExitStatus pure {
   return anchor;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
         );
         assert!(detail.contains("[GRAM-3]"), "{detail}");
-        assert!(detail.contains(r#"expected: ["own"]"#), "{detail}");
+        assert!(
+            detail.contains(
+                r#"expected: ["TYPEID", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "unit"]"#
+            ),
+            "{detail}"
+        );
         assert!(
             detail.contains(
                 r#"at reference-result.wf:1:33 in line "fn caller(anchor: &u64) -> out: &u64 pure {""#
@@ -2599,7 +2795,7 @@ fn main() -> status: own ExitStatus pure {
     fn a_canonical_gap_quotes_the_line_its_offending_bytes_are_in() {
         let detail = rejection(
             "indent.wf",
-            b"fn helper(value: own u64) -> out: own u64 pure {\n  let a = value +wrap 1_u64;\n    let b = a +wrap 2_u64;\n  return b;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+            b"fn helper(value: u64) -> out: u64 pure {\n  let a = value +wrap 1_u64;\n    let b = a +wrap 2_u64;\n  return b;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         );
         assert!(detail.contains("[FORM-2]"), "{detail}");
         assert!(
@@ -2611,7 +2807,7 @@ fn main() -> status: own ExitStatus pure {
         // the first byte of the gap, which is where the wrong bytes begin.
         let inline = rejection(
             "spacing.wf",
-            b"fn helper(value: own u64) -> out: own u64 pure {\n  let a = value +wrap 1_u64;\n  let b = a  +wrap 2_u64;\n  return b;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+            b"fn helper(value: u64) -> out: u64 pure {\n  let a = value +wrap 1_u64;\n  let b = a  +wrap 2_u64;\n  return b;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         );
         assert!(
             inline.contains(r#"at spacing.wf:3:12 in line "  let b = a  +wrap 2_u64;""#),

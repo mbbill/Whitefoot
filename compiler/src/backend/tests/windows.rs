@@ -31,13 +31,36 @@
 //! The remaining cases keep their subject and were retargeted onto the [OP-13]
 //! construction functions over the one heap [STOR-8].
 
-use crate::backend::target::{TargetLayout, TargetLayoutFailure, TargetObject, validate_program};
+use crate::backend::emitter::{
+    BackendFailure, WindowAddressFacts, emit_llvm_with_window_address_facts,
+};
+use crate::backend::target::{
+    TargetLayout, TargetLayoutFailure, TargetObject, TargetStorageType, validate_program,
+    validate_static_storage,
+};
 
 use super::system::with_ir;
 use super::*;
 
+/// The baseline clears the complete empty-window representation, including
+/// every descriptor word. This checks the shared row, not its callers.
+fn assert_empty_window_zeroed(module: &str, row: &str, header_fields: usize) {
+    let body = emitted_prelude_row(module, row);
+    assert!(!body.contains("poison"), "{body}");
+    assert!(!body.contains("undef"), "{body}");
+    let store = body
+        .lines()
+        .map(str::trim)
+        .find(|line| line.ends_with(" zeroinitializer, ptr %wf.result"))
+        .expect("the complete empty window is initialized in its result destination");
+    assert!(
+        store.starts_with(&format!("store {{ {}[", "i64, ".repeat(header_fields))),
+        "the zero aggregate includes every descriptor word before its slots: {body}"
+    );
+}
+
 const AFFINE_INVARIANT_BOUNDED_ALLOCATION: &[u8] =
-    br#"fn allocate(n: own u64, half: own u64) -> result: own unit pure contract {
+    br#"fn allocate(n: u64, half: u64) -> result: unit pure contract {
   requires half <= 500_u64;
 } {
   let doubled = half * 2_u64;
@@ -49,19 +72,19 @@ const AFFINE_INVARIANT_BOUNDED_ALLOCATION: &[u8] =
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
 
-const U64_RUNTIME_WINDOW: &[u8] = br#"fn main() -> status: own ExitStatus pure {
+const U64_RUNTIME_WINDOW: &[u8] = br#"fn main() -> status: ExitStatus pure {
   doc "One eight-byte slot in a runtime-capacity window, whose actual alignment the selected allocator has to promise.";
   let values = box_slots_new::<u64>(capacity: 1_u64);
   return exit_status(code: 0_u8);
 }
 "#;
 
-const U64_CELL: &[u8] = br#"fn main() -> status: own ExitStatus pure {
+const U64_CELL: &[u8] = br#"fn main() -> status: ExitStatus pure {
   doc "One eight-byte cell on the same heap, the other half of the same obligation.";
   let cell = box_new::<u64>(value: 7_u64);
   return exit_status(code: 0_u8);
@@ -80,9 +103,28 @@ fn slots_addresses_use_proved_offsets_and_ring_addresses_still_wrap() {
                 (format!("{shape}<u64{capacity}>"), "deref(values)")
             };
             let source = format!(
-                "fn read(values: &{ty}, index: own u64) -> result: own u64 reads(values) contract {{\n  requires index < {window}.len;\n}} {{\n  return {window}[index];\n}}\n\nfn roundtrip(values: &{ty}, value: own u64) -> result: own u64 writes(values) contract {{\n  requires {window}.len < {window}.cap;\n}} {{\n  place_back(window: &{window}, value: value);\n  let result = take_back(window: &{window});\n  return result;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+                "fn read(values: &{ty}, index: u64) -> result: u64 reads(values) contract {{\n  requires index < {window}.len;\n}} {{\n  return {window}[index];\n}}\n\nfn roundtrip(values: &{ty}, value: u64) -> result: u64 writes(values) contract {{\n  requires {window}.len < {window}.cap;\n}} {{\n  place_back(window: &{window}, value: value);\n  let result = take_back(window: &{window});\n  return result;\n}}\n\nfn main() -> status: ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
             );
-            let llvm = compile(source.as_bytes());
+            let (llvm, withheld) = with_ir(source.as_bytes(), |program| {
+                let target = TargetLayout::host().expect("supported target");
+                let emit = |facts| {
+                    emit_llvm_with_window_address_facts(program, target, facts)
+                        .expect("both fact choices use the same qualified program")
+                        .into_string()
+                };
+                (
+                    emit(WindowAddressFacts::Emit),
+                    emit(WindowAddressFacts::Withhold),
+                )
+            });
+            assert!(!withheld.contains("@llvm.assume"));
+            let ordinary_lines = llvm
+                .lines()
+                .filter(|line| {
+                    !line.contains("@llvm.assume") && !line.contains(".nonnegative = icmp sge i64 ")
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(ordinary_lines, withheld.lines().collect::<Vec<_>>());
             let functions = llvm
                 .split("\ndefine ")
                 .filter(|body| {
@@ -97,9 +139,292 @@ fn slots_addresses_use_proved_offsets_and_ring_addresses_still_wrap() {
             for body in functions {
                 assert!(body.contains("getelementptr inbounds"), "{body}");
                 assert_eq!(body.contains("icmp uge i64"), shape == "Ring", "{body}");
+                assert_eq!(body.matches("call void @llvm.assume(").count(), 1, "{body}");
+                let lines = body.lines().collect::<Vec<_>>();
+                let assume = lines
+                    .iter()
+                    .position(|line| line.contains("call void @llvm.assume("))
+                    .expect("one payload fact");
+                let address = lines[assume + 1].trim();
+                let (pointer, _) = address.split_once(" = ").expect("payload pointer");
+                let (_, operand) = address.rsplit_once(", i64 ").expect("actual GEP index");
+                assert_eq!(
+                    lines[assume - 1].trim(),
+                    format!("{pointer}.nonnegative = icmp sge i64 {operand}, 0")
+                );
+                assert_eq!(
+                    lines[assume].trim(),
+                    format!("call void @llvm.assume(i1 {pointer}.nonnegative)")
+                );
+                assert!(address.contains(" = getelementptr inbounds "), "{address}");
+                for line in lines {
+                    if line.contains(" = add ") || line.contains(" = sub ") {
+                        assert!(
+                            !line.contains(" nuw ") && !line.contains(" nsw "),
+                            "window coordinate arithmetic keeps its ordinary form: {line}"
+                        );
+                    }
+                }
             }
         }
     }
+}
+
+#[test]
+fn empty_fixed_windows_initialize_descriptors_before_return() {
+    let source = br#"fn main() -> status: ExitStatus pure {
+  let slots = slots_new::<Array<u64, 32>, 4>();
+  let ring = ring_new::<Array<u64, 32>, 4>();
+  if slots.len != 0_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if ring.len != 0_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if ring.head != 0_u64 {
+    return exit_status(code: 3_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let module = compile(source);
+    assert_empty_window_zeroed(&module, "slots_new", 1);
+    assert_empty_window_zeroed(&module, "ring_new", 2);
+    let output = compile_and_run(&module);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
+/// A take changes the descriptor even when no element bytes exist. Ring's
+/// captured physical position must still use its old head through wrapping.
+/// Huge logical capacities allocate only the header here; two front placements
+/// must preserve mathematical coordinates without overflowing an intermediate.
+#[test]
+fn zero_sized_takes_update_slots_and_wrapped_ring_boundaries_once() {
+    let source = br#"fn main() -> status: ExitStatus pure {
+  let value = array_filled::<u64, 0>(value: 0_u64);
+  let slots = slots_new::<Array<u64, 0>, 2>();
+  place_back(window: &slots, value: value);
+  place_back(window: &slots, value: value);
+  let last = take_back(window: &slots);
+  if slots.len != 1_u64 {
+    return exit_status(code: 1_u8);
+  }
+  let first = take_back(window: &slots);
+  if slots.len != 0_u64 {
+    return exit_status(code: 2_u8);
+  }
+  let ring = ring_new::<Array<u64, 0>, 2>();
+  place_back(window: &ring, value: value);
+  place_back(window: &ring, value: value);
+  let front = take_front(window: &ring);
+  if ring.head != 1_u64 {
+    return exit_status(code: 3_u8);
+  }
+  place_back(window: &ring, value: front);
+  let back = take_back(window: &ring);
+  if ring.len != 1_u64 {
+    return exit_status(code: 4_u8);
+  }
+  if ring.head != 1_u64 {
+    return exit_status(code: 5_u8);
+  }
+  let remainder = take_front(window: &ring);
+  if ring.head != 0_u64 {
+    return exit_status(code: 6_u8);
+  }
+  if ring.len != 0_u64 {
+    return exit_status(code: 7_u8);
+  }
+  let large = box_ring_new::<Array<u64, 0>>(capacity: 9223372036854775809_u64);
+  place_front(window: &large.inner, value: value);
+  if large.inner.head != 9223372036854775808_u64 {
+    return exit_status(code: 8_u8);
+  }
+  place_front(window: &large.inner, value: value);
+  if large.inner.head != 9223372036854775807_u64 {
+    return exit_status(code: 9_u8);
+  }
+  if large.inner.len != 2_u64 {
+    return exit_status(code: 10_u8);
+  }
+  let large_first = take_front(window: &large.inner);
+  if large.inner.head != 9223372036854775808_u64 {
+    return exit_status(code: 11_u8);
+  }
+  let large_last = take_front(window: &large.inner);
+  if large.inner.head != 0_u64 {
+    return exit_status(code: 12_u8);
+  }
+  if large.inner.len != 0_u64 {
+    return exit_status(code: 13_u8);
+  }
+  let single = ring_new::<Array<u64, 0>, 1>();
+  place_front(window: &single, value: value);
+  if single.head != 0_u64 {
+    return exit_status(code: 14_u8);
+  }
+  let only = take_front(window: &single);
+  if single.head != 0_u64 {
+    return exit_status(code: 15_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for (overlap, facts) in [
+        (OverlapLowering::Off, WindowAddressFacts::Emit),
+        (OverlapLowering::Off, WindowAddressFacts::Withhold),
+        (OverlapLowering::On, WindowAddressFacts::Emit),
+    ] {
+        let module = super::system::with_mutated_ir_lowering(source, overlap, |program| {
+            let target = TargetLayout::host().expect("supported target");
+            let mut module = emit_llvm_with_window_address_facts(program, target, facts)
+                .expect("the zero-stride program qualifies in both fact choices")
+                .into_string();
+            module.push_str(
+                &crate::driver::launcher::render(program, "main").expect("ordinary test launcher"),
+            );
+            module
+        });
+        let assumptions = module
+            .lines()
+            .filter(|line| line.contains(".nonnegative = icmp sge i64 "))
+            .collect::<Vec<_>>();
+        if facts == WindowAddressFacts::Emit {
+            assert!(!assumptions.is_empty(), "observe zero-stride payload facts");
+            assert!(assumptions.iter().all(|line| line.ends_with("i64 0, 0")));
+        } else {
+            assert!(assumptions.is_empty());
+            assert!(!module.contains("@llvm.assume"));
+        }
+        let retained = super::owned_places::retain_calls(&module);
+        let output = super::compile_and_run(&retained);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert!(output.stdout.is_empty(), "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+}
+
+/// Zero capacity removes the element's representation, including alignment.
+/// Otherwise an empty high-alignment window silently enlarges its parent and
+/// the emitted runtime allocation beyond the qualified byte ceiling. The
+/// native observer checks the emitted size independently of the Rust layout.
+#[test]
+fn zero_capacity_windows_keep_header_layout_inside_nonempty_storage() {
+    let source = br#"struct EmptyWindows {
+  before: u8;
+  slots: Slots<OutputStream, 0>;
+  ring: Ring<OutputStream, 0>;
+  after: u64;
+}
+
+fn empty_length(values: &[OutputStream]) -> result: u64 reads(values) {
+  return deref(values).len;
+}
+
+fn main() -> status: ExitStatus pure {
+  let initial_slots = slots_new::<OutputStream, 0>();
+  let initial_ring = ring_new::<OutputStream, 0>();
+  let value = EmptyWindows(before: 17_u8, slots: move initial_slots, ring: move initial_ring, after: 29_u64);
+  let storage = box_ring_new::<EmptyWindows>(capacity: 1_u64);
+  place_back(window: &storage.inner, value: move value);
+  let recovered = take_front(window: &storage.inner);
+  let EmptyWindows(before: before, slots: slots, ring: ring, after: after) = move recovered;
+  if before != 17_u8 {
+    return exit_status(code: 1_u8);
+  }
+  if after != 29_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if ring.head != 0_u64 {
+    return exit_status(code: 3_u8);
+  }
+  if ring.len != 0_u64 {
+    return exit_status(code: 7_u8);
+  }
+  let length = empty_length(values: &slots[0_u64..0_u64]);
+  if length != 0_u64 {
+    return exit_status(code: 4_u8);
+  }
+  let array = slots_into_array::<OutputStream, 0>(values: move slots);
+  let restored = slots_from_array::<OutputStream, 0>(values: move array);
+  if restored.len != 0_u64 {
+    return exit_status(code: 5_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let module = with_ir(source, |program| {
+        let host = TargetLayout::host().expect("supported target");
+        let owner = program
+            .nominals()
+            .iter()
+            .find(|nominal| nominal.name() == "EmptyWindows")
+            .expect("the nested source owner");
+        let owner_layout = validate_static_storage(
+            host,
+            program,
+            &TargetStorageType::source(crate::IrType::Nominal(owner.id())),
+        )
+        .expect("the complete parent fits");
+        assert_eq!((owner_layout.size(), owner_layout.align()), (40, 8));
+        let crate::IrNominalKind::Struct { fields } = owner.kind() else {
+            panic!("the owner is a source struct");
+        };
+        for (field, size) in [(1, 8), (2, 16)] {
+            let layout = validate_static_storage(
+                host,
+                program,
+                &TargetStorageType::source(fields[field].ty()),
+            )
+            .expect("the zero-capacity child fits");
+            assert_eq!((layout.size(), layout.align()), (size, 8));
+        }
+        // One Ring slot is the complete 40-byte parent after a 24-byte
+        // header, with no alignment inherited from the absent handles.
+        let exact = host.with_runtime_allocation_limits_for_test(64, 8);
+        assert_eq!(validate_program(exact, program), Ok(()));
+        let short = host.with_runtime_allocation_limits_for_test(63, 8);
+        assert_eq!(
+            validate_program(short, program),
+            Err(TargetLayoutFailure::Unrepresentable(
+                TargetObject::RuntimeSizedAllocation
+            ))
+        );
+        for facts in [WindowAddressFacts::Emit, WindowAddressFacts::Withhold] {
+            assert_eq!(
+                emit_llvm_with_window_address_facts(program, short, facts),
+                Err(BackendFailure::TargetLayout(
+                    TargetLayoutFailure::Unrepresentable(TargetObject::RuntimeSizedAllocation)
+                ))
+            );
+        }
+        let mut module = crate::backend::emitter::emit_llvm_with_layout(program, exact)
+            .expect("the exact allocation boundary emits")
+            .into_string();
+        module.push_str(
+            &crate::driver::launcher::render(program, "main").expect("ordinary test launcher"),
+        );
+        module
+    });
+    assert_empty_window_zeroed(&module, "slots_new", 1);
+    assert_empty_window_zeroed(&module, "ring_new", 2);
+    let observed = super::owned_places::retain_calls(&module)
+        .replace("@malloc(", "@wf_observe_window_allocate(");
+    let observer = r#"
+#include <stdint.h>
+#include <stdlib.h>
+
+void *wf_observe_window_allocate(uint64_t size) {
+    if (size != 64) exit(6);
+    return malloc((size_t)size);
+}
+"#;
+    let output = super::compile_link_and_run(&observed, Some(observer), &[]);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
 }
 
 /// OP-9 admits zero even when the mathematical language ceiling exceeds
@@ -109,7 +434,7 @@ fn slots_addresses_use_proved_offsets_and_ring_addresses_still_wrap() {
 fn an_above_u64_zero_count_reaches_target_qualification() {
     for generic in ["", "<T>"] {
         let source = format!(
-            "struct Giant {{\n  words: Array<u64, 2305843009213693952>;\n}}\n\nfn allocate{generic}(count: own u64) -> result: own unit pure contract {{\n  requires count <= 0_u64;\n}} {{\n  let cells = box_slots_new::<Giant>(capacity: count);\n  free_empty(window: move cells);\n  return unit;\n}}\n\nfn main() -> status: own ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+            "struct Giant {{\n  words: Array<u64, 2305843009213693952>;\n}}\n\nfn allocate{generic}(count: u64) -> result: unit pure contract {{\n  requires count <= 0_u64;\n}} {{\n  let cells = box_slots_new::<Giant>(capacity: count);\n  free_empty(window: move cells);\n  return unit;\n}}\n\nfn main() -> status: ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
         );
         with_ir(source.as_bytes(), |program| {
             let host = TargetLayout::host().expect("the test host is supported");
@@ -191,8 +516,7 @@ fn a_runtime_window_and_a_cell_must_fit_the_selected_allocator_alignment() {
 
 #[test]
 fn weigh_invariant_proves_domains_then_erases_before_llvm() {
-    let source =
-        br#"fn weigh(weights: &[u8], count: own u64) -> total: own u32 reads(weights) contract {
+    let source = br#"fn weigh(weights: &[u8], count: u64) -> total: u32 reads(weights) contract {
   define capacity = deref(weights).len;
   requires count <= capacity;
   requires count <= 1000_u64;
@@ -210,11 +534,11 @@ fn weigh_invariant_proves_domains_then_erases_before_llvm() {
   return sum;
 }
 
-fn tally(left: own u32, right: own u32) -> total: own u32 pure {
+fn tally(left: u32, right: u32) -> total: u32 pure {
   return left +wrap right;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let weights = slots_new::<u8, 4>();
   for @fill (
     at in 0_u64..4_u64,
@@ -285,7 +609,7 @@ fn main() -> status: own ExitStatus pure {
 fn a_runtime_capacity_window_crosses_functions_updates_and_frees_once() {
     // STOR-1 stores the length and elements in one allocation. The largest
     // u16 count is (i64::MAX - 8) / 2, including the Array header.
-    let source = br#"fn bounded_count(n: own u64) -> result: own u64 pure contract {
+    let source = br#"fn bounded_count(n: u64) -> result: u64 pure contract {
   ensures result <= 4611686018427387899_u64;
 } {
   if n <= 4611686018427387899_u64 {
@@ -295,16 +619,16 @@ fn a_runtime_capacity_window_crosses_functions_updates_and_frees_once() {
   }
 }
 
-fn make(n: own u64) -> result: own Box<Array<u16>> pure {
+fn make(n: u64) -> result: Box<Array<u16>> pure {
   let bounded = bounded_count(n: n);
   return box_array_filled::<u16>(count: bounded, value: 3_u16);
 }
 
-fn replacement() -> result: own u16 pure {
+fn replacement() -> result: u16 pure {
   return 9_u16;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let values = make(n: 4_u64);
   let length = values.inner.len;
   let stored = 0_u16;
@@ -376,12 +700,12 @@ fn main() -> status: own ExitStatus pure {
 /// next allocation of the same element type, so no target guard is emitted.
 #[test]
 fn a_window_length_qualifies_same_element_reallocation_without_a_target_guard() {
-    let source = br#"fn refill(source: own Box<Array<u8>>) -> result: own Box<Array<u8>> pure {
+    let source = br#"fn refill(source: Box<Array<u8>>) -> result: Box<Array<u8>> pure {
   let length = source.inner.len;
   return box_array_filled::<u8>(count: length, value: 0_u8);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let initial = box_array_filled::<u8>(count: 4_u64, value: 7_u8);
   let copied = refill(source: move initial);
   let length = copied.inner.len;
@@ -418,7 +742,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn op9_overflow_is_rejected_before_lowering() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let values = box_array_filled::<u64>(count: 18446744073709551615_u64, value: 0_u64);
   return exit_status(code: 0_u8);
 }
@@ -437,11 +761,11 @@ fn an_out_of_bounds_run_set_is_an_op4_compile_rejection() {
     // `box_array_filled`'s published count fixes the run's length [OP-13], so
     // 2 < 2 is underivable and the program rejects at compile time with the
     // residual over the [OP-15] measure read [OP-4, ENT-6].
-    let source = br#"fn replacement() -> result: own u8 pure {
+    let source = br#"fn replacement() -> result: u8 pure {
   return 9_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let values = box_array_filled::<u8>(count: 2_u64, value: 0_u8);
   set values.inner[2_u64] = replacement();
   return exit_status(code: 0_u8);
@@ -454,7 +778,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn run_cleanup_is_explicit_on_return_and_break_edges() {
-    let source = br#"fn cleanup(flag: own Bool) -> result: own unit pure {
+    let source = br#"fn cleanup(flag: Bool) -> result: unit pure {
   doc "Every edge that leaves this scope holding a window carries that window's release: the early return, the loop break, and the final return.";
   let values = box_slots_new::<u8>(capacity: 2_u64);
   if flag {
@@ -467,7 +791,7 @@ fn run_cleanup_is_explicit_on_return_and_break_edges() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let true_value = True();
   let false_value = False();
   cleanup(flag: true_value);
@@ -543,7 +867,7 @@ fn a_reference_parameter_updates_caller_storage_through_one_address_path() {
   count: u64;
 }
 
-fn update(pool: &Pool) -> result: own unit writes(pool.left), writes(pool.count) {
+fn update(pool: &Pool) -> result: unit writes(pool.left), writes(pool.count) {
   let spare = deref(pool).left.inner.len;
   let ok = 1_u64 < spare;
   if ok {
@@ -553,7 +877,7 @@ fn update(pool: &Pool) -> result: own unit writes(pool.left), writes(pool.count)
   return unit;
 }
 
-fn observe(pool: &Pool) -> result: own u64 reads(pool.left), reads(pool.count) {
+fn observe(pool: &Pool) -> result: u64 reads(pool.left), reads(pool.count) {
   let spare = deref(pool).left.inner.len;
   let ok = 1_u64 < spare;
   let count = deref(pool).count;
@@ -565,7 +889,7 @@ fn observe(pool: &Pool) -> result: own u64 reads(pool.left), reads(pool.count) {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let left = box_array_filled::<u64>(count: 2_u64, value: 0_u64);
   let right = box_array_filled::<u64>(count: 2_u64, value: 0_u64);
   let pool = Pool(left: move left, right: move right, count: 0_u64);
@@ -615,9 +939,9 @@ fn a_referenced_pool_tree_preserves_range_reference_and_result_abi() {
     for function in [build, checksum] {
         let header = function.lines().next().expect("helper signature");
         assert_eq!(header.matches("{ ptr, i64 }").count(), 2);
-        assert!(function.lines().any(|line| {
-            line.trim_start().starts_with("store %wf.t") && line.ends_with(", ptr %wf.result")
-        }));
+        // The result pointer still addresses the tag, u64 success payload
+        // and three-variant PoolError, each written on its selected route.
+        assert_scalar_result_fields(&llvm, function, &["i32", "i64", "i32"]);
     }
     assert!(
         build
@@ -766,11 +1090,11 @@ fn a_projected_window_target_is_formed_once_before_rhs() {
   right: Box<Array<u16>>;
 }
 
-fn replacement() -> result: own u16 pure {
+fn replacement() -> result: u16 pure {
   return 9_u16;
 }
 
-fn update(columns: own Columns) -> result: own Columns pure {
+fn update(columns: Columns) -> result: Columns pure {
   let spare = columns.left.inner.len;
   let ok = 1_u64 < spare;
   if ok {
@@ -779,7 +1103,7 @@ fn update(columns: own Columns) -> result: own Columns pure {
   return move columns;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let left = box_array_filled::<u16>(count: 2_u64, value: 0_u16);
   let right = box_array_filled::<u16>(count: 2_u64, value: 0_u16);
   let columns = Columns(left: move left, right: move right);
@@ -881,12 +1205,12 @@ struct Owner {
   suffix: Box<Slots<u64>>;
 }
 
-fn release(owner: own Owner) -> result: own unit pure {
+fn release(owner: Owner) -> result: unit pure {
   doc "Holds the whole nested owner and nothing else, so its one return edge carries exactly four cell releases.";
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let first = box_slots_new::<u8>(capacity: 1_u64);
   let second = box_slots_new::<u16>(capacity: 1_u64);
   let pair = Pair(first: move first, second: move second);
@@ -927,12 +1251,12 @@ struct Owner {
   suffix: Box<Slots<u8>>;
 }
 
-fn take(owner: own Owner) -> result: own Box<Slots<u8>> pure {
+fn take(owner: Owner) -> result: Box<Slots<u8>> pure {
   doc "Takes one field out; [WIN-3] consumes the whole owner, so the three residual siblings take their compiler-derived release here.";
   return move owner.pair.first;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let first = box_slots_new::<u8>(capacity: 1_u64);
   let second = box_slots_new::<u8>(capacity: 1_u64);
   let pair = Pair(first: move first, second: move second);
@@ -969,7 +1293,7 @@ fn trivially_droppable_affine_elements_keep_the_single_free() {
   Present(value: u32);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let slots = box_slots_new::<Maybe>(capacity: 4_u64);
   for @fill (
     at in 0_u64..4_u64,
@@ -1000,7 +1324,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_runtime_capacity_window_op9_overflow_is_rejected_before_lowering() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let slots = box_slots_new::<Option<u32>>(capacity: 18446744073709551615_u64);
   return exit_status(code: 0_u8);
 }
@@ -1019,7 +1343,7 @@ fn a_runtime_capacity_window_op9_overflow_is_rejected_before_lowering() {
 /// retrieves the element, and releases the now-empty allocation.
 #[test]
 fn a_transitive_generic_allocation_executes_and_releases_its_concrete_value() {
-    let source = br#"fn store<T>(value: own T) -> result: own T pure {
+    let source = br#"fn store<T>(value: T) -> result: T pure {
   let cells = box_slots_new::<T>(capacity: 1_u64);
   place_back(window: &cells.inner, value: move value);
   let output = take_back(window: &cells.inner);
@@ -1027,11 +1351,11 @@ fn a_transitive_generic_allocation_executes_and_releases_its_concrete_value() {
   return move output;
 }
 
-fn forward<T>(value: own T) -> result: own T pure {
+fn forward<T>(value: T) -> result: T pure {
   return store::<T>(value: move value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let output = forward::<u64>(value: 37_u64);
   if output != 37_u64 {
     return exit_status(code: 1_u8);

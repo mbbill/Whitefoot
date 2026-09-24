@@ -1,6 +1,6 @@
 const maximum: u64 = 18446744073709551615_u64;
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let held = maximum;
   if held == 18446744073709551615_u64 {
   } else {

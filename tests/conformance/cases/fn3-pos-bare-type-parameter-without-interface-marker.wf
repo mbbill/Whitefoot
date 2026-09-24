@@ -1,9 +1,9 @@
-fn pass<T>(value: own T) -> back: own T pure {
+fn pass<T>(value: T) -> back: T pure {
   doc "Without the interface marker, a bare generic-header TYPEID declares an ordinary unbounded type parameter.";
   return move value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The mandatory interface marker keeps ordinary <T> declarations unchanged and prevents lookup from reclassifying T as a group import.";
   let value = pass::<u8>(value: 6_u8);
   if value == 6_u8 {

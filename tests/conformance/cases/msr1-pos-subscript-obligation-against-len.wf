@@ -1,4 +1,4 @@
-fn filled<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
+fn filled<T: copy, const n: u64>(value: T) -> result: Slots<T, n> pure contract {
   ensures result.len >= n;
   ensures result.cap <= result.len;
 } {
@@ -14,7 +14,7 @@ fn filled<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure c
   return move built;
 }
 
-fn read_halves(run: own Slots<u8, 8>) -> total: own u64 pure contract {
+fn read_halves(run: Slots<u8, 8>) -> total: u64 pure contract {
   requires 8_u64 <= run.len;
 } {
   doc "Two disjoint logical ranges over one window.";
@@ -28,7 +28,7 @@ fn read_halves(run: own Slots<u8, 8>) -> total: own u64 pure contract {
   return seen;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "MSR-1, OP-4: a subscript offset is a logical offset naming the slot at physical offset (origin + i) mod cap, so its obligation is against len and never against cap. A Slots window begins at slot zero, so the map is the identity here and the injectivity sentence's conclusion - two disjoint logical ranges of one measured value describe disjoint storage - follows immediately from len <= cap, which MSR-2 publishes as a standing fact rather than as an obligation any occurrence submits. The two counted loops walk two disjoint ranges of one window and every subscript discharges against len.";
   let run = filled::<u8, 8>(value: 0_u8);
   let total = read_halves(run: move run);

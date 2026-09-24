@@ -2,11 +2,11 @@ nodrop struct Ticket {
   code: u8;
 }
 
-fn peek(cell: own Box<Ticket>) -> code: own u8 pure {
+fn peek(cell: Box<Ticket>) -> code: u8 pure {
   doc "A Box whose content is linear is itself linear, closed under ownership, so this binding may not reach the return edge by a compiler-derived release; the compiler never releases a linear value.";
   return 0_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

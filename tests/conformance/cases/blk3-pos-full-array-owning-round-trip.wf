@@ -3,20 +3,20 @@ struct Record {
   owner: Box<u64>;
 }
 
-fn record(tag: own u64) -> result: own Record pure {
+fn record(tag: u64) -> result: Record pure {
   doc "Builds one affine record whose owned part is a heap cell.";
   let owner = box_new::<u64>(value: tag);
   return Record(tag: tag, owner: move owner);
 }
 
-fn seal<T, const n: u64>(values: own Slots<T, n>) -> result: own Array<T, n> pure contract {
+fn seal<T, const n: u64>(values: Slots<T, n>) -> result: Array<T, n> pure contract {
   requires values.len == n;
 } {
   doc "Consumes a full window into a complete owning array.";
   return slots_into_array::<T, n>(values: move values);
 }
 
-fn open<T, const n: u64>(values: own Array<T, n>) -> result: own Slots<T, n> pure contract {
+fn open<T, const n: u64>(values: Array<T, n>) -> result: Slots<T, n> pure contract {
   ensures result.len == n;
 } {
   doc "Consumes a complete owning array back into a full window.";
@@ -24,12 +24,12 @@ fn open<T, const n: u64>(values: own Array<T, n>) -> result: own Slots<T, n> pur
   return move full;
 }
 
-fn lead_tag(values: &Array<Record, 3>) -> result: own u64 reads(values) {
+fn lead_tag(values: &Array<Record, 3>) -> result: u64 reads(values) {
   doc "Reads one scalar field of the first element through a shared reference.";
   return deref(values)[0_u64].tag;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A full Slots of affine records becomes a complete owning array in logical order. Operand-derived element types and explicit generic source helpers retain the exact type; a shared indexed read, an exchange through swap, the inverse conversion and a complete drain observe every value. Zero extent also crosses both conversions without element access. The wrapped-window variant of this round trip is not expressible here, because the two conversions admit Slots alone and only a Ring can wrap.";
   let a = record(tag: 11_u64);
   let b = record(tag: 22_u64);

@@ -15,7 +15,7 @@ use super::{compile, compile_and_run, compile_rejection, emitted_function};
 fn delivered_reference_guards_check_every_named_path_across_retained_calls() {
     let source = br#"const alternative: u64 = 9_u64;
 
-fn indexed(value: &u64) -> result: own u64 reads(value) contract {
+fn indexed(value: &u64) -> result: u64 reads(value) contract {
   requires deref(value) < 2_u64;
 } {
   let rows = array_filled::<u64, 2>(value: 7_u64);
@@ -23,7 +23,7 @@ fn indexed(value: &u64) -> result: own u64 reads(value) contract {
   return rows[index];
 }
 
-fn forward(value: &u64) -> result: own u64 reads(value) {
+fn forward(value: &u64) -> result: u64 reads(value) {
   let seen = deref(value);
   let chosen = if seen == 0_u64 {
     give &alternative;
@@ -37,7 +37,7 @@ fn forward(value: &u64) -> result: own u64 reads(value) {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let zero = 0_u64;
   let one = 1_u64;
   let refused = forward(value: &zero);
@@ -72,7 +72,8 @@ fn main() -> status: own ExitStatus pure {
     }
 }
 
-const OUTPUT_CAPACITY: &[u8] = br#"fn copy_bytes(out: &[u8], source: own Box<Slots<u8>>) -> written: own u64 writes(out) contract {
+const OUTPUT_CAPACITY: &[u8] =
+    br#"fn copy_bytes(out: &[u8], source: Box<Slots<u8>>) -> written: u64 writes(out) contract {
   define out_length = deref(out).len;
   define source_length = source.inner.len;
   requires source_length <= out_length;
@@ -85,7 +86,7 @@ const OUTPUT_CAPACITY: &[u8] = br#"fn copy_bytes(out: &[u8], source: own Box<Slo
   return length;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let length = 4_u64;
   let output = box_slots_new::<u8>(capacity: length);
   for @clear (
@@ -127,7 +128,7 @@ fn an_ordinary_selected_function_keeps_its_contract_without_a_wrapper_check() {
     // C2 deletes FN-7's command-entry contract refusal. This ordinary source
     // requirement is statically true; the build caller proves it normally.
     let module = compile(
-        br#"fn main() -> status: own ExitStatus pure contract {
+        br#"fn main() -> status: ExitStatus pure contract {
   requires 0_u64 == 0_u64;
 } {
   return exit_status(code: 0_u8);
@@ -139,7 +140,7 @@ fn an_ordinary_selected_function_keeps_its_contract_without_a_wrapper_check() {
     // A false requirement does not invalidate an ordinary declaration. The
     // build caller cannot prove it, so no executable entry is supplied.
     let library = compile(
-        br#"fn main() -> status: own ExitStatus pure contract {
+        br#"fn main() -> status: ExitStatus pure contract {
   requires 0_u64 == 1_u64;
 } {
   return exit_status(code: 0_u8);
@@ -153,14 +154,14 @@ fn an_ordinary_selected_function_keeps_its_contract_without_a_wrapper_check() {
 #[test]
 fn contradictory_requirements_emit_an_unreachable_body_without_a_trap() {
     let llvm = compile(
-        br#"fn impossible(value: own i32) -> out: own i32 pure contract {
+        br#"fn impossible(value: i32) -> out: i32 pure contract {
   requires value == 0_i32;
   requires value != 0_i32;
 } {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -173,7 +174,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn contract_define_is_symbolic_and_not_emitted_as_runtime_work() {
     let llvm = compile(
-        br#"fn identity(value: own u8) -> out: own u8 pure contract {
+        br#"fn identity(value: u8) -> out: u8 pure contract {
   define bits = ipopcount(value);
   requires bits == 0_u32;
   ensures out == value;
@@ -181,7 +182,7 @@ fn contract_define_is_symbolic_and_not_emitted_as_runtime_work() {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let bits = ipopcount(0_u8);
   if bits == 0_u32 {
     let zero = identity(value: 0_u8);
@@ -200,7 +201,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn contract_define_can_hold_a_float_endpoint_conversion_without_runtime_code() {
     let llvm = compile(
-        br#"fn identity(value: own u8) -> out: own u8 pure contract {
+        br#"fn identity(value: u8) -> out: u8 pure contract {
   define converted = cvt::<u8, f32>(value);
   requires feq(converted, 1.0_f32);
   ensures out == value;
@@ -208,7 +209,7 @@ fn contract_define_can_hold_a_float_endpoint_conversion_without_runtime_code() {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let converted = cvt::<u8, f32>(1_u8);
   if feq(converted, 1.0_f32) {
     let one = identity(value: 1_u8);
@@ -233,14 +234,14 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn ordinary_requirement_is_not_emitted_as_a_callee_prologue() {
     let llvm = compile(
-        br#"fn bounded(value: own i32) -> out: own i32 pure contract {
+        br#"fn bounded(value: i32) -> out: i32 pure contract {
   requires value >= 0_i32;
   ensures out == value;
 } {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let value = 7_i32;
   let returned = bounded(value: value);
   if returned != 7_i32 {
@@ -264,13 +265,13 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_requirement_must_be_discharged_at_each_ordinary_call() {
     let failure = compile_rejection(
-        br#"fn positive(value: own i32) -> out: own i32 pure contract {
+        br#"fn positive(value: i32) -> out: i32 pure contract {
   requires value > 0_i32;
 } {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let unknown = 0_i32;
   let returned = positive(value: unknown);
   return exit_status(code: 0_u8);
@@ -300,7 +301,12 @@ fn borrowed_output_capacity_contract_informs_the_body_without_a_callee_prologue(
     // compiler-derived free of that one heap object is on its return edge
     // [STOR-1, STOR-3, LIV-1].
     assert_eq!(copy.matches("call void @free").count(), 1);
-    assert!(!copy.contains("llvm.assume"));
+    // Retire the blanket absence-of-assume expectation: source.inner[offset]
+    // now receives the qualified nonnegative payload-index fact. The
+    // source_length <= out_length requirement itself remains erased; it
+    // supplies neither a callee prologue nor a separate assumption.
+    assert_eq!(copy.matches("call void @llvm.assume(i1 ").count(), 1);
+    assert_eq!(copy.matches(".nonnegative = icmp sge i64 ").count(), 1);
 
     let output = compile_and_run(&llvm);
     assert!(output.status.success());

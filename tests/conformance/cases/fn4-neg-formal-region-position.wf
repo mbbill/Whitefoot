@@ -3,10 +3,10 @@ struct Cell {
 }
 
 interface FirstValue {
-  fn read(x: &Cell, y: &Cell) -> result: own u8 reads(x.value);
+  fn read(x: &Cell, y: &Cell) -> result: u8 reads(x.value);
 }
 
-fn second_value(first: &Cell, second: &Cell) -> result: own u8 reads(second.value) {
+fn second_value(first: &Cell, second: &Cell) -> result: u8 reads(second.value) {
   doc "The row names the second parameter ordinal where the formal names the first.";
   return deref(second).value;
 }
@@ -15,6 +15,6 @@ binding Wrong : FirstValue {
   read = second_value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

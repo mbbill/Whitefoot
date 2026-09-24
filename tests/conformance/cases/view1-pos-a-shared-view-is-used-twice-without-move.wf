@@ -1,4 +1,4 @@
-fn first_byte(window: &[u8]) -> byte: own u8 reads(window) {
+fn first_byte(window: &[u8]) -> byte: u8 reads(window) {
   doc "Reads the first byte of a range reference when the range is nonempty.";
   let width = deref(window).len;
   let inside = 0_u64 < width;
@@ -9,7 +9,7 @@ fn first_byte(window: &[u8]) -> byte: own u8 reads(window) {
   return 0_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A reference is not an owned value [REF-1], so handing one to a helper is not a consuming use: one range reference is passed to the helper twice with no move and its own length is read after both calls, so a classification that consumed it at the first call would be visible as a rejection rather than as a silent difference. Read/read overlap at the two calls is admitted [EFF-5].";
   let data = array_filled::<u8, 2>(value: 13_u8);
   let window = &data[0_u64..2_u64];

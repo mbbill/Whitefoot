@@ -138,7 +138,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
                 (vec![], vec![self.element_type(element)?])
             }
-            CheckedType::Buffer { element } => (vec![], vec![element.ty()]),
+            CheckedType::Buffer { element } => (vec![], vec![self.element_type(element)?]),
             _ => (vec![], vec![]),
         };
         Ok(axes)

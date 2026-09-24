@@ -2,12 +2,12 @@ struct Holder<T: drop> {
   value: T;
 }
 
-fn swapin<T: drop>(handle: &Holder<T>, made: own T) -> code: own u8 pure {
+fn swapin<T: drop>(handle: &Holder<T>, made: T) -> code: u8 pure {
   doc "A reference parameter whose referent type is a generic type parameter. This helper declares no write and leaves the referent unchanged; there is no permission marker on the reference to suggest otherwise, and the exact projected row is what governs a caller's fact kills.";
   return 0_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Declares the generic helper above and returns.";
   return exit_status(code: 0_u8);
 }

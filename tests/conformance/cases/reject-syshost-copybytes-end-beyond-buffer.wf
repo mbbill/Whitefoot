@@ -1,4 +1,4 @@
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "The end exceeds the destination range's length. The ordinary function requires end <= deref(destination).len; FN-8 rejects the unproved call requirement without a runtime fallback.";
   let Inputs(args: arguments, cwd: root, handles: factory, ..) = move inputs;
   close_directory(factory: &factory, directory: move root);

@@ -89,13 +89,13 @@ fn consumed_result_fields_preserve_padding_siblings_and_smaller_returns() {
   right: u64;
 }
 
-fn split(value: own Row, bias: own u64) -> (before: own u8, updated: own Row, after: own u16) pure {
+fn split(value: Row, bias: u64) -> (before: u8, updated: Row, after: u16) pure {
   set value.left = value.left +wrap bias;
   set value.right = value.right +wrap 3_u64;
   return 7_u8, move value, 513_u16;
 }
 
-fn relay(value: own Row, bias: own u64) -> result: own Row pure {
+fn relay(value: Row, bias: u64) -> result: Row pure {
   let (before, updated, after) = split(value: move value, bias: bias);
   let stamp = 0_u64;
   if before == 7_u8 {
@@ -108,7 +108,7 @@ fn relay(value: own Row, bias: own u64) -> result: own Row pure {
   return move updated;
 }
 
-fn repeat(value: own Row, count: own u64) -> result: own Row pure {
+fn repeat(value: Row, count: u64) -> result: Row pure {
   for (iteration in 0_u64..count) {
     let (before, updated, after) = split(value: move value, bias: 5_u64);
     set value = move updated;
@@ -122,7 +122,7 @@ fn repeat(value: own Row, count: own u64) -> result: own Row pure {
   return move value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let input = Row(left: 11_u64, right: 29_u64);
   let result = relay(value: move input, bias: 5_u64);
   if result.left != 19_u64 {
@@ -170,12 +170,12 @@ fn indexed_child_references_update_only_the_selected_field() {
   y: u64;
 }
 
-fn write(value: &u64) -> result: own unit writes(value) {
+fn write(value: &u64) -> result: unit writes(value) {
   set deref(value) = 7_u64;
   return unit;
 }
 
-fn update(points: &Array<Point, 2>, index: own u64) -> result: own unit writes(points) contract {
+fn update(points: &Array<Point, 2>, index: u64) -> result: unit writes(points) contract {
   requires index < 2_u64;
 } {
   write(value: &deref(points)[index].x);
@@ -183,7 +183,7 @@ fn update(points: &Array<Point, 2>, index: own u64) -> result: own unit writes(p
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let first = Point(x: 17_u64, y: 29_u64);
   let second = Point(x: 41_u64, y: 53_u64);
   let loaded = slots_new::<Point, 2>();
@@ -228,13 +228,13 @@ struct Row {
   guard: u64;
 }
 
-fn add_to(value: &u64, amount: own u64) -> result: own unit writes(value) {
+fn add_to(value: &u64, amount: u64) -> result: unit writes(value) {
   let old = deref(value);
   set deref(value) = old +wrap amount;
   return unit;
 }
 
-fn adjust(rows: &Box<Array<Row>>, index: own u64, amount: own u64) -> result: own unit writes(rows) contract {
+fn adjust(rows: &Box<Array<Row>>, index: u64, amount: u64) -> result: unit writes(rows) contract {
   requires index < deref(rows).inner.len;
 } {
   let old = deref(rows).inner[index].pair.right;
@@ -244,7 +244,7 @@ fn adjust(rows: &Box<Array<Row>>, index: own u64, amount: own u64) -> result: ow
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let pair = Pair(left: 3_u64, right: 5_u64);
   let seed = Row(pair: pair, guard: 7_u64);
   let rows = box_array_filled::<Row>(count: 2_u64, value: seed);
@@ -300,7 +300,7 @@ fn loop_owner_sources_cover_later_iterations_and_counted_exhaustion() {
     // The two-place exchange retired with [LIV-2]'s multi-target commit; the
     // v0.60 spelling is [OP-11] `swap`, which consumes neither root and leaves
     // each the sole owner of the value the other held.
-    let source = br#"fn rotate(first: own Box<u64>, second: own Box<u64>, count: own u64) -> result: own u64 pure {
+    let source = br#"fn rotate(first: Box<u64>, second: Box<u64>, count: u64) -> result: u64 pure {
   for (iteration in 0_u64..count) {
     swap(first: &first, second: &second);
   }
@@ -308,7 +308,7 @@ fn loop_owner_sources_cover_later_iterations_and_counted_exhaustion() {
   return held;
 }
 
-fn once(first: own Box<u64>, second: own Box<u64>) -> result: own u64 pure {
+fn once(first: Box<u64>, second: Box<u64>) -> result: u64 pure {
   let repeat = True();
   loop {
     let observed = first.inner;
@@ -323,7 +323,7 @@ fn once(first: own Box<u64>, second: own Box<u64>) -> result: own u64 pure {
   return held;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let a = box_new::<u64>(value: 17_u64);
   let b = box_new::<u64>(value: 29_u64);
   let zero = rotate(first: move a, second: move b, count: 0_u64);
@@ -366,7 +366,7 @@ fn wide_result_returns_preserve_success_refusal_and_owned_children() {
   second: Box<u64>;
 }
 
-fn make_record(seed: own u64) -> result: own Result<Record, u8> pure {
+fn make_record(seed: u64) -> result: Result<Record, u8> pure {
   let first = box_new::<u64>(value: seed);
   if seed == 0_u64 {
     return Err<Record, u8>(error: 1_u8);
@@ -377,11 +377,11 @@ fn make_record(seed: own u64) -> result: own Result<Record, u8> pure {
   return Ok<Record, u8>(value: move record);
 }
 
-fn relay(seed: own u64) -> result: own Result<Record, u8> pure {
+fn relay(seed: u64) -> result: Result<Record, u8> pure {
   return make_record(seed: seed);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let reserved = box_slots_new::<Record>(capacity: 1_u64);
   match relay(seed: 0_u64) {
     Err(error: code) => {
@@ -437,7 +437,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn competing_wide_returns_preserve_live_and_referenced_contents() {
-    let source = br#"fn choose_live(seed: own u64) -> result: own Array<u64, 512> pure {
+    let source = br#"fn choose_live(seed: u64) -> result: Array<u64, 512> pure {
   let original = array_filled::<u64, 512>(value: seed);
   if seed == 0_u64 {
     return original;
@@ -449,7 +449,7 @@ fn competing_wide_returns_preserve_live_and_referenced_contents() {
   return candidate;
 }
 
-fn choose_referenced(seed: own u64) -> result: own Array<u64, 512> pure {
+fn choose_referenced(seed: u64) -> result: Array<u64, 512> pure {
   let original = array_filled::<u64, 512>(value: seed);
   if seed == 0_u64 {
     return original;
@@ -463,7 +463,7 @@ fn choose_referenced(seed: own u64) -> result: own Array<u64, 512> pure {
   return candidate;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let first = choose_live(seed: 0_u64);
   let second = choose_live(seed: 17_u64);
   let third = choose_referenced(seed: 0_u64);
@@ -516,14 +516,14 @@ fn an_owned_parameter_uses_same_or_distinct_result_storage_after_entry_transfer(
   value: u64;
 }
 
-fn extend(items: own Row, value: own u64, watch: &u64) -> updated: own Row reads(watch) {
+fn extend(items: Row, value: u64, watch: &u64) -> updated: Row reads(watch) {
   let bias = deref(watch);
   let adjusted = value +wrap bias;
   set items.value = adjusted;
   return move items;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let watch = 5_u64;
   let payload = array_filled::<u64, 16>(value: 41_u64);
   let same = Row(payload: payload, value: 0_u64);
@@ -585,11 +585,11 @@ struct Holder {
   row: Row;
 }
 
-fn discard(value: own Row) -> result: own unit pure {
+fn discard(value: Row) -> result: unit pure {
   return unit;
 }
 
-fn choose(left: own Row, right: own Row, watch: &u64) -> result: own Row reads(watch) {
+fn choose(left: Row, right: Row, watch: &u64) -> result: Row reads(watch) {
   let expected = deref(watch);
   if right.value != expected {
     let ignored = discard(value: move left);
@@ -598,13 +598,13 @@ fn choose(left: own Row, right: own Row, watch: &u64) -> result: own Row reads(w
   return move left;
 }
 
-fn relay(held: own Row, watch: &u64, offered: own u64) -> result: own Row reads(watch) {
+fn relay(held: Row, watch: &u64, offered: u64) -> result: Row reads(watch) {
   let row = Row(value: offered);
   let fresh = Holder(row: move row);
   return choose(left: move fresh.row, right: move held, watch: watch);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let watch = 29_u64;
   let first_input = Row(value: 29_u64);
   let second_input = Row(value: 31_u64);
@@ -644,12 +644,12 @@ fn zero_sized_aggregate_assignment_preserves_adjacent_fields() {
   after: u64;
 }
 
-fn install_empty(target: &Envelope, value: own Array<u64, 0>) -> result: own unit writes(target.empty) {
+fn install_empty(target: &Envelope, value: Array<u64, 0>) -> result: unit writes(target.empty) {
   set deref(target).empty = value;
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let empty = array_filled::<u64, 0>(value: 0_u64);
   let envelope = Envelope(before: 17_u64, empty: empty, after: 29_u64);
   let replacement = array_filled::<u64, 0>(value: 43_u64);
@@ -683,19 +683,19 @@ fn ordinary_box_owner_transfer_keeps_values_and_release_across_two_helpers() {
   current: u64;
 }
 
-fn exchange(slot: &Box<u64>, incoming: &Box<u64>) -> result: own unit writes(slot), writes(incoming) {
+fn exchange(slot: &Box<u64>, incoming: &Box<u64>) -> result: unit writes(slot), writes(incoming) {
   swap(first: slot, second: incoming);
   return unit;
 }
 
-fn observe(owner: own Box<u64>, incoming: own Box<u64>) -> result: own Observed pure {
+fn observe(owner: Box<u64>, incoming: Box<u64>) -> result: Observed pure {
   exchange(slot: &owner, incoming: &incoming);
   let previous_value = incoming.inner;
   let current_value = owner.inner;
   return Observed(previous: previous_value, current: current_value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let owner = box_new::<u64>(value: 11_u64);
   let incoming_value = owner.inner +wrap 11_u64;
   let incoming = box_new::<u64>(value: incoming_value);
@@ -733,13 +733,12 @@ fn main() -> status: own ExitStatus pure {
 /// above.
 #[test]
 fn box_assignment_updates_the_owner_and_releases_each_cell_once() {
-    let source =
-        br#"fn install(slot: &Box<u64>, incoming: own Box<u64>) -> result: own unit writes(slot) {
+    let source = br#"fn install(slot: &Box<u64>, incoming: Box<u64>) -> result: unit writes(slot) {
   set deref(slot) = move incoming;
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let cell = box_new::<u64>(value: 11_u64);
   let incoming = box_new::<u64>(value: 22_u64);
   install(slot: &cell, incoming: move incoming);
@@ -776,7 +775,7 @@ fn enum_payload_assignment_updates_the_child_owner_in_its_box() {
   HasChildren(left: Box<u64>, right: Box<u64>);
 }
 
-fn exchange_child(tree: &Box<Node>, incoming: own Box<u64>) -> kept: own u64 writes(tree) {
+fn exchange_child(tree: &Box<Node>, incoming: Box<u64>) -> kept: u64 writes(tree) {
   match deref(tree).inner {
     Marker(prefix: marker_prefix, suffix: marker_suffix) => {
       return 0_u64;
@@ -789,7 +788,7 @@ fn exchange_child(tree: &Box<Node>, incoming: own Box<u64>) -> kept: own u64 wri
   }
 }
 
-fn read_child(tree: &Box<Node>) -> result: own u64 reads(tree) {
+fn read_child(tree: &Box<Node>) -> result: u64 reads(tree) {
   match deref(tree).inner {
     Marker(prefix: marker_prefix, suffix: marker_suffix) => {
       return 0_u64;
@@ -805,7 +804,7 @@ fn read_child(tree: &Box<Node>) -> result: own u64 reads(tree) {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let first = box_new::<u64>(value: 11_u64);
   let incoming_value = first.inner +wrap 11_u64;
   let incoming = box_new::<u64>(value: incoming_value);
@@ -845,7 +844,7 @@ fn main() -> status: own ExitStatus pure {
 
 /// [SET-1] resolves and evaluates its target before the right-hand side, so a
 /// call that writes the index binding still commits to the slot the statement
-/// named.
+/// named. Slots and both fixed- and runtime-capacity Arrays share this rule.
 ///
 /// The two-target half of this case retired with [LIV-2]: `set (a, b) = e, f;`
 /// has no v0.60 production, [SET-1] writes exactly one place, and the
@@ -853,14 +852,14 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn indexed_targets_are_captured_before_disjoint_rhs_effects() {
     let module = compile(
-        br#"fn advance(offset: &u64, trace: &u64) -> result: own u64 writes(offset), writes(trace) {
+        br#"fn advance(offset: &u64, trace: &u64) -> result: u64 writes(offset), writes(trace) {
   set deref(offset) = 1_u64;
   let shifted = deref(trace) *wrap 10_u64;
   set deref(trace) = shifted +wrap 1_u64;
   return 41_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let left = slots_new::<u64, 2>();
   place_back(window: &left, value: 3_u64);
   place_back(window: &left, value: 5_u64);
@@ -879,6 +878,35 @@ fn main() -> status: own ExitStatus pure {
   }
   if trace != 1_u64 {
     return exit_status(code: 4_u8);
+  }
+  let fixed = array_filled::<u64, 2>(value: 7_u64);
+  set offset = 0_u64;
+  invariant fixed_target_bound: offset < fixed.len;
+  set fixed[offset] = advance(offset: &offset, trace: &trace);
+  if fixed[0_u64] != 41_u64 {
+    return exit_status(code: 5_u8);
+  }
+  if fixed[1_u64] != 7_u64 {
+    return exit_status(code: 6_u8);
+  }
+  if offset != 1_u64 {
+    return exit_status(code: 7_u8);
+  }
+  let runtime = box_array_filled::<u64>(count: 2_u64, value: 11_u64);
+  set offset = 0_u64;
+  invariant runtime_target_bound: offset < runtime.inner.len;
+  set runtime.inner[offset] = advance(offset: &offset, trace: &trace);
+  if runtime.inner[0_u64] != 41_u64 {
+    return exit_status(code: 8_u8);
+  }
+  if runtime.inner[1_u64] != 11_u64 {
+    return exit_status(code: 9_u8);
+  }
+  if offset != 1_u64 {
+    return exit_status(code: 10_u8);
+  }
+  if trace != 111_u64 {
+    return exit_status(code: 11_u8);
   }
   return exit_status(code: 0_u8);
 }
@@ -902,12 +930,12 @@ fn an_element_target_is_captured_before_the_rhs_changes_its_index() {
   right: u64;
 }
 
-fn replacement(offset: &u64) -> result: own Row writes(offset) {
+fn replacement(offset: &u64) -> result: Row writes(offset) {
   set deref(offset) = 1_u64;
   return Row(left: 19_u64, right: 23_u64);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let rows = slots_new::<Row, 2>();
   let first = Row(left: 3_u64, right: 5_u64);
   place_back(window: &rows, value: first);
@@ -960,7 +988,7 @@ struct Table {
   tag: u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let first = Row(left: 1_u64, right: 10_u64);
   let second = Row(left: 2_u64, right: 20_u64);
   for (round in 0_u64..5_u64) {
@@ -1011,6 +1039,86 @@ fn main() -> status: own ExitStatus pure {
     assert_success(&module);
 }
 
+/// OP-11 excludes partial overlap while admitting an exactly equal target.
+/// The owning payload makes a corrupted snapshot observable at cleanup; the
+/// wrapped Ring and retained helper keep address formation and dynamic indexes
+/// in the executable path instead of folding the exchange into constants.
+#[test]
+fn aggregate_swap_uses_equal_or_disjoint_copies_for_wrapped_owning_records() {
+    let module = compile(
+        br#"nocopy struct Row {
+  words: Array<u64, 32>;
+  owner: Box<u64>;
+}
+
+fn make_row(value: u64) -> result: Row pure {
+  let words = array_filled::<u64, 32>(value: value);
+  let owner = box_new::<u64>(value: value);
+  return Row(words: words, owner: move owner);
+}
+
+fn exchange(values: &Ring<Row, 3>, first: u64, second: u64) -> result: unit writes(values) contract {
+  requires first < second;
+  requires second < deref(values).len;
+  ensures deref(values).len == deref(entry(values)).len;
+} {
+  swap(first: &deref(values)[first], second: &deref(values)[second]);
+  return unit;
+}
+
+fn same(values: &Ring<Row, 3>, index: u64) -> result: unit writes(values) contract {
+  requires index < deref(values).len;
+  ensures deref(values).len == deref(entry(values)).len;
+} {
+  swap(first: &deref(values)[index], second: &deref(values)[index]);
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  let values = ring_new::<Row, 3>();
+  let first = make_row(value: 11_u64);
+  place_back(window: &values, value: move first);
+  let second = make_row(value: 22_u64);
+  place_back(window: &values, value: move second);
+  let third = make_row(value: 33_u64);
+  place_back(window: &values, value: move third);
+  let rotated = take_front(window: &values);
+  place_back(window: &values, value: move rotated);
+  exchange(values: &values, first: 0_u64, second: 2_u64);
+  same(values: &values, index: 1_u64);
+  if values[0_u64].owner.inner != 11_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if values[1_u64].owner.inner != 33_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if values[2_u64].owner.inner != 22_u64 {
+    return exit_status(code: 3_u8);
+  }
+  for (index in 0_u64..32_u64) {
+    if values[0_u64].words[index] != 11_u64 {
+      return exit_status(code: 4_u8);
+    }
+    if values[1_u64].words[index] != 33_u64 {
+      return exit_status(code: 5_u8);
+    }
+    if values[2_u64].words[index] != 22_u64 {
+      return exit_status(code: 6_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+    );
+    let swap = super::emitted_prelude_row(&module, "swap");
+    assert!(swap.contains("call void @llvm.memcpy."), "{swap}");
+    assert!(!swap.contains("@llvm.memmove."), "{swap}");
+    assert!(!swap.contains("@llvm.memcpy.inline."), "{swap}");
+    assert!(!swap.lines().next().unwrap().contains("noalias"), "{swap}");
+    assert_success(&module);
+    assert_success(&retain_calls(&module));
+}
+
 /// A reference to an element, a reference to an element's field, a range
 /// reference over a byte run and a reference to a sibling scalar all name
 /// paths into the one owner's storage [REF-1, REF-4], and a write through each
@@ -1034,7 +1142,7 @@ struct Table {
   tag: u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let loaded = slots_new::<Row, 2>();
   let first = Row(left: 3_u64, right: 5_u64);
   place_back(window: &loaded, value: first);
@@ -1084,7 +1192,7 @@ fn value_if_cleans_unchosen_owners_before_reusing_delivery_storage() {
   value: Box<u64>;
 }
 
-fn choose(left: own Cell, right: own Cell, flag: own Bool) -> result: own u64 pure {
+fn choose(left: Cell, right: Cell, flag: Bool) -> result: u64 pure {
   let selected = if flag {
     let first = move left;
     let second = move right;
@@ -1098,7 +1206,7 @@ fn choose(left: own Cell, right: own Cell, flag: own Bool) -> result: own u64 pu
   return held;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   for (round in 0_u64..2_u64) {
     let first_cell = box_new::<u64>(value: 11_u64);
     let second_cell = box_new::<u64>(value: 22_u64);
@@ -1146,16 +1254,16 @@ fn owner_cleanup_releases_cell_fields_in_checked_order() {
   stamp: u64;
 }
 
-fn touch(value: &u64) -> result: own unit writes(value) {
+fn touch(value: &u64) -> result: unit writes(value) {
   set deref(value) = 41_u64;
   return unit;
 }
 
-fn consume(value: own Holder) -> result: own u8 pure {
+fn consume(value: Holder) -> result: u8 pure {
   return 0_u8;
 }
 
-fn release(value: own Holder, early: own Bool) -> result: own u8 pure {
+fn release(value: Holder, early: Bool) -> result: u8 pure {
   touch(value: &value.stamp);
   if value.stamp != 41_u64 {
     return 2_u8;
@@ -1167,7 +1275,7 @@ fn release(value: own Holder, early: own Bool) -> result: own u8 pure {
   return 0_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   for (round in 0_u64..2_u64) {
     let cell = box_new::<u64>(value: 17_u64);
     let bytes = box_slots_new::<u8>(capacity: 3_u64);
@@ -1217,7 +1325,7 @@ enum Packet {
   Empty();
 }
 
-fn hold_packet() -> result: own unit pure {
+fn hold_packet() -> result: unit pure {
   let first = box_new::<u64>(value: 11_u64);
   let second = box_new::<u64>(value: 22_u64);
   let pair = Pair(first: move first, second: move second);
@@ -1226,7 +1334,7 @@ fn hold_packet() -> result: own unit pure {
   return unit;
 }
 
-fn hold_triple() -> result: own u8 pure {
+fn hold_triple() -> result: u8 pure {
   let first = box_new::<u64>(value: 44_u64);
   let selected = box_new::<u64>(value: 55_u64);
   let tail = box_new::<u64>(value: 66_u64);
@@ -1239,7 +1347,7 @@ fn hold_triple() -> result: own u8 pure {
   return 0_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   hold_packet();
   let code = hold_triple();
   return exit_status(code: code);
@@ -1277,7 +1385,7 @@ struct Outer {
   other: Box<u8>;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let payload = Payload(value: 7_u8);
   let selected = box_new::<Payload>(value: move payload);
   let tail = box_new::<u8>(value: 2_u8);
@@ -1392,6 +1500,51 @@ void wf_test_release(void *allocation) {{
     )
 }
 
+/// A front removal and back placement wrap a Ring, whose logical
+/// reads and drain must yield 20, 30, and 40 [TYPE-9, WIN-1, OP-10]. The helper
+/// consumes each whole Box while returning its copy scalar, so scope cleanup
+/// frees that cell before the next source step [WIN-3]. The process-tag trace
+/// checks that the removed owner leaves before A5, the remaining owners leave
+/// in logical order, and the outer cell leaves last. The runtime shape drains
+/// explicitly; a boxed inline shape leaves a wrapped partial window to cleanup.
+#[test]
+fn boxed_runtime_ring_wraps_and_releases_each_owner_in_order() {
+    let source = include_str!("../../../../tests/programs/runtime_ring_wrap.wf");
+    let fixed = source.replace(
+        "  let ring = box_ring_new::<Box<u64>>(capacity: 3_u64);",
+        r#"  let empty = ring_new::<Box<u64>, 3>();
+  let ring = box_new::<Ring<Box<u64>, 3>>(value: move empty);
+  if ring.inner.len != 0_u64 {
+    return exit_status(code: 12_u8);
+  }
+  if ring.inner.head != 0_u64 {
+    return exit_status(code: 13_u8);
+  }"#,
+    );
+    assert_ne!(fixed, source);
+    let (partial, _) = fixed
+        .split_once("  let second_owner = take_front(window: &ring.inner);")
+        .expect("the original control drains a second element");
+    let partial = format!("{partial}  return exit_status(code: 0_u8);\n}}\n");
+    let host = allocation_observer(5, 0).replace(
+        "held[id] = allocation;",
+        "memset(allocation, 0xa5, size);\n    held[id] = allocation;",
+    );
+    for source in [source, partial.as_str()] {
+        let module = compile(source.as_bytes());
+        let observed = retain_calls(&module)
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(");
+        let output = compile_link_and_run(&observed, Some(&host), &[]);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert_eq!(
+            output.stdout, b"A1;A2;A3;A4;F2;A5;F3;F4;F5;F1;",
+            "{output:?}"
+        );
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+}
+
 /// A full bounded append returns its input rather than overwriting an element.
 ///
 /// The arena half of this case retired with [STOR-4]: there is one heap
@@ -1404,14 +1557,14 @@ fn boxed_window_bounded_append_preserves_storage_and_elements() {
   code: u8;
 }
 
-fn add_one(storage: own Box<Slots<Box<u64>, 2>>, value: own Box<u64>) -> result: own Box<Slots<Box<u64>, 2>> pure contract {
+fn add_one(storage: Box<Slots<Box<u64>, 2>>, value: Box<u64>) -> result: Box<Slots<Box<u64>, 2>> pure contract {
   requires storage.inner.len < storage.inner.cap;
 } {
   place_back(window: &storage.inner, value: move value);
   return move storage;
 }
 
-fn try_append(storage: own Box<Slots<Box<u64>, 2>>, value: own Box<u64>) -> (result: own Box<Slots<Box<u64>, 2>>, returned: own Option<Box<u64>>) pure {
+fn try_append(storage: Box<Slots<Box<u64>, 2>>, value: Box<u64>) -> (result: Box<Slots<Box<u64>, 2>>, returned: Option<Box<u64>>) pure {
   let filled = storage.inner.len;
   if filled < 2_u64 {
     let updated = add_one(storage: move storage, value: move value);
@@ -1420,7 +1573,7 @@ fn try_append(storage: own Box<Slots<Box<u64>, 2>>, value: own Box<u64>) -> (res
   return move storage, Some<Box<u64>>(value: move value);
 }
 
-fn inspect(values: own Slots<Box<u64>, 2>) -> code: own u8 pure {
+fn inspect(values: Slots<Box<u64>, 2>) -> code: u8 pure {
   let length = values.len;
   if length != 2_u64 {
     return 4_u8;
@@ -1438,7 +1591,7 @@ fn inspect(values: own Slots<Box<u64>, 2>) -> code: own u8 pure {
   return 0_u8;
 }
 
-fn exercise(storage: own Box<Slots<Box<u64>, 2>>) -> result: own Checked pure {
+fn exercise(storage: Box<Slots<Box<u64>, 2>>) -> result: Checked pure {
   let first = box_new::<u64>(value: 17_u64);
   let (one, first_returned) = try_append(storage: move storage, value: move first);
   match first_returned {
@@ -1473,9 +1626,12 @@ fn exercise(storage: own Box<Slots<Box<u64>, 2>>) -> result: own Checked pure {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let empty = slots_new::<Box<u64>, 2>();
   let cell = box_new::<Slots<Box<u64>, 2>>(value: move empty);
+  if cell.inner.len != 0_u64 {
+    return exit_status(code: 8_u8);
+  }
   let result = exercise(storage: move cell);
   let Checked(storage: storage, code: code) = move result;
   if code != 0_u8 {
@@ -1491,7 +1647,10 @@ fn main() -> status: own ExitStatus pure {
         let observed = retain_calls(&module)
             .replace("@malloc(", "@wf_test_allocate(")
             .replace("@free(", "@wf_test_release(");
-        let host = allocation_observer(4, 0);
+        let host = allocation_observer(4, 0).replace(
+            "held[id] = allocation;",
+            "memset(allocation, 0xa5, size);\n    held[id] = allocation;",
+        );
         let output = compile_link_and_run(&observed, Some(&host), &[]);
         assert_eq!(output.status.code(), Some(0), "{output:?}");
         // The refused element leaves first. Moving the content out of the cell
@@ -1565,16 +1724,16 @@ fn referencing_owned_box_content_addresses_the_allocation() {
   right: u64;
 }
 
-fn write(value: &u64, fresh: own u64) -> result: own unit writes(value) {
+fn write(value: &u64, fresh: u64) -> result: unit writes(value) {
   set deref(value) = fresh;
   return unit;
 }
 
-fn read(value: &u64) -> result: own u64 reads(value) {
+fn read(value: &u64) -> result: u64 reads(value) {
   return deref(value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let pair = Pair(left: 11_u64, right: 29_u64);
   let owner = box_new::<Pair>(value: pair);
   write(value: &owner.inner.left, fresh: 37_u64);
@@ -1609,13 +1768,13 @@ fn main() -> status: own ExitStatus pure {
 /// content when the reference names the `Box` field `inner` [TYPE-9, REF-1].
 #[test]
 fn boxed_window_contracts_keep_the_content_projection_through_a_holder() {
-    let source = br#"fn first(values: &Slots<u64, 2>) -> result: own u64 reads(values) contract {
+    let source = br#"fn first(values: &Slots<u64, 2>) -> result: u64 reads(values) contract {
   requires deref(values).len > 0_u64;
 } {
   return deref(values)[0_u64];
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let initial = array_filled::<u64, 2>(value: 29_u64);
   let values = slots_from_array::<u64, 2>(values: initial);
   let owner = box_new::<Slots<u64, 2>>(value: move values);
@@ -1679,11 +1838,11 @@ fn main() -> status: own ExitStatus pure {
 fn a_commit_over_a_named_binding_releases_exactly_the_owner_it_displaces() {
     let program = |body: &str, expected: &str| {
         format!(
-            r#"fn probe() -> result: own u64 pure {{
+            r#"fn probe() -> result: u64 pure {{
 {body}
 }}
 
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   let total = probe();
   if total != {expected} {{
     return exit_status(code: 1_u8);
@@ -1763,5 +1922,105 @@ fn main() -> status: own ExitStatus pure {{
             );
             assert!(output.stderr.is_empty(), "{output:?}");
         }
+    }
+}
+
+#[test]
+fn discarded_struct_results_release_nested_cells_once() {
+    for statement in ["make();", "let held = make();"] {
+        let source = format!(
+            r#"struct Inner {{
+  value: Box<u64>;
+}}
+
+struct Outer {{
+  first: Box<u64>;
+  inner: Inner;
+}}
+
+fn make() -> result: Outer pure {{
+  let first = box_new::<u64>(value: 11_u64);
+  let second = box_new::<u64>(value: 22_u64);
+  let inner = Inner(value: move second);
+  return Outer(first: move first, inner: move inner);
+}}
+
+fn main() -> status: ExitStatus pure {{
+  {statement}
+  return exit_status(code: 0_u8);
+}}
+"#
+        );
+        for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
+            let module = super::emit_lowered(source.as_bytes(), overlap);
+            let observed = retain_calls(&module)
+                .replace("@malloc(", "@wf_test_allocate(")
+                .replace("@free(", "@wf_test_release(");
+            let output = compile_link_and_run(&observed, Some(&u64_allocation_observer(2)), &[]);
+            assert_eq!(output.status.code(), Some(0), "{statement}: {output:?}");
+            let records = std::str::from_utf8(&output.stdout)
+                .expect("observer emits ASCII")
+                .split_terminator(';')
+                .filter(|record| record.starts_with('V'))
+                .collect::<Vec<_>>();
+            assert_eq!(records, ["V11", "V22"], "{statement}: {output:?}");
+            assert!(output.stderr.is_empty(), "{output:?}");
+        }
+    }
+}
+
+#[test]
+fn boxed_field_consumes_skip_empty_residuals_and_release_nested_cells() {
+    let source = br#"nocopy enum Tag {
+  Present();
+}
+
+struct Residual {
+  tag: Tag;
+  cell: Box<u64>;
+}
+
+struct Holder {
+  stamp: u64;
+  selected: Box<u64>;
+  tag: Tag;
+  residual: Residual;
+}
+
+fn main() -> status: ExitStatus pure {
+  let selected = box_new::<u64>(value: 17_u64);
+  let other = box_new::<u64>(value: 29_u64);
+  let residual_tag = Present();
+  let residual = Residual(tag: move residual_tag, cell: move other);
+  let tag = Present();
+  let holder = Holder(stamp: 43_u64, selected: move selected, tag: move tag, residual: move residual);
+  let owner = box_new::<Holder>(value: move holder);
+  let taken = move owner.inner.selected;
+  if taken.inner != 17_u64 {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
+        let module = super::emit_lowered(source, overlap);
+        let observed = retain_calls(&module)
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(");
+        let output = compile_link_and_run(&observed, Some(&u64_allocation_observer(3)), &[]);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        let records = std::str::from_utf8(&output.stdout)
+            .expect("observer emits ASCII")
+            .split_terminator(';')
+            .collect::<Vec<_>>();
+        let released = records
+            .iter()
+            .copied()
+            .filter(|record| record.starts_with('V'))
+            .collect::<Vec<_>>();
+        // Payload identity is independent of parallel allocation order:
+        // release the residual, then the outer cell, then the moved result.
+        assert_eq!(released, ["V29", "V43", "V17"], "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
     }
 }

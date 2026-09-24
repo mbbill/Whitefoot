@@ -1,0 +1,16 @@
+fn write_read(x: &u64, y: &u64) -> result: unit reads(y), writes(x) {
+  set deref(x) = 9_u64;
+  let observed = deref(y);
+  return unit;
+}
+
+fn loop_rebound_index_may_overlap() -> result: unit pure {
+  let values = array_filled::<u64, 4>(value: 0_u64);
+  let moving = &values[0_u64];
+  let fixed = &values[1_u64];
+  for (i in 0_u64..2_u64) {
+    set moving = &values[i];
+    write_read(x: moving, y: fixed);
+  }
+  return unit;
+}

@@ -1,5 +1,5 @@
 interface Single {
-  fn value() -> result: own i32 pure;
+  fn value() -> result: i32 pure;
 }
 
 binding First : Single {
@@ -7,14 +7,14 @@ binding First : Single {
   extra = make_extra;
 }
 
-fn make_value() -> result: own i32 pure {
+fn make_value() -> result: i32 pure {
   return 1_i32;
 }
 
-fn make_extra() -> result: own i32 pure {
+fn make_extra() -> result: i32 pure {
   return 2_i32;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

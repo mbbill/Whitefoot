@@ -1,9 +1,9 @@
-fn spare() -> result: own unit pure {
+fn spare() -> result: unit pure {
   doc "A nullary function used only as a written actual.";
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "OP-1: a table operation carries no written argument and derives its selected type from its operands, so a written function actual there is a hard error citing OP-1 whatever kind the actual is.";
   let value = imax::<fn spare, u64>(1_u64, 2_u64);
   return exit_status(code: 0_u8);

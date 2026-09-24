@@ -1,4 +1,4 @@
-fn fill_recursive(output: &[u64], depth: own u64) -> result: own u64 writes(output) contract {
+fn fill_recursive(output: &[u64], depth: u64) -> result: u64 writes(output) contract {
   requires depth <= 64_u64;
 } {
   doc "Subdivides one range reference recursively, including uneven and empty ranges. The parent range is used again after both children complete, so the witness checks restoration as well as disjoint sibling calls.";
@@ -26,7 +26,7 @@ fn fill_recursive(output: &[u64], depth: own u64) -> result: own u64 writes(outp
   return count;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let values = array_filled::<u64, 17>(value: 0_u64);
   let filled = fill_recursive(output: &values[0_u64..17_u64], depth: 32_u64);
   if filled != 17_u64 {

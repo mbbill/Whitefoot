@@ -1,4 +1,4 @@
-fn exercise(args: &Args, cwd: &DirectoryRead, files: &HandleFactory) -> status: own ExitStatus reads(args), reads(cwd), writes(files) {
+fn exercise(args: &Args, cwd: &DirectoryRead, files: &HandleFactory) -> status: ExitStatus reads(args), reads(cwd), writes(files) {
   doc "The destination is a caller-formed range reference over one frame-resident array; writes(files) subsumes the read of the same path, so the pair is never written [EFF-1].";
   match arg_get(args: args, position: 1_u64) {
     Ok(value: text) => {
@@ -10,7 +10,7 @@ fn exercise(args: &Args, cwd: &DirectoryRead, files: &HandleFactory) -> status: 
               let window = &bytes[0_u64..64_u64];
               match read_at(factory: files, file: &file, destination: window, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
                 Ok(value: n) => {
-                  let narrowed = cvt::<u64, u8>(n);
+                  let narrowed = cvt.checked::<u64, u8>(n);
                   match narrowed {
                     Ok(value: code) => {
                       close_read(factory: files, file: move file);
@@ -52,7 +52,7 @@ fn exercise(args: &Args, cwd: &DirectoryRead, files: &HandleFactory) -> status: 
   }
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "PRE-1 ordinary Inputs are destructured once; the referenced operation chain returns before the initial directory is explicitly closed on every exit.";
   let Inputs(args: args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
   let outcome = exercise(args: &args, cwd: &cwd, files: &files);

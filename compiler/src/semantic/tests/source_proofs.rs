@@ -12,7 +12,7 @@ use super::super::entailment::{
 use super::{with_semantics, with_semantics_dark};
 
 const COMMAND_MAIN: &str =
-    "fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    "fn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
 #[derive(Clone, Copy)]
 enum ExpectedProofIssueNode<'source> {
@@ -93,7 +93,7 @@ fn assert_prf1_issue_named(
 #[test]
 fn an_automatic_pair_invariant_discharges_op2_after_a_middle_write() {
     let source = format!(
-        r#"fn increment(x: own u8, middle: own u8, replacement: own u8) -> result: own u8 pure contract {{
+        r#"fn increment(x: u8, middle: u8, replacement: u8) -> result: u8 pure contract {{
   requires x <= middle;
   requires middle <= 254_u8;
 }} {{
@@ -128,7 +128,7 @@ fn an_automatic_pair_invariant_discharges_op2_after_a_middle_write() {
 #[test]
 fn an_explicit_three_premise_invariant_survives_source_writes() {
     let source = format!(
-        r#"fn preserve(a: own u64, a_limit: own u64, b: own u64, b_limit: own u64, c: own u64, c_limit: own u64, replacement: own u64) -> result: own unit pure contract {{
+        r#"fn preserve(a: u64, a_limit: u64, b: u64, b_limit: u64, c: u64, c_limit: u64, replacement: u64) -> result: unit pure contract {{
   requires a <= a_limit;
   requires b <= b_limit;
   requires c <= c_limit;
@@ -207,7 +207,7 @@ fn an_explicit_three_premise_invariant_survives_source_writes() {
 #[test]
 fn a_relation_use_cannot_borrow_the_msr4_right_bridge() {
     let source = format!(
-        r#"fn larger(current: own u64, total: own u64) -> result: own u64 pure contract {{
+        r#"fn larger(current: u64, total: u64) -> result: u64 pure contract {{
   ensures result >= total;
 }} {{
   if current >= total {{
@@ -216,7 +216,7 @@ fn a_relation_use_cannot_borrow_the_msr4_right_bridge() {
   return total;
 }}
 
-fn inspect(length: own u64, capacity: own u64, first: own u64, first_limit: own u64, second: own u64, second_limit: own u64, choose_blockless: own Bool) -> result: own unit pure contract {{
+fn inspect(length: u64, capacity: u64, first: u64, first_limit: u64, second: u64, second_limit: u64, choose_blockless: Bool) -> result: unit pure contract {{
   requires length <= capacity;
   requires capacity <= 9223372036854775807_u64;
   requires first <= first_limit;
@@ -258,7 +258,7 @@ fn inspect(length: own u64, capacity: own u64, first: own u64, first_limit: own 
 #[test]
 fn a_written_certificate_is_not_redundant_when_only_full_msr4_proves_its_target() {
     let source = format!(
-        r#"fn inspect(storage: &Box<Slots<u8>>, start: own u64, at: own u64, count: own u64, capacity: own u64, cap: own u64, blockless: own Bool) -> result: own unit pure contract {{
+        r#"fn inspect(storage: &Box<Slots<u8>>, start: u64, at: u64, count: u64, capacity: u64, cap: u64, blockless: Bool) -> result: unit pure contract {{
   requires deref(storage).inner.len <= start + at;
   requires at < count;
   requires start + count <= capacity;
@@ -309,7 +309,7 @@ fn a_written_certificate_is_not_redundant_when_only_full_msr4_proves_its_target(
 #[test]
 fn the_first_unproved_use_is_reported_in_source_order() {
     let source = format!(
-        r#"fn increment(x: own u8, middle: own u8) -> result: own u8 pure contract {{
+        r#"fn increment(x: u8, middle: u8) -> result: u8 pure contract {{
   requires middle <= 254_u8;
 }} {{
   invariant upper_bound: x <= 254_u8 {{
@@ -334,7 +334,7 @@ fn the_first_unproved_use_is_reported_in_source_order() {
 #[test]
 fn the_second_unproved_use_is_reported_in_source_order() {
     let source = format!(
-        r#"fn increment(x: own u8, middle: own u8) -> result: own u8 pure contract {{
+        r#"fn increment(x: u8, middle: u8) -> result: u8 pure contract {{
   requires x <= middle;
 }} {{
   invariant upper_bound: x <= 254_u8 {{
@@ -359,7 +359,7 @@ fn the_second_unproved_use_is_reported_in_source_order() {
 #[test]
 fn proved_premises_cannot_strengthen_their_written_sum() {
     let source = format!(
-        r#"fn increment(x: own u8, middle: own u8) -> result: own u8 pure contract {{
+        r#"fn increment(x: u8, middle: u8) -> result: u8 pure contract {{
   requires x <= middle;
   requires middle <= 254_u8;
 }} {{
@@ -382,7 +382,7 @@ fn proved_premises_cannot_strengthen_their_written_sum() {
 #[test]
 fn proved_premises_may_weaken_their_written_sum_deterministically() {
     let source = format!(
-        r#"fn retain(a: own u64, a_limit: own u64, b: own u64, b_limit: own u64, c: own u64, c_limit: own u64) -> result: own unit pure contract {{
+        r#"fn retain(a: u64, a_limit: u64, b: u64, b_limit: u64, c: u64, c_limit: u64) -> result: unit pure contract {{
   requires a <= a_limit;
   requires b <= b_limit;
   requires c <= c_limit;
@@ -423,13 +423,13 @@ fn proved_premises_may_weaken_their_written_sum_deterministically() {
 #[test]
 fn equivalent_expression_and_binder_proofs_survive_a_branch_join() {
     let source = format!(
-        r#"fn need(value: own u32, limit: own u32) -> result: own unit pure contract {{
+        r#"fn need(value: u32, limit: u32) -> result: unit pure contract {{
   requires value <= limit;
 }} {{
   return unit;
 }}
 
-fn combine(flag: own Bool, a: own u8, a_limit: own u8, b: own u8, b_limit: own u8, c: own u8, c_limit: own u8) -> result: own u32 pure contract {{
+fn combine(flag: Bool, a: u8, a_limit: u8, b: u8, b_limit: u8, c: u8, c_limit: u8) -> result: u32 pure contract {{
   requires a <= a_limit;
   requires b <= b_limit;
   requires c <= c_limit;
@@ -507,13 +507,13 @@ fn combine(flag: own Bool, a: own u8, a_limit: own u8, b: own u8, b_limit: own u
 #[test]
 fn a_common_source_proof_reference_is_reused_across_a_branch_join() {
     let source = format!(
-        r#"fn need(value: own u32, limit: own u32) -> result: own unit pure contract {{
+        r#"fn need(value: u32, limit: u32) -> result: unit pure contract {{
   requires value <= limit;
 }} {{
   return unit;
 }}
 
-fn combine(flag: own Bool, a: own u8, a_limit: own u8, b: own u8, b_limit: own u8, c: own u8, c_limit: own u8) -> result: own u32 pure contract {{
+fn combine(flag: Bool, a: u8, a_limit: u8, b: u8, b_limit: u8, c: u8, c_limit: u8) -> result: u32 pure contract {{
   requires a <= a_limit;
   requires b <= b_limit;
   requires c <= c_limit;
@@ -570,7 +570,7 @@ fn combine(flag: own Bool, a: own u8, a_limit: own u8, b: own u8, b_limit: own u
 #[test]
 fn different_canonical_inequalities_do_not_merge_at_a_branch_join() {
     let source = format!(
-        r#"fn combine(flag: own Bool, a: own u8, b: own u8, c: own u8, x: own u8, p: own u8, q: own u8) -> result: own u8 pure {{
+        r#"fn combine(flag: Bool, a: u8, b: u8, c: u8, x: u8, p: u8, q: u8) -> result: u8 pure {{
   let a_wide = cvt::<u8, u16>(a);
   let b_wide = cvt::<u8, u16>(b);
   let c_wide = cvt::<u8, u16>(c);
@@ -635,7 +635,7 @@ fn different_canonical_inequalities_do_not_merge_at_a_branch_join() {
 #[test]
 fn an_earlier_weaker_fact_does_not_hide_a_later_automatic_pair() {
     let source = format!(
-        r#"fn preserve(first: own u64, first_limit: own u64, second: own u64, second_limit: own u64, replacement: own u64) -> result: own unit pure contract {{
+        r#"fn preserve(first: u64, first_limit: u64, second: u64, second_limit: u64, replacement: u64) -> result: unit pure contract {{
   requires first <= first_limit;
   requires second <= second_limit;
 }} {{
@@ -713,7 +713,7 @@ fn an_earlier_weaker_fact_does_not_hide_a_later_automatic_pair() {
 #[test]
 fn assignment_does_not_rebind_a_source_proof_to_the_new_value() {
     let source = format!(
-        r#"fn increment(first: own u8, first_limit: own u8, second: own u8, second_limit: own u8, third: own u8, third_limit: own u8, replacement: own u8) -> result: own u8 pure contract {{
+        r#"fn increment(first: u8, first_limit: u8, second: u8, second_limit: u8, third: u8, third_limit: u8, replacement: u8) -> result: u8 pure contract {{
   requires first <= first_limit;
   requires second <= second_limit;
   requires third <= third_limit;
@@ -779,7 +779,7 @@ fn assignment_does_not_rebind_a_source_proof_to_the_new_value() {
 #[test]
 fn an_unrepresentable_irrelevant_residual_does_not_hide_a_later_fact() {
     let source = format!(
-        r#"fn preserve_zero(x: own u64) -> result: own unit pure contract {{
+        r#"fn preserve_zero(x: u64) -> result: unit pure contract {{
   requires x <= 0_u64;
 }} {{
   for (
@@ -823,7 +823,7 @@ fn an_unrepresentable_irrelevant_residual_does_not_hide_a_later_fact() {
 #[test]
 fn three_written_uses_follow_the_certificate_when_auto_stops_at_two() {
     let source = format!(
-        r#"fn combine(a: own u64, a_limit: own u64, b: own u64, b_limit: own u64, c: own u64, c_limit: own u64) -> result: own unit pure contract {{
+        r#"fn combine(a: u64, a_limit: u64, b: u64, b_limit: u64, c: u64, c_limit: u64) -> result: unit pure contract {{
   requires a <= a_limit;
   requires b <= b_limit;
   requires c <= c_limit;
@@ -868,7 +868,7 @@ fn three_written_uses_follow_the_certificate_when_auto_stops_at_two() {
 #[test]
 fn a_midpoint_certificate_halves_its_doubled_sum_and_discharges_the_subscript() {
     let source = format!(
-        r#"fn probe(table: &[u8], lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {{
+        r#"fn probe(table: &[u8], lo: u64, hi: u64) -> found: u8 reads(table) contract {{
   define spare = deref(table).len;
   requires lo < hi;
   requires hi <= spare;
@@ -920,7 +920,7 @@ fn a_midpoint_certificate_halves_its_doubled_sum_and_discharges_the_subscript() 
 fn a_signed_certificate_floors_its_halved_bound_toward_negative_infinity() {
     let source = |slack: &str| {
         format!(
-            r#"fn ordered(a: own i32, b: own i32, c: own i32, d: own i32, e: own i32, f: own i32) -> result: own unit pure contract {{
+            r#"fn ordered(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> result: unit pure contract {{
   requires a < b;
   requires c < d;
   requires e < f;
@@ -969,7 +969,7 @@ fn a_signed_certificate_floors_its_halved_bound_toward_negative_infinity() {
 #[test]
 fn an_auto_provable_target_rejects_its_whole_use_block_as_redundant() {
     let source = format!(
-        r#"fn retain(value: own u64, limit: own u64) -> result: own unit pure contract {{
+        r#"fn retain(value: u64, limit: u64) -> result: unit pure contract {{
   requires value <= limit;
 }} {{
   invariant upper_bound: value <= limit {{
@@ -990,7 +990,7 @@ fn an_auto_provable_target_rejects_its_whole_use_block_as_redundant() {
 #[test]
 fn repeated_normalized_uses_require_one_explicit_multiplier() {
     let source = format!(
-        r#"fn combine(value: own u64, limit: own u64) -> result: own unit pure contract {{
+        r#"fn combine(value: u64, limit: u64) -> result: unit pure contract {{
   requires value <= limit;
 }} {{
   invariant upper_bound: 3_u64 * value <= 3_u64 * limit {{
@@ -1020,7 +1020,7 @@ fn repeated_normalized_uses_require_one_explicit_multiplier() {
 fn deeply_grouped_use_reaches_its_ordinary_redundancy_diagnostic() {
     let expression = format!("{}0_u64{}", "(".repeat(1400), ")".repeat(1400));
     let source = format!(
-        "fn check() -> result: own unit pure {{\n  invariant upper_bound: 0_u64 <= 0_u64 {{\n    use ({expression} <= 0_u64);\n  }}\n  return unit;\n}}\n\n{COMMAND_MAIN}"
+        "fn check() -> result: unit pure {{\n  invariant upper_bound: 0_u64 <= 0_u64 {{\n    use ({expression} <= 0_u64);\n  }}\n  return unit;\n}}\n\n{COMMAND_MAIN}"
     );
     assert_prf1_issue(
         source.as_bytes(),
@@ -1043,7 +1043,7 @@ fn affine_expression_capacity_preserves_the_boundary_and_rejects_oversized_trees
                 format!("invariant upper_bound: {relation};")
             };
             let source = format!(
-                "fn check() -> result: own unit pure {{\n  {proof}\n  return unit;\n}}\n\n{COMMAND_MAIN}"
+                "fn check() -> result: unit pure {{\n  {proof}\n  return unit;\n}}\n\n{COMMAND_MAIN}"
             );
             if terms == 2048 && in_use {
                 assert_prf1_issue(
@@ -1105,7 +1105,7 @@ fn affine_formation_preserves_grouping_source_order_and_literal_factors() {
     ] {
         let gap = if expression.starts_with('(') { "" } else { " " };
         let source = format!(
-            "fn check() -> result: own unit pure {{\n  invariant upper:{gap}{expression} <= {result}_u64;\n  invariant lower:{gap}{expression} >= {result}_u64;\n  return unit;\n}}\n\n{COMMAND_MAIN}"
+            "fn check() -> result: unit pure {{\n  invariant upper:{gap}{expression} <= {result}_u64;\n  invariant lower:{gap}{expression} >= {result}_u64;\n  return unit;\n}}\n\n{COMMAND_MAIN}"
         );
         with_semantics(source.as_bytes(), |outcome| {
             assert!(
@@ -1116,7 +1116,7 @@ fn affine_formation_preserves_grouping_source_order_and_literal_factors() {
     }
 
     let source = format!(
-        "fn check() -> result: own unit pure {{\n  invariant upper:(1_u64) *(2_u64) <= 2_u64;\n  return unit;\n}}\n\n{COMMAND_MAIN}"
+        "fn check() -> result: unit pure {{\n  invariant upper:(1_u64) *(2_u64) <= 2_u64;\n  return unit;\n}}\n\n{COMMAND_MAIN}"
     );
     super::assert_rule_kind(source.as_bytes(), SemanticRule::Inv1, |kind| {
         matches!(kind, SemanticIssueKind::InvalidInvariant { reason, .. }
@@ -1129,7 +1129,7 @@ fn use_capacity_cites_the_first_entry_beyond_the_admitted_prefix() {
     let written_use = "    use (value <= limit);\n";
     let uses = written_use.repeat(MAX_CERTIFICATE_PREMISES + 1);
     let source = format!(
-        "fn combine(value: own u64, limit: own u64, other: own u64, other_limit: own u64, final_value: own u64, final_limit: own u64) -> result: own unit pure {{\n  invariant upper_bound: value + other + final_value <= limit + other_limit + final_limit {{\n{uses}  }}\n  return unit;\n}}\n\n{COMMAND_MAIN}"
+        "fn combine(value: u64, limit: u64, other: u64, other_limit: u64, final_value: u64, final_limit: u64) -> result: unit pure {{\n  invariant upper_bound: value + other + final_value <= limit + other_limit + final_limit {{\n{uses}  }}\n  return unit;\n}}\n\n{COMMAND_MAIN}"
     );
     let maximum = u32::try_from(MAX_CERTIFICATE_PREMISES).expect("capacity fits u32");
     assert_prf1_issue(
@@ -1164,7 +1164,7 @@ fn use_capacity_cites_the_first_entry_beyond_the_admitted_prefix() {
 #[test]
 fn explicit_factors_apply_to_relation_and_named_uses() {
     let source = format!(
-        r#"fn relation_scale(value: own u64, limit: own u64) -> result: own unit pure contract {{
+        r#"fn relation_scale(value: u64, limit: u64) -> result: unit pure contract {{
   requires value <= limit;
 }} {{
   invariant scaled: 4_u64 * value <= 4_u64 * limit {{
@@ -1173,7 +1173,7 @@ fn explicit_factors_apply_to_relation_and_named_uses() {
   return unit;
 }}
 
-fn named_scale(value: own u64, limit: own u64) -> result: own unit pure contract {{
+fn named_scale(value: u64, limit: u64) -> result: unit pure contract {{
   requires value <= limit;
 }} {{
   invariant unit_bound: value <= limit;
@@ -1211,7 +1211,7 @@ fn named_scale(value: own u64, limit: own u64) -> result: own unit pure contract
 #[test]
 fn a_named_use_keeps_the_published_value_image_across_set() {
     let source = format!(
-        r#"fn update(value: own u64, replacement: own u64, limit: own u64) -> result: own unit pure contract {{
+        r#"fn update(value: u64, replacement: u64, limit: u64) -> result: unit pure contract {{
   requires value <= limit;
 }} {{
   invariant before: value <= limit;
@@ -1243,7 +1243,7 @@ fn a_named_use_keeps_the_published_value_image_across_set() {
 #[test]
 fn all_ordered_invariant_roots_normalize_to_their_written_direction() {
     let source = format!(
-        r#"fn ordered(a: own i32, b: own i32, c: own i32, d: own i32, e: own i32, f: own i32, g: own i32, h: own i32) -> result: own unit pure contract {{
+        r#"fn ordered(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32, h: i32) -> result: unit pure contract {{
   requires a <= b;
   requires c < d;
   requires e >= f;
@@ -1282,7 +1282,7 @@ fn all_ordered_invariant_roots_normalize_to_their_written_direction() {
 #[test]
 fn an_explicit_factor_one_is_not_canonical_source() {
     let source = format!(
-        r#"fn scale(value: own u64, limit: own u64) -> result: own unit pure contract {{
+        r#"fn scale(value: u64, limit: u64) -> result: unit pure contract {{
   requires value <= limit;
 }} {{
   invariant scaled: 4_u64 * value <= 4_u64 * limit {{
@@ -1311,7 +1311,7 @@ fn an_explicit_factor_one_is_not_canonical_source() {
 #[test]
 fn a_composite_requirement_uses_affine_invariant_leaves() {
     let source = format!(
-        r#"fn need(value: own u32, limit: own u32, enabled: own Bool) -> result: own unit pure contract {{
+        r#"fn need(value: u32, limit: u32, enabled: Bool) -> result: unit pure contract {{
   define ordered = value <= limit;
   define accepted = band(ordered, enabled);
   requires accepted;
@@ -1319,7 +1319,7 @@ fn a_composite_requirement_uses_affine_invariant_leaves() {
   return unit;
 }}
 
-fn caller(enabled: own Bool, a: own u8, a_limit: own u8, b: own u8, b_limit: own u8, c: own u8, c_limit: own u8) -> result: own unit pure contract {{
+fn caller(enabled: Bool, a: u8, a_limit: u8, b: u8, b_limit: u8, c: u8, c_limit: u8) -> result: unit pure contract {{
   requires enabled;
   requires a <= a_limit;
   requires b <= b_limit;
@@ -1383,13 +1383,13 @@ fn caller(enabled: own Bool, a: own u8, a_limit: own u8, b: own u8, b_limit: own
 #[test]
 fn a_contradictory_predecessor_is_neutral_to_an_affine_join() {
     let source = format!(
-        r#"fn need(value: own u32, limit: own u32) -> result: own unit pure contract {{
+        r#"fn need(value: u32, limit: u32) -> result: unit pure contract {{
   requires value <= limit;
 }} {{
   return unit;
 }}
 
-fn retain(a: own u8, a_limit: own u8, b: own u8, b_limit: own u8, c: own u8, c_limit: own u8) -> result: own unit pure contract {{
+fn retain(a: u8, a_limit: u8, b: u8, b_limit: u8, c: u8, c_limit: u8) -> result: unit pure contract {{
   requires a <= a_limit;
   requires b <= b_limit;
   requires c <= c_limit;
@@ -1441,7 +1441,7 @@ fn retain(a: own u8, a_limit: own u8, b: own u8, b_limit: own u8, c: own u8, c_l
 #[test]
 fn an_unpublished_named_header_source_is_not_reproved_by_a_later_guard() {
     let source = format!(
-        r#"fn named_source(value: own u64, limit: own u64) -> result: own unit pure {{
+        r#"fn named_source(value: u64, limit: u64) -> result: unit pure {{
   loop (
     invariant header_bound: value <= limit
   ) {{
@@ -1455,7 +1455,7 @@ fn an_unpublished_named_header_source_is_not_reproved_by_a_later_guard() {
   return unit;
 }}
 
-fn relation_source(value: own u64, limit: own u64) -> result: own unit pure {{
+fn relation_source(value: u64, limit: u64) -> result: unit pure {{
   if value <= limit {{
     invariant scaled_relation: 3_u64 * value <= 3_u64 * limit {{
       use 3 times (value <= limit);
@@ -1512,7 +1512,7 @@ fn relation_source(value: own u64, limit: own u64) -> result: own unit pure {{
 #[test]
 fn repeated_unpublished_named_uses_retain_the_structural_failure() {
     let source = format!(
-        r#"fn combine(value: own u64, limit: own u64) -> result: own unit pure {{
+        r#"fn combine(value: u64, limit: u64) -> result: unit pure {{
   loop (
     invariant header_bound: value <= limit
   ) {{
@@ -1557,7 +1557,7 @@ fn repeated_unpublished_named_uses_retain_the_structural_failure() {
 #[test]
 fn an_unpublished_named_use_does_not_hide_scaled_sum_overflow() {
     let source = format!(
-        r#"fn combine(value: own u64, limit: own u64) -> result: own unit pure {{
+        r#"fn combine(value: u64, limit: u64) -> result: unit pure {{
   loop (
     invariant doubled: 2_u64 * value <= 2_u64 * limit
   ) {{
@@ -1598,7 +1598,7 @@ fn an_unpublished_named_use_does_not_hide_scaled_sum_overflow() {
 #[test]
 fn source_order_sum_overflow_cites_the_use_that_triggers_it() {
     let source = format!(
-        r#"fn combine(a: own u64, a_limit: own u64, b: own u64, b_limit: own u64, c: own u64, c_limit: own u64) -> result: own unit pure contract {{
+        r#"fn combine(a: u64, a_limit: u64, b: u64, b_limit: u64, c: u64, c_limit: u64) -> result: unit pure contract {{
   requires a <= a_limit;
   requires b <= b_limit;
   requires c <= c_limit;
@@ -1646,7 +1646,7 @@ fn source_order_sum_overflow_cites_the_use_that_triggers_it() {
 #[test]
 fn an_unpublished_named_use_does_not_stop_later_duplicate_detection() {
     let source = format!(
-        r#"fn combine(value: own u64, limit: own u64, part: own u64, part_limit: own u64) -> result: own unit pure {{
+        r#"fn combine(value: u64, limit: u64, part: u64, part_limit: u64) -> result: unit pure {{
   loop (
     invariant header_bound: value <= limit
   ) {{
@@ -1692,7 +1692,7 @@ fn an_unpublished_named_use_does_not_stop_later_duplicate_detection() {
 #[test]
 fn current_value_image_overflow_precedes_redundant_block_detection() {
     let source = format!(
-        r#"fn expand(value: own u64) -> result: own unit pure contract {{
+        r#"fn expand(value: u64) -> result: unit pure contract {{
   requires value <= 0_u64;
 }} {{
   let scaled = 18446744073709551615_u64 * value;

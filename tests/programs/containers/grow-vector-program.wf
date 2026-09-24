@@ -8,7 +8,7 @@ struct OwnedItem {
   id: u64;
 }
 
-fn sum_accept(env: &Sum, value: own u64) -> result: own unit writes(env) {
+fn sum_accept(env: &Sum, value: u64) -> result: unit writes(env) {
   doc "One drain member: folds each drained value into the caller's accumulator through the reference the row declares.";
   let running = deref(env).total;
   set deref(env).total = running +wrap value;
@@ -22,12 +22,12 @@ binding SumDrain : VectorDrain<u64, Sum> {
   accept = sum_accept;
 }
 
-fn release_item(item: own Box<OwnedItem>) -> result: own unit pure {
+fn release_item(item: Box<OwnedItem>) -> result: unit pure {
   doc "There is no release operation: an affine value is released early by moving it into a function that consumes it and ends, which frees this cell here rather than at the caller's scope exit [PROV-6, STOR-3].";
   return unit;
 }
 
-fn sum_owned(env: &Sum, value: own Box<OwnedItem>) -> result: own unit writes(env) {
+fn sum_owned(env: &Sum, value: Box<OwnedItem>) -> result: unit writes(env) {
   let id = value.inner.id;
   sum_accept(env: env, value: id);
   return unit;
@@ -41,13 +41,13 @@ nodrop struct Ticket {
   payload: Box<OwnedItem>;
 }
 
-fn ticket_new(id: own u64) -> result: own Ticket pure {
+fn ticket_new(id: u64) -> result: Ticket pure {
   let item = OwnedItem(id: id);
   let payload = box_new::<OwnedItem>(value: item);
   return Ticket(payload: move payload);
 }
 
-fn sum_ticket(env: &Sum, value: own Ticket) -> result: own unit writes(env) {
+fn sum_ticket(env: &Sum, value: Ticket) -> result: unit writes(env) {
   let Ticket(payload: payload) = move value;
   sum_owned(env: env, value: move payload);
   return unit;
@@ -57,7 +57,7 @@ binding TicketDrain : VectorDrain<Ticket, Sum> {
   accept = sum_ticket;
 }
 
-fn scalar_consumption() -> code: own u64 pure {
+fn scalar_consumption() -> code: u64 pure {
   let values = grow_vector_new::<u64, 8>();
   let seen = Sum(total: 0_u64, sequence: 0_u64, count: 0_u64);
   grow_vector_drain::<SumDrain, 8>(values: &values, env: &seen);
@@ -102,17 +102,48 @@ fn scalar_consumption() -> code: own u64 pure {
   let reused = grow_vector_append::<u64, 8>(values: &values, value: 7_u64);
   grow_vector_truncate::<SumDrain, 8>(values: &values, retained: 1_u64, env: &seen);
   grow_vector_truncate::<SumDrain, 8>(values: &values, retained: 0_u64, env: &seen);
-  grow_vector_free_empty::<u64, 8>(values: move values);
   if seen.sequence != 1549_u64 {
     return 8_u64;
   }
   if seen.count != 2_u64 {
     return 9_u64;
   }
+  set seen.sequence = 0_u64;
+  set seen.count = 0_u64;
+  for @refill (
+    index in 0_u64..8_u64,
+    invariant length_lo: values.storage.inner.len >= index,
+    invariant length_hi: values.storage.inner.len <= index
+  ) {
+    let value = index + 1_u64;
+    let length = grow_vector_append::<u64, 8>(values: &values, value: value);
+  }
+  grow_vector_truncate::<SumDrain, 8>(values: &values, retained: 7_u64, env: &seen);
+  grow_vector_truncate::<SumDrain, 8>(values: &values, retained: 6_u64, env: &seen);
+  if seen.sequence != 2063_u64 {
+    return 10_u64;
+  }
+  if seen.count != 2_u64 {
+    return 11_u64;
+  }
+  for (index in 0_u64..6_u64) {
+    let expected = index + 1_u64;
+    if values.storage.inner[index] != expected {
+      return 12_u64;
+    }
+  }
+  if values.storage.inner.cap != reserved {
+    return 13_u64;
+  }
+  grow_vector_drain::<SumDrain, 8>(values: &values, env: &seen);
+  grow_vector_free_empty::<u64, 8>(values: move values);
+  if seen.count != 8_u64 {
+    return 14_u64;
+  }
   return 0_u64;
 }
 
-fn linear_consumption() -> code: own u64 pure {
+fn linear_consumption() -> code: u64 pure {
   let values = grow_vector_new::<Ticket, 4>();
   let seen = Sum(total: 0_u64, sequence: 0_u64, count: 0_u64);
   let failures = 0_u64;
@@ -155,7 +186,7 @@ fn linear_consumption() -> code: own u64 pure {
   return failures;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Scalar, droppable owning and must-consume owning chains exercise construction, growth, ceiling saturation, ordered insert/remove, swap-remove, original-order truncation/drain, empty and singleton boundaries, reuse and final cleanup. The observer checks every allocation identity. Allocation is total [STOR-8], so no operation carries a refusal arm.";
   let zero = grow_vector_new::<u64, 0>();
   let zero_length = zero.storage.inner.len;

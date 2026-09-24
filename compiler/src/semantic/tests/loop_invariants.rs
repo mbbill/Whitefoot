@@ -70,7 +70,7 @@ fn assert_invariant_required_relation(source: &[u8], expected: &str) {
 
 #[test]
 fn source_invariant_is_checked_at_base_and_arbitrary_backedge() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   for (
     i in 0_u64..1_u64,
     invariant limit: i <= 1_u64
@@ -93,7 +93,7 @@ fn source_invariant_is_checked_at_base_and_arbitrary_backedge() {
 
 #[test]
 fn a_body_local_invariant_is_not_a_counted_header_invariant() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   for (i in 0_u64..1_u64) {
     let value = i;
     invariant limit: i <= 1_u64;
@@ -117,7 +117,7 @@ fn a_body_local_invariant_is_not_a_counted_header_invariant() {
 
 #[test]
 fn ordered_invariant_roots_have_exact_integer_normalization() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   for (
     i in 0_u64..1_u64,
     invariant nonstrict_forward: i <= 1_u64,
@@ -144,7 +144,7 @@ fn ordered_invariant_roots_have_exact_integer_normalization() {
     });
 
     for source in [
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   for (
     i in 0_u64..1_u64,
     invariant limit: i < 1_u64
@@ -154,7 +154,7 @@ fn ordered_invariant_roots_have_exact_integer_normalization() {
 }
 "#
         .as_slice(),
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   for (
     i in 0_u64..1_u64,
     invariant limit: 1_u64 > i
@@ -184,7 +184,7 @@ fn ordered_invariant_roots_have_exact_integer_normalization() {
 
 #[test]
 fn equality_is_an_invariant_root() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   for (
     i in 0_u64..1_u64,
     invariant same: i == i
@@ -203,7 +203,7 @@ fn equality_is_an_invariant_root() {
 
 #[test]
 fn disequality_is_not_an_invariant_root() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   for (
     i in 0_u64..1_u64,
     invariant different: i != 2_u64
@@ -229,7 +229,7 @@ fn disequality_is_not_an_invariant_root() {
 
 #[test]
 fn ordinary_loop_invariant_is_inductive_at_an_arbitrary_header() {
-    let source = br#"fn repeat(leave: own Bool) -> result: own unit pure {
+    let source = br#"fn repeat(leave: Bool) -> result: unit pure {
   let value = 0_u64;
   loop (
     invariant limit: value <= 0_u64
@@ -243,7 +243,7 @@ fn ordinary_loop_invariant_is_inductive_at_an_arbitrary_header() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -267,7 +267,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn ordinary_loop_without_a_break_has_a_contradictory_continuation() {
-    let source = br#"fn repeat_forever() -> result: own unit pure {
+    let source = br#"fn repeat_forever() -> result: unit pure {
   let value = 0_u64;
   loop (
     invariant limit: value <= 0_u64
@@ -278,7 +278,7 @@ fn ordinary_loop_without_a_break_has_a_contradictory_continuation() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -309,7 +309,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_body_local_invariant_is_not_an_ordinary_loop_header_invariant() {
-    let source = br#"fn misplaced() -> result: own unit pure {
+    let source = br#"fn misplaced() -> result: unit pure {
   loop {
     let value = 0_u64;
     invariant limit: value <= 0_u64;
@@ -318,7 +318,7 @@ fn a_body_local_invariant_is_not_an_ordinary_loop_header_invariant() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -344,7 +344,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn ordinary_loop_write_must_preserve_the_next_header_invariant() {
     assert_invariant_issue(
-        br#"fn repeat(leave: own Bool) -> result: own unit pure {
+        br#"fn repeat(leave: Bool) -> result: unit pure {
   let value = 0_u64;
   loop (
     invariant limit: value <= 0_u64
@@ -358,7 +358,7 @@ fn ordinary_loop_write_must_preserve_the_next_header_invariant() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -369,7 +369,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn ordinary_backedge_diagnostic_prints_the_source_relation() {
     assert_invariant_required_relation(
-        br#"fn repeat(leave: own Bool) -> result: own unit pure {
+        br#"fn repeat(leave: Bool) -> result: unit pure {
   let value = 0_u64;
   loop (
     invariant limit: value <= 0_u64
@@ -383,7 +383,7 @@ fn ordinary_backedge_diagnostic_prints_the_source_relation() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -394,7 +394,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn counted_backedge_diagnostic_prints_the_hidden_next_binder() {
     assert_invariant_required_relation(
-        br#"fn accumulate() -> result: own unit pure {
+        br#"fn accumulate() -> result: unit pure {
   let sum = 0_u64;
   for (
     i in 0_u64..2_u64,
@@ -405,7 +405,7 @@ fn counted_backedge_diagnostic_prints_the_hidden_next_binder() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -415,7 +415,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn ordinary_loop_break_does_not_export_its_header_invariant() {
-    let source = br#"fn leave_loop(leave: own Bool) -> result: own unit pure {
+    let source = br#"fn leave_loop(leave: Bool) -> result: unit pure {
   let value = 0_u64;
   loop (
     invariant limit: value <= 0_u64
@@ -430,7 +430,7 @@ fn ordinary_loop_break_does_not_export_its_header_invariant() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -444,7 +444,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn ordinary_loop_batch_uses_all_invariants_for_each_backedge() {
-    let source = br#"fn preserve_pair(a: own u64, b: own u64, c: own u64, d: own u64, leave: own Bool) -> result: own unit pure contract {
+    let source = br#"fn preserve_pair(a: u64, b: u64, c: u64, d: u64, leave: Bool) -> result: unit pure contract {
   requires a <= b;
   requires c <= d;
 } {
@@ -477,7 +477,7 @@ fn ordinary_loop_batch_uses_all_invariants_for_each_backedge() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -527,7 +527,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_failed_base_batch_grants_no_ordinary_header_assumption() {
-    let source = br#"fn unknown_order(left: own u64, right: own u64, leave: own Bool) -> result: own unit pure {
+    let source = br#"fn unknown_order(left: u64, right: u64, leave: Bool) -> result: unit pure {
   loop (
     invariant first: left <= right,
     invariant second: left <= right
@@ -539,7 +539,7 @@ fn a_failed_base_batch_grants_no_ordinary_header_assumption() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -566,7 +566,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn zero_trip_range_still_requires_the_invariant_base_case() {
     assert_invariant_issue(
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   for (
     i in 0_u64..0_u64,
     invariant limit: 1_u64 <= i
@@ -582,7 +582,7 @@ fn zero_trip_range_still_requires_the_invariant_base_case() {
 #[test]
 fn normal_body_fallthrough_must_preserve_the_invariant() {
     assert_invariant_issue(
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   let sum = 0_u64;
   for (
     i in 0_u64..1_u64,
@@ -599,7 +599,7 @@ fn normal_body_fallthrough_must_preserve_the_invariant() {
 
 #[test]
 fn a_conditional_unit_step_preserves_the_invariant_through_an_affine_join() {
-    let source = br#"fn advance(flag: own Bool) -> result: own unit pure {
+    let source = br#"fn advance(flag: Bool) -> result: unit pure {
   let completed = 0_u64;
   for (
     i in 0_u64..4_u64,
@@ -612,7 +612,7 @@ fn a_conditional_unit_step_preserves_the_invariant_through_an_affine_join() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -637,7 +637,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn an_affine_join_does_not_hide_a_branch_that_advances_too_far() {
     assert_invariant_issue(
-        br#"fn advance(flag: own Bool) -> result: own unit pure {
+        br#"fn advance(flag: Bool) -> result: unit pure {
   let completed = 0_u64;
   for (
     i in 0_u64..4_u64,
@@ -650,7 +650,7 @@ fn an_affine_join_does_not_hide_a_branch_that_advances_too_far() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -660,7 +660,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_affine_join_retains_a_negative_constant_delta() {
-    let source = br#"fn select_nonpositive(flag: own Bool) -> result: own unit pure {
+    let source = br#"fn select_nonpositive(flag: Bool) -> result: unit pure {
   let offset = 0_i32;
   for (
     i in 0_u64..2_u64,
@@ -675,7 +675,7 @@ fn an_affine_join_retains_a_negative_constant_delta() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -700,7 +700,7 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn separate_joined_bindings_do_not_share_one_delta_atom() {
     assert_invariant_issue(
-        br#"fn select_pair(flag: own Bool) -> result: own unit pure {
+        br#"fn select_pair(flag: Bool) -> result: unit pure {
   let left = 0_u64;
   let right = 0_u64;
   for (
@@ -718,7 +718,7 @@ fn separate_joined_bindings_do_not_share_one_delta_atom() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -728,7 +728,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_matching_break_is_not_a_backedge() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   for (
     i in 0_u64..1_u64,
     invariant limit: i <= 0_u64
@@ -750,7 +750,7 @@ fn a_matching_break_is_not_a_backedge() {
 
 #[test]
 fn requirement_facts_seed_the_originating_invariant_context() {
-    let source = br#"fn bounded(start: own u64) -> result: own unit pure contract {
+    let source = br#"fn bounded(start: u64) -> result: unit pure contract {
   requires start <= 0_u64;
 } {
   for (
@@ -762,7 +762,7 @@ fn requirement_facts_seed_the_originating_invariant_context() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -783,7 +783,7 @@ fn main() -> status: own ExitStatus pure {
     });
 
     assert_invariant_issue(
-        br#"fn bounded(start: own u64) -> result: own unit pure {
+        br#"fn bounded(start: u64) -> result: unit pure {
   for (
     i in start..start,
     invariant limit: i <= 0_u64
@@ -793,7 +793,7 @@ fn main() -> status: own ExitStatus pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -803,8 +803,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn source_invariant_discharges_the_weigh_addition_domain() {
-    let source =
-        br#"fn weigh(weights: &[u8], count: own u64) -> total: own u32 reads(weights) contract {
+    let source = br#"fn weigh(weights: &[u8], count: u64) -> total: u32 reads(weights) contract {
   define capacity = deref(weights).len;
   requires count <= capacity;
   requires count <= 1000_u64;
@@ -822,7 +821,7 @@ fn source_invariant_discharges_the_weigh_addition_domain() {
   return sum;
 }
 
-fn add_one(weights: &[u8], count: own u64) -> result: own u32 reads(weights) contract {
+fn add_one(weights: &[u8], count: u64) -> result: u32 reads(weights) contract {
   define capacity = deref(weights).len;
   requires count <= capacity;
   requires count <= 1000_u64;
@@ -832,7 +831,7 @@ fn add_one(weights: &[u8], count: own u64) -> result: own u32 reads(weights) con
   return incremented;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -957,7 +956,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn later_invariant_backedge_can_use_an_earlier_invariant() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let x = 0_u64;
   let y = 0_u64;
   for (
@@ -983,7 +982,7 @@ fn later_invariant_backedge_can_use_an_earlier_invariant() {
     });
 
     assert_invariant_issue(
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   let x = 0_u64;
   let y = 0_u64;
   for (
@@ -1002,7 +1001,7 @@ fn later_invariant_backedge_can_use_an_earlier_invariant() {
 
 #[test]
 fn descending_range_does_not_publish_a_false_exhaustion_substitution() {
-    let source = br#"fn descending(value: own u64) -> result: own u64 pure contract {
+    let source = br#"fn descending(value: u64) -> result: u64 pure contract {
   requires value <= 2_u64;
   ensures result <= 1_u64;
 } {
@@ -1014,7 +1013,7 @@ fn descending_range_does_not_publish_a_false_exhaustion_substitution() {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1047,7 +1046,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn matching_break_removes_false_header_exhaustion_facts_at_the_join() {
-    let source = br#"fn may_stop(stop: own Bool) -> result: own u64 pure contract {
+    let source = br#"fn may_stop(stop: Bool) -> result: u64 pure contract {
   ensures result <= 1_u64;
 } {
   let value = 0_u64;
@@ -1063,7 +1062,7 @@ fn matching_break_removes_false_header_exhaustion_facts_at_the_join() {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1095,7 +1094,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn no_backedge_invariant_can_finish_with_a_safe_false_header_exit() {
-    let source = br#"fn zero_trip(value: own u64) -> result: own u64 pure contract {
+    let source = br#"fn zero_trip(value: u64) -> result: u64 pure contract {
   requires value <= 0_u64;
   ensures result <= 0_u64;
 } {
@@ -1109,7 +1108,7 @@ fn no_backedge_invariant_can_finish_with_a_safe_false_header_exit() {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1164,14 +1163,14 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn failed_invariant_withholds_other_summaries_in_the_same_scc() {
-    let source = br#"fn left(value: own i32) -> result: own i32 pure contract {
+    let source = br#"fn left(value: i32) -> result: i32 pure contract {
   ensures result == value;
 } {
   let ignored = right(value: value);
   return value;
 }
 
-fn right(value: own i32) -> result: own i32 pure {
+fn right(value: i32) -> result: i32 pure {
   let ignored = left(value: value);
   for (
     i in 0_u64..1_u64,
@@ -1182,7 +1181,7 @@ fn right(value: own i32) -> result: own i32 pure {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1233,7 +1232,7 @@ fn main() -> status: own ExitStatus pure {
 fn active_invariant_proves_a_real_array_index_obligation() {
     let source = br#"const values: Array<u8, 4> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let at = 0_u64;
   for (
     i in 0_u64..4_u64,
@@ -1291,13 +1290,13 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn one_exhaustion_fact_proves_a_requirement_and_postcondition() {
-    let source = br#"fn accept_total(value: own u32) -> result: own unit pure contract {
+    let source = br#"fn accept_total(value: u32) -> result: unit pure contract {
   requires value <= 255000_u32;
 } {
   return unit;
 }
 
-fn finish(count: own u64) -> result: own u32 pure contract {
+fn finish(count: u64) -> result: u32 pure contract {
   requires count <= 1000_u64;
   ensures result <= 255000_u32;
 } {
@@ -1312,7 +1311,7 @@ fn finish(count: own u64) -> result: own u32 pure contract {
   return total;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1387,13 +1386,13 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn matching_break_does_not_publish_an_exhaustion_fact_to_a_later_call() {
-    let source = br#"fn accept_small(value: own u64) -> result: own unit pure contract {
+    let source = br#"fn accept_small(value: u64) -> result: unit pure contract {
   requires value <= 1_u64;
 } {
   return unit;
 }
 
-fn finish_or_stop(stop: own Bool) -> result: own unit pure {
+fn finish_or_stop(stop: Bool) -> result: unit pure {
   let value = 0_u64;
   for (
     i in 0_u64..1_u64,
@@ -1408,7 +1407,7 @@ fn finish_or_stop(stop: own Bool) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1436,7 +1435,8 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn active_invariant_proves_a_dynamic_range_reference_index_obligation() {
-    let source = br#"fn read_prefix(values: &[u8], count: own u64) -> result: own unit reads(values) contract {
+    let source =
+        br#"fn read_prefix(values: &[u8], count: u64) -> result: unit reads(values) contract {
   define capacity = deref(values).len;
   requires count <= capacity;
 } {
@@ -1451,7 +1451,7 @@ fn active_invariant_proves_a_dynamic_range_reference_index_obligation() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1512,7 +1512,7 @@ fn main() -> status: own ExitStatus pure {
 /// and `box_slots_new`, whose counts are the same loop-exhausted `length`.
 #[test]
 fn exhaustion_fact_proves_filled_and_vacant_allocation_fit() {
-    let source = br#"fn allocate_prefix(count: own u64) -> result: own unit pure contract {
+    let source = br#"fn allocate_prefix(count: u64) -> result: unit pure contract {
   requires count <= 1000_u64;
 } {
   let length = 0_u64;
@@ -1527,7 +1527,7 @@ fn exhaustion_fact_proves_filled_and_vacant_allocation_fit() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1614,7 +1614,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn exhaustion_facts_prove_both_ordinary_range_requirements() {
-    let source = br#"fn publish_prefix(factory: &HandleFactory, output: &OutputStream, source: &[u8], limit: own u64) -> result: own unit reads(source), writes(factory), writes(output) contract {
+    let source = br#"fn publish_prefix(factory: &HandleFactory, output: &OutputStream, source: &[u8], limit: u64) -> result: unit reads(source), writes(factory), writes(output) contract {
   define capacity = deref(source).len;
   requires limit <= capacity;
 } {
@@ -1632,7 +1632,7 @@ fn exhaustion_facts_prove_both_ordinary_range_requirements() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1694,7 +1694,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn independent_invariant_intervals_discharge_two_operand_exact_multiplication() {
-    let source = br#"fn bounded_product(count: own u64) -> result: own u64 pure contract {
+    let source = br#"fn bounded_product(count: u64) -> result: u64 pure contract {
   requires count <= 1000_u64;
 } {
   let left = 0_u64;
@@ -1711,7 +1711,7 @@ fn independent_invariant_intervals_discharge_two_operand_exact_multiplication() 
   return left;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1778,7 +1778,7 @@ fn admitted_product_publishes_its_interval_to_the_following_operation() {
     // is in range only because the product's own interval bounds `base`.
     // Before S14 the rule proved that interval and discarded it, so the add
     // had no premise and was refused [OP-2].
-    let source = br#"fn flat(row: own u32, width: own u32, col: own u32) -> at: own u64 pure {
+    let source = br#"fn flat(row: u32, width: u32, col: u32) -> at: u64 pure {
   let r = cvt::<u32, u64>(row);
   let w = cvt::<u32, u64>(width);
   let c = cvt::<u32, u64>(col);
@@ -1787,7 +1787,7 @@ fn admitted_product_publishes_its_interval_to_the_following_operation() {
   return at;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1826,7 +1826,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn interval_product_checks_the_two_cross_endpoint_pairs() {
-    let source = br#"fn mixed(left: own i8, right: own i8) -> result: own unit pure contract {
+    let source = br#"fn mixed(left: i8, right: i8) -> result: unit pure contract {
   requires left <= 1_i8;
   requires 0_i8 <= right;
   requires right <= 2_i8;
@@ -1843,7 +1843,7 @@ fn interval_product_checks_the_two_cross_endpoint_pairs() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1863,13 +1863,13 @@ fn main() -> status: own ExitStatus pure {
 /// exhaustion to the arbitrary outer backedge.
 #[test]
 fn nested_invariants_publish_a_postcondition_consumed_by_a_later_requirement() {
-    let source = br#"fn accept_total(value: own u64) -> result: own unit pure contract {
+    let source = br#"fn accept_total(value: u64) -> result: unit pure contract {
   requires value <= 12_u64;
 } {
   return unit;
 }
 
-fn count_cells(rows: own u64) -> result: own u64 pure contract {
+fn count_cells(rows: u64) -> result: u64 pure contract {
   requires rows <= 3_u64;
   ensures result <= 12_u64;
 } {
@@ -1889,7 +1889,7 @@ fn count_cells(rows: own u64) -> result: own u64 pure contract {
   return total;
 }
 
-fn caller(rows: own u64) -> result: own unit pure contract {
+fn caller(rows: u64) -> result: unit pure contract {
   requires rows <= 3_u64;
 } {
   let total = count_cells(rows: rows);
@@ -1897,7 +1897,7 @@ fn caller(rows: own u64) -> result: own unit pure contract {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2028,7 +2028,7 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_local_proof_fact_can_discharge_an_ordinary_loop_backedge() {
-    let source = br#"fn preserve(first: own u64, first_limit: own u64, second: own u64, second_limit: own u64, third: own u64, third_limit: own u64, leave: own Bool) -> result: own unit pure contract {
+    let source = br#"fn preserve(first: u64, first_limit: u64, second: u64, second_limit: u64, third: u64, third_limit: u64, leave: Bool) -> result: unit pure contract {
   requires first <= first_limit;
   requires second <= second_limit;
   requires third <= third_limit;
@@ -2061,7 +2061,7 @@ fn a_local_proof_fact_can_discharge_an_ordinary_loop_backedge() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2102,7 +2102,7 @@ fn main() -> status: own ExitStatus pure {
 /// canonical term-pair order, without requiring a body-local invariant.
 #[test]
 fn automatic_residual_reduction_composes_two_live_l0_facts() {
-    let source = br#"fn preserve_pair_bounds(first: own u64, first_limit: own u64, second: own u64, second_limit: own u64) -> result: own unit pure contract {
+    let source = br#"fn preserve_pair_bounds(first: u64, first_limit: u64, second: u64, second_limit: u64) -> result: unit pure contract {
   requires first <= first_limit;
   requires second <= second_limit;
 } {
@@ -2122,7 +2122,7 @@ fn automatic_residual_reduction_composes_two_live_l0_facts() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2170,13 +2170,13 @@ fn main() -> status: own ExitStatus pure {
 /// therefore cannot satisfy the later requirement on every path.
 #[test]
 fn an_inner_break_does_not_export_its_exhaustion_fact_to_a_later_requirement() {
-    let source = br#"fn accept_total(value: own u64) -> result: own unit pure contract {
+    let source = br#"fn accept_total(value: u64) -> result: unit pure contract {
   requires value <= 4_u64;
 } {
   return unit;
 }
 
-fn count_or_stop(stop: own Bool) -> result: own unit pure {
+fn count_or_stop(stop: Bool) -> result: unit pure {
   let total = 0_u64;
   for (
     row in 0_u64..1_u64,
@@ -2198,7 +2198,7 @@ fn count_or_stop(stop: own Bool) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2247,13 +2247,13 @@ fn main() -> status: own ExitStatus pure {
 /// over the canonical inequality, not over its diagnostic provenance.
 #[test]
 fn an_exhaustion_export_and_a_break_local_invariant_join_by_canonical_fact() {
-    let source = br#"fn accept_total(value: own u64) -> result: own unit pure contract {
+    let source = br#"fn accept_total(value: u64) -> result: unit pure contract {
   requires value <= 4_u64;
 } {
   return unit;
 }
 
-fn count_or_stop(stop: own Bool) -> result: own unit pure {
+fn count_or_stop(stop: Bool) -> result: unit pure {
   let total = 0_u64;
   for (
     i in 0_u64..4_u64,
@@ -2269,7 +2269,7 @@ fn count_or_stop(stop: own Bool) -> result: own unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2327,7 +2327,7 @@ fn main() -> status: own ExitStatus pure {
 /// increment's own SET-1 target kill to the backedge.
 #[test]
 fn a_published_guard_discharges_an_ordinary_loop_cursor_increment() {
-    let source = br#"fn advance(limit: own u64) -> result: own unit pure {
+    let source = br#"fn advance(limit: u64) -> result: unit pure {
   let cursor = 0_u64;
   loop (
     invariant bounded: cursor <= limit
@@ -2343,7 +2343,7 @@ fn a_published_guard_discharges_an_ordinary_loop_cursor_increment() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2386,8 +2386,7 @@ fn main() -> status: own ExitStatus pure {
 /// the subject the backedge rather than the increment's domain.
 #[test]
 fn an_unguarded_cursor_increment_fails_the_ordinary_loop_backedge() {
-    let source =
-        br#"fn advance(limit: own u64, leave: own Bool) -> result: own unit pure contract {
+    let source = br#"fn advance(limit: u64, leave: Bool) -> result: unit pure contract {
   requires limit < 1000_u64;
 } {
   let cursor = 0_u64;
@@ -2403,7 +2402,7 @@ fn an_unguarded_cursor_increment_fails_the_ordinary_loop_backedge() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2445,7 +2444,7 @@ fn main() -> status: own ExitStatus pure {
 /// republication of the guard.
 #[test]
 fn a_guarded_cursor_increment_reaches_the_ordinary_loop_backedge() {
-    let source = br#"fn advance(limit: own u64) -> result: own unit pure {
+    let source = br#"fn advance(limit: u64) -> result: unit pure {
   let cursor = 0_u64;
   loop (
     invariant bounded: cursor <= limit
@@ -2460,7 +2459,7 @@ fn a_guarded_cursor_increment_reaches_the_ordinary_loop_backedge() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2489,7 +2488,7 @@ fn main() -> status: own ExitStatus pure {
 /// than by the statement's shape is what makes that hold.
 #[test]
 fn a_direct_cursor_increment_and_its_let_spelling_agree() {
-    let direct = br#"fn advance(limit: own u64) -> result: own unit pure {
+    let direct = br#"fn advance(limit: u64) -> result: unit pure {
   let cursor = 0_u64;
   loop (
     invariant bounded: cursor <= limit
@@ -2504,11 +2503,11 @@ fn a_direct_cursor_increment_and_its_let_spelling_agree() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    let through_let = br#"fn advance(limit: own u64) -> result: own unit pure {
+    let through_let = br#"fn advance(limit: u64) -> result: unit pure {
   let cursor = 0_u64;
   loop (
     invariant bounded: cursor <= limit
@@ -2524,7 +2523,7 @@ fn main() -> status: own ExitStatus pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2557,7 +2556,7 @@ fn main() -> status: own ExitStatus pure {
 /// with the header's own base and backedge obligations.
 #[test]
 fn a_body_invariant_after_the_write_and_the_ordinary_header_are_both_proved() {
-    let source = br#"fn advance(limit: own u64) -> result: own unit pure {
+    let source = br#"fn advance(limit: u64) -> result: unit pure {
   let cursor = 0_u64;
   loop (
     invariant bounded: cursor <= limit
@@ -2574,7 +2573,7 @@ fn a_body_invariant_after_the_write_and_the_ordinary_header_are_both_proved() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2608,7 +2607,7 @@ fn main() -> status: own ExitStatus pure {
 /// continuing kill and the base obligation is still checked.
 #[test]
 fn a_break_only_body_creates_no_ordinary_loop_backedge_obligation() {
-    let source = br#"fn stop(limit: own u64) -> result: own unit pure {
+    let source = br#"fn stop(limit: u64) -> result: unit pure {
   let cursor = 0_u64;
   loop (
     invariant bounded: cursor <= limit
@@ -2619,7 +2618,7 @@ fn a_break_only_body_creates_no_ordinary_loop_backedge_obligation() {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2653,8 +2652,7 @@ fn main() -> status: own ExitStatus pure {
 /// which is how a writer concludes that the join does establish the relation.
 #[test]
 fn a_failing_body_probe_is_reported_before_the_header_backedge() {
-    let source =
-        br#"fn narrow(spare: own u64, cand: own u64, flag: own Bool) -> out: own u64 pure {
+    let source = br#"fn narrow(spare: u64, cand: u64, flag: Bool) -> out: u64 pure {
   let hi = spare;
   loop (
     invariant bounds: hi <= spare
@@ -2671,7 +2669,7 @@ fn a_failing_body_probe_is_reported_before_the_header_backedge() {
   return hi;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let t = True();
   let v = narrow(spare: 8_u64, cand: 3_u64, flag: t);
   return exit_status(code: 0_u8);
@@ -2709,7 +2707,7 @@ fn main() -> status: own ExitStatus pure {
 /// would discharge from a length the run no longer has.
 #[test]
 fn a_write_that_kills_a_measure_retargets_the_invariant_image() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   doc "The measure the header names is replaced inside the body.";
   let seed = array_filled::<u8, 4>(value: 0_u8);
   let data = slots_from_array::<u8, 4>(values: seed);

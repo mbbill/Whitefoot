@@ -3,7 +3,7 @@ struct Pair {
   right: Box<u64>;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "WIN-3: a move out of a field consumes the whole owner; a destructuring consume binds the fields it names and covers the rest with the rest marker, whose parts take their compiler-derived release.";
   let a = box_new::<u64>(value: 3_u64);
   let b = box_new::<u64>(value: 4_u64);

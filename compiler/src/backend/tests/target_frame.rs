@@ -5,7 +5,7 @@ use crate::backend::target::{
 
 use super::system::with_ir;
 
-const FRAME_CONTEXT: &[u8] = br#"fn main() -> status: own ExitStatus pure {
+const FRAME_CONTEXT: &[u8] = br#"fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -59,6 +59,7 @@ fn i64_slot_after_i8_has_explicit_seven_byte_padding() {
     );
     assert_eq!(frame.layout().size(), 16);
     assert_eq!(frame.layout().align(), 8);
+    assert_eq!(frame.independent_slot_alignment(), None);
 }
 
 #[test]
@@ -77,6 +78,55 @@ fn requested_alignment_adds_tail_padding_to_byte_array_slot() {
     );
     assert_eq!(frame.layout().size(), 8);
     assert_eq!(frame.layout().align(), 8);
+    assert_eq!(frame.independent_slot_alignment(), None);
+}
+
+#[test]
+fn uniform_positive_roots_split_only_after_the_complete_extent_fits() {
+    let slots = [
+        TargetFrameSlot::natural(TargetStorageType::integer(64)),
+        TargetFrameSlot::natural(TargetStorageType::integer(64)),
+    ];
+    let frame = plan(&slots, Some(16)).expect("the complete pair fits exactly");
+    assert_eq!(frame.independent_slot_alignment(), Some(8));
+    assert_eq!(frame.layout().size(), 16);
+    assert_eq!(
+        plan(&slots, Some(15)),
+        Err(TargetLayoutFailure::Unrepresentable(
+            TargetObject::StackFrame
+        ))
+    );
+}
+
+#[test]
+fn mixed_alignment_keeps_the_struct_when_reordering_would_grow_the_frame() {
+    let word = TargetFrameSlot::natural(TargetStorageType::integer(64));
+    let byte = TargetFrameSlot::natural(TargetStorageType::integer(8));
+    let packed = plan(&[word.clone(), byte.clone(), byte.clone()], None)
+        .expect("the complete packed ordering fits");
+    let reordered =
+        plan(&[byte.clone(), word, byte], None).expect("the complete alternate ordering fits");
+    assert_eq!(packed.layout().size(), 16);
+    assert_eq!(reordered.layout().size(), 24);
+    assert_eq!(packed.independent_slot_alignment(), None);
+    assert_eq!(reordered.independent_slot_alignment(), None);
+}
+
+#[test]
+fn zero_sized_roots_and_invalid_requested_alignments_never_select_split() {
+    let zero = plan(
+        &[TargetFrameSlot::natural(TargetStorageType::bytes(0))],
+        None,
+    )
+    .expect("zero extent itself is representable");
+    assert_eq!(zero.layout().size(), 0);
+    assert_eq!(zero.independent_slot_alignment(), None);
+    for slot in [
+        TargetFrameSlot::aligned(TargetStorageType::integer(64), 4),
+        TargetFrameSlot::aligned(TargetStorageType::bytes(3), 3),
+    ] {
+        assert_eq!(plan(&[slot], None), Err(TargetLayoutFailure::InvalidIr));
+    }
 }
 
 #[test]

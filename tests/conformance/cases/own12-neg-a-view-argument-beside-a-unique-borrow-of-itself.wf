@@ -1,4 +1,4 @@
-fn take(window: &[u8], other: &[u8]) -> size: own u64 reads(other), writes(window) contract {
+fn take(window: &[u8], other: &[u8]) -> size: u64 reads(other), writes(window) contract {
   requires deref(window).len > 0_u64;
 } {
   doc "Two positions over one storage, one of them written.";
@@ -6,7 +6,7 @@ fn take(window: &[u8], other: &[u8]) -> size: own u64 reads(other), writes(windo
   return deref(other).len;
 }
 
-fn caller(input: &[u8]) -> size: own u64 writes(input) contract {
+fn caller(input: &[u8]) -> size: u64 writes(input) contract {
   requires deref(input).len > 0_u64;
 } {
   doc "A range-reference parameter is its own binding rather than an unknown overlapping every position: the two arguments here resolve to that one binding and one of them is written, so the call's own substituted effects are not disjoint.";
@@ -14,6 +14,6 @@ fn caller(input: &[u8]) -> size: own u64 writes(input) contract {
   return seen;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

@@ -21,7 +21,7 @@ struct Counter {
   value: u64;
 }
 
-fn store(counter: &Counter, next: own u64) -> result: own unit writes(counter.value) {
+fn store(counter: &Counter, next: u64) -> result: unit writes(counter.value) {
   set deref(counter).value = next;
   return unit;
 }
@@ -79,9 +79,12 @@ element is acceptable; it transfers a constant number of elements.
 `grow_vector_truncate` preserves a chosen prefix, while `grow_vector_drain`
 consumes the complete window. Both invoke the supplied `VectorDrain` member
 in the removed elements' original order and preserve capacity for reuse.
-They reverse the removed suffix and take from the back, so element movement
-is linear but greater than a direct native consumer. Their callback's
-environment must be effect-disjoint from the backing [EFF-5].
+For the first half of the removed suffix, they take the rear element into a
+local, exchange it with the next suffix element and consume that local. The
+remaining suffix can then be consumed from the back. Work is proportional
+to the number removed, with constant auxiliary element storage; rear-element
+relocation remains extra movement compared with a direct native consumer.
+The callback's environment must be effect-disjoint from the backing [EFF-5].
 
 These operations also accept `nodrop` elements: the callback explicitly
 consumes each one, then `grow_vector_free_empty` consumes the empty owner.
@@ -91,6 +94,50 @@ emptiness comes from a proved invariant; that route does not introduce an
 equality goal. An ordinary-loop header hypothesis itself expires at loop
 exit. Publish the required outer conclusion as a local `invariant` before
 `break` when the continuation needs it [ENT-5, INV-1].
+
+The [deque library](../lib/containers/deque.wf) uses `Box<Ring<T>>` directly.
+Endpoint helpers take a reference and require the caller to prove room or
+nonemptiness. `deque_rebase` consumes the old owner and returns a genuinely new
+backing, with the same logical length and head zero; it can grow or shrink to
+any sufficient capacity within the written ceiling. `DequeVisit` borrows each
+element in logical order, while `DequeDrain` consumes them in that order and
+leaves the allocation reusable. Per-element visitation does not provide two
+contiguous ranges: REF-4 refuses all Ring range references, even after a
+non-wrap test. The [caller](../tests/programs/containers/deque-program.wf)
+also shows an existing filled-slot reference surviving a back append whose
+row writes only the next slot and length.
+
+The [slab library](../lib/containers/slab.wf) reserves one bounded backing and
+materializes cells lazily. Each cell has an inline `Slots<T, 1>` for its
+zero-or-one occupant, a generation and a free-list link. An exhausted insert
+returns the offered owner; removal returns its occupant and retires the slot
+at the generation limit instead of wrapping. `SlabVisit` supplies borrowed
+access with an owned result, and `SlabConsume` handles every live element at
+teardown. Handles are ordinary index/generation data relative to a slab. The
+[membership example](../tests/programs/containers/slab-membership-program.wf)
+distinguishes an index that may expire from a composite protocol that refuses
+deletion while another index retains the object; ordinary public bookkeeping
+does not prove that arbitrary client functions preserve that protocol.
+
+The [owning hash map](../lib/containers/hash-map.wf) stores keys and values
+inline in ordinary enum buckets, including `nodrop` values. Supply hashing
+and equality through `HashMapKey`. `hash_map_try_put` uses existing capacity;
+`hash_map_put` may grow up to the written ceiling. Replacement installs the
+complete offered pair and returns the complete old pair. A full table returns
+the offered pair unchanged, distinguished by the reason in
+`HashMapReturned`; consume that pair explicitly when either member is
+`nodrop`. Allocation itself remains total under STOR-8.
+
+Use `hash_map_lookup` for borrowed observation and `hash_map_edit` to update
+the stored value through a callback, without removing and reinserting it.
+Both callbacks can return owned results. `hash_map_each` visits live pairs,
+and `hash_map_free` supplies every remaining pair to `HashMapConsume` before
+freeing the backing. Read the current count and capacity through
+`hash_map_len` and `hash_map_capacity`; reserve and rehash may relocate all
+payloads. Consistent key laws determine ordinary map behavior, but they do
+not grant ownership or bounds authority. The
+[caller](../tests/programs/containers/hash-map-program.wf) also exercises
+non-reflexive equality, zero-sized pairs and owned callback results.
 
 ## P3. Reach heap content through `Box.inner`
 
@@ -199,15 +246,15 @@ the body:
   more than once.
 
 ```whitefoot
-fn forward<T>(value: own T) -> result: own T pure {
+fn forward<T>(value: T) -> result: T pure {
   return move value;
 }
 
-fn discard<T: drop>(value: own T) -> result: own unit pure {
+fn discard<T: drop>(value: T) -> result: unit pure {
   return unit;
 }
 
-fn duplicate<T: copy>(value: own T) -> (left: own T, right: own T) pure {
+fn duplicate<T: copy>(value: T) -> (left: T, right: T) pure {
   return value, value;
 }
 ```
@@ -225,7 +272,7 @@ nodrop enum Ticket {
   Closed();
 }
 
-fn spend(ticket: own Ticket) -> result: own unit pure {
+fn spend(ticket: Ticket) -> result: unit pure {
   match move ticket {
     Open() => {
       return unit;
@@ -248,10 +295,10 @@ declarations; no dictionary, closure, or dynamic dispatch value is formed.
 
 ```whitefoot
 interface Identity<T> {
-  fn same(value: own T) -> result: own T pure;
+  fn same(value: T) -> result: T pure;
 }
 
-fn same_u8(value: own u8) -> result: own u8 pure {
+fn same_u8(value: u8) -> result: u8 pure {
   return value;
 }
 
@@ -259,7 +306,7 @@ binding ByteIdentity : Identity<u8> {
   same = same_u8;
 }
 
-fn apply<interface Identity<T>>(value: own T) -> result: own T pure {
+fn apply<interface Identity<T>>(value: T) -> result: T pure {
   return Identity<T>::same(value: move value);
 }
 ```
@@ -269,14 +316,14 @@ Every group introduction writes the marker, including a zero-argument group:
 qualified member call do not repeat it:
 
 ```whitefoot
-fn forward<interface Identity<T>>(value: own T) -> result: own T pure {
+fn forward<interface Identity<T>>(value: T) -> result: T pure {
   return apply::<Identity<T>>(value: move value);
 }
 
 let result = forward::<ByteIdentity>(value: 9_u8);
 ```
 
-The member's full modes, types, effects, requirements, and postconditions are
+The member's parameter kinds, result types, effects, requirements, and postconditions are
 the generic caller's boundary. A binding may refine that boundary only as
 [FN-4] permits. Calls retain their ordinary syntax; `interface` and `binding`
 replace the retired group-declaration keywords, not the call form. See
@@ -327,7 +374,7 @@ Use `requires` when every valid caller must establish the condition, and
 [FN-8, FN-9]. State window transitions with entry and exit measures:
 
 ```whitefoot
-fn pop<T, const n: u64>(window: &Slots<T, n>) -> value: own T writes(window.last), writes(window.len) contract {
+fn pop<T, const n: u64>(window: &Slots<T, n>) -> value: T writes(window.last), writes(window.len) contract {
   requires deref(window).len > 0_u64;
   ensures deref(window).len + 1_u64 == deref(entry(window)).len;
 } {
@@ -389,7 +436,7 @@ close_directory(factory: &factory, directory: move cwd);
 Host failures are ordinary `Result` values. Match them or use `propagate` in a
 function returning the same error type [ERR-1, ERR-3]. A helper that acquires a
 linear handle closes it or returns it on every path. Passing a handle by
-reference does not consume it; passing it as `own` does.
+reference does not consume it; passing it to a value parameter does.
 
 The maintained [stdin_echo.wf](../tests/programs/stdin_echo.wf) shows an inline
 window passed to `read_next` and `write_once`, with the invocation's owners
@@ -457,3 +504,67 @@ Current unresolved language and compiler questions are recorded in
 pattern does not authorize retired syntax or a new mechanism. Reduce the need
 to a small source case, identify the specification rule that admits or refuses
 it, and record measured cost only when performance selects between alternatives.
+
+## P15. Keep a Result's evidence with its value
+
+A local `Result` with an integer success payload retains its verified success
+relations when named, copied, moved, assigned or delivered by `give`. A match's
+own `Ok` binder and a successful `propagate` make those relations available.
+The error edge keeps its ordinary return and cleanup behavior [FN-9, ENT-5].
+
+```whitefoot
+let outcome = bounded(count: limit);
+let saved = outcome;
+let index = propagate saved;
+```
+
+If `bounded` declares its Ok payload less than `count`, `index < limit` is
+available after propagation while that relation remains valid. The fragment
+assumes that contract and a compatible enclosing Result return. A wrapper may
+return the named outcome or the call directly; its own routed `ensures` must
+still be proved. The
+[complete transport case](../tests/conformance/cases/fn9-pos-result-value-transport.wf)
+shows both forms and executes success and error paths.
+
+Evidence describes the value that was evaluated. Replacing the original
+binding does not change an earlier copy. Changing supporting storage does not
+retarget an old relation to the new contents, and merely holding an outcome
+does not assert that it is Ok. A branch join keeps only common consequences:
+`payload < 8` on one path and `payload < 10` on another retain `payload < 10`.
+An unchanged outcome can cross a loop head; one changed by a continuing
+backedge cannot reuse the initial payload's evidence there.
+
+`cvt.checked` between integer types supplies the same kind of conditional
+evidence: its success payload equals the input value evaluated by that call.
+Saving the outcome before changing the input preserves the old payload's
+bounds. A conversion involving a float supplies no such numeric relation or
+domain fact; use its payload directly or test `cvt.defined` on the input.
+
+## P16. Choose a conversion interface from the intended behavior
+
+Use bare `cvt` when the surrounding invariant proves exact representability.
+Its result is always the destination type, and its proof adds no runtime
+validity branch [OP-6, ENT-6].
+
+```whitefoot
+fn byte(value: u32) -> result: u8 pure contract {
+  requires value <= 255_u32;
+} {
+  return cvt::<u32, u8>(value);
+}
+```
+
+Use `cvt.checked::<Src, Dst>(value)` when out-of-domain input is an intended
+failure; it always returns `Result<Dst, NarrowError>`, including widening and
+identity pairs. Use `cvt.defined::<Src, Dst>(value)` when the program needs a
+Boolean domain answer. Its true branch proves a bare conversion of that same
+value and type pair; calculating and ignoring the Bool proves nothing.
+
+Integer bounds can prove narrowing or signedness changes. For conversion to
+f32, the interval from -2^24 through 2^24 is a sufficient automatic proof;
+larger exactly representable constants also work. A float's integer range
+alone does not prove integrality: branch on the exact domain query or declare
+that query as a requirement. Generic helpers can use `Int` or `Float` endpoint
+bounds and a `cvt.defined` requirement without changing their return type when
+the selected pair changes. Same-type conversion copies bits, while conversion
+between float formats uses the destination's canonical quiet NaN [OP-6].

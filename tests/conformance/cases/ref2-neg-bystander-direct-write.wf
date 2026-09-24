@@ -1,0 +1,16 @@
+struct BystanderRecord {
+  value: u8;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+
+fn inspect_direct_write(values: &Array<BystanderRecord, 4>, i: u64, j: u64) -> result: u8 reads(values), writes(values[j]) contract {
+  requires i < 4_u64;
+  requires j < 4_u64;
+} {
+  let selected = &deref(values)[i].value;
+  set deref(values)[j] = BystanderRecord(value: 9_u8);
+  return deref(selected);
+}

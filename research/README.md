@@ -32,12 +32,19 @@ they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge bounda
 - [Compute expression and cost](investigations/compute-model/DESIGN.md):
   blocked and irregular algorithm consumers, independent correctness criteria,
   and the runtime costs that test the compute model after range loans.
+- [Fixed-resource execution](investigations/fixed-resource-execution/README.md#deferred-work-and-resumption):
+  deferred research into no-heap computations with proved completion and
+  storage bounds; retained stack/rank/cleanup evidence, proposals and a
+  resumption checkpoint reached from the single TODO topic.
 - [Containers over x1](investigations/containers-and-resources/X1-LIBRARY.md):
   complete container operations and representation costs over merged PR #70,
   the restored source-library home, and the next implementation trials.
 - [Source certificate checking cost](investigations/proof-certificate-architecture/CHECKING-COST.md):
   separate written-proof length from entering-context size and attribute the
   large `proof_use` cost without changing its accepted rules.
+- [Result proof transport](investigations/result-proof-transport/DESIGN.md):
+  compare verified result facts across direct matches, named outcomes and
+  propagation, including capture, invalidation and composition boundaries.
 - [Incremental L0 closure](investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md):
   keep fact states' closed cores and insert fresh edges instead of recomputing
   the cubic closure, relaxing only which equal-bound L0 derivation is retained.

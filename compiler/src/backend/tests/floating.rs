@@ -2,7 +2,7 @@ use super::{compile, compile_and_run};
 
 #[test]
 fn every_direct_float_operation_executes_for_both_widths() {
-    let template = r#"fn main() -> status: own ExitStatus pure {
+    let template = r#"fn main() -> status: ExitStatus pure {
   let sum = fadd.strict(1.5_$TYPE, 2.25_$TYPE);
   if feq(sum, 3.75_$TYPE) {
   } else {
@@ -174,17 +174,17 @@ fn every_direct_float_operation_executes_for_both_widths() {
 /// optimization level.
 #[test]
 fn strict_float_addition_rounds_every_step_and_is_never_reassociated() {
-    let source = br#"fn left(a: own f32, b: own f32, c: own f32) -> result: own f32 pure {
+    let source = br#"fn left(a: f32, b: f32, c: f32) -> result: f32 pure {
   let ab = fadd.strict(a, b);
   return fadd.strict(ab, c);
 }
 
-fn right(a: own f32, b: own f32, c: own f32) -> result: own f32 pure {
+fn right(a: f32, b: f32, c: f32) -> result: f32 pure {
   let bc = fadd.strict(b, c);
   return fadd.strict(a, bc);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let one = 1.0_f32;
   let half_ulp = 4.0e-8_f32;
   let stepwise = left(a: one, b: half_ulp, c: half_ulp);

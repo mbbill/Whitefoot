@@ -33,11 +33,11 @@ use super::{assert_rule_kind, with_semantics};
 
 #[test]
 fn a_condition_call_cannot_hide_an_arm_read_of_the_previous_result() {
-    let source = br#"fn predicate(value: own u64) -> result: own Bool pure {
+    let source = br#"fn predicate(value: u64) -> result: Bool pure {
   return value == 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let first = predicate(value: 1_u64);
   if predicate(value: 0_u64) {
     let observed = first;
@@ -57,7 +57,7 @@ fn main() -> status: own ExitStatus pure {
 // separately. `writes(p)` subsumes `reads(p)` [EFF-1], so the write row is
 // written once and the read entry of v0.59's row is gone with the permission
 // marker on `output`.
-const MARKER: &str = "fn write_marker(output: &u64, source: &[u8], start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(source), writes(output) {\n  let previous = deref(output);\n  let length = deref(source).len;\n  set deref(output) = previous +wrap start;\n  return Ok<u64, IoError>(value: end);\n}\n\n";
+const MARKER: &str = "fn write_marker(output: &u64, source: &[u8], start: u64, end: u64) -> result: Result<u64, IoError> reads(source), writes(output) {\n  let previous = deref(output);\n  let length = deref(source).len;\n  set deref(output) = previous +wrap start;\n  return Ok<u64, IoError>(value: end);\n}\n\n";
 
 fn permission_of(source: &[u8]) -> PermissionMetadata {
     permission_of_with_discharged_query(source, None)
@@ -212,16 +212,16 @@ const CELLS: &str = r#"struct Cell {
   value: u64;
 }
 
-fn bump(slot: &Cell) -> result: own u64 writes(slot.value) {
+fn bump(slot: &Cell) -> result: u64 writes(slot.value) {
   set deref(slot).value = 7_u64;
   return 1_u64;
 }
 
-fn peek(slot: &Cell) -> result: own u64 reads(slot.value) {
+fn peek(slot: &Cell) -> result: u64 reads(slot.value) {
   return deref(slot).value;
 }
 
-fn take(v: own u64) -> result: own u64 pure {
+fn take(v: u64) -> result: u64 pure {
   return v;
 }
 
@@ -256,7 +256,7 @@ fn text(source: &[u8]) -> &str {
 /// Distinct scalar places admit independent ordinary mutating calls.
 #[test]
 fn writes_to_independent_scalar_places_are_permitted() {
-    let source = br#"fn main(out: own u64, err: own u64) -> status: own ExitStatus pure {
+    let source = br#"fn main(out: u64, err: u64) -> status: ExitStatus pure {
   let values = array_filled::<u8, 2>(value: 65_u8);
   let bytes = slots_from_array::<u8, 2>(values: values);
   let window = &bytes[0_u64..2_u64];
@@ -276,7 +276,7 @@ fn writes_to_independent_scalar_places_are_permitted() {
 /// conflict on the place both rows reach.
 #[test]
 fn two_writes_of_one_scalar_deny_overlap() {
-    let source = br#"fn main(out: own u64) -> status: own ExitStatus pure {
+    let source = br#"fn main(out: u64) -> status: ExitStatus pure {
   let values = array_filled::<u8, 2>(value: 65_u8);
   let bytes = slots_from_array::<u8, 2>(values: values);
   let window = &bytes[0_u64..2_u64];
@@ -320,17 +320,17 @@ fn independent_descendant_cursors_do_not_gain_sibling_field_separation() {
   next: Option<Box<Node>>;
 }
 
-fn paint_left(node: &Node) -> result: own unit writes(node.left) {
+fn paint_left(node: &Node) -> result: unit writes(node.left) {
   set deref(node).left = 1_u64;
   return unit;
 }
 
-fn paint_right(node: &Node) -> result: own unit writes(node.right) {
+fn paint_right(node: &Node) -> result: unit writes(node.right) {
   set deref(node).right = 2_u64;
   return unit;
 }
 
-fn inspect(root: &Node) -> result: own unit writes(root) {
+fn inspect(root: &Node) -> result: unit writes(root) {
   let first = root;
   let second = root;
   for (i in 0_u64..2_u64) {
@@ -354,7 +354,7 @@ fn inspect(root: &Node) -> result: own unit writes(root) {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -366,18 +366,66 @@ fn main() -> status: own ExitStatus pure {
     assert_eq!(kind.halves(), ("write", "write"));
 }
 
+/// Rebinding two incoming holders cannot make their entry-storage anchors
+/// unresolved. A third destination remains independent, while either member
+/// of the exchanged origin set still prevents parallel writes.
+#[test]
+fn rebound_parameter_summaries_distinguish_independent_and_overlapping_writes() {
+    for (destination, effects, independent) in [
+        ("other", "writes(second), writes(other)", true),
+        ("first", "writes(second)", false),
+        ("saved", "writes(first), writes(second)", false),
+    ] {
+        let source = format!(
+            "fn write_first(value: &u64) -> result: unit writes(value) {{
+  set deref(value) = 1_u64;
+  return unit;
+}}
+
+fn write_second(value: &u64) -> result: unit writes(value) {{
+  set deref(value) = 2_u64;
+  return unit;
+}}
+
+fn exchange(first: &u64, second: &u64, other: &u64) -> result: unit {effects} {{
+  let saved = first;
+  set first = &deref(second);
+  set second = &deref(saved);
+  let left = write_first(value: first);
+  let right = write_second(value: {destination});
+  return unit;
+}}
+
+fn main() -> status: ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        let table = permission_of(source.as_bytes());
+        let pair = pair_of(&table, "exchange", "write_first", "write_second");
+        if independent {
+            assert!(pair.verdict.is_eligible(), "{pair:?}");
+        } else {
+            let Denial::Footprint { kind, .. } = denial(pair, 1) else {
+                panic!("known overlapping origins must retain their footprint conflict");
+            };
+            assert_eq!(kind.halves(), ("write", "write"));
+        }
+    }
+}
+
 /// Disjoint destinations do not save two calls that also write one shared
 /// cursor: the substituted rows meet on that one path whatever else they
 /// reach.
 #[test]
 fn writes_through_one_shared_cursor_conflict_despite_disjoint_destinations() {
-    let source = br#"fn stamp(cursor: &Cell, destination: &Cell) -> result: own u64 writes(cursor.value), writes(destination.value) {
+    let source = br#"fn stamp(cursor: &Cell, destination: &Cell) -> result: u64 writes(cursor.value), writes(destination.value) {
   set deref(cursor).value = deref(cursor).value +wrap 1_u64;
   set deref(destination).value = 5_u64;
   return 1_u64;
 }
 
-fn probe(cursor: &Cell, left: &Cell, right: &Cell) -> result: own u64 writes(cursor.value), writes(left.value), writes(right.value) {
+fn probe(cursor: &Cell, left: &Cell, right: &Cell) -> result: u64 writes(cursor.value), writes(left.value), writes(right.value) {
   let first = stamp(cursor: cursor, destination: left);
   let second = stamp(cursor: cursor, destination: right);
   return 0_u64;
@@ -393,7 +441,7 @@ fn probe(cursor: &Cell, left: &Cell, right: &Cell) -> result: own u64 writes(cur
 
 #[test]
 fn direct_prelude_calls_form_an_eligible_pair() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let first = exit_status(code: 0_u8);
   let second = exit_status(code: 1_u8);
   return move second;
@@ -410,7 +458,7 @@ fn direct_prelude_calls_form_an_eligible_pair() {
 /// fold is written in.
 #[test]
 fn two_child_sibling_calls_are_permitted_and_eligible() {
-    let source = br#"fn fold(node: &Node) -> result: own u64 writes(node) {
+    let source = br#"fn fold(node: &Node) -> result: u64 writes(node) {
   match deref(node) {
     Leaf(w: leaf) => {
       return deref(leaf);
@@ -446,17 +494,17 @@ fn disjoint_effect_fields_of_one_object_are_permitted() {
   right: u64;
 }
 
-fn set_left(pair: &Pair) -> result: own unit writes(pair.left) {
+fn set_left(pair: &Pair) -> result: unit writes(pair.left) {
   set deref(pair).left = 1_u64;
   return unit;
 }
 
-fn set_right(pair: &Pair) -> result: own unit writes(pair.right) {
+fn set_right(pair: &Pair) -> result: unit writes(pair.right) {
   set deref(pair).right = 2_u64;
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let pair = Pair(left: 0_u64, right: 0_u64);
   let first = set_left(pair: &pair);
   let second = set_right(pair: &pair);
@@ -477,7 +525,7 @@ fn main() -> status: own ExitStatus pure {
 /// by separation.
 #[test]
 fn read_only_sibling_recursion_is_permitted_and_eligible() {
-    let source = br#"fn depth(node: &Node) -> result: own u64 reads(node) {
+    let source = br#"fn depth(node: &Node) -> result: u64 reads(node) {
   match deref(node) {
     Leaf(w: leaf) => {
       return 1_u64;
@@ -501,11 +549,11 @@ fn read_only_sibling_recursion_is_permitted_and_eligible() {
 /// input.
 #[test]
 fn reads_only_siblings_over_one_place_form_one_eligible_chain() {
-    let source = br#"fn width(data: &Slots<u64, 8>) -> result: own u64 reads(data) {
+    let source = br#"fn width(data: &Slots<u64, 8>) -> result: u64 reads(data) {
   return deref(data).len;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let values = array_filled::<u64, 8>(value: 1_u64);
   let buf = slots_from_array::<u64, 8>(values: values);
   let lo = width(data: &buf);
@@ -531,7 +579,7 @@ fn main() -> status: own ExitStatus pure {
 /// stops at two members even though both adjacent pairs hold.
 #[test]
 fn a_run_stops_where_a_nonadjacent_pair_conflicts() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let first = Cell(value: 1_u64);
   let second = Cell(value: 2_u64);
   let a = bump(slot: &first);
@@ -568,7 +616,7 @@ fn a_run_stops_where_a_nonadjacent_pair_conflicts() {
 /// read of it, and `Denial::Dataflow` is gone.
 #[test]
 fn a_dataflow_link_between_siblings_is_a_footprint_conflict() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let left = Cell(value: 1_u64);
   let a = bump(slot: &left);
   let b = take(v: a);
@@ -606,7 +654,7 @@ fn a_dataflow_link_between_siblings_is_a_footprint_conflict() {
 /// footprints overlap under [OWN-7].
 #[test]
 fn overlapping_reference_arguments_are_denied_by_their_footprints() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let cell = Cell(value: 1_u64);
   let lo = bump(slot: &cell);
   let hi = bump(slot: &cell);
@@ -639,7 +687,7 @@ fn overlapping_reference_arguments_are_denied_by_their_footprints() {
 /// moves exactly that read across `bump`'s call.
 #[test]
 fn an_operand_read_of_written_storage_is_denied() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let cell = Cell(value: 1_u64);
   let a = bump(slot: &cell);
   let b = take(v: cell.value);
@@ -665,19 +713,18 @@ fn an_operand_read_of_written_storage_is_denied() {
 /// element read is rooted at the storage the later call writes through.
 #[test]
 fn an_operand_element_read_of_a_written_run_is_denied() {
-    let source =
-        br#"fn fill(dst: &Slots<u64, 4>, mark: own u64) -> result: own u64 writes(dst) contract {
+    let source = br#"fn fill(dst: &Slots<u64, 4>, mark: u64) -> result: u64 writes(dst) contract {
   requires 1_u64 <= deref(dst).len;
 } {
   set deref(dst)[0_u64] = mark;
   return mark;
 }
 
-fn take(v: own u64) -> result: own u64 pure {
+fn take(v: u64) -> result: u64 pure {
   return v;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let values = array_filled::<u64, 4>(value: 1_u64);
   let buf = slots_from_array::<u64, 4>(values: values);
   let b = take(v: buf[0_u64]);
@@ -704,7 +751,7 @@ fn main() -> status: own ExitStatus pure {
 /// choice, so permission may not depend on it and both directions are judged.
 #[test]
 fn an_operand_read_by_the_first_call_of_storage_the_second_writes_is_denied() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let cell = Cell(value: 1_u64);
   let a = take(v: cell.value);
   let b = bump(slot: &cell);
@@ -730,7 +777,7 @@ fn an_operand_read_by_the_first_call_of_storage_the_second_writes_is_denied() {
 /// so the second one has to.
 #[test]
 fn a_write_by_the_second_call_over_a_read_by_the_first_is_denied() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let cell = Cell(value: 1_u64);
   let a = peek(slot: &cell);
   let b = bump(slot: &cell);
@@ -760,11 +807,11 @@ fn a_write_by_the_second_call_over_a_read_by_the_first_is_denied() {
 /// the pair exists and is refused with the edge that costs it.
 #[test]
 fn a_propagating_first_statement_is_denied_by_its_exit() {
-    let source = br#"fn narrow(v: own u32) -> result: own Result<u8, NarrowError> pure {
-  return cvt::<u32, u8>(v);
+    let source = br#"fn narrow(v: u32) -> result: Result<u8, NarrowError> pure {
+  return cvt.checked::<u32, u8>(v);
 }
 
-fn probe(v: own u32, slot: &Cell) -> result: own Result<unit, NarrowError> writes(slot.value) {
+fn probe(v: u32, slot: &Cell) -> result: Result<unit, NarrowError> writes(slot.value) {
   let narrowed = propagate narrow(v: v);
   let stamped = bump(slot: slot);
   return Ok<unit, NarrowError>(value: unit);
@@ -785,11 +832,11 @@ fn probe(v: own u32, slot: &Cell) -> result: own Result<unit, NarrowError> write
 /// exit; the judgment refuses both sides.
 #[test]
 fn a_propagating_second_statement_is_denied_by_its_exit() {
-    let source = br#"fn narrow(v: own u32) -> result: own Result<u8, NarrowError> pure {
-  return cvt::<u32, u8>(v);
+    let source = br#"fn narrow(v: u32) -> result: Result<u8, NarrowError> pure {
+  return cvt.checked::<u32, u8>(v);
 }
 
-fn probe(v: own u32, slot: &Cell) -> result: own Result<unit, NarrowError> writes(slot.value) {
+fn probe(v: u32, slot: &Cell) -> result: Result<unit, NarrowError> writes(slot.value) {
   let stamped = bump(slot: slot);
   let narrowed = propagate narrow(v: v);
   return Ok<unit, NarrowError>(value: unit);
@@ -813,11 +860,11 @@ fn probe(v: own u32, slot: &Cell) -> result: own Result<unit, NarrowError> write
 /// sibling pair and makes only that helper total with a dominating branch.
 #[test]
 fn a_recursive_closure_requires_source_proof_and_then_is_eligible() {
-    let unproved = r#"fn scaled(values: own Array<u8, 8>, index: own u64) -> result: own u8 pure {
+    let unproved = r#"fn scaled(values: Array<u8, 8>, index: u64) -> result: u8 pure {
   return values[index];
 }
 
-fn bubble(node: &Node) -> result: own u64 writes(node) {
+fn bubble(node: &Node) -> result: u64 writes(node) {
   match deref(node) {
     Leaf(w: leaf) => {
       let w = deref(leaf);
@@ -842,7 +889,7 @@ fn bubble(node: &Node) -> result: own u64 writes(node) {
         assert_eq!(issue.rule(), SemanticRule::Op4);
     });
 
-    let proved = r#"fn scaled(values: own Array<u8, 8>, index: own u64) -> result: own u8 pure {
+    let proved = r#"fn scaled(values: Array<u8, 8>, index: u64) -> result: u8 pure {
   let size = values.len;
   if index < size {
     return values[index];
@@ -850,7 +897,7 @@ fn bubble(node: &Node) -> result: own u64 writes(node) {
   return 0_u8;
 }
 
-fn bubble(node: &Node) -> result: own u64 writes(node) {
+fn bubble(node: &Node) -> result: u64 writes(node) {
   match deref(node) {
     Leaf(w: leaf) => {
       let w = deref(leaf);
@@ -900,7 +947,7 @@ fn bubble(node: &Node) -> result: own u64 writes(node) {
 /// pairwise may overlap may all overlap" — is what puts all three in one run.
 #[test]
 fn a_pure_builtin_between_two_calls_keeps_one_run() {
-    let source = r#"fn fold(node: &Node, seed: own u64) -> result: own u64 writes(node) {
+    let source = r#"fn fold(node: &Node, seed: u64) -> result: u64 writes(node) {
   match deref(node) {
     Leaf(w: leaf) => {
       return deref(leaf);
@@ -939,7 +986,7 @@ fn a_pure_builtin_between_two_calls_keeps_one_run() {
 /// the run without changing it.
 #[test]
 fn a_local_invariant_between_two_calls_keeps_one_run() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let left = Cell(value: 1_u64);
   let right = Cell(value: 2_u64);
   let a = peek(slot: &left);
@@ -971,7 +1018,7 @@ fn a_local_invariant_between_two_calls_keeps_one_run() {
 /// reports the adjacency that carries it.
 #[test]
 fn a_write_into_the_next_callees_read_is_denied() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let cell = Cell(value: 1_u64);
   let other = Cell(value: 2_u64);
   let a = peek(slot: &other);
@@ -1000,7 +1047,7 @@ fn a_write_into_the_next_callees_read_is_denied() {
 /// store/store race between the lane and the calling thread.
 #[test]
 fn a_write_over_the_previous_callees_write_is_denied() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let cell = Cell(value: 1_u64);
   let other = Cell(value: 2_u64);
   let a = bump(slot: &cell);
@@ -1030,7 +1077,7 @@ fn a_write_over_the_previous_callees_write_is_denied() {
 /// source order gives 15. No callee row is involved on either side.
 #[test]
 fn a_write_under_the_next_calls_operand_read_is_denied() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let cell = Cell(value: 1_u64);
   let other = Cell(value: 2_u64);
   let a = peek(slot: &other);
@@ -1065,7 +1112,7 @@ fn a_write_under_the_next_calls_operand_read_is_denied() {
 /// fixture used to pin is gone.
 #[test]
 fn a_write_over_the_previous_calls_operand_read_is_denied() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let cell = Cell(value: 1_u64);
   let other = Cell(value: 2_u64);
   let a = take(v: cell.value);
@@ -1099,11 +1146,11 @@ nocopy struct Holder {
   cell: Box<Payload>;
 }
 
-fn observe(holder: &Holder) -> result: own u8 reads(holder) {
+fn observe(holder: &Holder) -> result: u8 reads(holder) {
   return deref(holder).cell.inner.value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let payload = Payload(value: 7_u8);
   let cell = box_new::<Payload>(value: move payload);
   let holder = Holder(cell: move cell);
@@ -1134,7 +1181,7 @@ fn main() -> status: own ExitStatus pure {
 /// schedule that hands the call out that value does not exist until the join.
 #[test]
 fn a_read_of_the_previous_calls_result_is_a_footprint_conflict() {
-    let source = r#"fn fold(node: &Node, seed: own u64) -> result: own u64 writes(node) {
+    let source = r#"fn fold(node: &Node, seed: u64) -> result: u64 writes(node) {
   match deref(node) {
     Leaf(w: leaf) => {
       return deref(leaf);
@@ -1177,7 +1224,7 @@ fn a_read_of_the_previous_calls_result_is_a_footprint_conflict() {
 /// yet.
 #[test]
 fn a_call_reading_the_previous_statements_binding_is_a_footprint_conflict() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let other = Cell(value: 2_u64);
   let a = peek(slot: &other);
   let seed = 7_u64;
@@ -1207,7 +1254,7 @@ fn a_call_reading_the_previous_statements_binding_is_a_footprint_conflict() {
 /// difference.
 #[test]
 fn a_propagate_beside_a_call_is_denied_by_its_exit() {
-    let source = br#"fn probe(outcome: own Result<u8, NarrowError>, a: &Cell, b: &Cell) -> result: own Result<unit, NarrowError> reads(b.value), writes(a.value) {
+    let source = br#"fn probe(outcome: Result<u8, NarrowError>, a: &Cell, b: &Cell) -> result: Result<unit, NarrowError> reads(b.value), writes(a.value) {
   let seen = peek(slot: b);
   let narrowed = propagate outcome;
   let stamped = bump(slot: a);
@@ -1225,7 +1272,7 @@ fn a_propagate_beside_a_call_is_denied_by_its_exit() {
 
 #[test]
 fn a_proved_subscript_between_two_calls_creates_no_exit() {
-    let source = br#"fn probe(values: own Array<u8, 8>, cell: &Cell, other: &Cell) -> result: own u64 reads(cell.value), reads(other.value) {
+    let source = br#"fn probe(values: Array<u8, 8>, cell: &Cell, other: &Cell) -> result: u64 reads(cell.value), reads(other.value) {
   let a = peek(slot: other);
   let picked = values[3_u64];
   let b = peek(slot: cell);
@@ -1263,7 +1310,7 @@ fn a_match_statement_is_no_member_of_any_adjacency() {
   High(w: u64);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let cell = Cell(value: 1_u64);
   let other = Cell(value: 2_u64);
   let which = Low(w: 3_u64);
@@ -1304,7 +1351,7 @@ fn main() -> status: own ExitStatus pure {
 /// and silent are different defects, and only the second is fixed by denying.
 #[test]
 fn a_counted_loop_beside_a_call_is_an_unclassified_form() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let cell = Cell(value: 1_u64);
   let a = peek(slot: &cell);
   for @scan (i in 0_u64..4_u64) {
@@ -1345,7 +1392,7 @@ fn a_counted_loop_beside_a_call_is_an_unclassified_form() {
 /// Two read rows over one place are read/read overlap, which [PAR-1] admits.
 #[test]
 fn two_references_to_one_place_with_read_only_rows_are_permitted() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let cell = Cell(value: 21_u64);
   let a = peek(slot: &cell);
   let b = peek(slot: &cell);
@@ -1368,25 +1415,25 @@ fn two_references_to_one_place_with_read_only_rows_are_permitted() {
 /// halves are asserted here so the boundary is pinned in one fixture.
 #[test]
 fn a_pure_row_reaches_nothing_through_a_reference_and_a_reading_row_denies() {
-    let source = br#"fn ignore_node(node: &Box<u64>) -> result: own u64 pure {
+    let source = br#"fn ignore_node(node: &Box<u64>) -> result: u64 pure {
   return 7_u64;
 }
 
-fn read_node(node: &Box<u64>) -> result: own u64 reads(node) {
+fn read_node(node: &Box<u64>) -> result: u64 reads(node) {
   return deref(node).inner;
 }
 
-fn eat_node(node: own Box<u64>) -> result: own u64 pure {
+fn eat_node(node: Box<u64>) -> result: u64 pure {
   return 9_u64;
 }
 
-fn quiet(node: own Box<u64>) -> result: own u64 pure {
+fn quiet(node: Box<u64>) -> result: u64 pure {
   let a = ignore_node(node: &node);
   let b = eat_node(node: move node);
   return a +wrap b;
 }
 
-fn loud(node: own Box<u64>) -> result: own u64 pure {
+fn loud(node: Box<u64>) -> result: u64 pure {
   let a = read_node(node: &node);
   let b = eat_node(node: move node);
   return a +wrap b;
@@ -1423,7 +1470,7 @@ fn loud(node: own Box<u64>) -> result: own u64 pure {
 /// later `deref` resolves to that storage and conflicts with it.
 #[test]
 fn a_read_through_a_reference_is_a_read_of_the_path_it_names() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let cell = Cell(value: 1_u64);
   let g = &cell;
   let a = bump(slot: &cell);
@@ -1463,24 +1510,24 @@ fn a_read_through_a_reference_is_a_read_of_the_path_it_names() {
 /// on that path.
 #[test]
 fn the_row_not_the_reference_kind_decides_two_range_reference_calls() {
-    let source = br#"fn read_only(view: &[u8]) -> result: own u64 pure {
+    let source = br#"fn read_only(view: &[u8]) -> result: u64 pure {
   return 0_u64;
 }
 
-fn write_through(view: &[u8]) -> result: own u64 writes(view) contract {
+fn write_through(view: &[u8]) -> result: u64 writes(view) contract {
   requires 1_u64 <= deref(view).len;
 } {
   set deref(view)[0_u64] = 1_u8;
   return 0_u64;
 }
 
-fn shared(handed: &[u8]) -> result: own u64 pure {
+fn shared(handed: &[u8]) -> result: u64 pure {
   let a = read_only(view: handed);
   let b = read_only(view: handed);
   return a +wrap b;
 }
 
-fn exclusive(handed: &[u8]) -> result: own u64 writes(handed) contract {
+fn exclusive(handed: &[u8]) -> result: u64 writes(handed) contract {
   requires 1_u64 <= deref(handed).len;
 } {
   let a = write_through(view: handed);
@@ -1503,14 +1550,14 @@ fn exclusive(handed: &[u8]) -> result: own u64 writes(handed) contract {
 // Range fixtures for the proof-carrying half of [OWN-7]. Each call writes
 // the range it receives, while the source remains sequentially valid whether
 // or not [PAR-1] can retain an overlap permission.
-const RANGE_PERMISSION_HELPERS: &str = r#"fn stamp_range(part: &[u8]) -> result: own u64 writes(part) contract {
+const RANGE_PERMISSION_HELPERS: &str = r#"fn stamp_range(part: &[u8]) -> result: u64 writes(part) contract {
   requires 0_u64 < deref(part).len;
 } {
   set deref(part)[0_u64] = 9_u8;
   return 1_u64;
 }
 
-fn stamp_two_ranges(first: &[u8], second: &[u8]) -> result: own u64 writes(first), writes(second) contract {
+fn stamp_two_ranges(first: &[u8], second: &[u8]) -> result: u64 writes(first), writes(second) contract {
   requires 0_u64 < deref(first).len;
   requires 0_u64 < deref(second).len;
 } {
@@ -1534,7 +1581,7 @@ fn stamp_two_ranges(first: &[u8], second: &[u8]) -> result: own u64 writes(first
 fn loop_carried_range_generations_do_not_reuse_the_current_iteration_image() {
     let source = format!(
         "{RANGE_PERMISSION_HELPERS}
-fn shifted(values: &Array<u8, 8>) -> result: own u64 writes(values) {{
+fn shifted(values: &Array<u8, 8>) -> result: u64 writes(values) {{
   let seed = &deref(values)[0_u64..1_u64];
   let saved = &deref(seed)[0_u64..deref(seed).len];
   for (i in 0_u64..2_u64) {{
@@ -1556,7 +1603,7 @@ fn shifted(values: &Array<u8, 8>) -> result: own u64 writes(values) {{
   return 0_u64;
 }}
 
-fn current_iteration(values: &Array<u8, 8>) -> result: own u64 writes(values) {{
+fn current_iteration(values: &Array<u8, 8>) -> result: u64 writes(values) {{
   for (i in 0_u64..2_u64) {{
     let current_start = 5_u64 - i;
     let current_end = 6_u64 - i;
@@ -1597,7 +1644,7 @@ fn current_iteration(values: &Array<u8, 8>) -> result: own u64 writes(values) {{
 fn loop_carried_range_generations_do_not_discharge_overlapping_call_effects() {
     let source = format!(
         "{RANGE_PERMISSION_HELPERS}
-fn shifted(values: &Array<u8, 8>) -> result: own u64 writes(values) {{
+fn shifted(values: &Array<u8, 8>) -> result: u64 writes(values) {{
   let seed = &deref(values)[0_u64..1_u64];
   let saved = &deref(seed)[0_u64..deref(seed).len];
   for (i in 0_u64..2_u64) {{
@@ -1630,7 +1677,7 @@ fn shifted(values: &Array<u8, 8>) -> result: own u64 writes(values) {{
 fn dynamic_ranges_separated_at_the_first_statement_are_permitted() {
     let source = format!(
         "{RANGE_PERMISSION_HELPERS}
-fn separated(values: &Array<u8, 4>, split: own u64) -> result: own u64 writes(values) contract {{
+fn separated(values: &Array<u8, 4>, split: u64) -> result: u64 writes(values) contract {{
   requires 1_u64 <= split;
   requires split < 4_u64;
 }} {{
@@ -1660,7 +1707,7 @@ fn separated(values: &Array<u8, 4>, split: own u64) -> result: own u64 writes(va
 fn a_nonadjacent_dynamic_range_pair_keeps_the_complete_run() {
     let source = format!(
         "{RANGE_PERMISSION_HELPERS}
-fn separated(values: &Array<u8, 4>, split: own u64) -> result: own u64 writes(values) contract {{
+fn separated(values: &Array<u8, 4>, split: u64) -> result: u64 writes(values) contract {{
   requires 1_u64 <= split;
   requires split < 4_u64;
 }} {{
@@ -1698,7 +1745,7 @@ fn separated(values: &Array<u8, 4>, split: own u64) -> result: own u64 writes(va
 fn rebinding_an_endpoint_does_not_separate_earlier_captured_ranges() {
     let source = format!(
         "{RANGE_PERMISSION_HELPERS}
-fn stale(values: &Array<u8, 4>) -> result: own u64 writes(values) {{
+fn stale(values: &Array<u8, 4>) -> result: u64 writes(values) {{
   let start = 0_u64;
   let stop = 2_u64;
   let left = &deref(values)[0_u64..2_u64];
@@ -1729,7 +1776,7 @@ fn stale(values: &Array<u8, 4>) -> result: own u64 writes(values) {{
 fn a_guarded_range_permission_does_not_escape_to_another_statement_pair() {
     let source = format!(
         "{RANGE_PERMISSION_HELPERS}
-fn guarded(values: &Array<u8, 4>, cut: own u64, start: own u64) -> result: own u64 writes(values) contract {{
+fn guarded(values: &Array<u8, 4>, cut: u64, start: u64) -> result: u64 writes(values) contract {{
   requires 1_u64 <= cut;
   requires cut <= 4_u64;
   requires start < 4_u64;
@@ -1769,7 +1816,7 @@ fn guarded(values: &Array<u8, 4>, cut: own u64, start: own u64) -> result: own u
 fn every_range_conflict_of_a_multi_target_pair_must_be_separated() {
     let source = format!(
         "{RANGE_PERMISSION_HELPERS}
-fn conjunction(values: &Array<u8, 8>) -> result: own u64 writes(values) {{
+fn conjunction(values: &Array<u8, 8>) -> result: u64 writes(values) {{
   let a0 = &deref(values)[0_u64..2_u64];
   let a1 = &deref(values)[4_u64..6_u64];
   let b0 = &deref(values)[2_u64..4_u64];
@@ -1801,7 +1848,7 @@ fn conjunction(values: &Array<u8, 8>) -> result: own u64 writes(values) {{
 fn a_later_formed_range_does_not_justify_a_wider_run() {
     let source = format!(
         "{RANGE_PERMISSION_HELPERS}
-fn later(values: &Array<u8, 4>) -> result: own u64 writes(values) {{
+fn later(values: &Array<u8, 4>) -> result: u64 writes(values) {{
   let left = &deref(values)[0_u64..2_u64];
   let a = stamp_range(part: left);
   let right = &deref(values)[2_u64..4_u64];
@@ -1826,11 +1873,11 @@ fn later(values: &Array<u8, 4>) -> result: own u64 writes(values) {{
 /// statement the judgment passes over.
 #[test]
 fn an_inline_prelude_call_forms_ordinary_adjacent_pairs() {
-    let source = br#"fn quiet(cell: &Cell) -> result: own u64 pure {
+    let source = br#"fn quiet(cell: &Cell) -> result: u64 pure {
   return 3_u64;
 }
 
-fn probe(x: own u64, name: own HostString) -> result: own u64 pure {
+fn probe(x: u64, name: HostString) -> result: u64 pure {
   let p = Cell(value: x);
   let r = Cell(value: x);
   let a = quiet(cell: &p);
@@ -1861,7 +1908,7 @@ fn probe(x: own u64, name: own HostString) -> result: own u64 pure {
 /// cannot hide a read of the first statement's result.
 #[test]
 fn a_scrutinee_call_with_independent_arms_forms_a_pair() {
-    let source = br#"fn main(out: own u64, err: own u64) -> status: own ExitStatus pure {
+    let source = br#"fn main(out: u64, err: u64) -> status: ExitStatus pure {
   let values = array_filled::<u8, 2>(value: 65_u8);
   let bytes = slots_from_array::<u8, 2>(values: values);
   let window = &bytes[0_u64..2_u64];
@@ -1886,7 +1933,7 @@ fn a_scrutinee_call_with_independent_arms_forms_a_pair() {
 /// first statement; source order does not exclude its scrutinee call.
 #[test]
 fn a_scrutinee_call_written_first_with_independent_arms_forms_a_pair() {
-    let source = br#"fn main(out: own u64, err: own u64) -> status: own ExitStatus pure {
+    let source = br#"fn main(out: u64, err: u64) -> status: ExitStatus pure {
   let values = array_filled::<u8, 2>(value: 65_u8);
   let bytes = slots_from_array::<u8, 2>(values: values);
   let window = &bytes[0_u64..2_u64];

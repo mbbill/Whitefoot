@@ -1,9 +1,9 @@
-fn leak(x: own i32) -> function_result: own i32 pure {
+fn leak(x: i32) -> function_result: i32 pure {
   doc "A reference never escapes the function that formed it [REF-3]: it may be bound to a local and passed as an argument, but never returned. The restructuring is to return an index or other owned data and let the caller form the reference.";
   let local = x +wrap 1_i32;
   return &local;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

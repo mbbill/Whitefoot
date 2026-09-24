@@ -76,7 +76,7 @@ const PROBES: &[Probe] = &[
         name: "const-name-is-not-an-ident.wf",
         source: br#"const Limit: u64 = 8_u64;
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -93,7 +93,7 @@ fn main() -> status: own ExitStatus pure {
   seq: u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -110,7 +110,7 @@ fn main() -> status: own ExitStatus pure {
     // LABEL — whose own sentences no longer list REGIONID either.
     Probe {
         name: "break-target-is-not-a-label.wf",
-        source: br#"fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: ExitStatus pure {
   loop @spin {
     break spin;
   }
@@ -135,14 +135,14 @@ fn main() -> status: own ExitStatus pure {
     // stays pinned here.
     Probe {
         name: "requires-written-after-ensures.wf",
-        source: br#"fn count(end: own u64) -> lines: own u64 pure contract {
+        source: br#"fn count(end: u64) -> lines: u64 pure contract {
   ensures lines <= 8_u64;
   requires end <= 8_u64;
 } {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -153,16 +153,16 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "forbidden-atom-in-a-body.wf",
-        source: br#"fn double(value: own u64) -> out: own u64 pure {
+        source: br#"fn double(value: u64) -> out: u64 pure {
   return value +wrap value;
 }
 
-fn helper(value: own u64) -> out: own u64 pure {
+fn helper(value: u64) -> out: u64 pure {
   let a = double(value: double(value: value));
   return a;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -173,13 +173,13 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "forbidden-atom-in-a-contract-block.wf",
-        source: br#"fn count(data: &[u8], start: own u64, end: own u64) -> lines: own u64 reads(data) contract {
+        source: br#"fn count(data: &[u8], start: u64, end: u64) -> lines: u64 reads(data) contract {
   requires imax(start, imin(start, end)) <= end;
 } {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -193,13 +193,13 @@ fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "entry-of-a-shared-parameter.wf",
-        source: br#"fn record(destination: &[u8]) -> written: own u64 reads(destination) contract {
+        source: br#"fn record(destination: &[u8]) -> written: u64 reads(destination) contract {
   ensures written == deref(entry(destination)).len;
 } {
   return deref(destination).len;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -211,14 +211,14 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "contradictory-published-relations.wf",
-        source: br#"fn measure(taken: own Array<u8, 4>) -> measured: own u64 pure contract {
+        source: br#"fn measure(taken: Array<u8, 4>) -> measured: u64 pure contract {
   ensures measured <= taken.len;
   ensures taken.len < measured;
 } {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -237,7 +237,7 @@ fn main() -> status: own ExitStatus pure {
   seq: u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -252,7 +252,7 @@ fn main() -> status: own ExitStatus pure {
   seq: u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -263,7 +263,7 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "redeclared-in-one-scope.wf",
-        source: br#"fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: ExitStatus pure {
   let count = 1_u64;
   let count = 2_u64;
   return exit_status(code: 0_u8);
@@ -280,11 +280,11 @@ fn main() -> status: own ExitStatus pure {
   seq: u64;
 }
 
-fn consume(ticket: own Ticket) -> seq: own u64 pure {
+fn consume(ticket: Ticket) -> seq: u64 pure {
   return ticket.seq;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let permit = Ticket(seq: 1_u64);
   let used = consume(ticket: move permit);
   if used == 1_u64 {
@@ -305,7 +305,7 @@ fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "prelude-range-residual.wf",
-        source: br#"fn main(out: own OutputStream, factory: own HandleFactory) -> status: own ExitStatus pure {
+        source: br#"fn main(out: OutputStream, factory: HandleFactory) -> status: ExitStatus pure {
   let header = array_filled::<u8, 4>(value: 65_u8);
   let payload = array_filled::<u8, 9>(value: 66_u8);
   let wide = payload.len;
@@ -322,7 +322,7 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "bounds-residual.wf",
-        source: br#"fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: ExitStatus pure {
   let table = array_filled::<u8, 4>(value: 0_u8);
   let other = array_filled::<u8, 9>(value: 0_u8);
   let pick = other.len;
@@ -346,11 +346,11 @@ fn main() -> status: own ExitStatus pure {
     // FN-2's arity sentence survives and is pinned here.
     Probe {
         name: "call-without-its-type-arguments.wf",
-        source: br#"fn identity<T: Int>(value: own T) -> out: own T pure {
+        source: br#"fn identity<T: Int>(value: T) -> out: T pure {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let doubled = identity(value: 1_u64);
   return exit_status(code: 0_u8);
 }
@@ -370,7 +370,7 @@ fn main() -> status: own ExitStatus pure {
   right: T;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let p = Pair(left: 1_u64, right: 2_u64);
   return exit_status(code: 0_u8);
 }
@@ -387,7 +387,7 @@ fn main() -> status: own ExitStatus pure {
   right: T;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let p = Pair<u64, u64>(left: 1_u64, right: 2_u64);
   return exit_status(code: 0_u8);
 }
@@ -404,7 +404,7 @@ fn main() -> status: own ExitStatus pure {
   right: T;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let p = Pair<4>(left: 1_u64, right: 2_u64);
   return exit_status(code: 0_u8);
 }
@@ -420,7 +420,7 @@ fn main() -> status: own ExitStatus pure {
   count: u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let r = Row<u64>(count: 1_u64);
   return exit_status(code: 0_u8);
 }
@@ -436,7 +436,7 @@ fn main() -> status: own ExitStatus pure {
   value: u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let p = Plain<u64>(value: 1_u64);
   return exit_status(code: 0_u8);
 }
@@ -448,11 +448,11 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "type-arguments-on-a-type-that-takes-none.wf",
-        source: br#"fn take(value: own Bool<u8>) -> out: own u64 pure {
+        source: br#"fn take(value: Bool<u8>) -> out: u64 pure {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -463,11 +463,11 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "int-bound-is-not-satisfied.wf",
-        source: br#"fn widen<T: Int>(value: own T) -> out: own T pure {
+        source: br#"fn widen<T: Int>(value: T) -> out: T pure {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let a = widen::<f64>(value: 1.0_f64);
   return exit_status(code: 0_u8);
 }
@@ -479,11 +479,11 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "float-bound-is-not-satisfied.wf",
-        source: br#"fn scale<T: Float>(value: own T) -> out: own T pure {
+        source: br#"fn scale<T: Float>(value: T) -> out: T pure {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let a = scale::<u64>(value: 1_u64);
   return exit_status(code: 0_u8);
 }
@@ -498,11 +498,11 @@ fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "result-without-type-arguments.wf",
-        source: br#"fn pick(value: own u64) -> out: own Result pure {
+        source: br#"fn pick(value: u64) -> out: Result pure {
   return Ok(value: value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -513,11 +513,11 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "result-with-one-type-argument.wf",
-        source: br#"fn pick(value: own u64) -> out: own Result<u64> pure {
+        source: br#"fn pick(value: u64) -> out: Result<u64> pure {
   return Ok<u64>(value: value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -528,11 +528,11 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "result-with-a-const-type-argument.wf",
-        source: br#"fn pick(value: own u64) -> out: own Result<4, IoError> pure {
+        source: br#"fn pick(value: u64) -> out: Result<4, IoError> pure {
   return Ok<4, IoError>(value: value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -543,11 +543,11 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "option-without-type-arguments.wf",
-        source: br#"fn pick(value: own u64) -> out: own Option pure {
+        source: br#"fn pick(value: u64) -> out: Option pure {
   return Some(value: value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -558,11 +558,11 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "option-with-two-type-arguments.wf",
-        source: br#"fn pick(value: own u64) -> out: own Option<u64, u64> pure {
+        source: br#"fn pick(value: u64) -> out: Option<u64, u64> pure {
   return Some<u64, u64>(value: value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -573,11 +573,11 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "option-with-a-const-type-argument.wf",
-        source: br#"fn pick(value: own u64) -> out: own Option<4> pure {
+        source: br#"fn pick(value: u64) -> out: Option<4> pure {
   return Some<4>(value: value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -611,13 +611,13 @@ fn main() -> status: own ExitStatus pure {
         // exactly what the pinned sentence says a row may not do. Nothing here
         // repeats a category.
         name: "repeated-effect-path.wf",
-        source: br#"fn touch(left: &u64, right: &u64) -> out: own u64 reads(left), reads(left), reads(right) {
+        source: br#"fn touch(left: &u64, right: &u64) -> out: u64 reads(left), reads(left), reads(right) {
   let a = deref(left);
   let b = deref(right);
   return a +wrap b;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -628,11 +628,11 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "effect-suffix-on-a-non-struct.wf",
-        source: br#"fn touch(value: &u64) -> out: own u64 reads(value.count) {
+        source: br#"fn touch(value: &u64) -> out: u64 reads(value.count) {
   return deref(value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -648,11 +648,11 @@ fn main() -> status: own ExitStatus pure {
   right: u64;
 }
 
-fn touch(pair: &Pair) -> out: own u64 reads(pair.middle) {
+fn touch(pair: &Pair) -> out: u64 reads(pair.middle) {
   return deref(pair).left;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -663,11 +663,11 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "declared-row-is-narrower-than-the-body.wf",
-        source: br#"fn touch(data: &[u8]) -> out: own u64 pure {
+        source: br#"fn touch(data: &[u8]) -> out: u64 pure {
   return deref(data).len;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -681,7 +681,7 @@ fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "buffer-length-is-not-a-u64.wf",
-        source: br#"fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: ExitStatus pure {
   let flag = 1_u64 > 0_u64;
   let store = box_array_filled::<u8>(count: flag, value: 0_u8);
   return exit_status(code: 0_u8);
@@ -694,7 +694,7 @@ fn main() -> status: own ExitStatus pure {
         // Field suffixes after indices are supported; this scalar element
         // still has no fields. Pin that type rule, not the retired path limit.
         name: "scalar-buffer-element-has-no-fields.wf",
-        source: br#"fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: ExitStatus pure {
   let store = array_filled::<u8, 4>(value: 0_u8);
   let one = store[0_u64].value;
   return exit_status(code: 0_u8);
@@ -722,11 +722,11 @@ fn main() -> status: own ExitStatus pure {
         name: "slice-value-where-a-scalar-is-required.wf",
         source: br#"const digits: Array<u8, 2> =[48_u8, 49_u8];
 
-fn measure(view: own u64) -> out: own u64 pure {
+fn measure(view: u64) -> out: u64 pure {
   return view;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let view = &digits[0_u64..2_u64];
   let n = measure(view: view);
   return exit_status(code: 0_u8);
@@ -762,11 +762,11 @@ fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "projection-of-a-non-struct.wf",
-        source: br#"fn peek(value: own u64) -> out: own u64 pure {
+        source: br#"fn peek(value: u64) -> out: u64 pure {
   return value.count;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -782,11 +782,11 @@ fn main() -> status: own ExitStatus pure {
   right: u64;
 }
 
-fn peek(pair: own Pair) -> out: own u64 pure {
+fn peek(pair: Pair) -> out: u64 pure {
   return pair.middle;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -801,7 +801,7 @@ fn main() -> status: own ExitStatus pure {
   seq: u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let ticket = Ticket(seq: 1_u64);
   set ticket = 2_u64;
   return exit_status(code: 0_u8);
@@ -818,7 +818,7 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "boolean-operand-is-an-integer.wf",
-        source: br#"fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: ExitStatus pure {
   let flag = band(1_u64, 2_u64);
   return exit_status(code: 0_u8);
 }
@@ -828,7 +828,7 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "match-scrutinee-is-not-an-enum.wf",
-        source: br#"fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: ExitStatus pure {
   let value = 1_u64;
   match value {
     Ok(value: inner) => {
@@ -844,11 +844,11 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "generic-numeric-identity-of-a-non-numeric-type.wf",
-        source: br#"fn zeroed<T: drop>(sample: own T) -> out: own T pure {
+        source: br#"fn zeroed<T: drop>(sample: T) -> out: T pure {
   return 0_T;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let flag = 1_u64 > 0_u64;
   let a = zeroed::<Bool>(sample: flag);
   return exit_status(code: 0_u8);
@@ -864,14 +864,14 @@ fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "goal-with-an-infix-operation.wf",
-        source: br#"fn need(x: own u64) -> out: own u64 pure contract {
+        source: br#"fn need(x: u64) -> out: u64 pure contract {
   define bumped = x +wrap 1_u64;
   requires bumped < 10_u64;
 } {
   return x;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let s = 3_u64;
   let r = need(x: s);
   return exit_status(code: 0_u8);
@@ -882,14 +882,14 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "goal-with-a-numeric-conversion.wf",
-        source: br#"fn need(x: own u32) -> out: own u32 pure contract {
+        source: br#"fn need(x: u32) -> out: u32 pure contract {
   define wide = cvt::<u32, u64>(x);
   requires wide < 10_u64;
 } {
   return x;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let bytes = array_filled::<u8, 1>(value: 3_u8);
   let raw = bytes[0_u64];
   let s = cvt::<u8, u32>(raw);
@@ -907,14 +907,14 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "goal-with-a-reinterpretation.wf",
-        source: br#"fn need(x: own i64) -> out: own i64 pure contract {
+        source: br#"fn need(x: i64) -> out: i64 pure contract {
   define raw = reinterpret::<i64, u64>(x);
   requires raw < 10_u64;
 } {
   return x;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let s = 3_i64;
   let r = need(x: s);
   return exit_status(code: 0_u8);
@@ -925,13 +925,13 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "goal-with-a-float-literal.wf",
-        source: br#"fn need(x: own f64) -> out: own f64 pure contract {
+        source: br#"fn need(x: f64) -> out: f64 pure contract {
   requires flt(x, 1.0_f64);
 } {
   return x;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let v = 2.0_f64;
   let r = need(x: v);
   return exit_status(code: 0_u8);
@@ -942,13 +942,13 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "goal-over-an-admitted-index-actual.wf",
-        source: br#"fn need(x: own u8) -> out: own u8 pure contract {
+        source: br#"fn need(x: u8) -> out: u8 pure contract {
   requires x < 10_u8;
 } {
   return x;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let data = array_filled::<u8, 4>(value: 0_u8);
   let r = need(x: data[0_u64]);
   return exit_status(code: 0_u8);
@@ -959,19 +959,19 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "goal-over-a-dereferenced-holder.wf",
-        source: br#"fn need(names: &[u8], pos: own u64) -> out: own u64 pure contract {
+        source: br#"fn need(names: &[u8], pos: u64) -> out: u64 pure contract {
   define spare = deref(names).len;
   requires pos <= spare;
 } {
   return pos;
 }
 
-fn outer(names: &[u8]) -> out: own u64 pure {
+fn outer(names: &[u8]) -> out: u64 pure {
   let r = need(names: names, pos: 9_u64);
   return r;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -990,12 +990,12 @@ fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "branches-disagree-about-a-binding.wf",
-        source: br#"fn measure(cell: own Box<Array<u8>>) -> size: own u64 pure {
+        source: br#"fn measure(cell: Box<Array<u8>>) -> size: u64 pure {
   let n = cell.inner.len;
   return n;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let c = box_array_filled::<u8>(count: 4_u64, value: 0_u8);
   let flag = 1_u64;
   let taken = 0_u64;
@@ -1017,12 +1017,12 @@ fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "one-iteration-leaves-an-outer-binding-dead.wf",
-        source: br#"fn measure(cell: own Box<Array<u8>>) -> size: own u64 pure {
+        source: br#"fn measure(cell: Box<Array<u8>>) -> size: u64 pure {
   let n = cell.inner.len;
   return n;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let c = box_array_filled::<u8>(count: 4_u64, value: 0_u8);
   for (i in 0_u64..2_u64) {
     let taken = measure(cell: move c);
@@ -1047,7 +1047,7 @@ fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "an-affine-factor-that-is-not-a-measure.wf",
-        source: br#"fn main() -> status: own ExitStatus pure {
+        source: br#"fn main() -> status: ExitStatus pure {
   let limit = 4_u64;
   let seen = 0_u64;
   for (

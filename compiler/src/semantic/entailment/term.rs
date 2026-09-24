@@ -34,8 +34,13 @@ pub(crate) enum TermKind {
     /// const. Interning constants as terms lets disequalities and bounds share
     /// one representation; the implicit equality to Z folds them back.
     Constant(i128),
-    /// An in-scope integer-typed const-generic parameter, judged symbolically.
-    ConstParameter(DeclarationId),
+    /// An in-scope const-generic parameter with its exact written integer
+    /// type [MSR-6], which supplies its implicit bounds under [ENT-2].
+    ConstParameter(DeclarationId, IntegerType),
+    /// The typed payload parameter of one isolated conditional Result context.
+    /// Contexts interpret this parameter independently; selection substitutes
+    /// it away before publishing anything into ordinary flow.
+    ResultPayload(IntegerType),
     /// A tracked place [ENT-2] clause (a) whose final selected type is one
     /// fragment type, carried as the one resolved path the checker has
     /// [REF-1].
@@ -105,10 +110,10 @@ pub(crate) enum TermKind {
     /// across the event.
     ///
     /// `path` is empty where the operand is itself measured, and names the
-    /// field and payload selections that reach the measured place where the
-    /// operand is an aggregate holding one: a placement carries every
-    /// measured place under its operand, so one operand mints one datum set
-    /// per such place [MSR-1].
+    /// field, payload and Box-content selections that reach the measured
+    /// place where the operand is an aggregate holding one: a placement
+    /// carries every measured place under its operand, so one operand mints
+    /// one datum set per such place [MSR-1].
     MeasureDatum {
         statement: Vec<u32>,
         placement: MeasurePlacement,

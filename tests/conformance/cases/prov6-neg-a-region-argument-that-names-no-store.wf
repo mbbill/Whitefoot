@@ -2,12 +2,12 @@ nodrop struct Token {
   id: u64;
 }
 
-fn keep<T: copy>(value: own T) -> result: own unit pure {
+fn keep<T: copy>(value: T) -> result: unit pure {
   doc "A copy-bounded parameter's body may duplicate the value, use it bare, and drop it.";
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "PROV-6: satisfaction is the strict chain copy < affine < linear read left to right, so a copy bound accepts copy arguments only. Token carries the linear modifier, so this instantiation's argument does not satisfy the written bound and the refusal is at the instantiation's call, naming the parameter, the bound, and the argument.";
   let ticket = Token(id: 1_u64);
   keep::<Token>(value: move ticket);

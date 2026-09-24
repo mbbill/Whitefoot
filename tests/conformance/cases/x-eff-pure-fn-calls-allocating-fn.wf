@@ -1,16 +1,16 @@
-fn allocate_then_return(x: own i32) -> function_result: own i32 pure {
+fn allocate_then_return(x: i32) -> function_result: i32 pure {
   doc "Takes a cell from the one heap and lets it go at scope exit; allocation and release carry no effect entry [STOR-8], so the declared row is the empty one.";
   let scratch = box_slots_new::<u8>(capacity: 1_u64);
   return x;
 }
 
-fn f(x: own i32) -> function_result: own i32 pure {
+fn f(x: i32) -> function_result: i32 pure {
   doc "Declares pure and calls the allocating function above; EFF-2 propagates no allocation entry, there being none to propagate.";
   let a = allocate_then_return(x: x);
   return a;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Driver.";
   let a = f(x: 7_i32);
   return exit_status(code: 0_u8);

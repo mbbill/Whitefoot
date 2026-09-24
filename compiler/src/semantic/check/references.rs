@@ -34,10 +34,10 @@ use crate::{
 };
 
 use super::super::model::{
-    BindingId, CheckedContainerRoot, CheckedEffectStep, CheckedExpression, CheckedLoopId,
-    CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedPlaceStep, CheckedRangeRoot,
-    CheckedRangeSource, CheckedStatePath, CheckedTargetDomainObligation, CheckedType, IntegerType,
-    WindowShape,
+    BindingId, CheckedCallSeparation, CheckedContainerRoot, CheckedEffectStep, CheckedExpression,
+    CheckedLoopId, CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedPlaceStep,
+    CheckedRangeRoot, CheckedRangeSource, CheckedStatePath, CheckedTargetDomainObligation,
+    CheckedType, IntegerType, WindowShape,
 };
 use super::super::places::{
     CapturedRange, CapturedValue, DescendantTarget, PlaceRoot, PlaceStep, ResolvedPlace,
@@ -113,6 +113,7 @@ pub(super) struct DeferredLoopReferenceUse {
     pub(super) node: NodeId,
     pub(super) declaration: DeclarationId,
     pub(super) dependencies: Vec<LoopReferenceToken>,
+    pub(super) preservations: Vec<CheckedCallSeparation>,
 }
 
 /// The exactly enumerated events [REF-2] admits as invalidating, carried into
@@ -178,6 +179,9 @@ pub(super) struct ReferenceInfo {
     /// old one first checks the old dependencies and then creates a fresh
     /// valid reference.
     loop_dependencies: Vec<LoopReferenceToken>,
+    /// Conjunctive event-site questions needed to preserve this reference.
+    /// They become obligations only when the reference is used.
+    pub(super) preservations: Vec<CheckedCallSeparation>,
 }
 
 impl ReferenceInfo {
@@ -195,6 +199,7 @@ impl ReferenceInfo {
             paths,
             validity: ReferenceValidity::Valid,
             loop_dependencies: Vec::new(),
+            preservations: Vec::new(),
         }
     }
 
@@ -234,6 +239,11 @@ impl ReferenceInfo {
         }
         if let ReferenceValidity::Invalid(event) = &other.validity {
             self.invalidate(event.clone());
+        }
+        for preservation in &other.preservations {
+            if !self.preservations.contains(preservation) {
+                self.preservations.push(preservation.clone());
+            }
         }
         for dependency in &other.loop_dependencies {
             if !self.loop_dependencies.contains(dependency) {
@@ -279,7 +289,7 @@ impl ReferenceInfo {
     pub(super) fn resolve_loop_dependency(
         &mut self,
         token: LoopReferenceToken,
-        resolution: Result<&[LoopReferenceToken], &InvalidationEvent>,
+        resolution: Result<(&[LoopReferenceToken], &[CheckedCallSeparation]), &InvalidationEvent>,
     ) {
         if !self.loop_dependencies.contains(&token) {
             return;
@@ -287,7 +297,12 @@ impl ReferenceInfo {
         self.loop_dependencies
             .retain(|candidate| *candidate != token);
         match resolution {
-            Ok(dependencies) => {
+            Ok((dependencies, preservations)) => {
+                for preservation in preservations {
+                    if !self.preservations.contains(preservation) {
+                        self.preservations.push(preservation.clone());
+                    }
+                }
                 for dependency in dependencies {
                     if !self.loop_dependencies.contains(dependency) {
                         self.loop_dependencies.push(*dependency);
@@ -385,6 +400,23 @@ pub(super) enum RequiredReferent {
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    /// Retains the structural walk's already-resolved [REF-1] paths without
+    /// interpreting their roots again. Recording at formation and rebinding
+    /// sites also retains origins of invalidated and out-of-scope holders;
+    /// validity and point-current targets remain the ordinary walk's facts.
+    pub(super) fn record_reference_origins(&self, binding: BindingId, paths: &[ResolvedPlace]) {
+        let mut origins = self.reference_origins.borrow_mut();
+        let index = binding.0 as usize;
+        if origins.len() <= index {
+            origins.resize_with(index + 1, Vec::new);
+        }
+        for path in paths {
+            if !origins[index].contains(path) {
+                origins[index].push(path.clone());
+            }
+        }
+    }
+
     /// [REF-1] one root is added once; a differing shape becomes a cone
     /// whose finite anchor can only shorten. Repeated visits cannot unroll
     /// its unknown tail or mint additional captured identities.
@@ -473,21 +505,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         Ok(changed)
     }
-    /// [GRAM-3] the written mode of a `param`: `own`, `&`, or the `&[T]`
-    /// range-reference kind, which is written without a `mode` node.
-    pub(super) fn parse_mode(&self, node: NodeId) -> Result<CheckedMode, CheckStop> {
-        let Some(mode) = self.tree.first_child_with(node, Production::Mode)? else {
-            // `param := IDENT ":" (mode type | "&" "[" type "]")`: the second
-            // alternative writes no `mode` node at all [GRAM-2].
-            return Ok(CheckedMode::Range);
-        };
-        if self.has_fixed(mode, crate::FixedTerminal::Own)? {
+    /// [GRAM-3] the parameter kind follows its written prefix, independently
+    /// of type substitution: `T`, `&T`, or `&[T]`.
+    pub(super) fn parse_parameter_mode(&self, node: NodeId) -> Result<CheckedMode, CheckStop> {
+        if !self.has_fixed(node, crate::FixedTerminal::Ampersand)? {
             return Ok(CheckedMode::Own);
         }
-        if self.has_fixed(mode, crate::FixedTerminal::Ampersand)? {
-            return Ok(CheckedMode::Reference);
+        if self.has_fixed(node, crate::FixedTerminal::LeftBracket)? {
+            return Ok(CheckedMode::Range);
         }
-        Err(SemanticCompilerFailure::InvalidCanonicalTree.into())
+        Ok(CheckedMode::Reference)
     }
 
     /// [REF-1] the path set a spelled place root names, read through every
@@ -554,11 +581,38 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         node,
                         declaration: local.declaration,
                         dependencies: reference.loop_dependencies().to_vec(),
+                        preservations: reference.preservations.clone(),
                     });
                 Ok(())
             }
-            ReferenceValidity::Valid => Ok(()),
+            ReferenceValidity::Valid => self.demand_reference_preservations(
+                node,
+                local.declaration,
+                &reference.preservations,
+            ),
         }
+    }
+
+    pub(super) fn demand_reference_preservations(
+        &self,
+        node: NodeId,
+        declaration: DeclarationId,
+        preservations: &[CheckedCallSeparation],
+    ) -> Result<(), CheckStop> {
+        for preservation in preservations {
+            let mut query = preservation.clone();
+            let use_site = query
+                .reference_use
+                .as_mut()
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            use_site.site = self.tree.path(node)?.clone();
+            use_site.binder = self.declaration_spelling(declaration)?;
+            let mut queries = self.call_separations.borrow_mut();
+            if !queries.contains(&query) {
+                queries.push(query);
+            }
+        }
+        Ok(())
     }
 
     /// [REF-2] applies one access's invalidation to every live reference in
@@ -575,6 +629,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         written: &ResolvedPlace,
         event: &InvalidationEvent,
+    ) -> Result<(), CheckStop> {
+        self.invalidate_references_with_separation(bindings, written, event, None)
+    }
+
+    /// The event site fixes the proof context. Preserving a bystander is an
+    /// optional question until a later use demands this validity fact.
+    pub(super) fn invalidate_references_with_separation(
+        &self,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        written: &ResolvedPlace,
+        event: &InvalidationEvent,
+        site: Option<&crate::NodePath>,
     ) -> Result<(), CheckStop> {
         let include_equal = matches!(event, InvalidationEvent::PrefixMoved);
         let primitive_write = !include_equal
@@ -607,12 +673,38 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let Some(reference) = &mut local.reference else {
                 continue;
             };
-            if !primitive_write
-                && reference
-                    .paths
-                    .iter()
-                    .any(|path| written.may_be_prefix_of(&oracle, path, include_equal))
-            {
+            if primitive_write || !reference.is_valid() {
+                continue;
+            }
+            let mut invalidated = false;
+            for path in &reference.paths {
+                if !written.may_be_prefix_of(&oracle, path, include_equal) {
+                    continue;
+                }
+                if let Some((site, positions)) =
+                    site.zip(Self::separable_by_position(written, path))
+                {
+                    let query = CheckedCallSeparation {
+                        site: site.clone(),
+                        exchange: false,
+                        reference_use: Some(super::super::model::CheckedReferencePreservationUse {
+                            site: site.clone(),
+                            binder: String::new(),
+                            event: event.phrase(),
+                        }),
+                        positions,
+                        left_spelling: self.render_resolved_place(written)?,
+                        right_spelling: self.render_resolved_place(path)?,
+                    };
+                    if !reference.preservations.contains(&query) {
+                        reference.preservations.push(query);
+                    }
+                } else {
+                    invalidated = true;
+                    break;
+                }
+            }
+            if invalidated {
                 reference.invalidate(event.clone());
             }
         }
@@ -1080,7 +1172,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 // [OP-4] a runtime-capacity `Array<T>` is an indexable base
                 // exactly as the constant-capacity one is [TYPE-9].
-                CheckedType::Buffer { element } => element.ty(),
+                CheckedType::Buffer { element } => self.element_type(element)?,
                 _ => {
                     return self.issue_node(
                         SemanticRule::Op4,

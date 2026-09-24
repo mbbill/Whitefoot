@@ -2,13 +2,13 @@ nodrop struct Ticket {
   number: u8;
 }
 
-fn consume(ticket: own Ticket) -> number: own u8 pure {
+fn consume(ticket: Ticket) -> number: u8 pure {
   doc "The destructuring consume is one of the two routes a linear value leaves a scope by.";
   let Ticket(number: taken) = move ticket;
   return taken;
 }
 
-fn acquire(fail: own Bool) -> result: own Result<Ticket, u8> pure {
+fn acquire(fail: Bool) -> result: Result<Ticket, u8> pure {
   doc "A linear ticket on one outcome and an error code on the other.";
   if fail {
     return Err<Ticket, u8>(error: 7_u8);
@@ -17,7 +17,7 @@ fn acquire(fail: own Bool) -> result: own Result<Ticket, u8> pure {
   return Ok<Ticket, u8>(value: move ticket);
 }
 
-fn drain(fail: own Bool) -> result: own u8 pure {
+fn drain(fail: Bool) -> result: u8 pure {
   doc "Every ticket is taken out and consumed on both outcomes, and the window's zero length is established on each leaving edge, which is exactly what free_empty requires of a window whose element type is linear.";
   let run = slots_new::<Ticket, 2>();
   let first_ticket = Ticket(number: 1_u8);
@@ -42,7 +42,7 @@ fn drain(fail: own Bool) -> result: own u8 pure {
   }
 }
 
-fn attempt(fail: own Bool) -> result: own u8 pure {
+fn attempt(fail: Bool) -> result: u8 pure {
   doc "The same acquisition without a window: the prior ticket is consumed on both outcomes.";
   let first = Ticket(number: 1_u8);
   match acquire(fail: fail) {
@@ -59,7 +59,7 @@ fn attempt(fail: own Bool) -> result: own u8 pure {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Both outcomes of both helpers are exercised; no historical drained-window rejection label is retained as a language expectation.";
   let no = 0_u8 == 1_u8;
   let yes = 0_u8 == 0_u8;

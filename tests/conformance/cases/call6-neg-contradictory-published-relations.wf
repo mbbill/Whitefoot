@@ -1,4 +1,4 @@
-fn measure(taken: own Slots<u8, 4>) -> measured: own u64 pure contract {
+fn measure(taken: Slots<u8, 4>) -> measured: u64 pure contract {
   ensures measured <= taken.len;
   ensures taken.len < measured;
 } {
@@ -6,7 +6,7 @@ fn measure(taken: own Slots<u8, 4>) -> measured: own u64 pure contract {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Two ensures clauses publish relations that cannot hold together. At a contradictory point every relation and both signs of every goal are derivable, so an inconsistent contract is not one wrong fact at one caller but every fact at every caller; the set is fixed at the declaration and refused there.";
   let run = slots_new::<u8, 4>();
   place_back(window: &run, value: 0_u8);

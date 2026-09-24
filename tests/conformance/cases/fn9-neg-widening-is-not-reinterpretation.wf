@@ -1,4 +1,4 @@
-fn widened_value(value: own u8) -> result: own i16 pure contract {
+fn widened_value(value: u8) -> result: i16 pure contract {
   requires value == 200_u8;
   ensures result == -56_i16;
 } {
@@ -6,6 +6,6 @@ fn widened_value(value: own u8) -> result: own i16 pure contract {
   return wide;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

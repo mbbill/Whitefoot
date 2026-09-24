@@ -1,0 +1,15 @@
+fn selected(value: i32) -> result: Result<i32, Overflow> pure contract {
+  ensures when Ok(value: payload): payload == value;
+} {
+  return Ok<i32, Overflow>(value: value);
+}
+
+fn relay(input: i32) -> result: Result<i32, Overflow> pure contract {
+  ensures when Ok(value: payload): payload < input;
+} {
+  return selected(value: input);
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

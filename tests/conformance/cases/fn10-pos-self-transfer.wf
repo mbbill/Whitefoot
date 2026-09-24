@@ -7,7 +7,7 @@ struct Pair {
   second: u64;
 }
 
-fn swap_pairs(n: own u64, left: own Pair, right: own Pair) -> result: own Pair pure {
+fn swap_pairs(n: u64, left: Pair, right: Pair) -> result: Pair pure {
   if n == 0_u64 {
     return left;
   }
@@ -16,7 +16,7 @@ fn swap_pairs(n: own u64, left: own Pair, right: own Pair) -> result: own Pair p
   return musttail swap_pairs(n: next, left: right, right: left);
 }
 
-fn rotate<T: copy>(n: own u64, left: own T, right: own T) -> result: own T pure {
+fn rotate<T: copy>(n: u64, left: T, right: T) -> result: T pure {
   if n == 0_u64 {
     return left;
   }
@@ -24,7 +24,7 @@ fn rotate<T: copy>(n: own u64, left: own T, right: own T) -> result: own T pure 
   return musttail rotate::<T>(n: next, left: right, right: left);
 }
 
-fn accumulate(n: own u64, total: own u64) -> result: own u64 pure {
+fn accumulate(n: u64, total: u64) -> result: u64 pure {
   if n == 0_u64 {
     return total;
   }
@@ -36,7 +36,7 @@ fn accumulate(n: own u64, total: own u64) -> result: own u64 pure {
   return musttail accumulate(n: next, total: next_total);
 }
 
-fn sum(bytes: &[u8], total: own u64) -> result: own u64 reads(bytes) {
+fn sum(bytes: &[u8], total: u64) -> result: u64 reads(bytes) {
   let length = deref(bytes).len;
   if length == 0_u64 {
     return total;
@@ -48,7 +48,7 @@ fn sum(bytes: &[u8], total: own u64) -> result: own u64 reads(bytes) {
   return musttail sum(bytes: rest, total: next);
 }
 
-fn exchange(n: own u64, left: own Box<u64>, right: own Box<u64>) -> result: own u64 pure {
+fn exchange(n: u64, left: Box<u64>, right: Box<u64>) -> result: u64 pure {
   if n == 0_u64 {
     let high = left.inner *wrap 10_u64;
     return high +wrap right.inner;
@@ -60,7 +60,7 @@ fn exchange(n: own u64, left: own Box<u64>, right: own Box<u64>) -> result: own 
   return musttail exchange(n: next, left: move right, right: move left);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let rotated = rotate::<u64>(n: 100001_u64, left: 3_u64, right: 7_u64);
   let even = rotate::<u64>(n: 100002_u64, left: 3_u64, right: 7_u64);
   if rotated != 7_u64 {

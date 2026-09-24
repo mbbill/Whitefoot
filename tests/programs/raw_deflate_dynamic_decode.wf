@@ -1,4 +1,4 @@
-fn store_dynamic_length(literal_lengths: &[u8], distance_lengths: &[u8], literal_count: own u64, position: own u64, value: own u8) -> result: own Result<unit, InflateError> writes(literal_lengths), writes(distance_lengths) contract {
+fn store_dynamic_length(literal_lengths: &[u8], distance_lengths: &[u8], literal_count: u64, position: u64, value: u8) -> result: Result<unit, InflateError> writes(literal_lengths), writes(distance_lengths) contract {
   define literal_room = deref(literal_lengths).len;
   define enough_literals = literal_count <= literal_room;
   requires enough_literals;
@@ -21,7 +21,7 @@ fn store_dynamic_length(literal_lengths: &[u8], distance_lengths: &[u8], literal
   return Ok<unit, InflateError>(value: unit);
 }
 
-fn ordered_code_symbol(index: own u64) -> result: own Result<u64, InflateError> pure {
+fn ordered_code_symbol(index: u64) -> result: Result<u64, InflateError> pure {
   let bounded = index % 19_u64;
   let unchanged = bounded == index;
   if unchanged {
@@ -40,7 +40,7 @@ fn ordered_code_symbol(index: own u64) -> result: own Result<u64, InflateError> 
   return Ok<u64, InflateError>(value: ordered_symbol);
 }
 
-fn read_dynamic_code_lengths(state: &InflateState, input: &[u8], code_lengths: &[u8], code_count: own u64) -> result: own Result<unit, InflateError> reads(input), writes(state.input_offset), writes(state.hold), writes(state.bits), writes(code_lengths) contract {
+fn read_dynamic_code_lengths(state: &InflateState, input: &[u8], code_lengths: &[u8], code_count: u64) -> result: Result<unit, InflateError> reads(input), writes(state.input_offset), writes(state.hold), writes(state.bits), writes(code_lengths) contract {
   define code_count_fits = code_count <= 19_u64;
   define code_room = deref(code_lengths).len;
   define order_fits = 19_u64 <= code_room;
@@ -71,7 +71,7 @@ fn read_dynamic_code_lengths(state: &InflateState, input: &[u8], code_lengths: &
           return Err<unit, InflateError>(error: length_error);
         }
       }
-      match cvt::<u64, u8>(length_bits) {
+      match cvt.checked::<u64, u8>(length_bits) {
         Ok(value: length) => {
           let code_room = deref(code_lengths).len;
           let ordered_ok = ordered_symbol < code_room;
@@ -93,7 +93,7 @@ fn read_dynamic_code_lengths(state: &InflateState, input: &[u8], code_lengths: &
   return Ok<unit, InflateError>(value: unit);
 }
 
-fn decode_dynamic(state: &InflateState, input: &[u8], out: &[u8]) -> result: own Result<unit, InflateError> reads(input), writes(state.input_offset), writes(state.output_offset), writes(state.hold), writes(state.bits), writes(out) {
+fn decode_dynamic(state: &InflateState, input: &[u8], out: &[u8]) -> result: Result<unit, InflateError> reads(input), writes(state.input_offset), writes(state.output_offset), writes(state.hold), writes(state.bits), writes(out) {
   doc "The three code-length runs are inline Slots windows of this frame and the decoder reaches each through one range reference; the frame's release reclaims them, so the block needs no arena and no allocation [TYPE-9, STOR-1, REF-4].";
   let literal_count_bits = 0_u64;
   match read_bits(state: state, input: input, count: 5_u32, mask: 31_u64) {
@@ -189,7 +189,7 @@ fn decode_dynamic(state: &InflateState, input: &[u8], out: &[u8]) -> result: own
       }
       let direct_length = length_symbol <= 15_u64;
       if direct_length {
-        match cvt::<u64, u8>(length_symbol) {
+        match cvt.checked::<u64, u8>(length_symbol) {
           Ok(value: length) => {
             let stored = propagate store_dynamic_length(literal_lengths: literal_window, distance_lengths: distance_window, literal_count: literal_count, position: position, value: length);
             set previous_length = length;
@@ -313,7 +313,7 @@ fn decode_dynamic(state: &InflateState, input: &[u8], out: &[u8]) -> result: own
     }
     let literal = symbol <= 255_u64;
     if literal {
-      match cvt::<u64, u8>(symbol) {
+      match cvt.checked::<u64, u8>(symbol) {
         Ok(value: byte) => {
           match emit_byte(state: state, out: out, value: byte) {
             Ok(value: emitted) => {

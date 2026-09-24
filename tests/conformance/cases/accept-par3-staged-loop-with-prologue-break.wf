@@ -1,4 +1,4 @@
-fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+fn factory_refusal(error: &IoError) -> result: Bool reads(error) {
   match deref(error) {
     NotFound(code: native_code, origin: native_origin) => {
       return False();
@@ -87,7 +87,7 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
   }
 }
 
-fn component() -> made: own Slots<u8, 16> pure contract {
+fn component() -> made: Slots<u8, 16> pure contract {
   ensures made.len >= 16_u64;
   ensures made.cap <= made.len;
 } {
@@ -103,7 +103,7 @@ fn component() -> made: own Slots<u8, 16> pure contract {
   return move built;
 }
 
-fn exercise(cwd: &DirectoryRead, files: &HandleFactory) -> status: own ExitStatus reads(cwd), writes(files) {
+fn exercise(cwd: &DirectoryRead, files: &HandleFactory) -> status: ExitStatus reads(cwd), writes(files) {
   doc "An ordinary loop with a prologue break: the counter is advanced before the body opens anything, so the loop leaves through break with every handle already closed.";
   let opened = 0_u64;
   let index = 0_u64;
@@ -130,7 +130,7 @@ fn exercise(cwd: &DirectoryRead, files: &HandleFactory) -> status: own ExitStatu
   return exit_status(code: 0_u8);
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
   let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
   let outcome = exercise(cwd: &cwd, files: &files);

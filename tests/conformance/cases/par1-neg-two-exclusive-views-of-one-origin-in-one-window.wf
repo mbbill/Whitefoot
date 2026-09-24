@@ -1,4 +1,4 @@
-fn fill_pair(first: &[u8], second: &[u8]) -> result: own unit writes(first), writes(second) contract {
+fn fill_pair(first: &[u8], second: &[u8]) -> result: unit writes(first), writes(second) contract {
   requires 2_u64 <= deref(first).len;
   requires 2_u64 <= deref(second).len;
 } {
@@ -8,7 +8,7 @@ fn fill_pair(first: &[u8], second: &[u8]) -> result: own unit writes(first), wri
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The writer forms two range references over one run and hands one to each write parameter of a single call, so both substituted write paths resolve to the same storage. EFF-5 compares the substituted effects pairwise and refuses an overlapping pair containing a write that is not proved disjoint; the two identical ranges are not disjoint, so the call is the rejection.";
   let values = array_filled::<u8, 2>(value: 0_u8);
   let run = slots_from_array::<u8, 2>(values: values);

@@ -2,7 +2,7 @@ nodrop opaque struct Ticket {
   serial: u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "GRAM-2: struct_decl is opaque? (nocopy | nodrop)? struct TYPEID generics? and writes opaque before nodrop, so nodrop opaque struct is not the grammar's order. No item arm has a matching row at the second modifier, and the grammar-derivation rejection is attributed to the rule owning that production [DIAG-1].";
   return exit_status(code: 0_u8);
 }

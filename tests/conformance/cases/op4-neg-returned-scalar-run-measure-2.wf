@@ -3,7 +3,7 @@ struct Row {
   right: u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A write of one element field leaves the window length intact, but a SET-1 commit of the whole run kills every measure fact established over it, so the following subscript has nothing left to discharge it.";
   let rows = slots_new::<Row, 4>();
   let first = Row(left: 3_u64, right: 4_u64);

@@ -56,6 +56,124 @@ fn bind_compute_host_adapter(module: &str, adapter: &str) -> String {
     String::from_utf8(output.stdout).expect("adapter LLVM text")
 }
 
+/// The binder used to miss unassigned indirect-result calls. A tiny LLVM/C
+/// consumer checks both result ABIs through the real pool setting, without WF
+/// compilation: one native image, run at W1 and W4. Entry counters distinguish
+/// the actual world even when both worlds return the same complete result.
+#[test]
+fn compute_host_adapter_selects_world_for_both_result_abis() {
+    let module = r#"declare i32 @wf__par_pool_active()
+declare i64 @adapter_value_body(i64, i32)
+declare void @adapter_aggregate_body(ptr, i64, i32)
+declare i64 @wf_adapter_uncloned(i64)
+declare void @wf_adapter_uncloned_output(ptr, i64)
+define i64 @wf_adapter_value(i64 %input) {
+  %value = call i64 @adapter_value_body(i64 %input, i32 1)
+  ret i64 %value
+}
+define i64 @wf__par_seq_adapter_value(i64 %input) {
+  %value = call i64 @adapter_value_body(i64 %input, i32 0)
+  ret i64 %value
+}
+define void @wf_adapter_aggregate(ptr %result, i64 %input) {
+  call void @adapter_aggregate_body(ptr %result, i64 %input, i32 1)
+  ret void
+}
+define void @wf__par_seq_adapter_aggregate(ptr %result, i64 %input) {
+  call void @adapter_aggregate_body(ptr %result, i64 %input, i32 0)
+  ret void
+}
+"#;
+    let adapter = r#"define i64 @adapter_first(ptr %first, ptr %second, i64 %seed) {
+  call void @wf_adapter_aggregate(ptr %first, i64 %seed)
+  %value = call i64 @wf_adapter_value(i64 %seed)
+  call void @wf_adapter_aggregate(ptr %second, i64 %value)
+  %plain = call i64 @wf_adapter_uncloned(i64 %value)
+  ret i64 %plain
+}
+define i64 @adapter_second(ptr %first, ptr %second, ptr %plain, i64 %seed) {
+  %value = call i64 @wf_adapter_value(i64 %seed)
+  call void @wf_adapter_aggregate(ptr %first, i64 %value)
+  call void @wf_adapter_uncloned_output(ptr %plain, i64 %value)
+  call void @wf_adapter_aggregate(ptr %second, i64 %seed)
+  ret i64 %value
+}
+"#;
+    let llvm = bind_compute_host_adapter(module, adapter);
+    let host = r#"#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+extern int wf__floor_run(int, char **);
+extern int wf__par_pool_active(void);
+extern uint64_t adapter_first(uint64_t *, uint64_t *, uint64_t);
+extern uint64_t adapter_second(uint64_t *, uint64_t *, uint64_t *, uint64_t);
+static unsigned value_calls[2], aggregate_calls[2], plain_value_calls, plain_output_calls;
+uint64_t adapter_value_body(uint64_t input, int world) {
+    ++value_calls[world];
+    return input + 11;
+}
+void adapter_aggregate_body(uint64_t *result, uint64_t input, int world) {
+    ++aggregate_calls[world];
+    result[0] = input + 3;
+    result[1] = input * 3 + 1;
+    result[2] = input + 113;
+}
+uint64_t wf_adapter_uncloned(uint64_t input) {
+    ++plain_value_calls;
+    return input + 29;
+}
+void wf_adapter_uncloned_output(uint64_t *result, uint64_t input) {
+    ++plain_output_calls;
+    result[0] = input + 37;
+}
+int wf__main_body(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const char *workers = getenv("WF_WORKERS");
+    if (!workers || (strcmp(workers, "1") && strcmp(workers, "4"))) return 1;
+    unsigned world = !strcmp(workers, "4");
+    if ((wf__par_pool_active() != 0) != world) return 2;
+    struct { uint64_t before, fields[3], after; } cells[5];
+    for (unsigned i = 0; i < 5; ++i) {
+        cells[i].before = UINT64_C(0x1020304050607080) + i;
+        cells[i].after = UINT64_C(0x8070605040302010) + i;
+        for (unsigned j = 0; j < 3; ++j) cells[i].fields[j] = 777;
+    }
+    if (adapter_first(cells[0].fields, cells[1].fields, 17) != 57) return 3;
+    if (adapter_second(cells[2].fields, cells[3].fields, cells[4].fields, 23) != 34) return 4;
+    const uint64_t expected[5][3] = {
+        {20, 52, 130}, {31, 85, 141}, {37, 103, 147}, {26, 70, 136}, {71, 777, 777}
+    };
+    for (unsigned i = 0; i < 5; ++i) {
+        if (cells[i].before != UINT64_C(0x1020304050607080) + i ||
+            cells[i].after != UINT64_C(0x8070605040302010) + i) return 5;
+        for (unsigned j = 0; j < 3; ++j)
+            if (cells[i].fields[j] != expected[i][j]) return 6;
+    }
+    if (value_calls[world] != 2 || value_calls[1 - world] != 0 ||
+        aggregate_calls[world] != 4 || aggregate_calls[1 - world] != 0 ||
+        plain_value_calls != 1 || plain_output_calls != 1) return 7;
+    printf("host adapter worlds PASS: world=%u\n", world);
+    return 0;
+}
+int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+"#;
+    let directory = test_directory();
+    let executable = build_linked_executable(&llvm, Some(host), &[], &directory);
+    for (workers, world) in [("1", 0), ("4", 1)] {
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run host adapter world probe");
+        assert!(output.status.success(), "WF_WORKERS={workers}: {output:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stdout)
+                .contains(&format!("host adapter worlds PASS: world={world}"))
+        );
+    }
+    std::fs::remove_dir_all(directory).expect("remove host adapter world probe");
+}
+
 fn run_compute_oracle(executable: &Path, name: &str, parallel: bool) {
     // A sequential image has no worker world to select. The parallel image
     // additionally tests the pool-off fallback and two real pool widths.
@@ -97,7 +215,7 @@ fn build_compute_oracle(
 
 #[test]
 fn runtime_work_estimates_are_total_for_empty_and_inverted_ranges() {
-    let source = br#"fn count_work(lower: own u64, upper: own u64) -> result: own u64 pure {
+    let source = br#"fn count_work(lower: u64, upper: u64) -> result: u64 pure {
   let total = 0_u64;
   for (i in lower..upper) {
     set total = total +wrap i;
@@ -105,7 +223,7 @@ fn runtime_work_estimates_are_total_for_empty_and_inverted_ranges() {
   return total;
 }
 
-fn write_work(count: own u64, lower: own u64, upper: own u64) -> result: own u64 pure contract {
+fn write_work(count: u64, lower: u64, upper: u64) -> result: u64 pure contract {
   requires count <= 2_u64;
 } {
   let output = array_filled::<u64, 2>(value: 0_u64);
@@ -117,7 +235,7 @@ fn write_work(count: own u64, lower: own u64, upper: own u64) -> result: own u64
   return first +wrap second;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let total = write_work(count: 2_u64, lower: 0_u64, upper: 17_u64);
   return exit_status(code: 0_u8);
 }
@@ -171,6 +289,195 @@ int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
 }
 
 #[test]
+fn runtime_array_helper_prices_use_only_original_readonly_reference_captures() {
+    let mut source = String::from(
+        r#"fn sum_owner(input: &Box<Array<u64>>) -> result: u64 reads(input) {
+  let count = deref(input).inner.len;
+  let total = 0_u64;
+  for (i in 0_u64..count) {
+    set total = total +wrap deref(input).inner[i];
+  }
+  return total;
+}
+
+fn sum_range(input: &[u64]) -> result: u64 reads(input) {
+  let count = deref(input).len;
+  let total = 0_u64;
+  for (i in 0_u64..count) {
+    set total = total +wrap deref(input)[i];
+  }
+  return total;
+}
+
+fn sum_other(input: &Box<u64>) -> result: u64 reads(input) {
+  let count = deref(input).inner;
+  let total = 0_u64;
+  for (i in 0_u64..count) {
+    set total = total +wrap 7_u64;
+  }
+  return total;
+}
+
+fn sum_shared(first: &Box<Array<u64>>, second: &Box<Array<u64>>) -> result: u64 reads(first), reads(second) {
+  let first_sum = sum_owner(input: first);
+  let second_sum = sum_owner(input: second);
+  return first_sum +wrap second_sum;
+}
+"#,
+    );
+    for (name, parameter, effect, prefix, call, construct, actual) in [
+        (
+            "owner",
+            "&Box<Array<u64>>",
+            "reads(input)",
+            "",
+            "sum_owner(input: input)",
+            "box_array_filled::<u64>(count: count, value: 7_u64)",
+            "&input",
+        ),
+        (
+            "range",
+            "&[u64]",
+            "reads(input)",
+            "",
+            "sum_range(input: input)",
+            "box_array_filled::<u64>(count: count, value: 7_u64)",
+            "&input.inner[0_u64..count]",
+        ),
+        (
+            "mutable",
+            "&Box<Array<u64>>",
+            "writes(input)",
+            "  if deref(input).inner.len != 0_u64 {\n    set deref(input).inner[0_u64] = 7_u64;\n  }\n",
+            "sum_owner(input: input)",
+            "box_array_filled::<u64>(count: count, value: 7_u64)",
+            "&input",
+        ),
+        (
+            "rebound",
+            "&Box<Array<u64>>",
+            "reads(input)",
+            "  let original_count = deref(input).inner.len;\n  let replacement = box_array_filled::<u64>(count: count, value: 7_u64);\n  let selected = input;\n  set selected = &replacement;\n",
+            "sum_owner(input: selected)",
+            "box_array_filled::<u64>(count: 1_u64, value: 7_u64)",
+            "&input",
+        ),
+        (
+            "local",
+            "&Box<Array<u64>>",
+            "reads(input)",
+            "  let original_count = deref(input).inner.len;\n  let replacement = box_array_filled::<u64>(count: count, value: 7_u64);\n",
+            "sum_owner(input: &replacement)",
+            "box_array_filled::<u64>(count: 1_u64, value: 7_u64)",
+            "&input",
+        ),
+        (
+            "other",
+            "&Box<u64>",
+            "reads(input)",
+            "",
+            "sum_other(input: input)",
+            "box_new::<u64>(value: count)",
+            "&input",
+        ),
+        (
+            "shared",
+            "&Box<Array<u64>>",
+            "reads(input)",
+            "",
+            "sum_shared(first: input, second: input)",
+            "box_array_filled::<u64>(count: count, value: 7_u64)",
+            "&input",
+        ),
+    ] {
+        source.push_str(&format!(
+            r#"
+fn write_{name}(input: {parameter}, count: u64, iterations: u64) -> result: u64 {effect} contract {{
+  requires count <= 65536_u64;
+  requires iterations <= 2_u64;
+}} {{
+{prefix}  let output = array_filled::<u64, 2>(value: 0_u64);
+  for (i in 0_u64..iterations) {{
+    set output[i] = {call};
+  }}
+  return output[0_u64] +wrap output[1_u64];
+}}
+
+fn probe_{name}(count: u64, iterations: u64) -> result: u64 pure contract {{
+  requires count <= 65536_u64;
+  requires iterations <= 2_u64;
+}} {{
+  let input = {construct};
+  return write_{name}(input: {actual}, count: count, iterations: iterations);
+}}
+"#,
+        ));
+    }
+    source.push_str(
+        "\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+    );
+    let mut llvm = emit_with_overlap(source.as_bytes())
+        .replace("@main(", "@wf_reference_price_main(")
+        .replace("@wf__main_body(", "@wf_reference_price_body(")
+        .replace(
+            "call i64 @wf__par_split_budget(",
+            "call i64 @wf_work_budget(",
+        );
+    llvm.push_str("\ndeclare i64 @wf_work_budget(i64, i64)\n");
+    let host = r#"#include <stdint.h>
+#include <stdio.h>
+extern int wf__floor_run(int, char **);
+extern uint64_t wf_probe_owner(uint64_t, uint64_t), wf_probe_range(uint64_t, uint64_t);
+extern uint64_t wf_probe_mutable(uint64_t, uint64_t), wf_probe_rebound(uint64_t, uint64_t);
+extern uint64_t wf_probe_local(uint64_t, uint64_t), wf_probe_other(uint64_t, uint64_t);
+extern uint64_t wf_probe_shared(uint64_t, uint64_t);
+typedef uint64_t (*probe)(uint64_t, uint64_t);
+static uint64_t first_price;
+static unsigned observed;
+uint64_t wf_work_budget(uint64_t span, uint64_t price) {
+    (void)span;
+    if (observed++ == 0) first_price = price;
+    return 0;
+}
+int wf__main_body(int argc, char **argv) {
+    (void)argc; (void)argv;
+    const uint64_t extents[] = {0, 1, 17, 4096};
+    const probe probes[] = {wf_probe_owner, wf_probe_range, wf_probe_mutable,
+        wf_probe_rebound, wf_probe_local, wf_probe_other, wf_probe_shared};
+    const char *names[] = {"owner", "range", "mutable", "rebound", "local", "other", "shared"};
+    const unsigned dynamic[] = {1, 1, 0, 0, 0, 0, 1};
+    for (unsigned p = 0; p < sizeof(probes) / sizeof(*probes); ++p) {
+        uint64_t previous = 0;
+        for (unsigned e = 0; e < sizeof(extents) / sizeof(*extents); ++e) {
+            uint64_t count = extents[e];
+            observed = 0;
+            uint64_t actual = probes[p](count, 2);
+            uint64_t expected = count * (p == 6 ? 28 : 14);
+            if (!observed || actual != expected) return 1;
+            uint64_t price = first_price;
+            printf("%s extent=%llu price=%llu\n", names[p],
+                   (unsigned long long)count, (unsigned long long)price);
+            if (e && (dynamic[p] ? price <= previous : price != previous)) return 2;
+            previous = price;
+            observed = 0;
+            if (probes[p](count, 0) != 0 || !observed || first_price != price) return 3;
+        }
+    }
+    return 0;
+}
+int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
+"#;
+    let directory = test_directory();
+    let executable = build_linked_executable(&llvm, Some(host), &[], &directory);
+    let output = Command::new(executable)
+        .env("WF_WORKERS", "1")
+        .output()
+        .expect("run checked-reference scheduling price probe");
+    assert!(output.status.success(), "{output:?}");
+    std::fs::remove_dir_all(directory).expect("remove checked-reference scheduling price probe");
+}
+
+#[test]
 fn runtime_work_prices_post_loop_arithmetic_once_per_enclosing_iteration() {
     let mut source = String::new();
     for (extent, bound) in [("known", "upper"), ("fallback", "i")] {
@@ -182,7 +489,7 @@ fn runtime_work_prices_post_loop_arithmetic_once_per_enclosing_iteration() {
                 ("", bias)
             };
             source.push_str(&format!(
-                r#"fn count_{extent}_{position}(upper: own u64, repeats: own u64) -> result: own u64 pure {{
+                r#"fn count_{extent}_{position}(upper: u64, repeats: u64) -> result: u64 pure {{
   let total = 0_u64;
   for (i in 0_u64..repeats) {{
 {before}    for (j in 0_u64..{bound}) {{
@@ -194,7 +501,7 @@ fn runtime_work_prices_post_loop_arithmetic_once_per_enclosing_iteration() {
   return total;
 }}
 
-fn write_{extent}_{position}(upper: own u64, repeats: own u64) -> result: own u64 pure {{
+fn write_{extent}_{position}(upper: u64, repeats: u64) -> result: u64 pure {{
   let output = array_filled::<u64, 2>(value: 0_u64);
   for (i in 0_u64..2_u64) {{
     set output[i] = count_{extent}_{position}(upper: upper, repeats: repeats);
@@ -215,7 +522,7 @@ fn write_{extent}_{position}(upper: own u64, repeats: own u64) -> result: own u6
         }
     }
     source.push_str(
-        r#"fn main() -> status: own ExitStatus pure {
+        r#"fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -432,7 +739,7 @@ fn range_references_over_one_storage_write_the_original_array_and_window() {
   after: u64;
 }
 
-fn fill(values: &STORAGE) -> result: own unit writes(values) contract {
+fn fill(values: &STORAGE) -> result: unit writes(values) contract {
   requires deref(values).len == 8_u64;
   ensures deref(values).len == deref(entry(values)).len;
 } {
@@ -445,7 +752,7 @@ fn fill(values: &STORAGE) -> result: own unit writes(values) contract {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let initial = array_filled::<u64, 8>(value: 7_u64);
   let values = INITIAL;
   let packet = Packet(before: 53_u64, values: TRANSFER, after: 59_u64);
@@ -746,14 +1053,14 @@ fn exclusive_range_references_write_original_local_and_field_storage() {
   after: u64;
 }
 
-fn overwrite(view: &[u64], index: own u64, value: own u64) -> result: own unit writes(view) contract {
+fn overwrite(view: &[u64], index: u64, value: u64) -> result: unit writes(view) contract {
   requires index < deref(view).len;
 } {
   set deref(view)[index] = value;
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let values = array_filled::<u64, 4>(value: 7_u64);
   let before0 = values[0_u64];
   let before2 = values[2_u64];
@@ -835,7 +1142,7 @@ fn composite_range_elements_keep_nested_box_storage_and_descriptor_abi() {
   marker: u64;
 }
 
-fn rewrite(records: &[Record]) -> previous: own u64 writes(records) contract {
+fn rewrite(records: &[Record]) -> previous: u64 writes(records) contract {
   requires 1_u64 <= deref(records).len;
 } {
   let old = deref(records)[0_u64].cell.inner;
@@ -844,7 +1151,7 @@ fn rewrite(records: &[Record]) -> previous: own u64 writes(records) contract {
   return old;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let records = slots_new::<Record, 1>();
   let cell = box_new::<u64>(value: 41_u64);
   let record = Record(cell: move cell, marker: 17_u64);
@@ -881,7 +1188,7 @@ fn main() -> status: own ExitStatus pure {
 /// logical indices or address the corresponding column of another row.
 #[test]
 fn nested_range_elements_read_write_and_borrow_the_selected_inner_array() {
-    let source = br#"fn touch(rows: &[Array<u64, 2>], outer: own u64, inner: own u64, value: own u64) -> result: own u64 writes(rows) contract {
+    let source = br#"fn touch(rows: &[Array<u64, 2>], outer: u64, inner: u64, value: u64) -> result: u64 writes(rows) contract {
   requires outer < deref(rows).len;
   requires inner < 2_u64;
 } {
@@ -893,7 +1200,7 @@ fn nested_range_elements_read_write_and_borrow_the_selected_inner_array() {
   return scaled +wrap after;
 }
 
-fn nested_range_checksum() -> result: own u64 pure {
+fn nested_range_checksum() -> result: u64 pure {
   let seed = array_filled::<u64, 2>(value: 0_u64);
   let rows = array_filled::<Array<u64, 2>, 2>(value: seed);
   set rows[0_u64][0_u64] = 11_u64;
@@ -916,7 +1223,7 @@ fn nested_range_checksum() -> result: own u64 pure {
   return checksum4;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -968,7 +1275,7 @@ int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
 /// a Whitefoot checksum literal.
 #[test]
 fn loop_carried_references_execute_zero_trip_and_backedge_values() {
-    let source = br#"fn carried_cell(count: own u64) -> result: own u64 pure contract {
+    let source = br#"fn carried_cell(count: u64) -> result: u64 pure contract {
   requires count <= 2_u64;
 } {
   let values = array_filled::<u64, 3>(value: 0_u64);
@@ -988,7 +1295,7 @@ fn loop_carried_references_execute_zero_trip_and_backedge_values() {
   return scaled +wrap final_value;
 }
 
-fn carried_range(count: own u64) -> result: own u64 pure contract {
+fn carried_range(count: u64) -> result: u64 pure contract {
   requires count <= 2_u64;
 } {
   let values = array_filled::<u64, 4>(value: 0_u64);
@@ -1028,7 +1335,7 @@ fn carried_range(count: own u64) -> result: own u64 pure contract {
   return 2_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1114,7 +1421,7 @@ int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
 /// unused measure expression.
 #[test]
 fn a_measured_range_element_has_its_observable_inner_length() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let inner = slots_new::<u64, 2>();
   place_back(window: &inner, value: 41_u64);
   let outer = slots_new::<Slots<u64, 2>, 1>();
@@ -1141,7 +1448,7 @@ fn a_measured_range_element_has_its_observable_inner_length() {
 /// both possible targets rather than accepting an unused semantic join.
 #[test]
 fn joined_range_element_measures_select_each_runtime_target() {
-    let source = br#"fn observe(flag: own Bool, expected: own u64) -> result: own u8 pure {
+    let source = br#"fn observe(flag: Bool, expected: u64) -> result: u8 pure {
   let left_row = slots_new::<u64, 3>();
   place_back(window: &left_row, value: 11_u64);
   let right_row = slots_new::<u64, 3>();
@@ -1165,7 +1472,7 @@ fn joined_range_element_measures_select_each_runtime_target() {
   return 1_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let selected_left = 0_u64 == 0_u64;
   let left_status = observe(flag: selected_left, expected: 1_u64);
   if left_status != 0_u8 {
@@ -1194,7 +1501,7 @@ fn main() -> status: own ExitStatus pure {
 fn const_local_and_heap_run_ranges_share_one_read_only_path() {
     let source = br#"const bytes: Array<u8, 4> =[1_u8, 2_u8, 3_u8, 4_u8];
 
-fn sum(values: &[u8]) -> result: own u64 reads(values) {
+fn sum(values: &[u8]) -> result: u64 reads(values) {
   let total = 0_u64;
   let length = deref(values).len;
   for (offset in 0_u64..length) {
@@ -1205,7 +1512,7 @@ fn sum(values: &[u8]) -> result: own u64 reads(values) {
   return total;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let code = 0_u8;
   let constant = &bytes[0_u64..4_u64];
   let constant_total = sum(values: constant);
@@ -1263,7 +1570,7 @@ fn an_out_of_bounds_range_reference_read_is_an_op4_compile_rejection() {
     // A range reference's one measure is `hi - lo` [REF-4], so the constant
     // offset is refutable at compile time and the program rejects with the
     // residual [OP-4, ENT-6] - the same residual the window origin gives.
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let bytes = slots_new::<u8, 2>();
   place_back(window: &bytes, value: 0_u8);
   place_back(window: &bytes, value: 0_u8);
@@ -1290,7 +1597,7 @@ fn an_out_of_bounds_range_reference_read_is_an_op4_compile_rejection() {
 /// and the process publishes exactly the bytes the fill loop wrote.
 #[test]
 fn a_range_reference_over_a_frame_resident_window_reaches_its_own_slots() {
-    let source = br#"fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+    let source = br#"fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "Publishes a frame-resident window through a range reference held until the linked write returns.";
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
   close_directory(factory: &entry_factory, directory: move unused_cwd);
@@ -1365,7 +1672,7 @@ fn a_range_reference_over_a_frame_resident_window_reaches_its_own_slots() {
 
 #[test]
 fn a_returning_loop_with_no_break_has_a_valid_unreachable_continuation() {
-    let source = br#"fn count_down(count: own u64) -> result: own u64 pure {
+    let source = br#"fn count_down(count: u64) -> result: u64 pure {
   let remaining = count;
   loop {
     if remaining == 0_u64 {
@@ -1376,7 +1683,7 @@ fn a_returning_loop_with_no_break_has_a_valid_unreachable_continuation() {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let value = count_down(count: 17_u64);
   if value != 7_u64 {
     return exit_status(code: 1_u8);

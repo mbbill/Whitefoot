@@ -2,5 +2,11 @@ Decision: Every top-level function signature is visible throughout the closed co
 
 Decision: Resolution starts from one complete declaration inventory and then resolves each grammar-selected use role in its own domain and scope, with inventory knowledge never granting visibility outside the rule selected for that declaration class, because a single inventory keeps resolution deterministic while per-class visibility rules keep every non-function declaration's meaning local, instead of inventory-wide visibility.
 
+Decision: Invariant names admit every lexical IDENT without OP-1's additional operation and mode-word reservation, because their declaration and premise positions select a separate proof-only domain that cannot compete with callable lookup or field-token formation, instead of coupling proof names to the runtime operation inventory.
+
+Decision: Counted-loop value binders follow the same operation and mode-word reservation as ordinary let bindings, because both introduce ordinary value names and changing their availability with the binding syntax gives the same value domain inconsistent naming rules, instead of admitting reserved runtime names only in counted-loop bindings.
+
 Rejected:
 - A top-level function visible only after its declaration: rejected because item order became semantically significant and one edge of direct mutual recursion was unwritable without reordering or indirection.
+- Reserve operation and mode words from invariant declarations: rejected because invariant names are neither callable nor field names, so neither operation-versus-function resolution nor OPNAME maximal munch supplies a reason to exclude these spellings from the separate proof domain.
+- Permit operation and mode words in counted-loop value binders while reserving them from ordinary let bindings: rejected because the binding syntax does not establish a separate lookup domain, unlike proof-only invariant declarations.

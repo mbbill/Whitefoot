@@ -2,7 +2,7 @@ struct Record {
   bytes: Array<u8, 4096>;
 }
 
-fn make_record(seed: own u8) -> result: own Result<Record, u8> pure {
+fn make_record(seed: u8) -> result: Result<Record, u8> pure {
   if seed == 0_u8 {
     return Err<Record, u8>(error: 7_u8);
   }
@@ -11,7 +11,7 @@ fn make_record(seed: own u8) -> result: own Result<Record, u8> pure {
   return Ok<Record, u8>(value: record);
 }
 
-fn build_record(seed: own u8) -> result: own Slots<Record, 2> pure {
+fn build_record(seed: u8) -> result: Slots<Record, 2> pure {
   let rows = slots_new::<Record, 2>();
   match make_record(seed: seed) {
     Err(error: code) => {
@@ -25,7 +25,7 @@ fn build_record(seed: own u8) -> result: own Slots<Record, 2> pure {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let built = build_record(seed: 9_u8);
   let count = built.len;
   if count == 1_u64 {

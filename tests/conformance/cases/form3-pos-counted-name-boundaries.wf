@@ -1,0 +1,9 @@
+fn main() -> status: ExitStatus pure {
+  for @cvt (cvt_index in 0_u64..1_u64) {
+    break @cvt;
+  }
+  for (checked_index in 0_u64..1_u64) {
+    break;
+  }
+  return exit_status(code: 0_u8);
+}

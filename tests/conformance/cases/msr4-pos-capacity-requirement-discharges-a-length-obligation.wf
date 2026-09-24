@@ -1,4 +1,4 @@
-fn fetch_at(run: own Slots<u8, 8>, index: own u64) -> value: own u8 pure contract {
+fn fetch_at(run: Slots<u8, 8>, index: u64) -> value: u8 pure contract {
   requires index < run.cap;
   requires run.cap - run.len <= 0_u64;
 } {
@@ -6,7 +6,7 @@ fn fetch_at(run: own Slots<u8, 8>, index: own u64) -> value: own u8 pure contrac
   return run[index];
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "MSR-4, MSR-2: every consumer submits its normalized goal to one ordered disposition. The callee's requirement is stated over run.cap and the subscript's OP-4 obligation is stated over run.len in logical coordinates, and nothing between them relates the two except MSR-2's standing facts: len + (cap - len) = cap, appended to the automatic affine-premise sequence with the empty support every standing fact has. A window's cap - len is an ordinary killable term rather than a fixed cell, so the callee states it and the disposition discharges the subscript from the identity and that clause together; the caller discharges both requirements from the counted fill's own invariants.";
   let run = slots_new::<u8, 8>();
   for @fill (

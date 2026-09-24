@@ -3,11 +3,11 @@
 
 pub(crate) fn spine_source(depth: u64) -> Vec<u8> {
     format!(
-        r#"fn leafval(v: own f64) -> result: own f64 pure {{
+        r#"fn leafval(v: f64) -> result: f64 pure {{
   return fmul.strict(v, 0.5_f64);
 }}
 
-fn spine(depth: own u64, v: own f64) -> result: own f64 pure {{
+fn spine(depth: u64, v: f64) -> result: f64 pure {{
   let done = depth == 0_u64;
   if done {{
     return v;
@@ -18,11 +18,11 @@ fn spine(depth: own u64, v: own f64) -> result: own f64 pure {{
   return fadd.strict(a, b);
 }}
 
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   let total = spine(depth: {depth}_u64, v: 1.0009765625_f64);
   let bits = reinterpret::<f64, u64>(total);
   let low = iand(bits, 1_u64);
-  match cvt::<u64, u8>(low) {{
+  match cvt.checked::<u64, u8>(low) {{
     Ok(value: byte) => {{
       return exit_status(code: byte);
     }}
@@ -38,7 +38,7 @@ fn main() -> status: own ExitStatus pure {{
 
 pub(crate) fn wide_frame_source(depth: u64, slots: u64) -> Vec<u8> {
     format!(
-        r#"fn spine(depth: own u64, v: own u64, i: own u8) -> result: own u64 pure {{
+        r#"fn spine(depth: u64, v: u64, i: u8) -> result: u64 pure {{
   let pad = slots_new::<u64, {slots}>();
   for @fill (
     at in 0_u64..{slots}_u64,
@@ -62,12 +62,12 @@ pub(crate) fn wide_frame_source(depth: u64, slots: u64) -> Vec<u8> {
   return a +wrap b;
 }}
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {{
+fn main(inputs: Inputs) -> status: ExitStatus pure {{
   let Inputs(args: args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: factory, stdin: unused_stdin) = move inputs;
   close_directory(factory: &factory, directory: move cwd);
   let count = 0_u64;
   set count = args_count(args: &args);
-  match cvt::<u64, u8>(count) {{
+  match cvt.checked::<u64, u8>(count) {{
     Ok(value: idx) => {{
       let depth = count *wrap {depth}_u64;
       let r = spine(depth: depth, v: 3_u64, i: idx);

@@ -1,9 +1,9 @@
-fn takesref(x: &i32) -> function_result: own i32 reads(x) {
+fn takesref(x: &i32) -> function_result: i32 reads(x) {
   doc "Parameter x is a reference &i32 [FN-1]; the storage it names is reached through deref(x) [TYPE-7].";
   return deref(x);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A call passes an own value where the callee signature declares a reference &i32; the caller must conform to the signature exactly [FN-1], a reference being formed only by the & spelling, so the argument is rejected [TYPE-5].";
   let a = 5_i32;
   let r = takesref(x: a);

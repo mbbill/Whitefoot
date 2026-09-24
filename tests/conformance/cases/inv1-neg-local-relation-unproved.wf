@@ -1,8 +1,8 @@
-fn clamp_hint(x: own u8, limit: own u8) -> result: own u8 pure {
+fn clamp_hint(x: u8, limit: u8) -> result: u8 pure {
   invariant within_cap: x <= limit;
   return x;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

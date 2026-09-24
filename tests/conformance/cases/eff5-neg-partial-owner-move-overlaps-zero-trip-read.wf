@@ -1,0 +1,23 @@
+struct Pair {
+  input: Box<Array<u64>>;
+  other: Box<u64>;
+}
+
+fn observe(input: &Box<Array<u64>>, consumed: Box<u64>) -> result: u64 reads(input) {
+  doc "EFF-2 retains the exhibited Array-header read even when this counted body has zero trips.";
+  let observed = 0_u64;
+  for (i in 0_u64..0_u64) {
+    set observed = deref(input).inner.len;
+  }
+  return observed;
+}
+
+fn main() -> status: ExitStatus pure {
+  doc "OWN-1 consumes the whole root of a partial affine move, including residual sibling cleanup. EFF-5 compares that consumption with the substituted reference read, so the same-owner call is refused even when no source read would execute.";
+  let input = box_array_filled::<u64>(count: 1_u64, value: 7_u64);
+  let other = box_new::<u64>(value: 9_u64);
+  let pair = Pair(input: move input, other: move other);
+  let unrelated = box_array_filled::<u64>(count: 1_u64, value: 7_u64);
+  let observed = observe(input: &pair.input, consumed: move pair.other);
+  return exit_status(code: 0_u8);
+}

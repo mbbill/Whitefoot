@@ -8,7 +8,7 @@ enum Packet {
   Empty();
 }
 
-fn steal(packet: &Packet) -> return_value: own unit reads(packet) {
+fn steal(packet: &Packet) -> return_value: unit reads(packet) {
   doc "A payload binder derived from matching through a reference names the scrutinee path, which is not rooted in a live own-mode binding of this function, so its affine referent cannot be moved out.";
   match deref(packet) {
     Data(item: element) => {
@@ -20,6 +20,6 @@ fn steal(packet: &Packet) -> return_value: own unit reads(packet) {
   return unit;
 }
 
-fn main() -> return_value: own ExitStatus pure {
+fn main() -> return_value: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

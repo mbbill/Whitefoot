@@ -2,13 +2,13 @@ struct Holder<T: drop> {
   run: T;
 }
 
-fn hold<T: drop>(value: own T) -> made: own Holder<T> pure {
+fn hold<T: drop>(value: T) -> made: Holder<T> pure {
   doc "Wraps one owned run in a nominal generic over its element type.";
   let held = Holder<T>(run: move value);
   return move held;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "FN-2: a call's type arguments are substituted into every position of the callee's signature, results included, so two calls of one declaration at two arguments hand back two types. Setting a `Holder<Slots<u16, 4>>` into a dead binding of `Holder<Slots<u8, 4>>` is TYPE-5's exact-identity mismatch and not an accepted transfer.";
   let first = slots_new::<u8, 4>();
   let second = slots_new::<u16, 4>();

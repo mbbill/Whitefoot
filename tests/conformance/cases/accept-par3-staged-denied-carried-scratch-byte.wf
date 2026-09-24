@@ -1,4 +1,4 @@
-fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+fn factory_refusal(error: &IoError) -> result: Bool reads(error) {
   match deref(error) {
     NotFound(code: native_code, origin: native_origin) => {
       return False();
@@ -87,7 +87,7 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
   }
 }
 
-fn component() -> made: own Slots<u8, 16> pure contract {
+fn component() -> made: Slots<u8, 16> pure contract {
   ensures made.len >= 16_u64;
   ensures made.cap <= made.len;
 } {
@@ -103,7 +103,7 @@ fn component() -> made: own Slots<u8, 16> pure contract {
   return move built;
 }
 
-fn stamp(slot: &[u8], index: own u64) -> result: own unit writes(slot) {
+fn stamp(slot: &[u8], index: u64) -> result: unit writes(slot) {
   doc "Writes one marker byte on odd indices only, so its written extent is not a fact of the signature.";
   let spare = deref(slot).len;
   let sized = 0_u64 < spare;
@@ -117,7 +117,7 @@ fn stamp(slot: &[u8], index: own u64) -> result: own unit writes(slot) {
   return unit;
 }
 
-fn first_byte(source: &[u8]) -> result: own u64 reads(source) {
+fn first_byte(source: &[u8]) -> result: u64 reads(source) {
   doc "Reports the first byte of the ranged reference, or zero when it has none.";
   let spare = deref(source).len;
   let sized = 0_u64 < spare;
@@ -130,7 +130,7 @@ fn first_byte(source: &[u8]) -> result: own u64 reads(source) {
   return widened;
 }
 
-fn exercise(cwd: &DirectoryRead, files: &HandleFactory) -> status: own ExitStatus reads(cwd), writes(files) {
+fn exercise(cwd: &DirectoryRead, files: &HandleFactory) -> status: ExitStatus reads(cwd), writes(files) {
   doc "One scratch byte is carried across the whole scan: the same window is written through one range reference and read through another, and every open is closed on its own arm.";
   let scratch = slots_new::<u8, 1>();
   for @prime (
@@ -163,7 +163,7 @@ fn exercise(cwd: &DirectoryRead, files: &HandleFactory) -> status: own ExitStatu
   return exit_status(code: 0_u8);
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
   let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
   let outcome = exercise(cwd: &cwd, files: &files);

@@ -1,14 +1,14 @@
-fn add(a: own i32, b: own i32) -> result: own i32 pure contract {
+fn add(a: i32, b: i32) -> result: i32 pure contract {
   requires a +defined b;
 } {
   return a + b;
 }
 
-fn eq(a: own i32, b: own i32) -> result: own Bool pure {
+fn eq(a: i32, b: i32) -> result: Bool pure {
   return a == b;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let sum = add(a: 20_i32, b: 22_i32);
   if sum != 42_i32 {
     return exit_status(code: 1_u8);

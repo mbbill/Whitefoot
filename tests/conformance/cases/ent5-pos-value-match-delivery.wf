@@ -1,0 +1,37 @@
+enum Choice {
+  Narrow();
+  Wide();
+}
+
+fn guard(value: i32) -> result: unit pure contract {
+  requires value < 128_i32;
+} {
+  return unit;
+}
+
+fn matched(value: i32, choice: Choice) -> result: i32 pure {
+  let picked = match choice {
+    Narrow() => {
+      let narrow_bound = value < 8_i32;
+      if narrow_bound {
+      } else {
+        return value;
+      }
+      give value;
+    }
+    Wide() => {
+      let wide_bound = value < 128_i32;
+      if wide_bound {
+      } else {
+        return value;
+      }
+      give value;
+    }
+  }
+  guard(value: picked);
+  return picked;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

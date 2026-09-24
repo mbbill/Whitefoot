@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   for @walk (i in 0_u64..2_u64) {
     for @walk (j in 0_u64..2_u64) {
     }

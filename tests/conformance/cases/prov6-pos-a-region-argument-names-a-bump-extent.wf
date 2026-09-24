@@ -1,10 +1,10 @@
-fn carve<T: drop, const n: u64>(store: &Slots<T, n>) -> spare: own u64 reads(store) {
+fn carve<T: drop, const n: u64>(store: &Slots<T, n>) -> spare: u64 reads(store) {
   doc "One helper generic over a window shape: its written type and const arguments are substituted into this parameter's container type at every call.";
   let room = deref(store).cap - deref(store).len;
   return room;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "PROV-6: satisfaction is the strict chain copy < affine < linear read left to right, so an affine bound accepts a copy argument. The written arguments are substituted into the parameter's container type at the call, which is what makes a source function generic over a storage shape.";
   let workspace = slots_new::<u64, 4>();
   let spare = carve::<u64, 4>(store: &workspace);

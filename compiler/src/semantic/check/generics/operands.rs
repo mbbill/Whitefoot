@@ -133,7 +133,7 @@ const OPERAND_ROWS: &[OperandRow] = &[
             },
         ],
     },
-    // `split_off(source: &W, index: own u64, destination: &X)`.
+    // `split_off(source: &W, index: u64, destination: &X)`.
     OperandRow {
         name: "split_off",
         rule: SemanticRule::Op10,
@@ -149,7 +149,7 @@ const OPERAND_ROWS: &[OperandRow] = &[
             },
         ],
     },
-    // `grow<T>(cell: &Box<Slots<T>>, capacity: own u64)`: the one parameter is
+    // `grow<T>(cell: &Box<Slots<T>>, capacity: u64)`: the one parameter is
     // the boxed window's element type.
     OperandRow {
         name: "grow",
@@ -494,7 +494,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         ty = SelectedPlaceType::Value(self.element_type(element)?);
                     }
                     SelectedPlaceType::Value(CheckedType::Buffer { element }) => {
-                        ty = SelectedPlaceType::Value(element.ty());
+                        ty = SelectedPlaceType::Value(self.element_type(element)?);
                     }
                     // [REF-4] a `&[T]` binding already carries the element
                     // type the dereference selects, so its subscript selects

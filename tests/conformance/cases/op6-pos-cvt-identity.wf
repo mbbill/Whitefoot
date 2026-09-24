@@ -1,0 +1,49 @@
+fn integer_identity<T: Int>(value: T) -> result: T pure {
+  return cvt::<T, T>(value);
+}
+
+fn float_identity<T: Float>(value: T) -> result: T pure {
+  return cvt::<T, T>(value);
+}
+
+fn main() -> status: ExitStatus pure {
+  doc "Same-type conversion is whole-type total, including symbolic repeated endpoints. All three interfaces preserve the input representation, including noncanonical NaN payloads and negative zero.";
+  let integer = integer_identity::<i32>(value: -37_i32);
+  if integer != -37_i32 {
+    return exit_status(code: 1_u8);
+  }
+  let nan32 = reinterpret::<u32, f32>(4290847557_u32);
+  let copied32 = float_identity::<f32>(value: nan32);
+  let bits32 = reinterpret::<f32, u32>(copied32);
+  if bits32 != 4290847557_u32 {
+    return exit_status(code: 2_u8);
+  }
+  let nan64 = reinterpret::<u64, f64>(18444512289894210236_u64);
+  let copied64 = float_identity::<f64>(value: nan64);
+  let bits64 = reinterpret::<f64, u64>(copied64);
+  if bits64 != 18444512289894210236_u64 {
+    return exit_status(code: 3_u8);
+  }
+  if cvt.defined::<f64, f64>(nan64) {
+    match cvt.checked::<f64, f64>(nan64) {
+      Ok(value: saved) => {
+        let saved_bits = reinterpret::<f64, u64>(saved);
+        if saved_bits != 18444512289894210236_u64 {
+          return exit_status(code: 4_u8);
+        }
+      }
+      Err(error: refused) => {
+        return exit_status(code: 5_u8);
+      }
+    }
+  } else {
+    return exit_status(code: 6_u8);
+  }
+  let negative_zero = reinterpret::<u32, f32>(2147483648_u32);
+  let copied_zero = cvt::<f32, f32>(negative_zero);
+  let zero_bits = reinterpret::<f32, u32>(copied_zero);
+  if zero_bits != 2147483648_u32 {
+    return exit_status(code: 7_u8);
+  }
+  return exit_status(code: 0_u8);
+}

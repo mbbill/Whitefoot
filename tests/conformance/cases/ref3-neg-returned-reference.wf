@@ -1,11 +1,11 @@
-fn leak(values: &[u64]) -> result: own u64 reads(values) contract {
+fn leak(values: &[u64]) -> result: u64 reads(values) contract {
   requires deref(values).len > 0_u64;
 } {
   doc "REF-3: a reference may not be returned; the restructuring is to return an index and let the caller form the reference.";
   return &deref(values)[0_u64];
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "REF-3: the caller of a function that tried to return a reference.";
   let a = array_filled::<u64, 4>(value: 6_u64);
   let part = &a[0_u64..4_u64];

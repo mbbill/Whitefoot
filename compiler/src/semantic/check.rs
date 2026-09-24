@@ -37,8 +37,8 @@ use super::goal::{
 };
 use super::model::{
     BindingId, CheckedConst, CheckedConstant, CheckedConstantId, CheckedElement, CheckedExpression,
-    CheckedFlatElement, CheckedFunction, CheckedGenericRequirement, CheckedMode, CheckedNominal,
-    CheckedNominalKind, CheckedParameter, CheckedProgramData, CheckedSetTarget, CheckedStatement,
+    CheckedFunction, CheckedGenericRequirement, CheckedMode, CheckedNominal, CheckedNominalKind,
+    CheckedNumericType, CheckedParameter, CheckedProgramData, CheckedSetTarget, CheckedStatement,
     CheckedType, CheckedValue, DerivedConst, DerivedConstId, FunctionId, NominalId,
     ValueInitializerKind, evaluate_const_operation,
 };
@@ -544,16 +544,15 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// `struct_decl` or `enum_decl` body is being read, and `None`
     /// everywhere else, where FORM-8 requires a written store argument.
     elided_store_brand: std::cell::Cell<Option<DeclarationId>>,
-    /// [FN-2, OWN-1, PROV-6] whether the body now being checked is a *concrete
-    /// instance* of a generic template whose spelling one symbolic instance
-    /// has already judged.
+    /// [FN-2, OWN-1, PROV-6] whether the body now being checked is an instance
+    /// other than its generic template's own symbolic spelling authority.
     ///
     /// The template is the spelling authority: a body whose parameter lacks
     /// copy writes `move`, a `copy`-bounded body writes bare use, and the one
-    /// symbolic instance decides both once. The concrete-instance recheck
-    /// therefore
-    /// does not re-judge the [OWN-1]/[FORM-1] spelling, and a `move` of a
-    /// template-affine value at a copy instance denotes a copy. Every other
+    /// symbolic instance decides both once. A recheck with supplied arguments,
+    /// even arguments still symbolic in a caller, does not re-judge the
+    /// [OWN-1]/[FORM-1] spelling, and a `move` of a template-affine value at a
+    /// copy instance denotes a copy. Every other
     /// [OWN-1] judgment — consume-once, dead roots, exclusivity — is
     /// re-judged as usual, because those are properties of the concrete
     /// instance and not of the written spelling.
@@ -572,6 +571,9 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// the function driver clears this scratch state on every retry.
     deferred_loop_reference_uses: RefCell<Vec<references::DeferredLoopReferenceUse>>,
     loop_reference_summaries: RefCell<HashMap<references::LoopReferenceToken, Vec<ResolvedPlace>>>,
+    /// Resolved origins established by this structural function attempt.
+    /// Every retry starts fresh; only its complete final walk is published.
+    reference_origins: RefCell<Vec<Vec<ResolvedPlace>>>,
     /// Successful declaration-only FN-4 queries. A complete member check
     /// stages its batch before publishing here, and the whole checker remains
     /// failure-atomic with the prospective checked program [DIAG-2].
@@ -1003,8 +1005,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// spelling [FORM-1] keys on a value's copy/affine class.
     ///
     /// That spelling is `move p` versus a bare `p` [OWN-1]: one spelling per
-    /// meaning, selected by the class. A concrete instance of a generic
-    /// template is not its authority: the template's one symbolic instance
+    /// meaning, selected by the class. A supplied instance of a generic
+    /// template is not its authority: the template's own symbolic instance
     /// judged it under the parameter's written bound, so at a copy instance a
     /// `move` of a template-affine value denotes a copy rather than reopening
     /// a judgment the template already made [PROV-6]. Every other judgment of
@@ -1143,6 +1145,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             call_separations: RefCell::new(Vec::new()),
             deferred_loop_reference_uses: RefCell::new(Vec::new()),
             loop_reference_summaries: RefCell::new(HashMap::new()),
+            reference_origins: RefCell::new(Vec::new()),
             contract_queries: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
             prelude_types: Vec::new(),
@@ -1553,6 +1556,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let declaration = self.declaration_at(node, DeclarationRole::NamedConst)?;
         let declaration_id = declaration.id();
         let name = declaration.spelling().to_owned();
+        // CONST-2 can be the first use of a concrete nominal. Prepare the
+        // declared type and every written initializer argument before the
+        // read-only type/value checks, just as for ordinary constructions.
+        self.ensure_nominals_in_node(node, &GenericSubstitution::default())?;
         let ty_node = self
             .tree
             .first_child_with(node, Production::Type)?
@@ -1645,19 +1652,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// [FN-2, OWN-1, PROV-6] one body, checked with the template's spelling
     /// authority recorded for the instance it is.
     ///
-    /// A concrete instance of a generic template is exactly the body whose
-    /// [OWN-1]/[FORM-1] spelling the template's own symbolic instance already
-    /// judged under the parameter's written bound, so this instance does not
-    /// re-judge it. A symbolic instance and a nongeneric body are their own
-    /// authority and judge the spelling here.
+    /// A supplied instance of a generic template is exactly the body whose
+    /// [OWN-1]/[FORM-1] spelling the template's own symbolic instance judges
+    /// under the parameter's written bound, so this instance does not re-judge
+    /// it. In particular, a caller may fix one argument to a copy type while
+    /// forwarding another still-symbolic type, const or function parameter.
+    /// Only the template's own symbolic instance and a nongeneric body judge
+    /// the written spelling here.
     fn check_function_signature(
         &self,
         signature: &FunctionSignature,
     ) -> Result<CheckedFunctionInventory, CheckStop> {
-        let previous = self.template_spelling_authority.replace(
-            signature.substitution.len() > 0
-                && signature.substitution.is_concrete(&self.elements.borrow()),
-        );
+        let previous = self
+            .template_spelling_authority
+            .replace(signature.substitution.len() > 0 && !signature.substitution.is_symbolic());
         self.loop_reference_summaries.borrow_mut().clear();
         let queries = self.contract_queries.borrow().len();
         let tail_rejections = self.musttail_rejections.borrow().len();
@@ -1727,6 +1735,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // inventory. No deferred REF-2 dependency may cross that namespace
         // boundary.
         self.deferred_loop_reference_uses.borrow_mut().clear();
+        self.reference_origins.borrow_mut().clear();
         self.check_musttail_callees(signature)?;
         self.check_entry_formers(signature)?;
         let mut bindings = HashMap::new();
@@ -1743,10 +1752,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             next_binding = next_binding
                 .checked_add(1)
                 .ok_or(SemanticCompilerFailure::CounterOverflow)?;
-            bindings.insert(
-                parameter.declaration,
-                self.parameter_local(parameter, binding)?,
-            );
+            let local = self.parameter_local(parameter, binding)?;
+            if let Some(reference) = &local.reference {
+                self.record_reference_origins(binding, &reference.paths);
+            }
+            bindings.insert(parameter.declaration, local);
             parameters.push(CheckedParameter {
                 name: parameter.name.clone(),
                 declaration: parameter.declaration,
@@ -1916,6 +1926,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             requirements,
             postconditions,
             body: (!declaration_only).then_some(checked.statements),
+            reference_origins: std::mem::take(&mut *self.reference_origins.borrow_mut()),
             body_disposition: super::model::CheckedBodyDisposition::Inhabited,
             call_separations: {
                 let mut separations = std::mem::take(&mut *self.call_separations.borrow_mut());
@@ -2103,6 +2114,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<PostconditionSchedule, CheckStop> {
         let selected = |index: usize| analyzed.is_none_or(|analyzed| analyzed[index]);
         let contract_queries = self.contract_queries.borrow().clone();
+        let const_parameter_types = self.const_generic_types().collect();
         // ENT is the single acceptance-bearing proof path for ordinary
         // obligations, call requirements, invariants and postconditions.
         let mut schedule =
@@ -2114,9 +2126,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     continue;
                 }
                 let context = EntailmentContext {
+                    declarations: self.resolved.declarations(),
                     callees,
                     constants: &self.checked_constants,
                     constant_ids: &self.constants,
+                    const_parameter_types: &const_parameter_types,
                     nominals: &self.nominals,
                     elements: &self.elements.borrow(),
                     contract_queries: &contract_queries,
@@ -2186,9 +2200,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .filter(|checked| checked.function.id == *function)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                     let context = EntailmentContext {
+                        declarations: self.resolved.declarations(),
                         callees,
                         constants: &self.checked_constants,
                         constant_ids: &self.constants,
+                        const_parameter_types: &const_parameter_types,
                         nominals: &self.nominals,
                         elements: &self.elements.borrow(),
                         contract_queries: &contract_queries,
@@ -2367,16 +2383,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::Set { target, value, .. } => {
                     match target {
                         CheckedSetTarget::Place(_) => {}
-                        CheckedSetTarget::ArrayIndex(target) => self
-                            .install_expression_call_requirements(
-                                &mut target.offset,
-                                requirements,
-                            )?,
-                        CheckedSetTarget::BufferIndex(target) => self
-                            .install_expression_call_requirements(
-                                &mut target.offset,
-                                requirements,
-                            )?,
                         CheckedSetTarget::RangeIndex(target) => {
                             for offset in target.offsets_mut() {
                                 self.install_expression_call_requirements(offset, requirements)?;
@@ -2576,12 +2582,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::Set { target, value, .. } => {
                     match target {
                         CheckedSetTarget::Place(_) => {}
-                        CheckedSetTarget::ArrayIndex(target) => {
-                            Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
-                        }
-                        CheckedSetTarget::BufferIndex(target) => {
-                            Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
-                        }
                         CheckedSetTarget::RangeIndex(target) => {
                             for offset in target.offsets_mut() {
                                 Self::install_expression_allocation_bounds(offset, bounds)?;
@@ -2859,18 +2859,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 operand_type: self.instantiate_goal_type(operand_type, signature, regions)?,
             },
             GoalOperation::NumericConversion {
+                mode,
                 source,
                 destination,
             } => GoalOperation::NumericConversion {
-                source,
-                destination,
+                mode,
+                source: self.instantiate_goal_numeric_type(source, signature, regions)?,
+                destination: self.instantiate_goal_numeric_type(destination, signature, regions)?,
             },
             GoalOperation::Reinterpret {
                 source,
                 destination,
             } => GoalOperation::Reinterpret {
-                source,
-                destination,
+                source: self.instantiate_goal_numeric_type(source, signature, regions)?,
+                destination: self.instantiate_goal_numeric_type(destination, signature, regions)?,
             },
             GoalOperation::Boolean(operation) => GoalOperation::Boolean(operation),
             GoalOperation::EnumEquality {
@@ -2895,10 +2897,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             },
             GoalOperation::BufferMeasure { measure, element } => GoalOperation::BufferMeasure {
                 measure,
-                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                element: self.instantiate_goal_element(element, signature, regions)?,
             },
             GoalOperation::BufferIndex { element } => GoalOperation::BufferIndex {
-                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                element: self.instantiate_goal_element(element, signature, regions)?,
             },
             GoalOperation::BufferFits {
                 element,
@@ -2944,6 +2946,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
+    fn instantiate_goal_numeric_type(
+        &self,
+        ty: CheckedNumericType,
+        signature: &FunctionSignature,
+        regions: &[DeclarationId],
+    ) -> Result<CheckedNumericType, CheckStop> {
+        CheckedNumericType::from_type(self.instantiate_goal_type(ty.ty(), signature, regions)?)
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
+    }
+
     fn instantiate_goal_type(
         &self,
         ty: CheckedType,
@@ -2962,7 +2974,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 length: self.instantiate_goal_const(length, signature)?,
             },
             CheckedType::Buffer { element } => CheckedType::Buffer {
-                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                element: self.instantiate_goal_element(element, signature, regions)?,
             },
             CheckedType::Window {
                 shape,
@@ -3008,36 +3020,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .filter(|(formal, actual)| formal != actual)
             .collect::<Vec<_>>();
         self.substitute_type_regions(CheckedType::Nominal(id), &substitution)
-    }
-
-    fn instantiate_goal_flat_element(
-        &self,
-        element: CheckedFlatElement,
-        signature: &FunctionSignature,
-        regions: &[DeclarationId],
-    ) -> Result<CheckedFlatElement, CheckStop> {
-        let ty = self.instantiate_goal_type(element.ty(), signature, regions)?;
-        Ok(match ty {
-            CheckedType::Unit => CheckedFlatElement::Unit,
-            CheckedType::Bool => CheckedFlatElement::Bool,
-            CheckedType::Integer(ty) => CheckedFlatElement::Integer(ty),
-            CheckedType::Float(ty) => CheckedFlatElement::Float(ty),
-            CheckedType::GenericInt(declaration) => CheckedFlatElement::GenericInt(declaration),
-            CheckedType::GenericFloat(declaration) => CheckedFlatElement::GenericFloat(declaration),
-            CheckedType::Nominal(nominal) => {
-                if self.nominal(nominal)?.is_tag_only_enum() {
-                    CheckedFlatElement::TagOnlyNominal(nominal)
-                } else {
-                    CheckedFlatElement::Nominal(nominal)
-                }
-            }
-            CheckedType::Generic(_)
-            | CheckedType::Array { .. }
-            | CheckedType::Buffer { .. }
-            | CheckedType::Window { .. } => {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            }
-        })
     }
 
     /// One run element at a caller's instance [BLK-1].
@@ -3262,9 +3244,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     Self::Obligation(outcome) => match outcome.family {
                         super::entailment::ObligationFamily::Bounds => SemanticRule::Op4,
                         super::entailment::ObligationFamily::IntegerDomain => SemanticRule::Op2,
+                        super::entailment::ObligationFamily::ConversionDomain => SemanticRule::Op6,
                         super::entailment::ObligationFamily::AllocationFit => SemanticRule::Op9,
                         super::entailment::ObligationFamily::RangeFormation => SemanticRule::Ref4,
                         super::entailment::ObligationFamily::CallSeparation => SemanticRule::Eff5,
+                        super::entailment::ObligationFamily::ReferencePreservation(_) => {
+                            SemanticRule::Ref2
+                        }
                         super::entailment::ObligationFamily::ExchangeSeparation => {
                             SemanticRule::Op11
                         }
@@ -3579,6 +3565,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 mechanical_fix: "the allocation's own size arithmetic must stay inside u64: bound the count with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when the refusal is intended program behavior; otherwise restructure the allocation",
                             },
                         },
+                        super::entailment::ObligationFamily::ConversionDomain => SemanticIssue {
+                            rule: SemanticRule::Op6,
+                            location,
+                            kind: SemanticIssueKind::UndischargedConversionDomainObligation {
+                                residual,
+                                disposition: if outcome.refuted {
+                                    StaticObligationDisposition::Refuted
+                                } else {
+                                    StaticObligationDisposition::Unproved
+                                },
+                                mechanical_fix: "establish this cvt.defined domain with a verified requirement, an integer range invariant, or explicit finite proof steps; use a dominating cvt.defined condition when refusal is intended behavior, or use cvt.checked to return the failed conversion",
+                            },
+                        },
                         super::entailment::ObligationFamily::CallSeparation
                         | super::entailment::ObligationFamily::ExchangeSeparation => {
                             SemanticIssue {
@@ -3593,6 +3592,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 kind: SemanticIssueKind::UndischargedCallSeparation {
                                     residual,
                                     mechanical_fix: "prove the two positions distinct before this call, or pass one of them",
+                                },
+                            }
+                        }
+                        super::entailment::ObligationFamily::ReferencePreservation(query) => {
+                            let use_site = function
+                                .call_separations
+                                .get(query as usize)
+                                .and_then(|query| query.reference_use.as_ref())
+                                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                            SemanticIssue {
+                                rule: SemanticRule::Ref2,
+                                location,
+                                kind: SemanticIssueKind::InvalidReferenceUse {
+                                    binder: use_site.binder.clone(),
+                                    event: use_site.event,
+                                    mechanical_fix: references::REF2_FORM_AGAIN,
                                 },
                             }
                         }

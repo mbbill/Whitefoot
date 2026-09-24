@@ -2,7 +2,7 @@ use super::{compile, compile_and_run};
 
 #[test]
 fn executes_the_remaining_integer_family_and_defined_edges() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let anded = iand(240_u8, 15_u8);
   if anded == 0_u8 {
   } else {
@@ -172,7 +172,7 @@ fn executes_the_remaining_integer_family_and_defined_edges() {
 
 #[test]
 fn defined_shift_reports_false_without_executing_an_invalid_shift() {
-    let source = br#"fn main() -> status: own ExitStatus pure {
+    let source = br#"fn main() -> status: ExitStatus pure {
   let is_defined = ishl.defined(1_u8, 8_u32);
   if bnot(is_defined) {
   } else {
@@ -191,11 +191,11 @@ fn defined_shift_reports_false_without_executing_an_invalid_shift() {
 
 #[test]
 fn defined_division_checks_zero_and_signed_overflow_without_dividing() {
-    let source = br#"fn division_is_defined(n: own i32, d: own i32) -> result: own Bool pure {
+    let source = br#"fn division_is_defined(n: i32, d: i32) -> result: Bool pure {
   return n /defined d;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let zero = 0_i32;
   let one = 1_i32;
   let zero_defined = division_is_defined(n: one, d: zero);

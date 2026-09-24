@@ -10,14 +10,14 @@ struct BlockPool {
   free: Slots<Block, 8>;
 }
 
-fn block_new() -> made: own Block pure {
+fn block_new() -> made: Block pure {
   doc "One run of 256 slots, frame-resident inside the block that owns it [STOR-1].";
   let bytes = slots_new::<u8, 256>();
   let made = Block(bytes: move bytes);
   return move made;
 }
 
-fn pool_new() -> made: own BlockPool pure {
+fn pool_new() -> made: BlockPool pure {
   doc "A pool is a Slots plus the blocks it holds [OP-13]: eight runs are carved into one run of runs and kept as a free list.";
   let free = slots_new::<Block, 8>();
   for @carve (
@@ -33,7 +33,7 @@ fn pool_new() -> made: own BlockPool pure {
   return move pool;
 }
 
-fn take_free(free: &Slots<Block, 8>) -> block: own Block writes(free.last), writes(free.len) contract {
+fn take_free(free: &Slots<Block, 8>) -> block: Block writes(free.last), writes(free.len) contract {
   requires deref(free).len > 0_u64;
   ensures deref(free).len + 1_u64 == deref(entry(free)).len;
 } {
@@ -42,7 +42,7 @@ fn take_free(free: &Slots<Block, 8>) -> block: own Block writes(free.last), writ
   return move block;
 }
 
-fn return_free(free: &Slots<Block, 8>, block: own Block) -> result: own unit writes(free.next), writes(free.len) contract {
+fn return_free(free: &Slots<Block, 8>, block: Block) -> result: unit writes(free.next), writes(free.len) contract {
   requires deref(free).len < deref(free).cap;
   ensures deref(free).len == deref(entry(free)).len + 1_u64;
 } {
@@ -51,7 +51,7 @@ fn return_free(free: &Slots<Block, 8>, block: own Block) -> result: own unit wri
   return unit;
 }
 
-fn pool_take(pool: own BlockPool) -> (rest: own BlockPool, leased: own Option<Lease>) pure {
+fn pool_take(pool: BlockPool) -> (rest: BlockPool, leased: Option<Lease>) pure {
   doc "Leases one run, or reports that the free list is empty. The pool arrives by value, so the row is empty and the reference the body forms is rooted in local storage [EFF-1, EFF-2].";
   let spare = pool.free.len;
   let any = spare > 0_u64;
@@ -65,7 +65,7 @@ fn pool_take(pool: own BlockPool) -> (rest: own BlockPool, leased: own Option<Le
   return move pool, None<Lease>();
 }
 
-fn pool_release(pool: own BlockPool, lease: own Lease) -> rest: own BlockPool pure contract {
+fn pool_release(pool: BlockPool, lease: Lease) -> rest: BlockPool pure contract {
   requires pool.free.len < pool.free.cap;
 } {
   doc "Returns one lease to the free list; the caller has proved there is room. The linear lease leaves this scope only by being taken apart, which is what makes the return unavoidable [PROV-6].";
@@ -78,7 +78,7 @@ struct StaticBlock {
   bytes: Slots<u8, 4>;
 }
 
-fn take_static(free: &Slots<StaticBlock, 2>) -> block: own StaticBlock writes(free.last), writes(free.len) contract {
+fn take_static(free: &Slots<StaticBlock, 2>) -> block: StaticBlock writes(free.last), writes(free.len) contract {
   requires deref(free).len > 0_u64;
   ensures deref(free).len + 1_u64 == deref(entry(free)).len;
 } {
@@ -87,7 +87,7 @@ fn take_static(free: &Slots<StaticBlock, 2>) -> block: own StaticBlock writes(fr
   return move block;
 }
 
-fn return_static(free: &Slots<StaticBlock, 2>, block: own StaticBlock) -> result: own unit writes(free.next), writes(free.len) contract {
+fn return_static(free: &Slots<StaticBlock, 2>, block: StaticBlock) -> result: unit writes(free.next), writes(free.len) contract {
   requires deref(free).len < deref(free).cap;
   ensures deref(free).len == deref(entry(free)).len + 1_u64;
 } {
@@ -96,7 +96,7 @@ fn return_static(free: &Slots<StaticBlock, 2>, block: own StaticBlock) -> result
   return unit;
 }
 
-fn static_block_round_trip() -> code: own u8 pure {
+fn static_block_round_trip() -> code: u8 pure {
   doc "One block leaves the free list, every byte of its run is incremented, and the block goes back; a second round trip reads the incremented bytes back out.";
   let payload = slots_new::<u8, 4>();
   place_back(window: &payload, value: 1_u8);
@@ -128,7 +128,7 @@ fn static_block_round_trip() -> code: own u8 pure {
   return result;
 }
 
-fn boxed_block_round_trip() -> code: own u8 pure {
+fn boxed_block_round_trip() -> code: u8 pure {
   doc "The same round trip where the free list holds heap cells: a Box owns one heap object, its content is the field inner, and the cell is released when its owner's scope ends [TYPE-9, STOR-3].";
   let payload = slots_new::<u8, 4>();
   place_back(window: &payload, value: 1_u8);
@@ -160,7 +160,7 @@ fn boxed_block_round_trip() -> code: own u8 pure {
   return result;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Runs the block pool: eight runs carved into one run of runs, a lease taken off the back boundary and returned to a free list the caller proved had room, then the two round trips over a frame-resident and a heap-cell element type.";
   let pool = pool_new();
   let held = pool.free.len;

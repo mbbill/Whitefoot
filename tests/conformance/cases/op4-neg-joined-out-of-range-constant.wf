@@ -1,4 +1,4 @@
-fn indexed_byte(b: &[u8], flag: own Bool) -> result: own u8 reads(b) contract {
+fn indexed_byte(b: &[u8], flag: Bool) -> result: u8 reads(b) contract {
   define spare = deref(b).len;
   requires spare == 5_u64;
 } {
@@ -12,6 +12,6 @@ fn indexed_byte(b: &[u8], flag: own Bool) -> result: own u8 reads(b) contract {
   return deref(b)[idx];
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

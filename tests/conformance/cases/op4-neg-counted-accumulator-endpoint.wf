@@ -1,4 +1,4 @@
-fn select(data: &[u8]) -> result: own u8 reads(data) {
+fn select(data: &[u8]) -> result: u8 reads(data) {
   doc "Exhaustion exports count <= length for a conditional counter, not the strict bound required to index the same input after the loop.";
   let count = 0_u64;
   let length = deref(data).len;
@@ -14,6 +14,6 @@ fn select(data: &[u8]) -> result: own u8 reads(data) {
   return deref(data)[count];
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

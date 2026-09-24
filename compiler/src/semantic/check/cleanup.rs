@@ -30,12 +30,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::Set { target, value, .. } => {
                     match target {
                         CheckedSetTarget::Place(_) => {}
-                        CheckedSetTarget::ArrayIndex(target) => {
-                            self.validate_expression_release_graphs(&target.offset)?;
-                        }
-                        CheckedSetTarget::BufferIndex(target) => {
-                            self.validate_expression_release_graphs(&target.offset)?;
-                        }
                         CheckedSetTarget::RangeIndex(target) => {
                             for offset in target.offsets() {
                                 self.validate_expression_release_graphs(offset)?;
@@ -52,9 +46,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::Evaluate(value) => {
                     self.validate_expression_release_graphs(value)?;
                 }
-                CheckedStatement::DropExpression { value } => {
+                CheckedStatement::DropExpression { value, drops } => {
                     self.validate_expression_release_graphs(value)?;
-                    self.release_graph_nodes(value.ty())?;
+                    for drop in drops {
+                        self.release_graph_nodes(drop.ty)?;
+                    }
                 }
                 CheckedStatement::Proof(_) => {}
                 CheckedStatement::Return { value, drops, .. } => {

@@ -383,8 +383,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
-    /// One value's exact written mode and type, as `own u64`, `&Counter`, or
-    /// `&[u8]`.
+    /// One value's exact semantic mode and type, as `own u64`, `&Counter`,
+    /// or `&[u8]`, using [GRAM-3]'s mode/type notation for diagnostics.
     pub(in crate::semantic::check) fn checked_value_name(
         &self,
         mode: CheckedMode,
@@ -408,12 +408,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    /// One written mode, as [GRAM-2] spells it.
+    /// One checked mode's diagnostic label [GRAM-3].
     ///
-    /// v0.60 has one reference kind and no permission marker on it [REF-1],
-    /// and the `&[T]` range kind is spelled by the type it precedes, so the
-    /// mode renders in the three words the grammar writes. The region the
-    /// v0.59 spellings carried has no subject.
+    /// `own` names value mode without being a source annotation. Both
+    /// reference kinds use `&`; `checked_value_name` renders the range
+    /// brackets together with its element type [REF-1, REF-4].
     pub(in crate::semantic::check) fn checked_mode_name(
         &self,
         mode: CheckedMode,
@@ -503,7 +502,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 )
             }
             CheckedType::Buffer { element } => {
-                format!("Array<{}>", self.checked_type_name(element.ty())?)
+                format!(
+                    "Array<{}>",
+                    self.checked_type_name(self.element_type(element)?)?
+                )
             }
             CheckedType::Window {
                 shape,

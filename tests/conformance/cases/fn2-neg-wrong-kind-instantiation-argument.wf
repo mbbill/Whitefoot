@@ -2,12 +2,12 @@ struct Held {
   v: i32;
 }
 
-fn pick<T: drop>(value: own T) -> result: own T pure {
+fn pick<T: drop>(value: T) -> result: T pure {
   doc "A generic fn declaring one type parameter [FN-2].";
   return move value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The call states one instantiation argument, so FN-2's explicit-argument requirement is met and the count is right; the argument is of the wrong kind, a const where the declaration binds a type. Writing pick<Held> here compiles, so the kind is the only thing this case varies.";
   let a = Held(v: 1_i32);
   let b = pick::<4>(value: a);

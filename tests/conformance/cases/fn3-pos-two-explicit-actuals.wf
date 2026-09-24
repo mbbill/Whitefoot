@@ -1,5 +1,5 @@
 interface Zeroed {
-  fn zero() -> result: own i32 pure;
+  fn zero() -> result: i32 pure;
 }
 
 binding First : Zeroed {
@@ -10,14 +10,14 @@ binding Second : Zeroed {
   zero = i32_zero_b;
 }
 
-fn i32_zero_a() -> result: own i32 pure {
+fn i32_zero_a() -> result: i32 pure {
   return 0_i32;
 }
 
-fn i32_zero_b() -> result: own i32 pure {
+fn i32_zero_b() -> result: i32 pure {
   return 0_i32;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

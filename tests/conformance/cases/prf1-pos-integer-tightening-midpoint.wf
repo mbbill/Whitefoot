@@ -1,4 +1,4 @@
-fn probe(table: &Slots<u8, 4>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
+fn probe(table: &Slots<u8, 4>, lo: u64, hi: u64) -> found: u8 reads(table) contract {
   define spare = deref(table).len;
   requires lo < hi;
   requires hi <= spare;
@@ -15,7 +15,7 @@ fn probe(table: &Slots<u8, 4>, lo: own u64, hi: own u64) -> found: own u8 reads(
   return byte;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A four-slot window is filled from a full array, so its length is exactly four at the call.";
   let values = array_filled::<u8, 4>(value: 0_u8);
   let table = slots_from_array::<u8, 4>(values: values);

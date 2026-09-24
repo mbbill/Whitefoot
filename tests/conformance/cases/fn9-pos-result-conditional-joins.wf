@@ -1,0 +1,70 @@
+fn below_ten(value: i32) -> result: unit pure contract {
+  requires value < 10_i32;
+} {
+  return unit;
+}
+
+fn joined(value: i32, narrow: Bool) -> result: Result<i32, u8> pure contract {
+  ensures when Ok(value: payload): payload < 10_i32;
+} {
+  let outcome = if narrow {
+    if value < 8_i32 {
+      give Ok<i32, u8>(value: value);
+    } else {
+      give Err<i32, u8>(error: 1_u8);
+    }
+  } else if value < 10_i32 {
+    give Ok<i32, u8>(value: value);
+  } else {
+    give Err<i32, u8>(error: 2_u8);
+  }
+  match outcome {
+    Ok(value: payload) => {
+      below_ten(value: payload);
+    }
+    Err(error: problem) => {
+    }
+  }
+  return outcome;
+}
+
+fn later(value: i32, narrow: Bool) -> (stamp: u8, outcome: Result<i32, u8>) pure contract {
+  ensures when outcome is Ok(value: payload): payload < 10_i32;
+} {
+  let saved = joined(value: value, narrow: narrow);
+  return 3_u8, saved;
+}
+
+fn earlier(value: i32, narrow: Bool) -> (outcome: Result<i32, u8>, stamp: u8) pure contract {
+  ensures when outcome is Ok(value: payload): payload < 10_i32;
+} {
+  let saved = joined(value: value, narrow: narrow);
+  return saved, 3_u8;
+}
+
+fn length(window: &Slots<u8, 4>) -> result: Result<u64, u8> reads(window) contract {
+  ensures when Ok(value: size): size == deref(window).len;
+} {
+  let size = deref(window).len;
+  return Ok<u64, u8>(value: size);
+}
+
+fn same_length(left: u64, right: u64) -> result: unit pure contract {
+  requires left == right;
+} {
+  return unit;
+}
+
+fn element_write(window: &Slots<u8, 4>) -> result: Result<unit, u8> writes(window) contract {
+  requires deref(window).len > 0_u64;
+} {
+  let outcome = length(window: window);
+  set deref(window)[0_u64] = 7_u8;
+  let size = propagate outcome;
+  same_length(left: size, right: deref(window).len);
+  return Ok<unit, u8>(value: unit);
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

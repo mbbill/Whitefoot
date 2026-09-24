@@ -47,6 +47,13 @@ Its parts answer different questions:
   ordinary and retained helpers. An independent sequence oracle and matched
   allocation bytes precede timing; `RESULTS.md` separates lowering from
   source-composition costs and identifies the retained historical samples.
+- `slab-library/`: bounded generation-handle lookup and reuse over the actual
+  library, compared with a matching one-slot layout and a compact tagged C
+  cell. Both scalar and wide inline payloads retain ownership and cleanup.
+- `deque-library/`: two-ended churn and wrapped rebase over the actual library,
+  compared with the same element loop and a bulk two-extent C conversion.
+  Normal and retained helper measurements distinguish source composition from
+  lowering; neither experiment supplies a workload-frequency distribution.
 
 These small programs test specific capabilities and costs. They are not a
 representative corpus of real applications and supply no workload-frequency data.
@@ -65,6 +72,9 @@ or canonical `make check`. Historical sub-experiments retain their recorded
 language conditions; their sources and verdicts are not an x1 capability claim.
 The focused x1 entry is `make -C research/experiments/container-representation x1-observe`,
 run under the shared guard as `x1/RESULTS.md` describes.
+The focused Slab/Deque entries are `slab-deque-check` and
+`slab-deque-measure` in the same Makefile, also run under that guard; they do
+not require historical experiments to accept a newer language revision.
 `measure` also records timing samples and retains
 the foundation probe's producer boundary for generated-storage inspection;
 timing is descriptive evidence, not a host-speed-dependent acceptance threshold.

@@ -37,11 +37,11 @@ struct Wrap<T: drop> {
   payload: T;
 }
 
-fn pack<T: drop>(value: own T) -> result: own Wrap<T> pure {
+fn pack<T: drop>(value: T) -> result: Wrap<T> pure {
   return Wrap<T>(payload: move value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let value = Mark(value: 9_u64);
   let wrapped = pack::<Mark>(value: value);
   return exit_status(code: 0_u8);
@@ -74,11 +74,11 @@ fn a_generic_cycle_judgment_reads_the_complete_argument_vector() {
   value: T;
 }
 
-fn recur<T: drop, const n: u64>(value: own T) -> result: own Mark<T> pure {
+fn recur<T: drop, const n: u64>(value: T) -> result: Mark<T> pure {
   return recur::<T, n>(value: move value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -105,11 +105,11 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn explicit_int_generic_function_builds_each_reachable_concrete_instance() {
-    let source = br#"fn identity<T: Int>(value: own T) -> result: own T pure {
+    let source = br#"fn identity<T: Int>(value: T) -> result: T pure {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let first = identity::<u32>(value: 7_u32);
   let second = identity::<i64>(value: -9_i64);
   return exit_status(code: 0_u8);
@@ -126,11 +126,11 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn int_bound_selects_the_same_operation_row_for_every_concrete_instance() {
-    let source = br#"fn maximum<T: Int>(left: own T, right: own T) -> result: own T pure {
+    let source = br#"fn maximum<T: Int>(left: T, right: T) -> result: T pure {
   return imax(left, right);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let small = maximum::<u8>(left: 4_u8, right: 9_u8);
   let signed = maximum::<i64>(left: -7_i64, right: -2_i64);
   return exit_status(code: 0_u8);
@@ -146,14 +146,14 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn float_bound_selects_operations_and_identities_for_every_concrete_instance() {
-    let source = br#"fn nudge<T: Float>(value: own T) -> result: own T pure {
+    let source = br#"fn nudge<T: Float>(value: T) -> result: T pure {
   let zero = 0_T;
   let one = 1_T;
   let shifted = fadd.strict(value, one);
   return fadd.strict(zero, shifted);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let single = nudge::<f32>(value: 2.0_f32);
   let double = nudge::<f64>(value: 4.0_f64);
   return exit_status(code: 0_u8);
@@ -169,11 +169,11 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn float_bound_rejects_a_non_float_explicit_argument_under_fn3() {
-    let source = br#"fn identity<T: Float>(value: own T) -> result: own T pure {
+    let source = br#"fn identity<T: Float>(value: T) -> result: T pure {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let invalid = identity::<u32>(value: 7_u32);
   return exit_status(code: 0_u8);
 }
@@ -185,11 +185,11 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn numeric_identity_requires_an_int_or_float_bound() {
-    let source = br#"fn invalid<T: drop>() -> result: own T pure {
+    let source = br#"fn invalid<T: drop>() -> result: T pure {
   return 0_T;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -200,11 +200,11 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn int_bound_identity_is_concretized_before_lowering() {
-    let source = br#"fn one<T: Int>() -> result: own T pure {
+    let source = br#"fn one<T: Int>() -> result: T pure {
   return 1_T;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let value = one::<u16>();
   return exit_status(code: 0_u8);
 }
@@ -218,13 +218,295 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn generic_conversion_is_reported_as_unsupported_instead_of_invalid_source() {
-    let source = br#"fn convert<T: Int>(value: own T) -> result: own unit pure {
-  cvt::<T, u64>(value);
+fn unused_generic_exact_conversion_requires_the_complete_bound_domain() {
+    // Numeric generics now have ordinary OP-6 obligations. A safe concrete
+    // call cannot authorize the unused or canonical symbolic body's cast.
+    for call in ["", "  let result = convert::<u8>(value: 7_u8);\n"] {
+        let source = format!(
+            "fn convert<T: Int>(value: T) -> result: u64 pure {{
+  return cvt::<T, u64>(value);
+}}
+
+fn main() -> status: ExitStatus pure {{
+{call}  return exit_status(code: 0_u8);
+}}
+"
+        );
+        assert_rule_kind(source.as_bytes(), SemanticRule::Op6, |kind| {
+            matches!(
+                kind,
+                SemanticIssueKind::UndischargedConversionDomainObligation { .. }
+            )
+        });
+    }
+}
+
+#[test]
+fn generic_conversion_interfaces_accept_each_numeric_bound_pair() {
+    for (source_bound, destination_bound, source_type, destination_type, literal) in [
+        ("Int", "Int", "u32", "u8", "7_u32"),
+        ("Int", "Float", "u32", "f32", "7_u32"),
+        ("Float", "Int", "f64", "i32", "7.0_f64"),
+        ("Float", "Float", "f64", "f32", "7.0_f64"),
+    ] {
+        let source = format!(
+            "fn attempt<S: {source_bound}, D: {destination_bound}>(value: S) -> result: Result<D, NarrowError> pure {{
+  return cvt.checked::<S, D>(value);
+}}
+
+fn convert<S: {source_bound}, D: {destination_bound}>(value: S) -> result: D pure contract {{
+  requires cvt.defined::<S, D>(value);
+}} {{
+  let local_attempt = cvt.checked::<S, D>(value);
+  let permitted = cvt.defined::<S, D>(value);
+  return cvt::<S, D>(value);
+}}
+
+fn forward<A: {source_bound}, B: {destination_bound}>(value: A) -> result: B pure contract {{
+  requires cvt.defined::<A, B>(value);
+}} {{
+  return convert::<A, B>(value: value);
+}}
+
+fn main() -> status: ExitStatus pure {{
+  let attempted = attempt::<{source_type}, {destination_type}>(value: {literal});
+  let result = forward::<{source_type}, {destination_type}>(value: {literal});
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::Complete(checked) = outcome else {
+                panic!("{source_bound} to {destination_bound} conversion must check: {outcome:?}");
+            };
+            lower_checked(*checked, OverlapLowering::Off)
+                .expect("concrete conversion endpoints must lower");
+        });
+    }
+}
+
+#[test]
+fn generic_total_conversions_preserve_repeated_type_identity() {
+    let source = br#"fn same_integer<T: Int>(value: T) -> result: T pure {
+  let attempt_result = cvt.checked::<T, T>(value);
+  return cvt::<T, T>(value);
+}
+
+fn same_float<T: Float>(value: T) -> result: T pure {
+  let attempt_result = cvt.checked::<T, T>(value);
+  return cvt::<T, T>(value);
+}
+
+fn widen_float<T: Float>(value: T) -> result: f64 pure {
+  return cvt::<T, f64>(value);
+}
+
+fn small_float<T: Float>(value: u8) -> result: T pure {
+  return cvt::<u8, T>(value);
+}
+
+fn main() -> status: ExitStatus pure {
+  let integer = same_integer::<i64>(value: -1_i64);
+  let floating = same_float::<f32>(value: -0.0_f32);
+  let wide = widen_float::<f32>(value: floating);
+  let same = widen_float::<f64>(value: wide);
+  let small = small_float::<f32>(value: 255_u8);
+  let large = small_float::<f64>(value: 255_u8);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("correlated and universally total numeric pairs must check: {outcome:?}");
+        };
+        lower_checked(*checked, OverlapLowering::Off)
+            .expect("universally total conversion instances must lower");
+    });
+}
+
+#[test]
+fn generic_conversion_constants_use_exact_values_without_selecting_widths() {
+    let source = br#"const small: u32 = 127_u32;
+
+const exact_integer: u32 = 16777218_u32;
+
+const half: f64 = 0.5_f64;
+
+fn integer_identities<T: Int, D: Int>() -> result: D pure {
+  let zero = cvt::<T, D>(0_T);
+  return cvt::<T, D>(1_T);
+}
+
+fn integer_float_identities<T: Int, D: Float>() -> result: D pure {
+  let zero = cvt::<T, D>(0_T);
+  return cvt::<T, D>(1_T);
+}
+
+fn float_integer_identities<T: Float, D: Int>() -> result: D pure {
+  let zero = cvt::<T, D>(0_T);
+  return cvt::<T, D>(1_T);
+}
+
+fn float_identities<T: Float, D: Float>() -> result: D pure {
+  let zero = cvt::<T, D>(0_T);
+  return cvt::<T, D>(1_T);
+}
+
+fn small_integer<D: Int>() -> result: D pure {
+  return cvt::<u32, D>(small);
+}
+
+fn sparse_float<D: Float>() -> result: D pure {
+  return cvt::<u32, D>(exact_integer);
+}
+
+fn integral_float<D: Int>() -> result: D pure {
+  return cvt::<f64, D>(1.0_f64);
+}
+
+fn fractional_float<D: Float>() -> result: D pure {
+  return cvt::<f64, D>(half);
+}
+
+fn require_exact<D: Float>(value: u32) -> result: unit pure contract {
+  requires cvt.defined::<u32, D>(value);
+} {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn forward_exact<D: Float>() -> result: unit pure {
+  return require_exact::<D>(value: 16777218_u32);
+}
+
+fn main() -> status: ExitStatus pure {
+  let integer = integer_identities::<u64, i8>();
+  let integer_float = integer_float_identities::<i64, f32>();
+  let float_integer = float_integer_identities::<f64, u8>();
+  let floating = float_identities::<f64, f32>();
+  let small_value = small_integer::<i8>();
+  let sparse = sparse_float::<f32>();
+  let integral = integral_float::<u8>();
+  let half_value = fractional_float::<f32>();
+  let forwarded = forward_exact::<f32>();
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("uniform symbolic constant domains must check: {outcome:?}");
+        };
+        lower_checked(*checked, OverlapLowering::Off)
+            .expect("symbolic constant conversion instances must lower");
+    });
+}
+
+#[test]
+fn mixed_generic_constant_domains_prove_neither_truth_sign() {
+    let exact = br#"fn invalid<D: Float>() -> result: D pure {
+  return cvt::<u32, D>(16777217_u32);
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(exact, SemanticRule::Op6, |kind| {
+        matches!(
+            kind,
+            SemanticIssueKind::UndischargedConversionDomainObligation {
+                disposition: crate::StaticObligationDisposition::Unproved,
+                ..
+            }
+        )
+    });
+    let positive_requirement = br#"fn invalid<D: Float>(value: f64) -> result: i32 pure contract {
+  requires cvt.defined::<u32, D>(16777217_u32);
+} {
+  return cvt::<f64, i32>(value);
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(positive_requirement, SemanticRule::Op6, |kind| {
+        matches!(
+            kind,
+            SemanticIssueKind::UndischargedConversionDomainObligation { .. }
+        )
+    });
+    let negative_requirement = br#"fn require_inexact<D: Float>() -> result: unit pure contract {
+  define exact = cvt.defined::<u32, D>(16777217_u32);
+  requires bnot(exact);
+} {
+  return unit;
+}
+
+fn invalid<D: Float>() -> result: unit pure {
+  return require_inexact::<D>();
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(negative_requirement, SemanticRule::Fn8, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedCallRequirement { .. })
+    });
+}
+
+#[test]
+fn distinct_generic_numeric_parameters_keep_their_domain_identity() {
+    for (bound, source_type, destination_type, literal) in [
+        ("Int", "u8", "u16", "1_u8"),
+        ("Float", "f32", "f64", "1.0_f32"),
+    ] {
+        let source = format!(
+            "fn invalid<S: {bound}, D: {bound}>(value: S) -> result: D pure {{
+  return cvt::<S, D>(value);
+}}
+
+fn main() -> status: ExitStatus pure {{
+  let result = invalid::<{source_type}, {destination_type}>(value: {literal});
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        assert_rule_kind(source.as_bytes(), SemanticRule::Op6, |kind| {
+            matches!(
+                kind,
+                SemanticIssueKind::UndischargedConversionDomainObligation { residual, .. }
+                    if residual == "cvt.defined::<S, D>(value)"
+            )
+        });
+    }
+}
+
+#[test]
+fn numeric_conversion_does_not_grant_an_unbounded_type_numeric_capability() {
+    let source = br#"fn invalid<T>(value: T) -> result: u64 pure {
+  return cvt::<T, u64>(value);
+}
+
+fn main() -> status: ExitStatus pure {
+  let result = invalid::<u8>(value: 7_u8);
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule(
+        source,
+        SemanticRule::Op1,
+        SemanticIssueKind::InvalidOperation,
+    );
+}
+
+#[test]
+fn generic_reinterpret_keeps_its_existing_capability_boundary() {
+    let source = br#"fn reinterpret_value<T: Int>(value: T) -> result: u32 pure {
+  return reinterpret::<T, u32>(value);
+}
+
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -232,12 +514,119 @@ fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn int_bound_rejects_a_non_integer_explicit_argument_under_fn3() {
-    let source = br#"fn identity<T: Int>(value: own T) -> result: own T pure {
+fn generic_conversion_requirements_follow_forwarded_const_arguments() {
+    let source = br#"fn convert<const value: u32>() -> result: u8 pure contract {
+  requires cvt.defined::<u32, u8>(value);
+} {
+  return cvt::<u32, u8>(value);
+}
+
+fn forward<const value: u32>() -> result: u8 pure contract {
+  requires cvt.defined::<u32, u8>(value);
+} {
+  return convert::<value>();
+}
+
+fn main() -> status: ExitStatus pure {
+  let result = forward::<7>();
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+    let out_of_range = std::str::from_utf8(source)
+        .unwrap()
+        .replace("forward::<7>", "forward::<256>");
+    assert_rule_kind(out_of_range.as_bytes(), SemanticRule::Fn8, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
+    });
+}
+
+#[test]
+fn conversion_clause_definitions_admit_only_universally_total_exact_pairs() {
+    let source = br#"fn same<T: Float>(value: T) -> result: T pure contract {
+  define copied = cvt::<T, T>(value);
+  requires cvt.defined::<T, T>(copied);
+} {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn small<T: Float>(value: u8) -> result: T pure contract {
+  define widened = cvt::<u8, T>(value);
+  requires cvt.defined::<T, f64>(widened);
+} {
+  return cvt::<u8, T>(value);
+}
+
+fn main() -> status: ExitStatus pure {
+  let same_value = same::<f64>(value: 1.0_f64);
+  let converted = small::<f32>(value: 7_u8);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+    for (source_type, destination_type) in [("u32", "u8"), ("S", "D")] {
+        let parameters = if source_type == "S" {
+            "<S: Int, D: Int>"
+        } else {
+            ""
+        };
+        let source = format!(
+            "fn invalid{parameters}(value: {source_type}, witness: {destination_type}) -> result: unit pure contract {{
+  requires cvt.defined::<{source_type}, {destination_type}>(value);
+  requires cvt::<{source_type}, {destination_type}>(value) == witness;
+}} {{
+  return unit;
+}}
+
+fn main() -> status: ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        assert_rule(
+            source.as_bytes(),
+            SemanticRule::Fn8,
+            SemanticIssueKind::InvalidRequires,
+        );
+    }
+}
+
+#[test]
+fn conversion_defined_does_not_extend_the_postcondition_relation_fragment() {
+    let source = br#"fn invalid<T: Float>(value: T) -> result: u8 pure contract {
+  ensures cvt.defined::<T, T>(value);
+} {
+  return 0_u8;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule(
+        source,
+        SemanticRule::Fn9,
+        SemanticIssueKind::InvalidPostconditionRelation,
+    );
+}
+
+#[test]
+fn int_bound_rejects_a_non_integer_explicit_argument_under_fn3() {
+    let source = br#"fn identity<T: Int>(value: T) -> result: T pure {
+  return value;
+}
+
+fn main() -> status: ExitStatus pure {
   let input = True();
   let invalid = identity::<Bool>(value: input);
   return exit_status(code: 0_u8);
@@ -256,11 +645,11 @@ fn main() -> status: own ExitStatus pure {
 /// capability.
 #[test]
 fn a_generic_call_cycle_at_the_callers_own_parameters_monomorphizes() {
-    let source = br#"fn recursive<T: Int>(value: own T) -> result: own T pure {
+    let source = br#"fn recursive<T: Int>(value: T) -> result: T pure {
   return recursive::<T>(value: value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let seen = recursive::<u16>(value: 1_u16);
   return exit_status(code: 0_u8);
 }
@@ -278,7 +667,7 @@ fn main() -> status: own ExitStatus pure {
 /// gap; the changed verdict follows the explicit specification amendment.
 #[test]
 fn a_generic_cycle_varying_a_const_argument_stops_before_instance_enumeration() {
-    let source = br#"fn expand_count<const n: u64>(at: own u64) -> total: own u64 pure {
+    let source = br#"fn expand_count<const n: u64>(at: u64) -> total: u64 pure {
   let done = at == 0_u64;
   if done {
     return 0_u64;
@@ -288,7 +677,7 @@ fn a_generic_cycle_varying_a_const_argument_stops_before_instance_enumeration() 
   return rest +wrap 1_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let total = expand_count::<1>(at: 3_u64);
   return exit_status(code: 0_u8);
 }
@@ -323,12 +712,12 @@ fn polymorphic_recursion_is_rejected_at_the_call_that_leaves_the_caller_paramete
     // A growing argument is the shape that would actually diverge: each
     // instance would demand a strictly larger one.
     assert_rule(
-        br#"fn poly<T: drop>(x: own T) -> result: own T pure {
+        br#"fn poly<T: drop>(x: T) -> result: T pure {
   let y = poly::<Slots<T, 2>>(x: x);
   return x;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -338,17 +727,17 @@ fn main() -> status: own ExitStatus pure {
     // A permutation cycle terminates, and FN-6 is deliberately stronger than
     // finiteness requires, so it is rejected all the same.
     assert_rule(
-        br#"fn left<A: drop, B: drop>(first: own A, second: own B) -> result: own A pure {
+        br#"fn left<A: drop, B: drop>(first: A, second: B) -> result: A pure {
   let swapped = right::<B, A>(first: second, second: first);
   return first;
 }
 
-fn right<A: drop, B: drop>(first: own A, second: own B) -> result: own A pure {
+fn right<A: drop, B: drop>(first: A, second: B) -> result: A pure {
   let back = left::<A, B>(first: first, second: second);
   return first;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -364,17 +753,17 @@ fn main() -> status: own ExitStatus pure {
 /// D7 deliberately refuses it under FN-6's stronger unchanged-vector rule.
 #[test]
 fn a_cycle_cannot_drop_the_generic_vector_at_a_nongeneric_trampoline() {
-    let source = br#"fn poly<T: drop>(x: own T) -> result: own T pure {
+    let source = br#"fn poly<T: drop>(x: T) -> result: T pure {
   let back = trampoline();
   return x;
 }
 
-fn trampoline() -> result: own i32 pure {
+fn trampoline() -> result: i32 pure {
   let forward = poly::<i32>(x: 0_i32);
   return forward;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -392,11 +781,11 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn unused_int_generic_body_is_checked_for_the_complete_bound_domain() {
-    let source = br#"fn invalid<T: Int>(value: own T) -> result: own T pure {
+    let source = br#"fn invalid<T: Int>(value: T) -> result: T pure {
   return 0_u8;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -422,11 +811,11 @@ fn a_move_in_an_affine_bounded_body_denotes_a_copy_at_a_copy_instance() {
   value: u8;
 }
 
-fn transfer<T: drop>(value: own T) -> result: own T pure {
+fn transfer<T: drop>(value: T) -> result: T pure {
   return move value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let copied = transfer::<u8>(value: 7_u8);
   let payload = Payload(value: 3_u8);
   let held = transfer::<Payload>(value: move payload);
@@ -442,17 +831,134 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// [FN-2, OWN-1] a callee's written body keeps its own symbolic spelling
+/// authority when a generic caller fixes only some of its arguments. The two
+/// declarations deliberately reuse `T`: symbolic identity is a declaration,
+/// not the parameter's spelling.
+#[test]
+fn partial_type_instantiation_keeps_the_callees_move_spelling() {
+    let source = br#"nocopy struct Payload {
+  value: u64;
+}
+
+fn package_value<T: drop, R>(value: R) -> result: Result<R, unit> pure {
+  return Ok<R, unit>(value: move value);
+}
+
+fn forward<T: drop>(value: T) -> result: T pure {
+  let wrapped = package_value::<T, unit>(value: unit);
+  return move value;
+}
+
+fn main() -> status: ExitStatus pure {
+  let copied = forward::<u64>(value: 7_u64);
+  let payload = Payload(value: 3_u64);
+  let held = forward::<Payload>(value: move payload);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+}
+
+#[test]
+fn partial_const_instantiation_keeps_the_callees_move_spelling() {
+    let source = br#"fn package_value<R, const n: u64>(value: R) -> result: Result<R, unit> pure {
+  return Ok<R, unit>(value: move value);
+}
+
+fn forward<const n: u64>() -> result: Result<unit, unit> pure {
+  return package_value::<unit, n>(value: unit);
+}
+
+fn main() -> status: ExitStatus pure {
+  let copied = forward::<3>();
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+}
+
+/// This is the Slab visitor's failure without any container code: the result
+/// type is already copy while the supplied callable is still symbolic.
+#[test]
+fn partial_function_instantiation_keeps_the_callees_move_spelling() {
+    let source =
+        br#"fn package_value<R, fn make() -> result: R pure>() -> result: Result<R, unit> pure {
+  let observed = make();
+  return Ok<R, unit>(value: move observed);
+}
+
+fn forward<fn make() -> result: unit pure>() -> result: Result<unit, unit> pure {
+  return package_value::<unit, fn make>();
+}
+
+fn make_unit() -> result: unit pure {
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  let copied = forward::<fn make_unit>();
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+}
+
+#[test]
+fn the_canonical_generic_body_still_rejects_copy_moves_and_repeated_consumes() {
+    for (parameters, value_type) in [("T: copy", "T"), ("T: drop", "u64")] {
+        let source = format!(
+            "fn invalid<{parameters}>(value: {value_type}) -> result: {value_type} pure {{\n  return move value;\n}}\n\nfn main() -> status: ExitStatus pure {{\n  return exit_status(code: 0_u8);\n}}\n"
+        );
+        assert_rule_kind(source.as_bytes(), SemanticRule::Own1, |kind| {
+            matches!(kind, SemanticIssueKind::MoveOfCopy { .. })
+        });
+    }
+    let source = br#"fn invalid<T: drop, R>(value: R) -> result: Result<R, unit> pure {
+  let first = move value;
+  return Ok<R, unit>(value: move value);
+}
+
+fn forward<T: drop>() -> result: Result<unit, unit> pure {
+  return invalid::<T, unit>(value: unit);
+}
+
+fn main() -> status: ExitStatus pure {
+  let copied = forward::<u64>();
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Own1, |kind| {
+        matches!(kind, SemanticIssueKind::UseAfterMove { .. })
+    });
+}
+
 #[test]
 fn nested_generic_calls_discover_reachable_instances_after_template_checking() {
-    let source = br#"fn select<T: Int>(value: own T) -> result: own T pure {
+    let source = br#"fn select<T: Int>(value: T) -> result: T pure {
   return imax(value, value);
 }
 
-fn forward<T: Int>(value: own T) -> result: own T pure {
+fn forward<T: Int>(value: T) -> result: T pure {
   return select::<T>(value: value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let small = forward::<u8>(value: 7_u8);
   let signed = forward::<i64>(value: -9_i64);
   return exit_status(code: 0_u8);
@@ -468,17 +974,16 @@ fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn const_parameters_forward_symbolically_and_instantiate_at_reachable_sizes() {
-    let source =
-        br#"fn preserve<const n: u64>(value: own Slots<u8, n>) -> result: own Slots<u8, n> pure {
+    let source = br#"fn preserve<const n: u64>(value: Slots<u8, n>) -> result: Slots<u8, n> pure {
   let size = value.len;
   return move value;
 }
 
-fn forward<const n: u64>(value: own Slots<u8, n>) -> result: own Slots<u8, n> pure {
+fn forward<const n: u64>(value: Slots<u8, n>) -> result: Slots<u8, n> pure {
   return preserve::<n>(value: move value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let small_input = slots_new::<u8, 2>();
   let small = forward::<2>(value: move small_input);
   let large_input = slots_new::<u8, 5>();
@@ -502,13 +1007,181 @@ fn main() -> status: own ExitStatus pure {
     });
 }
 
+const CONST_GENERIC_INTEGER_DOMAINS: [(&str, i128, i128); 8] = [
+    ("u8", 0, 255),
+    ("u16", 0, 65_535),
+    ("u32", 0, 4_294_967_295),
+    ("u64", 0, 18_446_744_073_709_551_615),
+    ("i8", -128, 127),
+    ("i16", -32_768, 32_767),
+    ("i32", -2_147_483_648, 2_147_483_647),
+    ("i64", -9_223_372_036_854_775_808, 9_223_372_036_854_775_807),
+];
+
+/// [ENT-2, MSR-6] the branch relates the runtime value to the const parameter,
+/// whose own written type closes the arithmetic domain. An alias or an extra
+/// invariant must not be needed to introduce that standing bound.
 #[test]
-fn unbounded_type_parameters_build_only_explicit_reachable_instances() {
-    let source = br#"fn marker<T: drop>() -> result: own unit pure {
+fn const_generic_type_bounds_discharge_strictly_guarded_arithmetic() {
+    for (ty, _, _) in CONST_GENERIC_INTEGER_DOMAINS {
+        let source = format!(
+            "fn increment<const limit: {ty}>(value: {ty}) -> result: {ty} pure {{
+  if value < limit {{
+    return value + 1_{ty};
+  }}
+  return value;
+}}
+
+fn decrement<const limit: {ty}>(value: {ty}) -> result: {ty} pure {{
+  if value > limit {{
+    return value - 1_{ty};
+  }}
+  return value;
+}}
+
+fn forward<const limit: {ty}>(value: {ty}) -> result: {ty} pure {{
+  let increased = increment::<limit>(value: value);
+  return decrement::<limit>(value: increased);
+}}
+
+fn main() -> status: ExitStatus pure {{
+  let value = forward::<0>(value: 0_{ty});
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        with_semantics(source.as_bytes(), |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{ty}: {outcome:?}"
+            );
+        });
+    }
+}
+
+/// The source invariant uses the affine image of the same const term. Its
+/// interval is the declared type's interval, including signed lower bounds.
+#[test]
+fn const_generic_affine_images_keep_every_declared_integer_domain() {
+    for (ty, minimum, maximum) in CONST_GENERIC_INTEGER_DOMAINS {
+        let source = format!(
+            "fn bounded<const limit: {ty}>() -> result: unit pure {{
+  invariant lower: limit >= {minimum}_{ty};
+  invariant upper: limit <= {maximum}_{ty};
+  return unit;
+}}
+
+fn main() -> status: ExitStatus pure {{
+  bounded::<0>();
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        with_semantics(source.as_bytes(), |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "{ty}: {outcome:?}"
+            );
+        });
+    }
+}
+
+/// A u8 parameter used as a u64 storage extent is still the same symbolic
+/// constant; neither the measure nor a forwarded formal may widen its bound.
+#[test]
+fn const_generic_extent_and_forwarding_keep_one_declared_type_identity() {
+    let source = br#"fn extent<const n: u8>() -> result: unit pure {
+  let values = slots_new::<u8, n>();
+  invariant same: values.cap == n;
+  invariant bounded: values.cap <= 255_u64;
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn increment<const limit: u64>(value: u64) -> result: u64 pure {
+  if value < limit {
+    return value + 1_u64;
+  }
+  return value;
+}
+
+fn forward<const n: u8>(value: u64) -> result: u64 pure {
+  extent::<n>();
+  return increment::<n>(value: value);
+}
+
+fn main() -> status: ExitStatus pure {
+  let value = forward::<3>(value: 0_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+}
+
+#[test]
+fn const_generic_bounds_do_not_prove_a_narrower_domain() {
+    for (ty, minimum, maximum) in CONST_GENERIC_INTEGER_DOMAINS {
+        for (comparison, boundary) in [(">=", minimum + 1), ("<=", maximum - 1)] {
+            // Neither an unused template nor a safe concrete use grants a
+            // stronger bound to the canonical symbolic instance [FN-2].
+            for call in ["", "  invalid::<0>();\n"] {
+                let source = format!(
+                    "fn invalid<const limit: {ty}>() -> result: unit pure {{
+  invariant narrowed: limit {comparison} {boundary}_{ty};
+  return unit;
+}}
+
+fn main() -> status: ExitStatus pure {{
+{call}  return exit_status(code: 0_u8);
+}}
+"
+                );
+                assert_rule_kind(source.as_bytes(), SemanticRule::Inv1, |kind| {
+                    matches!(kind, SemanticIssueKind::UndischargedLocalInvariant { .. })
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn const_generic_type_bounds_do_not_make_inclusive_arithmetic_guards_strict() {
+    for (ty, _, _) in CONST_GENERIC_INTEGER_DOMAINS {
+        for (comparison, operation) in [("<=", "+"), (">=", "-")] {
+            let source = format!(
+                "fn invalid<const limit: {ty}>(value: {ty}) -> result: {ty} pure {{
+  if value {comparison} limit {{
+    return value {operation} 1_{ty};
+  }}
+  return value;
+}}
+
+fn main() -> status: ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"
+            );
+            assert_rule_kind(source.as_bytes(), SemanticRule::Op2, |kind| {
+                matches!(
+                    kind,
+                    SemanticIssueKind::UndischargedIntegerDomainObligation { .. }
+                )
+            });
+        }
+    }
+}
+
+#[test]
+fn unbounded_type_parameters_build_only_explicit_reachable_instances() {
+    let source = br#"fn marker<T: drop>() -> result: unit pure {
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
   marker::<u8>();
   marker::<Bool>();
   return exit_status(code: 0_u8);
@@ -532,11 +1205,11 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn generic_argument_kinds_and_const_parameter_types_are_checked() {
     assert_rule_kind(
-        br#"fn marker<T: drop>() -> result: own unit pure {
+        br#"fn marker<T: drop>() -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   marker::<4>();
   return exit_status(code: 0_u8);
 }
@@ -545,11 +1218,11 @@ fn main() -> status: own ExitStatus pure {
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
     assert_rule_kind(
-        br#"fn sized<const n: u64>() -> result: own unit pure {
+        br#"fn sized<const n: u64>() -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   sized::<u8>();
   return exit_status(code: 0_u8);
 }
@@ -558,11 +1231,11 @@ fn main() -> status: own ExitStatus pure {
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
     assert_rule(
-        br#"fn invalid<const n: Bool>() -> result: own unit pure {
+        br#"fn invalid<const n: Bool>() -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -578,11 +1251,11 @@ fn source_generic_structs_are_checked_symbolically_and_rechecked_per_instance() 
   right: T;
 }
 
-fn duplicate<T: Int>(value: own T) -> result: own Pair<T> pure {
+fn duplicate<T: Int>(value: T) -> result: Pair<T> pure {
   return Pair<T>(left: value, right: value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let small = duplicate::<u8>(value: 7_u8);
   let wide = duplicate::<i64>(value: -9_i64);
   let small_left = small.left;
@@ -613,7 +1286,7 @@ fn source_generic_enums_use_the_concrete_instance_member_table() {
   Present(value: T);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let small = Present<u8>(value: 3_u8);
   match small {
     Missing() => {
@@ -661,7 +1334,7 @@ struct Holder<T: drop> {
   value: T;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let short_bytes = slots_new::<u8, 2>();
   let short = Packet<2>(bytes: move short_bytes);
   let long_bytes = slots_new::<u8, 5>();
@@ -729,7 +1402,7 @@ fn source_nominal_argument_arity_and_kinds_are_exact() {
   value: T;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let invalid = Pair<u8, u16>(value: 1_u8);
   return exit_status(code: 0_u8);
 }
@@ -742,7 +1415,7 @@ fn main() -> status: own ExitStatus pure {
   bytes: Slots<u8, n>;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let bytes = slots_new::<u8, 1>();
   let invalid = Packet<u8>(bytes: move bytes);
   return exit_status(code: 0_u8);
@@ -760,7 +1433,7 @@ fn constructor_only_generic_instances_still_reach_normal_type_diagnostics() {
   value: T;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return Holder<u8>(value: 1_u8);
 }
 "#,
@@ -776,7 +1449,7 @@ fn recursive_generic_nominal_layouts_stop_before_concrete_enumeration() {
   next: Recursive<T>;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
@@ -787,11 +1460,11 @@ fn main() -> status: own ExitStatus pure {
 #[test]
 fn checked_integer_results_are_available_during_template_and_concrete_rechecking() {
     let source =
-        br#"fn checked_sum<T: Int>(left: own T, right: own T) -> result: own Result<T, Overflow> pure {
+        br#"fn checked_sum<T: Int>(left: T, right: T) -> result: Result<T, Overflow> pure {
   return left +checked right;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let small = checked_sum::<u8>(left: 1_u8, right: 2_u8);
   let wide = checked_sum::<i64>(left: -3_i64, right: 5_i64);
   return exit_status(code: 0_u8);
@@ -811,7 +1484,8 @@ fn numeric_and_const_parameters_flow_through_window_operations() {
     // under an `allocates(store)` row. There is one heap in v0.60, allocation
     // carries no effect entry [STOR-8], and the store provider is gone, so the
     // surviving subject is the constant-capacity window the [OP-10] rows move.
-    let source = br#"fn filled_run<T: Int, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
+    let source =
+        br#"fn filled_run<T: Int, const n: u64>(value: T) -> result: Slots<T, n> pure contract {
   ensures result.len >= n;
 } {
   let built = slots_new::<T, n>();
@@ -825,7 +1499,7 @@ fn numeric_and_const_parameters_flow_through_window_operations() {
   return move built;
 }
 
-fn filled_float_run<T: Float, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
+fn filled_float_run<T: Float, const n: u64>(value: T) -> result: Slots<T, n> pure contract {
   ensures result.len >= n;
 } {
   let built = slots_new::<T, n>();
@@ -839,7 +1513,7 @@ fn filled_float_run<T: Float, const n: u64>(value: own T) -> result: own Slots<T
   return move built;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let bytes = filled_run::<u8, 2>(value: 7_u8);
   let words = filled_run::<i64, 3>(value: -5_i64);
   let byte = bytes[1_u64];
@@ -873,17 +1547,17 @@ fn schema_written_concrete_nominal_arguments_are_rebuilt_after_the_symbolic_chec
   value: T;
 }
 
-fn consume<T: drop>(value: own T) -> result: own unit pure {
+fn consume<T: drop>(value: T) -> result: unit pure {
   return unit;
 }
 
-fn wrapper<U: drop>() -> result: own unit pure {
+fn wrapper<U: drop>() -> result: unit pure {
   let pair = Pair<u8>(value: 1_u8);
   consume::<Pair<u8>>(value: pair);
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -917,21 +1591,21 @@ fn partial_schema_rebuild_keeps_only_the_truly_concrete_nominal_instance() {
   right: T;
 }
 
-fn sink<T: drop>() -> result: own unit pure {
+fn sink<T: drop>() -> result: unit pure {
   return unit;
 }
 
-fn middle<A: Int, B: drop>() -> result: own unit pure {
+fn middle<A: Int, B: drop>() -> result: unit pure {
   sink::<Pair<A>>();
   return unit;
 }
 
-fn wrapper<U: drop>() -> result: own unit pure {
+fn wrapper<U: drop>() -> result: unit pure {
   middle::<u8, U>();
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -981,21 +1655,21 @@ fn partial_schema_rebuild_still_discovers_an_independent_concrete_descendant() {
   right: T;
 }
 
-fn sink<T: drop>() -> result: own unit pure {
+fn sink<T: drop>() -> result: unit pure {
   return unit;
 }
 
-fn next<X: drop, Y: drop>() -> result: own unit pure {
+fn next<X: drop, Y: drop>() -> result: unit pure {
   sink::<Y>();
   return unit;
 }
 
-fn middle<A: Int>() -> result: own unit pure {
+fn middle<A: Int>() -> result: unit pure {
   next::<Pair<A>, u8>();
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1036,16 +1710,15 @@ fn main() -> status: own ExitStatus pure {
 /// body receives a dense concrete instance identity during inventory build.
 #[test]
 fn ordinary_admission_diagnostics_prefer_source_order_over_instance_identity() {
-    let source =
-        br#"fn earlier<T: drop>(values: own Slots<u8, 4>, index: own u64) -> result: own u8 pure {
+    let source = br#"fn earlier<T: drop>(values: Slots<u8, 4>, index: u64) -> result: u8 pure {
   return values[index];
 }
 
-fn later(values: own Slots<u8, 4>, index: own u64) -> result: own u8 pure {
+fn later(values: Slots<u8, 4>, index: u64) -> result: u8 pure {
   return values[index];
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let first_values = slots_new::<u8, 4>();
   let second_values = slots_new::<u8, 4>();
   earlier::<u8>(values: move first_values, index: 5_u64);
@@ -1072,15 +1745,15 @@ fn nominal_physical_families_keep_result_list_ordinal_names() {
   value: T;
 }
 
-fn general(value: own Wrapped<Box<u64>>, spare: own Box<u64>) -> (back: own Wrapped<Box<u64>>, spare: own Box<u64>) pure {
+fn general(value: Wrapped<Box<u64>>, spare: Box<u64>) -> (back: Wrapped<Box<u64>>, spare: Box<u64>) pure {
   return move value, move spare;
 }
 
-fn renamed(value: own Wrapped<Box<u64>>, spare: own Box<u64>) -> (other: own Wrapped<Box<u64>>, spare: own Box<u64>) pure {
+fn renamed(value: Wrapped<Box<u64>>, spare: Box<u64>) -> (other: Wrapped<Box<u64>>, spare: Box<u64>) pure {
   return move value, move spare;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1119,23 +1792,23 @@ fn nominal_physical_families_preserve_declarations_and_phantom_arguments() {
 struct AlternateMarker<T: drop, const n: u64> {
 }
 
-fn base(value: own Marker<u8, 1>) -> back: own Marker<u8, 1> pure {
+fn base(value: Marker<u8, 1>) -> back: Marker<u8, 1> pure {
   return value;
 }
 
-fn element(value: own Marker<u16, 1>) -> back: own Marker<u16, 1> pure {
+fn element(value: Marker<u16, 1>) -> back: Marker<u16, 1> pure {
   return value;
 }
 
-fn count(value: own Marker<u8, 2>) -> back: own Marker<u8, 2> pure {
+fn count(value: Marker<u8, 2>) -> back: Marker<u8, 2> pure {
   return value;
 }
 
-fn declaration(value: own AlternateMarker<u8, 1>) -> back: own AlternateMarker<u8, 1> pure {
+fn declaration(value: AlternateMarker<u8, 1>) -> back: AlternateMarker<u8, 1> pure {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1176,9 +1849,9 @@ fn nominal_physical_families_complete_deep_finite_type_graphs() {
         ));
     }
     source.push_str(
-        "fn first(value: own Layer80) -> back: own Layer80 pure {\n  return move value;\n}\n\n\
-         fn second(value: own Layer80) -> back: own Layer80 pure {\n  return move value;\n}\n\n\
-         fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        "fn first(value: Layer80) -> back: Layer80 pure {\n  return move value;\n}\n\n\
+         fn second(value: Layer80) -> back: Layer80 pure {\n  return move value;\n}\n\n\
+         fn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
     with_semantics(source.as_bytes(), |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
@@ -1215,15 +1888,15 @@ fn nominal_physical_families_complete_cycles_and_check_remaining_fields() {
   Branch(next: Box<Tree>, values: Slots<u64, 2>);
 }
 
-fn first(value: own Tree) -> back: own Tree pure {
+fn first(value: Tree) -> back: Tree pure {
   return move value;
 }
 
-fn second(value: own Tree) -> back: own Tree pure {
+fn second(value: Tree) -> back: Tree pure {
   return move value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1265,15 +1938,15 @@ fn main() -> status: own ExitStatus pure {
 /// including when the call is inside an uncalled ordinary helper.
 #[test]
 fn generic_replay_preserves_a_box_type_argument() {
-    let source = br#"fn pass<T>(value: own T) -> result: own T pure {
+    let source = br#"fn pass<T>(value: T) -> result: T pure {
   return move value;
 }
 
-fn relay(cell: own Box<u64>) -> result: own Box<u64> pure {
+fn relay(cell: Box<u64>) -> result: Box<u64> pure {
   return pass::<Box<u64>>(value: move cell);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1314,11 +1987,11 @@ fn general_elements_retain_deep_windows_through_generic_replay_and_nominal_field
   values: Slots<Slots<Slots<u64, 2>, 2>, 2>;
 }
 
-fn pass<T: drop>(value: own T) -> result: own T pure {
+fn pass<T: drop>(value: T) -> result: T pure {
   return move value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let empty_leaf = slots_new::<u64, 2>();
   place_back(window: &empty_leaf, value: 7_u64);
   let leaf = move empty_leaf;
@@ -1372,11 +2045,11 @@ fn general_elements_reify_nominal_children_after_the_schema_checkpoint() {
   value: T;
 }
 
-fn consume<T: drop>(value: own T) -> result: own unit pure {
+fn consume<T: drop>(value: T) -> result: unit pure {
   return unit;
 }
 
-fn wrapper<U: drop>() -> result: own unit pure {
+fn wrapper<U: drop>() -> result: unit pure {
   let pair = Pair<u8>(value: 7_u8);
   let empty_inner = slots_new::<Pair<u8>, 1>();
   place_back(window: &empty_inner, value: pair);
@@ -1388,7 +2061,7 @@ fn wrapper<U: drop>() -> result: own unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1436,7 +2109,7 @@ fn constructor_fields_materialize_the_nominal_instance() {
   values: Slots<u8, 4>;
 }
 
-fn rebuild(values: own Slots<u8, 4>) -> result: own Slots<u8, 4> pure {
+fn rebuild(values: Slots<u8, 4>) -> result: Slots<u8, 4> pure {
   let wrapped = Wrapped(values: move values);
   let Wrapped(values: restored) = move wrapped;
   return move restored;
@@ -1462,7 +2135,8 @@ fn rebuild(values: own Slots<u8, 4>) -> result: own Slots<u8, 4> pure {
 /// the same boxed content descriptor, including in the symbolic instance.
 #[test]
 fn a_generic_boxed_window_constructor_establishes_its_loop_preheader() {
-    let source = br#"fn build<T: Int>(count: own u64, value: own T) -> result: own Box<Slots<T>> pure contract {
+    let source =
+        br#"fn build<T: Int>(count: u64, value: T) -> result: Box<Slots<T>> pure contract {
   requires count <= 4_u64;
   ensures result.inner.len >= count;
 } {
@@ -1478,7 +2152,7 @@ fn a_generic_boxed_window_constructor_establishes_its_loop_preheader() {
   return move built;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let built = build::<u8>(count: 4_u64, value: 7_u8);
   return exit_status(code: 0_u8);
 }

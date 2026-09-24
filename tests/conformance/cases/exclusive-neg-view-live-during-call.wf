@@ -1,4 +1,4 @@
-fn blend(target: &[u8], source: &[u8]) -> result: own unit reads(source), writes(target) contract {
+fn blend(target: &[u8], source: &[u8]) -> result: unit reads(source), writes(target) contract {
   requires deref(target).len > 0_u64;
   requires deref(source).len > 0_u64;
 } {
@@ -8,7 +8,7 @@ fn blend(target: &[u8], source: &[u8]) -> result: own unit reads(source), writes
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Two range references over the same extent of one window are handed to one call, one of them at a written parameter. EFF-5 compares the substituted paths pairwise, no admitted family proves the two ranges disjoint [OWN-7, REF-4], and the overlapping write/read pair is rejected at the call.";
   let line = slots_new::<u8, 4>();
   place_back(window: &line, value: 1_u8);

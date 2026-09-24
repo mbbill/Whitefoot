@@ -1,4 +1,4 @@
-fn last_index(values: &Slots<u8, 12>) -> index: own u64 reads(values.len) contract {
+fn last_index(values: &Slots<u8, 12>) -> index: u64 reads(values.len) contract {
   define capacity = deref(values).len;
   requires capacity > 0_u64;
   ensures index < capacity;
@@ -9,7 +9,7 @@ fn last_index(values: &Slots<u8, 12>) -> index: own u64 reads(values.len) contra
   return index;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let values = slots_new::<u8, 12>();
   for (
     at_values in 0_u64..12_u64,

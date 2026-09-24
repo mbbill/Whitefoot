@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "TYPE-5: TcpConnection has an ordinary public constructor, but unit is not TcpReceive or TcpSend. The original two wrong field values remain rejected.";
   let link = TcpConnection(receive: unit, send: unit);
   return exit_status(code: 0_u8);

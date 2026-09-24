@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let cursor = 0_u64;
   let doubled = 0_u64;
   loop @walk (

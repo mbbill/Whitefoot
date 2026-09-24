@@ -1,8 +1,8 @@
 interface Factory<T: drop> {
-  fn make(value: own T) -> result: own T pure;
+  fn make(value: T) -> result: T pure;
 }
 
-fn retain(value: own Slots<u8, 4>) -> result: own Slots<u8, 4> pure {
+fn retain(value: Slots<u8, 4>) -> result: Slots<u8, 4> pure {
   doc "An owned formal result may be a newly constructed value of the exact declared type; the unused incoming owner takes its compiler-derived release [STOR-3].";
   return slots_new::<u8, 4>();
 }
@@ -11,6 +11,6 @@ binding Identity : Factory<Slots<u8, 4>> {
   make = retain;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

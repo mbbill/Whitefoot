@@ -19,7 +19,7 @@ use super::super::places::{CapturedRange, CapturedValue};
 use super::VerifiedPostconditionSummaryRef;
 use super::affine::{AffineForm, AffineInequality};
 use super::term::{MeasureBound, TermId, TermKind, TermTable, ZERO, type_range};
-use crate::{BuiltinPreludeId, NodePath};
+use crate::NodePath;
 
 /// One normalized source relation over interned terms.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -90,6 +90,14 @@ pub(crate) struct GoalNormalization {
 }
 
 impl GoalNormalization {
+    /// A sufficient positive conjunction. Its failure says nothing about the
+    /// domain's complement, so it supplies no negative clause.
+    pub(crate) fn sufficient_conjunction(components: Vec<Option<Relation>>) -> Self {
+        let mut normalization = Self::conjunction(components);
+        normalization.negative_clauses.clear();
+        normalization
+    }
+
     /// A fixed conjunction and its exact De Morgan negation.
     pub(crate) fn conjunction(components: Vec<Option<Relation>>) -> Self {
         let count = u32::try_from(components.len())
@@ -406,6 +414,12 @@ pub(crate) enum DerivationNode {
         goal: Option<GoalId>,
         parents: Vec<DerivationId>,
     },
+    /// An OP-6 domain established from the evaluated operand's upper and
+    /// lower bounds, in that order. The same rule answers FN-8 queries.
+    ConversionDomain {
+        goal: GoalId,
+        parents: Vec<DerivationId>,
+    },
     /// One fixed affine consequence used by an integer-domain, bounds,
     /// callable-boundary, or postcondition judgment. `premises` records every
     /// source fact and its positive integer factor in the deterministic
@@ -541,14 +555,17 @@ pub(crate) enum DerivationNode {
         relation: Box<Relation>,
         parent: DerivationId,
     },
-    PostconditionDirectMatch {
-        call: NodePath,
-        variant: BuiltinPreludeId,
-        field: BuiltinPreludeId,
-        tag: u32,
-        binding: BindingId,
+    /// Forward substitution into or out of an isolated Ok-payload context.
+    ResultTransport {
+        statement: NodePath,
+        from: TermId,
+        to: TermId,
         relation: Box<Relation>,
         parent: DerivationId,
+    },
+    /// An Err constructor makes its conditional Ok context unreachable.
+    ResultErr {
+        statement: NodePath,
     },
     PostconditionDirectReceiver {
         statement: NodePath,
@@ -558,15 +575,7 @@ pub(crate) enum DerivationNode {
         target_event: FlowEventId,
         parent: DerivationId,
     },
-    PostconditionSelectedReceiver {
-        statement: NodePath,
-        payload: BindingId,
-        binding: BindingId,
-        relation: Box<Relation>,
-        target_event: FlowEventId,
-        parent: DerivationId,
-    },
-    /// One eligible `value_if` edge after forward carrier-to-receiver
+    /// One eligible value-initializer edge after forward carrier-to-receiver
     /// substitution and the edge's ordinary kills.
     PostconditionGive {
         statement: NodePath,
@@ -717,9 +726,8 @@ impl DerivationNode {
             | Self::MaterializedContradiction { parent, .. }
             | Self::PostconditionExit { parent, .. }
             | Self::PostconditionDirectResult { parent, .. }
-            | Self::PostconditionDirectMatch { parent, .. }
             | Self::PostconditionDirectReceiver { parent, .. }
-            | Self::PostconditionSelectedReceiver { parent, .. }
+            | Self::ResultTransport { parent, .. }
             | Self::PostconditionGive { parent, .. } => visit(*parent),
             Self::Equality {
                 forward, reverse, ..
@@ -766,6 +774,7 @@ impl DerivationNode {
             }
             Self::PostconditionAggregate { parents, .. }
             | Self::IntegerDomain { parents, .. }
+            | Self::ConversionDomain { parents, .. }
             | Self::AffineConsequence { parents, .. }
             | Self::GoalNormalization { parents, .. }
             | Self::BooleanIntroduction { parents, .. } => {
@@ -778,6 +787,7 @@ impl DerivationNode {
             | Self::SourceGoal { .. }
             | Self::BooleanLiteral { .. }
             | Self::SignatureContract { .. }
+            | Self::ResultErr { .. }
             | Self::ImplicitBound { .. } => {}
         }
     }
@@ -813,9 +823,8 @@ impl DerivationNode {
             | Self::MaterializedContradiction { .. }
             | Self::PostconditionExit { .. }
             | Self::PostconditionDirectResult { .. }
-            | Self::PostconditionDirectMatch { .. }
             | Self::PostconditionDirectReceiver { .. }
-            | Self::PostconditionSelectedReceiver { .. }
+            | Self::ResultTransport { .. }
             | Self::PostconditionGive { .. } => 1,
             Self::JoinBound { parents, .. }
             | Self::JoinDistinct { parents, .. }
@@ -824,6 +833,7 @@ impl DerivationNode {
             Self::PostconditionDeliveryJoin { detail } => detail.parents.len(),
             Self::PostconditionAggregate { parents, .. } => parents.len(),
             Self::IntegerDomain { parents, .. }
+            | Self::ConversionDomain { parents, .. }
             | Self::AffineConsequence { parents, .. }
             | Self::GoalNormalization { parents, .. }
             | Self::BooleanIntroduction { parents, .. } => parents.len(),
@@ -842,6 +852,7 @@ impl DerivationNode {
             | Self::SourceGoal { .. }
             | Self::BooleanLiteral { .. }
             | Self::SignatureContract { .. }
+            | Self::ResultErr { .. }
             | Self::ImplicitBound { .. } => 0,
         }
     }
@@ -857,6 +868,9 @@ impl DerivationNode {
 
     fn rank(&self) -> u8 {
         match self {
+            Self::ResultTransport { .. } => 42,
+            Self::ResultErr { .. } => 43,
+            Self::ConversionDomain { .. } => 44,
             Self::UnsignedDivisionProduct { .. } => 36,
             Self::SourceBound { .. } => 0,
             Self::SourceDistinct { .. } => 1,
@@ -886,9 +900,7 @@ impl DerivationNode {
             Self::SignatureContract { .. } => 35,
             Self::PostconditionCall { .. } => 25,
             Self::PostconditionDirectResult { .. } => 26,
-            Self::PostconditionDirectMatch { .. } => 27,
             Self::PostconditionDirectReceiver { .. } => 28,
-            Self::PostconditionSelectedReceiver { .. } => 29,
             Self::PostconditionGive { .. } => 30,
             Self::PostconditionDeliveryJoin { .. } => 31,
             Self::IntegerDomain { .. } => 32,
@@ -931,6 +943,7 @@ pub(crate) enum DerivationRootKind {
         base: bool,
     },
     IntegerDomainObligation(u32),
+    ConversionDomainObligation(u32),
     CallGoal(u32),
     CallContract(u32),
     /// One declaration-only [FN-4] compatibility query. Its ledger and dense
@@ -965,16 +978,13 @@ pub(crate) enum DerivationRootKind {
     PostconditionState {
         occurrence: u32,
     },
+    PostconditionConditional {
+        occurrence: u32,
+    },
     PostconditionDirectResult {
         occurrence: u32,
     },
-    PostconditionDirectMatch {
-        occurrence: u32,
-    },
     PostconditionDirectReceiver {
-        occurrence: u32,
-    },
-    PostconditionSelectedReceiver {
         occurrence: u32,
     },
     PostconditionGive {
@@ -1284,9 +1294,7 @@ impl DerivationLedger {
                 | DerivationNode::SourceDistinct { .. }
                 | DerivationNode::PostconditionCall { .. }
                 | DerivationNode::PostconditionDirectResult { .. }
-                | DerivationNode::PostconditionDirectMatch { .. }
                 | DerivationNode::PostconditionDirectReceiver { .. }
-                | DerivationNode::PostconditionSelectedReceiver { .. }
                 | DerivationNode::PostconditionGive { .. }
                 | DerivationNode::PostconditionDeliveryJoin { .. }
         );
@@ -1507,10 +1515,12 @@ impl DerivationLedger {
                     | DerivationNode::JoinContradiction { parents, .. } => {
                         parents.capacity() * size_of::<JoinParent>()
                     }
+                    DerivationNode::ResultTransport { .. } => size_of::<Relation>(),
                     DerivationNode::PostconditionAggregate { parents, .. } => {
                         parents.capacity() * size_of::<DerivationId>()
                     }
                     DerivationNode::IntegerDomain { parents, .. }
+                    | DerivationNode::ConversionDomain { parents, .. }
                     | DerivationNode::GoalNormalization { parents, .. } => {
                         parents.capacity() * size_of::<DerivationId>()
                     }
@@ -1568,15 +1578,15 @@ impl DerivationLedger {
                 .nodes
                 .iter()
                 .filter_map(|node| match node {
-                    DerivationNode::PostconditionExit { statement, .. } => Some(statement),
+                    DerivationNode::PostconditionExit { statement, .. }
+                    | DerivationNode::ResultTransport { statement, .. }
+                    | DerivationNode::ResultErr { statement } => Some(statement),
                     DerivationNode::PostconditionAggregate { block, .. }
                     | DerivationNode::SignatureContract { block, .. } => Some(block),
                     DerivationNode::PostconditionCall { detail } => Some(&detail.call),
                     DerivationNode::ContractCall { call, .. } => Some(call),
-                    DerivationNode::PostconditionDirectMatch { call, .. } => Some(call),
                     DerivationNode::PostconditionDirectResult { statement, .. }
                     | DerivationNode::PostconditionDirectReceiver { statement, .. }
-                    | DerivationNode::PostconditionSelectedReceiver { statement, .. }
                     | DerivationNode::PostconditionGive { statement, .. } => Some(statement),
                     DerivationNode::PostconditionDeliveryJoin { detail } => Some(&detail.statement),
                     _ => None,
@@ -1681,6 +1691,9 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
                     .map(|parent| parent.0)
             })
         }
+        DerivationNode::ConversionDomain { goal, parents } => (index == 0)
+            .then_some(goal.0)
+            .or_else(|| parents.get(index.checked_sub(1)?).map(|parent| parent.0)),
         DerivationNode::AffineConsequence {
             premises, parents, ..
         } => {
@@ -1817,15 +1830,13 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
                 parents.get(index - 1).map(|parent| parent.0)
             }
         }
+        DerivationNode::ResultTransport {
+            from, to, parent, ..
+        } => [from.0, to.0, parent.0].get(index).copied(),
+        DerivationNode::ResultErr { .. } => None,
         DerivationNode::PostconditionDirectResult {
             binding, parent, ..
         } => [binding.0, parent.0].get(index).copied(),
-        DerivationNode::PostconditionDirectMatch {
-            tag,
-            binding,
-            parent,
-            ..
-        } => [*tag, binding.0, parent.0].get(index).copied(),
         DerivationNode::PostconditionDirectReceiver {
             binding,
             receiver_formal,
@@ -1833,15 +1844,6 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
             parent,
             ..
         } => [binding.0, *receiver_formal, target_event.0, parent.0]
-            .get(index)
-            .copied(),
-        DerivationNode::PostconditionSelectedReceiver {
-            payload,
-            binding,
-            target_event,
-            parent,
-            ..
-        } => [payload.0, binding.0, target_event.0, parent.0]
             .get(index)
             .copied(),
         DerivationNode::PostconditionGive {
@@ -1888,10 +1890,6 @@ fn node_event(node: &DerivationNode) -> Option<FlowEventId> {
             target_event: event,
             ..
         }
-        | DerivationNode::PostconditionSelectedReceiver {
-            target_event: event,
-            ..
-        }
         | DerivationNode::PostconditionGive { event, .. } => Some(*event),
         DerivationNode::PostconditionDeliveryJoin { detail } => Some(detail.event),
         _ => None,
@@ -1912,10 +1910,6 @@ fn node_event_mut(node: &mut DerivationNode) -> Option<&mut FlowEventId> {
         | DerivationNode::MaterializedGoal { event, .. }
         | DerivationNode::MaterializedContradiction { event, .. }
         | DerivationNode::PostconditionDirectReceiver {
-            target_event: event,
-            ..
-        }
-        | DerivationNode::PostconditionSelectedReceiver {
             target_event: event,
             ..
         }
@@ -1980,6 +1974,7 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
             remap_id(negative, remap);
         }
         DerivationNode::IntegerDomain { parents, .. }
+        | DerivationNode::ConversionDomain { parents, .. }
         | DerivationNode::AffineConsequence { parents, .. }
         | DerivationNode::GoalNormalization { parents, .. }
         | DerivationNode::BooleanIntroduction { parents, .. } => {
@@ -2007,9 +2002,8 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
         | DerivationNode::MaterializedContradiction { parent, .. }
         | DerivationNode::PostconditionExit { parent, .. }
         | DerivationNode::PostconditionDirectResult { parent, .. }
-        | DerivationNode::PostconditionDirectMatch { parent, .. }
         | DerivationNode::PostconditionDirectReceiver { parent, .. }
-        | DerivationNode::PostconditionSelectedReceiver { parent, .. }
+        | DerivationNode::ResultTransport { parent, .. }
         | DerivationNode::PostconditionGive { parent, .. } => remap_id(parent, remap),
         DerivationNode::PostconditionDeliveryJoin { detail } => {
             for parent in &mut detail.parents {
@@ -2046,6 +2040,7 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
         | DerivationNode::SourceGoal { .. }
         | DerivationNode::BooleanLiteral { .. }
         | DerivationNode::SignatureContract { .. }
+        | DerivationNode::ResultErr { .. }
         | DerivationNode::ImplicitBound { .. } => {}
     }
 }
@@ -2469,6 +2464,14 @@ impl BoundStore {
         candidates
     }
 
+    fn contains_candidate(&self, pair: (TermId, TermId), candidate: (i128, DerivationId)) -> bool {
+        self.get(pair.0, pair.1) == Some(candidate)
+            || self
+                .extra
+                .get(&pair)
+                .is_some_and(|extra| extra.contains(&candidate))
+    }
+
     /// Adds one candidate. The selection is the least candidate by bound and
     /// then proof, so only the new candidate and the current selection
     /// compete; the loser is kept among the other candidates.
@@ -2482,12 +2485,7 @@ impl BoundStore {
             self.store_single(pair.0, pair.1, candidate.0, candidate.1);
             return;
         };
-        if selected == candidate
-            || self
-                .extra
-                .get(&pair)
-                .is_some_and(|extra| extra.contains(&candidate))
-        {
+        if self.contains_candidate(pair, candidate) {
             return;
         }
         let preferred = candidate.0 < selected.0
@@ -2856,6 +2854,36 @@ impl FactState {
         }
     }
 
+    /// The numeric part of a materialized snapshot, retaining its completed
+    /// closure and shared stores. Opaque goals and writer-origin metadata do
+    /// not travel with a Result. Their numeric consequences have already been
+    /// materialized by the caller, so removing that metadata does not make
+    /// the retained numeric core incomplete.
+    pub(crate) fn numeric_snapshot(&self) -> Self {
+        Self {
+            closure: self.closure.clone(),
+            ordinary_closure: self.ordinary_closure.clone(),
+            postcondition_candidates: self.postcondition_candidates,
+            all_derivable: self.all_derivable,
+            contradiction: self.contradiction,
+            bounds: Rc::clone(&self.bounds),
+            distinct: Rc::clone(&self.distinct),
+            distinct_proofs: Rc::clone(&self.distinct_proofs),
+            distinct_candidates: Rc::clone(&self.distinct_candidates),
+            ..Self::new()
+        }
+    }
+
+    /// Size of the recorded numeric core, before its fresh and weakened
+    /// cells are closed again. This selects a reuse opportunity, not a fact
+    /// or a bound on the amount of closure work that remains.
+    pub(crate) fn numeric_core_terms(&self) -> u32 {
+        match self.closure {
+            ClosureRecord::Unknown => 0,
+            ClosureRecord::Closed { terms } | ClosureRecord::Core { terms, .. } => terms,
+        }
+    }
+
     /// Deterministic normalized live L0 facts and their canonical proofs.
     /// This excludes opaque goals and origin metadata.
     pub(crate) fn live_l0_relations(&self) -> Vec<(Relation, DerivationId)> {
@@ -2879,6 +2907,36 @@ impl FactState {
                 self.distinct_proofs[&(left, right)],
             )
         }));
+        relations
+    }
+
+    /// Every independently live numeric candidate, including the ordinary
+    /// fallback behind a stronger call-dependent bound. Value transport must
+    /// preserve both when their later support kills differ.
+    pub(crate) fn l0_candidates(&self) -> Vec<(Relation, DerivationId)> {
+        if self.all_derivable {
+            return Vec::new();
+        }
+        let mut relations = Vec::new();
+        for (left, right, _, _) in self.bounds.cells() {
+            for (bound, parent) in self.bounds.candidates((left, right)) {
+                relations.push((Relation::Bound { left, right, bound }, parent));
+            }
+        }
+        let mut pairs = self.distinct_candidates.keys().copied().collect::<Vec<_>>();
+        pairs.sort_unstable();
+        for (left, right) in pairs {
+            for parent in &self.distinct_candidates[&(left, right)] {
+                relations.push((
+                    Relation::Distinct {
+                        left,
+                        right,
+                        difference: 0,
+                    },
+                    *parent,
+                ));
+            }
+        }
         relations
     }
 
@@ -2945,12 +3003,29 @@ impl FactState {
         proof: DerivationId,
         ledger: &DerivationLedger,
     ) {
+        let pair = (left, right);
+        if self.bounds.contains_candidate(pair, (bound, proof)) {
+            return;
+        }
         self.closed_view.take();
-        self.closure.mark_fresh_cell((left, right));
+        // A new proof candidate must remain available to later support kills,
+        // but only a stronger numeric bound changes this layer's closure.
+        // Result transport routinely imports already-known ordinary bounds.
+        if self
+            .bounds
+            .get(left, right)
+            .is_none_or(|(old, _)| bound < old)
+        {
+            self.closure.mark_fresh_cell(pair);
+        }
         if ledger.depends_on_postcondition_call(proof) {
             self.postcondition_candidates = true;
-        } else {
-            self.ordinary_closure.mark_fresh_cell((left, right));
+        } else if self
+            .bounds
+            .candidate_minimum(pair, |parent| !ledger.depends_on_postcondition_call(parent))
+            .is_none_or(|old| bound < old)
+        {
+            self.ordinary_closure.mark_fresh_cell(pair);
         }
         Rc::make_mut(&mut self.bounds).add_candidate((left, right), (bound, proof), ledger);
     }
@@ -2961,12 +3036,29 @@ impl FactState {
         proof: DerivationId,
         ledger: &DerivationLedger,
     ) {
+        if self
+            .distinct_candidates
+            .get(&pair)
+            .is_some_and(|candidates| candidates.contains(&proof))
+        {
+            return;
+        }
         self.closed_view.take();
-        self.closure.mark_fresh_cell(pair);
-        self.closure.mark_fresh_cell((pair.1, pair.0));
+        if !self.distinct.contains(&pair) {
+            self.closure.mark_fresh_cell(pair);
+            self.closure.mark_fresh_cell((pair.1, pair.0));
+        }
         if ledger.depends_on_postcondition_call(proof) {
             self.postcondition_candidates = true;
-        } else {
+        } else if !self
+            .distinct_candidates
+            .get(&pair)
+            .is_some_and(|candidates| {
+                candidates
+                    .iter()
+                    .any(|parent| !ledger.depends_on_postcondition_call(*parent))
+            })
+        {
             self.ordinary_closure.mark_fresh_cell(pair);
             self.ordinary_closure.mark_fresh_cell((pair.1, pair.0));
         }
@@ -3830,12 +3922,12 @@ fn for_each_implicit_bound(
 ) {
     emit(id, id, 0, ImplicitBoundKind::Reflexive);
     match terms.kind(id) {
-        TermKind::Zero | TermKind::ConstParameter(_) => {}
+        TermKind::Zero => {}
         TermKind::Constant(value) => {
             emit(id, ZERO, *value, ImplicitBoundKind::Constant);
             emit(ZERO, id, -value, ImplicitBoundKind::Constant);
         }
-        TermKind::Place(_, ty) => {
+        TermKind::Place(_, ty) | TermKind::ConstParameter(_, ty) => {
             let (minimum, maximum) = type_range(*ty);
             emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
             emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
@@ -3887,7 +3979,9 @@ fn for_each_implicit_bound(
             emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
             emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
         }
-        TermKind::CommitValue { ty, .. } | TermKind::CallDatum { ty, .. } => {
+        TermKind::ResultPayload(ty)
+        | TermKind::CommitValue { ty, .. }
+        | TermKind::CallDatum { ty, .. } => {
             let (minimum, maximum) = type_range(*ty);
             emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
             emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
@@ -6041,13 +6135,28 @@ pub(crate) mod tests {
     /// flow walk reaches its kill, join, strengthening and term-growth paths.
     #[test]
     fn seeded_closures_match_complete_closures_on_real_programs() {
-        // The smallest real program keeps this gate test cheap; the generated
-        // flows below cover postcondition candidates, holder kills, joins and
-        // new terms. Larger programs were verified by temporary inclusion.
-        let bundles: [&[(&str, &[u8])]; 1] = [&[(
-            "utf8parse.wf",
-            include_bytes!("../../../../tests/programs/utf8parse.wf"),
-        )]];
+        // The small real program and existing Result cases exercise closure
+        // records through the ordinary walk. The additional observation here
+        // is agreement with an eager closure at every intermediate proof point;
+        // the corpus's ordinary verdict checks do not inspect those states.
+        let bundles: [&[(&str, &[u8])]; 3] = [
+            &[(
+                "utf8parse.wf",
+                include_bytes!("../../../../tests/programs/utf8parse.wf"),
+            )],
+            &[(
+                "result-value-transport.wf",
+                include_bytes!(
+                    "../../../../tests/conformance/cases/fn9-pos-result-value-transport.wf"
+                ),
+            )],
+            &[(
+                "result-conditional-joins.wf",
+                include_bytes!(
+                    "../../../../tests/conformance/cases/fn9-pos-result-conditional-joins.wf"
+                ),
+            )],
+        ];
         VERIFY_SEEDED_CLOSURE.with(|verify| verify.set(true));
         VERIFIED_CLOSURES.with(|count| count.set(0));
         for bundle in bundles {
@@ -6236,6 +6345,7 @@ pub(crate) mod tests {
         let mut terms = TermTable::new();
         let parameter = terms.intern(TermKind::ConstParameter(
             DeclarationId::from_index(0).expect("zero declaration identity exists"),
+            IntegerType::U64,
         ));
         let length = |terms: &mut TermTable, binding| {
             let term = terms.intern(TermKind::Measure(
@@ -7001,6 +7111,134 @@ pub(crate) mod tests {
         }
         assert!(contradiction_without_proofs(&state, &terms, &goals));
         assert!(close(&state, &terms, &goals, &mut ledger).contradictory());
+    }
+
+    /// Reimporting a numeric snapshot must not schedule its complete matrix
+    /// for closure again. Additional candidates still matter after a call's
+    /// authority is removed, even when they do not improve the full layer.
+    #[test]
+    fn repeated_snapshot_imports_preserve_closure_and_ordinary_fallbacks() {
+        let mut terms = TermTable::new();
+        let [left, middle, right] = [0, 1, 2].map(|binding| {
+            terms.intern(TermKind::Place(
+                super::super::term::ResolvedPlace::binding(BindingId(binding)),
+                IntegerType::U8,
+            ))
+        });
+        let goals = GoalTable::default();
+        let mut ledger = DerivationLedger::default();
+        let event = ledger.event(FlowEventKind::S1, None);
+        let mut state = FactState::new();
+        for (left, right, bound) in [(left, middle, 10), (middle, right, 4)] {
+            state.establish(&Relation::Bound { left, right, bound }, &mut ledger, event);
+        }
+        for relation in [
+            Relation::Bound {
+                left,
+                right: middle,
+                bound: 0,
+            },
+            Relation::Distinct {
+                left: middle,
+                right,
+                difference: 0,
+            },
+        ] {
+            let proof = postcondition_call_proof(&mut ledger, relation.clone());
+            state.establish_from_proof(&relation, proof, &ledger);
+        }
+        materialize_closure_before_kill(&mut state, &terms, &goals, &mut ledger);
+        // Equal-value witness replacement must refresh the proof-bearing
+        // view even though no numeric closure work is needed. Removing the
+        // new witnesses must reveal the original still-live candidates.
+        let mut swapped = state.clone();
+        let old_bound = swapped.bounds.get(left, middle).unwrap();
+        let pair = ordered(middle, right);
+        let old_distinct = swapped.distinct_proofs[&pair];
+        let cached = close(&swapped, &terms, &goals, &mut ledger);
+        swapped.establish(
+            &Relation::Bound {
+                left,
+                right: middle,
+                bound: 0,
+            },
+            &mut ledger,
+            event,
+        );
+        swapped.establish(
+            &Relation::Distinct {
+                left: middle,
+                right,
+                difference: 0,
+            },
+            &mut ledger,
+            event,
+        );
+        let new_bound = swapped.bounds.get(left, middle).unwrap();
+        let new_distinct = swapped.distinct_proofs[&pair];
+        assert_ne!(old_bound.1, new_bound.1);
+        assert_ne!(old_distinct, new_distinct);
+        assert!(!ledger.depends_on_postcondition_call(new_bound.1));
+        assert!(!ledger.depends_on_postcondition_call(new_distinct));
+        assert!(swapped.closure.is_closed_over(terms.ids().count()));
+        assert!(!Rc::ptr_eq(
+            &cached,
+            &close(&swapped, &terms, &goals, &mut ledger)
+        ));
+        swapped.kill_proof_candidates(&ledger, |_, _, proof| {
+            proof == new_bound.1 || proof == new_distinct
+        });
+        assert_eq!(swapped.bounds.get(left, middle), Some(old_bound));
+        assert_eq!(swapped.distinct_proofs[&pair], old_distinct);
+        let restored = close(&swapped, &terms, &goals, &mut ledger);
+        assert_seeded_closure_matches_complete(&swapped, &terms, &goals, &ledger, &restored);
+
+        for (relation, proof) in state.l0_candidates() {
+            state.establish_from_proof(&relation, proof, &ledger);
+        }
+        let weaker = Relation::Bound {
+            left,
+            right: middle,
+            bound: 20,
+        };
+        state.establish(&weaker, &mut ledger, event);
+        assert!(state.closure.is_closed_over(terms.ids().count()));
+        assert!(state.ordinary_closure.is_closed_over(terms.ids().count()));
+        assert!(
+            state
+                .bounds
+                .candidates((left, middle))
+                .iter()
+                .any(|(bound, _)| *bound == 20)
+        );
+
+        // These ordinary facts change only the fallback layer: the full
+        // layer already knows the stronger bound and the same disequality.
+        state.establish(
+            &Relation::Bound {
+                left,
+                right: middle,
+                bound: 5,
+            },
+            &mut ledger,
+            event,
+        );
+        state.establish(
+            &Relation::Distinct {
+                left: middle,
+                right,
+                difference: 0,
+            },
+            &mut ledger,
+            event,
+        );
+        assert!(state.closure.is_closed_over(terms.ids().count()));
+        state.retain_non_postcondition_candidates(&ledger);
+        let closed = close(&state, &terms, &goals, &mut ledger);
+        assert!(closed.derives_bound(left, right, 9));
+        assert!(!closed.derives_bound(left, right, 8));
+        assert!(closed.distinct.contains(&ordered(middle, right)));
+        assert_seeded_closure_matches_complete(&state, &terms, &goals, &ledger, &closed);
     }
 
     fn bound_store_proof(

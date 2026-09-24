@@ -1,4 +1,4 @@
-fn scan(data: own Array<u8, 12>) -> result: own u8 pure {
+fn scan(data: Array<u8, 12>) -> result: u8 pure {
   let total = 0_u8;
   for (row in 0_u64..3_u64) {
     for (col in 0_u64..5_u64) {
@@ -11,6 +11,6 @@ fn scan(data: own Array<u8, 12>) -> result: own u8 pure {
   return total;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

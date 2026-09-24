@@ -84,6 +84,8 @@ core on an SMT runner while the busy-waiting `static` reference never does.
 clock-measured idle window when the lanes fit the online CPUs, else park as
 today — is recorded there as the next step rather than as a result.
 
+<a id="idle-window-comparisons"></a>
+
 Twelve sections then carry that rule as built code, six hosted runs on
 branch `compute/idle-window` with both legs each, `ubuntu-24.04` then
 `macos-14`. Four of them are A/B twins and **none of those four is
@@ -2733,6 +2735,8 @@ the way back to the no-frontier 1,910, and its module is 117,685 bytes of
 `.ll` and 24,792 of `.o` against the plain 21,627 and 6,104 — five and four
 times the code for a row that is worse than depth 8's. The curve over this
 host therefore has an interior best near 8 and pays for both sides of it.
+
+<a id="recursion-budget-comparison"></a>
 
 ## 2026-09-11 — local host (Linux x86_64, 4 logical CPUs), the recursion budget as an opt-in control
 
@@ -8899,6 +8903,8 @@ fir          1 A/B  wf-b/wf  wall 0.999 [0.97-1.05]  lower 3/5  cpu 0.999
   serial: none: one thread, a loop over all callbacks
 
 ```
+
+<a id="alignment-comparison"></a>
 
 ## 2026-09-11 — local host (Linux x86_64, 4 logical CPUs), what code placement alone is worth, with a shifted null arm
 
@@ -18702,6 +18708,8 @@ fir          1 A/B  wf-b/wf  wall 0.993 [0.97-1.00]  lower 5/5  cpu 0.994
   serial: none: one thread, a loop over all callbacks
 
 ```
+
+<a id="sparse-cadence-comparisons"></a>
 
 ## 2026-09-12 — ubuntu-24.04 (Linux x86_64, 4 logical CPUs, 2 cores × 2 SMT), run 34667725821 at `fd00c10c`, the idle window at a 2 ms call gap
 

@@ -3,13 +3,13 @@ struct Node {
   next: Option<Box<Node>>;
 }
 
-fn read_and_clear(node: &Node) -> result: own u64 reads(node.value), writes(node.next) {
+fn read_and_clear(node: &Node) -> result: u64 reads(node.value), writes(node.next) {
   let observed = deref(node).value;
   set deref(node).next = None<Box<Node>>();
   return observed;
 }
 
-fn inspect(root: &Node) -> result: own u64 writes(root) {
+fn inspect(root: &Node) -> result: u64 writes(root) {
   let cursor = root;
   for (i in 0_u64..2_u64) {
     match deref(cursor).next {
@@ -24,7 +24,7 @@ fn inspect(root: &Node) -> result: own u64 writes(root) {
   return read_and_clear(node: cursor);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "One captured cursor target retains disjoint finite sibling effects at a call.";
   return exit_status(code: 0_u8);
 }

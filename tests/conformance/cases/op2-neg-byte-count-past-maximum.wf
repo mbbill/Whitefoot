@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let count = 0_u8;
   for (
     i in 0_u64..256_u64,

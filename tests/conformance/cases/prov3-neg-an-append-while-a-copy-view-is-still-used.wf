@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A range reference is formed over the filled window, and then take_back writes the window's last slot and its len. Those writes reach a proper prefix of the reference's path, so the reference is invalid after that call; the write itself is legal, and the later read through the stale reference is the rejection [REF-2, EFF-5].";
   let run = slots_new::<u8, 4>();
   place_back(window: &run, value: 7_u8);

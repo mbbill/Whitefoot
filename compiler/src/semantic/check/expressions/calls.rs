@@ -13,7 +13,7 @@ use crate::{
 };
 
 use super::super::super::model::{
-    CheckedBooleanOperation, CheckedExpression, CheckedIntegerArgument,
+    CheckedBooleanOperation, CheckedConversionMode, CheckedExpression, CheckedIntegerArgument,
     CheckedIntegerArgumentSource, CheckedIntegerErrorClass, CheckedIntegerOperation,
     CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedType,
 };
@@ -95,8 +95,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if floating::is_float_operation(spelling) {
             return self.check_float_operation(node, spelling, function, bindings, loop_depth);
         }
-        if spelling == "cvt" {
-            return self.check_conversion(node, function, bindings, loop_depth);
+        let conversion_mode = match spelling {
+            "cvt" => Some(CheckedConversionMode::Exact),
+            "cvt.checked" => Some(CheckedConversionMode::Checked),
+            "cvt.defined" => Some(CheckedConversionMode::Defined),
+            _ => None,
+        };
+        if let Some(mode) = conversion_mode {
+            return self.check_conversion(node, mode, spelling, function, bindings, loop_depth);
         }
         if spelling == "reinterpret" {
             return self.check_reinterpret(node, function, bindings, loop_depth);
@@ -313,8 +319,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ))
     }
 
-    /// The written type pair of `cvt` and `reinterpret`, two of the closed
-    /// retained-argument rows.
+    /// The written type pair of the conversion and reinterpretation rows.
     ///
     /// [DIAG-1] selects the cited rule by the callee's class rather than by
     /// the kind of argument problem: a table operation cites what [OP-2]
@@ -326,6 +331,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         node: NodeId,
         function: &FunctionSignature,
+        allow_symbolic: bool,
     ) -> Result<[CheckedNumericType; 2], CheckStop> {
         let targs = self.tree.argument_list(node)?.ok_or_else(|| {
             self.issue_value(
@@ -346,22 +352,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .ok_or_else(|| {
                     self.issue_value(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation)
                 })?;
-            parsed.push(
-                match self.parse_type_with(type_node, &function.substitution)? {
-                    CheckedType::Integer(ty) => CheckedNumericType::Integer(ty),
-                    CheckedType::Float(ty) => CheckedNumericType::Float(ty),
-                    CheckedType::GenericInt(_) | CheckedType::GenericFloat(_) => {
-                        return self.unsupported(UnsupportedSemanticFeature::Generics, type_node);
-                    }
-                    _ => {
-                        return self.issue_node(
-                            SemanticRule::Op1,
-                            node,
-                            SemanticIssueKind::InvalidOperation,
-                        );
-                    }
-                },
-            );
+            let ty = self.parse_type_with(type_node, &function.substitution)?;
+            if !allow_symbolic
+                && matches!(
+                    ty,
+                    CheckedType::GenericInt(_) | CheckedType::GenericFloat(_)
+                )
+            {
+                return self.unsupported(UnsupportedSemanticFeature::Generics, type_node);
+            }
+            let Some(ty) = CheckedNumericType::from_type(ty) else {
+                return self.issue_node(
+                    SemanticRule::Op1,
+                    node,
+                    SemanticIssueKind::InvalidOperation,
+                );
+            };
+            parsed.push(ty);
         }
         parsed
             .try_into()

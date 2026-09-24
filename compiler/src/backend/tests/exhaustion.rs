@@ -51,7 +51,7 @@ const MIXED_DEFINITIONS: &[u8] = br#"enum Chain {
   More(tail: Box<Chain>);
 }
 
-fn depth(chain: &Box<Chain>) -> result: own u64 reads(chain) {
+fn depth(chain: &Box<Chain>) -> result: u64 reads(chain) {
   match deref(chain).inner {
     End() => {
       return 0_u64;
@@ -63,7 +63,7 @@ fn depth(chain: &Box<Chain>) -> result: own u64 reads(chain) {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let end = End();
   let bottom = box_new::<Chain>(value: move end);
   let one = More(tail: move bottom);
@@ -240,23 +240,23 @@ const fn libc_sigabrt() -> i32 {
 /// really carries the construction whose heap exhaustion the trusted base
 /// reports. Nothing in the source names that outcome: [STOR-8] hands back no
 /// payload and the program holds no failure arm.
-const HEAP_RECORD_LANE: &[u8] = br#"fn leafwork(v: own u64) -> result: own u64 pure {
+const HEAP_RECORD_LANE: &[u8] = br#"fn leafwork(v: u64) -> result: u64 pure {
   return v *wrap 3_u64;
 }
 
-fn build(n: own u64) -> result: own u64 pure {
+fn build(n: u64) -> result: u64 pure {
   let b = box_array_filled::<u8>(count: 4000000000000000000_u64, value: 7_u8);
   let e = b.inner.len;
   return 0_u64 +wrap n;
 }
 
-fn both(n: own u64) -> result: own u64 pure {
+fn both(n: u64) -> result: u64 pure {
   let a = build(n: n);
   let c = leafwork(v: n);
   return a +wrap c;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let r = both(n: 5_u64);
   let ok = r > 0_u64;
   if ok {
@@ -303,7 +303,7 @@ fn a_module_that_writes_a_resource_record_and_hands_a_call_out_is_latched() {
 /// `box_ring_new`, the fourth [OP-13] cell construction. Each form contributes
 /// one observed measure [OP-15] so the successful run still proves it ran:
 /// 7 + 4 + 4 + 3 = 18, the same exit code v0.59's image produced.
-const ALL_HEAP_FORMS: &[u8] = br#"fn shapes(n: own u64) -> result: own u64 pure {
+const ALL_HEAP_FORMS: &[u8] = br#"fn shapes(n: u64) -> result: u64 pure {
   let packed = box_array_filled::<u64>(count: 4_u64, value: 5_u64);
   let vacant = box_slots_new::<u32>(capacity: 4_u64);
   let cycle = box_ring_new::<u32>(capacity: 3_u64);
@@ -318,9 +318,9 @@ const ALL_HEAP_FORMS: &[u8] = br#"fn shapes(n: own u64) -> result: own u64 pure 
   return total;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let total = shapes(n: 4_u64);
-  match cvt::<u64, u8>(total) {
+  match cvt.checked::<u64, u8>(total) {
     Ok(value: byte) => {
       return exit_status(code: byte);
     }
@@ -396,6 +396,91 @@ fn each_generated_allocation_form_reaches_its_refusal_record() {
     }
     std::fs::remove_dir_all(directory).expect("remove allocation refusal image");
 }
+
+/// Script only the generated record write, leaving host startup and the floor
+/// untouched. Both record writers must retry EINTR at the same byte offset,
+/// keep positive partial progress, and stop on zero or a different error.
+#[test]
+fn heap_record_writers_retry_interruption_without_losing_partial_progress() {
+    let source = std::str::from_utf8(HEAP_RECORD_LANE)
+        .unwrap()
+        .replace("4000000000000000000_u64", "4_u64");
+    for overlap in [super::OverlapLowering::Off, super::OverlapLowering::On] {
+        let directory = test_directory();
+        let module = super::emit_lowered(source.as_bytes(), overlap);
+        assert_eq!(
+            module.contains("%latch = call ptr @wf__floor_record_latch()"),
+            overlap == super::OverlapLowering::On,
+            "exercise the sequential and latched record writers"
+        );
+        let observed = module
+            .replace("@malloc(", "@wf_test_allocate(")
+            .replace("@free(", "@wf_test_release(")
+            .replace("@write(", "@wf_test_record_write(");
+        let host = format!(
+            "{}\n{}",
+            super::owned_places::allocation_observer_by_process(1),
+            RECORD_WRITE_OBSERVER
+        );
+        let executable = build_linked_executable(&observed, Some(&host), &[], &directory);
+        for schedule in 0..4 {
+            let output = Command::new(&executable)
+                .env("WF_TEST_REFUSE_ALLOCATION", "1")
+                .env("WF_TEST_WRITE_SCHEDULE", schedule.to_string())
+                .current_dir(&directory)
+                .output()
+                .expect("run interrupted heap record writer");
+            assert_eq!(signal_of(&output), Some(libc_sigabrt()), "{output:?}");
+            if schedule < 2 {
+                assert_resource_record(&output.stderr, "heap");
+                assert_eq!(output.stdout, b"X1;W1;W2;W3;", "{output:?}");
+            } else {
+                assert_eq!(output.stderr, b"{\"res", "{output:?}");
+                assert_eq!(output.stdout, b"X1;W1;W2;", "{output:?}");
+            }
+        }
+        std::fs::remove_dir_all(directory).expect("remove interrupted record image");
+    }
+}
+
+const RECORD_WRITE_OBSERVER: &str = r#"
+#include <errno.h>
+#include <unistd.h>
+
+__attribute__((constructor)) static void unbuffer(void) {
+    setvbuf(stdout, NULL, _IONBF, 0);
+}
+
+ssize_t wf_test_record_write(int fd, const void *bytes, size_t length) {
+    static const char record[] = "{\"resource\":\"heap\"}\n";
+    static unsigned calls;
+    static size_t offset;
+    const char *selected = getenv("WF_TEST_WRITE_SCHEDULE");
+    if (selected == NULL || selected[0] < '0' || selected[0] > '3'
+        || selected[1] != '\0') _Exit(90);
+    unsigned schedule = (unsigned)(selected[0] - '0');
+    unsigned step = calls++;
+    if (step >= (schedule < 2 ? 3u : 2u)) _Exit(91);
+    if (fd != 2 || length != sizeof(record) - 1 - offset
+        || memcmp(bytes, record + offset, length) != 0) _Exit(92);
+    printf("W%u;", calls);
+    if ((schedule == 0 && step == 0) || (schedule == 1 && step == 1)) {
+        errno = EINTR;
+        return -1;
+    }
+    if (schedule >= 2 && step == 1) {
+        errno = schedule == 2 ? EINTR : EIO;
+        return schedule == 2 ? 0 : -1;
+    }
+    size_t count = step < 2 ? 5 : length;
+    ssize_t written = write(fd, bytes, count);
+    if (written != (ssize_t)count) _Exit(93);
+    offset += count;
+    /* A positive result remains progress even with stale EINTR. */
+    errno = EINTR;
+    return written;
+}
+"#;
 
 /// Filled and empty windows whose proved byte ceilings fit the selected target
 /// carry no runtime target-domain path. The allocator can still return null,
@@ -541,13 +626,13 @@ fn every_allocation_refusal_edge_reaches_the_resource_abort() {
 /// recursive edge keeps the generated function representative of an ordinary
 /// source recursion without making the fault depend on a sequence of frames.
 const LARGE_FRAME_SPINE: &[u8] =
-    br#"fn read_pad(values: &Array<u64, 7168>, index: own u64) -> result: own u64 reads(values) contract {
+    br#"fn read_pad(values: &Array<u64, 7168>, index: u64) -> result: u64 reads(values) contract {
   requires index < 7168_u64;
 } {
   return deref(values)[index];
 }
 
-fn spine(depth: own u64, v: own u64, i: own u8) -> result: own u64 pure {
+fn spine(depth: u64, v: u64, i: u8) -> result: u64 pure {
   let pad = array_filled::<u64, 7168>(value: v);
   let wide = cvt::<u8, u64>(i);
   set pad[wide] = depth;
@@ -561,12 +646,12 @@ fn spine(depth: own u64, v: own u64, i: own u8) -> result: own u64 pure {
   return a +wrap b;
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
   close_directory(factory: &entry_factory, directory: move unused_cwd);
   let count = 0_u64;
   set count = args_count(args: &args);
-  match cvt::<u64, u8>(count) {
+  match cvt.checked::<u64, u8>(count) {
     Ok(value: idx) => {
       let depth = count *wrap 20000_u64;
       let r = spine(depth: depth, v: 3_u64, i: idx);
@@ -898,17 +983,17 @@ struct Holder {{
   node: Box<Tree>;
 }}
 
-fn boxed_leaf() -> result: own Box<Tree> pure {{
+fn boxed_leaf() -> result: Box<Tree> pure {{
   let leaf = Leaf();
   return box_new::<Tree>(value: move leaf);
 }}
 
-fn boxed_branch(left: own Box<Tree>, right: own Box<Tree>) -> result: own Box<Tree> pure {{
+fn boxed_branch(left: Box<Tree>, right: Box<Tree>) -> result: Box<Tree> pure {{
   let branch = Branch(left: move left, right: move right);
   return box_new::<Tree>(value: move branch);
 }}
 
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   let seed = boxed_leaf();
   let held = Holder(node: move seed);
   for @grow (i in 0_u64..{depth}_u64) {{
@@ -953,13 +1038,13 @@ fn buffer_chain_source(depth: u64) -> Vec<u8> {
   Cons(kids: Box<Slots<Chain>>);
 }}
 
-fn nest(inner: own Chain) -> result: own Chain pure {{
+fn nest(inner: Chain) -> result: Chain pure {{
   let held = box_slots_new::<Chain>(capacity: 1_u64);
   place_back(window: &held.inner, value: move inner);
   return Cons(kids: move held);
 }}
 
-fn main() -> status: own ExitStatus pure {{
+fn main() -> status: ExitStatus pure {{
   let holder = box_slots_new::<Chain>(capacity: 1_u64);
   let seed = Nil();
   place_back(window: &holder.inner, value: move seed);
@@ -984,7 +1069,7 @@ fn main() -> status: own ExitStatus pure {{
 ///
 /// The chain is `Box<Slots<Box<u64>>>` -> `Slots<Box<u64>>` -> `Box<u64>` ->
 /// `u64`, and no node type names another one above it.
-const SHALLOW_OWNERSHIP: &[u8] = br#"fn main() -> status: own ExitStatus pure {
+const SHALLOW_OWNERSHIP: &[u8] = br#"fn main() -> status: ExitStatus pure {
   let slots = box_slots_new::<Box<u64>>(capacity: 2_u64);
   let boxed = box_new::<u64>(value: 7_u64);
   place_back(window: &slots.inner, value: move boxed);
@@ -1145,12 +1230,12 @@ const WIDE_BUFFER_CYCLE: &[u8] = br#"enum Chain {
   Cons(kids: Box<Slots<Chain>>);
 }
 
-fn leafy() -> result: own Chain pure {
+fn leafy() -> result: Chain pure {
   let held = box_slots_new::<Chain>(capacity: 1_u64);
   return Cons(kids: move held);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let slots = box_slots_new::<Chain>(capacity: 4_u64);
   let child0 = leafy();
   place_back(window: &slots.inner, value: move child0);

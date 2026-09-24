@@ -1,4 +1,4 @@
-fn probe<const n: u64>(table: own Slots<u8, n>, idx: own u64, limit: own u64) -> found: own u8 pure contract {
+fn probe<const n: u64>(table: Slots<u8, n>, idx: u64, limit: u64) -> found: u8 pure contract {
   define spare = table.len;
   requires idx < limit;
   requires limit <= spare;
@@ -11,7 +11,7 @@ fn probe<const n: u64>(table: own Slots<u8, n>, idx: own u64, limit: own u64) ->
   return byte;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let table = slots_new::<u8, 4>();
   place_back(window: &table, value: 0_u8);
   place_back(window: &table, value: 0_u8);

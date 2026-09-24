@@ -3,7 +3,7 @@ struct Chunk {
   high: Slots<u64, 256>;
 }
 
-fn append_selected(values: &Slots<u64, 256>, value: own u64, selected: own Bool) -> result: own unit writes(values) contract {
+fn append_selected(values: &Slots<u64, 256>, value: u64, selected: Bool) -> result: unit writes(values) contract {
   requires deref(values).len < 256_u64;
   ensures deref(values).len <= deref(entry(values)).len + 1_u64;
 } {
@@ -14,7 +14,7 @@ fn append_selected(values: &Slots<u64, 256>, value: own u64, selected: own Bool)
   return unit;
 }
 
-fn partition_block(input: &[u64], bit: own u32) -> (low: own Slots<u64, 256>, high: own Slots<u64, 256>) reads(input) contract {
+fn partition_block(input: &[u64], bit: u32) -> (low: Slots<u64, 256>, high: Slots<u64, 256>) reads(input) contract {
   requires deref(input).len <= 256_u64;
   requires bit < 64_u32;
   ensures low.len <= deref(input).len;
@@ -39,7 +39,7 @@ fn partition_block(input: &[u64], bit: own u32) -> (low: own Slots<u64, 256>, hi
   return move lows, move highs;
 }
 
-fn write_chunk(input: &[u64], bit: own u32, output: &[Option<Chunk>]) -> result: own u64 reads(input), writes(output) contract {
+fn write_chunk(input: &[u64], bit: u32, output: &[Option<Chunk>]) -> result: u64 reads(input), writes(output) contract {
   requires deref(input).len <= 256_u64;
   requires bit < 64_u32;
   requires 1_u64 <= deref(output).len;
@@ -50,7 +50,7 @@ fn write_chunk(input: &[u64], bit: own u32, output: &[Option<Chunk>]) -> result:
   return deref(input).len;
 }
 
-fn tally(chunk: &Option<Chunk>, previous_low: own u64, previous_high: own u64) -> (low: own u64, high: own u64) reads(chunk) contract {
+fn tally(chunk: &Option<Chunk>, previous_low: u64, previous_high: u64) -> (low: u64, high: u64) reads(chunk) contract {
   requires previous_low <= 16777472_u64;
   requires previous_high <= 16777472_u64;
   ensures low <= previous_low + 256_u64;
@@ -70,7 +70,7 @@ fn tally(chunk: &Option<Chunk>, previous_low: own u64, previous_high: own u64) -
   }
 }
 
-fn copy_run(values: &Slots<u64, 256>, output: &[u64]) -> result: own u64 reads(values), writes(output) contract {
+fn copy_run(values: &Slots<u64, 256>, output: &[u64]) -> result: u64 reads(values), writes(output) contract {
   requires deref(values).len <= deref(output).len;
 } {
   let count = deref(values).len;
@@ -80,7 +80,7 @@ fn copy_run(values: &Slots<u64, 256>, output: &[u64]) -> result: own u64 reads(v
   return count;
 }
 
-fn copy_values(input: &[u64], output: &[u64]) -> result: own u64 reads(input), writes(output) contract {
+fn copy_values(input: &[u64], output: &[u64]) -> result: u64 reads(input), writes(output) contract {
   requires deref(input).len <= deref(output).len;
 } {
   let count = deref(input).len;
@@ -90,7 +90,7 @@ fn copy_values(input: &[u64], output: &[u64]) -> result: own u64 reads(input), w
   return count;
 }
 
-fn pack_payload(payload: &Chunk, chunks: &Box<Slots<Option<Chunk>>>, first: own u64, lows: &[u64], highs: &[u64]) -> result: own u64 reads(payload), reads(chunks), writes(lows), writes(highs) contract {
+fn pack_payload(payload: &Chunk, chunks: &Box<Slots<Option<Chunk>>>, first: u64, lows: &[u64], highs: &[u64]) -> result: u64 reads(payload), reads(chunks), writes(lows), writes(highs) contract {
   requires deref(chunks).inner.len <= 16777217_u64;
   requires first < deref(chunks).inner.len;
   requires 256_u64 * deref(chunks).inner.len <= deref(lows).len + 256_u64 * first;
@@ -120,7 +120,7 @@ fn pack_payload(payload: &Chunk, chunks: &Box<Slots<Option<Chunk>>>, first: own 
   return 0_u64;
 }
 
-fn pack_chunks(chunks: &Box<Slots<Option<Chunk>>>, first: own u64, lows: &[u64], highs: &[u64]) -> result: own u64 reads(chunks), writes(lows), writes(highs) contract {
+fn pack_chunks(chunks: &Box<Slots<Option<Chunk>>>, first: u64, lows: &[u64], highs: &[u64]) -> result: u64 reads(chunks), writes(lows), writes(highs) contract {
   requires deref(chunks).inner.len <= 16777217_u64;
   requires first <= deref(chunks).inner.len;
   requires 256_u64 * deref(chunks).inner.len <= deref(lows).len + 256_u64 * first;
@@ -142,7 +142,7 @@ fn pack_chunks(chunks: &Box<Slots<Option<Chunk>>>, first: own u64, lows: &[u64],
   }
 }
 
-fn radix_scatter(input: &[u64], bit: own u32) -> result: own Box<Array<u64>> reads(input) contract {
+fn radix_scatter(input: &[u64], bit: u32) -> result: Box<Array<u64>> reads(input) contract {
   requires deref(input).len <= 16777216_u64;
   requires bit < 64_u32;
 } {
@@ -231,11 +231,11 @@ fn radix_scatter(input: &[u64], bit: own u32) -> result: own Box<Array<u64>> rea
   return move output;
 }
 
-fn release_radix_scatter(output: own Box<Array<u64>>) -> result: own u64 pure {
+fn release_radix_scatter(output: Box<Array<u64>>) -> result: u64 pure {
   return 0_u64;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let input = box_array_filled::<u64>(count: 8209_u64, value: 0_u64);
   for (i in 0_u64..8209_u64) {
     set input.inner[i] = i;

@@ -1,10 +1,10 @@
-fn count_arguments(args: &Args) -> function_result: own u64 pure {
+fn count_arguments(args: &Args) -> function_result: u64 pure {
   doc "args_count declares reads(args), so this caller exhibits an ordinary read through its own reference parameter and a pure row omits it. EFF-2 checks rows both ways.";
   let total = args_count(args: args);
   return total;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The rejection is in the helper above; this entry point does nothing.";
   return exit_status(code: 0_u8);
 }

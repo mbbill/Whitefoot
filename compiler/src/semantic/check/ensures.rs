@@ -733,6 +733,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let CheckedStatement::Let { binding, value, .. } = &checked.statement else {
                     return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
                 };
+                self.validate_clause_conversion_domains(
+                    ClauseKind::Postcondition(record),
+                    definition,
+                    value,
+                )?;
                 self.validate_clause_copy_local(
                     ClauseKind::Postcondition(record),
                     definition,
@@ -752,6 +757,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             self.validate_clause_condition(ClauseKind::Postcondition(record), clause, expression)?;
             let condition = self.check_expression(function, expression, bindings, 0)?;
+            self.validate_clause_conversion_domains(
+                ClauseKind::Postcondition(record),
+                clause,
+                &condition.expression,
+            )?;
             if condition.mode != CheckedMode::Own || condition.expression.ty() != CheckedType::Bool
             {
                 return self.issue_node(
@@ -1307,6 +1317,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .get(*ordinal as usize)
                         .and_then(Option::as_ref)
                         .is_some_and(|value| match value {
+                            PostconditionReturnDatum::ResultPayload { ty } => {
+                                matches!(ty, CheckedType::Integer(_))
+                            }
                             PostconditionReturnDatum::Place(place) => {
                                 matches!(place.ty, CheckedType::Integer(_))
                             }
@@ -1591,8 +1604,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         } else {
                             produced
                         };
-                        let datum =
-                            self.postcondition_return_datum(produced, node_path, binding_info)?;
+                        let datum = if selector.variant.is_some()
+                            && ordinal == selector.ordinal
+                            && produced.ty() != selector.result_type
+                        {
+                            Some(PostconditionReturnDatum::ResultPayload {
+                                ty: selector.result_type,
+                            })
+                        } else {
+                            self.postcondition_return_datum(produced, node_path, binding_info)?
+                        };
                         if datum.is_none() && named.contains(&ordinal) {
                             return self.invalid_postcondition_return(node_path);
                         }
@@ -1633,13 +1654,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// The `Ok` payload one routed ordinal produces at a return, `None` for a
-    /// direct `Err`, and the [FN-9] rejection for every other Result shape.
+    /// direct `Err`, and the whole value for an ordinary forwarded Result.
     fn postcondition_route_payload<'value>(
         &self,
         function: &FunctionSignature,
         ordinal: u32,
         value: &'value CheckedExpression,
-        node_path: &crate::NodePath,
+        _node_path: &crate::NodePath,
     ) -> Result<Option<&'value CheckedExpression>, CheckStop> {
         let declared = function
             .results
@@ -1671,7 +1692,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 fields,
                 ..
             } if *nominal == result_nominal && *variant == 1 && fields.len() == 1 => Ok(None),
-            _ => self.invalid_postcondition_return(node_path),
+            _ => Ok(Some(value)),
         }
     }
 

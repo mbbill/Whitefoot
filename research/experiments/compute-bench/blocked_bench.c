@@ -5,10 +5,10 @@
 #include "backend.h"
 #include "harness.h"
 
-extern void PAR_ENTRY(const uint64_t *, uint64_t, uint64_t, uint64_t, uint64_t **, uint64_t *);
-extern void SEQ_ENTRY(const uint64_t *, uint64_t, uint64_t, uint64_t, uint64_t **, uint64_t *);
-extern void PAR_RELEASE(uint64_t *, uint64_t);
-extern void SEQ_RELEASE(uint64_t *, uint64_t);
+extern void PAR_ENTRY(const uint64_t *, uint64_t, uint64_t, uint64_t, uint64_t **, uint64_t *, void **);
+extern void SEQ_ENTRY(const uint64_t *, uint64_t, uint64_t, uint64_t, uint64_t **, uint64_t *, void **);
+extern void PAR_RELEASE(void *);
+extern void SEQ_RELEASE(void *);
 
 typedef struct {
     const uint64_t *input;
@@ -85,11 +85,11 @@ static size_t input_count = 4194321, block_size = 4096, buckets = 256;
 static unsigned distribution;
 static char workload[112];
 static uint64_t *input, *expected, *output;
+static void *output_held;
 static blocked_release release_output;
 
-static void native_release(uint64_t *words, uint64_t count) {
-    (void)count;
-    free(words);
+static void native_release(void *held) {
+    free(held);
 }
 
 static void prepare(unsigned workers) {
@@ -114,12 +114,13 @@ static size_t call(const char *form, unsigned workers) {
         blocked_entry entry = sequential ? SEQ_ENTRY : PAR_ENTRY;
         release_output = sequential ? SEQ_RELEASE : PAR_RELEASE;
         uint64_t length = UINT64_MAX;
-        entry(input, input_count, block_size, buckets, &output, &length);
+        entry(input, input_count, block_size, buckets, &output, &length, &output_held);
         if (length != count) fail("generated result length");
     } else {
         const wfb_backend *backend = wfb_backend_named(form);
         if (!backend || !backend->map) fail("unknown reference");
         output = native_run(input, input_count, block_size, buckets, backend, workers);
+        output_held = output;
         release_output = native_release;
     }
     return count;
@@ -130,8 +131,9 @@ static size_t check(void) {
     size_t compared = compare(expected, output, count);
     for (size_t i = 0; i < input_count; ++i)
         if (input[i] != key_at(i, distribution)) fail("input modified");
-    release_output(output, count);
+    release_output(output_held);
     output = NULL;
+    output_held = NULL;
     return compared;
 }
 
@@ -139,9 +141,10 @@ static const wfb_backend *verify_backend;
 static unsigned verify_workers;
 
 static void native_entry(const uint64_t *values, uint64_t count, uint64_t block,
-                          uint64_t bins, uint64_t **out, uint64_t *length) {
+                          uint64_t bins, uint64_t **out, uint64_t *length, void **held) {
     *out = native_run(values, count, block, bins, verify_backend, verify_workers);
     *length = output_count(count, bins);
+    *held = *out;
 }
 
 static size_t verify(const char *form, unsigned workers) {

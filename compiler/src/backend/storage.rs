@@ -14,7 +14,7 @@
 use std::collections::BTreeSet;
 
 use crate::{
-    IrArrayRoot, IrFunction, IrInstruction, IrNominalId, IrNominalKind, IrOperation, IrProgram,
+    IrFunction, IrInstruction, IrNominalId, IrNominalKind, IrOperation, IrProgram,
     IrSourceArgument, IrSourceMode, IrTerminator, IrType, IrValueId,
 };
 
@@ -106,12 +106,18 @@ impl FunctionStoragePlan {
                 fields: Vec::new(),
             });
         }
-        let types = function
-            .value_types()
-            .iter()
-            .map(|ty| is_stored_aggregate(program, *ty).map(|stored| stored.then_some(*ty)))
-            .collect::<Result<Vec<_>, _>>()?;
         let graph = FlowGraph::from_function(program, function, sequential)?;
+        // Capture pruning preserves value IDs and their type metadata. Only
+        // definitions still present in the graph need backing; ordinary unused
+        // definitions keep their storage just as used definitions do.
+        let mut types = vec![None; function.value_types().len()];
+        for value in graph.definitions() {
+            let ty = *function
+                .value_types()
+                .get(value)
+                .ok_or(BackendFailure::InvalidIr)?;
+            types[value] = is_stored_aggregate(program, ty)?.then_some(ty);
+        }
         let returned: Vec<_> = function
             .blocks()
             .iter()
@@ -411,6 +417,20 @@ struct FlowInstruction {
 }
 
 impl FlowGraph {
+    fn definitions(&self) -> impl Iterator<Item = usize> + '_ {
+        self.entry_parameters
+            .iter()
+            .copied()
+            .chain(self.blocks.iter().flat_map(|block| {
+                block.parameters.iter().copied().chain(
+                    block
+                        .instructions
+                        .iter()
+                        .filter_map(|instruction| instruction.result),
+                )
+            }))
+    }
+
     /// Whether a later CFG visit can overwrite this block's static backing.
     /// No source ownership inference is needed for an acyclic initialization.
     fn reentered(&self, block: usize) -> bool {
@@ -480,7 +500,9 @@ impl FlowGraph {
                             FlowInstruction::from_ir(program, function, instruction, sequential)
                         })
                         .collect::<Result<Vec<_>, BackendFailure>>()?,
-                    terminal_uses: terminator_operands(block.terminator())
+                    terminal_uses: block
+                        .terminator()
+                        .operands()
                         .into_iter()
                         .map(index)
                         .collect(),
@@ -838,17 +860,13 @@ impl FlowInstruction {
                 };
                 (Some(index(*result)), reuse, exposed)
             }
-            IrInstruction::StoreBuffer { .. }
-            | IrInstruction::StoreSlice { .. }
+            IrInstruction::StoreSlice { .. }
             | IrInstruction::Store { .. }
             | IrInstruction::Drops(_) => (None, None, None),
         };
         Ok(Self {
             result,
-            operands: instruction_operands(instruction)
-                .into_iter()
-                .map(index)
-                .collect(),
+            operands: instruction.operands().into_iter().map(index).collect(),
             reuse,
             exposed,
         })
@@ -859,142 +877,6 @@ fn index(value: IrValueId) -> usize {
     value.ordinal() as usize
 }
 
-fn instruction_operands(instruction: &IrInstruction) -> Vec<IrValueId> {
-    match instruction {
-        IrInstruction::Define { operation, .. } => operation_operands(operation),
-        IrInstruction::StoreBuffer {
-            buffer,
-            index,
-            value,
-        } => vec![*buffer, *index, *value],
-        IrInstruction::StoreSlice {
-            slice,
-            index,
-            value,
-        } => vec![*slice, *index, *value],
-        IrInstruction::Store { address, value, .. } => vec![*address, *value],
-        IrInstruction::Drops(drops) => drops.iter().map(|drop| drop.operand()).collect(),
-    }
-}
-
-fn terminator_operands(terminator: &IrTerminator) -> Vec<IrValueId> {
-    match terminator {
-        IrTerminator::Unreachable => Vec::new(),
-        IrTerminator::Jump {
-            arguments, drops, ..
-        } => arguments
-            .iter()
-            .copied()
-            .chain(drops.iter().map(|drop| drop.operand()))
-            .collect(),
-        IrTerminator::Match { scrutinee, .. } => vec![*scrutinee],
-        IrTerminator::Return { value, drops } => std::iter::once(*value)
-            .chain(drops.iter().map(|drop| drop.operand()))
-            .collect(),
-    }
-}
-
-/// Every value read by an operation, including allocation providers, captures,
-/// and source aggregates. Exhaustive matching makes a new IR operation require
-/// a deliberate liveness decision before this module compiles.
-pub(super) fn operation_operands(operation: &IrOperation) -> Vec<IrValueId> {
-    match operation {
-        IrOperation::Constant(_) | IrOperation::ConstantAddress { .. } | IrOperation::Window => {
-            Vec::new()
-        }
-        IrOperation::Call { arguments, .. }
-        | IrOperation::Integer { arguments, .. }
-        | IrOperation::Float { arguments, .. }
-        | IrOperation::Boolean { arguments, .. } => arguments.clone(),
-        IrOperation::EnumEquality { arguments, .. } => arguments.to_vec(),
-        IrOperation::NumericConversion { value, .. }
-        | IrOperation::Reinterpret { value, .. }
-        | IrOperation::ArrayFill { value, .. }
-        | IrOperation::FullArrayConversion { value }
-        | IrOperation::BoxNew { value, .. }
-        | IrOperation::BoxTake { value, .. }
-        | IrOperation::BoxDeref { value, .. }
-        | IrOperation::RuntimeBoxPayload { owner: value, .. }
-        | IrOperation::RuntimeBoxOwner { payload: value, .. }
-        | IrOperation::AddressOf { value, .. } => vec![*value],
-        IrOperation::ArrayIndex { root, offset, .. } => array_root_operand(*root)
-            .into_iter()
-            .chain([*offset])
-            .collect(),
-        IrOperation::BufferFill { length, value, .. } => vec![*length, *value],
-        IrOperation::BufferMeasure { buffer } | IrOperation::SliceFromBuffer { buffer } => {
-            vec![*buffer]
-        }
-        IrOperation::ContainerMeasure { container, .. } => vec![*container],
-        IrOperation::RunIndex { run, offset, .. } => vec![*run, *offset],
-        IrOperation::RunBoundary { run, value, .. } => {
-            std::iter::once(*run).chain(value.iter().copied()).collect()
-        }
-        IrOperation::RunTaken { run, .. } | IrOperation::SliceFromRun { run } => vec![*run],
-        IrOperation::RunShift { run, index, .. } => vec![*run, *index],
-        IrOperation::RunInsert { run, index, value } => vec![*run, *index, *value],
-        IrOperation::RunTransfer {
-            destination,
-            source,
-            index,
-        } => vec![*destination, *source, *index],
-        IrOperation::WindowBlockNew { capacity, .. } => vec![*capacity],
-        IrOperation::WindowGrow { cell, capacity, .. } => vec![*cell, *capacity],
-        IrOperation::CellFree { value, .. } => vec![*value],
-        IrOperation::SliceRange { slice, start, end } => vec![*slice, *start, *end],
-        IrOperation::BufferIndex { buffer, offset, .. } => vec![*buffer, *offset],
-        IrOperation::BufferProbeSkip {
-            buffer,
-            index,
-            limit,
-            needles,
-        } => [*buffer, *index, *limit]
-            .into_iter()
-            .chain(needles.iter().copied())
-            .collect(),
-        IrOperation::SliceMeasure { slice } => vec![*slice],
-        IrOperation::SliceIndex { slice, offset, .. } => vec![*slice, *offset],
-        IrOperation::SliceAddress { slice, offset, .. } => vec![*slice, *offset],
-        IrOperation::ConstructStruct { fields, .. } | IrOperation::ConstructEnum { fields, .. } => {
-            fields.clone()
-        }
-        IrOperation::ProjectStruct { aggregate, .. }
-        | IrOperation::ProjectVariant { aggregate, .. } => vec![*aggregate],
-        IrOperation::InsertStruct {
-            aggregate, value, ..
-        } => vec![*aggregate, *value],
-        IrOperation::Load { address, .. } => vec![*address],
-        IrOperation::ProjectAddress {
-            address,
-            projection,
-        } => match projection {
-            crate::IrPlaceStep::Field { .. }
-            | crate::IrPlaceStep::BoxReferent { .. }
-            | crate::IrPlaceStep::EnumVariant { .. } => vec![*address],
-            crate::IrPlaceStep::RunElement { offset, .. }
-            | crate::IrPlaceStep::ArrayElement { offset, .. }
-            | crate::IrPlaceStep::BufferElement { offset, .. } => vec![*address, *offset],
-        },
-        IrOperation::LoopSplit {
-            seed,
-            lower,
-            upper,
-            captures,
-            ..
-        } => [*seed, *lower, *upper]
-            .into_iter()
-            .chain(captures.iter().copied())
-            .collect(),
-    }
-}
-
-fn array_root_operand(root: IrArrayRoot) -> Option<IrValueId> {
-    match root {
-        IrArrayRoot::Value(value) => Some(value),
-        IrArrayRoot::Constant(_) => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     #![allow(clippy::panic)]
@@ -1002,10 +884,7 @@ mod tests {
     use super::*;
 
     const AGGREGATE: IrType = IrType::Buffer {
-        element: crate::IrFlatElement::Integer {
-            width: 64,
-            signed: false,
-        },
+        element: crate::IrElement(0),
     };
 
     fn define(result: usize, operands: &[usize], reuse: Option<usize>) -> FlowInstruction {
@@ -1097,17 +976,17 @@ mod tests {
   right: u64;
 }
 
-fn split(value: own Row) -> (observed: own u64, updated: own Row) pure {
+fn split(value: Row) -> (observed: u64, updated: Row) pure {
   let observed = value.left;
   return observed, move value;
 }
 
-fn relay(value: own Row) -> result: own Row pure {
+fn relay(value: Row) -> result: Row pure {
   let (observed, updated) = split(value: move value);
   return move updated;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let value = Row(left: 3_u64, right: 5_u64);
   let result = relay(value: move value);
   if result.right != 5_u64 {
@@ -1533,19 +1412,19 @@ fn main() -> status: own ExitStatus pure {
   right: u64;
 }
 
-fn build(seed: own u64) -> result: own Row pure {
+fn build(seed: u64) -> result: Row pure {
   let after = seed +wrap 1_u64;
   return Row(left: seed, right: after);
 }
 
-fn exchange(old: &Row) -> result: own Row writes(old) {
+fn exchange(old: &Row) -> result: Row writes(old) {
   let previous = build(seed: 11_u64);
   swap(first: old, second: &previous);
   set deref(old).left = 99_u64;
   return move previous;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let first = build(seed: 11_u64);
   let previous = exchange(old: &first);
   if first.left != 99_u64 {
@@ -1635,15 +1514,15 @@ fn main() -> status: own ExitStatus pure {
   right: u64;
 }
 
-fn pass(value: own Row) -> result: own Row pure {
+fn pass(value: Row) -> result: Row pure {
   return move value;
 }
 
-fn relay(value: own Row) -> result: own Row pure {
+fn relay(value: Row) -> result: Row pure {
   return pass(value: move value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let row = Row(left: 3_u64, right: 5_u64);
   let kept = relay(value: move row);
   if kept.left != 3_u64 {
@@ -1685,15 +1564,15 @@ fn main() -> status: own ExitStatus pure {
   right: u64;
 }
 
-fn choose(left: own Row, right: own Row) -> result: own Row pure {
+fn choose(left: Row, right: Row) -> result: Row pure {
   return move right;
 }
 
-fn relay(left: own Row, right: own Row) -> result: own Row pure {
+fn relay(left: Row, right: Row) -> result: Row pure {
   return choose(left: move left, right: move right);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let left = Row(left: 1_u64, right: 2_u64);
   let right = Row(left: 3_u64, right: 4_u64);
   let kept = relay(left: move left, right: move right);
@@ -1740,17 +1619,17 @@ fn main() -> status: own ExitStatus pure {
   right: u64;
 }
 
-fn split(value: own Row) -> (updated: own Row, observed: own u64) pure {
+fn split(value: Row) -> (updated: Row, observed: u64) pure {
   let observed = value.left;
   return move value, observed;
 }
 
-fn relay(value: own Row) -> result: own Row pure {
+fn relay(value: Row) -> result: Row pure {
   let (updated, observed) = split(value: move value);
   return move updated;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let row = Row(left: 3_u64, right: 5_u64);
   let kept = relay(value: move row);
   if kept.left != 3_u64 {
@@ -1795,7 +1674,7 @@ fn main() -> status: own ExitStatus pure {
     #[test]
     fn checked_dense_ir_coalesces_without_changing_ownership() {
         with_program(
-            br#"fn main() -> status: own ExitStatus pure {
+            br#"fn main() -> status: ExitStatus pure {
   let built = slots_new::<u64, 8>();
   for @fill (
     at in 0_u64..8_u64,

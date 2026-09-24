@@ -3,10 +3,10 @@ nodrop struct Token {
 }
 
 interface Inspect<T: drop> {
-  fn inspect(value: &T) -> result: own unit pure;
+  fn inspect(value: &T) -> result: unit pure;
 }
 
-fn ignore(value: &Token) -> result: own unit pure {
+fn ignore(value: &Token) -> result: unit pure {
   doc "Observes nothing, so the row is empty.";
   return unit;
 }
@@ -15,7 +15,7 @@ binding TokenInspect : Inspect<Token> {
   inspect = ignore;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "PROV-6: every actual application must satisfy its group's written linearity bound. Satisfaction is the chain copy < affine < linear read left to right, so an affine bound accepts copy and affine arguments only; Token carries the linear modifier and is refused here. The matching affine application and the ownership-closed linear one are the other two variants.";
   return exit_status(code: 0_u8);
 }

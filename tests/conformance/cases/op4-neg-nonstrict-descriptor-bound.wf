@@ -1,4 +1,4 @@
-fn probe<const n: u64>(table: own Slots<u8, n>, idx: own u64) -> found: own u8 pure contract {
+fn probe<const n: u64>(table: Slots<u8, n>, idx: u64) -> found: u8 pure contract {
   define spare = table.len;
   requires idx <= spare;
 } {
@@ -6,6 +6,6 @@ fn probe<const n: u64>(table: own Slots<u8, n>, idx: own u64) -> found: own u8 p
   return byte;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

@@ -1,4 +1,4 @@
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "One frame-resident array of bytes is published twice through one range reference: an empty request and then a middle prefix, whose absolute accepted endpoint becomes the exit status.";
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
   close_directory(factory: &entry_factory, directory: move unused_cwd);
@@ -20,7 +20,7 @@ fn main(inputs: own Inputs) -> status: own ExitStatus pure {
   }
   match write_once(factory: &entry_factory, output: &out, source: window, start: 1_u64, end: 3_u64) {
     Ok(value: written) => {
-      let narrowed = cvt::<u64, u8>(written);
+      let narrowed = cvt.checked::<u64, u8>(written);
       match narrowed {
         Ok(value: code) => {
           return exit_status(code: code);

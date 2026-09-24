@@ -1,4 +1,4 @@
-fn exercise(args: &Args, cwd: &DirectoryRead, files: &HandleFactory) -> status: own ExitStatus reads(args), reads(cwd), writes(files) {
+fn exercise(args: &Args, cwd: &DirectoryRead, files: &HandleFactory) -> status: ExitStatus reads(args), reads(cwd), writes(files) {
   doc "A short success is progress, not end of input, so the drain keeps requesting until the host reports the end; the destination range reference is formed again for each request [REF-2].";
   match arg_get(args: args, position: 1_u64) {
     Ok(value: text) => {
@@ -36,7 +36,7 @@ fn exercise(args: &Args, cwd: &DirectoryRead, files: &HandleFactory) -> status: 
               }
               let scaled = total *wrap 10_u64;
               let mixed = scaled +wrap chunks;
-              let narrowed = cvt::<u64, u8>(mixed);
+              let narrowed = cvt.checked::<u64, u8>(mixed);
               match narrowed {
                 Ok(value: code) => {
                   close_read(factory: files, file: move file);
@@ -64,7 +64,7 @@ fn exercise(args: &Args, cwd: &DirectoryRead, files: &HandleFactory) -> status: 
   }
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "PRE-1 ordinary Inputs are destructured once; the referenced operation chain returns before the initial directory is explicitly closed on every exit.";
   let Inputs(args: args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
   let outcome = exercise(args: &args, cwd: &cwd, files: &files);

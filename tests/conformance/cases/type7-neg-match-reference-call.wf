@@ -2,14 +2,14 @@ enum State {
   Ready();
 }
 
-fn make() -> result: own Box<State> pure {
+fn make() -> result: Box<State> pure {
   doc "Hands back the cell itself, references never being returned [REF-3].";
   let state = Ready();
   let cell = box_new::<State>(value: state);
   return move cell;
 }
 
-fn inspect() -> function_result: own unit pure {
+fn inspect() -> function_result: unit pure {
   doc "TYPE-5: a cell-returning call yields an owned Box temporary, not the enclosed enum, so it cannot be matched directly; the result must be bound and reached with holder.inner [TYPE-9].";
   match make() {
     Ready() => {
@@ -18,6 +18,6 @@ fn inspect() -> function_result: own unit pure {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

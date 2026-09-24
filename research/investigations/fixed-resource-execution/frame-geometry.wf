@@ -1,0 +1,25 @@
+program no_heap;
+
+fn frame_sample(seed: own u64, index: own u64) -> result: own u64 pure contract {
+  requires index < 1024_u64;
+} {
+  let values = array_filled::<u64, 1024>(value: 0_u64);
+  for (at in 0_u64..1024_u64) {
+    let value = seed +wrap at;
+    set values[at] = value *wrap value;
+  }
+  return values[index];
+}
+
+fn main() -> status: own ExitStatus pure {
+  for (index in 0_u64..1024_u64) {
+    let actual = frame_sample(seed: 3_u64, index: index);
+    let value = 3_u64 +wrap index;
+    let expected = value *wrap value;
+    if actual == expected {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

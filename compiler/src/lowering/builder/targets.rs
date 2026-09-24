@@ -5,7 +5,7 @@
 //! need no runtime target evaluation; rebuilding one at commit uses the current
 //! root so writes performed by the right-hand side to sibling fields survive.
 
-use crate::semantic::{CheckedContainerRoot, CheckedPlaceStep, CheckedWritablePlace};
+use crate::semantic::CheckedWritablePlace;
 
 use super::*;
 
@@ -25,11 +25,6 @@ enum TargetStorage<'target> {
     Address {
         address: IrValueId,
         referent: IrAddressed,
-    },
-    Buffer {
-        buffer: IrValueId,
-        index: IrValueId,
-        target_domain: IrTargetDomainObligation,
     },
     Slice {
         slice: IrValueId,
@@ -94,44 +89,6 @@ impl IrBuilder<'_> {
                     } else {
                         TargetStorage::Place(place)
                     }
-                }
-            }
-            CheckedSetTarget::ArrayIndex(target) => {
-                let root = CheckedContainerRoot {
-                    root: crate::semantic::CheckedPlaceRoot::Binding(target.binding),
-                    path: target
-                        .fields
-                        .iter()
-                        .copied()
-                        .map(CheckedPlaceStep::Field)
-                        .collect(),
-                    ty: target.array_type,
-                };
-                let array = self.lower_place_address(&root)?;
-                let offset = self.expression(&target.offset)?;
-                self.check_target_offset(offset, target.target_domain.into())?;
-                let referent = IrAddressed::of(ty).ok_or(LoweringFailure::InvalidCheckedProgram)?;
-                let address = self.define(
-                    IrType::Address(referent),
-                    IrOperation::ProjectAddress {
-                        address: array,
-                        projection: IrPlaceStep::ArrayElement {
-                            offset,
-                            target_domain: target.target_domain.into(),
-                        },
-                    },
-                )?;
-                address_kind(address, referent)
-            }
-            CheckedSetTarget::BufferIndex(target) => {
-                let buffer = self.lower_buffer_borrow(&target.root)?;
-                let index = self.expression(&target.offset)?;
-                let target_domain = target.target_domain.into();
-                self.check_target_offset(index, target_domain)?;
-                TargetStorage::Buffer {
-                    buffer,
-                    index,
-                    target_domain,
                 }
             }
             // [REF-4, SET-1] one element position of the run a range names.
@@ -232,18 +189,6 @@ impl IrBuilder<'_> {
                     self.project_struct_path(root, &place.fields, false)?
                 }
             }
-            TargetStorage::Buffer {
-                buffer,
-                index,
-                target_domain,
-            } => self.define(
-                target.ty,
-                IrOperation::BufferIndex {
-                    buffer: *buffer,
-                    offset: *index,
-                    target_domain: *target_domain,
-                },
-            )?,
             TargetStorage::Slice {
                 slice,
                 index,
@@ -277,16 +222,6 @@ impl IrBuilder<'_> {
         match &target.kind {
             TargetStorage::Address { address, referent } => {
                 self.store_addressed(*address, value, *referent)
-            }
-            TargetStorage::Buffer { buffer, index, .. } => {
-                self.current_block_mut()?
-                    .instructions
-                    .push(IrInstruction::StoreBuffer {
-                        buffer: *buffer,
-                        index: *index,
-                        value,
-                    });
-                Ok(())
             }
             TargetStorage::Slice { slice, index, .. } => {
                 self.current_block_mut()?

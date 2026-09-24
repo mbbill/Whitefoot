@@ -1,4 +1,4 @@
-fn paired(flag: own Bool) -> result: own u64 pure {
+fn paired(flag: Bool) -> result: u64 pure {
   let first = 0_u64;
   let second = 0_u64;
   for (
@@ -15,7 +15,7 @@ fn paired(flag: own Bool) -> result: own u64 pure {
   return first + second;
 }
 
-fn sequential(flag: own Bool) -> result: own u64 pure {
+fn sequential(flag: Bool) -> result: u64 pure {
   let first = 0_u64;
   for (
     i in 0_u64..4_u64,
@@ -37,7 +37,7 @@ fn sequential(flag: own Bool) -> result: own u64 pure {
   return first + second;
 }
 
-fn count_byte() -> result: own u8 pure {
+fn count_byte() -> result: u8 pure {
   let count = 0_u8;
   for (
     i in 0_u64..255_u64,
@@ -48,6 +48,6 @@ fn count_byte() -> result: own u8 pure {
   return count;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

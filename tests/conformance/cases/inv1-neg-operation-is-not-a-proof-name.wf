@@ -1,0 +1,12 @@
+fn probe(x: u64, limit: u64) -> result: unit pure contract {
+  requires x <= limit;
+} {
+  invariant scaled: 3_u64 * x <= 3_u64 * limit {
+    use 3 times cvt;
+  }
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

@@ -1,4 +1,4 @@
-fn headroom(run: own Slots<u8, 8>) -> total: own u64 pure contract {
+fn headroom(run: Slots<u8, 8>) -> total: u64 pure contract {
   requires 8_u64 <= run.len;
 } {
   doc "A header invariant over a measure of the window it scans.";
@@ -12,7 +12,7 @@ fn headroom(run: own Slots<u8, 8>) -> total: own u64 pure contract {
   return seen;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A header invariant can use a window length as an affine factor alongside the counted range facts. This variant builds its window from a full array rather than from a counted fill.";
   let values = array_filled::<u8, 8>(value: 0_u8);
   let run = slots_from_array::<u8, 8>(values: values);

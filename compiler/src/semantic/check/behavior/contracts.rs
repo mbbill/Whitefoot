@@ -285,6 +285,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             requirements,
             postconditions: Vec::new(),
             body: None,
+            reference_origins: Vec::new(),
             body_disposition: Default::default(),
             allocates: false,
             call_separations: Vec::new(),
@@ -297,10 +298,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .map(|parameter| parameter.name.clone())
             .collect::<Vec<_>>();
         let elements = self.elements.borrow();
+        let const_parameter_types = self.const_generic_types().collect();
         let context = EntailmentContext {
+            declarations: self.resolved.declarations(),
             callees: &[],
             constants: &self.checked_constants,
             constant_ids: &self.constants,
+            const_parameter_types: &const_parameter_types,
             nominals: &self.nominals,
             elements: &elements,
             contract_queries: &[],

@@ -1,4 +1,4 @@
-fn make_path(name: own Slots<u8, 4>) -> result: own unit pure {
+fn make_path(name: Slots<u8, 4>) -> result: unit pure {
   doc "Attempts to construct a path from run bytes rather than the declared HostString parameter.";
   match relative_path(value: move name) {
     Ok(value: path) => {

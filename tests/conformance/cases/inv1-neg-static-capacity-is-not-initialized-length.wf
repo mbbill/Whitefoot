@@ -2,7 +2,7 @@ struct StaticBlock {
   bytes: Slots<u8, 4>;
 }
 
-fn take_static(free: &Slots<StaticBlock, 2>) -> block: own StaticBlock writes(free) contract {
+fn take_static(free: &Slots<StaticBlock, 2>) -> block: StaticBlock writes(free) contract {
   requires deref(free).len > 0_u64;
   ensures deref(free).len + 1_u64 == deref(entry(free)).len;
 } {
@@ -11,7 +11,7 @@ fn take_static(free: &Slots<StaticBlock, 2>) -> block: own StaticBlock writes(fr
   return move block;
 }
 
-fn return_static(free: &Slots<StaticBlock, 2>, block: own StaticBlock) -> result: own unit writes(free) contract {
+fn return_static(free: &Slots<StaticBlock, 2>, block: StaticBlock) -> result: unit writes(free) contract {
   requires deref(free).len < deref(free).cap;
   ensures deref(free).len == deref(entry(free)).len + 1_u64;
 } {
@@ -20,7 +20,7 @@ fn return_static(free: &Slots<StaticBlock, 2>, block: own StaticBlock) -> result
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "INV-1: the constant extent of Slots<u8, 4> fixes capacity, not initialized length. The helper publishes the pool's own measures and nothing about the block it hands back, and a window operation carries no measure through the slot it writes, so the caller cannot recover that the four slots are initialized even though it stocked a full window itself.";
   let bytes = array_filled::<u8, 4>(value: 0_u8);
   let payload = slots_from_array::<u8, 4>(values: bytes);

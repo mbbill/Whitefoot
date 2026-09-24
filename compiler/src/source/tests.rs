@@ -238,6 +238,57 @@ fn spans_are_half_open_and_bound_to_their_exact_source() {
 }
 
 #[test]
+fn compilation_inputs_are_nonempty_before_prelude_injection() {
+    for limits in [
+        SourceLimits::REPRESENTABLE,
+        SourceLimits {
+            max_sources: 0,
+            ..SourceLimits::REPRESENTABLE
+        },
+    ] {
+        assert_eq!(
+            SourceBundle::with_prelude(&[], limits),
+            Err(SourceBundleError::EmptySourceSequence)
+        );
+    }
+
+    // The lower-level transport remains usable by envelope-checking tools;
+    // the parser already rejects its empty form as an invocation failure.
+    assert!(SourceBundle::with_limits(&[], SourceLimits::REPRESENTABLE).is_ok());
+}
+
+#[test]
+fn prelude_injection_keeps_the_complete_bundle_source_ceiling() {
+    let inputs = [input("empty.wf", b"")];
+    let prelude_count = u32::try_from(crate::prelude::DECLARATIONS.len()).unwrap();
+    let exact = SourceLimits {
+        max_sources: prelude_count + 1,
+        ..SourceLimits::REPRESENTABLE
+    };
+    let bundle = SourceBundle::with_prelude(&inputs, exact).unwrap();
+    let first = bundle.file(SourceId::from_ordinal(0)).unwrap();
+    assert_eq!(first.logical_path().as_str(), "empty.wf");
+    assert!(first.bytes().is_empty());
+    assert!(first.prelude().is_none());
+    assert_eq!(bundle.len(), usize::try_from(prelude_count).unwrap() + 1);
+
+    assert_eq!(
+        SourceBundle::with_prelude(
+            &inputs,
+            SourceLimits {
+                max_sources: prelude_count,
+                ..exact
+            },
+        ),
+        Err(SourceBundleError::LimitExceeded {
+            limit: SourceLimit::Sources,
+            maximum: u64::from(prelude_count),
+            actual: u64::from(prelude_count) + 1,
+        })
+    );
+}
+
+#[test]
 fn supplied_prelude_paths_do_not_reserve_writer_logical_paths() {
     let inputs = [input("prelude/HostString.wf", b"writer bytes")];
     let bundle = SourceBundle::with_prelude(&inputs, SourceLimits::REPRESENTABLE).unwrap();

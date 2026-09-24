@@ -12,11 +12,11 @@ pub(crate) struct BindingId(pub(crate) u32);
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct ContractQueryId(pub(crate) u32);
 
-/// The three kinds a parameter, a binder, or a result may have [GRAM-3].
+/// The three checked value and reference kinds [GRAM-3].
 ///
-/// `mode := "own" | "&"`, plus the `&[T]` range-reference kind, which
-/// `param` writes without a `mode` node at all [GRAM-2, REF-4]. There is no
-/// permission marker and no region on a reference [REF-1], so the three
+/// A parameter's `T`, `&T`, or `&[T]` spelling determines its kind before
+/// substitution; a result always has value mode [GRAM-2, FN-1]. There is no
+/// permission marker and no region on a reference [REF-1], so these three
 /// kinds carry nothing: a reference is a local name for a path and the path
 /// is carried beside the binding, not inside its kind.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -271,8 +271,7 @@ pub(crate) struct CheckedSourceProof {
 }
 
 /// The checked source production that owns a value initializer. These forms
-/// share GIVE-1 typing and lowering, but only `value_if` is an ENT-5 relation
-/// carrier.
+/// share GIVE-1 typing and lowering and ENT-5 relation delivery.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum ValueInitializerKind {
     ValueIf,
@@ -417,20 +416,81 @@ impl FloatType {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum CheckedConversionMode {
+    Exact,
+    Checked,
+    Defined,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum CheckedNumericType {
     Integer(IntegerType),
     Float(FloatType),
+    GenericInteger(DeclarationId),
+    GenericFloat(DeclarationId),
 }
 
 impl CheckedNumericType {
+    pub(crate) const fn from_type(ty: CheckedType) -> Option<Self> {
+        match ty {
+            CheckedType::Integer(ty) => Some(Self::Integer(ty)),
+            CheckedType::Float(ty) => Some(Self::Float(ty)),
+            CheckedType::GenericInt(declaration) => Some(Self::GenericInteger(declaration)),
+            CheckedType::GenericFloat(declaration) => Some(Self::GenericFloat(declaration)),
+            _ => None,
+        }
+    }
+
     pub(crate) const fn ty(self) -> CheckedType {
         match self {
             Self::Integer(ty) => CheckedType::Integer(ty),
             Self::Float(ty) => CheckedType::Float(ty),
+            Self::GenericInteger(declaration) => CheckedType::GenericInt(declaration),
+            Self::GenericFloat(declaration) => CheckedType::GenericFloat(declaration),
         }
     }
 
-    pub(crate) const fn converts_totally_to(self, destination: Self) -> bool {
+    /// [OP-6] whole-type totality over the finite domains of numeric bounds.
+    /// Repeated parameters denote one type choice, so a symbolic identity is
+    /// total before the independent endpoint domains are enumerated.
+    pub(crate) fn converts_totally_to(self, destination: Self) -> bool {
+        if self == destination {
+            return true;
+        }
+        self.concrete_domain().iter().copied().all(|source| {
+            destination
+                .concrete_domain()
+                .iter()
+                .copied()
+                .all(|destination| {
+                    source == destination || source.concrete_converts_totally_to(destination)
+                })
+        })
+    }
+
+    pub(crate) fn concrete_domain(&self) -> &[Self] {
+        const INTEGERS: [CheckedNumericType; 8] = [
+            CheckedNumericType::Integer(IntegerType::I8),
+            CheckedNumericType::Integer(IntegerType::I16),
+            CheckedNumericType::Integer(IntegerType::I32),
+            CheckedNumericType::Integer(IntegerType::I64),
+            CheckedNumericType::Integer(IntegerType::U8),
+            CheckedNumericType::Integer(IntegerType::U16),
+            CheckedNumericType::Integer(IntegerType::U32),
+            CheckedNumericType::Integer(IntegerType::U64),
+        ];
+        const FLOATS: [CheckedNumericType; 2] = [
+            CheckedNumericType::Float(FloatType::F32),
+            CheckedNumericType::Float(FloatType::F64),
+        ];
+        match self {
+            Self::GenericInteger(_) => &INTEGERS,
+            Self::GenericFloat(_) => &FLOATS,
+            Self::Integer(_) | Self::Float(_) => std::slice::from_ref(self),
+        }
+    }
+
+    const fn concrete_converts_totally_to(self, destination: Self) -> bool {
         match (self, destination) {
             (Self::Integer(source), Self::Integer(destination)) => {
                 source.converts_totally_to(destination)
@@ -451,47 +511,7 @@ impl CheckedNumericType {
             | (Self::Float(destination), Self::Integer(source)) => {
                 source.width() == destination.width()
             }
-            (Self::Float(_), Self::Float(_)) => false,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) enum CheckedFlatElement {
-    Unit,
-    Bool,
-    Integer(IntegerType),
-    Float(FloatType),
-    GenericInt(DeclarationId),
-    GenericFloat(DeclarationId),
-    TagOnlyNominal(NominalId),
-    /// One affine aggregate element type: a region-free non-copy nominal
-    /// stored by value. [TYPE-2] admits this element domain for `buffer`
-    /// formation only; slices keep the flat copy domain, so
-    /// their element constructors never produce this variant.
-    Nominal(NominalId),
-    /// One unbounded type parameter in a run's element position [TYPE-9].
-    ///
-    /// [FN-2] makes generics monomorphization-only, so this variant belongs
-    /// to the symbolic pass alone: every concrete instance re-parses the
-    /// element position with its own substitution and produces a concrete
-    /// element. Only a run's element position forms it — a `buffer`, an
-    /// `array` and a `slice` keep the element domains [TYPE-2] gives them —
-    /// and it reaches no layout, no lowering, and no backend.
-    Generic(DeclarationId),
-}
-
-impl CheckedFlatElement {
-    pub(crate) const fn ty(self) -> CheckedType {
-        match self {
-            Self::Unit => CheckedType::Unit,
-            Self::Bool => CheckedType::Bool,
-            Self::Integer(ty) => CheckedType::Integer(ty),
-            Self::Float(ty) => CheckedType::Float(ty),
-            Self::GenericInt(declaration) => CheckedType::GenericInt(declaration),
-            Self::GenericFloat(declaration) => CheckedType::GenericFloat(declaration),
-            Self::TagOnlyNominal(id) | Self::Nominal(id) => CheckedType::Nominal(id),
-            Self::Generic(declaration) => CheckedType::Generic(declaration),
+            _ => false,
         }
     }
 }
@@ -540,7 +560,7 @@ pub(crate) enum CheckedType {
     /// One runtime-capacity `Array<T>` [TYPE-9]. Its `len` is the allocated
     /// slot count, the one runtime number its block stores [WIN-1, MSR-1].
     Buffer {
-        element: CheckedFlatElement,
+        element: CheckedElement,
     },
     /// One `Slots<T, N>`, `Slots<T>`, `Ring<T, N>` or `Ring<T>` [TYPE-9]: a
     /// run of `cap` slots whose initialized storage is the window of `len`
@@ -598,7 +618,9 @@ impl CheckedType {
                     .is_some_and(|ty| ty.is_concrete(elements))
                     && capacity.is_none_or(|capacity| capacity.is_concrete())
             }
-            Self::Buffer { element } => element.ty().is_concrete(elements),
+            Self::Buffer { element } => elements
+                .get(element.index())
+                .is_some_and(|ty| ty.is_concrete(elements)),
             Self::Unit | Self::Bool | Self::Integer(_) | Self::Float(_) | Self::Nominal(_) => true,
         }
     }
@@ -1520,7 +1542,8 @@ pub(crate) struct CheckedBufferRoot {
     /// [TYPE-9], so the path of one reached from an owner carries that
     /// content step and [OWN-7] and [ENT-5] compare it like any other.
     pub(crate) path: Vec<CheckedPlaceStep>,
-    pub(crate) element: CheckedFlatElement,
+    pub(crate) element: CheckedElement,
+    pub(crate) element_type: CheckedType,
 }
 
 impl CheckedBufferRoot {
@@ -1617,9 +1640,9 @@ impl CheckedRangeElementPlace {
 
     pub(crate) const fn element(&self) -> Option<CheckedElement> {
         match self.ty {
-            CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
-                Some(element)
-            }
+            CheckedType::Array { element, .. }
+            | CheckedType::Window { element, .. }
+            | CheckedType::Buffer { element } => Some(element),
             _ => None,
         }
     }
@@ -1735,9 +1758,9 @@ impl CheckedContainerRoot {
     /// The element type of a storage shape.
     pub(crate) const fn element(&self) -> Option<CheckedElement> {
         match self.ty {
-            CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => {
-                Some(element)
-            }
+            CheckedType::Array { element, .. }
+            | CheckedType::Window { element, .. }
+            | CheckedType::Buffer { element } => Some(element),
             _ => None,
         }
     }
@@ -1892,6 +1915,7 @@ pub(crate) enum CheckedExpression {
     },
     NumericConversion {
         carrier: NodePath,
+        mode: CheckedConversionMode,
         source: CheckedNumericType,
         destination: CheckedNumericType,
         value: Box<CheckedExpression>,
@@ -2119,7 +2143,7 @@ impl CheckedExpression {
             | Self::ContainerMeasure { .. }
             | Self::RangeMeasure { .. }
             | Self::RangeElementMeasure { .. } => CheckedType::Integer(IntegerType::U64),
-            Self::BufferIndex { root, .. } => root.element.ty(),
+            Self::BufferIndex { root, .. } => root.element_type,
             // [TYPE-8] `&[T]` is a reference kind, not a type: the value's
             // own type is the element type and its kind is its mode, exactly
             // as a `&[T]` parameter carries them [GRAM-2, REF-4].
@@ -2213,30 +2237,8 @@ pub(crate) struct CheckedWritablePlace {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedArraySetTarget {
-    pub(crate) binding: BindingId,
-    pub(crate) fields: Vec<u32>,
-    pub(crate) array_type: CheckedType,
-    pub(crate) element_type: CheckedType,
-    pub(crate) length: CheckedConst,
-    pub(crate) offset: CheckedExpression,
-    pub(crate) obligation: NodePath,
-    pub(crate) target_domain: CheckedTargetDomainObligation,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedBufferSetTarget {
-    pub(crate) root: CheckedBufferRoot,
-    pub(crate) offset: CheckedExpression,
-    pub(crate) obligation: NodePath,
-    pub(crate) target_domain: CheckedTargetDomainObligation,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedSetTarget {
     Place(CheckedWritablePlace),
-    ArrayIndex(Box<CheckedArraySetTarget>),
-    BufferIndex(Box<CheckedBufferSetTarget>),
     /// One element position of the run a range reference names [REF-4].
     RangeIndex(Box<CheckedRangeElementPlace>),
     /// A typed storage path including all subscripts and terminal fields.
@@ -2247,8 +2249,6 @@ impl CheckedSetTarget {
     pub(crate) fn binding(&self) -> BindingId {
         match self {
             Self::Place(target) => target.binding,
-            Self::ArrayIndex(target) => target.binding,
-            Self::BufferIndex(target) => target.root.binding,
             Self::RangeIndex(target) => target.root.binding,
             Self::Storage(target) => target
                 .binding()
@@ -2259,8 +2259,6 @@ impl CheckedSetTarget {
     pub(crate) fn ty(&self) -> CheckedType {
         match self {
             Self::Place(target) => target.ty,
-            Self::ArrayIndex(target) => target.element_type,
-            Self::BufferIndex(target) => target.root.element.ty(),
             Self::RangeIndex(target) => target.ty,
             Self::Storage(target) => target.ty,
         }
@@ -2271,19 +2269,6 @@ impl CheckedSetTarget {
 pub(crate) struct PropagationContext {
     pub(crate) function: String,
     pub(crate) node_path: NodePath,
-}
-
-/// One outer reference whose value may cross this loop's normal backedge.
-///
-/// `paths` are the finite static-shape or descendant header covers [REF-1]. Every
-/// index and range capture that a continuing rebinding may replace carries a
-/// compiler-owned loop generation rather than the source occurrence in the
-/// body. This is proof metadata for place resolution and permission only;
-/// lowering carries the binding's ordinary runtime reference value.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedLoopCarriedReference {
-    pub(crate) binding: BindingId,
-    pub(crate) paths: Vec<super::places::ResolvedPlace>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2338,6 +2323,7 @@ pub(crate) enum CheckedStatement {
     /// compiler-derived release it runs [STOR-3].
     DropExpression {
         value: CheckedExpression,
+        drops: Vec<CheckedProjectedDrop>,
     },
     /// A finite source-written local invariant checked before it is published
     /// and erased before lowering. It has no runtime expression, effect,
@@ -2382,7 +2368,6 @@ pub(crate) enum CheckedStatement {
     },
     Loop {
         id: CheckedLoopId,
-        carried_references: Vec<CheckedLoopCarriedReference>,
         /// Formed source invariants awaiting the normal semantic proof
         /// checker. Their presence alone grants no authority.
         invariants: Vec<CheckedLoopInvariant>,
@@ -2391,7 +2376,6 @@ pub(crate) enum CheckedStatement {
     },
     CountedRange {
         id: CheckedLoopId,
-        carried_references: Vec<CheckedLoopCarriedReference>,
         node_path: NodePath,
         binder: BindingId,
         lower: CheckedExpression,
@@ -2498,6 +2482,12 @@ pub(crate) struct CheckedFunction {
     /// clause at every selected exit.
     pub(crate) postconditions: Vec<super::postcondition::CheckedPostcondition>,
     pub(crate) body: Option<Vec<CheckedStatement>>,
+    /// Function-wide union of the resolved paths each reference holder names
+    /// during the final structural walk, indexed by `BindingId`. Roots are
+    /// owned bindings, constants or immutable incoming-reference anchors,
+    /// never mutable reference-holder links to expand again. This inventory is
+    /// not authority for the holder's target at any particular program point.
+    pub(crate) reference_origins: Vec<Vec<super::places::ResolvedPlace>>,
     /// Whether the independently established body-entry requirements close to
     /// a contradiction. The contradiction is retained proof metadata.
     pub(crate) body_disposition: CheckedBodyDisposition,
@@ -2517,25 +2507,35 @@ pub(crate) struct CheckedFunction {
     pub(crate) entailment: super::entailment::FunctionEntailment,
 }
 
-/// One [EFF-5] pairwise comparison the checker could not settle by syntax.
+/// One [OWN-7] separation question the checker could not settle by syntax.
 ///
-/// Two substituted effect paths overlap [OWN-7] and at least one of them is a
-/// write, so the call is admitted only where the two positions are proved
-/// distinct. The checker holds the actual argument spellings and the live
+/// A mandatory call-effect pair [EFF-5] or a write's preservation of a later
+/// reference use [REF-2] requires the positions to be proved distinct.
+/// The checker holds the actual argument spellings and the live
 /// reference state, so it owns the comparison; what it cannot do is discharge
 /// the index or range goal, which is the fixed [ENT-6] families' work under
 /// [MSR-4]'s disposition. This record is that handover, and the diagnostic it
-/// carries cites EFF-5, or OP-11 for exchange, at the complete `call`.
+/// carries cites EFF-5 or OP-11 at the call, or REF-2 at the reference use.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedCallSeparation {
-    /// The complete `call` the diagnostic is reported at.
+    /// The call or set commit whose pre-write proof context answers the query.
     pub(crate) site: NodePath,
     /// Exchange's possible ancestry is refused by OP-11, rather than EFF-5.
     pub(crate) exchange: bool,
+    /// A demanded REF-2 use; the separation is still proved at `site`, before
+    /// the invalidating write, and diagnosed at this later use.
+    pub(crate) reference_use: Option<CheckedReferencePreservationUse>,
     pub(crate) positions: Vec<CheckedCallSeparationPositions>,
     /// The two substituted paths as the diagnostic renders them.
     pub(crate) left_spelling: String,
     pub(crate) right_spelling: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedReferencePreservationUse {
+    pub(crate) site: NodePath,
+    pub(crate) binder: String,
+    pub(crate) event: &'static str,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

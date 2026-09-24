@@ -7,7 +7,7 @@ struct Envelope {
   packet: Packet;
 }
 
-fn inspect(envelope: &Envelope) -> result: own u64 reads(envelope.packet) {
+fn inspect(envelope: &Envelope) -> result: u64 reads(envelope.packet) {
   doc "Matching through a struct projection binds the cell payload as a reference, and the window length behind that cell is read through it.";
   match deref(envelope).packet {
     Data(bytes: payload) => {
@@ -19,7 +19,7 @@ fn inspect(envelope: &Envelope) -> result: own u64 reads(envelope.packet) {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let bytes = box_slots_new::<u8>(capacity: 3_u64);
   place_back(window: &bytes.inner, value: 7_u8);
   place_back(window: &bytes.inner, value: 7_u8);

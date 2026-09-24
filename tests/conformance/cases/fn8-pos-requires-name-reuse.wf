@@ -1,4 +1,4 @@
-fn increment(x: own i32) -> result: own i32 pure contract {
+fn increment(x: i32) -> result: i32 pure contract {
   define value = x >= 0_i32;
   requires value;
 } {
@@ -7,7 +7,7 @@ fn increment(x: own i32) -> result: own i32 pure contract {
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let value = increment(x: 7_i32);
   if value == 8_i32 {
   } else {

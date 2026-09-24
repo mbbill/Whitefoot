@@ -1,4 +1,4 @@
-fn filled<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure contract {
+fn filled<T: copy, const n: u64>(value: T) -> result: Slots<T, n> pure contract {
   ensures result.len >= n;
   ensures result.cap <= result.len;
 } {
@@ -14,14 +14,14 @@ fn filled<T: copy, const n: u64>(value: own T) -> result: own Slots<T, n> pure c
   return move built;
 }
 
-fn transposed(run: own Slots<u8, 8>, at: own u64) -> value: own u8 pure contract {
+fn transposed(run: Slots<u8, 8>, at: u64) -> value: u8 pure contract {
   requires at + 2_u64 <= run.len;
 } {
   doc "Reads one element under a requirement that leaves a second element beyond it.";
   return run[at];
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "MSR-5, FN-8: a requirement side carries the whole affine expression rather than the difference-bound fragment a published relation is narrowed to, so at + 2_u64 <= run.len is both the caller's obligation and the premise the callee's own subscript bound discharges from.";
   let run = filled::<u8, 8>(value: 4_u8);
   let value = transposed(run: move run, at: 3_u64);

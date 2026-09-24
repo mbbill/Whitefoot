@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "INV-1 and OP-4: an invariant evaluates nothing and reads no storage, but a measure over a place whose subscripts are not all discharged is no term there either. The run below is empty, so the subscript's own `0 < table.len` is underivable at the statement that writes it.";
   let table = slots_new::<Slots<u8, 4>, 2>();
   invariant flat: table[0_u64].len <= table[0_u64].cap;

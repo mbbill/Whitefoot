@@ -9,24 +9,24 @@ fn concrete_options_reuse_the_nominal_path_for_supported_payloads() {
   right: u32;
 }
 
-fn scalar(value: own i32) -> result: own Option<i32> pure {
+fn scalar(value: i32) -> result: Option<i32> pure {
   return Some<i32>(value: value);
 }
 
-fn aggregate(value: own Pair) -> result: own Option<Pair> pure {
+fn aggregate(value: Pair) -> result: Option<Pair> pure {
   return Some<Pair>(value: value);
 }
 
-fn nested() -> result: own Option<Option<u8>> pure {
+fn nested() -> result: Option<Option<u8>> pure {
   let inner = Some<u8>(value: 7_u8);
   return Some<Option<u8>>(value: inner);
 }
 
-fn absent() -> result: own Option<Pair> pure {
+fn absent() -> result: Option<Pair> pure {
   return None<Pair>();
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -62,7 +62,7 @@ fn main() -> status: own ExitStatus pure {
 /// variant-dependent, and one drop on the return edge.
 #[test]
 fn option_of_a_resource_bearing_payload_uses_variant_dependent_cleanup() {
-    let source = b"fn abandon(value: own Option<Box<u64>>) -> result: own unit pure {\n  return unit;\n}\n\nfn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    let source = b"fn abandon(value: Option<Box<u64>>) -> result: unit pure {\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
             panic!("Option<Box<u64>> must check: {outcome:?}");

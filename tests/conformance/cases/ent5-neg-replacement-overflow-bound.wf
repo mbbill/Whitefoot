@@ -1,4 +1,4 @@
-fn f(x: own u8, w: own u8) -> result: own u8 pure contract {
+fn f(x: u8, w: u8) -> result: u8 pure contract {
   requires x <= 5_u8;
 } {
   set x = w;
@@ -6,6 +6,6 @@ fn f(x: own u8, w: own u8) -> result: own u8 pure contract {
   return z;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

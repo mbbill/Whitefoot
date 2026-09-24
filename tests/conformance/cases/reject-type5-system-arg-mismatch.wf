@@ -1,9 +1,9 @@
-fn take_args(args: own Args) -> function_result: own unit pure {
+fn take_args(args: Args) -> function_result: unit pure {
   doc "A helper accepts the admitted opaque Args type, while its command caller passes unit. Exact argument conformance rejects the value-type mismatch under TYPE-5.";
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   take_args(args: unit);
   return exit_status(code: 0_u8);
 }

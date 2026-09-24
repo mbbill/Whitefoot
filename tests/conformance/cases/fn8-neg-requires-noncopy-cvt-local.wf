@@ -2,7 +2,7 @@ nocopy struct ProofToken {
   value: u8;
 }
 
-fn guarded(value: own ProofToken) -> result: own unit pure contract {
+fn guarded(value: ProofToken) -> result: unit pure contract {
   define saved = value;
   define ok = value.value >= 0_u8;
   requires ok;
@@ -11,6 +11,6 @@ fn guarded(value: own ProofToken) -> result: own unit pure contract {
   return unit;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

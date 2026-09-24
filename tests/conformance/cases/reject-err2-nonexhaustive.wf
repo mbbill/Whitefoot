@@ -4,7 +4,7 @@ enum Sign {
   Pos();
 }
 
-fn bad(s: own Sign) -> function_result: own u64 pure {
+fn bad(s: Sign) -> function_result: u64 pure {
   match s {
     Neg() => {
       return 1_u64;
@@ -15,6 +15,6 @@ fn bad(s: own Sign) -> function_result: own u64 pure {
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

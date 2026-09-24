@@ -1,4 +1,4 @@
-fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+fn factory_refusal(error: &IoError) -> result: Bool reads(error) {
   match deref(error) {
     NotFound(code: native_code, origin: native_origin) => {
       return False();
@@ -87,7 +87,7 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
   }
 }
 
-fn component() -> made: own Slots<u8, 16> pure contract {
+fn component() -> made: Slots<u8, 16> pure contract {
   ensures made.len >= 16_u64;
   ensures made.cap <= made.len;
 } {
@@ -103,7 +103,7 @@ fn component() -> made: own Slots<u8, 16> pure contract {
   return move built;
 }
 
-fn fold_prefix(source: &[u8], produced: own u64, seed: own u64) -> result: own u64 reads(source) {
+fn fold_prefix(source: &[u8], produced: u64, seed: u64) -> result: u64 reads(source) {
   doc "Folds one read prefix into a running order-sensitive checksum.";
   let spare = deref(source).len;
   let sum = seed;
@@ -127,7 +127,7 @@ fn fold_prefix(source: &[u8], produced: own u64, seed: own u64) -> result: own u
   return sum;
 }
 
-fn exercise(cwd: &DirectoryRead, files: &HandleFactory) -> status: own ExitStatus reads(cwd), writes(files) {
+fn exercise(cwd: &DirectoryRead, files: &HandleFactory) -> status: ExitStatus reads(cwd), writes(files) {
   doc "One scratch run is hoisted out of the scan: each iteration writes it through a range reference handed to read_at and then reads it through a second range reference.";
   let data = slots_new::<u8, 64>();
   for @prime (
@@ -171,7 +171,7 @@ fn exercise(cwd: &DirectoryRead, files: &HandleFactory) -> status: own ExitStatu
   return exit_status(code: 0_u8);
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "PRE-1 ordinary Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
   let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: files, stdin: unused_stdin) = move inputs;
   let outcome = exercise(cwd: &cwd, files: &files);

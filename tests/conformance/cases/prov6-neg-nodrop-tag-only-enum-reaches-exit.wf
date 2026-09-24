@@ -3,7 +3,7 @@ nodrop enum Ticket {
   Closed();
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "A tag-only declaration may remove drop, but the resulting linear value must still leave its scope by an explicit whole-value consume. This live ticket reaches the return edge and is refused.";
   let ticket = Open();
   return exit_status(code: 0_u8);

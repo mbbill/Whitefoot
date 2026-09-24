@@ -1,4 +1,4 @@
-fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
+fn factory_refusal(error: &IoError) -> result: Bool reads(error) {
   match deref(error) {
     NotFound(code: native_code, origin: native_origin) => {
       return False();
@@ -87,7 +87,7 @@ fn factory_refusal(error: &IoError) -> result: own Bool reads(error) {
   }
 }
 
-fn socket_class(error: own IoError) -> result: own u8 pure {
+fn socket_class(error: IoError) -> result: u8 pure {
   doc "Matches an ordinary IoError value to the distinctions a loopback program reports [PRE-1, ERR-2].";
   match error {
     NotFound(code: c, origin: o) => {
@@ -177,7 +177,7 @@ fn socket_class(error: own IoError) -> result: own u8 pure {
   }
 }
 
-fn byte_at(store: &[u8], index: own u64) -> result: own u8 reads(store) {
+fn byte_at(store: &[u8], index: u64) -> result: u8 reads(store) {
   doc "Reads one stored byte, delivering zero for a position the range reference does not hold.";
   let room = deref(store).len;
   let inside = index < room;
@@ -188,7 +188,7 @@ fn byte_at(store: &[u8], index: own u64) -> result: own u8 reads(store) {
   return 0_u8;
 }
 
-fn parse_port(digits: &[u8], length: own u64) -> result: own u16 reads(digits) {
+fn parse_port(digits: &[u8], length: u64) -> result: u16 reads(digits) {
   doc "Reads one decimal port out of the argument bytes the invocation supplied; a byte that is not a digit ends the number.";
   let port = 0_u16;
   let ended = 0_u8;
@@ -220,7 +220,7 @@ fn parse_port(digits: &[u8], length: own u64) -> result: own u16 reads(digits) {
   return port;
 }
 
-fn send_all(send: &TcpSend, source: &[u8], length: own u64) -> result: own Result<unit, IoError> reads(source), writes(send) contract {
+fn send_all(send: &TcpSend, source: &[u8], length: u64) -> result: Result<unit, IoError> reads(source), writes(send) contract {
   define source_length = deref(source).len;
   requires length <= source_length;
 } {
@@ -244,7 +244,7 @@ fn send_all(send: &TcpSend, source: &[u8], length: own u64) -> result: own Resul
   return Ok<unit, IoError>(value: unit);
 }
 
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "Listens on the loopback port named by the invocation, takes one connection, and returns every byte the peer sends until the peer stops sending through ordinary prelude calls [PRE-1]. The prelude declares no operation reporting a listener's own local address, so the port is the caller's choice and arrives as an argument. The argument scratch and the echo chunk are two inline Slots windows of this frame, each reached through one range reference [TYPE-9, REF-4].";
   let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: handles, stdin: unused_stdin) = move inputs;
   close_directory(factory: &handles, directory: move unused_cwd);

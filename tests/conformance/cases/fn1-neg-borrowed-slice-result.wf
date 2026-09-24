@@ -1,9 +1,9 @@
 fn borrowed_slice(value: &[u8]) -> result: &[u8] pure {
-  doc "A result is written `own type` [GRAM-3], so no reference kind derives in result position and a function cannot hand its range reference back [REF-3, FN-1].";
+  doc "A result writes a value type [GRAM-3], so no reference kind derives in result position and a function cannot hand its range reference back [REF-3, FN-1].";
   return value;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "No construction is needed to exercise the result shape.";
   return exit_status(code: 0_u8);
 }

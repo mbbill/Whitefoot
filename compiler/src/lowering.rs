@@ -1,16 +1,18 @@
-//! Target-independent lowering from the semantically checked active Whitefoot specification.
+//! Typed control-flow lowering from the semantically checked Whitefoot specification.
 //!
 //! The private IR records exact value types, nominal construction/projection,
 //! direct calls, erased source proofs, and explicit control-flow edges. It performs
 //! no source admission, label lookup, exhaustiveness decision, or ownership
-//! judgment.
+//! judgment. Optional loop actualization uses the selected target's lane-frame
+//! layout; the value and control-flow representation remains target-neutral.
 
 use crate::semantic::{
-    CheckedBooleanOperation, CheckedElement, CheckedEnumType, CheckedFlatElement,
+    CheckedBooleanOperation, CheckedConversionMode, CheckedElement, CheckedEnumType,
     CheckedFloatOperation, CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude,
     CheckedNumericType, CheckedProgram, CheckedTargetDomainObligation, CheckedType,
 };
 
+mod operands;
 mod physical_types;
 mod specialize;
 
@@ -85,7 +87,7 @@ impl IrNominalId {
         self.0
     }
 
-    const fn index(self) -> usize {
+    pub(crate) const fn index(self) -> usize {
         self.0 as usize
     }
 }
@@ -104,39 +106,10 @@ impl IrConstantId {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum IrFlatElement {
-    Unit,
-    Bool,
-    Integer {
-        width: u8,
-        signed: bool,
-    },
-    Float {
-        width: u8,
-    },
-    TagOnlyNominal(IrNominalId),
-    /// One affine aggregate element: a non-copy nominal stored by value.
-    /// Only `buffer` element positions carry this variant [TYPE-2].
-    Nominal(IrNominalId),
-}
-
-impl IrFlatElement {
-    pub const fn ty(self) -> IrType {
-        match self {
-            Self::Unit => IrType::Unit,
-            Self::Bool => IrType::Bool,
-            Self::Integer { width, signed } => IrType::Integer { width, signed },
-            Self::Float { width } => IrType::Float { width },
-            Self::TagOnlyNominal(id) | Self::Nominal(id) => IrType::Nominal(id),
-        }
-    }
-}
-
 /// The complete type of an array or run element, interned in its program's type table.
 /// Structural nesting uses handles; only nominal edges can close a type graph.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct IrElement(u32);
+pub struct IrElement(pub(crate) u32);
 
 impl IrElement {
     pub(crate) const fn index(self) -> usize {
@@ -161,7 +134,7 @@ pub enum IrAddressed {
     },
     Nominal(IrNominalId),
     Buffer {
-        element: IrFlatElement,
+        element: IrElement,
     },
     /// Dense inline array storage reached through a checked borrow or target.
     Array {
@@ -263,7 +236,7 @@ pub enum IrType {
     /// the `Box` value is that pointer — and no value of this type is ever
     /// copied, passed, or stored.
     Buffer {
-        element: IrFlatElement,
+        element: IrElement,
     },
     /// One `&[T]` range reference [REF-4]: a pointer to the first element of
     /// the range and the element count, which is its one measure [MSR-1].
@@ -345,35 +318,6 @@ fn lower_element(
         .copied()
         .flatten()
         .ok_or(LoweringFailure::InvalidCheckedProgram)
-}
-
-fn lower_flat_element(
-    erasure: TypeLowering<'_>,
-    value: CheckedFlatElement,
-) -> Result<IrFlatElement, LoweringFailure> {
-    Ok(match value {
-        CheckedFlatElement::Unit => IrFlatElement::Unit,
-        CheckedFlatElement::Bool => IrFlatElement::Bool,
-        CheckedFlatElement::Integer(integer) => IrFlatElement::Integer {
-            width: integer.width(),
-            signed: integer.signed(),
-        },
-        CheckedFlatElement::Float(float) => IrFlatElement::Float {
-            width: float.width(),
-        },
-        // [FN-2] a symbolic element belongs to the pre-IR pass alone: every
-        // lowered instance is concrete.
-        CheckedFlatElement::GenericInt(_) | CheckedFlatElement::Generic(_) => {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
-        CheckedFlatElement::GenericFloat(_) => {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
-        CheckedFlatElement::TagOnlyNominal(id) => {
-            IrFlatElement::TagOnlyNominal(erased_nominal(erasure, id))
-        }
-        CheckedFlatElement::Nominal(id) => IrFlatElement::Nominal(erased_nominal(erasure, id)),
-    })
 }
 
 /// Whether a value of this type derives any release work at all [STOR-3].
@@ -491,7 +435,7 @@ fn lower_type(erasure: TypeLowering<'_>, value: CheckedType) -> Result<IrType, L
                 .ok_or(LoweringFailure::InvalidCheckedProgram)?,
         },
         CheckedType::Buffer { element } => IrType::Buffer {
-            element: lower_flat_element(erasure, element)?,
+            element: lower_element(erasure, element)?,
         },
         CheckedType::Window {
             shape,
@@ -511,8 +455,8 @@ fn lower_type(erasure: TypeLowering<'_>, value: CheckedType) -> Result<IrType, L
     })
 }
 
-const fn lower_numeric_type(value: CheckedNumericType) -> IrType {
-    match value {
+const fn lower_numeric_type(value: CheckedNumericType) -> Result<IrType, LoweringFailure> {
+    Ok(match value {
         CheckedNumericType::Integer(integer) => IrType::Integer {
             width: integer.width(),
             signed: integer.signed(),
@@ -520,7 +464,10 @@ const fn lower_numeric_type(value: CheckedNumericType) -> IrType {
         CheckedNumericType::Float(float) => IrType::Float {
             width: float.width(),
         },
-    }
+        CheckedNumericType::GenericInteger(_) | CheckedNumericType::GenericFloat(_) => {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+    })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -738,6 +685,25 @@ pub enum IrBooleanOperation {
     Or,
     ExclusiveOr,
     Not,
+}
+
+/// The source-selected conversion contract, retained independently of its
+/// concrete endpoints and result representation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IrConversionMode {
+    Exact,
+    Checked,
+    Defined,
+}
+
+impl From<CheckedConversionMode> for IrConversionMode {
+    fn from(value: CheckedConversionMode) -> Self {
+        match value {
+            CheckedConversionMode::Exact => Self::Exact,
+            CheckedConversionMode::Checked => Self::Checked,
+            CheckedConversionMode::Defined => Self::Defined,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1049,6 +1015,12 @@ pub enum IrWorkEstimate {
     Constant(u64),
     Value(IrValueId),
     Length(IrValueId),
+    /// The runtime Array length behind an original, read-only Box reference
+    /// formal, or its exact capture in a synthesized chunk. The marker on
+    /// `IrFunction` supplies the no-write fact; the observation must also
+    /// originate in an exhibited typed Array-length read. An address or a
+    /// captured Box owner alone does not authorize the observation.
+    BoxArrayLength(IrValueId),
     Sum(Vec<Self>),
     Product(Box<Self>, Box<Self>),
     Difference(Box<Self>, Box<Self>),
@@ -1074,6 +1046,7 @@ pub enum IrOperation {
         arguments: Vec<IrValueId>,
     },
     NumericConversion {
+        mode: IrConversionMode,
         source_type: IrType,
         destination_type: IrType,
         value: IrValueId,
@@ -1153,16 +1126,16 @@ pub enum IrOperation {
         offset: IrValueId,
         target_domain: IrTargetDomainObligation,
     },
-    /// [BLK-3] the run one boundary operation hands back: one store at the
-    /// boundary slot for a placement, and one boundary arithmetic for both.
+    /// [OP-10] place one element at a window boundary and move that boundary.
     RunBoundary {
         row: IrBoundary,
         run: IrValueId,
-        /// The placed element; a removal row has none.
+        /// The placed element. Takes use the complete `RunTaken` operation.
         value: Option<IrValueId>,
     },
-    /// [BLK-3] the element a removal row hands back, read from the boundary
-    /// slot before the boundary moves.
+    /// [OP-10] take one element and move the window boundary. The physical
+    /// element address is captured before changing the descriptor; no source
+    /// observation occurs between that change and reading the captured slot.
     RunTaken {
         row: IrBoundary,
         run: IrValueId,
@@ -1403,11 +1376,6 @@ pub enum IrInstruction {
         result: IrValueId,
         ty: IrType,
         operation: IrOperation,
-    },
-    StoreBuffer {
-        buffer: IrValueId,
-        index: IrValueId,
-        value: IrValueId,
     },
     /// One element-position store through an exclusive view [SET-1,
     /// VIEW-1]. The descriptor is unchanged; the storage written is the
@@ -1790,6 +1758,15 @@ pub(crate) struct IrCountedRange {
 pub struct IrFunction {
     name: String,
     parameters: Vec<(IrValueId, IrType)>,
+    /// Original reference formals whose roots have no declared write, copied
+    /// from checked effects. Only their exact direct chunk captures inherit
+    /// the fact: changed reference values and reconstructed owned captures do
+    /// not. This marker alone is not a lifetime certificate: a BoxArrayLength
+    /// observation must originate in a checked typed read. EFF-2 retains that
+    /// read even in a zero-trip body, and EFF-5 separates it from reference
+    /// writes and by-value consumption throughout the call. Scheduling uses
+    /// those checked facts without inferring new lifetimes.
+    readonly_reference_parameters: Vec<IrValueId>,
     /// Checked source modes, or `None` for a compiler-synthesized function.
     /// Internal transfer contracts must not be invented from representation.
     source_signature: Option<IrSourceSignature>,
@@ -1867,6 +1844,9 @@ pub struct IrProgram<'classified, 'lexed, 'source> {
     actualization: Vec<String>,
     sequential_compute_refusal: bool,
     recursion_budget: Option<RecursionBudget>,
+    /// Construction work is not recoverable from final IR after a refusal.
+    #[cfg(test)]
+    loop_candidate_constructions: usize,
 }
 
 impl IrProgram<'_, '_, '_> {
@@ -1927,6 +1907,9 @@ impl IrProgram<'_, '_, '_> {
 pub enum LoweringFailure {
     InvalidCheckedProgram,
     CounterOverflow,
+    /// A target-stage layout check during optional loop actualization failed.
+    /// Semantic acceptance has already completed; this is no source verdict.
+    TargetLayout(crate::backend::target::TargetLayoutFailure),
     /// Capability stop: one [PRE-1] record the compiler itself owns -- a
     /// window operation [OP-10], `swap` [OP-11], a construction function
     /// [OP-13] or `free_empty` [OP-14] -- whose body this version does not
@@ -1943,6 +1926,15 @@ pub enum LoweringFailure {
     /// module that names a symbol nothing defines. It is never a source
     /// verdict, so the driver reports it as the unsupported capability it is.
     UnimplementedPreludeRow(&'static str),
+}
+
+impl From<crate::backend::target::TargetLayoutFailure> for LoweringFailure {
+    fn from(failure: crate::backend::target::TargetLayoutFailure) -> Self {
+        match failure {
+            crate::backend::target::TargetLayoutFailure::InvalidIr => Self::InvalidCheckedProgram,
+            other => Self::TargetLayout(other),
+        }
+    }
 }
 
 /// The [PRE-1] records whose bodies the compiler itself emits: the nine
@@ -1986,4 +1978,6 @@ mod builder;
 #[cfg(test)]
 mod tests;
 
-pub use builder::lower_checked;
+#[cfg(test)]
+pub(crate) use builder::lower_checked;
+pub(crate) use builder::lower_checked_with_layout;

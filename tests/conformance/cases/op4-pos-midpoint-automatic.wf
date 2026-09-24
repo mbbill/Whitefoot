@@ -1,4 +1,4 @@
-fn probe(table: own Slots<u8, 4>, lo: own u64, hi: own u64) -> found: own u8 pure contract {
+fn probe(table: Slots<u8, 4>, lo: u64, hi: u64) -> found: u8 pure contract {
   define spare = table.len;
   requires lo < hi;
   requires hi <= spare;
@@ -12,7 +12,7 @@ fn probe(table: own Slots<u8, 4>, lo: own u64, hi: own u64) -> found: own u8 pur
   return byte;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let table = slots_new::<u8, 4>();
   place_back(window: &table, value: 0_u8);
   place_back(window: &table, value: 0_u8);

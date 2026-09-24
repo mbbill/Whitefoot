@@ -2,12 +2,12 @@ enum StepError {
   Failed();
 }
 
-fn forward(holder: own Box<Result<i32, StepError>>) -> function_result: own Result<i32, StepError> pure {
+fn forward(holder: Box<Result<i32, StepError>>) -> function_result: Result<i32, StepError> pure {
   doc "ERR-3: propagate requires an operand of own Result type, and a Box holder is not one; the enclosed Result is the field inner, so the operand is written holder.inner [TYPE-9].";
   let value = propagate holder;
   return Ok<i32, StepError>(value: value);
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }

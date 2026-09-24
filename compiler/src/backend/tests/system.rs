@@ -6,8 +6,10 @@ use crate::{
     ACTIVE_KERNEL_SPEC_HASH, CanonicalOutcome, FinalizeOutcome, IrProgram, LexOutcome,
     OverlapLowering, ParseOutcome, ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput,
     TerminalLimits, TerminalOutcome, audit_canonical, check_semantics, classify_terminals,
-    finalize, lex, lower_checked, parse, resolve,
+    finalize, lex, lower_checked_with_layout, parse, resolve,
 };
+
+use crate::backend::target::TargetLayout;
 
 use super::{
     CANONICAL_LIMITS, FINALIZE_LIMITS, LEX_LIMITS, PARSE_LIMITS, SOURCE_LIMITS, compile,
@@ -40,6 +42,20 @@ pub(super) fn with_mutated_ir_lowering<R>(
     overlap: OverlapLowering,
     run: impl for<'a, 'b, 'c> FnOnce(&mut IrProgram<'a, 'b, 'c>) -> R,
 ) -> R {
+    with_ir_layout(
+        source,
+        overlap,
+        TargetLayout::host().expect("supported test target"),
+        run,
+    )
+}
+
+pub(super) fn with_ir_layout<R>(
+    source: &[u8],
+    overlap: OverlapLowering,
+    target: TargetLayout,
+    run: impl for<'a, 'b, 'c> FnOnce(&mut IrProgram<'a, 'b, 'c>) -> R,
+) -> R {
     let inputs = [SourceInput::new("test.wf", source)];
     let bundle = SourceBundle::with_prelude(&inputs, SOURCE_LIMITS).expect("valid test bundle");
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
@@ -70,7 +86,8 @@ pub(super) fn with_mutated_ir_lowering<R>(
         SemanticOutcome::Complete(checked) => checked,
         other => panic!("ordinary ABI test source must check: {other:?}"),
     };
-    let mut ir = lower_checked(*checked, overlap).expect("checked program must lower");
+    let mut ir = lower_checked_with_layout(*checked, overlap, target)
+        .expect("checked program must lower for the selected target");
     run(&mut ir)
 }
 
@@ -86,7 +103,7 @@ pub(super) fn corpus_source(name: &str) -> Vec<u8> {
 #[test]
 fn ordinary_declarations_have_no_frame_and_share_the_call_abi() {
     with_ir(
-        br#"fn relay(code: own u8) -> result: own ExitStatus pure {
+        br#"fn relay(code: u8) -> result: ExitStatus pure {
   return exit_status(code: code);
 }
 "#,
@@ -119,7 +136,7 @@ fn ordinary_declarations_have_no_frame_and_share_the_call_abi() {
 /// The writer-side clauses use the local binder `copied` where the prelude
 /// record uses `next`. Both spellings are ordinary identifiers; renaming the
 /// binder changes neither the declared relation nor the ABI being compared.
-const COPY_BYTES_WRAPPER: &str = r#"fn copy_bytes(value: &HostString, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value), writes(destination) contract {
+const COPY_BYTES_WRAPPER: &str = r#"fn copy_bytes(value: &HostString, destination: &[u8], start: u64, end: u64) -> result: Result<u64, CopyError> reads(value), writes(destination) contract {
   requires start <= end;
   requires end <= deref(destination).len;
   ensures when Ok(value: copied): start <= copied;
@@ -183,7 +200,7 @@ fn behavior_actuals_preserve_ordinary_range_reference_calls_rows_and_contracts()
     // The interface uses the same locally renamed clause binder as the
     // ordinary wrapper; the relation and callable boundary stay identical.
     let formal = r#"interface Copier {
-  fn transfer(value: &HostString, destination: &[u8], start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value), writes(destination) contract {
+  fn transfer(value: &HostString, destination: &[u8], start: u64, end: u64) -> result: Result<u64, CopyError> reads(value), writes(destination) contract {
     requires start <= end;
     requires end <= deref(destination).len;
     ensures when Ok(value: copied): start <= copied;
@@ -260,7 +277,7 @@ fn behavior_actuals_preserve_ordinary_range_reference_calls_rows_and_contracts()
 #[test]
 fn an_entry_selecting_no_input_starts_and_returns_its_status() {
     let llvm = compile(
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   return exit_status(code: 37_u8);
 }
 "#,
@@ -274,7 +291,7 @@ fn an_entry_selecting_no_input_starts_and_returns_its_status() {
 #[test]
 fn opaque_drop_has_no_implicit_native_close() {
     let llvm = compile(
-        br#"fn main() -> status: own ExitStatus pure {
+        br#"fn main() -> status: ExitStatus pure {
   let unused = exit_status(code: 9_u8);
   return exit_status(code: 0_u8);
 }

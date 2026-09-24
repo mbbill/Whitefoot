@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::syntax::NodeId;
 use crate::{
@@ -342,7 +342,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // [EFF-5] would otherwise report against that row.
         let atomic_target = self.check_atomic_update_row(node, &actual_paths, &substituted)?;
         self.check_call_pairwise_disjointness(node, signature, &substituted)?;
-        self.invalidate_call_references(&substituted, atomic_target.as_ref(), bindings)?;
+        self.invalidate_call_references(node, &substituted, atomic_target.as_ref(), bindings)?;
         Self::invalidate_window_operation_references(signature, &substituted, bindings);
         self.project_call_effects(node, function, &substituted, bindings, &mut effects)?;
         let result = signature.result;
@@ -369,7 +369,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 requirements: Vec::new(),
                 result,
                 result_borrow: None,
-                allocation: self.allocation_fit_of_call(function, signature)?,
+                allocation: self.allocation_fit_of_call(signature)?,
             },
             mode: result_mode,
             // [REF-3] no call delivers a reference: FN-1 returns owned values
@@ -395,7 +395,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// obligation.
     fn allocation_fit_of_call(
         &self,
-        caller: &FunctionSignature,
         signature: &FunctionSignature,
     ) -> Result<Option<super::super::super::super::model::CheckedAllocationFit>, CheckStop> {
         let (count, cell) = match signature.name.as_str() {
@@ -413,13 +412,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         let layout_ceiling = match self.instantiated_layout_ceiling(element) {
             Some(ceiling) => ceiling,
-            None if !caller.substitution.is_concrete(&self.elements.borrow()) => {
+            None if self
+                .stabilize_substitution_with_visiting(
+                    &signature.substitution,
+                    0,
+                    &mut HashSet::new(),
+                    false,
+                )?
+                .is_none() =>
+            {
                 // [ENT-1, FN-2] only a layout depending on an unresolved
                 // type or const parameter may defer the schema obligation.
                 // This includes an opaque parameter inside an aggregate,
                 // but not a fixed-layout Box shell or a known AboveU64
-                // ceiling. No deferred record grants proof or lowering
-                // authority; every concrete replay recomputes its bound.
+                // ceiling. Inspect the operation's substitution recursively:
+                // a nominal argument can still contain a schema parameter.
+                // No deferred record grants proof or lowering authority;
+                // every concrete replay recomputes its bound.
                 return Ok(None);
             }
             None => return Err(SemanticCompilerFailure::InvalidResolution.into()),
@@ -452,7 +461,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(None);
         };
         Ok(match referent {
-            CheckedType::Buffer { element } => Some(element.ty()),
+            CheckedType::Buffer { element } => Some(self.element_type(element)?),
             CheckedType::Window {
                 element,
                 capacity: None,
@@ -463,7 +472,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// One resolved place in the spelling an [EFF-5] diagnostic renders.
-    fn render_resolved_place(&self, place: &ResolvedPlace) -> Result<String, CheckStop> {
+    pub(in crate::semantic::check) fn render_resolved_place(
+        &self,
+        place: &ResolvedPlace,
+    ) -> Result<String, CheckStop> {
         let mut rendered = match place.root {
             PlaceRoot::Binding(binding) => format!("<binding:{}>", binding.0),
             PlaceRoot::Constant(constant) => self.constant(constant)?.name.clone(),
@@ -710,6 +722,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .push(CheckedCallSeparation {
                             site: self.tree.path(node)?.clone(),
                             exchange,
+                            reference_use: None,
                             positions,
                             left_spelling: left.spelling.clone(),
                             right_spelling: right.spelling.clone(),
@@ -741,7 +754,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// The ordered position disagreements an admitted [OWN-7] family can
     /// still separate. Index suffixes remain candidates; a range divergence
     /// is the final candidate because its coordinate frames then differ.
-    fn separable_by_position(
+    pub(in crate::semantic::check) fn separable_by_position(
         left: &ResolvedPlace,
         right: &ResolvedPlace,
     ) -> Option<Vec<super::super::super::super::model::CheckedCallSeparationPositions>> {
@@ -888,6 +901,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// being an argument does not exempt it from another actual's write.
     fn invalidate_call_references(
         &self,
+        node: NodeId,
         entries: &[SubstitutedEntry],
         atomic_target: Option<&ResolvedPlace>,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
@@ -910,7 +924,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             } else {
                 InvalidationEvent::CallWrite
             };
-            self.invalidate_references(bindings, &entry.place, &event)?;
+            self.invalidate_references_with_separation(
+                bindings,
+                &entry.place,
+                &event,
+                Some(self.tree.path(node)?),
+            )?;
         }
         Ok(())
     }

@@ -25,7 +25,7 @@ enum PutOutcome {
   Full(offered: Box<Resource>);
 }
 
-fn fingerprint(key: own u64) -> result: own u8 pure {
+fn fingerprint(key: u64) -> result: u8 pure {
   doc "Seven low bits of the key, folded one at a time.";
   let tag = 0_u8;
   let bit0 = iand(key, 1_u64);
@@ -59,7 +59,7 @@ fn fingerprint(key: own u64) -> result: own u8 pure {
   return tag;
 }
 
-fn probe_index(home: own u64, step: own u64, count: own u64) -> index: own u64 pure contract {
+fn probe_index(home: u64, step: u64, count: u64) -> index: u64 pure contract {
   requires home < count;
   requires step < count;
   ensures index < count;
@@ -74,7 +74,7 @@ fn probe_index(home: own u64, step: own u64, count: own u64) -> index: own u64 p
   return straight;
 }
 
-fn probe(slot: &Slot, key: own u64) -> result: own Probe reads(slot) {
+fn probe(slot: &Slot, key: u64) -> result: Probe reads(slot) {
   doc "Matching through a reference leaves the scrutinee live and binds each payload as a reference naming the scrutinee path.";
   match deref(slot) {
     Vacant() => {
@@ -92,7 +92,7 @@ fn probe(slot: &Slot, key: own u64) -> result: own Probe reads(slot) {
   }
 }
 
-fn fill_slots(slots: &Slots<Slot, 2>, count: own u64) -> result: own unit writes(slots) contract {
+fn fill_slots(slots: &Slots<Slot, 2>, count: u64) -> result: unit writes(slots) contract {
   requires deref(slots).len == 0_u64;
   requires count <= deref(slots).cap - deref(slots).len;
   ensures deref(slots).len == count;
@@ -112,7 +112,7 @@ fn fill_slots(slots: &Slots<Slot, 2>, count: own u64) -> result: own unit writes
   return unit;
 }
 
-fn put(slots: &Slots<Slot, 2>, key: own u64, payload: own Box<Resource>) -> outcome: own PutOutcome writes(slots) contract {
+fn put(slots: &Slots<Slot, 2>, key: u64, payload: Box<Resource>) -> outcome: PutOutcome writes(slots) contract {
   requires deref(slots).len > 0_u64;
   ensures deref(slots).len == deref(entry(slots)).len;
 } {
@@ -171,7 +171,7 @@ fn put(slots: &Slots<Slot, 2>, key: own u64, payload: own Box<Resource>) -> outc
   }
 }
 
-fn allocate_put(slots: &Slots<Slot, 2>, key: own u64, id: own u64) -> outcome: own PutOutcome writes(slots) contract {
+fn allocate_put(slots: &Slots<Slot, 2>, key: u64, id: u64) -> outcome: PutOutcome writes(slots) contract {
   requires deref(slots).len > 0_u64;
   ensures deref(slots).len == deref(entry(slots)).len;
 } {
@@ -186,7 +186,7 @@ fn allocate_put(slots: &Slots<Slot, 2>, key: own u64, id: own u64) -> outcome: o
   return move result;
 }
 
-fn check_put(outcome: own PutOutcome, kind: own u64, expected: own u64) -> code: own u8 pure {
+fn check_put(outcome: PutOutcome, kind: u64, expected: u64) -> code: u8 pure {
   doc "Refusal and ordinary cleanup retain their owning payloads: every arm's payload is released with its binder.";
   match outcome {
     Inserted() => {
@@ -218,7 +218,7 @@ fn check_put(outcome: own PutOutcome, kind: own u64, expected: own u64) -> code:
   }
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "The owning enum-slot put and its allocation wrapper use reference window parameters. Collision insertion and duplicate replacement preserve the window length through verified equality contracts.";
   let slots = slots_new::<Slot, 2>();
   fill_slots(slots: &slots, count: 2_u64);

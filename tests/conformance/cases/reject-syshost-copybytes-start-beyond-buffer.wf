@@ -1,4 +1,4 @@
-fn main(inputs: own Inputs) -> status: own ExitStatus pure {
+fn main(inputs: Inputs) -> status: ExitStatus pure {
   doc "The empty range at eight over a four-element destination refutes end <= deref(destination).len. FN-8 rejects the ordinary function requirement.";
   let Inputs(args: arguments, cwd: root, handles: factory, ..) = move inputs;
   close_directory(factory: &factory, directory: move root);

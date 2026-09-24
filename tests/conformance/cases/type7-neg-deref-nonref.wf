@@ -1,4 +1,4 @@
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "deref applied to a plain i32 value is malformed [TYPE-7]: deref takes a place whose selected kind is a reference, &T or &[T], and an owned scalar is neither; a Box is refused there too, its content being the field inner [TYPE-9].";
   let a = 42_i32;
   let v = deref(a);

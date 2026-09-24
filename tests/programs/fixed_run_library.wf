@@ -1,4 +1,4 @@
-fn vacant<T: drop, const n: u64>() -> result: own Ring<Option<T>, n> pure contract {
+fn vacant<T: drop, const n: u64>() -> result: Ring<Option<T>, n> pure contract {
   ensures result.len >= n;
   ensures result.cap <= result.len;
 } {
@@ -16,7 +16,7 @@ fn vacant<T: drop, const n: u64>() -> result: own Ring<Option<T>, n> pure contra
   return move built;
 }
 
-fn filled<T: copy, const n: u64>(value: own T) -> result: own Ring<T, n> pure contract {
+fn filled<T: copy, const n: u64>(value: T) -> result: Ring<T, n> pure contract {
   ensures result.len >= n;
   ensures result.cap <= result.len;
 } {
@@ -33,7 +33,7 @@ fn filled<T: copy, const n: u64>(value: own T) -> result: own Ring<T, n> pure co
   return move built;
 }
 
-fn take_at<T: drop, const n: u64>(window: &Ring<T, n>, at: own u64) -> taken: own T writes(window) contract {
+fn take_at<T: drop, const n: u64>(window: &Ring<T, n>, at: u64) -> taken: T writes(window) contract {
   requires at + 2_u64 <= deref(window).len;
   ensures deref(window).len + 1_u64 == deref(entry(window)).len;
 } {
@@ -43,7 +43,7 @@ fn take_at<T: drop, const n: u64>(window: &Ring<T, n>, at: own u64) -> taken: ow
   return move endv;
 }
 
-fn try_place<T: drop, const n: u64>(window: &Ring<T, n>, value: own T) -> unplaced: own Option<T> writes(window.next), writes(window.len) contract {
+fn try_place<T: drop, const n: u64>(window: &Ring<T, n>, value: T) -> unplaced: Option<T> writes(window.next), writes(window.len) contract {
   ensures deref(window).len <= deref(entry(window)).len + 1_u64;
   ensures deref(window).len >= deref(entry(window)).len;
 } {
@@ -57,7 +57,7 @@ fn try_place<T: drop, const n: u64>(window: &Ring<T, n>, value: own T) -> unplac
   return Some<T>(value: move value);
 }
 
-fn try_take<T: drop, const n: u64>(window: &Ring<T, n>) -> taken: own Option<T> writes(window.last), writes(window.len) contract {
+fn try_take<T: drop, const n: u64>(window: &Ring<T, n>) -> taken: Option<T> writes(window.last), writes(window.len) contract {
   ensures deref(window).len <= deref(entry(window)).len;
   ensures deref(window).len + 1_u64 >= deref(entry(window)).len;
 } {
@@ -71,7 +71,7 @@ fn try_take<T: drop, const n: u64>(window: &Ring<T, n>) -> taken: own Option<T> 
   return None<T>();
 }
 
-fn rebase<T: drop, const n: u64>(window: own Ring<T, n>, spare: own Ring<T, n>) -> rebased: own Ring<T, n> pure contract {
+fn rebase<T: drop, const n: u64>(window: Ring<T, n>, spare: Ring<T, n>) -> rebased: Ring<T, n> pure contract {
   requires spare.len <= 0_u64;
   ensures rebased.len >= window.len;
   ensures rebased.len <= window.len;
@@ -94,7 +94,7 @@ fn rebase<T: drop, const n: u64>(window: own Ring<T, n>, spare: own Ring<T, n>) 
   return move built;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   doc "Runs all six fixed-window library functions at copy element types, then separately instantiates the transposing removal at an affine Box element type: the two constructions, the removal built on swap, the two checked boundary forms, and the drain that returns a wrapped window to its origin.";
   let slots = vacant::<u8, 4>();
   let vacant_held = slots.len;
