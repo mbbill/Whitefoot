@@ -342,14 +342,13 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   consumption, exits and lowering for all result ordinals rather than granting
   a tuple-specific exception.
 
-- **A releasing expression statement is never a hand-out group member.**
-  PAR-1 and PAR-2 now judge an expression statement by its call's row, as a
-  let-bound call is, and lowering hands out a discarded copy or borrowed
-  result exactly as a let-bound one. A discarded affine result, however, runs
-  its release immediately after the call, reading the value between a
-  hand-out and its join, so `compiler/src/lowering/builder.rs` leaves that call
-  unrecorded and it ends any overlap group through it. It could instead be a
-  group's last member, as an addressed binding already may. No measured
+- **A discarded affine result's call never joins a hand-out group.** Its
+  expression statement runs the result's release immediately after the call,
+  reading the value between a hand-out and its join, so
+  `compiler/src/lowering/builder.rs` leaves that call unrecorded and it ends
+  any overlap group through it, although PAR-1 permits it exactly as the
+  let-bound call. It could instead be a group's last member, as an addressed
+  binding already may. No measured
   program discards an affine result beside an independent call, so the
   benefit is unverified. Reopen when such a program appears; validate by
   emitting the call as the join site with its release after the join and
@@ -664,7 +663,15 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   still unavailable; missing evidence keeps sequential lowering. For windows
   this means every [WIN-2] part-relative separation is refused when a member
   before the later one writes that window's `len`, which also refuses a read
-  of an old slot after an append; the mapping would recover it. Investigate
+  of an old slot after an append; the mapping would recover it. A cheaper
+  recovery needs no mapping: a place reached through a reference live at the
+  first statement's entry is interpreted in that state, and the reference's
+  validity gives `i < len` there, so WIN-2's single-state separation still
+  holds. That recovers the one pair this rule newly denies in the maintained
+  programs, `deque_push_back` against `let first_after_append =
+  deref(original_first)` at `tests/programs/containers/deque-program.wf:113`.
+  The ledger's denial should also name the length change as its cause; it
+  currently reports only the overlapping write and read. Investigate
   indexing and reuse without losing statement identity, captured endpoints,
   flow context or all-pairs composition. Close this item when larger segments
   have measured costs and the intended proof coverage, retaining guarded,

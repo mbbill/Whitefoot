@@ -1371,8 +1371,6 @@ fn a_borrowed_read_modify_map_preserves_the_sequential_bytes() {
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
-/// A loop that maps and reduces still selects the Reduction result path. The
-/// full map and all eight reduction bytes are independently observable.
 /// Each iteration fills one proved-disjoint row through a unit helper written
 /// as a [GRAM-4] expression statement, the natural spelling of a call whose
 /// result is `unit`. PAR-2 judges that call by its row exactly as it judges a
@@ -1451,6 +1449,8 @@ fn an_expression_statement_row_map_is_split_and_keeps_its_rows() {
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
+/// A loop that maps and reduces still selects the Reduction result path. The
+/// full map and all eight reduction bytes are independently observable.
 #[test]
 fn a_map_and_reduction_preserves_both_results() {
     let source = map_and_reduction_source();

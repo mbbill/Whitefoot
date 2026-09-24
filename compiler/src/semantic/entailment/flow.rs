@@ -1385,6 +1385,13 @@ impl SeparationOracle for SeparationLedger {
     fn index_is_not_last(&self, window: &ResolvedPlace, index: CapturedValue) -> bool {
         self.not_last.contains(&(window.clone(), index.capture))
     }
+
+    /// The ledger answers [EFF-5] and [REF-2] at one program point: the
+    /// actuals of one call, or a live reference against a write at that
+    /// write's entry. Both places read that state's `r.len`.
+    fn window_length_is_shared(&self, _window: &ResolvedPlace) -> bool {
+        true
+    }
 }
 
 struct Analyzer<'check, 'unit> {
