@@ -1,56 +1,35 @@
 # Task completion review
 
-Run this checklist at the completion triggers the Design Correspondence
-Review section of `design/skill/SKILL.md` defines; that section is their
-definition. One review of the current content and scope can cover multiple
-triggers.
+The items an independent reviewer checks when a task completes. The
+[completion-review skill](../.agents/skills/completion-review/SKILL.md) owns
+when the review runs, who runs it, how findings are routed and where the report
+goes. Merge conditions remain in [AGENTS.md](../AGENTS.md#branch-and-main-boundary).
 
-Use a separate agent that did not implement the change, normally a small or
-mid-sized model, for the applicable checks. DCR follows the report-and-response
-rule in `design/skill/SKILL.md`: present findings with the primary agent's
-assessment and await the owner's direction before acting. For other reviews,
-fix concrete findings and recheck affected items. Merge conditions remain in
-[AGENTS.md](../AGENTS.md#branch-and-main-boundary).
+## How to review
 
-## Review input and result
-
-Read the task's requested outcome and constraints, the complete task diff
-(including uncommitted and new files), and the actual validation results.
-Identify the base and reviewed revision; for uncommitted work, identify the
-working-tree changes as well. Read changed sections in context, the relevant
+Read the task's requested outcome and constraints, the complete diff from the
+base to the reviewed revision (including uncommitted and new files, but not
+the archived specification copies `make review-scope` lists as excluded), and
+the actual validation results. Read changed sections in context, the relevant
 document roles below, and directly affected definitions, callers, or cases.
 Do not load the whole repository or require a separate review packet.
 
 Judge the artifacts against the task and current owners, not just the author's
 summary. Mechanical checks cover their encoded properties; this review checks
 meaning, placement, and omitted dependent updates. Neither reconstructs an
-unrecorded reason or certifies the soundness of a design argument. Flag such
-uncertainty for the implementing agent rather than inventing missing evidence.
+unrecorded reason or certifies the soundness of a design argument: mark such a
+question `unverified` for the implementing agent rather than inventing missing
+evidence or redesigning the project.
 
-Check the applicable items below. Skip sections whose trigger is absent.
-Use `pass`, `finding`, `unverified`, or `not applicable`; missing evidence is
-not a pass. When the task changes a review rule or an expected result, compare
-its previous form with the requested change rather than judging only against
-the newly edited rule.
-
-Put a compact report in the existing PR, or the task reply when there is no PR.
-Also check the conversation handoff required by `design/skill/SKILL.md`.
-Publishing the report in the PR does not replace that handoff to the owner.
-Use the [PR template](../.github/pull_request_template.md)'s three bullets:
-
-- **Scope:** reviewer/model, base and head, checked groups and any skipped
-  groups or unreviewed parts. A scoped review does not certify the whole PR.
-- **Checks:** commands actually run and their results; distinguish the full
-  gate from focused checks and identify the tested revision.
-- **Findings:** remaining issues and unverified items, or none within the
-  reviewed scope. Each finding names its item ID, file/line, offending text or
-  missing evidence, and a short reason; quote both sides of a contradiction.
-
-Summarize clean groups together rather than listing every passed item. Link
-detailed evidence when needed instead of copying logs, stage tables or the
-checklist. Mark a question needing design judgment `unverified` and return it
-to the implementing agent; do not guess or redesign the project. Do not create
-a repository audit log. Later edits invalidate review of the affected content,
+Check every group whose trigger applies; `make review-scope` names them from
+the changed paths, and a group it cannot decide from paths says so. Mark items
+`pass`, `finding`, `unverified`, or `not applicable`; missing evidence is not a
+pass. When the task changes a review rule or an expected result, compare its
+previous form with the requested change rather than judging only against the
+newly edited rule. A finding names its item ID, file/line, the offending text
+or missing evidence, and a short reason; quote both sides of a contradiction.
+Summarize clean groups together and link detailed evidence instead of copying
+logs or this checklist. Later edits invalidate review of the affected content,
 not unrelated completed checks.
 
 ## Document roles
@@ -67,7 +46,8 @@ or self-description merely to satisfy this table.
 | `spec/kernel-spec.md` | Normative syntax, semantics, judgments, boundaries and relevant examples | Compiler convenience presented as law, task status, editing history |
 | `docs/todo.md` | Defects, costs, improvement opportunities and their validation tasks, removed when resolved | Settled decisions, claims of implemented capability, progress logs |
 | `docs/patterns.md` | Writer problems, usable forms, examples, applicability and costs | Additional acceptance rules, unsupported universal performance claims, project administration |
-| `AGENTS.md` | Agent entry, project constraints, authority, workflow and pointers to detailed guidance | Research narration, a second detailed checklist or compiler inventory |
+| `AGENTS.md` | Agent entry: goal and priorities, authority map, the approval and merge rules, integrity and hygiene rules, and pointers to skills and detailed guidance | Research narration, a procedure a skill owns, a second detailed checklist or compiler inventory |
+| `.agents/skills/` (linked from `.claude/skills/`) | One recurring procedure per skill: its trigger, steps, commands and formats, loaded when the task matches its description | Project rules that AGENTS.md owns, language semantics, a copy of this checklist |
 | `docs/practice.md` / this checklist | Engineering methods and decision-update triggers / completion checks and document boundaries | Language semantics, task-specific outcomes, new owner approval requirements |
 | `research/`; `governance/spec-evolution/` | Questions, alternatives, designs, change proposals, reproducible experiments, results and limitations; the research README provides navigation | Task completion as technical evidence, a proposal presented as an implemented rule, daily test implementations or inputs retained in research |
 | `docs/ideas.md`; `docs/why-whitefoot.md` | Candidate mechanisms, open questions and experiment sketches; explanatory essays and dated rationale respectively | A live work queue, invented present-day measurements, contributor process inserted into an essay |
@@ -117,7 +97,7 @@ Source: [repository hygiene](../AGENTS.md#repository-structure-and-hygiene).
   different role justifies another tool; `AGENTS.md` remains the single
   agent-instruction source.
 
-## D. Documentation — changed prose, comments or examples
+## D. Documentation — changed Markdown, comments or examples
 
 - [ ] **D1 — Purpose.** Each added or changed passage serves the containing
   document or code's reader. Check against the role table, including editorial
@@ -139,7 +119,7 @@ Source: [repository hygiene](../AGENTS.md#repository-structure-and-hygiene).
   programs. No duplicated changing status or version identity needs another
   synchronized update. Do not invent new style conventions during review.
 
-## C. Code and cases — implementation or behavior changes
+## C. Code and cases — changes under `compiler/`, `lib/` or `tests/`
 
 Source: [compiler rules](../AGENTS.md#compiler-rules) and
 [test integrity](../AGENTS.md#specification-and-test-integrity).
@@ -170,7 +150,7 @@ Source: [compiler rules](../AGENTS.md#compiler-rules) and
   assessment occurred when making or revising the choice and was explained
   to the owner, rather than supplied retrospectively at completion.
 
-## T. Specification and checks — changed language rules, design premises, tests or gate wiring
+## T. Specification and checks — changes to `spec/kernel-spec.md`, `tests/`, a Makefile or `.github/`
 
 Source: [specification and test integrity](../AGENTS.md#specification-and-test-integrity).
 
@@ -178,8 +158,9 @@ Source: [specification and test integrity](../AGENTS.md#specification-and-test-i
   active bytes are archived unchanged, released archives are untouched, and
   the active title advances the version. The change declares its specification delta
   (rules, tokens, spellings, exceptions) and evidence/minimality selection
-  ground. Affected cases/verdicts, generated syntax, compiler and documentation
-  follow the amendment. For changed rules or constitutional premises, apply
+  ground. `make static` checks the archive name, its bytes and the title
+  mechanically. Affected cases/verdicts, generated syntax, compiler and
+  documentation follow the amendment. For changed rules or constitutional premises, apply
   R3–R4 below. For conformance changes,
   the PR explains the normative expectation and how the changed evidence tests
   it. The conformance runner checks unique rule IDs and resolving references;
@@ -226,11 +207,13 @@ Source: [specification and test integrity](../AGENTS.md#specification-and-test-i
 
 ## R. Decisions — changed choices, premises or relevant evidence
 
-Source: [decision practice](practice.md#decision-work). These are checks on
-observable artifacts, not a claim to know an agent's internal reasoning or
-a second design review. A routine fix under unchanged design can skip this
-group; absence of a tree diff does not establish that the group is
-inapplicable.
+Source: [decision practice](practice.md#decision-work). Applies to changes
+under `design/`, `docs/constitution.md`, `spec/kernel-spec.md` or
+`research/investigations/`, and to any task that made a material choice
+elsewhere. These are checks on observable artifacts, not a claim to know an
+agent's internal reasoning or a second design review. A routine fix under
+unchanged design can skip this group; absence of a tree diff does not
+establish that the group is inapplicable.
 
 - [ ] **R1 — Stated ground.** A material choice has a retrievable explanation
   of its purpose, required properties, assumptions, alternatives actually
@@ -261,11 +244,12 @@ inapplicable.
   sources a decision cites resolve and support the stated scope. A log entry
   or a lint success is not proof that a cited argument is true.
 
-## M. Design review
+## M. Design review — every change
 
-- [ ] **M1 — Design procedure.** Apply `design/skill/SKILL.md` to the reviewed
-  scope, including its DCR, structural validation and owner handoff. That skill
-  owns the procedure; include its actual results in this completion review.
+- [ ] **M1 — Design procedure.** Apply the design-tree skill
+  (`design/skill/SKILL.md`) to the reviewed scope: its design checks G1–G3,
+  correspondence checks DC1–DC4 and structural validation. That skill owns the
+  procedure; include its actual results in this completion review.
 
 ## V. Validation and handoff — every change
 
@@ -287,18 +271,18 @@ Source: [evidence practice](practice.md#evidence-guidance) and
   ground. If merging is requested, verify owner approval and root
   `make check` for the exact merge tree under the existing four rules; neither
   a fast review nor a focused test run substitutes for them.
-- [ ] **V4 — Existing PR updated.** Before reporting completion, commit and
-  push the reviewed task changes to the existing PR branch without waiting
-  for a reminder. Verify its remote head contains the delivered revision and
-  its description and validation reflect the current diff. Link the PR in
-  the reply. A failed publication is an explicit delivery blocker, not a
-  completed update. This check runs after the content review and push.
+- [ ] **V4 — Existing PR updated.** The reviewed task changes are committed
+  and pushed to the existing PR branch; its remote head contains the delivered
+  revision, and its description and validation reflect the current diff. The
+  reply links the PR. A failed publication is an explicit delivery blocker,
+  not a completed update. This check runs after the content review and push.
 
 Use existing checks when applicable: `git diff --check` for patch whitespace;
-`make static` for repository invariants, immutable spec archives and live spec
-references; `make -C compiler format lint` and the
-[focused compiler commands](../README.md#verification) for
-code. `make static` does not check document purpose or all links, and compiler
+`make static` for repository invariants, specification archives (immutability
+and amendment shape), live spec references, cited review items, entry-document
+paths, skill links and design-tree form; `make -C compiler format lint` and the
+[focused compiler commands](../README.md#verification) for code. `make static`
+does not check document purpose, anchors or the truth of a claim, and compiler
 `docs` builds Rust API documentation, not this prose checklist. The root
 [Makefile](../Makefile) owns the full gate inventory; the design-tree checks
 follow `design/skill/SKILL.md` and are covered by M1.

@@ -37,6 +37,7 @@ Read the material that owns the question you are working on:
 | What does this compiler implement, and how do I run it? | [Running the compiler](#running-the-compiler) below; the conformance report states the implemented surface |
 | What are the project goals and design principles? | [Constitution](docs/constitution.md) |
 | How do I work on a branch and prepare a merge? | [AGENTS.md](AGENTS.md) |
+| How do I amend the specification, finish a task, or hand work back? | [Agent skills](.agents/skills/) |
 | Which writer forms should I try? | [Patterns](docs/patterns.md) |
 | How should I investigate, verify, and maintain documentation? | [Engineering practice](docs/practice.md) |
 | Why was a design chosen? | [Design trees](design/), with reasons and refused alternatives |
@@ -60,13 +61,15 @@ requirements. The reading and authority rules are in
   reference material.
 - [research/](research/README.md): investigations and experiments with their
   designs, measurements, and rejected alternatives.
-- [mcts_mem/](mcts_mem/): frozen historical decision record, being moved into
-  `design/` and deleted when that is complete.
+- [mcts_mem/](mcts_mem/): frozen historical decision record, replaced by
+  `design/`.
 - [design/](design/): live design decisions with their reasons, and the
   procedure that maintains them.
 - [governance/](governance/): archive-protection hooks and specification-change
   design evidence. The old approval ledger is retired.
-- [.github/](.github/): CI and the pull-request template.
+- [.github/](.github/): CI, repository checks and the pull-request template.
+- [.agents/skills/](.agents/skills/): recurring agent procedures, read by
+  Codex; `.claude/skills/` links the same skills for Claude Code.
 - [archive/](archive/): frozen historical material. Active source, builds,
   tests, and tools do not depend on it.
 
@@ -144,7 +147,10 @@ subprocess. Nested or parallel rows are not additive suite wall time. See the
 [measured build/test investigation](research/investigations/test-economy/build-and-test.md).
 
 The [gate workflow](.github/workflows/gate.yml) runs those groups on Linux and
-macOS. Additional [I/O host checks](.github/workflows/io-hosts.yml) and
+macOS, and the [design-readiness workflow](.github/workflows/design-readiness.yml)
+rejects pending design amendments on a pull request that is ready for review.
+`make review-scope` lists what a completion review covers. Additional
+[I/O host checks](.github/workflows/io-hosts.yml) and
 [benchmarks](.github/workflows/io-bench.yml) own their platform-specific
 evidence. Automatic CI checks correctness and performance regressions under
 the [test boundary](docs/practice.md#test-boundary): useful research cases and

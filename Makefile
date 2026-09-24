@@ -157,6 +157,10 @@ guidance:
 	@$(PY) .github/check-guidance.py --self-test
 	@$(PY) .github/check-guidance.py
 
+# What a completion review covers: base, depth, groups and excluded paths.
+review-scope:
+	@sh .agents/skills/completion-review/scripts/review-scope.sh main
+
 spec-append-only-staged:
 	@changes="$$(git diff --cached --name-status --diff-filter=MDRCT -- 'spec/kernel-spec-v*.md')" || exit 1; \
 	if test -n "$$changes"; then \
@@ -223,4 +227,4 @@ install-hooks:
 	git config core.hooksPath governance/hooks
 	@echo "installed governance/hooks (pre-commit, pre-merge-commit)"
 
-.PHONY: historical-tool-tests _historical-tool-tests check _check check-groups check-group static repository-invariants spec-archives guidance spec-append-only-staged spec-prose-integrity design-lint design-ready conformance compiler performance-instrument conformance-run install-hooks
+.PHONY: historical-tool-tests _historical-tool-tests check _check check-groups check-group static repository-invariants spec-archives guidance review-scope spec-append-only-staged spec-prose-integrity design-lint design-ready conformance compiler performance-instrument conformance-run install-hooks

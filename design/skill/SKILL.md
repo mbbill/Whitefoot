@@ -107,7 +107,8 @@ both, newest first.
    tree changes in amendments; pending approval does not block this work.
 2. Once the agreed implementation and evidence are ready, run DCR against the
    live tree, amendments and implementation together. Present the reviewed
-   proposals and findings to the owner, then await the ruling.
+   proposals, and any findings awaiting direction, to the owner, then await
+   the ruling.
 3. Apply the ruling to the tree, log and affected implementation; remove the
    resolved amendments and their directory. Recheck affected work and run CI.
 4. Only after all proposals are resolved and the final revision's required CI
@@ -129,8 +130,8 @@ Keep this proportional to the current work.
 
 When discussing implementation choices or handing back work, include a short,
 separate **Design suitability** paragraph in the owner's language. State
-concerns and improvement opportunities, their disposition and reasons; if none
-were found, say so within the assessed scope and give the reason. This does not
+concerns and improvement opportunities, their disposition and reasons; when
+none were found, one line naming the assessed scope suffices. This does not
 replace amendment or DCR explanations.
 
 ## Design Correspondence Review (DCR)
@@ -138,28 +139,33 @@ replace amendment or DCR explanations.
 Run the bidirectional review below when asked for `dcr` and at Workflow step 2,
 before submitting the completed work for owner ruling. Amendments are review
 inputs at this point, not a reason to refuse DCR. Opening a Draft PR or
-publishing intermediate progress needs no completion review. A task without
-proposed tree changes still needs DCR before completion. Reuse the project's
-completion review when it covers these checks; no second DCR is required just
-to apply the exact reviewed and approved revision.
+publishing intermediate progress needs no review. A task without proposed
+tree changes still needs DCR before completion. Where the project's completion
+review includes these checks, running it is the DCR; no second DCR is required
+just to apply the exact reviewed and approved revision.
 
 Use a separate, read-only reviewer that did not implement the change,
 normally a small or mid-sized model with bounded inputs. It reads actual
 artifacts and reports scope, revision, findings, evidence, and uncertainty.
-Before awaiting owner input, give a self-contained handoff in the owner's
-language. For each amendment, name the node and current decision, the exact
-revision, its problem, evidence, alternatives, tradeoffs, uncertainty and
-recommended ruling. Report the DCR revision, scope, passed checks, findings
-and unverified items; assess each finding and recommend a response. Say when
-none were found within scope. Links and amendment counts support this account
-but do not replace it. A clean DCR does not approve the proposals or make the
-Draft PR ready.
 
-Await the owner's direction before acting on the findings, including during
-unattended work; DCR does not authorize fixes or tree changes. This waiting
-rule does not excuse an incomplete explanation. Recheck affected items after
-directed changes, reusing unaffected review. Tests and merge rules belong to
-the project.
+Route each finding by what resolving it would change. A finding whose
+resolution would change a decision, an amendment or the agreed scope goes to
+the owner with the primary agent's assessment and recommended response, and
+waits for direction, including during unattended work. Fix every other
+finding (form, wording, a broken reference, missing evidence or coverage),
+recheck the affected items and report it. DCR never authorizes a tree change.
+
+Before awaiting owner input, give a self-contained handoff in the owner's
+language. Lead with one compact row per amendment and per finding awaiting
+direction: the node, the current and proposed decision, and the recommended
+ruling with its decisive reason. The amendment keeps its problem, evidence,
+alternatives, tradeoffs and uncertainty; bring any of them forward when it
+decides the recommendation. Report the DCR revision and scope and the
+findings fixed; say when none were found within scope. Links and amendment
+counts support this account but do not replace it. A clean DCR does not
+approve the proposals or make the Draft PR ready. Recheck affected items
+after directed changes, reusing unaffected review. Tests and merge rules
+belong to the project.
 
 ## Lint
 
@@ -216,19 +222,19 @@ resulting artifacts, and validation. Do not limit review to the tree diff.
 Here, code means whichever artifact implements a decision, including a
 specification or configuration. Extend into affected consumers as needed.
 
-C1. Decisions in code. For each changed region embodying a design choice,
+DC1. Decisions in code. For each changed region embodying a design choice,
 name its node or amendment. Report unrecorded choices as missing amendments;
 ordinary implementation steps need no record.
 
-C2. Contradiction. Report code that contradicts a decision or implements a
+DC2. Contradiction. Report code that contradicts a decision or implements a
 refused alternative, naming any amendment proposing that change. Without an
 amendment it is drift.
 
-C3. Orphaned support. For deleted code, identify decisions that lose their
+DC3. Orphaned support. For deleted code, identify decisions that lose their
 implementation. Report a retired approach missing its rejection rationale,
 and rejected approaches still implemented.
 
-C4. Missing or partial implementation. For each design commitment in scope,
+DC4. Missing or partial implementation. For each design commitment in scope,
 including existing nodes and pending revisions, identify support for its
 required behavior and conditions. Report missing or partial paths,
 placeholders, and insufficient evidence; a related function alone is not
