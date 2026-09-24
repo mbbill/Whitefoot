@@ -2,13 +2,17 @@
 
 Whitefoot is a research systems programming language. A program the compiler
 accepts cannot reach undefined behavior, a panic, or a silent integer overflow
-at run time, provided the trusted base listed below is correct.
+at run time, provided its [trusted base](#what-an-accepted-program-cannot-do-and-what-it-still-can)
+(the compiler, LLVM, the runtime, linked C code and the operating system) is
+correct.
 
-It gets there without runtime checks. Every indexing, arithmetic, conversion,
-division and allocation-size operation needs a proof that it is in range. The
-compiler finds most proofs itself with a fixed procedure and no SMT solver.
-When it cannot, you add a branch or state one more fact, and the compiler
-checks that fact too.
+It gets there without runtime checks; the cost moves to compile time and to
+the writer. Every indexing, arithmetic, conversion, division and
+allocation-size operation needs a proof that it is in range. The compiler
+finds most proofs itself with a fixed procedure and no SMT solver. The
+procedure proves less than a solver would, but it always terminates and gives
+the same answer everywhere. When it cannot connect the facts, you add a branch
+or state one more fact, and the compiler checks that fact too.
 
 ```
 fn drop_spaces(out: &[u8], src: &[u8]) -> count: u64 reads(src), writes(out) contract {
@@ -132,8 +136,9 @@ compiler/target/release/whitefootc tests/programs/wfgrep.wf -o wfgrep
 compiler/target/release/whitefootc tests/conformance/cases/op4-neg-index-undischarged.wf
 ```
 
-The last command shows a rejection; `--diagnostic-format json` prints it as
-JSON.
+Building the compiler takes about a minute; compiling the grep takes about
+three seconds. The last command shows a rejection; `--diagnostic-format json`
+prints it as JSON.
 
 ## Evidence
 
