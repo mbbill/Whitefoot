@@ -756,8 +756,9 @@ mod tests {
 
     /// [MOD-2] a directory entry named by bytes ending in `.wf` is a record
     /// of its module, so one whose name is not a portable component is
-    /// refused rather than skipped.
-    #[cfg(unix)]
+    /// refused rather than skipped. Linux file systems store such a name;
+    /// APFS and NTFS refuse to create it, so no such record exists there.
+    #[cfg(target_os = "linux")]
     #[test]
     fn a_record_name_that_is_not_utf8_is_refused() {
         use std::os::unix::ffi::OsStrExt;
