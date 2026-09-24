@@ -8870,12 +8870,14 @@ fn real_sources_retain_complete_proof_roots_without_counted_false_positives() {
     // exactly one of the three mains a counted loop of its own — utf8parse's
     // output run is taken from a bump extent and filled by a counted `for`
     // where it was a `buffer_new` with an initial value.
+    let mut raw_deflate_routes_checked = 0;
     let mut wfgrep_routes_checked = 0;
     for (bundle, sources) in bundles.into_iter().enumerate() {
         let inputs = sources
             .iter()
             .map(|(name, bytes)| SourceInput::new(name, bytes))
             .collect::<Vec<_>>();
+        let compiles_raw_deflate = sources.iter().any(|(name, _)| *name == "raw_deflate.wf");
         let compiles_wfgrep = sources.iter().any(|(name, _)| *name == "wfgrep.wf");
         super::with_semantics_inputs(&inputs, |outcome| {
             let SemanticOutcome::Complete(program) = outcome else {
@@ -8916,26 +8918,28 @@ fn real_sources_retain_complete_proof_roots_without_counted_false_positives() {
                     function.name,
                 );
             }
-            if program
-                .data
-                .functions
-                .iter()
-                .any(|function| function.name == "read_bits")
-            {
+            // Both route checks are selected by the source the bundle
+            // compiles rather than by the presence of a function name: a name
+            // probe skipped wfgrep's assertions without failing when
+            // `report_failure` was renamed `assemble_failure`. A missing
+            // anchor function fails inside each check, a reordered bundle
+            // list cannot re-target either, and the counts below require
+            // each to run exactly once.
+            if compiles_raw_deflate {
                 assert_real_read_bits_routes(&program.data);
                 assert_real_raw_append_routes(&program.data);
+                raw_deflate_routes_checked += 1;
             }
-            // Selected by the source the bundle compiles rather than by the
-            // presence of a function name: a name probe skipped these
-            // assertions without failing when `report_failure` was renamed
-            // `assemble_failure`. A missing anchor function now fails inside,
-            // and a reordered bundle list cannot re-target the check.
             if compiles_wfgrep {
                 assert_real_wfgrep_routes(&program.data);
                 wfgrep_routes_checked += 1;
             }
         });
     }
+    assert_eq!(
+        raw_deflate_routes_checked, 1,
+        "exactly one bundle compiles raw_deflate.wf and runs its route assertions"
+    );
     assert_eq!(
         wfgrep_routes_checked, 1,
         "exactly one bundle compiles wfgrep.wf and runs its route assertions"
@@ -8959,7 +8963,7 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
         .functions
         .iter()
         .find(|function| function.name == "read_bits")
-        .expect("read_bits declaration")
+        .expect("raw DEFLATE's bit reader, read_bits, anchors these routes")
         .id;
     let mut calls = Vec::new();
     for (caller, function) in program.functions.iter().enumerate() {
@@ -9254,6 +9258,28 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
 }
 
 fn assert_real_raw_append_routes(program: &CheckedProgramData) {
+    // The eight routes are `assemble_reason`'s eight direct-receiver
+    // `set length = append_slice(filled: length, ...)` sites in
+    // `raw_deflate_boundary.wf`, the only such form in the chain.
+    let assemble = program
+        .functions
+        .iter()
+        .find(|function| function.name == "assemble_reason")
+        .expect("raw DEFLATE's diagnostic assembly, assemble_reason, anchors these routes");
+    assert_eq!(
+        assemble
+            .entailment
+            .derivations
+            .roots
+            .iter()
+            .filter(|root| matches!(
+                root.kind,
+                DerivationRootKind::PostconditionDirectReceiver { .. }
+            ))
+            .count(),
+        8,
+        "every receiver route is one of assemble_reason's append sites",
+    );
     assert_eq!(
         program
             .functions
