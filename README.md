@@ -60,8 +60,6 @@ requirements. The reading and authority rules are in
   reference material.
 - [research/](research/README.md): investigations and experiments with their
   designs, measurements, and rejected alternatives.
-- [mcts_mem/](mcts_mem/): frozen historical decision record, being moved into
-  `design/` and deleted when that is complete.
 - [design/](design/): live design decisions with their reasons, and the
   procedure that maintains them.
 - [governance/](governance/): archive-protection hooks and specification-change

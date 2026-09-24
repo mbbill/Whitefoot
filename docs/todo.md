@@ -127,6 +127,23 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   Results or wider storage support makes this cost material. The language
   extensions below remain a separate question.
 
+- **Some ENT-3 sources read no measure operand.** S7's constant-offset,
+  checked-offset, exact-division, remainder and unsigned `iand` rows read an
+  operand the specification calls an admitted term or constant through the
+  flow's tracked-place and constant reader, which omits ENT-2 clause (b)
+  measure terms; S5/S6 copies, S1 comparisons and S11 counted captures do
+  read measures. So `let r = x % deref(src).len;` establishes no
+  `r < deref(src).len`, and a following `deref(src)[r]` is rejected under
+  OP-4 although binding the length first is accepted. Other flow readers of
+  the same shape (subscript offset terms, S13 index captures, allocation
+  lengths, range-formation operands, integer-domain operands, the ENT-5 `Ok`
+  payload) are unverified; affine images already cover some of them. Repair
+  with one complete ENT-2 term reader, and validate it with paired direct and
+  let-bound cases for each source, including a write that kills the measure,
+  requiring no other verdict change. Deferred from the counted-endpoint
+  repair, which changed only S11's reading; reopen with the next entailment
+  change or when a program needs the direct form.
+
 - **Joined reference proofs lose useful target-relative information.** A
   reference selecting either of two freshly empty Slots cannot establish the
   append precondition from both constructors' facts; captured disjoint ranges
@@ -757,6 +774,37 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   propagate g();` never overlaps. Allowing a `propagate` second member would
   need the lowering to join the hand-out before the `Err` return; a future
   investigation, taken up when a real program shows the gap.
+- **Acceptance and check removal are trusted to the whole checker.** Every
+  lowering authorization (a subscript without a check, an exact operation, a
+  discharged call goal) is issued by the same entailment engine that decides
+  acceptance, so the trusted base for "no unproved partial operation" is the
+  full front end plus entailment. The
+  [certificate packet](../research/investigations/proof-certificate-architecture/PACKET.md)
+  (v0.26, before the x1 ownership redesign) selects a staged route: the engine
+  records a positive derivation for every discharged obligation, and a small
+  verifier over a trusted proof-flow extraction checks them and jointly issues
+  the lowering capability, while rejections stay with the engine because a
+  missing certificate does not prove non-derivability. The compiler keeps a
+  derivation ledger; no verifier, extraction boundary or joint issuer exists.
+  Re-derive the packet's Envelope B against the current specification, then
+  prototype the verifier on `tests/programs/` and measure its size, proof size
+  and added compile time; a corrupted or missing certificate must never
+  authorize lowering. Close when a verifier jointly issues the capability, or
+  when the packet's stop gates record why the unified engine remains.
+- **There is no source-level foreign-function boundary.** C enters only as a
+  trusted linked definition of an ordinary declaration [PRE-1, SCOPE-3], which
+  the checker cannot inspect, and a C program cannot call Whitefoot code
+  through a stated ABI. A real systems program needs both directions: calling
+  an existing C library and exporting a Whitefoot component. The
+  [C ABI capsule idea](ideas.md#safe-c-abi-capsules) sketches export through
+  opaque validated handles; import needs an explicit contract for ownership,
+  layout, callbacks, foreign threads and failure, and a statement of what the
+  compiler trusts. Validate on one real dependency in each direction, starting
+  with the capsule experiment's misuse tests (stale handles, double drop,
+  overlapping buffers, short outputs, allocation failure). This interacts with
+  the module design for separate compilation. Close when a specified boundary
+  and its conformance cases land, or the owner records why a narrower
+  boundary suffices.
 
 ## Open language questions
 
@@ -1075,13 +1123,41 @@ condition under which it is taken up.
 - **Handing checker facts to the backend.** Emitted since the v0.60 port:
   `noalias` (not on `swap`), `nonnull`, `dereferenceable`,
   `captures(none)` or `nocapture` by a build-time probe, `inbounds`, and
-  `nuw`/`nsw` on the exact family. The later qualified Ring payload-address
+  `nuw`/`nsw` on the exact family. A `&[T]` range parameter crosses calls as
+  its element pointer and count, and the pointer carries the same facts
+  except `dereferenceable` (`compiler/backend-facts`; the
+  [range-reference fact investigation](../research/investigations/range-reference-facts/DESIGN.md)
+  records the derivation and the removed vectorizer overlap check). The later
+  qualified Ring payload-address
   `llvm.assume` is measured in the [Deque comparison](../research/experiments/container-representation/deque-library/RESULTS.md);
   its remaining costs are tracked above. Not emitted: `memory(argmem: ...)` (the
   IR carries neither the declared row nor the allocation fact), scoped
   alias metadata and `llvm.loop.parallel_accesses` (the emitter has no
   metadata table). Build the metadata subsystem as its own step with a
   before/after benchmark.
+- **Alias facts for worker-run loop chunks.** A synthesized loop-split chunk
+  or splitter has no source signature, so its range and reference captures
+  carry no `noalias`. The sequential world inlines the chunk into its source
+  function, which has the facts; a chunk run as a worker lane does not, so a
+  vectorizable chunk loop may keep a runtime overlap check. The facts would
+  need their own derivation from PAR-2 independence and the enclosing call's
+  EFF-5 result, since sibling chunks write other parts of the same captured
+  range concurrently. Impact and whether any current kernel pays such a check
+  are unmeasured. Validate by inspecting the optimized worker chunks of the
+  formal compute kernels for `vector.memcheck` and, where one appears,
+  comparing chunk time with and without a hand-added fact. Deferred because
+  the range-reference change covers source signatures only; reopen when a
+  measured parallel kernel shows the check.
+- **Compute-bench private adapters still pass aggregate ranges.**
+  `research/experiments/compute-bench/array_reference_host.ll`,
+  `first_index_host.ll`, `dag_fanin_host.ll` and the first-index observation
+  rewrite in that Makefile spell a range argument as one `{ ptr, i64 }`
+  aggregate. The compiler now passes it as pointer and count; the machine code
+  is identical on the admitted targets, but LLVM text bound into a WF module
+  must use the split form, and the first-index rewrite no longer matches the
+  emitted head and refuses. These dated research inputs were left unchanged;
+  update them before running those experiments with a compiler that includes
+  the split, keeping an older baseline arm on its own adapter.
 - **Subscripted integer places as terms.** Today a place with subscripts is
   a term only when its last step is a readonly field. The kill machinery
   (offset support, overlapping element writes) already serves measure terms

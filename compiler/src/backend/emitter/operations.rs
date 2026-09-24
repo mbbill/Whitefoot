@@ -132,11 +132,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 let address = self.value_place(*argument)?;
                 rendered.push(format!("ptr {address}"));
             } else {
-                rendered.push(format!(
-                    "{} {}",
-                    llvm_type(self.program, parameter.ty())?,
-                    self.value_name(*argument)
-                ));
+                let operand = self.value_name(*argument);
+                rendered.push(self.value_argument(*parameter, &operand)?);
             }
         }
         // A call that stays inside a budgeted component carries the caller's
@@ -162,6 +159,31 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             rendered.join(", ")
         )
         .map_err(|_| BackendFailure::TextEmission)
+    }
+
+    /// One by-value operand as its callee's parameter receives it.
+    ///
+    /// A range reference crosses every call boundary as its element pointer
+    /// and count (see [`crate::backend::abi`]), so its pair is split here,
+    /// immediately before the call that passes it; any other value passes as
+    /// itself.
+    pub(super) fn value_argument(
+        &mut self,
+        parameter: ParameterAbi,
+        operand: &str,
+    ) -> Result<String, BackendFailure> {
+        let ty = llvm_type(self.program, parameter.ty())?;
+        if !parameter.is_range() {
+            return Ok(format!("{ty} {operand}"));
+        }
+        let pointer = self.next_temporary()?;
+        let count = self.next_temporary()?;
+        writeln!(
+            self.output,
+            "  %{pointer} = extractvalue {ty} {operand}, 0\n  %{count} = extractvalue {ty} {operand}, 1"
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        Ok(format!("ptr %{pointer}, i64 %{count}"))
     }
 
     pub(super) fn emit_boolean(
