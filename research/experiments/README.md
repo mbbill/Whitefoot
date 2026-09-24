@@ -141,8 +141,9 @@ completion criterion were refused.
   against their references, and the stdin-to-stdout filter was not writable as
   specified because v0.38 had no standard input, so that program copies a
   named file instead. None of the five received a staged I/O overlap: every
-  `PAR stage` verdict in the trial's `ledger/` is denied. That finding concerns
-  PAR-3 staged overlap, which the C2 amendment later removed (see
+  `PAR stage` verdict for programs p1–p5 in the trial's `ledger/` is denied,
+  while three of the trial's probe programs show the permitted form. That
+  finding concerns PAR-3 staged overlap, which the C2 amendment later removed (see
   `io-completion-bench/` below). The writer's findings are summarized in
   [`REPORT.md`](blind-writer/2026-08-28/REPORT.md) §8. It is removed when the
   language stops changing.
@@ -285,8 +286,9 @@ independent oracles require a formal test home outside this directory.
 - `port-study/binary-trees/` — floor-raising result: the v0 language's
   no-reborrow rule steered the port to the fast bottom-up shape (RESULTS.md
   corrects the earlier "only expressible shape" reading, and the current
-  language has recursive `Box` trees); ~11% checked-semantics tax vs
-  identical-shape Rust.
+  language has recursive `Box` trees, as in
+  [`recursive_tree.wf`](../../tests/programs/recursive_tree.wf)); ~11%
+  checked-semantics tax vs identical-shape Rust.
 - `port-study/wc/` — full-counts 0.27s vs GNU 0.48 / uutils-Rust 0.56 on a
   426MB corpus (regenerate: see RESULTS); -l honest gap vs memchr/bytecount.
 - `port-study/wc-chunk-summary/` — ordered-monoid parallel wc. NEGATIVE
