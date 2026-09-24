@@ -3054,6 +3054,52 @@ mod tests {
         );
     }
 
+    /// [MOD-8, FN-9] a caller's verdict reads the interface of the generic
+    /// function it supplies an actual to, never that function's body: when
+    /// the body starts calling the supplied actual, the caller's recorded
+    /// verdict and the root's are reused, and only the callee's module and
+    /// the composition, which checks the instance that now calls the actual,
+    /// are recomputed and accepted.
+    #[test]
+    fn a_callee_body_that_starts_calling_a_supplied_actual_leaves_its_caller_reused() {
+        const GRAPH: &[u8] = b"pkg::apply: [];\npkg::caller: [pkg::apply];\npkg: [pkg::caller];\n\nentry app = pkg::main;\n";
+        const APPLY_INTERFACE: &[u8] = b"public fn run<fn step(value: u64) -> result: u64 pure>(value: u64) -> result: u64 pure doc \"Runs a value through the supplied step.\";\n";
+        const RETURNS: &[u8] = b"fn run<fn step(value: u64) -> result: u64 pure>(value: u64) -> result: u64 pure {\n  return value;\n}\n";
+        const CALLS: &[u8] = b"fn run<fn step(value: u64) -> result: u64 pure>(value: u64) -> result: u64 pure {\n  let stepped = step(value: value);\n  return stepped;\n}\n";
+        const CALLER_INTERFACE: &[u8] =
+            b"public fn go(value: u64) -> result: u64 pure doc \"Runs the caller's step.\";\n";
+        const CALLER_BODY: &[u8] = b"fn twice(value: u64) -> result: u64 pure {\n  let result = value *wrap 2_u64;\n  return result;\n}\n\nfn go(value: u64) -> result: u64 pure {\n  let result = pkg::apply::run::<fn twice>(value: value);\n  return result;\n}\n";
+        const MAIN_BODY: &[u8] = b"fn main() -> status: ExitStatus pure {\n  let total = pkg::caller::go(value: 3_u64);\n  let low = iand(total, 1_u64);\n  match cvt.checked::<u64, u8>(low) {\n    Ok(value: code) => {\n      return exit_status(code: code);\n    }\n    Err(error: refused) => {\n      return exit_status(code: 255_u8);\n    }\n  }\n}\n";
+        let directory = CacheDirectory::new("actual");
+        let cache = directory.open();
+        let records = |apply_body: &'static [u8]| -> Vec<(&'static str, &'static [u8])> {
+            vec![
+                ("apply/module.wfm", APPLY_INTERFACE),
+                ("apply/run.wf", apply_body),
+                ("caller/module.wfm", CALLER_INTERFACE),
+                ("caller/go.wf", CALLER_BODY),
+                ("module.wfm", ROOT_INTERFACE),
+                ("main.wf", MAIN_BODY),
+            ]
+        };
+        assert_eq!(
+            recomputed(GRAPH, &records(RETURNS), &cache),
+            ["pkg::apply", "pkg::caller", "pkg", "app"]
+                .map(str::to_owned)
+                .to_vec()
+        );
+        assert_eq!(
+            recomputed(GRAPH, &records(CALLS), &cache),
+            ["pkg::apply", "app"].map(str::to_owned).to_vec()
+        );
+        assert!(
+            verdicts(GRAPH, &records(CALLS), Some(&cache))
+                .iter()
+                .all(|(_, outcome, _)| matches!(outcome, super::CheckOutcome::Accepted { .. })),
+            "the callee's new body and the composition that checks it are accepted"
+        );
+    }
+
     /// [MOD-1, MOD-5] deleting a dependency edge changes the graph facts the
     /// client's check read, so its recorded verdict is not reused and the
     /// recomputed one refuses the now unpermitted reference.

@@ -190,9 +190,16 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   the bound in both reserve and caller, propagated through intervening helpers,
   then require the intended OP-9 rejection one element above it. Improve the
   diagnostic to identify the failed callee obligation and unavailable summary
-  without changing acceptance. Its benefit and exact attribution remain
-  unverified; defer this diagnostic work while the admitted generic standalone
-  control serves the experiment, and reopen when improving call-proof reports.
+  without changing acceptance. The GrowVector module witness met the same
+  report: a wrapper generic only over `ceiling` that returns
+  `grow_vector_append::<u64, ceiling>`'s length is refused at its own
+  postcondition (FN-9, identically by main's compiler), while the reserve
+  instance it reaches carries the same unbounded OP-9 `grow` obligation; the
+  conformance case `mod6-pos-grow-vector-boundary` therefore wraps with a
+  wrapper generic over the element type as well. Its benefit and exact
+  attribution remain unverified; defer this diagnostic work while the
+  admitted generic standalone control serves the experiment, and reopen when
+  improving call-proof reports.
 
 - **Validate a shared Ring wrap calculation independent of layout bounds.**
   The corrected front predecessor handles every admitted capacity. Remaining
