@@ -367,6 +367,22 @@ pub(crate) trait SeparationOracle {
     /// `i != r.len - 1` is proved. `window` is the resolved place the two
     /// steps hang below, which is the `r` the relation `r.len` is read of.
     fn index_is_not_last(&self, window: &ResolvedPlace, index: CapturedValue) -> bool;
+
+    /// Whether both places are interpreted against one value of `r.len`.
+    ///
+    /// Every [WIN-2] part is defined relative to `r.len`, and a subscript is
+    /// live only below it, so each fixed answer that separates a part from an
+    /// index or from another part holds only when both steps read the same
+    /// length. A consumer comparing places of one program state answers
+    /// `true`, which is this default. [PAR-1] compares two statements' places
+    /// in the state before the first, where the second's subscript is live
+    /// only after the statements before it have run; when one of those writes
+    /// `r.len`, an index live only after an append is not distinct from the
+    /// append slot, and the answer is `false`. Answering `false` is sound:
+    /// the pair then overlaps.
+    fn window_length_is_shared(&self, _window: &ResolvedPlace) -> bool {
+        true
+    }
 }
 
 /// One resolved place [OWN-7]: its root and the ordered steps below it.
@@ -697,10 +713,12 @@ fn separation(
                 StepSeparation::Overlapping
             }
         }
+        // Two parts are separated by their definitions against one `r.len`,
+        // and by nothing when the two places read different lengths.
         (PlaceStep::Part(left), PlaceStep::Part(right)) => {
             if left == right {
                 StepSeparation::Same
-            } else if parts_overlap(left, right) {
+            } else if parts_overlap(left, right) || !oracle.window_length_is_shared(window) {
                 StepSeparation::Overlapping
             } else {
                 StepSeparation::Separate
@@ -708,7 +726,13 @@ fn separation(
         }
         // A live `r[i]`, which has `i < r.len`, never overlaps `r.next` or
         // `r.free`, always overlaps `r.filled`, and overlaps `r.last` unless
-        // `i != r.len - 1` is proved [WIN-2].
+        // `i != r.len - 1` is proved [WIN-2]. Liveness bounds the index by the
+        // length the part is defined against only when both read one length.
+        (PlaceStep::Index(_), PlaceStep::Part(_)) | (PlaceStep::Part(_), PlaceStep::Index(_))
+            if !oracle.window_length_is_shared(window) =>
+        {
+            StepSeparation::Overlapping
+        }
         (PlaceStep::Index(index), PlaceStep::Part(part))
         | (PlaceStep::Part(part), PlaceStep::Index(index)) => match part {
             WindowPart::Next | WindowPart::Free => StepSeparation::Separate,

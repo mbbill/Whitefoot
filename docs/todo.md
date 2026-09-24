@@ -661,7 +661,10 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   repeated visits meet with logical AND. A segment of n members has n(n-1)/2
   pairs, but that logical requirement does not mandate quadratic repeated
   proof work. General index mapping through the first member's `ensures` is
-  still unavailable; missing evidence keeps sequential lowering. Investigate
+  still unavailable; missing evidence keeps sequential lowering. For windows
+  this means every [WIN-2] part-relative separation is refused when a member
+  before the later one writes that window's `len`, which also refuses a read
+  of an old slot after an append; the mapping would recover it. Investigate
   indexing and reuse without losing statement identity, captured endpoints,
   flow context or all-pairs composition. Close this item when larger segments
   have measured costs and the intended proof coverage, retaining guarded,

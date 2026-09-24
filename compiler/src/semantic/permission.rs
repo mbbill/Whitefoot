@@ -92,9 +92,9 @@
 
 use super::loop_permission::LoopPermission;
 use super::model::{
-    BindingId, CheckedArrayRoot, CheckedEffects, CheckedExpression, CheckedFunction, CheckedMode,
-    CheckedPlaceStep, CheckedSetTarget, CheckedStatePath, CheckedStatement, FunctionId,
-    expression_children,
+    BindingId, CheckedArrayRoot, CheckedEffects, CheckedExpression, CheckedFunction,
+    CheckedMeasure, CheckedMode, CheckedPlaceStep, CheckedSetTarget, CheckedStatePath,
+    CheckedStatement, FunctionId, expression_children,
 };
 use super::places::{
     CapturedRange, CapturedValue, PlaceMap, PlaceRoot, PlaceStep, ResolvedPlace, SeparationOracle,
@@ -604,6 +604,7 @@ impl<'check> Program<'check> {
             first: &first_site.statement,
             second: &second_site.statement,
             proofs,
+            before_second: vec![left],
         };
         match footprint_conflict(&oracle, left, right) {
             Some(denial) => PermissionVerdict::Denied(denial),
@@ -661,10 +662,16 @@ impl<'check> Program<'check> {
                 else {
                     return true;
                 };
+                // A run is contiguous, so the statements between this pair
+                // are the run members between them, each with a footprint.
                 let oracle = PairSeparationOracle {
                     first: &first_site.statement,
                     second: &second_site.statement,
                     proofs,
+                    before_second: classified[*earlier..index]
+                        .iter()
+                        .filter_map(|member| member.footprint.as_ref().ok())
+                        .collect(),
                 };
                 footprint_conflict(&oracle, first_footprint, footprint).is_some()
             });
@@ -1119,9 +1126,33 @@ struct PairSeparationOracle<'proof> {
     first: &'proof NodePath,
     second: &'proof NodePath,
     proofs: &'proof [PermissionSeparationProof],
+    /// The footprints of the first statement and of every statement between
+    /// the two: what runs from the state both paths are interpreted in up to
+    /// the second statement's own entry [PAR-1].
+    before_second: Vec<&'proof Footprint>,
 }
 
 impl SeparationOracle for PairSeparationOracle<'_> {
+    /// "The paths of both statements are interpreted in the state before the
+    /// first statement; the first statement's `ensures` maps the second's
+    /// indices into that state, so an index that is live only after an append
+    /// is not distinct from the append slot" [PAR-1, WIN-2]. This judgment
+    /// performs no such mapping, so a window whose `r.len` any statement
+    /// before the second writes has no length the two paths share.
+    fn window_length_is_shared(&self, window: &ResolvedPlace) -> bool {
+        let mut path = window.path.clone();
+        path.push(PlaceStep::Measure(CheckedMeasure::Length));
+        let length = ResolvedPlace {
+            root: window.root,
+            path,
+        };
+        !self
+            .before_second
+            .iter()
+            .flat_map(|footprint| &footprint.writes)
+            .any(|write| places_overlap(&UnprovedSeparations, &write.place, &length))
+    }
+
     fn indices_distinct(&self, _left: CapturedValue, _right: CapturedValue) -> bool {
         false
     }
