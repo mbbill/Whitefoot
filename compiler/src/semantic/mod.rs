@@ -512,9 +512,6 @@ pub struct UndischargedPostconditionDetail {
     pub relation: String,
     /// The exact non-discharged disposition.
     pub disposition: PostconditionProofDisposition,
-    /// The restructuring that disposition admits: a refuted relation is
-    /// false in the facts at that return, and an unproved one lacks a fact.
-    pub mechanical_fix: &'static str,
 }
 
 /// Structured reason for one semantic rejection.

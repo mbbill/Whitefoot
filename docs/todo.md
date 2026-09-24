@@ -774,16 +774,38 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   that capture identity stays unchanged. Deferred because the separation
   proof already needs a binding there and the rejection names the call;
   reopen when a writer report shows the `?` blocking a repair.
-- **DIAG-1's FN-8 restructuring is one sentence for both dispositions.** The
-  specification states one required restructuring for an FN-8 rejection,
-  `establish the complete callee requirement with one dominating branch or
-  one preceding proved invariant before the call`, and the checker's texts
-  already elaborate it. A refuted goal is false in the facts that reach the
-  call, so no added invariant establishes it; the checker now names a
-  refuted-specific repair for FN-8, OP-2, OP-6 and FN-9. The owner should
-  decide whether DIAG-1 states the refuted restructuring, or whether the
-  diagnostic texts return to the single sentence. Close with that ruling and,
-  if the specification changes, the matching pinned sentences.
+- **Proposal: disposition-specific restructurings for proof rejections.** A
+  `refuted` goal is false in the facts where it stands [ENT-4], so no added
+  requirement, invariant or proof step can establish it, yet the FN-8, OP-2
+  and OP-6 texts ask for exactly that for both dispositions, and an FN-9
+  rejection carries no restructuring at all. For an agent that applies
+  the repair literally, a refuted goal should name a change to what reaches
+  the site — the call's arguments, the operands, the returned value or the
+  state that reaches it — or a deliberate guard where rejection is intended
+  behavior, while an unproved goal keeps "establish the fact". This needs a
+  specification amendment of DIAG-1's FN-8 sentence and the FN-8, FN-9, OP-2
+  and OP-6 rejection text (with any FN-9 payload field it adds), followed by
+  the compiler texts, the pinned sentences and the unit tests that assert a
+  disposition's fix; a compiler-only change would diverge from the texts the
+  specification prescribes. Validate on one refuted and one unproved probe per
+  rule, such as `255_u8 + 1_u8`, `cvt::<u32, u8>(256_u32)`, a literal actual
+  outside a callee requirement, and an ensures relation false at its return.
+  Close when the amendment and its derived updates land, or the owner keeps
+  one restructuring per rule.
+- **Printed restructurings have drifted from the specification's texts.**
+  DIAG-1 includes a mechanical fix "exactly where the owning rule requires
+  one", and several rules prescribe its words, but the checker's strings on
+  main differ: FN-8 prescribes `establish the complete callee requirement
+  with one dominating branch or one preceding proved invariant before the
+  call` and prints "when the call is required to succeed, establish the entire
+  instantiated callee requirement with a verified requirement, ..."; OP-6's
+  printed repair likewise elaborates its prescribed one, and rules that
+  prescribe none, such as EFF-1 and EFF-2, print one anyway. Audit every
+  rejection in one pass, rule by rule, and either update the specification's
+  text or the compiler's; the criterion is that every restructuring the
+  specification prescribes equals the printed one, and a printed fix exists
+  only where a rule requires one or the specification is amended to allow
+  it. Pinned sentences and unit tests that assert the texts change with it.
 
 ## Open language questions
 

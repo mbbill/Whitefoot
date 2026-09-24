@@ -225,20 +225,6 @@ fn conversion_diagnostics_distinguish_refutation_from_missing_or_stale_evidence(
                 ),
                 "unexpected issue: {issue:?}"
             );
-            // A refuted domain is false where the conversion stands, so its
-            // repair changes what reaches it; an unproved one asks for the
-            // missing fact.
-            let SemanticIssueKind::UndischargedConversionDomainObligation {
-                mechanical_fix, ..
-            } = issue.kind()
-            else {
-                unreachable!("matched above");
-            };
-            assert_eq!(
-                mechanical_fix.starts_with("the facts that reach this conversion prove"),
-                disposition == StaticObligationDisposition::Refuted,
-                "{mechanical_fix}"
-            );
         });
     }
 }

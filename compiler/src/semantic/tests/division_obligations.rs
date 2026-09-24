@@ -15,9 +15,6 @@ use super::entailment::validate_derivations;
 use super::with_semantics;
 
 const DIVISION_FIX: &str = "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic";
-/// The [OP-2] repair when the facts at the operation prove its `.defined`
-/// normalization false: no added proof establishes it.
-const REFUTED_DOMAIN_FIX: &str = "the facts that reach this operation prove its `.defined` normalization false, so the exact operation cannot succeed as written and no added invariant or proof step establishes it: change its operands or the state that reaches it, or use an available total non-exact row; guard it with a dominating branch only when its false edge is intended program behavior";
 
 fn named<'functions>(
     functions: &'functions [CheckedFunction],
@@ -230,7 +227,7 @@ fn a_constant_zero_divisor_is_rejected_everywhere() {
             &SemanticIssueKind::UndischargedIntegerDomainObligation {
                 residual: "x /defined 0_i32".to_owned(),
                 disposition: StaticObligationDisposition::Refuted,
-                mechanical_fix: REFUTED_DOMAIN_FIX,
+                mechanical_fix: DIVISION_FIX,
             },
         );
     });
@@ -369,7 +366,7 @@ fn the_default_checker_rejects_a_constant_zero_divisor() {
             &SemanticIssueKind::UndischargedIntegerDomainObligation {
                 residual: "x /defined 0_i32".to_owned(),
                 disposition: StaticObligationDisposition::Refuted,
-                mechanical_fix: REFUTED_DOMAIN_FIX,
+                mechanical_fix: DIVISION_FIX,
             },
         );
     });

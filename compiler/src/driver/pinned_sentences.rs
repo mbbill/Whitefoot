@@ -1023,10 +1023,9 @@ fn main() -> status: ExitStatus pure {
         sentences: &[r#"instantiated_goal: "9_u64 <= deref(names).len""#],
     },
     Probe {
-        // A refuted goal is false in the facts that reach the call, so the
-        // repair changes what reaches it; and a generic callee is named as a
-        // call writes it.
-        name: "refuted-goal-of-a-generic-instance.wf",
+        // A generic callee is named as a call writes it [FN-2], never by the
+        // symbol that keys its lowering.
+        name: "goal-of-a-generic-instance.wf",
         source: br#"fn need<const n: u64>(x: u64) -> out: u64 pure contract {
   requires x < n;
 } {
@@ -1039,40 +1038,13 @@ fn main() -> status: ExitStatus pure {
 }
 "#,
         rule: "FN-8",
-        sentences: &[
-            r#"concrete_callee: "need::<4>""#,
-            r#"disposition: Refuted, mechanical_fix: "the facts that reach this call prove the instantiated requirement false, so the call cannot succeed as written and no added invariant or proof step establishes it: change the call's arguments or the state that reaches the call; guard the call with a dominating branch only when rejection is intended program behavior""#,
-        ],
+        sentences: &[r#"concrete_callee: "need::<4>""#],
     },
     // -------------------------------------------------------------------
-    // [OP-2], [OP-6] and [FN-9]: a refuted goal names a different repair.
+    // [FN-9]: the selected return, named by its instance.
     // -------------------------------------------------------------------
     Probe {
-        name: "refuted-exact-addition.wf",
-        source: br#"fn main() -> status: ExitStatus pure {
-  let x = 255_u8 + 1_u8;
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "OP-2",
-        sentences: &[
-            r#"disposition: Refuted, mechanical_fix: "the facts that reach this operation prove its `.defined` normalization false, so the exact operation cannot succeed as written and no added invariant or proof step establishes it: change its operands or the state that reaches it, or use an available total non-exact row; guard it with a dominating branch only when its false edge is intended program behavior""#,
-        ],
-    },
-    Probe {
-        name: "refuted-exact-conversion.wf",
-        source: br#"fn main() -> status: ExitStatus pure {
-  let narrow = cvt::<u32, u8>(256_u32);
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "OP-6",
-        sentences: &[
-            r#"disposition: Refuted, mechanical_fix: "the facts that reach this conversion prove its cvt.defined domain false, so the exact conversion cannot succeed as written and no added invariant or proof step establishes it: change the converted value or the state that reaches it, or use cvt.checked to return the failed conversion; guard it with a dominating cvt.defined condition only when refusal is intended behavior""#,
-        ],
-    },
-    Probe {
-        name: "refuted-postcondition-of-a-generic-instance.wf",
+        name: "postcondition-of-a-generic-instance.wf",
         source: br#"fn bad<T: Int>(value: T) -> result: T pure contract {
   ensures result < value;
 } {
@@ -1085,27 +1057,7 @@ fn main() -> status: ExitStatus pure {
 }
 "#,
         rule: "FN-9",
-        sentences: &[
-            r#"concrete_function: "bad::<u8>""#,
-            r#"disposition: Refuted, mechanical_fix: "the facts at this return prove the ensures relation false, so the return cannot satisfy it as written and no added invariant or proof step establishes it: change the returned value or the state that reaches this return, or state in the ensures clause only what every return establishes""#,
-        ],
-    },
-    Probe {
-        name: "unproved-postcondition.wf",
-        source: br#"fn pass(value: u64, bound: u64) -> result: u64 pure contract {
-  ensures result < bound;
-} {
-  return value;
-}
-
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#,
-        rule: "FN-9",
-        sentences: &[
-            r#"disposition: Unproved, mechanical_fix: "establish the ensures relation at this return with a verified requirement, a source invariant, or explicit finite proof steps; otherwise restructure the return, or state in the ensures clause only what every return establishes""#,
-        ],
+        sentences: &[r#"concrete_function: "bad::<u8>""#],
     },
     // [FORM-8] one canonical region spelling: each position a region can
     // occupy, written exactly where the surrounding text does not fix it.

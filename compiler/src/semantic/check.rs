@@ -3691,9 +3691,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 mechanical_fix: "when the relation must hold, establish the residual with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise restructure the access",
                             },
                         },
-                        // A refuted goal is false in the facts that reach the
-                        // operation, so the repair changes what reaches it; an
-                        // unproved one lacks a fact the writer can supply.
                         super::entailment::ObligationFamily::IntegerDomain => SemanticIssue {
                             rule: SemanticRule::Op2,
                             location,
@@ -3704,11 +3701,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 } else {
                                     StaticObligationDisposition::Unproved
                                 },
-                                mechanical_fix: if outcome.refuted {
-                                    "the facts that reach this operation prove its `.defined` normalization false, so the exact operation cannot succeed as written and no added invariant or proof step establishes it: change its operands or the state that reaches it, or use an available total non-exact row; guard it with a dominating branch only when its false edge is intended program behavior"
-                                } else {
-                                    "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic"
-                                },
+                                mechanical_fix: "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic",
                             },
                         },
                         super::entailment::ObligationFamily::AllocationFit => SemanticIssue {
@@ -3729,11 +3722,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 } else {
                                     StaticObligationDisposition::Unproved
                                 },
-                                mechanical_fix: if outcome.refuted {
-                                    "the facts that reach this conversion prove its cvt.defined domain false, so the exact conversion cannot succeed as written and no added invariant or proof step establishes it: change the converted value or the state that reaches it, or use cvt.checked to return the failed conversion; guard it with a dominating cvt.defined condition only when refusal is intended behavior"
-                                } else {
-                                    "establish this cvt.defined domain with a verified requirement, an integer range invariant, or explicit finite proof steps; use a dominating cvt.defined condition when refusal is intended behavior, or use cvt.checked to return the failed conversion"
-                                },
+                                mechanical_fix: "establish this cvt.defined domain with a verified requirement, an integer range invariant, or explicit finite proof steps; use a dominating cvt.defined condition when refusal is intended behavior, or use cvt.checked to return the failed conversion",
                             },
                         },
                         super::entailment::ObligationFamily::CallSeparation
@@ -3816,15 +3805,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             },
                         }));
                     }
-                    // [FN-8] a refuted goal is false in the facts that reach the
-                    // call, so no added invariant or proof step establishes it and
-                    // only a change to what reaches the call repairs it; an
-                    // unproved one lacks a fact the writer can supply.
-                    let mechanical_fix = if disposition
-                        == crate::CallRequirementDisposition::Refuted
-                    {
-                        "the facts that reach this call prove the instantiated requirement false, so the call cannot succeed as written and no added invariant or proof step establishes it: change the call's arguments or the state that reaches the call; guard the call with a dominating branch only when rejection is intended program behavior"
-                    } else if first_ephemeral_argument(&outcome.goal.root).is_some() {
+                    let mechanical_fix = if first_ephemeral_argument(&outcome.goal.root).is_some() {
                         "bind that argument or referent value with one preceding ordinary let, establish the entire instantiated requirement over that binding, and pass the binding, borrowing it when the parameter mode requires a borrow"
                     } else {
                         "when the call is required to succeed, establish the entire instantiated callee requirement with a verified requirement, a source invariant, or explicit finite proof steps before the call; use a dominating branch only when rejection is intended program behavior; otherwise restructure the call"
@@ -3917,14 +3898,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         conjunct: proof.relation_ordinal,
                         selector: proof.selector.clone(),
                         relation: exit.residual.clone(),
-                        mechanical_fix: match disposition {
-                            crate::PostconditionProofDisposition::Refuted => {
-                                "the facts at this return prove the ensures relation false, so the return cannot satisfy it as written and no added invariant or proof step establishes it: change the returned value or the state that reaches this return, or state in the ensures clause only what every return establishes"
-                            }
-                            crate::PostconditionProofDisposition::Unproved => {
-                                "establish the ensures relation at this return with a verified requirement, a source invariant, or explicit finite proof steps; otherwise restructure the return, or state in the ensures clause only what every return establishes"
-                            }
-                        },
                         disposition,
                     },
                 )),
