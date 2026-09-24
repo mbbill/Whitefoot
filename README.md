@@ -96,11 +96,11 @@ It still can:
 
 Contracts on functions (`requires`, `ensures`), `reads`/`writes` effect rows
 on signatures, loop invariants, and occasionally an explicit proof step. The
-test programs and container library (94 files, 23.6k lines, about 800
+test programs and container library (94 files, about 24k lines and 800
 functions: a recursive grep, a DEFLATE decoder, a B-tree, a hash map, a
-priority queue, a TCP echo server, a directory walker and more) contain 200
-contract blocks, 294 invariants and 41 explicit proof steps. The 1,363-line
-grep has 3 invariants and no explicit proof step.
+priority queue, a TCP echo server, a directory walker and more) contain about
+200 contract blocks, 290 invariants and 41 explicit proof steps. The grep,
+about 1,700 lines, needs 2 invariants and no explicit proof step.
 
 The proof procedure is fixed: difference-bound closure, trying zero, one or
 two premises per goal ([ENT-1](spec/kernel-spec.md)). There is no timeout and
@@ -133,7 +133,7 @@ clang.
 git clone https://github.com/mbbill/Whitefoot.git && cd Whitefoot
 cargo build --release --manifest-path compiler/Cargo.toml
 compiler/target/release/whitefootc tests/programs/wfgrep.wf -o wfgrep
-./wfgrep invariant tests/programs/wfgrep.wf
+./wfgrep invariant tests/programs
 compiler/target/release/whitefootc tests/conformance/cases/op4-neg-index-undischarged.wf
 ```
 
@@ -145,8 +145,8 @@ prints it as JSON.
 
 - [Specification](spec/kernel-spec.md): 121 numbered rules. Every rejection
   cites one rule and one location.
-- [Conformance suite](tests/conformance/): 1,203 cases, 568 of which must be
-  rejected under a named rule (61 distinct rules).
+- [Conformance suite](tests/conformance/): about 1,200 cases, more than 560
+  of which must be rejected under a named rule (over 60 distinct rules).
 - [Programs](tests/programs/) built and run by the test gate.
 - [Known defects and follow-up work](docs/todo.md), including compiler bugs.
 - [Experiments](research/experiments/README.md), negative results included.
