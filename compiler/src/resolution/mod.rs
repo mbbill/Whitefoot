@@ -1105,6 +1105,29 @@ impl InterfaceFunction {
 }
 
 impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'source> {
+    /// [MOD-6, MOD-8] the read-only rendering of one module's resolved public
+    /// interface: its public declarations and the complete definitions they
+    /// reach, every name printed as its qualified identity and no `doc`
+    /// entry, so that comparing two revisions' renderings conservatively
+    /// detects every semantic and representation change.
+    ///
+    /// # Errors
+    ///
+    /// Returns a compiler invariant failure when the canonical tree or the
+    /// resolution records are inconsistent.
+    pub fn render_interface(
+        &self,
+        module: crate::ModuleId,
+    ) -> Result<String, ResolutionCompilerFailure> {
+        engine::render_interface(
+            &self.syntax.finalized.topology,
+            self.syntax.classified_bundle(),
+            &self.declarations,
+            &self.lexical_uses,
+            module,
+        )
+    }
+
     /// Returns every interface function declaration with its definition
     /// [MOD-7].
     #[must_use]

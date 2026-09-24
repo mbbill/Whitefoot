@@ -464,6 +464,38 @@ pub fn check_module(
     with_checked_program(&selected, Some(graph.modules()), limits, |_, _| Ok(()))
 }
 
+/// [MOD-6, MOD-8] renders one module's resolved public interface after
+/// checking its interface records against its dependencies' interfaces, the
+/// same input the interface check reads. Equal renderings of two revisions
+/// mean equal public names, signatures, contracts and complete reached
+/// representations, so comparing them is a conservative interface
+/// comparison.
+///
+/// # Errors
+///
+/// Returns the interface check's failure, or an unregistered module.
+pub fn render_module_interface(
+    graph: &crate::ModuleGraph,
+    inputs: &[SourceInput<'_>],
+    module: &str,
+    limits: CompilerLimits,
+) -> Result<String, CompilationFailure> {
+    let target = registered_module(graph, module)?;
+    let selected = module_check_inputs(graph, inputs, target, true);
+    with_checked_program(&selected, Some(graph.modules()), limits, |checked, _| {
+        checked
+            ._resolved
+            .render_interface(target)
+            .map_err(|failure| {
+                CompilationFailure::new(
+                    CompilationStage::Resolution,
+                    CompilationFailureKind::Compiler,
+                    failure,
+                )
+            })
+    })
+}
+
 /// [MOD-8] the records one module's check reads: the module's own records,
 /// or its interface alone, and the interface records of its dependency
 /// closure. No other module's implementation record enters.
@@ -1750,6 +1782,48 @@ mod tests {
             recomputed(reworded, &records, &cache),
             ["spare"].map(str::to_owned).to_vec()
         );
+    }
+
+    /// [MOD-6, MOD-8] the interface rendering prints every resolved name as
+    /// its qualified identity whatever alias wrote it, leaves `doc` entries
+    /// out, and includes the complete definitions the public declarations
+    /// reach, so a dependency's representation change shows in a client
+    /// whose interface file did not change.
+    #[test]
+    fn an_interface_renders_resolved_identities_and_reached_definitions() {
+        let graph_bytes: &[u8] = b"pkg::shape: [];\npkg::client: [pkg::shape];\n";
+        let graph = crate::form_module_graph(
+            SourceInput::new("modules.wfg", graph_bytes),
+            CompilerLimits::default(),
+        )
+        .expect("the graph forms");
+        let render = |shape: &'static [u8], client: &'static [u8]| {
+            let records: Vec<(&str, &[u8])> =
+                vec![("shape/module.wfm", shape), ("client/module.wfm", client)];
+            let inputs = module_inputs(&graph, &records);
+            super::render_module_interface(
+                &graph,
+                &inputs,
+                "pkg::client",
+                CompilerLimits::default(),
+            )
+            .expect("the interface renders")
+        };
+        let shape: &[u8] = b"public struct Point {\n  public x: u8;\n  hidden: u8;\n}\n";
+        let client: &[u8] = b"alias Spot = pkg::shape::Point;\n\npublic fn origin() -> result: Spot pure doc \"The origin.\";\n";
+        let rendered = render(shape, client);
+        assert_eq!(
+            rendered,
+            "module pkg::client\npublic fn pkg::client::origin ( ) -> result : pkg::shape::Point pure ;\nreached\npublic struct pkg::shape::Point { public x : u8 ; hidden : u8 ; }\n"
+        );
+        // A documentation edit, or dropping the entry, changes nothing.
+        let undocumented: &[u8] =
+            b"alias Spot = pkg::shape::Point;\n\npublic fn origin() -> result: Spot pure;\n";
+        assert_eq!(render(shape, undocumented), rendered);
+        // A private field of the dependency's type changes the client's
+        // rendering, though the client's own file is unchanged.
+        let widened: &[u8] = b"public struct Point {\n  public x: u8;\n  hidden: u16;\n}\n";
+        assert_ne!(render(widened, client), rendered);
     }
 
     /// [MOD-9] an entry build is reused for an unchanged composition and

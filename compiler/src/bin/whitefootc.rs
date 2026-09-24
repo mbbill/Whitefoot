@@ -15,7 +15,7 @@ use whitefoot::{
     SCHED_PRIM_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER, build_module_entry, check,
     check_module_program, compile_with_overlap, compile_with_permission_ledger, content_digest,
     discover_module_sources, entry_verdict, form_module_graph, module_verdict,
-    running_compiler_identity, stack_ledger,
+    render_module_interface, running_compiler_identity, stack_ledger,
 };
 
 // `HOST_LINK_LIBRARIES` is here rather than above because its one reader is
@@ -35,7 +35,7 @@ use whitefoot::{
 };
 
 const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-scalar-leaf-limit N|off] [--par-sequential-refusal] [--par-recursive-frontier auto|N|off] [--no-overlap] [--par-ledger] \
-[--stack-ledger] [--check] [--cache DIR [--fragments module|function]] [--report] [-o OUTPUT] (SOURCE... | --graph modules.wfg [--entry NAME | --function pkg::module::name | --check-module pkg::module | --check-interface pkg::module | --check-modules])";
+[--stack-ledger] [--check] [--cache DIR [--fragments module|function]] [--report] [-o OUTPUT] (SOURCE... | --graph modules.wfg [--entry NAME | --function pkg::module::name | --check-module pkg::module | --check-interface pkg::module | --check-modules | --render-interface pkg::module | --compare-interface pkg::module --against OTHER/modules.wfg])";
 
 // The compiler walks typed source and lowering trees recursively. Windows
 // gives the process's primary thread a 1 MiB stack by default, which is small
@@ -285,27 +285,40 @@ fn run_module_program(
     cache: Option<&BuildCache>,
     report: &mut BuildReport,
 ) -> Result<Option<String>, String> {
-    let graph_bytes = std::fs::read(graph_path)
-        .map_err(|error| format!("cannot read {}: {error}", graph_path.display()))?;
-    let display = graph_path.display().to_string();
-    let graph = form_module_graph(
-        SourceInput::from_host_path(GRAPH_FILE_NAME, &display, &graph_bytes),
-        CompilerLimits::default(),
-    )
-    .map_err(|failure| failure.to_string())?;
-    let root = graph_path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    let sources = discover_module_sources(root, &graph).map_err(|failure| failure.to_string())?;
-    let inputs: Vec<_> = sources
-        .iter()
-        .map(|source| {
-            SourceInput::from_host_path(&source.logical_path, &source.display_path, &source.bytes)
-                .in_module(source.module, source.role)
-        })
-        .collect();
+    let (graph, sources) = read_module_program(graph_path)?;
+    let inputs = module_inputs(&sources);
     let limits = CompilerLimits::default();
+    if let Some(module) = &options.render_interface {
+        let rendered = render_module_interface(&graph, &inputs, module, limits)
+            .map_err(|failure| failure.to_string())?;
+        let Some(against) = &options.against else {
+            print!("{rendered}");
+            return Ok(None);
+        };
+        // [MOD-6, MOD-8] the conservative revision comparison: the other
+        // revision's rendering of the same module, line by line.
+        let (other_graph, other_sources) = read_module_program(against)?;
+        let other_inputs = module_inputs(&other_sources);
+        let before = render_module_interface(&other_graph, &other_inputs, module, limits)
+            .map_err(|failure| failure.to_string())?;
+        if before == rendered {
+            println!("{module}: interface unchanged");
+            return Ok(None);
+        }
+        let old_lines = before.lines().collect::<Vec<_>>();
+        let new_lines = rendered.lines().collect::<Vec<_>>();
+        for line in &old_lines {
+            if !new_lines.contains(line) {
+                println!("- {line}");
+            }
+        }
+        for line in &new_lines {
+            if !old_lines.contains(line) {
+                println!("+ {line}");
+            }
+        }
+        return Err(format!("{module}: interface changed"));
+    }
     if options.check_modules {
         let mut verdicts = Vec::new();
         for record in graph.modules() {
@@ -379,6 +392,38 @@ fn run_module_program(
     report.front_end = front_end.elapsed();
     report.module_reused = Some(reused);
     Ok(Some(module))
+}
+
+/// A module program's graph and every registered module's records, read
+/// from the graph's directory [MOD-1, MOD-2].
+fn read_module_program(
+    graph_path: &Path,
+) -> Result<(whitefoot::ModuleGraph, Vec<whitefoot::ModuleSourceFile>), String> {
+    let graph_bytes = std::fs::read(graph_path)
+        .map_err(|error| format!("cannot read {}: {error}", graph_path.display()))?;
+    let display = graph_path.display().to_string();
+    let graph = form_module_graph(
+        SourceInput::from_host_path(GRAPH_FILE_NAME, &display, &graph_bytes),
+        CompilerLimits::default(),
+    )
+    .map_err(|failure| failure.to_string())?;
+    let root = graph_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let sources = discover_module_sources(root, &graph).map_err(|failure| failure.to_string())?;
+    Ok((graph, sources))
+}
+
+/// Each record placed in its module and role.
+fn module_inputs(sources: &[whitefoot::ModuleSourceFile]) -> Vec<SourceInput<'_>> {
+    sources
+        .iter()
+        .map(|source| {
+            SourceInput::from_host_path(&source.logical_path, &source.display_path, &source.bytes)
+                .in_module(source.module, source.role)
+        })
+        .collect()
 }
 
 /// Opens the build cache directory for this exact compiler.
@@ -1273,6 +1318,10 @@ struct Options {
     cache: Option<PathBuf>,
     /// Split the emitted module into ThinLTO link fragments.
     fragments: Option<Fragments>,
+    /// Print this module's resolved public interface [MOD-6, MOD-8].
+    render_interface: Option<String>,
+    /// The other revision's graph the rendered interface is compared with.
+    against: Option<PathBuf>,
     output: Option<PathBuf>,
     sources: Vec<PathBuf>,
 }
@@ -1297,6 +1346,8 @@ impl Options {
         let mut report = false;
         let mut cache = None;
         let mut fragments = None;
+        let mut render_interface = None;
+        let mut against = None;
         let mut output = None;
         let mut sources = Vec::new();
         let mut cursor = 0;
@@ -1354,6 +1405,26 @@ impl Options {
                 "--check" => check = true,
                 "--check-modules" => check_modules = true,
                 "--report" => report = true,
+                "--render-interface" | "--compare-interface" => {
+                    let option = arguments[cursor].clone();
+                    cursor += 1;
+                    let value = arguments
+                        .get(cursor)
+                        .ok_or_else(|| format!("{option} requires a module path"))?
+                        .clone();
+                    if render_interface.replace(value).is_some() {
+                        return Err("--render-interface and --compare-interface select one module: write one".to_owned());
+                    }
+                }
+                "--against" => {
+                    cursor += 1;
+                    let path = arguments
+                        .get(cursor)
+                        .ok_or_else(|| "--against requires a graph file".to_owned())?;
+                    if against.replace(PathBuf::from(path)).is_some() {
+                        return Err("--against may be written only once".to_owned());
+                    }
+                }
                 "--fragments" => {
                     cursor += 1;
                     let granularity = match arguments.get(cursor).map(String::as_str) {
@@ -1446,6 +1517,21 @@ impl Options {
                     .to_owned(),
             );
         }
+        if render_interface.is_some()
+            && (graph.is_none()
+                || check
+                || check_modules
+                || check_module.is_some()
+                || entry.is_some()
+                || function.is_some())
+        {
+            return Err("--render-interface prints one module's interface of a --graph program and checks or builds nothing else".to_owned());
+        }
+        if against.is_some() && render_interface.is_none() {
+            return Err(
+                "--against names the revision a --compare-interface compares with".to_owned(),
+            );
+        }
         if fragments.is_some() && (cache.is_none() || emit_llvm) {
             return Err(
                 "--fragments splits a cached link: write --cache and no --emit-llvm".to_owned(),
@@ -1462,6 +1548,7 @@ impl Options {
         if graph.is_some()
             && !check
             && !check_modules
+            && render_interface.is_none()
             && check_module.is_none()
             && entry.is_none()
             && function.is_none()
@@ -1524,6 +1611,8 @@ impl Options {
             report,
             cache,
             fragments,
+            render_interface,
+            against,
             output,
             sources,
         })
@@ -2101,8 +2190,40 @@ mod tests {
         ])
         .expect("a cached fragment build");
         assert_eq!(build.fragments, Some(super::Fragments::Function));
-        for option in ["--cache", "--fragments", "--report", "--check-modules"] {
+        for option in [
+            "--cache",
+            "--fragments",
+            "--report",
+            "--check-modules",
+            "--render-interface",
+            "--compare-interface",
+            "--against",
+        ] {
             assert!(super::USAGE.contains(option), "usage text omits {option}");
+        }
+        let compare = parse(&[
+            "--graph",
+            "new/modules.wfg",
+            "--compare-interface",
+            "pkg::data",
+            "--against",
+            "old/modules.wfg",
+        ])
+        .expect("a revision comparison");
+        assert_eq!(compare.render_interface.as_deref(), Some("pkg::data"));
+        assert!(compare.against.is_some());
+        for refused in [
+            &["--graph", "modules.wfg", "--against", "old/modules.wfg"][..],
+            &[
+                "--graph",
+                "modules.wfg",
+                "--render-interface",
+                "pkg::data",
+                "--check",
+            ][..],
+            &["--render-interface", "pkg::data", "value.wf"][..],
+        ] {
+            assert!(parse(refused).is_err(), "{refused:?} must be refused");
         }
     }
 

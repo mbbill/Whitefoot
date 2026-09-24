@@ -20,7 +20,10 @@ mod correspondence;
 mod inventory;
 mod lookup;
 mod prelude;
+mod render;
 mod roles;
+
+pub(super) use render::render_interface;
 
 use admission::{
     check_clause_blocks, check_heap_declaration, check_module_forms, check_public_closure,

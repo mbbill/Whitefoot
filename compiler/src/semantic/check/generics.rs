@@ -1157,7 +1157,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let symbol = if template.generic_parameters.is_empty() {
             base
         } else {
-            format!("{base}$instance${}", id.0)
+            // An instance's symbol names its template and a digest of its
+            // concrete arguments spelled by module-qualified declaration
+            // names, so it keeps its name while unrelated instances and
+            // declarations come and go and an unchanged link fragment keeps
+            // its bytes. An argument with no concrete spelling, or a symbol
+            // another instance already holds, falls back to the instance's
+            // ordinal, which is unique.
+            self.stable_instance_suffix(&substitution)
+                .map(|suffix| format!("{base}$instance${suffix}"))
+                .filter(|candidate| {
+                    !self
+                        .signatures
+                        .iter()
+                        .any(|signature| signature.symbol == *candidate)
+                })
+                .unwrap_or_else(|| format!("{base}$instance${}", id.0))
         };
         Ok(FunctionSignature {
             id,
@@ -1657,6 +1672,150 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         };
         Ok(Some(stable))
+    }
+
+    /// The digest part of an instance symbol: the first eight bytes of the
+    /// SHA-256 of its arguments' canonical spelling, or `None` when an
+    /// argument has no concrete spelling.
+    fn stable_instance_suffix(&self, substitution: &GenericSubstitution) -> Option<String> {
+        use core::fmt::Write as _;
+        let stable = self
+            .stabilize_substitution_with_visiting(substitution, 0, &mut HashSet::new(), false)
+            .ok()
+            .flatten()?;
+        let mut spelling = String::new();
+        self.spell_stable_substitution(&stable, &mut spelling)
+            .ok()?;
+        let digest = crate::spec::sha256::digest(spelling.as_bytes());
+        let mut suffix = String::with_capacity(16);
+        for byte in &digest[..8] {
+            let _ = write!(suffix, "{byte:02x}");
+        }
+        Some(suffix)
+    }
+
+    /// Spells a concrete substitution's arguments in binding order, each type
+    /// by module-qualified declaration names and each function by its
+    /// declaration and its own arguments.
+    fn spell_stable_substitution(
+        &self,
+        substitution: &StableGenericSubstitution,
+        out: &mut String,
+    ) -> Result<(), CheckStop> {
+        if substitution.bindings.is_empty() {
+            return Ok(());
+        }
+        out.push('<');
+        for (index, (_, argument)) in substitution.bindings.iter().enumerate() {
+            if index > 0 {
+                out.push(',');
+            }
+            match argument {
+                StableGenericArgument::Type(ty) => self.spell_stable_type(ty, out)?,
+                StableGenericArgument::Const(value) => {
+                    out.push_str(&self.checked_const_name(*value)?);
+                }
+                StableGenericArgument::Function(super::behavior::FunctionArgument::Source {
+                    reference,
+                    ..
+                }) => {
+                    let reference = self.function_reference(*reference)?;
+                    let spelling = self
+                        .resolved
+                        .declaration(reference.declaration)
+                        .map(|declaration| declaration.spelling().to_owned())
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    out.push_str("fn ");
+                    out.push_str(&self.module_symbol_base(reference.declaration, &spelling));
+                    self.spell_stable_substitution(&reference.substitution, out)?;
+                }
+                StableGenericArgument::Function(super::behavior::FunctionArgument::Parameter(
+                    _,
+                )) => {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                }
+            }
+        }
+        out.push('>');
+        Ok(())
+    }
+
+    fn spell_stable_type(&self, ty: &StableCheckedType, out: &mut String) -> Result<(), CheckStop> {
+        match ty {
+            StableCheckedType::Scalar(ty) => out.push_str(&self.checked_type_name(*ty)?),
+            StableCheckedType::SourceNominal {
+                template,
+                substitution,
+            } => {
+                let template = self
+                    .nominal_templates
+                    .get(*template)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                out.push_str(&self.module_symbol_base(template.declaration, &template.name));
+                self.spell_stable_substitution(substitution, out)?;
+            }
+            StableCheckedType::Prelude(prelude) => match prelude {
+                StablePreludeType::Option(value) => {
+                    out.push_str("Option<");
+                    self.spell_stable_type(value, out)?;
+                    out.push('>');
+                }
+                StablePreludeType::Result(value, error) => {
+                    out.push_str("Result<");
+                    self.spell_stable_type(value, out)?;
+                    out.push(',');
+                    self.spell_stable_type(error, out)?;
+                    out.push('>');
+                }
+                StablePreludeType::Overflow => out.push_str("Overflow"),
+                StablePreludeType::DivError => out.push_str("DivError"),
+                StablePreludeType::NarrowError => out.push_str("NarrowError"),
+            },
+            StableCheckedType::ResultList(results) => {
+                out.push('(');
+                for (index, (name, ty)) in results.iter().enumerate() {
+                    if index > 0 {
+                        out.push(',');
+                    }
+                    out.push_str(name);
+                    out.push(':');
+                    self.spell_stable_type(ty, out)?;
+                }
+                out.push(')');
+            }
+            StableCheckedType::Boxed { referent, .. } => {
+                out.push_str("Box<");
+                self.spell_stable_type(referent, out)?;
+                out.push('>');
+            }
+            StableCheckedType::Array { element, length } => {
+                out.push_str("Array<");
+                self.spell_stable_type(&element.0, out)?;
+                out.push(',');
+                out.push_str(&self.checked_const_name(*length)?);
+                out.push('>');
+            }
+            StableCheckedType::Buffer { element } => {
+                out.push_str("Array<");
+                self.spell_stable_type(&element.0, out)?;
+                out.push('>');
+            }
+            StableCheckedType::Window {
+                shape,
+                element,
+                capacity,
+            } => {
+                out.push_str(shape.spelling());
+                out.push('<');
+                self.spell_stable_type(&element.0, out)?;
+                if let Some(capacity) = capacity {
+                    out.push(',');
+                    out.push_str(&self.checked_const_name(*capacity)?);
+                }
+                out.push('>');
+            }
+        }
+        Ok(())
     }
 
     pub(super) fn stabilize_substitution_with_visiting(
