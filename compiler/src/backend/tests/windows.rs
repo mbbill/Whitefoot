@@ -933,12 +933,27 @@ fn a_referenced_pool_tree_preserves_range_reference_and_result_abi() {
     let main = emitted_function(&llvm, "main");
     // The case lends the pool as two range references and one ordinary
     // reference to a scalar-bearing struct. A range reference crosses this
-    // boundary as its `{ ptr, i64 }` address-and-length pair [REF-4].
+    // boundary as its address-and-length pair [REF-4], passed as the element
+    // pointer, which carries the reference facts, and the count
+    // (compiler/backend-facts).
     assert!(build.starts_with("define void @wf_build(ptr %wf.result, "));
     assert!(checksum.starts_with("define void @wf_checksum(ptr %wf.result, "));
-    for function in [build, checksum] {
+    // `build` also takes its cursor by reference; `checksum` only reads.
+    for (function, references) in [(build, 3), (checksum, 2)] {
         let header = function.lines().next().expect("helper signature");
-        assert_eq!(header.matches("{ ptr, i64 }").count(), 2);
+        for ordinal in 0..2 {
+            assert!(
+                header.contains(&format!(
+                    " %wf.arg.v{ordinal}.data, i64 %wf.arg.v{ordinal}.len, "
+                )),
+                "{header}"
+            );
+        }
+        assert_eq!(
+            header.matches("ptr noalias nonnull ").count(),
+            references,
+            "{header}"
+        );
         // The result pointer still addresses the tag, u64 success payload
         // and three-variant PoolError, each written on its selected route.
         assert_scalar_result_fields(&llvm, function, &["i32", "i64", "i32"]);
@@ -948,14 +963,14 @@ fn a_referenced_pool_tree_preserves_range_reference_and_result_abi() {
             .lines()
             .next()
             .expect("build signature")
-            .contains(", i32 ")
+            .contains(", i32 %v3)")
     );
     assert!(
         checksum
             .lines()
             .next()
             .expect("checksum signature")
-            .contains(", i64 ")
+            .contains(", i64 %v2)")
     );
     assert!(!build.contains("call void @free"));
     assert!(!checksum.contains("call void @free"));

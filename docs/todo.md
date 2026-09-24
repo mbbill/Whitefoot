@@ -744,6 +744,14 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   the module design for separate compilation. Close when a specified boundary
   and its conformance cases land, or the owner records why a narrower
   boundary suffices.
+- **The driver's clang lookup is a fixed path.** `clang_executable()` in
+  `compiler/src/bin/whitefootc.rs` hard-codes `/usr/bin/clang` on Linux/macOS
+  (`clang` on PATH on Windows), so a host whose clang lives only elsewhere —
+  a versioned-only `clang-18`, a Nix profile, or Homebrew LLVM — cannot run
+  the driver even with clang installed. Validate whether to accept an
+  explicit override, for example an environment variable, without changing
+  which clang CI uses. Close when the owner decides for or against the
+  override and, if accepted, its implementation lands.
 
 ## Open language questions
 
@@ -1062,13 +1070,41 @@ condition under which it is taken up.
 - **Handing checker facts to the backend.** Emitted since the v0.60 port:
   `noalias` (not on `swap`), `nonnull`, `dereferenceable`,
   `captures(none)` or `nocapture` by a build-time probe, `inbounds`, and
-  `nuw`/`nsw` on the exact family. The later qualified Ring payload-address
+  `nuw`/`nsw` on the exact family. A `&[T]` range parameter crosses calls as
+  its element pointer and count, and the pointer carries the same facts
+  except `dereferenceable` (`compiler/backend-facts`; the
+  [range-reference fact investigation](../research/investigations/range-reference-facts/DESIGN.md)
+  records the derivation and the removed vectorizer overlap check). The later
+  qualified Ring payload-address
   `llvm.assume` is measured in the [Deque comparison](../research/experiments/container-representation/deque-library/RESULTS.md);
   its remaining costs are tracked above. Not emitted: `memory(argmem: ...)` (the
   IR carries neither the declared row nor the allocation fact), scoped
   alias metadata and `llvm.loop.parallel_accesses` (the emitter has no
   metadata table). Build the metadata subsystem as its own step with a
   before/after benchmark.
+- **Alias facts for worker-run loop chunks.** A synthesized loop-split chunk
+  or splitter has no source signature, so its range and reference captures
+  carry no `noalias`. The sequential world inlines the chunk into its source
+  function, which has the facts; a chunk run as a worker lane does not, so a
+  vectorizable chunk loop may keep a runtime overlap check. The facts would
+  need their own derivation from PAR-2 independence and the enclosing call's
+  EFF-5 result, since sibling chunks write other parts of the same captured
+  range concurrently. Impact and whether any current kernel pays such a check
+  are unmeasured. Validate by inspecting the optimized worker chunks of the
+  formal compute kernels for `vector.memcheck` and, where one appears,
+  comparing chunk time with and without a hand-added fact. Deferred because
+  the range-reference change covers source signatures only; reopen when a
+  measured parallel kernel shows the check.
+- **Compute-bench private adapters still pass aggregate ranges.**
+  `research/experiments/compute-bench/array_reference_host.ll`,
+  `first_index_host.ll`, `dag_fanin_host.ll` and the first-index observation
+  rewrite in that Makefile spell a range argument as one `{ ptr, i64 }`
+  aggregate. The compiler now passes it as pointer and count; the machine code
+  is identical on the admitted targets, but LLVM text bound into a WF module
+  must use the split form, and the first-index rewrite no longer matches the
+  emitted head and refuses. These dated research inputs were left unchanged;
+  update them before running those experiments with a compiler that includes
+  the split, keeping an older baseline arm on its own adapter.
 - **Subscripted integer places as terms.** Today a place with subscripts is
   a term only when its last step is a readonly field. The kill machinery
   (offset support, overlapping element writes) already serves measure terms
