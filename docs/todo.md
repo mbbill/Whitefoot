@@ -641,6 +641,24 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   controls and the investigation's checking-cost criterion; do not equate
   targets merely because their covers agree. Close this item when the gain is
   implemented and qualified or the measured tradeoff supports declining it.
+- **Write kills do not submit their own OWN-7 separations.** An ENT-5 write
+  kill decides an index or range step against a fact's support only from the
+  separations already retained on the current edge, which are the EFF-5
+  pairwise and REF-2 preservation questions the structural checker submitted,
+  plus literal index inequality. OWN-7 makes two ranges disjoint whenever the
+  current ProofContext proves one of its four orderings, so a length fact over
+  `deref(head)[0_u64]` with `head = &rows[0_u64..1_u64]` should survive a write
+  through `rows[1_u64..3_u64]`, bound or formed at the call; today it dies and
+  the dependent subscript is rejected, and binding offsets proved distinct
+  only by a guard behave the same way. The effect is over-rejection, never an
+  unsound acceptance. Submitting one bounded question per written/support step
+  pair at each kill would admit these programs at a proof cost per fact per
+  write; a literal-endpoint range shortcut beside the literal index one would
+  cover constant ranges cheaply. Validate with the bound and inline spellings,
+  stale-capture and joined-origin negative controls, and a measured
+  checking-cost comparison. Reopen when a real program needs a fact to survive
+  a provably disjoint write; close when kill-time separation is implemented and
+  qualified or declined on measured cost.
 - **Pair-scoped parallel proofs need scaling and coverage work.** The current
   PAR-1 planner constructs questions for every ordered source pair in a segment
   and retains range separation only for that pair's first-statement state;

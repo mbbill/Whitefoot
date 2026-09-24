@@ -1868,6 +1868,43 @@ fn later(values: &Array<u8, 4>) -> result: u64 writes(values) {{
     assert!(!has_wider_run);
 }
 
+/// [PAR-1, EFF-5] a range formed at the call resolves to its source's path
+/// extended by the formation's own range step, as a bound range reference
+/// does. Two inline ranges over different roots are therefore disjoint, and
+/// two over one root meet on their range steps as an ordinary footprint
+/// conflict; neither is the fail-closed unresolved footprint.
+#[test]
+fn inline_range_actuals_resolve_to_their_formation_paths() {
+    let source = format!(
+        "{RANGE_PERMISSION_HELPERS}
+fn independent(values: &Array<u8, 4>, others: &Array<u8, 4>) -> result: u64 writes(values), writes(others) {{
+  let a = stamp_range(part: &deref(values)[0_u64..2_u64]);
+  let b = stamp_range(part: &deref(others)[0_u64..2_u64]);
+  return a +wrap b;
+}}
+
+fn shared(values: &Array<u8, 4>) -> result: u64 writes(values) {{
+  let a = stamp_range(part: &deref(values)[0_u64..3_u64]);
+  let b = stamp_range(part: &deref(values)[2_u64..4_u64]);
+  return a +wrap b;
+}}
+"
+    );
+    let table = permission_of(source.as_bytes());
+    assert_eq!(
+        pair_of(&table, "independent", "stamp_range", "stamp_range").verdict,
+        PermissionVerdict::PermittedEligible
+    );
+    let pair = pair_of(&table, "shared", "stamp_range", "stamp_range");
+    let Denial::Footprint { kind, .. } = denial(pair, 1) else {
+        panic!(
+            "overlapping inline ranges must meet on their resolved paths: {:?}",
+            pair.verdict
+        );
+    };
+    assert_eq!(kind.halves(), ("write", "write"));
+}
+
 /// Prelude calls use the ordinary call permission judgment. This pure call
 /// forms the two adjacent eligible pairs rather than becoming an opaque
 /// statement the judgment passes over.
