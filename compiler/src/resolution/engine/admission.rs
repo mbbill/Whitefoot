@@ -142,8 +142,9 @@ fn node_origin(
 ///   none of its sources writes `program no_heap`;
 /// - [MOD-6] `public` is written only in a module interface, on a member
 ///   only of a public type, and `readonly` only on a public field; and
-/// - [MOD-7] an interface declares functions without bodies, and an
-///   implementation or source bundle defines them with bodies.
+/// - [MOD-7] an interface declares functions without bodies, each ending in
+///   its `doc` entry, and an implementation or source bundle defines them
+///   with bodies.
 pub(super) fn check_module_forms(
     topology: &FinalizedTopology,
     scopes: &ScopeBuild,
@@ -242,7 +243,17 @@ pub(super) fn check_module_forms(
                     ResolutionRule::Mod7,
                     ResolutionIssueKind::Correspondence {
                         spelling,
-                        reason: "a module interface declares a function without a body, ending in `;` or its `doc` entry; its body belongs in one of the module's `.wf` files",
+                        reason: "a module interface declares a function without a body, ending in its `doc` entry; its body belongs in one of the module's `.wf` files",
+                    },
+                );
+            }
+            if interface && child(function, Production::Doc).is_none() {
+                return issue(
+                    function,
+                    ResolutionRule::Mod7,
+                    ResolutionIssueKind::Correspondence {
+                        spelling,
+                        reason: "a module interface declares each function with the `doc` entry that describes it to the module's clients; end the declaration in `doc \"...\";`",
                     },
                 );
             }
@@ -266,7 +277,10 @@ pub(super) fn check_module_forms(
                     for member in topology.node_children(node).unwrap_or(&[]) {
                         match topology.node(*member).map(|record| record.production) {
                             Some(Production::Field | Production::Vfield) => members.push(*member),
-                            Some(Production::Variant) => pending.push(*member),
+                            // A payload field sits in its variant's list.
+                            Some(Production::Variant | Production::VfieldList) => {
+                                pending.push(*member);
+                            }
                             _ => {}
                         }
                     }

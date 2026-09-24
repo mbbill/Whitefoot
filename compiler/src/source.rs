@@ -229,6 +229,23 @@ pub struct SourceInput<'input> {
     role: SourceRole,
 }
 
+impl<'input> SourceInput<'input> {
+    /// The same record with other bytes, for a check that sets part of it
+    /// aside [MOD-8].
+    pub(crate) const fn with_bytes<'bytes>(&self, bytes: &'bytes [u8]) -> SourceInput<'bytes>
+    where
+        'input: 'bytes,
+    {
+        SourceInput {
+            logical_path: self.logical_path,
+            display_path: self.display_path,
+            bytes,
+            module: self.module,
+            role: self.role,
+        }
+    }
+}
+
 impl fmt::Debug for SourceInput<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter

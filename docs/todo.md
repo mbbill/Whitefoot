@@ -7,59 +7,32 @@ criterion for deciding whether to pursue it. Entries do not select a design.
 Remove an item when its implementation and checks land, or its validation
 concludes with a recorded disposition; retain any selected follow-up work here.
 
-- **Implement and qualify the modular incremental design.** The module
+- **Finish and qualify the modular incremental design.** The module
   decisions in the [language](../design/language.md) and
   [compiler](../design/compiler.md) design trees rest on the
   [architecture](../research/investigations/modular-compilation/DESIGN.md),
   [source rules](../research/investigations/modular-compilation/LANGUAGE.md)
-  and [complete specimen](../research/investigations/modular-compilation/demo/README.md).
-  Specification v0.70 and the compiler now implement the module grammar, graph
-  formation and record discovery, module inventories with forward visibility,
-  file aliases, qualified references with edge and access checks in code and
-  annotations (fields, constructions, destructuring, arms, contracts and
-  effect rows), publication with its public-signature closure over
-  declarations and fields, interface/definition correspondence, pending
-  declarations, type-owned variants, module-relative `readonly`, CALL-4
-  result projections through struct fields and `Box` contents, per-module
-  summary publication over conservative components, module checks against
-  dependency interfaces alone and interface-only checks, named and unnamed
-  entries whose composition is the entry module's dependency closure, the
-  per-entry no-heap closure over calls and layout with component attribution
-  and closure-only output (a heap-free entry's executable names no
-  allocator), instance failures that name the requesting call, and a
-  content-addressed build cache (`whitefootc --cache DIR`) reusing module and
-  composition verdicts, entry modules, runtime objects and program objects,
-  with `--check-modules --report` as the impact report, a resolved interface
-  rendering (`--render-interface MODULE`, and `--compare-interface MODULE
-  --against GRAPH` against another revision), instance symbols named by a digest of their concrete
-  arguments, and ThinLTO link fragments (`--fragments module|function`)
-  split by `llvm-extract`, compiled to cached bitcode and linked by LLD with
-  its ThinLTO object cache; the
-  [build-cost measurements](../research/experiments/modular-build-cost/RESULTS.md)
-  record their costs. Remaining, each with the measurement that shows it:
-  declaration- and component-granular queries and proof fragments with
-  remapping (today an edit rechecks and relowers the whole composition, 320 ms
-  of a 500 ms body-edit rebuild of a 32-module chain); a native or parallel
-  fragment split (one `llvm-extract` process per fragment costs 430 to 490 ms
-  there); stable LLVM names for nominal types, which still carry an ordinal,
-  so that adding a type does not rename unchanged fragments; interface keys
-  that ignore
-  `doc` entries, so a documentation edit does not recheck every dependent;
-  a full-LTO comparator including the runtime units and a workload whose hot
-  path crosses many fragments; qualified groups in `gparam` and
-  `binding_decl` (an alias works today); and the GrowVector
-  wrapper/function-kind witness.
-  Follow the design's ordered implementation slices and discriminating
-  acceptance matrix: graph/alias/visibility and correspondence; complete
-  representations, module-relative readonly and imported capability/release;
-  CALL-4 result projections and interface-derived proof components with
-  per-module summary publication; module and
-  interface checks with pending declarations; query/receipt persistence,
-  impact reports and deletion-sensitive proof SCCs; shared generic instances,
-  target no-heap closure and failure attribution; optimized LLVM fragments and
-  native objects. Extract useful cases into formal test ownership as each
-  mechanism lands; no daily gate depends on the research probe or specimen.
-  Compare clean/warm verdicts and executables across edits, including changed
+  and [complete specimen](../research/investigations/modular-compilation/demo/README.md);
+  the [build-cost measurements](../research/experiments/modular-build-cost/RESULTS.md)
+  record what the module-granular implementation costs. Remaining, each with
+  the measurement or limit that shows it: declaration- and component-granular
+  queries and proof fragments with remapping (an edit rechecks and relowers
+  the whole composition, 320 ms of a 500 ms body-edit rebuild of a 32-module
+  chain, and the impact report finds each further failing body by checking
+  its module again with the earlier ones set aside); a native or parallel
+  fragment split (one `llvm-extract` process per fragment costs 430 to
+  490 ms there); stable LLVM names for nominal types, which still carry an
+  ordinal, so that adding a type does not rename unchanged fragments;
+  interface keys that ignore `doc` entries, so a documentation edit does not
+  recheck every dependent; a full-LTO comparator including the runtime units
+  and a workload whose hot path crosses many fragments; an executable runner
+  for entries that take other parameters than `Inputs` or return other
+  results than `ExitStatus` or `unit`, which build only as libraries
+  (`--emit-llvm`); qualified groups in `gparam` and `binding_decl` (an alias
+  works today); and the GrowVector wrapper/function-kind witness.
+  Extract useful cases into formal test ownership as each finer mechanism
+  lands; no daily gate depends on the research probe or specimen. Compare
+  clean/warm verdicts and executables across edits, including changed
   summary availability with unchanged headers, a callee body that starts
   calling a supplied actual, published-field versus private-field changes,
   hidden layout/heap changes, rejected import candidates becoming profitable,
@@ -74,10 +47,7 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   build/runtime and collaboration gains remain unverified. Reopen structural
   choices when a discriminating control or matched workload fails; remove this
   entry when the complete implementation evidence lands.
-  Integration changes current single-bundle inputs by stated rules: user
-  variant constructors become type-owned, source `readonly` fields require
-  `public` so their TYPE-2 conformance cases move to module form, and bindings
-  named `alias` are renamed. Defer resolved-public-surface CI reporting until
+  Defer resolved-public-surface CI reporting until
   interface query values exist; its benefit is detecting capability/contract
   changes that a `public` keyword diff misses. Validate same-identity alias
   renames, retargeting and published or private representation edits before

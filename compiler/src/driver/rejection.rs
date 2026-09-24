@@ -15,26 +15,34 @@
 
 use core::fmt;
 
+use super::SourceLocation;
 use crate::SyntaxCoordinate;
 use crate::source::SourceBundle;
 
 /// One stage rejection, its location in host terms, and its source line.
 pub(super) struct Located<Issue> {
     issue: Issue,
-    at: String,
+    at: Option<SourceLocation>,
     source_line: String,
     /// Where the concrete generic instance whose check failed was requested,
     /// and that line, when the rejection arose in one [FN-2, MOD-8].
-    requested: Option<(String, String)>,
+    requested: Option<(SourceLocation, String)>,
 }
 
 impl<Issue: fmt::Debug> fmt::Debug for Located<Issue> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "{:?} at {} in line {:?}",
-            self.issue, self.at, self.source_line
-        )?;
+        match &self.at {
+            Some(at) => write!(
+                formatter,
+                "{:?} at {at} in line {:?}",
+                self.issue, self.source_line
+            )?,
+            None => write!(
+                formatter,
+                "{:?} at an unresolved coordinate in line {:?}",
+                self.issue, self.source_line
+            )?,
+        }
         if let Some((at, line)) = &self.requested {
             write!(
                 formatter,
@@ -77,11 +85,24 @@ impl<Issue> Located<Issue> {
         coordinate: SyntaxCoordinate,
         anchor: Anchor,
     ) -> Self {
-        let (at, source_line) = context(bundle, coordinate, anchor)
-            .unwrap_or_else(|| ("an unresolved coordinate".to_owned(), String::new()));
+        let (at, source_line) = match context(bundle, coordinate, anchor) {
+            Some((at, line)) => (Some(at), line),
+            None => (None, String::new()),
+        };
         Self {
             issue,
             at,
+            source_line,
+            requested: None,
+        }
+    }
+
+    /// Wraps one rejection with a location already rendered from another
+    /// record, such as a graph entry's.
+    pub(super) const fn written(issue: Issue, at: SourceLocation, source_line: String) -> Self {
+        Self {
+            issue,
+            at: Some(at),
             source_line,
             requested: None,
         }
@@ -99,6 +120,14 @@ impl<Issue> Located<Issue> {
             coordinate.and_then(|coordinate| context(bundle, coordinate, Anchor::Start));
         self
     }
+}
+
+/// The `path:line:column` of a written construct's first byte and its line.
+pub(super) fn written_at(
+    bundle: &SourceBundle,
+    coordinate: SyntaxCoordinate,
+) -> Option<(SourceLocation, String)> {
+    context(bundle, coordinate, Anchor::Start)
 }
 
 /// Which byte of a coordinate the reader is sent to.
@@ -120,7 +149,7 @@ fn context(
     bundle: &SourceBundle,
     coordinate: SyntaxCoordinate,
     anchor: Anchor,
-) -> Option<(String, String)> {
+) -> Option<(SourceLocation, String)> {
     let file = bundle.file(coordinate.source())?;
     let bytes = file.bytes();
     let start = usize::try_from(coordinate.start().value()).ok()?;
@@ -154,7 +183,11 @@ fn context(
     let column = start.saturating_sub(line_start).saturating_add(1);
     let source_line = String::from_utf8_lossy(bytes.get(line_start..line_end)?).into_owned();
     Some((
-        format!("{}:{line}:{column}", file.display_path()),
+        SourceLocation {
+            path: file.display_path().to_owned(),
+            line: u64::try_from(line).ok()?,
+            column: u64::try_from(column).ok()?,
+        },
         source_line,
     ))
 }

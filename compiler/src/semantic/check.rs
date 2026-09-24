@@ -1238,8 +1238,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// [MOD-5] refuses a field selection, binding or construction written in
     /// a module other than the field's declaring module when that module
-    /// does not publish the field. PRE-1 and compiler-owned fields keep their
-    /// ordinary availability.
+    /// does not publish the field, or when the writing module's graph row
+    /// does not list the declaring module. PRE-1 and compiler-owned fields
+    /// keep their ordinary availability.
     pub(in crate::semantic::check) fn reject_inaccessible_field(
         &self,
         nominal: super::model::NominalId,
@@ -1251,13 +1252,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let Some(module) = self.nominal_module(nominal) else {
             return Ok(());
         };
-        if self.field_declared_public(nominal, variant, field)? {
-            return Ok(());
-        }
+        let public = self.field_declared_public(nominal, variant, field)?;
         // [MOD-6] a public function's contract, effect row and formals are
         // read by every client, so they name only published fields even in
         // the declaring module.
-        if self.in_published_header(node)? {
+        if !public && self.in_published_header(node)? {
             return self.issue_node(
                 SemanticRule::Mod6,
                 node,
@@ -1267,11 +1266,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        if self
-            .writing_module
-            .get()
-            .is_none_or(|writer| writer == module)
-        {
+        let Some(writer) = self.writing_module.get() else {
+            return Ok(());
+        };
+        if writer == module || (public && self.module_lists(writer, module)) {
             return Ok(());
         }
         self.issue_node(
@@ -1279,14 +1277,86 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             node,
             SemanticIssueKind::InaccessibleField {
                 field: name.to_owned(),
-                reason: "the field is private to its declaring module; publish it in that module's interface, or use one of its operations",
+                reason: if public {
+                    "the field's declaring module is not in this module's graph row; list it there, or reach the field through an operation of a module the row lists"
+                } else {
+                    "the field is private to its declaring module; publish it in that module's interface, or use one of its operations"
+                },
             },
         )
     }
 
-    /// Whether a node lies in the header of a public function: its
+    /// [MOD-5] refuses an arm label written in a module other than its
+    /// enum's declaring module unless the enum is public and the writing
+    /// module's graph row lists the declaring module: the label is a name
+    /// written in the body. PRE-1 enums keep their ordinary availability.
+    pub(in crate::semantic::check) fn reject_inaccessible_variant(
+        &self,
+        nominal: super::model::NominalId,
+        name: &str,
+        arm: NodeId,
+    ) -> Result<(), CheckStop> {
+        let Some(module) = self.nominal_module(nominal) else {
+            return Ok(());
+        };
+        let Some(writer) = self.writing_module.get() else {
+            return Ok(());
+        };
+        if writer == module {
+            return Ok(());
+        }
+        let public = self.nominal_declared_public(nominal)?;
+        if public && self.module_lists(writer, module) {
+            return Ok(());
+        }
+        self.issue_node(
+            SemanticRule::Mod5,
+            arm,
+            SemanticIssueKind::InaccessibleVariant {
+                variant: name.to_owned(),
+                reason: if public {
+                    "the enum's declaring module is not in this module's graph row; list it there, or match through an operation of a module the row lists"
+                } else {
+                    "the enum is private to its declaring module, and so are its variants"
+                },
+            },
+        )
+    }
+
+    /// Whether `writer`'s graph row lists `module` [MOD-1, MOD-5].
+    fn module_lists(&self, writer: crate::ModuleId, module: crate::ModuleId) -> bool {
+        self.resolved
+            .syntax()
+            .classified_bundle()
+            .source_bundle()
+            .module(writer)
+            .is_some_and(|record| record.depends_on(module))
+    }
+
+    /// Whether a source nominal's declaration carries `public` [MOD-6].
+    fn nominal_declared_public(&self, nominal: super::model::NominalId) -> Result<bool, CheckStop> {
+        let Some((template, _)) = self
+            .source_nominal_instances
+            .get(nominal.0 as usize)
+            .and_then(Option::as_ref)
+        else {
+            return Ok(true);
+        };
+        let declaration = self
+            .nominal_templates
+            .get(*template)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            .declaration;
+        Ok(self
+            .resolved
+            .declaration(declaration)
+            .is_some_and(crate::DeclarationRecord::is_public))
+    }
+
+    /// Whether a node lies in a published header: a public function's
     /// parameters, results, effect row, contract or function-kind formals,
-    /// and not its body [MOD-6].
+    /// and not its body, or any formal of a public interface group, which
+    /// publishes its complete formal vector [MOD-6].
     fn in_published_header(&self, node: NodeId) -> Result<bool, CheckStop> {
         let mut current = Some(node);
         while let Some(candidate) = current {
@@ -1295,6 +1365,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 Production::FnDecl => {
                     return Ok(self
                         .optional_declaration_at(candidate, DeclarationRole::Function)?
+                        .is_some_and(crate::DeclarationRecord::is_public));
+                }
+                Production::InterfaceDecl => {
+                    return Ok(self
+                        .optional_declaration_at(candidate, DeclarationRole::Interface)?
                         .is_some_and(crate::DeclarationRecord::is_public));
                 }
                 _ => {}

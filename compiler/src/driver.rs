@@ -187,6 +187,42 @@ pub struct CompilationFailure {
     kind: CompilationFailureKind,
     rule_id: Option<&'static str>,
     detail: String,
+    location: Option<SourceLocation>,
+}
+
+/// Where a rejection is written: a record's display path and the one-based
+/// line and byte column there.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceLocation {
+    path: String,
+    line: u64,
+    column: u64,
+}
+
+impl SourceLocation {
+    /// Returns the record's display path.
+    #[must_use]
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// Returns the one-based line.
+    #[must_use]
+    pub const fn line(&self) -> u64 {
+        self.line
+    }
+
+    /// Returns the one-based byte column.
+    #[must_use]
+    pub const fn column(&self) -> u64 {
+        self.column
+    }
+}
+
+impl fmt::Display for SourceLocation {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}:{}:{}", self.path, self.line, self.column)
+    }
 }
 
 impl CompilationFailure {
@@ -220,6 +256,7 @@ impl CompilationFailure {
             kind,
             rule_id: None,
             detail: format!("{detail:?}"),
+            location: None,
         }
     }
 
@@ -253,25 +290,30 @@ impl CompilationFailure {
             kind: CompilationFailureKind::Source,
             rule_id: Some(rule_id),
             detail: format!("{detail:?}"),
+            location: None,
         }
     }
 
-    /// A malformed compiler-supplied declaration is a pipeline defect, not a
-    /// rejection of the writer's source bundle.
+    /// A rejection at `coordinate`, whose location it records. A malformed
+    /// compiler-supplied declaration is a pipeline defect, not a rejection of
+    /// the writer's source bundle.
     fn at_source(
         stage: CompilationStage,
         rule: &'static str,
         detail: impl fmt::Debug,
         bundle: &SourceBundle,
-        source: crate::SourceId,
+        coordinate: crate::SyntaxCoordinate,
     ) -> Self {
         if bundle
-            .file(source)
+            .file(coordinate.source())
             .is_some_and(|file| file.prelude().is_some())
         {
             Self::new(stage, CompilationFailureKind::Compiler, detail)
         } else {
-            Self::source(stage, rule, detail)
+            Self {
+                location: rejection::written_at(bundle, coordinate).map(|(at, _)| at),
+                ..Self::source(stage, rule, detail)
+            }
         }
     }
 
@@ -291,6 +333,13 @@ impl CompilationFailure {
     #[must_use]
     pub fn detail(&self) -> &str {
         &self.detail
+    }
+
+    /// Returns where a source rejection is written, when it names a written
+    /// place.
+    #[must_use]
+    pub const fn location(&self) -> Option<&SourceLocation> {
+        self.location.as_ref()
     }
 
     /// Returns the exact numbered source rule this rejection cites.
@@ -411,7 +460,10 @@ pub fn form_module_graph(
         limits,
         true,
         |canonical| match crate::graph::form_graph(&canonical) {
-            Ok(Ok(graph)) => Ok(graph),
+            Ok(Ok(mut graph)) => {
+                graph.locate_entries(|coordinate| rejection::written_at(&bundle, coordinate));
+                Ok(graph)
+            }
             Ok(Err(issue)) => {
                 let coordinate = issue.coordinate();
                 Err(CompilationFailure::at_source(
@@ -419,7 +471,7 @@ pub fn form_module_graph(
                     issue.rule_id(),
                     Located::new(issue, &bundle, coordinate),
                     &bundle,
-                    coordinate.source(),
+                    coordinate,
                 ))
             }
             Err(failure) => Err(CompilationFailure::new(
@@ -431,8 +483,9 @@ pub fn form_module_graph(
     )
 }
 
-/// Checks every registered module of a module program through complete
-/// source acceptance, without selecting an entry [MOD-8].
+/// Checks every registered module of a module program against its
+/// dependencies' interfaces, in row order, without selecting an entry, and
+/// returns the first rejected module's failure [MOD-8].
 ///
 /// `inputs` are the modules' interface and implementation records, each
 /// placed with [`SourceInput::in_module`].
@@ -441,7 +494,10 @@ pub fn check_module_program(
     inputs: &[SourceInput<'_>],
     limits: CompilerLimits,
 ) -> Result<(), CompilationFailure> {
-    with_checked_program(inputs, Some(graph.modules()), limits, |_, _| Ok(()))
+    let modules = (0..graph.modules().len())
+        .filter_map(crate::ModuleId::from_index)
+        .collect::<Vec<_>>();
+    require_module_verdicts(graph, inputs, &modules, limits, None)
 }
 
 /// Checks one module against the interfaces it may name [MOD-8]: the
@@ -554,13 +610,96 @@ pub enum CheckOutcome {
         /// The pending interface function declarations, in source order.
         pending: Vec<String>,
     },
-    /// The module's first source rejection.
+    /// The check's first source rejection, and the failing tasks an impact
+    /// report lists, the first of which is that rejection [MOD-8].
     Rejected {
         /// The numbered rule the rejection cites.
         rule: Option<String>,
         /// The rejection as a fresh check renders it.
         failure: String,
+        /// One task per failing definition, body or declaration.
+        tasks: Vec<ImpactTask>,
+        /// Whether the tasks name every failure of the check; a list that
+        /// stopped at a failure it could not step past is not known to.
+        complete: bool,
     },
+}
+
+/// What an impact report asks of one failure [MOD-8].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TaskKind {
+    /// A definition that no longer repeats its interface declaration
+    /// [MOD-7].
+    Definition,
+    /// A function body, such as one whose call a changed declaration no
+    /// longer admits.
+    Body,
+    /// A declaration: an interface declaration, type or constant, of the
+    /// module or of an interface it reads.
+    Declaration,
+}
+
+impl TaskKind {
+    /// The kind's name in the report.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Definition => "definition",
+            Self::Body => "body",
+            Self::Declaration => "declaration",
+        }
+    }
+
+    fn named(name: &[u8]) -> Option<Self> {
+        match name {
+            b"definition" => Some(Self::Definition),
+            b"body" => Some(Self::Body),
+            b"declaration" => Some(Self::Declaration),
+            _ => None,
+        }
+    }
+}
+
+/// One failing task of an impact report [MOD-8].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ImpactTask {
+    kind: TaskKind,
+    function: Option<String>,
+    rule: Option<String>,
+    location: Option<SourceLocation>,
+    failure: String,
+}
+
+impl ImpactTask {
+    /// Returns what the task asks for.
+    #[must_use]
+    pub const fn kind(&self) -> TaskKind {
+        self.kind
+    }
+
+    /// Returns the function whose definition or body fails, when one does.
+    #[must_use]
+    pub fn function(&self) -> Option<&str> {
+        self.function.as_deref()
+    }
+
+    /// Returns the numbered rule the failure cites.
+    #[must_use]
+    pub fn rule(&self) -> Option<&str> {
+        self.rule.as_deref()
+    }
+
+    /// Returns where the failure is written.
+    #[must_use]
+    pub const fn location(&self) -> Option<&SourceLocation> {
+        self.location.as_ref()
+    }
+
+    /// Returns the failure as a check renders it.
+    #[must_use]
+    pub fn failure(&self) -> &str {
+        &self.failure
+    }
 }
 
 impl CheckVerdict {
@@ -593,10 +732,14 @@ const MODULE_VERDICTS: &str = "module-verdicts";
 ///
 /// With a cache, a verdict recorded for exactly the same inputs is reused:
 /// the module's selected records and their display names, the interface
-/// records of its dependency closure, the registered module paths, the
-/// closure's edges and the compiler itself. An edit to another module's
-/// implementation records changes none of these, so it never recomputes this
-/// verdict, and an edit to an interface this module reads always does.
+/// records of its dependency closure, the closure's edges, the registered
+/// modules one path component below a closure module, and the compiler
+/// itself. An edit to another module's implementation records changes none
+/// of these, so it never recomputes this verdict, and an edit to an
+/// interface this module reads always does. A rejection is reused only while
+/// the order in which the check reads its records and the whole set of
+/// registered modules are unchanged as well, since they select which of
+/// several defects it reports.
 ///
 /// # Errors
 ///
@@ -612,39 +755,407 @@ pub fn module_verdict(
     cache: Option<&BuildCache>,
 ) -> Result<CheckVerdict, CompilationFailure> {
     let target = registered_module(graph, module)?;
-    let selected = module_check_inputs(graph, inputs, target, interface_only);
-    let mut modules = graph.dependency_closure(target);
-    modules.push(target);
-    modules.sort();
-    let mut material = b"module-verdict 1\n".to_vec();
-    material.extend_from_slice(if interface_only {
-        b"interface-only\n".as_slice()
-    } else {
-        b"complete\n".as_slice()
+    let check = ModuleCheck::new(graph, inputs, target, interface_only);
+    recorded_verdict(
+        module,
+        cache,
+        MODULE_VERDICTS,
+        (&check.material, &check.reading),
+        || match check.run(graph, limits) {
+            Ok(pending) => Ok(CheckOutcome::Accepted { pending }),
+            Err(failure) if failure.kind() == CompilationFailureKind::Source => {
+                module_rejection(graph, &check, &failure, limits)
+            }
+            Err(failure) => Err(failure),
+        },
+    )
+}
+
+/// [MOD-8] a rejected module's impact report: one task per failing
+/// definition, body or declaration, found by checking the module again with
+/// each failing function set aside. A definition whose function the
+/// interface declares is removed, leaving that declaration pending as a
+/// missing definition's is; a private function's header moves into the
+/// interface as a pending private declaration. Callers keep using the
+/// written boundary, so the next check reports the next failure. A failure
+/// in no function, or a private header the interface cannot state, ends the
+/// list, which is then not known to be complete.
+fn module_rejection(
+    graph: &crate::ModuleGraph,
+    check: &ModuleCheck<'_>,
+    first: &CompilationFailure,
+    limits: CompilerLimits,
+) -> Result<CheckOutcome, CompilationFailure> {
+    let mut texts = check
+        .selected
+        .iter()
+        .map(|input| input.bytes().to_vec())
+        .collect::<Vec<_>>();
+    let interface = check.selected.iter().position(|input| {
+        input.module() == check.target && input.role() == crate::SourceRole::Interface
     });
-    push_module_line(&mut material, "module", graph, target);
-    push_graph_facts(&mut material, graph, &modules);
-    push_records(&mut material, graph, &selected);
-    recorded_verdict(module, cache, MODULE_VERDICTS, &material, || {
-        with_checked_program(&selected, Some(graph.modules()), limits, |checked, _| {
-            Ok(pending_declarations(&checked, target))
-        })
+    // Each current line's line in the record as written, zero for a line
+    // this report added: a later failure is reported where the writer sees
+    // it, and one in an added declaration is the report's, not the module's.
+    let mut origins = texts
+        .iter()
+        .map(|text| (1..=line_count(text)).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    let mut tasks = Vec::new();
+    let mut failure = first.clone();
+    let complete = loop {
+        let item = failing_item(&failure, &check.selected, &texts);
+        let task = impact_task(&failure, &check.selected, item.as_ref());
+        tasks.push(as_written(task, &check.selected, &origins));
+        let Some((record, range, function)) = item.filter(|(record, _, function)| {
+            function.is_some()
+                && check.selected[*record].module() == check.target
+                && check.selected[*record].role() == crate::SourceRole::Implementation
+        }) else {
+            break false;
+        };
+        let (Some(function), Some(interface)) = (function, interface) else {
+            break false;
+        };
+        if !declares_function(&texts[interface], &function) {
+            let Some(declaration) =
+                pending_declaration(&String::from_utf8_lossy(&texts[record][range.clone()]))
+            else {
+                break false;
+            };
+            let text = &mut texts[interface];
+            let mut added = line_count(declaration.as_bytes());
+            if !text.is_empty() {
+                text.push(b'\n');
+                added += 1;
+            }
+            text.extend_from_slice(declaration.as_bytes());
+            origins[interface].extend((0..added).map(|_| 0));
+        }
+        let removal = item_removal(&texts[record], range);
+        let first_line =
+            usize::try_from(line_count(&texts[record][..removal.start])).unwrap_or(usize::MAX);
+        let lines =
+            usize::try_from(line_count(&texts[record][removal.clone()])).unwrap_or(usize::MAX);
+        let lines = first_line..first_line.saturating_add(lines).min(origins[record].len());
+        origins[record].drain(lines);
+        texts[record].drain(removal);
+        let rechecked = check
+            .selected
+            .iter()
+            .zip(&texts)
+            .map(|(input, text)| input.with_bytes(text))
+            .collect::<Vec<_>>();
+        match with_checked_program(&rechecked, Some(graph.modules()), limits, |_, _| Ok(())) {
+            Ok(()) => break true,
+            Err(next) if next.kind() == CompilationFailureKind::Source => {
+                if written_line(next.location(), &check.selected, &origins) == Some(0) {
+                    break false;
+                }
+                failure = next;
+            }
+            Err(next) => return Err(next),
+        }
+    };
+    Ok(CheckOutcome::Rejected {
+        rule: first.rule_id().map(str::to_owned),
+        failure: first.to_string(),
+        tasks,
+        complete,
     })
 }
 
+/// The record and top-level item a failure is written in, and the item's
+/// function when it is one: in canonical form a top-level item is a run of
+/// nonempty lines between empty ones [FORM-2].
+fn failing_item(
+    failure: &CompilationFailure,
+    records: &[SourceInput<'_>],
+    texts: &[Vec<u8>],
+) -> Option<(usize, core::ops::Range<usize>, Option<String>)> {
+    let location = failure.location()?;
+    let record = records
+        .iter()
+        .position(|input| input.display_path() == location.path())?;
+    let text = texts.get(record)?;
+    let mut starts = vec![0_usize];
+    starts.extend(
+        text.iter()
+            .enumerate()
+            .filter(|(_, byte)| **byte == b'\n')
+            .map(|(index, _)| index + 1),
+    );
+    let line = usize::try_from(location.line()).ok()?.checked_sub(1)?;
+    let empty = |line: usize| {
+        let (Some(&start), end) = (starts.get(line), starts.get(line + 1)) else {
+            return true;
+        };
+        end.map_or(start >= text.len(), |end| end - start <= 1)
+    };
+    if empty(line) {
+        return None;
+    }
+    let mut first = line;
+    while first > 0 && !empty(first - 1) {
+        first -= 1;
+    }
+    let mut last = line;
+    while !empty(last + 1) {
+        last += 1;
+    }
+    let start = starts[first];
+    let end = starts.get(last + 1).copied().unwrap_or(text.len());
+    let header = String::from_utf8_lossy(&text[start..end]);
+    let header = header.lines().next().unwrap_or_default();
+    let function = header
+        .strip_prefix("public ")
+        .unwrap_or(header)
+        .strip_prefix("fn ")
+        .and_then(|rest| rest.split(['(', '<']).next())
+        .map(str::to_owned);
+    Some((record, start..end, function))
+}
+
+/// A location's line in its record as written, from the current line's
+/// origin; zero for a line an impact report added.
+fn written_line(
+    location: Option<&SourceLocation>,
+    records: &[SourceInput<'_>],
+    origins: &[Vec<u64>],
+) -> Option<u64> {
+    let location = location?;
+    let record = records
+        .iter()
+        .position(|input| input.display_path() == location.path())?;
+    let line = usize::try_from(location.line()).ok()?.checked_sub(1)?;
+    origins.get(record)?.get(line).copied()
+}
+
+/// A task located where the writer sees it: a check of a record with earlier
+/// failing items set aside reports lines of that shorter text.
+fn as_written(
+    mut task: ImpactTask,
+    records: &[SourceInput<'_>],
+    origins: &[Vec<u64>],
+) -> ImpactTask {
+    if let Some(line) = written_line(task.location.as_ref(), records, origins)
+        && let Some(location) = &mut task.location
+        && line != location.line
+    {
+        let current = format!(" at {location} in line");
+        location.line = line;
+        task.failure = task
+            .failure
+            .replacen(&current, &format!(" at {location} in line"), 1);
+    }
+    task
+}
+
+/// The task one failure asks for.
+fn impact_task(
+    failure: &CompilationFailure,
+    records: &[SourceInput<'_>],
+    item: Option<&(usize, core::ops::Range<usize>, Option<String>)>,
+) -> ImpactTask {
+    let function = item.and_then(|(_, _, function)| function.clone());
+    let implementation = item
+        .is_some_and(|(record, _, _)| records[*record].role() == crate::SourceRole::Implementation);
+    let kind = match (implementation, &function) {
+        (true, Some(_)) if failure.rule_id() == Some("MOD-7") => TaskKind::Definition,
+        (true, Some(_)) => TaskKind::Body,
+        _ => TaskKind::Declaration,
+    };
+    ImpactTask {
+        kind,
+        function,
+        rule: failure.rule_id().map(str::to_owned),
+        location: failure.location().cloned(),
+        failure: failure.to_string(),
+    }
+}
+
+/// Whether an interface record declares a function of this name.
+fn declares_function(interface: &[u8], function: &str) -> bool {
+    String::from_utf8_lossy(interface).lines().any(|line| {
+        line.strip_prefix("public ")
+            .unwrap_or(line)
+            .strip_prefix("fn ")
+            .and_then(|rest| rest.strip_prefix(function))
+            .is_some_and(|rest| rest.starts_with(['(', '<']))
+    })
+}
+
+/// A private definition's pending interface declaration: its header and
+/// contract, which end at its body, followed by a `doc` entry, in canonical
+/// form [FORM-2, MOD-7].
+fn pending_declaration(definition: &str) -> Option<String> {
+    const DOC: &str = "doc \"Set aside by the impact report while its body fails.\";";
+    let mut lines = definition.lines();
+    let first = lines.next()?;
+    if first.strip_suffix(" contract {").is_some() {
+        let mut declaration = format!("{first}\n");
+        for line in lines {
+            if line == "} {" {
+                declaration.push_str(&format!("}} {DOC}\n"));
+                return Some(declaration);
+            }
+            declaration.push_str(line);
+            declaration.push('\n');
+        }
+        return None;
+    }
+    let header = first.strip_suffix(" {")?;
+    Some(format!("{header} {DOC}\n"))
+}
+
+/// The number of lines a canonical text holds.
+fn line_count(text: &[u8]) -> u64 {
+    text.iter().filter(|byte| **byte == b'\n').count() as u64
+}
+
+/// The bytes that remove one top-level item with one of the empty lines that
+/// separate it from its neighbours, keeping the record canonical: a record
+/// left without items is one LF [FORM-2].
+fn item_removal(text: &[u8], item: core::ops::Range<usize>) -> core::ops::Range<usize> {
+    if item.end < text.len() {
+        item.start..item.end + 1
+    } else if item.start > 0 {
+        item.start - 1..item.end
+    } else {
+        item.start..item.end.saturating_sub(1)
+    }
+}
+
+/// One module's check against the interfaces it may name [MOD-8]: the
+/// records it reads and the key material of its verdict.
+struct ModuleCheck<'input> {
+    target: crate::ModuleId,
+    selected: Vec<SourceInput<'input>>,
+    /// What the verdict depends on, whatever it concludes.
+    material: Vec<u8>,
+    /// What a rejection depends on beyond `material`.
+    reading: Vec<u8>,
+}
+
+impl<'input> ModuleCheck<'input> {
+    fn new(
+        graph: &crate::ModuleGraph,
+        inputs: &[SourceInput<'input>],
+        target: crate::ModuleId,
+        interface_only: bool,
+    ) -> Self {
+        let selected = module_check_inputs(graph, inputs, target, interface_only);
+        let mut modules = graph.dependency_closure(target);
+        modules.push(target);
+        modules.sort();
+        let mut material = b"module-verdict 2\n".to_vec();
+        material.extend_from_slice(if interface_only {
+            b"interface-only\n".as_slice()
+        } else {
+            b"complete\n".as_slice()
+        });
+        push_module_line(&mut material, "module", graph, target);
+        push_graph_facts(&mut material, graph, &modules);
+        push_records(&mut material, graph, &selected, RecordOrder::Sorted);
+        let reading = rejection_reading(graph, &selected);
+        Self {
+            target,
+            selected,
+            material,
+            reading,
+        }
+    }
+
+    /// The pending declarations of an accepted module, or its failure.
+    fn run(
+        &self,
+        graph: &crate::ModuleGraph,
+        limits: CompilerLimits,
+    ) -> Result<Vec<String>, CompilationFailure> {
+        with_checked_program(
+            &self.selected,
+            Some(graph.modules()),
+            limits,
+            |checked, _| Ok(pending_declarations(&checked, self.target)),
+        )
+    }
+}
+
+/// [MOD-8] a composition holds only while every selected module's own
+/// verdict does. Each module is checked against its dependencies' interfaces
+/// alone, in row order, reusing an acceptance a cache recorded for exactly
+/// its inputs, and the first rejected module's failure is the composition's.
+fn require_module_verdicts(
+    graph: &crate::ModuleGraph,
+    inputs: &[SourceInput<'_>],
+    modules: &[crate::ModuleId],
+    limits: CompilerLimits,
+    cache: Option<&BuildCache>,
+) -> Result<(), CompilationFailure> {
+    for module in modules {
+        let check = ModuleCheck::new(graph, inputs, *module, false);
+        let reading = content_digest(&check.reading);
+        let recorded = cache
+            .and_then(|cache| cache.load(MODULE_VERDICTS, &check.material))
+            .and_then(|payload| decode_outcome(&payload, &reading));
+        if matches!(recorded, Some(CheckOutcome::Accepted { .. })) {
+            continue;
+        }
+        // A rejection is left to a module check, which records it with its
+        // impact report; a build needs only its first failure.
+        let pending = check.run(graph, limits)?;
+        if let Some(cache) = cache {
+            // A failed publication costs only a later recomputation.
+            let _ = cache.store(
+                MODULE_VERDICTS,
+                &check.material,
+                &encode_outcome(&CheckOutcome::Accepted { pending }, &reading),
+            );
+        }
+    }
+    Ok(())
+}
+
+/// A composition check's result as a verdict records it: an acceptance, or a
+/// source rejection with its one task. Any other failure returns as it is
+/// and is never recorded.
+fn outcome_of(
+    result: Result<Vec<String>, CompilationFailure>,
+    records: &[SourceInput<'_>],
+) -> Result<CheckOutcome, CompilationFailure> {
+    match result {
+        Ok(pending) => Ok(CheckOutcome::Accepted { pending }),
+        Err(failure) if failure.kind() == CompilationFailureKind::Source => {
+            let texts = records
+                .iter()
+                .map(|input| input.bytes().to_vec())
+                .collect::<Vec<_>>();
+            let item = failing_item(&failure, records, &texts);
+            Ok(CheckOutcome::Rejected {
+                rule: failure.rule_id().map(str::to_owned),
+                failure: failure.to_string(),
+                tasks: vec![impact_task(&failure, records, item.as_ref())],
+                complete: false,
+            })
+        }
+        Err(failure) => Err(failure),
+    }
+}
+
 /// The verdict recorded for exactly `material`, or the one `check` computes,
-/// which is then recorded. Only a source verdict is recorded: any other
-/// failure returns as it is.
+/// which is then recorded. A recorded rejection also needs its exact
+/// `reading`.
 fn recorded_verdict(
     subject: &str,
     cache: Option<&BuildCache>,
     family: &str,
-    material: &[u8],
-    check: impl FnOnce() -> Result<Vec<String>, CompilationFailure>,
+    (material, reading): (&[u8], &[u8]),
+    check: impl FnOnce() -> Result<CheckOutcome, CompilationFailure>,
 ) -> Result<CheckVerdict, CompilationFailure> {
+    let reading = content_digest(reading);
     let recorded = cache
         .and_then(|cache| cache.load(family, material))
-        .and_then(|payload| decode_outcome(&payload));
+        .and_then(|payload| decode_outcome(&payload, &reading));
     if let Some(outcome) = recorded {
         return Ok(CheckVerdict {
             subject: subject.to_owned(),
@@ -652,19 +1163,10 @@ fn recorded_verdict(
             reused: true,
         });
     }
-    let outcome = match check() {
-        Ok(pending) => CheckOutcome::Accepted { pending },
-        Err(failure) if failure.kind() == CompilationFailureKind::Source => {
-            CheckOutcome::Rejected {
-                rule: failure.rule_id().map(str::to_owned),
-                failure: failure.to_string(),
-            }
-        }
-        Err(failure) => return Err(failure),
-    };
+    let outcome = check()?;
     if let Some(cache) = cache {
         // A failed publication costs only a later recomputation.
-        let _ = cache.store(family, material, &encode_outcome(&outcome));
+        let _ = cache.store(family, material, &encode_outcome(&outcome, &reading));
     }
     Ok(CheckVerdict {
         subject: subject.to_owned(),
@@ -693,15 +1195,16 @@ fn composition_inputs<'input>(
 }
 
 /// The key material of one entry's composition: the selection and its
-/// requirement, the graph facts its modules read, and every record of them.
+/// requirement, the graph facts its modules read, and every record of them,
+/// sorted or in the order the composition reads them.
 fn composition_material(
     family: &str,
     graph: &crate::ModuleGraph,
     selection: &Selection<'_>,
-    modules: &[crate::ModuleId],
-    selected: &[SourceInput<'_>],
+    (modules, selected): (&[crate::ModuleId], &[SourceInput<'_>]),
+    order: RecordOrder,
 ) -> Vec<u8> {
-    let mut material = format!("{family} 1\n").into_bytes();
+    let mut material = format!("{family} 2\n").into_bytes();
     push_module_line(&mut material, "entry-module", graph, selection.module);
     material.extend_from_slice(
         format!(
@@ -711,7 +1214,7 @@ fn composition_material(
         .as_bytes(),
     );
     push_graph_facts(&mut material, graph, modules);
-    push_records(&mut material, graph, selected);
+    push_records(&mut material, graph, selected, order);
     material
 }
 
@@ -721,10 +1224,13 @@ const COMPOSITION_VERDICTS: &str = "composition-verdicts";
 /// The cache family of entry builds' emitted modules.
 const ENTRY_MODULES: &str = "entry-modules";
 
-/// [MOD-8, MOD-9] checks one entry's composition, its modules' complete
-/// source acceptance and the entry's own requirements, stopping before
-/// lowering, and reports its verdict. With a cache, a verdict recorded for
-/// exactly the same composition is reused.
+/// [MOD-8, MOD-9] checks one entry's composition, stopping before lowering,
+/// and reports its verdict: every module of the entry's closure must hold its
+/// own verdict, in row order, and then the composition must hold its
+/// definitions, instances and the entry's own requirements. With a cache, a
+/// verdict recorded for exactly the same composition is reused, and so is
+/// each module's. `known` holds complete module verdicts this caller has
+/// already computed, which are not computed again.
 ///
 /// # Errors
 ///
@@ -736,6 +1242,7 @@ pub fn entry_verdict(
     entry: ModuleEntry<'_>,
     limits: CompilerLimits,
     cache: Option<&BuildCache>,
+    known: &[CheckVerdict],
 ) -> Result<CheckVerdict, CompilationFailure> {
     let subject = match entry {
         ModuleEntry::Named(name) => name.to_owned(),
@@ -743,17 +1250,53 @@ pub fn entry_verdict(
     };
     let selection = entry_selection(graph, entry)?;
     let (modules, selected) = composition_inputs(graph, inputs, selection.module);
-    let material =
-        composition_material(COMPOSITION_VERDICTS, graph, &selection, &modules, &selected);
-    recorded_verdict(&subject, cache, COMPOSITION_VERDICTS, &material, || {
-        with_checked_program(
-            &selected,
-            Some(graph.modules()),
-            limits,
-            |checked, bundle| admit_entry(&checked, bundle, &selection),
-        )
-        .map(|()| Vec::new())
-    })
+    let material = composition_material(
+        COMPOSITION_VERDICTS,
+        graph,
+        &selection,
+        (&modules, &selected),
+        RecordOrder::Sorted,
+    );
+    let mut reading = rejection_reading(graph, &selected);
+    // A named entry's rejection quotes where the graph writes it.
+    if let Some((at, line)) = selection.written {
+        let mut fields = Fields::default();
+        fields.push(at.to_string().as_bytes()).push(line.as_bytes());
+        reading.extend_from_slice(b"written ");
+        reading.extend_from_slice(&fields.into_bytes());
+        reading.push(b'\n');
+    }
+    recorded_verdict(
+        &subject,
+        cache,
+        COMPOSITION_VERDICTS,
+        (&material, &reading),
+        || {
+            for module in &modules {
+                let name = graph
+                    .modules()
+                    .get(module.index())
+                    .map_or_else(String::new, crate::ModuleRecord::qualified_name);
+                let verdict = match known.iter().find(|verdict| verdict.subject == name) {
+                    Some(verdict) => verdict.clone(),
+                    None => module_verdict(graph, inputs, &name, false, limits, cache)?,
+                };
+                if let CheckOutcome::Rejected { .. } = verdict.outcome {
+                    return Ok(verdict.outcome);
+                }
+            }
+            outcome_of(
+                with_checked_program(
+                    &selected,
+                    Some(graph.modules()),
+                    limits,
+                    |checked, bundle| admit_entry(&checked, bundle, &selection),
+                )
+                .map(|()| Vec::new()),
+                &selected,
+            )
+        },
+    )
 }
 
 /// [MOD-8] the interface function declarations of `module` that no
@@ -786,62 +1329,147 @@ fn push_module_line(
     material.extend_from_slice(format!("{label} {name}\n").as_bytes());
 }
 
-/// The graph facts a check over `modules` reads: every registered path, in
-/// row order, which prefix resolution and the MOD-3 slot check compare with,
-/// and each of those modules' direct dependencies. Entries, comments and
-/// spacing of the graph file are not among them [MOD-1, MOD-5].
+/// The graph facts a check over `modules` reads whatever it concludes,
+/// independent of row and edge order [MOD-1]: each of those modules' direct
+/// dependencies, which name permission compares with [MOD-5], and every
+/// registered module one path component below one of them, whose last
+/// component a top-level declaration of that module may not take [MOD-3].
+/// An accepted check names only modules among these; which other modules
+/// are registered changes only which rejection a check reports, and a
+/// rejection's reading covers it. Entries, comments and spacing of the graph
+/// file are not among them.
 fn push_graph_facts(
     material: &mut Vec<u8>,
     graph: &crate::ModuleGraph,
     modules: &[crate::ModuleId],
 ) {
-    material.extend_from_slice(b"registered");
-    for module in graph.modules() {
-        material.push(b' ');
-        material.extend_from_slice(module.qualified_name().as_bytes());
-    }
-    material.push(b'\n');
-    for module in modules {
-        let Some(record) = graph.modules().get(module.index()) else {
-            continue;
-        };
-        material.extend_from_slice(format!("edges {}:", record.qualified_name()).as_bytes());
-        for dependency in record.dependencies() {
-            if let Some(dependency) = graph.modules().get(dependency.index()) {
-                material.push(b' ');
-                material.extend_from_slice(dependency.qualified_name().as_bytes());
-            }
+    let records = graph.modules();
+    let name = |module: &crate::ModuleId| {
+        records
+            .get(module.index())
+            .map_or_else(String::new, crate::ModuleRecord::qualified_name)
+    };
+    let mut edges = modules
+        .iter()
+        .map(|module| {
+            let mut dependencies = records
+                .get(module.index())
+                .map_or(&[][..], crate::ModuleRecord::dependencies)
+                .iter()
+                .map(name)
+                .collect::<Vec<_>>();
+            dependencies.sort();
+            (name(module), dependencies)
+        })
+        .collect::<Vec<_>>();
+    edges.sort();
+    for (module, dependencies) in &edges {
+        material.extend_from_slice(format!("edges {module}:").as_bytes());
+        for dependency in dependencies {
+            material.push(b' ');
+            material.extend_from_slice(dependency.as_bytes());
         }
         material.push(b'\n');
     }
+    let mut children = records
+        .iter()
+        .filter(|record| {
+            record.path().split_last().is_some_and(|(_, parent)| {
+                modules.iter().any(|module| {
+                    records
+                        .get(module.index())
+                        .is_some_and(|record| record.path() == parent)
+                })
+            })
+        })
+        .map(crate::ModuleRecord::qualified_name)
+        .collect::<Vec<_>>();
+    children.sort();
+    material.extend_from_slice(b"children");
+    for child in &children {
+        material.push(b' ');
+        material.extend_from_slice(child.as_bytes());
+    }
+    material.push(b'\n');
 }
 
-/// Each record a check reads, in the order it reads them: its module, role,
-/// logical and display names, and bytes.
-fn push_records(material: &mut Vec<u8>, graph: &crate::ModuleGraph, inputs: &[SourceInput<'_>]) {
+/// What a rejection depends on beyond the key material: every registered
+/// module in row order, and the order in which the check reads its records,
+/// which selects the first of several defects it reports [DIAG-1].
+fn rejection_reading(graph: &crate::ModuleGraph, inputs: &[SourceInput<'_>]) -> Vec<u8> {
+    let mut reading = b"registered".to_vec();
+    for module in graph.modules() {
+        reading.push(b' ');
+        reading.extend_from_slice(module.qualified_name().as_bytes());
+    }
+    reading.push(b'\n');
     for input in inputs {
         let module = graph
             .modules()
             .get(input.module().index())
             .map_or_else(String::new, crate::ModuleRecord::qualified_name);
-        let role = match input.role() {
-            crate::SourceRole::Interface => "interface",
-            crate::SourceRole::Implementation => "implementation",
-        };
         let mut fields = Fields::default();
         fields
             .push(module.as_bytes())
-            .push(role.as_bytes())
-            .push(input.logical_path().as_bytes())
-            .push(input.display_path().as_bytes())
-            .push(input.bytes());
+            .push(input.logical_path().as_bytes());
+        reading.extend_from_slice(&fields.into_bytes());
+        reading.push(b'\n');
+    }
+    reading
+}
+
+/// The order in which key material lists records.
+#[derive(Clone, Copy)]
+enum RecordOrder {
+    /// Sorted by their encoding, for a verdict, which a read order changes
+    /// only through a rejection's reading.
+    Sorted,
+    /// The order the check reads them, for an emitted module, whose symbols
+    /// and type names follow it.
+    Read,
+}
+
+/// Each record a check reads: its module, role, logical and display names,
+/// and bytes.
+fn push_records(
+    material: &mut Vec<u8>,
+    graph: &crate::ModuleGraph,
+    inputs: &[SourceInput<'_>],
+    order: RecordOrder,
+) {
+    let mut records = inputs
+        .iter()
+        .map(|input| {
+            let module = graph
+                .modules()
+                .get(input.module().index())
+                .map_or_else(String::new, crate::ModuleRecord::qualified_name);
+            let role = match input.role() {
+                crate::SourceRole::Interface => "interface",
+                crate::SourceRole::Implementation => "implementation",
+            };
+            let mut fields = Fields::default();
+            fields
+                .push(module.as_bytes())
+                .push(role.as_bytes())
+                .push(input.logical_path().as_bytes())
+                .push(input.display_path().as_bytes())
+                .push(input.bytes());
+            fields.into_bytes()
+        })
+        .collect::<Vec<_>>();
+    if let RecordOrder::Sorted = order {
+        records.sort();
+    }
+    for record in records {
         material.extend_from_slice(b"record ");
-        material.extend_from_slice(&fields.into_bytes());
+        material.extend_from_slice(&record);
         material.push(b'\n');
     }
 }
 
-fn encode_outcome(outcome: &CheckOutcome) -> Vec<u8> {
+/// A recorded outcome; a rejection carries the digest of its reading.
+fn encode_outcome(outcome: &CheckOutcome, reading: &[u8]) -> Vec<u8> {
     let mut fields = Fields::default();
     match outcome {
         CheckOutcome::Accepted { pending } => {
@@ -850,17 +1478,46 @@ fn encode_outcome(outcome: &CheckOutcome) -> Vec<u8> {
                 fields.push(name.as_bytes());
             }
         }
-        CheckOutcome::Rejected { rule, failure } => {
+        CheckOutcome::Rejected {
+            rule,
+            failure,
+            tasks,
+            complete,
+        } => {
             fields
                 .push(b"rejected")
                 .push(rule.as_deref().unwrap_or_default().as_bytes())
-                .push(failure.as_bytes());
+                .push(failure.as_bytes())
+                .push(reading)
+                .push(if *complete { b"complete" } else { b"partial" });
+            for task in tasks {
+                let (path, line, column) = task.location.as_ref().map_or_else(
+                    || (String::new(), String::new(), String::new()),
+                    |location| {
+                        (
+                            location.path.clone(),
+                            location.line.to_string(),
+                            location.column.to_string(),
+                        )
+                    },
+                );
+                fields
+                    .push(task.kind.name().as_bytes())
+                    .push(task.function.as_deref().unwrap_or_default().as_bytes())
+                    .push(task.rule.as_deref().unwrap_or_default().as_bytes())
+                    .push(path.as_bytes())
+                    .push(line.as_bytes())
+                    .push(column.as_bytes())
+                    .push(task.failure.as_bytes());
+            }
         }
     }
     fields.into_bytes()
 }
 
-fn decode_outcome(payload: &[u8]) -> Option<CheckOutcome> {
+/// A recorded outcome, or `None` when the payload is malformed or records a
+/// rejection read in another way than `reading`.
+fn decode_outcome(payload: &[u8], reading: &[u8]) -> Option<CheckOutcome> {
     let fields = Fields::parse(payload)?;
     let text = |field: &[u8]| String::from_utf8(field.to_vec()).ok();
     match fields.as_slice() {
@@ -870,16 +1527,48 @@ fn decode_outcome(payload: &[u8]) -> Option<CheckOutcome> {
                 .map(|name| text(name))
                 .collect::<Option<Vec<_>>>()?,
         }),
-        [b"rejected", rule, failure] => Some(CheckOutcome::Rejected {
-            rule: (!rule.is_empty()).then(|| text(rule)).flatten(),
-            failure: text(failure)?,
-        }),
+        [b"rejected", rule, failure, recorded, complete, tasks @ ..]
+            if *recorded == reading && tasks.len() % 7 == 0 =>
+        {
+            let optional = |field: &[u8]| (!field.is_empty()).then(|| text(field)).flatten();
+            let tasks = tasks
+                .chunks(7)
+                .map(|task| {
+                    let [kind, function, rule, path, line, column, failure] = task else {
+                        return None;
+                    };
+                    let location = if path.is_empty() {
+                        None
+                    } else {
+                        Some(SourceLocation {
+                            path: text(path)?,
+                            line: text(line)?.parse().ok()?,
+                            column: text(column)?.parse().ok()?,
+                        })
+                    };
+                    Some(ImpactTask {
+                        kind: TaskKind::named(kind)?,
+                        function: optional(function),
+                        rule: optional(rule),
+                        location,
+                        failure: text(failure)?,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some(CheckOutcome::Rejected {
+                rule: optional(rule),
+                failure: text(failure)?,
+                tasks,
+                complete: *complete == b"complete",
+            })
+        }
         _ => None,
     }
 }
 
-/// Checks a module program through complete source acceptance and admits
-/// one of its entries [MOD-9, STOR-8], stopping before lowering.
+/// [MOD-8, MOD-9] checks one entry's composition, stopping before lowering:
+/// every module of the entry's closure holds its own verdict, in row order,
+/// and then the composition admits the entry.
 pub fn check_module_entry(
     graph: &crate::ModuleGraph,
     inputs: &[SourceInput<'_>],
@@ -887,7 +1576,8 @@ pub fn check_module_entry(
     limits: CompilerLimits,
 ) -> Result<(), CompilationFailure> {
     let selection = entry_selection(graph, entry)?;
-    let (_, selected) = composition_inputs(graph, inputs, selection.module);
+    let (modules, selected) = composition_inputs(graph, inputs, selection.module);
+    require_module_verdicts(graph, inputs, &modules, limits, None)?;
     with_checked_program(
         &selected,
         Some(graph.modules()),
@@ -918,6 +1608,7 @@ fn entry_selection<'graph>(
                 name: entry.function(),
                 no_heap: entry.no_heap(),
                 public: true,
+                written: entry.written(),
             }
         }
         ModuleEntry::Function { module, function } => Selection {
@@ -927,6 +1618,7 @@ fn entry_selection<'graph>(
             name: function,
             no_heap: false,
             public: false,
+            written: None,
         },
     })
 }
@@ -961,14 +1653,23 @@ pub fn build_module_entry(
 ) -> Result<(String, bool), CompilationFailure> {
     let selection = entry_selection(graph, entry)?;
     let (modules, selected) = composition_inputs(graph, inputs, selection.module);
-    let mut material = composition_material(ENTRY_MODULES, graph, &selection, &modules, &selected);
+    let mut material = composition_material(
+        ENTRY_MODULES,
+        graph,
+        &selection,
+        (&modules, &selected),
+        RecordOrder::Read,
+    );
     material.extend_from_slice(format!("overlap {overlap:?}\n").as_bytes());
+    // Only a build that composed is recorded, so a recorded module implies
+    // that every module verdict of its closure held for these inputs.
     if let Some(module) = cache
         .and_then(|cache| cache.load(ENTRY_MODULES, &material))
         .and_then(|payload| String::from_utf8(payload).ok())
     {
         return Ok((module, true));
     }
+    require_module_verdicts(graph, inputs, &modules, limits, cache)?;
     let module = compile_selected(
         &selected,
         Some(graph.modules()),
@@ -1008,6 +1709,7 @@ fn compile_reporting(
             name: "main",
             no_heap: false,
             public: false,
+            written: None,
         },
     )
 }
@@ -1021,6 +1723,8 @@ struct Selection<'a> {
     no_heap: bool,
     /// A named entry, which must select a public function [MOD-9].
     public: bool,
+    /// Where a named entry is written in the graph record, and that line.
+    written: Option<(&'a SourceLocation, &'a str)>,
 }
 
 fn compile_selected(
@@ -1035,6 +1739,25 @@ fn compile_selected(
             admit_entry(&checked, bundle, selection)?;
         }
         lower_selected(inputs, modules, limits, overlap, selection, bundle, checked)
+    })
+}
+
+/// The ordinary function a selection names, found by its declaration's
+/// module: a PRE-1 function's checked record carries the first registered
+/// module, but its declaration belongs to no module's inventory [MOD-9,
+/// PROG-3].
+fn selected_function<'checked>(
+    checked: &'checked CheckedProgram<'_, '_, '_>,
+    selection: &Selection<'_>,
+) -> Option<&'checked crate::semantic::CheckedFunction> {
+    checked.data.functions.iter().find(|function| {
+        !function.formal_hypothesis
+            && function.name == selection.name
+            && checked
+                ._resolved
+                .declaration(function.declaration)
+                .and_then(crate::DeclarationRecord::module)
+                == Some(selection.module)
     })
 }
 
@@ -1066,16 +1789,23 @@ fn admit_entry(
             "MOD-8",
             Located::new(detail, bundle, coordinate),
             bundle,
-            coordinate.source(),
+            coordinate,
         ));
     }
-    let entry_failure =
-        |detail: String| CompilationFailure::source(CompilationStage::Semantics, "MOD-9", detail);
-    let Some(function) = checked.data.functions.iter().find(|function| {
-        !function.formal_hypothesis
-            && function.module == selection.module
-            && function.name == selection.name
-    }) else {
+    // A named entry's rejection is located at its `entry_decl` in the graph
+    // record; an unnamed entry is written only in the build's selection.
+    let entry_failure = |detail: String| match selection.written {
+        Some((at, line)) => CompilationFailure {
+            location: Some(at.clone()),
+            ..CompilationFailure::source(
+                CompilationStage::Semantics,
+                "MOD-9",
+                Located::written(detail, at.clone(), line.to_owned()),
+            )
+        },
+        None => CompilationFailure::source(CompilationStage::Semantics, "MOD-9", detail),
+    };
+    let Some(function) = selected_function(checked, selection) else {
         return Err(entry_failure(format!(
             "the entry names `{}`, which is no ordinary nongeneric function of its module",
             selection.name
@@ -1120,7 +1850,7 @@ fn admit_entry(
                     "STOR-8",
                     Located::new(detail, bundle, coordinate),
                     bundle,
-                    coordinate.source(),
+                    coordinate,
                 )
             }
             None => CompilationFailure::source(CompilationStage::Semantics, "STOR-8", detail),
@@ -1153,7 +1883,11 @@ where
                 issue.kind().rule_id(),
                 issue,
                 bundle,
-                issue.span().source(),
+                crate::SyntaxCoordinate::new(
+                    issue.span().source(),
+                    issue.span().start(),
+                    issue.span().end(),
+                ),
             ));
         }
         LexOutcome::ResourceFailure(failure) => {
@@ -1179,7 +1913,11 @@ where
                 issue.owner().id(),
                 issue,
                 bundle,
-                issue.token().source(),
+                crate::SyntaxCoordinate::new(
+                    issue.token().span().source(),
+                    issue.token().span().start(),
+                    issue.token().span().end(),
+                ),
             ));
         }
         TerminalOutcome::ResourceFailure(failure) => {
@@ -1217,7 +1955,7 @@ where
                 issue.rule().id(),
                 Located::new(issue, classified.source_bundle(), coordinate),
                 bundle,
-                coordinate.source(),
+                coordinate,
             ));
         }
         ParseOutcome::ResourceFailure(failure) => {
@@ -1271,7 +2009,7 @@ where
                 issue.rule().id(),
                 Located::in_gap(issue, classified.source_bundle(), coordinate),
                 bundle,
-                coordinate.source(),
+                coordinate,
             ));
         }
         CanonicalOutcome::ResourceFailure(failure) => {
@@ -1325,7 +2063,7 @@ where
                     issue.rule().id(),
                     Located::new(issue, classified.source_bundle(), coordinate),
                     &bundle,
-                    coordinate.source(),
+                    coordinate,
                 ));
             }
             ResolutionOutcome::CompilerFailure { failure, .. } => {
@@ -1354,7 +2092,7 @@ where
                     Located::new(issue, classified.source_bundle(), coordinate)
                         .requested_at(classified.source_bundle(), request),
                     &bundle,
-                    coordinate.source(),
+                    coordinate,
                 ));
             }
             SemanticOutcome::ResolutionIssue { issue, .. } => {
@@ -1364,7 +2102,7 @@ where
                     issue.rule().id(),
                     Located::new(issue, classified.source_bundle(), coordinate),
                     &bundle,
-                    coordinate.source(),
+                    coordinate,
                 ));
             }
             SemanticOutcome::Unsupported { unsupported, .. } => {
@@ -1395,11 +2133,7 @@ fn lower_selected(
     bundle: &SourceBundle,
     checked: CheckedProgram<'_, '_, '_>,
 ) -> Result<Reported, CompilationFailure> {
-    let entry = checked.data.functions.iter().find(|function| {
-        !function.formal_hypothesis
-            && function.module == selection.module
-            && function.name == selection.name
-    });
+    let entry = selected_function(&checked, selection);
     let selected = entry
         .map_or(selection.name, |function| function.symbol.as_str())
         .to_owned();
@@ -1431,6 +2165,7 @@ fn lower_selected(
             name: &name,
             no_heap: selection.no_heap,
             public: false,
+            written: selection.written,
         };
         match compile_selected(&with_caller, modules, limits, overlap, &caller_selection) {
             Ok(reported) => return Ok(reported),
@@ -1567,11 +2302,14 @@ mod tests {
         b"pkg::base: [];\npkg::user: [pkg::base];\npkg::tool: [];\npkg: [pkg::base, pkg::user];\n\nentry app = pkg::main;\n";
     const BASE_INTERFACE: &[u8] = b"public fn half(value: u8) -> result: u8 pure contract {\n  requires value > 1_u8;\n} doc \"Halves a value above one.\";\n";
     const BASE_BODY: &[u8] = b"fn half(value: u8) -> result: u8 pure contract {\n  requires value > 1_u8;\n} {\n  let result = value / 2_u8;\n  return result;\n}\n";
-    const USER_INTERFACE: &[u8] = b"public fn use_half() -> result: u8 pure;\n";
+    const USER_INTERFACE: &[u8] =
+        b"public fn use_half() -> result: u8 pure doc \"Halves eight.\";\n";
     const USER_BODY: &[u8] = b"fn use_half() -> result: u8 pure {\n  let result = pkg::base::half(value: 8_u8);\n  return result;\n}\n";
-    const TOOL_INTERFACE: &[u8] = b"public fn spare() -> result: u8 pure;\n";
+    const TOOL_INTERFACE: &[u8] =
+        b"public fn spare() -> result: u8 pure doc \"Supplies a spare value.\";\n";
     const TOOL_BODY: &[u8] = b"fn spare() -> result: u8 pure {\n  return 1_u8;\n}\n";
-    const ROOT_INTERFACE: &[u8] = b"public fn main() -> status: ExitStatus pure;\n";
+    const ROOT_INTERFACE: &[u8] =
+        b"public fn main() -> status: ExitStatus pure doc \"Runs the program.\";\n";
     const ROOT_BODY: &[u8] = b"fn main() -> status: ExitStatus pure {\n  let code = pkg::user::use_half();\n  return exit_status(code: code);\n}\n";
 
     /// Every module's verdict and every entry's composition verdict, with
@@ -1611,6 +2349,7 @@ mod tests {
                 super::ModuleEntry::Named(entry.name()),
                 CompilerLimits::default(),
                 cache,
+                &[],
             )
             .expect("a composition verdict");
             verdicts.push((
@@ -1784,6 +2523,237 @@ mod tests {
         );
     }
 
+    /// [MOD-1] a graph's meaning does not depend on row or edge order, and a
+    /// module outside a check's closure is no input of it: reordering both
+    /// recomputes nothing, and registering a module computes only its own
+    /// verdict and those of the modules whose names it extends.
+    #[test]
+    fn row_and_edge_order_and_unrelated_modules_leave_verdicts_reused() {
+        let directory = CacheDirectory::new("order");
+        let cache = directory.open();
+        let mut records: Vec<(&str, &[u8])> = vec![
+            ("base/module.wfm", BASE_INTERFACE),
+            ("base/half.wf", BASE_BODY),
+            ("user/module.wfm", USER_INTERFACE),
+            ("user/use.wf", USER_BODY),
+            ("tool/module.wfm", TOOL_INTERFACE),
+            ("tool/spare.wf", TOOL_BODY),
+            ("module.wfm", ROOT_INTERFACE),
+            ("main.wf", ROOT_BODY),
+        ];
+        let _ = recomputed(PROGRAM_GRAPH, &records, &cache);
+        let reordered: &[u8] =
+            b"pkg::tool: [];\npkg::base: [];\npkg::user: [pkg::base];\npkg: [pkg::user, pkg::base];\n\nentry app = pkg::main;\n";
+        assert_eq!(
+            recomputed(reordered, &records, &cache),
+            Vec::<String>::new()
+        );
+        // A registered module one component below `pkg::tool` is a name
+        // `pkg::tool`'s declarations may not take [MOD-3], so only those two
+        // verdicts are computed.
+        records.push(("tool/extra/module.wfm", TOOL_INTERFACE));
+        records.push(("tool/extra/spare.wf", TOOL_BODY));
+        let extended: &[u8] =
+            b"pkg::tool: [];\npkg::base: [];\npkg::user: [pkg::base];\npkg: [pkg::user, pkg::base];\npkg::tool::extra: [];\n\nentry app = pkg::main;\n";
+        assert_eq!(
+            recomputed(extended, &records, &cache),
+            ["pkg::tool", "pkg::tool::extra"]
+                .map(str::to_owned)
+                .to_vec()
+        );
+    }
+
+    /// [MOD-3, MOD-8] an interface sees only its module's interface
+    /// declarations, so a public struct whose field names a type declared in
+    /// an implementation record is refused in the module's own verdict, in
+    /// every client's verdict that reads the interface, and in the entry's
+    /// composition, which reports the first rejected module's verdict.
+    #[test]
+    fn a_composition_reports_its_first_rejected_module_verdict() {
+        let graph: &[u8] = b"pkg::base: [];\npkg: [pkg::base];\n\nentry app = pkg::main;\n";
+        let base_interface: &[u8] = b"public struct Wrapper {\n  public value: u8;\n  secret: Hidden;\n}\n\npublic fn make() -> wrapper: Wrapper pure doc \"Makes a wrapper.\";\n";
+        let base_body: &[u8] = b"struct Hidden {\n  inner: u8;\n}\n\nfn make() -> wrapper: Wrapper pure {\n  let hidden = Hidden(inner: 1_u8);\n  return Wrapper(value: 7_u8, secret: hidden);\n}\n";
+        let root_body: &[u8] = b"fn main() -> status: ExitStatus pure {\n  let wrapper = pkg::base::make();\n  return exit_status(code: wrapper.value);\n}\n";
+        let records: Vec<(&str, &[u8])> = vec![
+            ("base/module.wfm", base_interface),
+            ("base/make.wf", base_body),
+            ("module.wfm", ROOT_INTERFACE),
+            ("main.wf", root_body),
+        ];
+        let verdicts = verdicts(graph, &records, None);
+        let outcome = |subject: &str| {
+            verdicts
+                .iter()
+                .find(|(name, _, _)| name == subject)
+                .map(|(_, outcome, _)| outcome.clone())
+                .expect("a verdict for every subject")
+        };
+        let base = outcome("pkg::base");
+        assert!(
+            matches!(&base, super::CheckOutcome::Rejected { failure, .. } if failure.contains("base/module.wfm:3:11")),
+            "{base:?}"
+        );
+        assert!(
+            matches!(outcome("pkg"), super::CheckOutcome::Rejected { failure, .. } if failure.contains("base/module.wfm:3:11"))
+        );
+        assert_eq!(outcome("app"), base);
+    }
+
+    /// [MOD-9] an entry selects a function its module's own inventory
+    /// declares: a PRE-1 function is no entry even when the first registered
+    /// module is selected, whose row a prelude function's checked record
+    /// shares, and a named entry's rejection is located at its `entry_decl`.
+    #[test]
+    fn an_entry_selects_its_modules_own_function_and_is_located_when_refused() {
+        let graph = crate::form_module_graph(
+            SourceInput::new(
+                "modules.wfg",
+                b"pkg::a: [];\npkg: [pkg::a];\n\nentry main = pkg::main;\n\nentry hidden = pkg::a::seven;\n",
+            ),
+            CompilerLimits::default(),
+        )
+        .expect("the graph forms");
+        let records: [(&str, &[u8]); 4] = [
+            (
+                "a/module.wfm",
+                b"public fn value() -> result: u8 pure doc \"Seven.\";\n",
+            ),
+            (
+                "a/a.wf",
+                b"fn value() -> result: u8 pure {\n  return 7_u8;\n}\n\nfn seven() -> status: ExitStatus pure {\n  return exit_status(code: 7_u8);\n}\n",
+            ),
+            ("module.wfm", ROOT_INTERFACE),
+            (
+                "main.wf",
+                b"fn main() -> status: ExitStatus pure {\n  let code = pkg::a::value();\n  return exit_status(code: code);\n}\n",
+            ),
+        ];
+        let inputs = module_inputs(&graph, &records);
+        let limits = CompilerLimits::default();
+        super::check_module_entry(&graph, &inputs, super::ModuleEntry::Named("main"), limits)
+            .expect("the named entry composes");
+        super::check_module_entry(
+            &graph,
+            &inputs,
+            super::ModuleEntry::Function {
+                module: "pkg::a",
+                function: "seven",
+            },
+            limits,
+        )
+        .expect("an unnamed entry may select a private function");
+        let prelude = super::check_module_entry(
+            &graph,
+            &inputs,
+            super::ModuleEntry::Function {
+                module: "pkg::a",
+                function: "exit_status",
+            },
+            limits,
+        )
+        .expect_err("a PRE-1 function is no function of pkg::a");
+        assert_eq!(prelude.rule_id(), Some("MOD-9"));
+        let named =
+            super::check_module_entry(&graph, &inputs, super::ModuleEntry::Named("hidden"), limits)
+                .expect_err("a named entry runs a public function");
+        assert_eq!(named.rule_id(), Some("MOD-9"));
+        let location = named.location().expect("a named entry is written");
+        assert_eq!(
+            (location.path(), location.line(), location.column()),
+            ("modules.wfg", 6, 1)
+        );
+        assert!(
+            named
+                .to_string()
+                .contains("in line \"entry hidden = pkg::a::seven;\""),
+            "{named}"
+        );
+    }
+
+    /// [MOD-8] after an interface edit, the impact report lists every
+    /// failing definition and consumer body with its written location: the
+    /// changed module's definition, and both of a client's bodies, the
+    /// declared function and the private helper after it, whose lines are
+    /// those of the record as written.
+    #[test]
+    fn an_impact_report_lists_every_failing_definition_and_body() {
+        let graph: &[u8] = b"pkg::base: [];\npkg::user: [pkg::base];\n";
+        let records: Vec<(&str, &[u8])> = vec![
+            (
+                "base/module.wfm",
+                b"public fn one(value: u8, extra: u8) -> result: u8 pure doc \"Now takes two values.\";\n",
+            ),
+            (
+                "base/one.wf",
+                b"fn one(value: u8) -> result: u8 pure {\n  return value;\n}\n",
+            ),
+            (
+                "user/module.wfm",
+                b"public fn first() -> result: u8 pure doc \"Calls one.\";\n",
+            ),
+            (
+                "user/use.wf",
+                b"fn first() -> result: u8 pure {\n  let value = pkg::base::one(value: 1_u8);\n  return value;\n}\n\nfn second() -> result: u8 pure {\n  let value = pkg::base::one(value: 2_u8);\n  return value;\n}\n",
+            ),
+        ];
+        let cache_directory = CacheDirectory::new("impact");
+        let cache = cache_directory.open();
+        for cache in [None, Some(&cache), Some(&cache)] {
+            let verdicts = verdicts(graph, &records, cache);
+            let tasks = |subject: &str| match verdicts
+                .iter()
+                .find(|(name, _, _)| name == subject)
+                .map(|(_, outcome, _)| outcome)
+            {
+                Some(super::CheckOutcome::Rejected {
+                    tasks, complete, ..
+                }) => (
+                    tasks
+                        .iter()
+                        .map(|task| {
+                            (
+                                task.kind(),
+                                task.function().map(str::to_owned),
+                                task.location().map(|at| (at.path().to_owned(), at.line())),
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                    *complete,
+                ),
+                other => panic!("{subject}: {other:?}"),
+            };
+            assert_eq!(
+                tasks("pkg::base"),
+                (
+                    vec![(
+                        super::TaskKind::Definition,
+                        Some("one".to_owned()),
+                        Some(("base/one.wf".to_owned(), 1))
+                    )],
+                    true
+                )
+            );
+            assert_eq!(
+                tasks("pkg::user"),
+                (
+                    vec![
+                        (
+                            super::TaskKind::Body,
+                            Some("first".to_owned()),
+                            Some(("user/use.wf".to_owned(), 2))
+                        ),
+                        (
+                            super::TaskKind::Body,
+                            Some("second".to_owned()),
+                            Some(("user/use.wf".to_owned(), 7))
+                        ),
+                    ],
+                    true
+                )
+            );
+        }
+    }
+
     /// [MOD-6, MOD-8] the interface rendering prints every resolved name as
     /// its qualified identity whatever alias wrote it, leaves `doc` entries
     /// out, and includes the complete definitions the public declarations
@@ -1818,7 +2788,7 @@ mod tests {
         );
         // A documentation edit, or dropping the entry, changes nothing.
         let undocumented: &[u8] =
-            b"alias Spot = pkg::shape::Point;\n\npublic fn origin() -> result: Spot pure;\n";
+            b"alias Spot = pkg::shape::Point;\n\npublic fn origin() -> result: Spot pure doc \"The origin.\";\n";
         assert_eq!(render(shape, undocumented), rendered);
         // A private field of the dependency's type changes the client's
         // rendering, though the client's own file is unchanged.
@@ -1880,7 +2850,8 @@ mod tests {
     /// [FN-2, MOD-8] a rejection raised while checking a concrete instance
     /// stays at the template's source, in the module that owns it, and names
     /// the call in another module that requested the instance. Here the
-    /// `Bool` instance's `ensures` has no fragment result datum.
+    /// instance's result capacity `n * 2` leaves the u64 domain [CONST-1],
+    /// which the template, checked for every `n`, does not.
     #[test]
     fn an_instance_failure_names_the_template_and_its_requesting_call() {
         let graph = crate::form_module_graph(
@@ -1894,26 +2865,29 @@ mod tests {
         let records: [(&str, &[u8]); 4] = [
             (
                 "lib/module.wfm",
-                b"public fn same<T: copy>(value: T) -> result: T pure contract {\n  ensures result == value;\n} doc \"Returns its argument.\";\n",
+                b"public fn doubled<const n: u64>(count: u64) -> result: Slots<u64, n * 2> pure doc \"Forms a run of twice the capacity.\";\n",
             ),
             (
-                "lib/same.wf",
-                b"fn same<T: copy>(value: T) -> result: T pure contract {\n  ensures result == value;\n} {\n  return value;\n}\n",
+                "lib/doubled.wf",
+                b"fn doubled<const n: u64>(count: u64) -> result: Slots<u64, n * 2> pure {\n  return slots_new::<u64, n * 2>();\n}\n",
             ),
-            ("module.wfm", b"public fn main() -> status: ExitStatus pure;\n"),
+            (
+                "module.wfm",
+                b"public fn main() -> status: ExitStatus pure doc \"Requests one overflowing instance.\";\n",
+            ),
             (
                 "main.wf",
-                b"fn main() -> status: ExitStatus pure {\n  let small = pkg::lib::same::<u8>(value: 3_u8);\n  let yes = True();\n  let flag = pkg::lib::same::<Bool>(value: yes);\n  return exit_status(code: small);\n}\n",
+                b"fn main() -> status: ExitStatus pure {\n  let cells = pkg::lib::doubled::<9223372036854775808>(count: 7_u64);\n  return exit_status(code: 0_u8);\n}\n",
             ),
         ];
         let inputs = module_inputs(&graph, &records);
         let failure = crate::check_module_program(&graph, &inputs, CompilerLimits::default())
-            .expect_err("the Bool instance's ensures has no fragment result datum");
-        assert_eq!(failure.rule_id(), Some("FN-9"));
+            .expect_err("the instance's capacity leaves the u64 domain");
+        assert_eq!(failure.rule_id(), Some("CONST-1"));
         let detail = failure.to_string();
-        assert!(detail.contains(" at lib/same.wf:1:"), "{detail}");
+        assert!(detail.contains(" at lib/module.wfm:1:"), "{detail}");
         assert!(
-            detail.contains("in the instance requested at main.wf:4:14"),
+            detail.contains("in the instance requested at main.wf:2:"),
             "{detail}"
         );
     }
@@ -1933,12 +2907,18 @@ mod tests {
         )
         .expect("the graph forms");
         let records: [(&str, &[u8]); 4] = [
-            ("module.wfm", b"public fn start() -> status: ExitStatus pure;\n"),
+            (
+                "module.wfm",
+                b"public fn start() -> status: ExitStatus pure doc \"Starts the kernel.\";\n",
+            ),
             (
                 "start.wf",
                 b"fn spare() -> result: u8 pure {\n  let cell = box_new::<u8>(value: 1_u8);\n  return 0_u8;\n}\n\nfn start() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
             ),
-            ("tools/module.wfm", b"public fn run() -> status: ExitStatus pure;\n"),
+            (
+                "tools/module.wfm",
+                b"public fn run() -> status: ExitStatus pure doc \"Runs the tool.\";\n",
+            ),
             (
                 "tools/run.wf",
                 b"fn run() -> status: ExitStatus pure {\n  let cell = box_new::<u8>(value: 7_u8);\n  return exit_status(code: 0_u8);\n}\n",

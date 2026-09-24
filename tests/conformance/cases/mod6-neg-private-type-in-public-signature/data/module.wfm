@@ -2,4 +2,4 @@ struct Secret {
   value: i32;
 }
 
-public fn leak(value: Secret) -> result: i32 pure;
+public fn leak(value: Secret) -> result: i32 pure doc "Reads the secret's value.";

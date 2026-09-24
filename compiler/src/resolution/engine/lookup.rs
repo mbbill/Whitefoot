@@ -255,13 +255,16 @@ pub(super) fn resolve_uses_deferred(
                 if !universe.contains(class) {
                     continue;
                 }
+                // [MOD-3] an interface record sees its module's interface
+                // declarations; an implementation-only one is out of its
+                // view, as an earlier binder is out of a later one's.
                 let visible = is_visible(
                     scopes,
                     meta,
                     use_record.scope,
                     use_record.origin.coordinate.source().ordinal(),
                     use_record.origin.coordinate.start().value(),
-                );
+                ) && !(use_record.interface && meta.implementation_only);
                 if visible {
                     available.insert(*class);
                 }
@@ -439,7 +442,12 @@ fn resolve_qualified(
         .with_spelling(&use_record.spelling)
         .iter()
         .filter_map(|candidate| metas.get(*candidate))
-        .filter(|meta| meta.scope == inventory && !meta.type_owned && !defers_to_definition(meta))
+        .filter(|meta| {
+            meta.scope == inventory
+                && !meta.type_owned
+                && !defers_to_definition(meta)
+                && !(use_record.interface && meta.implementation_only)
+        })
     {
         for class in &meta.entries {
             if admissible.contains(class) {
@@ -721,6 +729,8 @@ pub(super) fn resolve_alias_targets(
         let alias_module = meta
             .module
             .ok_or(ResolutionCompilerFailure::InvalidRoleShape)?;
+        // [MOD-3] an alias of an interface record sees what the record sees.
+        let alias_interface = !meta.implementation_only;
         let origin = declarations[record_index].origin.clone();
         let spelling = declarations[record_index].spelling.clone();
         let refuse = |reason: &'static str| ResolutionIssue {
@@ -740,46 +750,26 @@ pub(super) fn resolve_alias_targets(
             index,
             modules,
             qualifier,
-            alias_module,
+            (alias_module, alias_interface),
             &spelling,
         )?;
         match target {
-            Err(reason) => issues.push((record_index, refuse(reason))),
-            Ok((target, target_module)) => {
-                if !modules.permits(alias_module, target_module) {
-                    issues.push((
-                        record_index,
-                        ResolutionIssue {
-                            rule: ResolutionRule::Mod5,
-                            origin: origin.clone(),
-                            kind: ResolutionIssueKind::MissingModuleEdge {
-                                from: modules.name(alias_module),
-                                to: modules.name(target_module),
-                            },
-                        },
-                    ));
-                    continue;
-                }
+            Err(AliasRefusal::Target(reason)) => issues.push((record_index, refuse(reason))),
+            Err(AliasRefusal::Edge(target_module)) => issues.push((
+                record_index,
+                ResolutionIssue {
+                    rule: ResolutionRule::Mod5,
+                    origin: origin.clone(),
+                    kind: ResolutionIssueKind::MissingModuleEdge {
+                        from: modules.name(alias_module),
+                        to: modules.name(target_module),
+                    },
+                },
+            )),
+            Ok(target) => {
                 let entries = match target {
                     AliasTarget::Module(_) => vec![DeclarationClass::Module],
-                    AliasTarget::Declaration(target) => {
-                        let target_meta = &metas[target];
-                        if target_module != alias_module && !target_meta.public {
-                            issues.push((
-                                record_index,
-                                ResolutionIssue {
-                                    rule: ResolutionRule::Mod5,
-                                    origin: origin.clone(),
-                                    kind: ResolutionIssueKind::PrivateDeclaration {
-                                        spelling: declarations[target].spelling.clone(),
-                                        module: modules.name(target_module),
-                                    },
-                                },
-                            ));
-                            continue;
-                        }
-                        target_meta.entries.clone()
-                    }
+                    AliasTarget::Declaration(target) => metas[target].entries.clone(),
                 };
                 declarations[record_index].classes.clone_from(&entries);
                 let meta = &mut metas[record_index];
@@ -791,6 +781,20 @@ pub(super) fn resolve_alias_targets(
     Ok(issues)
 }
 
+/// Why an alias path binds nothing [MOD-4, MOD-5].
+enum AliasRefusal {
+    /// The path names nothing an alias of this case binds [MOD-4].
+    Target(&'static str),
+    /// The path's registered module is one the alias's module may not name
+    /// [MOD-5].
+    Edge(crate::ModuleId),
+}
+
+/// Resolves an alias path in order: a registered module, one the alias's
+/// module may name [MOD-5], then a target of the alias's case among that
+/// module's declarations, which for another module are its public ones, so
+/// that the verdict never depends on another module's implementation
+/// records [MOD-4, MOD-8].
 #[allow(clippy::too_many_arguments)]
 fn alias_target(
     topology: &crate::syntax::FinalizedTopology,
@@ -800,9 +804,9 @@ fn alias_target(
     index: &DeclarationIndex,
     modules: &ModuleView<'_>,
     qualifier: &Qualifier,
-    alias_module: crate::ModuleId,
+    (alias_module, alias_interface): (crate::ModuleId, bool),
     spelling: &str,
-) -> Result<Result<(AliasTarget, crate::ModuleId), &'static str>, ResolutionCompilerFailure> {
+) -> Result<Result<AliasTarget, AliasRefusal>, ResolutionCompilerFailure> {
     let lower = spelling
         .as_bytes()
         .first()
@@ -826,49 +830,61 @@ fn alias_target(
             .filter_map(|candidate| metas.get(*candidate))
             .find(|meta| {
                 meta.scope == inventory
+                    && if module == alias_module {
+                        !(alias_interface && meta.implementation_only)
+                    } else {
+                        meta.public
+                    }
                     && !meta.type_owned
                     && !defers_to_definition(meta)
                     && meta.entries.iter().any(|class| wanted.contains(class))
             })?;
         Some(found.record_index)
     };
-    let _ = alias_module;
+    let refuse = |reason| Ok(Err(AliasRefusal::Target(reason)));
     match first_type {
         None => {
             if let Some(module) = module_of(&names) {
-                if !lower {
-                    return Ok(Err("a module is bound by a lowercase alias"));
+                if !modules.permits(alias_module, module) {
+                    return Ok(Err(AliasRefusal::Edge(module)));
                 }
-                return Ok(Ok((AliasTarget::Module(module), module)));
+                if !lower {
+                    return refuse("a module is bound by a lowercase alias");
+                }
+                return Ok(Ok(AliasTarget::Module(module)));
             }
             let Some((last, prefix)) = names.split_last() else {
-                return Ok(Err("the path names no registered module"));
+                return refuse("the path names no registered module");
             };
             let Some(module) = module_of(prefix) else {
-                return Ok(Err("the path names no registered module"));
+                return refuse("the path names no registered module");
             };
+            if !modules.permits(alias_module, module) {
+                return Ok(Err(AliasRefusal::Edge(module)));
+            }
             if !lower {
-                return Ok(Err("a function or constant is bound by a lowercase alias"));
+                return refuse("a function or constant is bound by a lowercase alias");
             }
             match declaration_in(
                 module,
                 last,
                 &[DeclarationClass::Function, DeclarationClass::NamedConst],
             ) {
-                Some(target) => Ok(Ok((AliasTarget::Declaration(target), module))),
-                None => Ok(Err(
-                    "the module declares no function or constant with this name",
-                )),
+                Some(target) => Ok(Ok(AliasTarget::Declaration(target))),
+                None => refuse(
+                    "the module declares no function or constant with this name that the alias's module can access",
+                ),
             }
         }
         Some(position) => {
             let Some(module) = module_of(&names[..position]) else {
-                return Ok(Err("the path names no registered module"));
+                return refuse("the path names no registered module");
             };
+            if !modules.permits(alias_module, module) {
+                return Ok(Err(AliasRefusal::Edge(module)));
+            }
             if lower {
-                return Ok(Err(
-                    "a type, group or variant is bound by an uppercase alias",
-                ));
+                return refuse("a type, group or variant is bound by an uppercase alias");
             }
             let rest = &names[position..];
             match rest {
@@ -881,17 +897,21 @@ fn alias_target(
                         DeclarationClass::Binding,
                     ],
                 ) {
-                    Some(target) => Ok(Ok((AliasTarget::Declaration(target), module))),
-                    None => Ok(Err("the module declares no type or group with this name")),
+                    Some(target) => Ok(Ok(AliasTarget::Declaration(target))),
+                    None => refuse(
+                        "the module declares no type or group with this name that the alias's module can access",
+                    ),
                 },
                 [owner, variant] if is_type(variant) => {
                     let Some(owner) =
                         declaration_in(module, owner, &[DeclarationClass::NominalType])
                     else {
-                        return Ok(Err("the module declares no enum with this name"));
+                        return refuse(
+                            "the module declares no enum with this name that the alias's module can access",
+                        );
                     };
                     if declarations[owner].role != super::super::DeclarationRole::Enum {
-                        return Ok(Err("only an enum owns variants"));
+                        return refuse("only an enum owns variants");
                     }
                     let owner_meta = &metas[owner];
                     let generic = owner_meta.owner.is_some_and(|node| {
@@ -904,9 +924,9 @@ fn alias_target(
                         })
                     });
                     if generic {
-                        return Ok(Err(
+                        return refuse(
                             "a generic enum's constructor keeps its owner and arguments, so no alias abbreviates it",
-                        ));
+                        );
                     }
                     let found = metas.iter().find(|meta| {
                         meta.type_owned
@@ -914,15 +934,11 @@ fn alias_target(
                             && declarations[meta.record_index].spelling == *variant
                     });
                     match found {
-                        Some(found) => {
-                            Ok(Ok((AliasTarget::Declaration(found.record_index), module)))
-                        }
-                        None => Ok(Err("the enum declares no variant with this name")),
+                        Some(found) => Ok(Ok(AliasTarget::Declaration(found.record_index))),
+                        None => refuse("the enum declares no variant with this name"),
                     }
                 }
-                _ => Ok(Err(
-                    "an alias target ends at a module, a declaration or one variant",
-                )),
+                _ => refuse("an alias target ends at a module, a declaration or one variant"),
             }
         }
     }

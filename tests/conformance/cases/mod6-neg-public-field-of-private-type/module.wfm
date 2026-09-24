@@ -2,4 +2,4 @@ struct Hidden {
   public value: u8;
 }
 
-public fn main() -> status: ExitStatus pure;
+public fn main() -> status: ExitStatus pure doc "Runs the program.";

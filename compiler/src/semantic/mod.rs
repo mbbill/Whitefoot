@@ -534,11 +534,19 @@ pub enum SemanticIssueKind {
     /// A named constant value does not exactly inhabit its written type.
     InvalidConstValue,
     /// Code or an annotation of another module selects, constructs or binds
-    /// a field its declaring module does not publish, or constructs a value
-    /// with a readonly field [MOD-5, TYPE-2].
+    /// a field its declaring module does not publish or its graph row does
+    /// not reach, or constructs a value with a readonly field [MOD-5,
+    /// TYPE-2].
     InaccessibleField {
         /// The field's spelling.
         field: String,
+        /// What access the module lacks.
+        reason: &'static str,
+    },
+    /// An arm names a variant of an enum its module cannot access [MOD-5].
+    InaccessibleVariant {
+        /// The variant's spelling.
+        variant: String,
         /// What access the module lacks.
         reason: &'static str,
     },

@@ -171,6 +171,10 @@ struct DeclarationMeta {
     /// Which part of an interface/implementation pairing a function
     /// declaration is [MOD-7].
     function_form: FunctionForm,
+    /// Declared by an implementation record of a module program and standing
+    /// for no interface declaration, so visible only in implementation
+    /// records [MOD-3].
+    implementation_only: bool,
 }
 
 /// What one alias binds [MOD-4].
@@ -223,6 +227,9 @@ struct UseMeta {
     member_owner: Option<crate::SyntaxCoordinate>,
     /// The module of the source that writes the use.
     module: crate::ModuleId,
+    /// Written in a module's interface record, which sees only its module's
+    /// interface declarations [MOD-3].
+    interface: bool,
     owner: NodeId,
     origin: SourceOrigin,
     scope: ScopeId,
@@ -455,6 +462,11 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                         type_owned: declaration_role == DeclarationRole::Variant && !prelude_source,
                         alias: None,
                         function_form,
+                        implementation_only: bundle.is_module_program()
+                            && !prelude_source
+                            && file.is_some_and(|file| {
+                                file.role() == crate::SourceRole::Implementation
+                            }),
                     });
                 }
                 RawRoleKind::DependentDeclaration(dependent_role) => {
@@ -473,6 +485,13 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                         module: bundle
                             .file(role.origin.coordinate.source())
                             .map_or(crate::ModuleId::BUNDLE_ROOT, crate::SourceFile::module),
+                        interface: bundle.is_module_program()
+                            && bundle
+                                .file(role.origin.coordinate.source())
+                                .is_some_and(|file| {
+                                    file.prelude().is_none()
+                                        && file.role() == crate::SourceRole::Interface
+                                }),
                         owner: role.owner,
                         origin: role.origin.clone(),
                         scope: role.scope,

@@ -30,6 +30,9 @@ pub struct GraphEntry {
     function: String,
     no_heap: bool,
     coordinate: SyntaxCoordinate,
+    /// The entry's location in the graph record and that line, for a
+    /// rejection that cites the entry [MOD-9].
+    written: Option<(crate::SourceLocation, String)>,
 }
 
 impl GraphEntry {
@@ -61,6 +64,13 @@ impl GraphEntry {
     #[must_use]
     pub const fn coordinate(&self) -> SyntaxCoordinate {
         self.coordinate
+    }
+
+    /// Returns the entry's location in the graph record and the line
+    /// holding it.
+    #[must_use]
+    pub fn written(&self) -> Option<(&crate::SourceLocation, &str)> {
+        self.written.as_ref().map(|(at, line)| (at, line.as_str()))
     }
 }
 
@@ -112,6 +122,17 @@ impl ModuleGraph {
         }
         closure.sort();
         closure
+    }
+
+    /// Records where each entry is written, rendered by `locate` from its
+    /// coordinate in the graph record.
+    pub(crate) fn locate_entries(
+        &mut self,
+        locate: impl Fn(SyntaxCoordinate) -> Option<(crate::SourceLocation, String)>,
+    ) {
+        for entry in &mut self.entries {
+            entry.written = locate(entry.coordinate);
+        }
     }
 
     /// Returns the module registered at this qualified name, `pkg` or
@@ -427,6 +448,7 @@ pub(crate) fn form_graph(
             function: function.clone(),
             no_heap,
             coordinate: coordinate(entry)?,
+            written: None,
         });
     }
     Ok(Ok(ModuleGraph { modules, entries }))
@@ -481,6 +503,11 @@ pub enum DiscoveryFailure {
         /// The record.
         path: PathBuf,
     },
+    /// The selected graph record is not a file named `modules.wfg`.
+    GraphRecordName {
+        /// The selected path.
+        path: PathBuf,
+    },
     /// A directory or record cannot be read.
     Unreadable {
         /// The path.
@@ -519,6 +546,11 @@ impl core::fmt::Display for DiscoveryFailure {
                 "[MOD-2] {} is not a portable source record name",
                 path.display()
             ),
+            Self::GraphRecordName { path } => write!(
+                formatter,
+                "[MOD-1] {} is not a graph record; a module program is selected by the file {GRAPH_FILE_NAME} in its package root",
+                path.display()
+            ),
             Self::Unreadable { path, error } => {
                 write!(formatter, "cannot read {}: {error}", path.display())
             }
@@ -527,6 +559,32 @@ impl core::fmt::Display for DiscoveryFailure {
 }
 
 impl std::error::Error for DiscoveryFailure {}
+
+/// Reads the graph record a build selects [MOD-1]: a regular file named
+/// `modules.wfg`, not a symbolic link, whose directory is the package root.
+pub fn read_graph_record(path: &Path) -> Result<Vec<u8>, DiscoveryFailure> {
+    if path.file_name() != Some(std::ffi::OsStr::new(GRAPH_FILE_NAME)) {
+        return Err(DiscoveryFailure::GraphRecordName {
+            path: path.to_path_buf(),
+        });
+    }
+    let unreadable = |error| DiscoveryFailure::Unreadable {
+        path: path.to_path_buf(),
+        error,
+    };
+    let metadata = std::fs::symlink_metadata(path).map_err(unreadable)?;
+    if metadata.file_type().is_symlink() {
+        return Err(DiscoveryFailure::SymbolicLink {
+            path: path.to_path_buf(),
+        });
+    }
+    if !metadata.is_file() {
+        return Err(DiscoveryFailure::GraphRecordName {
+            path: path.to_path_buf(),
+        });
+    }
+    std::fs::read(path).map_err(unreadable)
+}
 
 /// Reads every registered module's records from the package directory
 /// [MOD-2]: each module's `module.wfm` and then its direct `.wf` files in byte
@@ -611,10 +669,9 @@ pub fn discover_module_sources(
         });
         let mut records = Vec::new();
         for name in names {
-            let Some(text) = name.to_str() else {
-                continue;
-            };
-            if !text.ends_with(".wf") {
+            // A record is named by its bytes: a name ending in `.wf` that is
+            // not a portable component is refused, never skipped.
+            if !name.as_encoded_bytes().ends_with(b".wf") {
                 continue;
             }
             let path = directory.join(&name);
@@ -622,12 +679,12 @@ pub fn discover_module_sources(
             if !metadata.is_file() {
                 continue;
             }
-            if !text
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
-            {
+            let Some(text) = name.to_str().filter(|text| {
+                text.bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+            }) else {
                 return Err(DiscoveryFailure::InvalidFileName { path });
-            }
+            };
             records.push((text.to_owned(), path));
         }
         records.sort_by(|left, right| left.0.as_bytes().cmp(right.0.as_bytes()));
@@ -642,4 +699,82 @@ pub fn discover_module_sources(
         }
     }
     Ok(sources)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DiscoveryFailure, read_graph_record};
+
+    /// A fresh directory for one test, removed by the returned guard.
+    struct Directory(std::path::PathBuf);
+
+    impl Directory {
+        fn new(name: &str) -> Self {
+            let path =
+                std::env::temp_dir().join(format!("whitefoot-graph-{}-{name}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).expect("create the test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for Directory {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// [MOD-1] a module program is selected by its `modules.wfg` alone: a
+    /// graph under another name, and one reached through a symbolic link,
+    /// are refused before any byte of them is read.
+    #[test]
+    fn only_a_regular_modules_wfg_is_a_graph_record() {
+        let directory = Directory::new("record");
+        let graph = directory.0.join("modules.wfg");
+        std::fs::write(&graph, b"pkg: [];\n").expect("write the graph");
+        assert_eq!(
+            read_graph_record(&graph).expect("the graph record"),
+            b"pkg: [];\n"
+        );
+        let other = directory.0.join("other.wfg");
+        std::fs::write(&other, b"pkg: [];\n").expect("write another graph");
+        assert!(matches!(
+            read_graph_record(&other),
+            Err(DiscoveryFailure::GraphRecordName { .. })
+        ));
+        #[cfg(unix)]
+        {
+            let linked = directory.0.join("linked");
+            std::fs::create_dir_all(&linked).expect("create a directory");
+            std::os::unix::fs::symlink(&graph, linked.join("modules.wfg")).expect("link the graph");
+            assert!(matches!(
+                read_graph_record(&linked.join("modules.wfg")),
+                Err(DiscoveryFailure::SymbolicLink { .. })
+            ));
+        }
+    }
+
+    /// [MOD-2] a directory entry named by bytes ending in `.wf` is a record
+    /// of its module, so one whose name is not a portable component is
+    /// refused rather than skipped.
+    #[cfg(unix)]
+    #[test]
+    fn a_record_name_that_is_not_utf8_is_refused() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let directory = Directory::new("names");
+        std::fs::write(directory.0.join("modules.wfg"), b"pkg: [];\n").expect("write the graph");
+        std::fs::write(directory.0.join("module.wfm"), b"\n").expect("write the interface");
+        let name = std::ffi::OsStr::from_bytes(b"bad\xff.wf");
+        std::fs::write(directory.0.join(name), b"\n").expect("write the record");
+        let graph = crate::form_module_graph(
+            crate::SourceInput::new("modules.wfg", b"pkg: [];\n"),
+            crate::CompilerLimits::default(),
+        )
+        .expect("the graph forms");
+        assert!(matches!(
+            super::discover_module_sources(&directory.0, &graph),
+            Err(DiscoveryFailure::InvalidFileName { .. })
+        ));
+    }
 }

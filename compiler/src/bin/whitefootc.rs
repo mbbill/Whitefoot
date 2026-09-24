@@ -14,7 +14,7 @@ use whitefoot::{
     RecursionBudget, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
     SCHED_PRIM_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER, build_module_entry, check,
     check_module_program, compile_with_overlap, compile_with_permission_ledger, content_digest,
-    discover_module_sources, entry_verdict, form_module_graph, module_verdict,
+    discover_module_sources, entry_verdict, form_module_graph, module_verdict, read_graph_record,
     render_module_interface, running_compiler_identity, stack_ledger,
 };
 
@@ -329,6 +329,10 @@ fn run_module_program(
                     .map_err(|failure| failure.to_string())?,
             ));
         }
+        let modules = verdicts
+            .iter()
+            .map(|(_, verdict)| verdict.clone())
+            .collect::<Vec<_>>();
         for entry in graph.entries() {
             verdicts.push((
                 "entry",
@@ -338,6 +342,7 @@ fn run_module_program(
                     ModuleEntry::Named(entry.name()),
                     limits,
                     cache,
+                    &modules,
                 )
                 .map_err(|failure| failure.to_string())?,
             ));
@@ -373,7 +378,7 @@ fn run_module_program(
         // one, it is that entry's composition check [MOD-8, MOD-9].
         match entry {
             Some(entry) => {
-                let verdict = entry_verdict(&graph, &inputs, entry, limits, cache)
+                let verdict = entry_verdict(&graph, &inputs, entry, limits, cache, &[])
                     .map_err(|failure| failure.to_string())?;
                 publish_verdicts(options, &[("entry", verdict)])?;
             }
@@ -399,8 +404,7 @@ fn run_module_program(
 fn read_module_program(
     graph_path: &Path,
 ) -> Result<(whitefoot::ModuleGraph, Vec<whitefoot::ModuleSourceFile>), String> {
-    let graph_bytes = std::fs::read(graph_path)
-        .map_err(|error| format!("cannot read {}: {error}", graph_path.display()))?;
+    let graph_bytes = read_graph_record(graph_path).map_err(|failure| failure.to_string())?;
     let display = graph_path.display().to_string();
     let graph = form_module_graph(
         SourceInput::from_host_path(GRAPH_FILE_NAME, &display, &graph_bytes),
@@ -458,9 +462,36 @@ fn publish_verdicts(options: &Options, verdicts: &[(&str, CheckVerdict)]) -> Res
                     }
                 }
             }
-            CheckOutcome::Rejected { failure, .. } => {
+            CheckOutcome::Rejected {
+                failure,
+                tasks,
+                complete,
+                ..
+            } => {
                 if !options.report {
                     println!("{}: rejected: {failure}", verdict.subject());
+                    // [MOD-8] the impact report's further tasks, one line
+                    // each, after the rejection the verdict reports.
+                    for task in tasks.iter().skip(1) {
+                        println!(
+                            "{}: also {} {}{} [{}]",
+                            verdict.subject(),
+                            task.kind().name(),
+                            task.function()
+                                .map_or_else(String::new, |name| format!("`{name}` ")),
+                            task.location().map_or_else(
+                                || "at no written place".to_owned(),
+                                |at| format!("at {at}")
+                            ),
+                            task.rule().unwrap_or("no rule"),
+                        );
+                    }
+                    if !complete {
+                        println!(
+                            "{}: further failures may follow the last listed one",
+                            verdict.subject()
+                        );
+                    }
                 }
                 rejected.push(verdict.subject().to_owned());
             }
@@ -488,7 +519,12 @@ fn verdict_json(kind: &str, verdict: &CheckVerdict) -> String {
                     .join(",")
             ));
         }
-        CheckOutcome::Rejected { rule, failure } => {
+        CheckOutcome::Rejected {
+            rule,
+            failure,
+            tasks,
+            complete,
+        } => {
             fields.push("\"verdict\":\"rejected\"".to_owned());
             fields.push(format!(
                 "\"rule\":{}",
@@ -496,6 +532,25 @@ fn verdict_json(kind: &str, verdict: &CheckVerdict) -> String {
                     .map_or_else(|| "null".to_owned(), json_string)
             ));
             fields.push(format!("\"failure\":{}", json_string(failure)));
+            let optional = |text: Option<&str>| text.map_or_else(|| "null".to_owned(), json_string);
+            let tasks = tasks
+                .iter()
+                .map(|task| {
+                    let location = task.location();
+                    format!(
+                        "{{\"kind\":{},\"function\":{},\"rule\":{},\"file\":{},\"line\":{},\"column\":{},\"failure\":{}}}",
+                        json_string(task.kind().name()),
+                        optional(task.function()),
+                        optional(task.rule()),
+                        optional(location.map(whitefoot::SourceLocation::path)),
+                        location.map_or_else(|| "null".to_owned(), |at| at.line().to_string()),
+                        location.map_or_else(|| "null".to_owned(), |at| at.column().to_string()),
+                        json_string(task.failure()),
+                    )
+                })
+                .collect::<Vec<_>>();
+            fields.push(format!("\"tasks\":[{}]", tasks.join(",")));
+            fields.push(format!("\"complete\":{complete}"));
         }
     }
     fields.push(format!("\"reused\":{}", verdict.reused()));
@@ -545,6 +600,7 @@ fn finish(
         }
         return Ok(());
     }
+    require_runner(module)?;
     compile_executable(
         module,
         options.output.as_deref().unwrap_or(Path::new("a.out")),
@@ -556,6 +612,24 @@ fn finish(
         println!("{}", report.json());
     }
     Ok(())
+}
+
+/// [PROG-3] the executable runs the selected function through the runner the
+/// build generates for it; a checked module without one is a library, which
+/// this compiler links into no executable.
+fn require_runner(module: &str) -> Result<(), String> {
+    if module.contains("\ndefine i32 @wf__main_body(") {
+        return Ok(());
+    }
+    let refused = module
+        .lines()
+        .find_map(|line| line.strip_prefix("; Executable caller was not admitted: "))
+        .map_or_else(String::new, |reason| {
+            format!(": its generated caller was not admitted: {reason}")
+        });
+    Err(format!(
+        "the selected function has no executable runner{refused}; this build runs a function that takes no parameter or one Inputs and returns ExitStatus or unit, and --emit-llvm writes any checked program as a library"
+    ))
 }
 
 /// Compiles the module once more, to assembly, purely to read the two things
@@ -1652,7 +1726,40 @@ mod tests {
     use std::collections::HashSet;
     use std::path::{Component, Path, PathBuf};
 
-    use super::{Options, OverlapLowering, RecursionBudget, runtime_units, source_names};
+    use super::{
+        Options, OverlapLowering, RecursionBudget, require_runner, runtime_units, source_names,
+    };
+
+    /// [PROG-3] a build refuses a checked module that has no runner, naming
+    /// the generated caller's refusal when there is one, instead of leaving
+    /// the missing body for the linker to report.
+    #[test]
+    fn a_build_without_a_runner_says_so() {
+        let checked = |caller: &str| {
+            whitefoot::compile(
+                &[whitefoot::SourceInput::new("entry.wf", caller.as_bytes())],
+                whitefoot::CompilerLimits::default(),
+            )
+            .expect("the program checks")
+        };
+        require_runner(&checked(
+            "fn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        ))
+        .expect("an ExitStatus entry has a runner");
+        let integer = require_runner(&checked(
+            "fn main() -> result: u64 pure {\n  return 7_u64;\n}\n",
+        ))
+        .expect_err("a u64 result has no runner");
+        assert!(integer.contains("no executable runner;"), "{integer}");
+        let unproved = require_runner(&checked(
+            "fn main() -> result: unit pure contract {\n  requires 1_u64 <= 0_u64;\n} {\n  return unit;\n}\n",
+        ))
+        .expect_err("an unprovable requirement leaves no runner");
+        assert!(
+            unproved.contains("its generated caller was not admitted"),
+            "{unproved}"
+        );
+    }
 
     fn parse(arguments: &[&str]) -> Result<Options, String> {
         let owned: Vec<String> = arguments.iter().map(|value| (*value).to_owned()).collect();

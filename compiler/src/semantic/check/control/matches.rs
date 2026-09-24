@@ -178,6 +178,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut resolved_variants = Vec::with_capacity(arm_nodes.len());
         for arm_node in &arm_nodes {
             let variant = self.match_variant(&descriptor, *arm_node)?.clone();
+            if let CheckedEnumType::Nominal(owner) = descriptor.enum_type {
+                self.reject_inaccessible_variant(owner, &variant.name, *arm_node)?;
+            }
             if !seen.insert(variant.tag) {
                 duplicate_arm.get_or_insert(*arm_node);
             }

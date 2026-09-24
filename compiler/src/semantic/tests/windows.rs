@@ -173,7 +173,7 @@ fn a_readonly_field_is_never_a_write_target() {
 #[test]
 fn readonly_provenance_survives_reference_aliases_and_reborrows() {
     let graph = b"pkg::records: [];\npkg: [pkg::records];\n";
-    let interface = b"public struct Record {\n  public readonly value: u8;\n}\n\npublic fn make() -> record: Record pure;\n";
+    let interface = b"public struct Record {\n  public readonly value: u8;\n}\n\npublic fn make() -> record: Record pure doc \"Makes a record.\";\n";
     let definition = b"fn make() -> record: Record pure {\n  return Record(value: 1_u8);\n}\n";
     for writer in [
         b"  let p = &record.value;\n  put(cell: p);\n".as_slice(),

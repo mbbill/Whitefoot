@@ -48,6 +48,9 @@ pub(super) fn pair_interface_functions(
             };
             metas[*definition].public = public;
             declarations[*definition].public = public;
+            // [MOD-3, MOD-7] the definition stands for its interface
+            // declaration in lookup, so it is visible where that is.
+            metas[*definition].implementation_only = false;
         }
     }
 }

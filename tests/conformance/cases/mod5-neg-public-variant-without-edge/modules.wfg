@@ -1,0 +1,5 @@
+pkg::a: [];
+pkg::b: [pkg::a];
+pkg: [pkg::b];
+
+entry main = pkg::main;
