@@ -8835,30 +8835,32 @@ fn counted_sha256_discharges_all_nine_indices_from_counted_facts() {
 
 #[test]
 fn real_sources_retain_complete_proof_roots_without_counted_false_positives() {
-    let bundles: [&[SourceInput<'_>]; 3] = [
-        &[SourceInput::new(
+    // Each bundle is its sources' logical names and bytes, so a check below
+    // can select a bundle by the source it compiles rather than by position.
+    let bundles: [&[(&str, &[u8])]; 3] = [
+        &[(
             "utf8parse.wf",
             include_bytes!("../../../../tests/programs/utf8parse.wf"),
         )],
         &[
-            SourceInput::new(
+            (
                 "raw_deflate.wf",
                 include_bytes!("../../../../tests/programs/raw_deflate.wf"),
             ),
-            SourceInput::new(
+            (
                 "raw_deflate_dynamic.wf",
                 include_bytes!("../../../../tests/programs/raw_deflate_dynamic.wf"),
             ),
-            SourceInput::new(
+            (
                 "raw_deflate_dynamic_decode.wf",
                 include_bytes!("../../../../tests/programs/raw_deflate_dynamic_decode.wf"),
             ),
-            SourceInput::new(
+            (
                 "raw_deflate_boundary.wf",
                 include_bytes!("../../../../tests/programs/raw_deflate_boundary.wf"),
             ),
         ],
-        &[SourceInput::new(
+        &[(
             "wfgrep.wf",
             include_bytes!("../../../../tests/programs/wfgrep.wf"),
         )],
@@ -8868,8 +8870,14 @@ fn real_sources_retain_complete_proof_roots_without_counted_false_positives() {
     // exactly one of the three mains a counted loop of its own — utf8parse's
     // output run is taken from a bump extent and filled by a counted `for`
     // where it was a `buffer_new` with an initial value.
-    for (bundle, inputs) in bundles.into_iter().enumerate() {
-        super::with_semantics_inputs(inputs, |outcome| {
+    let mut wfgrep_routes_checked = 0;
+    for (bundle, sources) in bundles.into_iter().enumerate() {
+        let inputs = sources
+            .iter()
+            .map(|(name, bytes)| SourceInput::new(name, bytes))
+            .collect::<Vec<_>>();
+        let compiles_wfgrep = sources.iter().any(|(name, _)| *name == "wfgrep.wf");
+        super::with_semantics_inputs(&inputs, |outcome| {
             let SemanticOutcome::Complete(program) = outcome else {
                 panic!("real source bundle must remain accepted: {outcome:?}");
             };
@@ -8917,15 +8925,21 @@ fn real_sources_retain_complete_proof_roots_without_counted_false_positives() {
                 assert_real_read_bits_routes(&program.data);
                 assert_real_raw_append_routes(&program.data);
             }
-            // Selected by bundle, which the list above fixes, rather than by
-            // the presence of a function name: a name probe skipped these
+            // Selected by the source the bundle compiles rather than by the
+            // presence of a function name: a name probe skipped these
             // assertions without failing when `report_failure` was renamed
-            // `assemble_failure`. A missing anchor function now fails inside.
-            if bundle == 2 {
+            // `assemble_failure`. A missing anchor function now fails inside,
+            // and a reordered bundle list cannot re-target the check.
+            if compiles_wfgrep {
                 assert_real_wfgrep_routes(&program.data);
+                wfgrep_routes_checked += 1;
             }
         });
     }
+    assert_eq!(
+        wfgrep_routes_checked, 1,
+        "exactly one bundle compiles wfgrep.wf and runs its route assertions"
+    );
 }
 
 fn assert_real_read_bits_routes(program: &CheckedProgramData) {
