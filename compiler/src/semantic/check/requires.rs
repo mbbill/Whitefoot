@@ -948,10 +948,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut projections = Vec::with_capacity(suffixes.len());
         for suffix in suffixes {
             let range_step = std::mem::replace(&mut range_referent, false);
-            // [ENT-2] clause (b) forms a place "with any number of
-            // field-selection and enum-payload `psuffix`es, `deref` wrappings,
-            // and subscripts", which is what makes `table[i].len` and
-            // `nodes[i].count` terms. A clause reads that place exactly as the
+            // [ENT-2] clause (b) forms a place with field selections,
+            // `deref` wrappings and subscripts, which is what makes
+            // `table[i].len` and `nodes[i].count` terms. A clause reads that place exactly as the
             // body does, so a subscript written here is one projection and not
             // a composite value this version cannot represent.
             if self.subscript_offset(*suffix)?.is_some() {
@@ -997,9 +996,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// One written subscript inside a clause (b) place [ENT-2].
     ///
     /// [ENT-2] fixes what may stand there: "Each offset occurring inside a
-    /// clause (b) place is a written integer literal, a live `own`
-    /// fragment-integer tracked place, or an in-scope const generic [MSR-6],
-    /// because the place's identity is decided over it." A clause is no
+    /// clause (b) place is itself a clause (a) or clause (c) term, because the
+    /// place's identity is decided over its offsets." A clause is no
     /// evaluation, so the offset carries no occurrence of its own: [ENT-2]
     /// makes two places one term when "their canonical source spellings are
     /// byte-identical", which is exactly what keys this projection, and
@@ -1008,9 +1006,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ///
     /// A parameter offset is kept as the formal it names, because a caller
     /// substitutes its own actual there [FN-8, CALL-6]; a literal and a const
-    /// are values and need no substitution. Any other offset — a tracked
-    /// place with projections, or a definition — is not represented here and
-    /// is reported as the compiler capability it is.
+    /// are values and need no substitution. Any other tracked-place offset,
+    /// one with projections or a definition, is admitted but not represented
+    /// here and is reported as the compiler capability it is [DIAG-1]; an
+    /// element read never reaches here, because a subscript that ends a
+    /// clause place is refused first.
     fn clause_subscript_projection(
         &self,
         suffix: NodeId,
@@ -1691,11 +1691,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(place, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        // [ENT-2] clause (b): a place "formed with any number of
-        // field-selection and enum-payload `psuffix`es, `deref` wrappings,
-        // and subscripts" whose final step selects a readonly field is a
-        // term of the clause language, `deref(rows)[i].len` and
-        // `deref(nodes)[i].count` alike. A clause names no element value, so
+        // [ENT-2] clause (b): a place formed with field selections,
+        // `deref` wrappings and at least one subscript whose final step
+        // selects a readonly field is a term of the clause language,
+        // `deref(rows)[i].len` and `deref(nodes)[i].count` alike. A clause names no element value, so
         // a subscript that ends the place is this rule's refusal here; one
         // followed by a further step is judged against the selected field's
         // declaration once the place is typed [`validate_clause_checked_forms`].

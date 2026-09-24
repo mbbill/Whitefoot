@@ -1638,22 +1638,25 @@ impl CheckedRangeElementPlace {
         self.ty.measured()
     }
 
+    /// [ENT-2] how this element place's offsets stand: the range's own
+    /// subscript first, then every nested one.
+    pub(crate) fn subscripted_term(&self) -> Option<SubscriptedTerm> {
+        SubscriptedTerm::of_offsets(
+            std::iter::once((&self.offset, self.captured)).chain(subscript_offsets(&self.path)),
+        )
+    }
+
     /// [ENT-2] clause (b): whether this element place is a term because its
     /// final step selects a readonly field of one fragment type. The range's
     /// own subscript selects the element every later step starts from.
     pub(crate) fn readonly_field_term(
         &self,
         nominals: &[CheckedNominal],
-    ) -> Option<ReadonlyFieldTerm> {
+    ) -> Option<SubscriptedTerm> {
         if !selects_readonly_fragment_field(nominals, self.root.element_type, &self.path) {
             return None;
         }
-        ReadonlyFieldTerm::of_offsets(std::iter::once((&self.offset, self.captured)).chain(
-            self.path.iter().filter_map(|step| match step {
-                CheckedPlaceStep::Subscript(index) => Some((&index.offset, index.captured)),
-                CheckedPlaceStep::Field(_) | CheckedPlaceStep::BoxReferent(_) => None,
-            }),
-        ))
+        self.subscripted_term()
     }
 
     pub(crate) const fn element(&self) -> Option<CheckedElement> {
@@ -1793,6 +1796,12 @@ impl CheckedContainerRoot {
         }
     }
 
+    /// [ENT-2] how this place's subscript offsets stand; a place with no
+    /// subscript has none to judge.
+    pub(crate) fn subscripted_term(&self) -> Option<SubscriptedTerm> {
+        SubscriptedTerm::of_offsets(subscript_offsets(&self.path))
+    }
+
     /// [ENT-2] clause (b): whether this subscripted place is a term because
     /// its final step selects a readonly field of one fragment type.
     ///
@@ -1801,7 +1810,7 @@ impl CheckedContainerRoot {
     pub(crate) fn readonly_field_term(
         &self,
         nominals: &[CheckedNominal],
-    ) -> Option<ReadonlyFieldTerm> {
+    ) -> Option<SubscriptedTerm> {
         let last = self
             .path
             .iter()
@@ -1812,31 +1821,46 @@ impl CheckedContainerRoot {
         if !selects_readonly_fragment_field(nominals, index.element_type, &self.path[last + 1..]) {
             return None;
         }
-        ReadonlyFieldTerm::of_offsets(self.path.iter().filter_map(|step| match step {
-            CheckedPlaceStep::Subscript(index) => Some((&index.offset, index.captured)),
-            CheckedPlaceStep::Field(_) | CheckedPlaceStep::BoxReferent(_) => None,
-        }))
+        self.subscripted_term()
     }
 }
 
-/// How one subscripted place whose final step selects a readonly field of
-/// one fragment type stands as an [ENT-2] clause (b) term.
+impl CheckedBufferRoot {
+    /// [ENT-2] how this run's subscript offsets stand.
+    pub(crate) fn subscripted_term(&self) -> Option<SubscriptedTerm> {
+        SubscriptedTerm::of_offsets(subscript_offsets(&self.path))
+    }
+}
+
+/// Every subscript offset of a checked storage path with its captured value,
+/// in written order.
+fn subscript_offsets(
+    path: &[CheckedPlaceStep],
+) -> impl Iterator<Item = (&CheckedExpression, super::places::CapturedValue)> {
+    path.iter().filter_map(|step| match step {
+        CheckedPlaceStep::Subscript(index) => Some((&index.offset, index.captured)),
+        CheckedPlaceStep::Field(_) | CheckedPlaceStep::BoxReferent(_) => None,
+    })
+}
+
+/// How one place's subscript offsets stand under [ENT-2]: every offset of a
+/// term is itself a clause (a) or clause (c) term.
 ///
-/// A place with an offset of a form clause (b) does not admit is no term at
-/// all and has no value here.
+/// A place with an offset of any other form is no term at all and has no
+/// value here.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ReadonlyFieldTerm {
+pub(crate) enum SubscriptedTerm {
     /// Every offset is a captured literal, const or binding [REF-1], so the
     /// place has the term identity the entailment fragment interns.
     Represented,
-    /// An offset is a tracked place with projections, which clause (b)
-    /// admits but no captured value names. This is a compiler capability
-    /// limit, not a language rejection.
+    /// An offset is a tracked place with projections, which ENT-2 admits but
+    /// no captured value names. This is a compiler capability limit, reported
+    /// as unsupported, not a language rejection [DIAG-1].
     Unrepresented,
 }
 
-impl ReadonlyFieldTerm {
-    /// Classifies the offsets of one clause (b) place in written order.
+impl SubscriptedTerm {
+    /// Classifies the offsets of one place in written order.
     fn of_offsets<'offset>(
         offsets: impl IntoIterator<Item = (&'offset CheckedExpression, super::places::CapturedValue)>,
     ) -> Option<Self> {

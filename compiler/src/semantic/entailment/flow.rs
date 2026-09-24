@@ -37,7 +37,7 @@ use super::super::model::{
     CheckedLoopInvariant, CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominalKind,
     CheckedNumericType, CheckedPlaceStep, CheckedProofMultiplicity, CheckedProofUseSource,
     CheckedRangeSource, CheckedSetTarget, CheckedStatement, CheckedType, CheckedValue, FloatType,
-    IntegerType, MeasureCell, MeasuredKind, ReadonlyFieldTerm,
+    IntegerType, MeasureCell, MeasuredKind, SubscriptedTerm,
 };
 use super::super::permission::{PermissionSeparationProof, PermissionSeparationQuery};
 use super::super::places::{
@@ -4907,13 +4907,13 @@ impl Analyzer<'_, '_> {
             // own row in `measure_operand`.
             CheckedExpression::ReadStorage { root, .. }
                 if root.readonly_field_term(self.context.nominals)
-                    == Some(ReadonlyFieldTerm::Represented) =>
+                    == Some(SubscriptedTerm::Represented) =>
             {
                 Some(self.container_root_path(root))
             }
             CheckedExpression::RangeIndex { place, .. }
                 if place.readonly_field_term(self.context.nominals)
-                    == Some(ReadonlyFieldTerm::Represented) =>
+                    == Some(SubscriptedTerm::Represented) =>
             {
                 Some(ResolvedPlace::from_path(
                     place.root.binding,
@@ -5301,8 +5301,12 @@ impl Analyzer<'_, '_> {
                 )
             }
             // [MSR-1] a measure of a storage shape, read as the same
-            // quantity the reader row loads.
-            CheckedExpression::ContainerMeasure { measure, root } => {
+            // quantity the reader row loads. [ENT-2] a place whose offsets
+            // are not all captured terms or constants names no one element,
+            // so it has no goal identity either.
+            CheckedExpression::ContainerMeasure { measure, root }
+                if root.subscripted_term() == Some(SubscriptedTerm::Represented) =>
+            {
                 let measured = root.measured()?;
                 let argument = self.goal_container_place(root)?;
                 build_operation(
@@ -5356,7 +5360,9 @@ impl Analyzer<'_, '_> {
                     ],
                 )
             }
-            CheckedExpression::BufferMeasure { measure, root } => {
+            CheckedExpression::BufferMeasure { measure, root }
+                if root.subscripted_term() == Some(SubscriptedTerm::Represented) =>
+            {
                 let argument = self.goal_binding_place(
                     root.binding,
                     root.path.iter().map(CheckedPlaceStep::goal_projection),
@@ -5395,7 +5401,9 @@ impl Analyzer<'_, '_> {
                     vec![argument],
                 )
             }
-            CheckedExpression::RangeElementMeasure { measure, place, .. } => {
+            CheckedExpression::RangeElementMeasure { measure, place, .. }
+                if place.subscripted_term() == Some(SubscriptedTerm::Represented) =>
+            {
                 let measured = place.measured()?;
                 let argument = self.goal_binding_place(
                     place.root.binding,
@@ -5467,6 +5475,9 @@ impl Analyzer<'_, '_> {
             | CheckedExpression::BoxTake { .. }
             | CheckedExpression::ProjectValue { .. }
             | CheckedExpression::UserCall { .. }
+            | CheckedExpression::BufferMeasure { .. }
+            | CheckedExpression::RangeElementMeasure { .. }
+            | CheckedExpression::ContainerMeasure { .. }
             | CheckedExpression::ReadStorage { .. }
             | CheckedExpression::ArrayIndex { .. }
             | CheckedExpression::BufferIndex { .. }

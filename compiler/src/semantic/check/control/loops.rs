@@ -9,7 +9,7 @@ use crate::{
 
 use super::super::super::model::{
     BindingId, CheckedExpression, CheckedLoopId, CheckedLoopInvariant, CheckedMode,
-    CheckedStatement, CheckedType, IntegerType, ReadonlyFieldTerm,
+    CheckedStatement, CheckedType, IntegerType, SubscriptedTerm,
 };
 use super::super::references::{
     InvalidationEvent, LoopReferenceToken, ReferenceValidity, RequiredReferent,
@@ -886,39 +886,45 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// After TYPE-5, the only atom shapes still capable of producing `own
-    /// u64` are a literal or a place. ENT-2 admits the literal, a clause (b)
-    /// term — a measure [MSR-1] or another readonly field, whose place may
-    /// contain subscripts — and a tracked place with field/deref wrappers but
-    /// no subscript at any depth.
+    /// u64` are a literal or a place. ENT-2 admits the literal, a measure
+    /// [MSR-1] or other readonly field whose subscripts, if any, all carry an
+    /// offset that is itself a tracked place or a constant, and a tracked
+    /// place with field/deref wrappers but no subscript at any depth.
     fn counted_endpoint_is_term_or_constant(
         &self,
         node: NodeId,
         endpoint: &CheckedExpression,
     ) -> Result<bool, CheckStop> {
-        if matches!(
-            endpoint,
-            CheckedExpression::ArrayMeasure { .. }
-                | CheckedExpression::BufferMeasure { .. }
-                | CheckedExpression::RangeMeasure { .. }
-                | CheckedExpression::RangeElementMeasure { .. }
-                | CheckedExpression::ContainerMeasure { .. }
-        ) {
-            return Ok(true);
-        }
-        let readonly = match endpoint {
+        let term = match endpoint {
+            CheckedExpression::ArrayMeasure { .. } | CheckedExpression::RangeMeasure { .. } => {
+                Some(SubscriptedTerm::Represented)
+            }
+            CheckedExpression::BufferMeasure { root, .. } => root.subscripted_term(),
+            CheckedExpression::ContainerMeasure { root, .. } => root.subscripted_term(),
+            CheckedExpression::RangeElementMeasure { place, .. } => place.subscripted_term(),
             CheckedExpression::ReadStorage { root, .. } => root.readonly_field_term(&self.nominals),
             CheckedExpression::RangeIndex { place, .. } => {
                 place.readonly_field_term(&self.nominals)
             }
             _ => None,
         };
-        match readonly {
-            Some(ReadonlyFieldTerm::Represented) => return Ok(true),
+        match term {
+            Some(SubscriptedTerm::Represented) => return Ok(true),
             // A tracked-place offset with projections is admitted by ENT-2
             // but names no captured value in this compiler: the place is not
-            // rejected, it is not represented.
-            Some(ReadonlyFieldTerm::Unrepresented) => {
+            // rejected, it is not represented [DIAG-1].
+            Some(SubscriptedTerm::Unrepresented) => {
                 return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
+            }
+            // A measure over a place with any other offset is no term.
+            None if matches!(
+                endpoint,
+                CheckedExpression::BufferMeasure { .. }
+                    | CheckedExpression::ContainerMeasure { .. }
+                    | CheckedExpression::RangeElementMeasure { .. }
+            ) =>
+            {
+                return Ok(false);
             }
             None => {}
         }

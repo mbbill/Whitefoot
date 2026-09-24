@@ -53,8 +53,21 @@ only resolved-place overlap and consumption, not the support of offsets in
 the term's own spelled path. Clause (a) places have no offsets, so this was
 not a defect before; a subscripted place term without it would have survived
 `set i = 2` and discharged a subscript at the new element (reproduced before
-the fix). The arm now also applies `event_kills_offset_support`. No kill was
-missing for existing measure terms.
+the fix). The arm now also applies `event_kills_offset_support`.
+
+The independent review of this change (about sixty probes) found one further
+compiler gap, which existing measure terms share: a call whose `&[T]`
+parameter is written kills nothing when its actual is an inline range such as
+`&rows[1_u64..3_u64]`, because the flow's argument-referent walk returns no
+place for a range formation. The language rule is unaffected (the projected
+write overlaps the element storage under [EFF-2] and [CALL-3]); the compiler
+does not implement it. A measure term over such an actual already reads out of
+bounds on main, and the new terms inherit the gap. It is being repaired on
+main separately, with negative cases for measure and readonly-field terms.
+
+The same review found that a requirement over an element that does not exist
+yet is now admitted and that its fact survives `place_back` in the callee;
+`docs/todo.md` records why no accepted caller reaches it and what closes it.
 
 Evidence: the conformance cases
 `ent5-neg-readonly-field-offset-reassigned-in-loop`,
@@ -113,12 +126,53 @@ It deliberately does not reach three surfaces, each for its own reason:
   places do: L0 only. A relation such as `first + count <= kids.len` therefore
   still needs own parameters or a measure.
 - Tracked-place offsets with projections. [ENT-2] admits `nodes[n.parent].count`,
-  but the compiler captures only literal, const and bare-binding offsets. Such a
-  place forms no term (under-derivation), and as a counted endpoint it is
-  reported as an unsupported compiler capability, never as a source verdict. A
-  measure read with such an offset was already unsupported.
+  but the compiler captures only literal, const and bare-binding offsets. A read
+  of such a place, in a body or a clause, is reported as an unsupported compiler
+  capability, never as a source verdict, as a measure read over one already was;
+  reading it as no term would let the missing fact surface later as a source
+  rejection.
 
 `docs/todo.md` records each with its validation criterion.
+
+## Offsets
+
+v0.69 listed an offset as "a written integer literal, a live `own`
+fragment-integer place, or an in-scope const generic" and called every other
+offset "a place this version does not represent, reported as the compiler
+capability it is". That made a compiler limit a clause of the language and
+left open whether an element-read offset was a language question at all. The
+restriction is kept exactly where it is principled: an offset must itself be
+something whose changes the fact system tracks, a clause (a) term or a
+constant, because a term dies only through its support and an offset's support
+is part of it. A write to `idx[0]` changes which element `table[idx[0]]`
+selects, and no term records `idx[0]` as support. So v0.70 states: every offset
+of a clause (b) place is a clause (a) or clause (c) term; a place with any other
+offset is no term; an implementation that cannot represent an admitted offset
+reports the place as unsupported [DIAG-1].
+
+Observable before and after:
+
+| program | v0.69 compiler | v0.70 |
+| --- | --- | --- |
+| `requires k < deref(table)[deref(idx)[0_u64]].len` | unsupported | FN-8 rejection (`fn8-neg-element-offset-in-clause-place`) |
+| endpoint `table[idx[0_u64]].len` | OP-4 at the offset | ENT-2 rejection |
+| endpoint `entries[slots[0_u64]].width` | ENT-2 rejection | ENT-2 rejection (`ent2-neg-element-offset-readonly-field-endpoint`) |
+| `deref(nodes)[cursor.at].count` | body read accepted as no term; in a clause, FN-8 rejection | unsupported in both (unit test) |
+
+A clause (b) term as an offset, as in `nodes[nodes[i].parent].count`, is tracked
+as well and would be a principled recursive extension; it stays out to keep the
+rule non-recursive and is a recorded follow-up.
+
+## Clause exclusivity
+
+"A term is exactly one of" needs the clauses to be disjoint. v0.69's clause (b)
+began "a place whose final step selects a readonly field", which every
+unsubscripted readonly field and every unsubscripted measure such as `run.len`
+also is under clause (a). v0.70 separates them by subscripts alone: clause (a)
+has none, clause (b) has at least one. An unsubscripted measure and a range's
+`len` are clause (a) tracked places, whose support (the resolved place, that is
+the descriptor word) is what [MSR-2] already gives a measure, so no fact
+changes.
 
 ## Checking cost
 

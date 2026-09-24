@@ -218,13 +218,15 @@ fn main() -> status: ExitStatus pure {
 }
 
 /// [ENT-2] clause (b): a readonly field below a subscript is an endpoint term
-/// exactly when every offset in its place is one the clause admits.
+/// exactly when every offset in its place is itself a clause (a) or clause
+/// (c) term.
 ///
 /// A bare binding offset is represented and admitted. An array-element offset
-/// is no admitted form, so the place is no term and the endpoint is ENT-2's
-/// rejection. A tracked field place is an admitted offset that this compiler
-/// captures no value for, so the endpoint is the compiler capability it is
-/// and never a source verdict.
+/// is no term, so the place is no term and the endpoint is ENT-2's rejection.
+/// A tracked field place is an admitted offset that this compiler captures no
+/// value for, so the place is the compiler capability it is and never a
+/// source verdict [DIAG-1]; the conformance corpus cannot pin that, because a
+/// case declares the specification's verdict, which is acceptance.
 #[test]
 fn a_readonly_field_endpoint_follows_its_offset_forms() {
     let program = |offset: &str| {
@@ -266,6 +268,70 @@ fn main() -> status: ExitStatus pure {{
         program("cursor.at").as_bytes(),
         crate::UnsupportedSemanticFeature::CompositeValues,
     );
+}
+
+/// [ENT-2, DIAG-1] an admitted offset the compiler cannot capture stops the
+/// read itself, in a body and in a contract clause alike, so no missing fact
+/// can later surface as a source rejection. A measure over such a place is
+/// the same capability.
+#[test]
+fn an_unrepresented_offset_is_unsupported_wherever_the_place_is_read() {
+    let body = br#"struct Entry {
+  readonly width: u64;
+}
+
+struct Cursor {
+  at: u64;
+}
+
+fn probe(entries: Array<Entry, 4>, cursor: Cursor) -> result: u64 pure contract {
+  requires cursor.at < 4_u64;
+} {
+  let width = entries[cursor.at].width;
+  return width;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    super::assert_unsupported(body, crate::UnsupportedSemanticFeature::CompositeValues);
+    let clause = br#"struct Node {
+  readonly count: u64;
+}
+
+struct Cursor {
+  at: u64;
+}
+
+fn probe(nodes: &[Node], cursor: Cursor) -> result: u64 reads(nodes) contract {
+  requires cursor.at < deref(nodes).len;
+  requires deref(nodes)[cursor.at].count <= 8_u64;
+} {
+  return 0_u64;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    super::assert_unsupported(clause, crate::UnsupportedSemanticFeature::CompositeValues);
+    let measure = br#"struct Cursor {
+  at: u64;
+}
+
+fn probe(grid: Array<Slots<u8, 4>, 4>, cursor: Cursor) -> result: u64 pure contract {
+  requires cursor.at < 4_u64;
+} {
+  let width = grid[cursor.at].len;
+  return width;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    super::assert_unsupported(measure, crate::UnsupportedSemanticFeature::CompositeValues);
 }
 
 /// [OWN-11] a counted binder may be copied and may have a reference formed to

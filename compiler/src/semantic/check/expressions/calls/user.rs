@@ -988,9 +988,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // [REF-4, MSR-1] a range reference's one measure is `len`, equal
             // to `hi - lo`, and that is no measure of the storage the range
             // was formed over: `&a[2..4]` names two elements whatever `a.len`
-            // is. [ENT-2] clause (b) admits `deref(view)` as a measure place
-            // — a root with `deref` wrappings, field selections and
-            // subscripts — and admits no place formed with a range step, so
+            // is. [MSR-1] admits `deref(view)` as a measure place — a root
+            // with `deref` wrappings, field selections and subscripts — and
+            // admits no place formed with a range step, so
             // the term this instantiation names is the reference the actual
             // names and never that reference's base. Resolving through the
             // reference here would drop the range step and read
