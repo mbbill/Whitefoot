@@ -852,8 +852,8 @@ fn retain(old: Token) -> result: Token pure {
 fn main() -> status: ExitStatus pure {
   let token = Token(value: 7_u64);
   let target = &token;
-  let alias = &token;
-  set deref(target) = retain(old: move deref(alias));
+  let aliased = &token;
+  set deref(target) = retain(old: move deref(aliased));
   if deref(target).value == 7_u64 {
     return exit_status(code: 0_u8);
   }
@@ -884,8 +884,8 @@ fn examine(flag: Bool) -> result: unit pure {
   } else {
     give &second;
   }
-  let alias = &first;
-  set deref(target) = retain(old: move deref(alias));
+  let aliased = &first;
+  set deref(target) = retain(old: move deref(aliased));
   return unit;
 }
 
@@ -1043,11 +1043,11 @@ fn overwrite(target: &u64) -> result: unit writes(target) {
 fn examine(flag: Bool) -> result: unit pure {
   let spare = 0_u64;
   let original = &permanent;
-  let alias = original;
+  let aliased = original;
   let selected = if flag {
     give &spare;
   } else {
-    give alias;
+    give aliased;
   }
   overwrite(target: selected);
   return unit;

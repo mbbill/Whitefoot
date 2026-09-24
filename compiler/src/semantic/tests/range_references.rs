@@ -326,8 +326,8 @@ fn main() -> status: ExitStatus pure {
   place_back(window: &outer, value: move row);
   let items = &outer[0_u64..1_u64];
   if deref(items)[0_u64].len == 1_u64 {
-    let alias = &deref(items)[0_u64];
-    let cleared = clear(window: alias);
+    let aliased = &deref(items)[0_u64];
+    let cleared = clear(window: aliased);
     let invalid = needs_one(value: deref(items)[0_u64].len);
   }
   return exit_status(code: 0_u8);

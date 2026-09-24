@@ -2756,7 +2756,8 @@ fn main() -> status: ExitStatus pure {
     /// the language. The successor pinned here is [REF-3]'s own refusal,
     /// which the grammar reaches first: `type` has no reference production
     /// [GRAM-3], so a written reference result stops at the result type with
-    /// the spelling the position does admit.
+    /// the spelling the position does admit, including a qualified type's
+    /// leading module alias or `pkg` [GRAM-3, MOD-3].
     #[test]
     fn a_reference_result_is_refused_at_the_result_type() {
         let detail = rejection(
@@ -2773,7 +2774,7 @@ fn main() -> status: ExitStatus pure {
         assert!(detail.contains("[GRAM-3]"), "{detail}");
         assert!(
             detail.contains(
-                r#"expected: ["TYPEID", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "unit"]"#
+                r#"expected: ["IDENT", "TYPEID", "pkg", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "unit"]"#
             ),
             "{detail}"
         );

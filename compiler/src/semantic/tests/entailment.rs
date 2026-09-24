@@ -7142,8 +7142,8 @@ fn other_operand(value: f64, other: f64) -> result: i32 pure {
 
 fn alias_write(value: f64) -> result: i32 pure {
   let allowed = cvt.defined::<f64, i32>(value);
-  let alias = &value;
-  set deref(alias) = 1.5_f64;
+  let aliased = &value;
+  set deref(aliased) = 1.5_f64;
   if allowed {
     return cvt::<f64, i32>(value);
   }
@@ -10085,9 +10085,9 @@ fn setting_an_intermediate_bool_binding_stops_later_origin_expansion() {
 
 fn caller(value: u64) -> result: unit pure {
   let positive = value > 0_u64;
-  let alias = positive;
+  let aliased = positive;
   set positive = False();
-  if alias {
+  if aliased {
     guarded(value: value);
   } else {
     return unit;
@@ -10123,8 +10123,8 @@ fn through_holder(first: Bool, second: Bool) -> result: unit pure {
   let source = band(first, second);
   let holder = &source;
   set deref(holder) = False();
-  let alias = source;
-  if alias {
+  let aliased = source;
+  if aliased {
     need(first: first, second: second);
   } else {
     return unit;
@@ -10135,8 +10135,8 @@ fn through_holder(first: Bool, second: Bool) -> result: unit pure {
 fn through_call(first: Bool, second: Bool) -> result: unit pure {
   let source = band(first, second);
   mutate(value: &source);
-  let alias = source;
-  if alias {
+  let aliased = source;
+  if aliased {
     need(first: first, second: second);
   } else {
     return unit;

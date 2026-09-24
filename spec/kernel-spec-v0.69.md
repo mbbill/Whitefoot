@@ -1,4 +1,4 @@
-# Kernel Specification v0.70
+# Kernel Specification v0.69
 
 Rule IDs are stable; diagnostics cite rule IDs.
 
@@ -167,22 +167,18 @@ The only abbreviation expansion is FN-3's hygienic expansion of interface and bi
 
 ```wf-ebnf GRAM-2
 program      := item*
-item         := alias_decl
-              | "public" ( fn_decl | struct_decl | enum_decl | interface_decl | binding_decl
-              | const_decl )
-              | fn_decl | struct_decl | enum_decl | interface_decl | binding_decl | const_decl
+item         := fn_decl | struct_decl | enum_decl | interface_decl | binding_decl | const_decl
               | heap_decl
-alias_decl   := "alias" (IDENT | TYPEID) "=" "pkg" ("::" (IDENT | TYPEID))* ";"
 heap_decl    := "program" "no_heap" ";"
 struct_decl  := "opaque"? ("nocopy" | "nodrop")? "struct" TYPEID generics? "{" doc? field* "}"
-field        := "public"? "readonly"? IDENT ":" type ";"
+field        := "readonly"? IDENT ":" type ";"
 enum_decl    := ("nocopy" | "nodrop")? "enum" TYPEID generics? "{" doc? variant* "}"
 variant      := TYPEID "(" vfield_list? ")" ";"
 vfield_list  := vfield ("," vfield)*
-vfield       := "public"? IDENT ":" type
+vfield       := IDENT ":" type
 fn_decl      := "fn" IDENT generics? "(" param_list? ")"
                 "->" ( result_binding | "(" result_binding ("," result_binding)+ ")" )
-                effects contract_block? ( ";" | doc | "{" doc? stmt* "}" )
+                effects contract_block? "{" doc? stmt* "}"
 result_binding:= IDENT ":" rtype
 contract_block:= "contract" "{" contract_define* requires_clause* ensures_clause* "}"
 contract_define:= "define" IDENT "=" expr ";"
@@ -190,7 +186,7 @@ requires_clause:= "requires" clause_expr ";"
 ensures_clause:= "ensures" ("when" result_route ":")? clause_expr ";"
 result_route:= (IDENT "is")? TYPEID "(" fieldbind ")"
 interface_decl  := "interface" TYPEID generics? "{" doc? (fn_sig ";")* "}"
-binding_decl  := "binding" TYPEID ":" (pack_use | type_path targs?) "{" doc? fn_bind* "}"
+binding_decl  := "binding" TYPEID ":" pack_use "{" doc? fn_bind* "}"
 fn_sig       := "fn" IDENT "(" param_list? ")"
                 "->" (result_binding | "(" result_binding ("," result_binding)+ ")")
                 effects contract_block?
@@ -201,14 +197,10 @@ fn_bind      := IDENT "=" callee ("::" targs)? ";"
 doc          := "doc" STRING ";"
 generics     := "<" gparam ("," gparam)* ">"
 gparam       := TYPEID (":" (TYPEID | capability_bound))?
-              | "const" IDENT ":" type | fn_sig | "interface" (pack_use | type_path targs?)
+              | "const" IDENT ":" type | fn_sig | "interface" pack_use
 capability_bound:= "copy" | "drop"
 param_list   := param ("," param)*
 param        := IDENT ":" (type | "&" (type | "[" type "]"))
-graph_file   := module_row+ entry_decl*
-module_row   := module_path ":" "[" (module_path ("," module_path)*)? "]" ";"
-module_path  := "pkg" ("::" IDENT)*
-entry_decl   := "entry" IDENT "=" module_path (";" | "{" "no_heap" ";" "}")
 ```
 
 A `heap_decl` is admitted at most once in a compilation unit and only as the first `item` of the first source record [PROG-2]; a second `heap_decl`, or one at any later item position, is a hard error citing GRAM-2 at that `heap_decl` node.
@@ -219,8 +211,7 @@ What the declaration means is [STOR-8]'s.
 
 ```wf-ebnf GRAM-3
 type   := "i8"|"i16"|"i32"|"i64"|"u8"|"u16"|"u32"|"u64"|"f32"|"f64"|"unit"
-        | TYPEID targs? | type_path targs?
-type_path := ("pkg" | IDENT) "::" (IDENT "::")* TYPEID
+        | TYPEID targs?
 rtype  := type
 targs  := "<" targ ("," targ)* ">"
 targ   := type | const | function_arg
@@ -239,7 +230,7 @@ let_stmt    := "let" ( IDENT "="
                ( ordinary_let_rhs | propagate_let_rhs
                | value_match | value_if )
                | "(" IDENT ("," IDENT)+ ")" "=" call ";"
-               | (TYPEID | type_path) "(" ( fieldbind_list ("," "..")? | ".." )? ")" "=" "move" place ";" )
+               | TYPEID "(" ( fieldbind_list ("," "..")? | ".." )? ")" "=" "move" place ";" )
 if_stmt     := "if" expr "{" stmt* "}" ("else" (if_stmt | "{" stmt* "}"))?
 value_if    := "if" expr "{" stmt* "}" "else" (value_if | "{" stmt* "}")
 ordinary_let_rhs:= expr ";"
@@ -265,7 +256,7 @@ break_stmt  := "break" LABEL? ";"
 give_stmt   := "give" expr ";"
 match_stmt  := "match" expr "{" arm+ "}"
 value_match := "match" expr "{" arm+ "}"
-arm            := TYPEID "(" ( fieldbind_list ("," "..")? | ".." )? ")" "=>" "{" stmt* "}"
+arm            := TYPEID "(" fieldbind_list? ")" "=>" "{" stmt* "}"
 fieldbind_list := fieldbind ("," fieldbind)*
 fieldbind      := IDENT ":" IDENT
 ```
@@ -283,9 +274,7 @@ infix_op       := "+" | "+wrap" | "+defined" | "+checked" | "+sat"
 compare_op     := "==" | "!=" | "<" | "<=" | ">" | ">="
 atom           := literal | "move" place | place | borrow_expr
 call           := "musttail"? callee ("::" targs)? "(" ( atom_list | fieldinit_list )? ")"
-callee         := OPNAME | IDENT ("::" callee_path)? | "pkg" "::" callee_path
-                | pack_use ("::" (IDENT | TYPEID))?
-callee_path    := IDENT ("::" callee_path)? | pack_use ("::" (IDENT | TYPEID))?
+callee         := IDENT | OPNAME | pack_use ("::" IDENT)?
 fieldinit_list := fieldinit ("," fieldinit)*
 fieldinit      := IDENT ":" atom
 borrow_expr    := "&" place
@@ -586,8 +575,7 @@ This keeps the const-generic forwarding path closed under the one operation: `co
 [CONST-2] A `const IDENT: type = cvalue;` item declares an immutable, program-lifetime, read-only static value, with the `cvalue` production of the fence below.
 
 ```wf-ebnf CONST-2
-cvalue := literal | IDENT | "[" cvalue ("," cvalue)* "]"
-        | (TYPEID | type_path) targs? ("::" TYPEID)? "(" (IDENT ":" cvalue ("," IDENT ":" cvalue)*)? ")"
+cvalue := literal | IDENT | "[" cvalue ("," cvalue)* "]" | TYPEID targs? "(" (IDENT ":" cvalue ("," IDENT ":" cvalue)*)? ")"
 ```
 
 `type` must be const-eligible: a primitive [TYPE-1], `Array<T, N>` of const-eligible T, or a source non-opaque `struct` whose every field type is const-eligible; `enum`, `Box`, `Slots`, and `Ring` are not const-eligible (a const is pure static rodata: no allocation, no drop).
