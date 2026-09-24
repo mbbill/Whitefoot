@@ -37,7 +37,7 @@ use super::super::model::{
     CheckedLoopInvariant, CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominalKind,
     CheckedNumericType, CheckedPlaceStep, CheckedProofMultiplicity, CheckedProofUseSource,
     CheckedRangeSource, CheckedSetTarget, CheckedStatement, CheckedType, CheckedValue, FloatType,
-    IntegerType, MeasureCell, MeasuredKind,
+    IntegerType, MeasureCell, MeasuredKind, ReadonlyFieldTerm,
 };
 use super::super::permission::{PermissionSeparationProof, PermissionSeparationQuery};
 use super::super::places::{
@@ -4138,14 +4138,21 @@ impl Analyzer<'_, '_> {
             | TermKind::CallDatum { .. }
             | TermKind::EntryDatum { .. }
             | TermKind::MeasureDatum { .. } => false,
-            TermKind::Place(place, _) => match event {
-                KillEvent::Write { place: written, .. }
-                | KillEvent::EntryImageHolderWrite { place: written, .. } => {
-                    self.resolved_places_overlap(separations, place, written)
-                }
-                KillEvent::Consume { binding, .. } => place.root == PlaceRoot::Binding(*binding),
-                KillEvent::EntryImageHolderConsume { .. } => false,
-            },
+            // [ENT-5] a clause (b) place's written offsets are part of its
+            // support, so a write to one kills the term exactly as it kills a
+            // measure over the same place. A clause (a) place has none.
+            TermKind::Place(place, _) => {
+                (match event {
+                    KillEvent::Write { place: written, .. }
+                    | KillEvent::EntryImageHolderWrite { place: written, .. } => {
+                        self.resolved_places_overlap(separations, place, written)
+                    }
+                    KillEvent::Consume { binding, .. } => {
+                        place.root == PlaceRoot::Binding(*binding)
+                    }
+                    KillEvent::EntryImageHolderConsume { .. } => false,
+                }) || self.event_kills_offset_support(separations, place, event)
+            }
             // [MSR-2] a measure term's support is its place's DESCRIPTOR
             // storage, which is the resolved place of P itself and not of
             // P's root: a write to a sibling field of P overlaps neither.
@@ -4892,6 +4899,26 @@ impl Analyzer<'_, '_> {
                 let mut path = self.read_place_path(value)?;
                 path.path.push(PlaceStep::Field(*field));
                 Some(path)
+            }
+            // [ENT-2] clause (b): a subscripted place is a term exactly when
+            // its final step selects a readonly field of one fragment type.
+            // Its offsets are part of its identity, so only a place whose
+            // every offset was captured is one; the measure former keeps its
+            // own row in `measure_operand`.
+            CheckedExpression::ReadStorage { root, .. }
+                if root.readonly_field_term(self.context.nominals)
+                    == Some(ReadonlyFieldTerm::Represented) =>
+            {
+                Some(self.container_root_path(root))
+            }
+            CheckedExpression::RangeIndex { place, .. }
+                if place.readonly_field_term(self.context.nominals)
+                    == Some(ReadonlyFieldTerm::Represented) =>
+            {
+                Some(ResolvedPlace::from_path(
+                    place.root.binding,
+                    place.place_path(),
+                ))
             }
             _ => None,
         }
@@ -8380,7 +8407,7 @@ impl Analyzer<'_, '_> {
     /// stated [MSR-1]: a plain place, or one element position of a run.
     ///
     /// An element position is a place only where its offset is one a place
-    /// relation can name [MSR-1] — a written literal, a live `own` integer
+    /// relation can name [ENT-2] — a written literal, a live `own` integer
     /// binding, or an in-scope const generic. An offset of any other form is
     /// provably distinct from nothing, itself included, so a measure over it
     /// would relate two elements as one term [OWN-7] and there is no place to

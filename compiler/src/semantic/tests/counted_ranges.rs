@@ -217,6 +217,57 @@ fn main() -> status: ExitStatus pure {
     );
 }
 
+/// [ENT-2] clause (b): a readonly field below a subscript is an endpoint term
+/// exactly when every offset in its place is one the clause admits.
+///
+/// A bare binding offset is represented and admitted. An array-element offset
+/// is no admitted form, so the place is no term and the endpoint is ENT-2's
+/// rejection. A tracked field place is an admitted offset that this compiler
+/// captures no value for, so the endpoint is the compiler capability it is
+/// and never a source verdict.
+#[test]
+fn a_readonly_field_endpoint_follows_its_offset_forms() {
+    let program = |offset: &str| {
+        format!(
+            r#"struct Entry {{
+  readonly width: u64;
+}}
+
+struct Cursor {{
+  at: u64;
+}}
+
+fn probe(entries: Array<Entry, 4>, slots: Array<u64, 2>, i: u64) -> result: u64 pure contract {{
+  requires i < 4_u64;
+}} {{
+  let cursor = Cursor(at: 0_u64);
+  let seen = 0_u64;
+  for @items (c in 0_u64..entries[{offset}].width) {{
+    set seen = seen +wrap 1_u64;
+  }}
+  return seen;
+}}
+
+fn main() -> status: ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"#
+        )
+    };
+    assert_checks(program("i").as_bytes());
+    assert_rule(
+        program("slots[0_u64]").as_bytes(),
+        SemanticRule::Ent2,
+        SemanticIssueKind::InvalidCountedEndpoint {
+            mechanical_fix: ENDPOINT_TERM_FIX,
+        },
+    );
+    super::assert_unsupported(
+        program("cursor.at").as_bytes(),
+        crate::UnsupportedSemanticFeature::CompositeValues,
+    );
+}
+
 /// [OWN-11] a counted binder may be copied and may have a reference formed to
 /// it, but it is compiler-updated state: source may not write it [SET-1] and
 /// may not pass it to a callee whose row declares a write of it [EFF-1].

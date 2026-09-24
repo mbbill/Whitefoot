@@ -1069,12 +1069,56 @@ condition under which it is taken up.
   alias metadata and `llvm.loop.parallel_accesses` (the emitter has no
   metadata table). Build the metadata subsystem as its own step with a
   before/after benchmark.
-- **Subscripted integer places as terms.** Today a place with subscripts is
-  a term only when its last step is a readonly field. The kill machinery
-  (offset support, overlapping element writes) already serves measure terms
-  and whole-expression goals, so generalizing to every integer place is
-  cheap in mechanism; measure its effect on closure size and checking time
-  first.
+- **Subscripted integer places as terms.** A place with subscripts is a
+  term only when its last step is a readonly field, a measure or a writer's
+  own (v0.70, [investigation](../research/investigations/readonly-field-terms/DESIGN.md#alternatives)).
+  The kill machinery (offset support, overlapping element writes) serves
+  every such term, so generalizing to every integer place is cheap in
+  mechanism, but a field updated in place loses its facts at every element
+  write whose index is not proved distinct. Measure the effect on closure
+  size and checking time on a program that updates element fields in loops
+  before selecting it; reopen when such a program needs a fact about a
+  writable element field that a `let` copy cannot carry.
+- **Readonly-field terms stop at L0.** A readonly field below a subscript is
+  an ENT-2 term for comparisons, requirements, copies and counted endpoints,
+  but it is no FN-9 relation datum, no INV-1 atom and has no ENT-6 affine
+  image, so `ensures result <= deref(nodes)[i].count` is refused and
+  `requires deref(nodes)[i].first + deref(nodes)[i].count <= deref(kids).len`
+  gives the body no usable affine premise. FN-9 needs the formal offset
+  substituted on both the body and the caller side first (see the next
+  entry); affine images need their kill to follow the term's support, as
+  measure atoms do. Validate with paired published and local cases, a kill of
+  each support member, and unchanged verdicts elsewhere; reopen when an
+  index-based program needs one of these surfaces.
+- **FN-9 relations read a formal subscript as an unknown offset.** A
+  published relation over `deref(rows)[i].len` with `i` a formal renders as
+  `deref(entry(rows))[?].len`: the body side and the caller side
+  (`call_parameter_place`) turn `GoalProjection::FormalSubscript` into an
+  unknown capture instead of the parameter binding or the actual's offset,
+  as requirement instantiation already does. Nothing but standing facts is
+  provable about that term, so the relation is unusable rather than unsound
+  today, but any extension of what can be proved about it would conflate the
+  elements of two calls. Substitute the formal on both sides, then add a
+  case whose caller publishes over two different offsets and must not equate
+  them.
+- **Tracked-place offsets with projections are not captured.** ENT-2 admits
+  an offset that is a live own integer tracked place, but the compiler
+  captures only literals, consts and bare bindings. A measure read such as
+  `table[s.k].len` is reported unsupported; a readonly-field place such as
+  `nodes[n.parent].count` forms no term (a counted endpoint over it is
+  reported unsupported) and so derives nothing. Capture such offsets with
+  their own support (the field place) so OWN-7 separation and ENT-5 kills
+  read them; validate with a write to the offset's field and to its root.
+  Until then, bind the offset with `let` first.
+- **Member names `len`, `cap` and `head` are classified by spelling in two
+  paths.** Contract clauses and subscripted body places pick the measure
+  route by the member's name before its type is known, so a writer's field
+  named `len` fails: `requires k < s.len` over a struct field is an internal
+  `InvalidResolution`, and `spans[1_u64].len` is a TYPE-5 rejection. The
+  typed member walk already decides this for unsubscripted body places.
+  Select the measure route from the prefix type in `trailing_measure_member`'s
+  callers; validate with a readonly and a writable field named `len` in a
+  clause, below a subscript, and as a counted endpoint.
 - **Vocabulary no declaration can state.** The `len` of a range reference
   (`&[T]` is a kind, not a type) and the four effect-row part names `next`,
   `last`, `filled`, `free` remain specification vocabulary after the

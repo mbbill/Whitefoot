@@ -1638,6 +1638,24 @@ impl CheckedRangeElementPlace {
         self.ty.measured()
     }
 
+    /// [ENT-2] clause (b): whether this element place is a term because its
+    /// final step selects a readonly field of one fragment type. The range's
+    /// own subscript selects the element every later step starts from.
+    pub(crate) fn readonly_field_term(
+        &self,
+        nominals: &[CheckedNominal],
+    ) -> Option<ReadonlyFieldTerm> {
+        if !selects_readonly_fragment_field(nominals, self.root.element_type, &self.path) {
+            return None;
+        }
+        ReadonlyFieldTerm::of_offsets(std::iter::once((&self.offset, self.captured)).chain(
+            self.path.iter().filter_map(|step| match step {
+                CheckedPlaceStep::Subscript(index) => Some((&index.offset, index.captured)),
+                CheckedPlaceStep::Field(_) | CheckedPlaceStep::BoxReferent(_) => None,
+            }),
+        ))
+    }
+
     pub(crate) const fn element(&self) -> Option<CheckedElement> {
         match self.ty {
             CheckedType::Array { element, .. }
@@ -1773,6 +1791,128 @@ impl CheckedContainerRoot {
             CheckedType::Window { capacity, .. } => capacity,
             _ => None,
         }
+    }
+
+    /// [ENT-2] clause (b): whether this subscripted place is a term because
+    /// its final step selects a readonly field of one fragment type.
+    ///
+    /// Only the steps after the last subscript decide the final field; the
+    /// offsets of every subscript decide whether its identity is represented.
+    pub(crate) fn readonly_field_term(
+        &self,
+        nominals: &[CheckedNominal],
+    ) -> Option<ReadonlyFieldTerm> {
+        let last = self
+            .path
+            .iter()
+            .rposition(|step| matches!(step, CheckedPlaceStep::Subscript(_)))?;
+        let CheckedPlaceStep::Subscript(index) = &self.path[last] else {
+            return None;
+        };
+        if !selects_readonly_fragment_field(nominals, index.element_type, &self.path[last + 1..]) {
+            return None;
+        }
+        ReadonlyFieldTerm::of_offsets(self.path.iter().filter_map(|step| match step {
+            CheckedPlaceStep::Subscript(index) => Some((&index.offset, index.captured)),
+            CheckedPlaceStep::Field(_) | CheckedPlaceStep::BoxReferent(_) => None,
+        }))
+    }
+}
+
+/// How one subscripted place whose final step selects a readonly field of
+/// one fragment type stands as an [ENT-2] clause (b) term.
+///
+/// A place with an offset of a form clause (b) does not admit is no term at
+/// all and has no value here.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ReadonlyFieldTerm {
+    /// Every offset is a captured literal, const or binding [REF-1], so the
+    /// place has the term identity the entailment fragment interns.
+    Represented,
+    /// An offset is a tracked place with projections, which clause (b)
+    /// admits but no captured value names. This is a compiler capability
+    /// limit, not a language rejection.
+    Unrepresented,
+}
+
+impl ReadonlyFieldTerm {
+    /// Classifies the offsets of one clause (b) place in written order.
+    fn of_offsets<'offset>(
+        offsets: impl IntoIterator<Item = (&'offset CheckedExpression, super::places::CapturedValue)>,
+    ) -> Option<Self> {
+        let mut term = Self::Represented;
+        for (offset, captured) in offsets {
+            if captured != super::places::CapturedValue::unknown() {
+                continue;
+            }
+            if !is_tracked_place_read(offset) {
+                return None;
+            }
+            term = Self::Unrepresented;
+        }
+        Some(term)
+    }
+}
+
+/// Whether `steps`, read from a value of type `start`, end by selecting a
+/// readonly field [TYPE-2] whose type is one fragment integer [ENT-2].
+fn selects_readonly_fragment_field(
+    nominals: &[CheckedNominal],
+    start: CheckedType,
+    steps: &[CheckedPlaceStep],
+) -> bool {
+    let struct_field = |ty: CheckedType, field: u32| {
+        let CheckedType::Nominal(nominal) = ty else {
+            return None;
+        };
+        let CheckedNominalKind::Struct { fields } = &nominals.get(nominal.0 as usize)?.kind else {
+            return None;
+        };
+        fields.get(field as usize)
+    };
+    let Some((CheckedPlaceStep::Field(last), prefix)) = steps.split_last() else {
+        return false;
+    };
+    let mut ty = start;
+    for step in prefix {
+        ty = match step {
+            CheckedPlaceStep::Subscript(index) => index.element_type,
+            CheckedPlaceStep::Field(field) => match struct_field(ty, *field) {
+                Some(field) => field.ty,
+                None => return false,
+            },
+            CheckedPlaceStep::BoxReferent(nominal) => {
+                match nominals
+                    .get(nominal.0 as usize)
+                    .map(|nominal| &nominal.kind)
+                {
+                    Some(CheckedNominalKind::Box { referent, .. }) => *referent,
+                    _ => return false,
+                }
+            }
+        };
+    }
+    struct_field(ty, *last)
+        .is_some_and(|field| field.readonly && matches!(field.ty, CheckedType::Integer(_)))
+}
+
+/// Whether one checked offset reads an [ENT-2] clause (a) tracked place:
+/// a binding, possibly below field selections, `deref` wrappings and `Box`
+/// content, with no subscript.
+fn is_tracked_place_read(offset: &CheckedExpression) -> bool {
+    match offset {
+        CheckedExpression::Binding {
+            consume_root: false,
+            ..
+        }
+        | CheckedExpression::Project {
+            consume_root: false,
+            ..
+        }
+        | CheckedExpression::DerefAddressed { .. } => true,
+        CheckedExpression::BoxDeref { value, .. }
+        | CheckedExpression::ProjectValue { value, .. } => is_tracked_place_read(value),
+        _ => false,
     }
 }
 

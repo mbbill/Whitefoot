@@ -9,7 +9,7 @@ use crate::{
 
 use super::super::super::model::{
     BindingId, CheckedExpression, CheckedLoopId, CheckedLoopInvariant, CheckedMode,
-    CheckedStatement, CheckedType, IntegerType,
+    CheckedStatement, CheckedType, IntegerType, ReadonlyFieldTerm,
 };
 use super::super::references::{
     InvalidationEvent, LoopReferenceToken, ReferenceValidity, RequiredReferent,
@@ -887,9 +887,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// After TYPE-5, the only atom shapes still capable of producing `own
     /// u64` are a literal or a place. ENT-2 admits the literal, a clause (b)
-    /// measure term [MSR-1], whose measure place may contain subscripts, and
-    /// a tracked place with field/deref wrappers but no subscript at any
-    /// depth.
+    /// term — a measure [MSR-1] or another readonly field, whose place may
+    /// contain subscripts — and a tracked place with field/deref wrappers but
+    /// no subscript at any depth.
     fn counted_endpoint_is_term_or_constant(
         &self,
         node: NodeId,
@@ -904,6 +904,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | CheckedExpression::ContainerMeasure { .. }
         ) {
             return Ok(true);
+        }
+        let readonly = match endpoint {
+            CheckedExpression::ReadStorage { root, .. } => root.readonly_field_term(&self.nominals),
+            CheckedExpression::RangeIndex { place, .. } => {
+                place.readonly_field_term(&self.nominals)
+            }
+            _ => None,
+        };
+        match readonly {
+            Some(ReadonlyFieldTerm::Represented) => return Ok(true),
+            // A tracked-place offset with projections is admitted by ENT-2
+            // but names no captured value in this compiler: the place is not
+            // rejected, it is not represented.
+            Some(ReadonlyFieldTerm::Unrepresented) => {
+                return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
+            }
+            None => {}
         }
         let Some(place) = self.tree.first_child_with(node, Production::Place)? else {
             // TYPE-5 has already excluded a borrow expression, so the
