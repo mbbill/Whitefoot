@@ -90,11 +90,15 @@ impl Analyzer<'_, '_> {
         state: &mut FactState,
         event: FlowEventId,
     ) -> CountedTerms {
+        // [FN-1] each capture copies its endpoint's value, so an admitted
+        // endpoint reads exactly as an ordinary `let` of the same atom: a
+        // measure term through its [MSR-1] former, otherwise the tracked
+        // place or constant [ENT-2].
         let lower_source = self
-            .read_operand(lower)
+            .copy_source(lower)
             .expect("checked counted lower endpoint must be an ENT-2 term or constant");
         let upper_source = self
-            .read_operand(upper)
+            .copy_source(upper)
             .expect("checked counted upper endpoint must be an ENT-2 term or constant");
         let lower_capture = self.terms.intern(TermKind::CountedCapture {
             range_path: range_path.to_vec(),
@@ -442,9 +446,10 @@ impl Analyzer<'_, '_> {
         })
     }
 
-    /// The value image shared by an ordinary let and a direct-place SET-1
-    /// commit. Every admitted exact integer conversion preserves its input's
-    /// mathematical value; checked and defined rows have another result type.
+    /// The value image shared by an ordinary let, a direct-place SET-1
+    /// commit and a counted endpoint capture [FN-1]. Every admitted exact
+    /// integer conversion preserves its input's mathematical value; checked
+    /// and defined rows have another result type.
     fn copy_source(&mut self, value: &CheckedExpression) -> Option<TermId> {
         match value {
             CheckedExpression::NumericConversion {
