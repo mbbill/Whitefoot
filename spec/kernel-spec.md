@@ -454,7 +454,7 @@ Construction and matching never consult an expected nominal type: a constructor 
 PRE-1 contributes its declaration records in the preorder stated there.
 The prelude's nominals, constructors, functions and numeric bounds, including the construction functions [OP-13] and the window operations [OP-10], enter the ordinary lookup inventory and are visible in every module. A declaration's type parameters, value parameters and fields are owner-local and enter only that declaration's ordinary owner tables.
 PRE-1 records have no source event or source node.
-Every top-level declaration of a module — function, struct with its constructor, enum, interface group, binding group and named const — is visible in every record of that module independently of record and item order, after inventory formation and before any use is resolved [MOD-3, FN-1].
+Every top-level declaration of a module — function, struct with its constructor, enum, interface group, binding group and named const — is visible, independently of record and item order, in the records of its module that [MOD-3] selects, after inventory formation and before any use is resolved [FN-1].
 An alias is visible throughout its own record [MOD-4]. Another module's declarations are reached only through a module prefix or an alias [MOD-5].
 
 A generic TYPEID parameter becomes visible after its declaring terminal through the remainder of its declaration's generic, header, and body scope.
@@ -1586,7 +1586,7 @@ Visibility grants no value, proof or layout: constant dependencies, group expans
 [MOD-4] An `alias_decl` is written only in its record's initial alias header, before any other `item`; an alias item after another item is a hard error citing MOD-4 at the alias.
 An alias binds its IDENT or TYPEID, in its own record alone, to the identity its complete `pkg` path names in the alias's module: a lowercase alias binds a registered module, or a function or named const of one; an uppercase alias binds a struct, enum, interface or binding of one, or a variant of a nongeneric enum of one, written as that enum's path followed by the variant TYPEID.
 A path whose registered module the alias's module may not name is a hard error citing [MOD-5] at the alias. Otherwise a path naming nothing an alias of that case binds where the alias is written, or a variant of a generic enum, is a hard error citing MOD-4 at the alias: of another module's declarations an alias binds only public ones, and an alias of an interface record sees what that record sees [MOD-3].
-An alias takes its target's lookup classes and collision domains, and a module alias the lexical-IDENT domain, and it collides as a declaration of its record's scope does [TYPE-6]: with another alias, with a module declaration visible in the record, with a PRE-1 declaration, and with a local declaration that would shadow it.
+An alias takes its target's lookup classes and collision domains, and a module alias the lexical-IDENT domain, and it collides as a declaration of its record's scope does [TYPE-6]: with another alias, with a declaration of its module's inventory, with a PRE-1 declaration, and with a local declaration that would shadow it.
 Every use of an alias resolves to its target's own identity. An alias is never public, never another alias's target, and grants no graph edge; an unused alias receives the same checks.
 
 [MOD-5] A qualified `type`, `callee`, construction or destructuring target begins with a module prefix: `pkg`, or a module alias of the record, followed by lowercase path components [GRAM-3, GRAM-5].
