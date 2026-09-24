@@ -1686,9 +1686,10 @@ fn main() -> status: ExitStatus pure {
         ));
         assert!(impossible.body.iter().flatten().any(|statement| matches!(
             statement,
-            crate::semantic::CheckedStatement::Evaluate(
-                crate::semantic::CheckedExpression::UserCall { .. }
-            )
+            crate::semantic::CheckedStatement::Evaluate {
+                value: crate::semantic::CheckedExpression::UserCall { .. },
+                ..
+            }
         )));
         let plan = super::specialize::PhysicalFunctions::build(&checked.data)
             .expect("proof-closed functions retain their physical signature");

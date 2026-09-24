@@ -520,6 +520,84 @@ fn main() -> status: ExitStatus pure {
     );
 }
 
+/// [GRAM-4] makes an expression statement one call whose result is discarded,
+/// and [PAR-1] gives it no footprint of its own: it is the call's substituted
+/// row [EFF-5], its operand reads, and its by-value consumptions, with no
+/// binding write and no path for a discarded result's release [STOR-8]. Every
+/// adjacency therefore receives the verdict the let-bound spelling receives,
+/// whichever member is written which way: disjoint rows are permitted, one
+/// shared row is the ordinary write/write conflict, and a releasing
+/// expression statement (the discarded `Box`) is judged by its row alone.
+///
+/// Until this fixture, both expression-statement forms were refused as
+/// unclassified, ending every run through them by their spelling.
+#[test]
+fn an_expression_statement_call_is_judged_as_its_let_bound_call() {
+    const PREFIX: &str = r#"struct Pair {
+  left: u64;
+  right: u64;
+}
+
+fn set_left(pair: &Pair) -> result: unit writes(pair.left) {
+  set deref(pair).left = 1_u64;
+  return unit;
+}
+
+fn set_right(pair: &Pair) -> result: unit writes(pair.right) {
+  set deref(pair).right = 2_u64;
+  return unit;
+}
+
+fn fresh_left(pair: &Pair) -> result: Box<Array<u64>> writes(pair.left) {
+  set deref(pair).left = 3_u64;
+  let made = box_array_filled::<u64>(count: 2_u64, value: 0_u64);
+  return move made;
+}
+
+"#;
+    for (first_callee, second_callee, expected) in [
+        ("set_left", "set_right", None),
+        ("set_left", "set_left", Some(1)),
+        ("fresh_left", "set_right", None),
+        ("fresh_left", "set_left", Some(1)),
+    ] {
+        for (first_form, second_form) in [
+            ("let first = ", "let second = "),
+            ("", ""),
+            ("let first = ", ""),
+            ("", "let second = "),
+        ] {
+            let source = format!(
+                "{PREFIX}fn main() -> status: ExitStatus pure {{
+  let pair = Pair(left: 0_u64, right: 0_u64);
+  {first_form}{first_callee}(pair: &pair);
+  {second_form}{second_callee}(pair: &pair);
+  return exit_status(code: 0_u8);
+}}
+"
+            );
+            let table = permission_of(source.as_bytes());
+            let pair = pair_of(&table, "main", first_callee, second_callee);
+            match expected {
+                None => assert_eq!(
+                    pair.verdict,
+                    PermissionVerdict::PermittedEligible,
+                    "the two rows name two fields:\n{source}"
+                ),
+                Some(condition) => {
+                    let Denial::Footprint { kind, .. } = denial(pair, condition) else {
+                        panic!("expected a footprint conflict:\n{source}");
+                    };
+                    assert_eq!(kind.halves(), ("write", "write"), "{source}");
+                }
+            }
+            if expected.is_none() {
+                run_of(&table, "main", &[first_callee, second_callee]);
+            }
+        }
+    }
+}
+
 /// Read-only sibling recursion. Nothing is written at all, so the
 /// disjointness clause is satisfied by an empty write footprint rather than
 /// by separation.

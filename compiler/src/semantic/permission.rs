@@ -826,22 +826,24 @@ impl<'check> Program<'check> {
                     "a statement that binds an ordered result list",
                 )),
             ),
-            // An expression statement's reach is projected by no row, and a
-            // discarded result carries its own [STOR-3] release walk.
-            CheckedStatement::Evaluate(_) => (
-                None,
-                None,
-                None,
-                "an expression statement",
-                Err(Refusal::Form("an expression statement")),
-            ),
-            CheckedStatement::DropExpression { .. } => (
-                None,
-                None,
-                None,
-                "a discarded expression statement",
-                Err(Refusal::Form("a discarded expression statement")),
-            ),
+            // [GRAM-4] an expression statement is one call whose result is
+            // discarded. Its footprint is that call's, formed exactly as a
+            // `let` right-hand side's is: the substituted row [EFF-5], its
+            // operand reads, and its by-value consumptions. It defines no
+            // binding, so it has no binding write path, and the release a
+            // discarded affine result runs contributes no path [STOR-8].
+            CheckedStatement::Evaluate { node_path, value }
+            | CheckedStatement::DropExpression {
+                node_path, value, ..
+            } => {
+                let footprint = self.value_footprint(places, value, node_path);
+                let projection = call_projection(value);
+                let label = projection
+                    .as_ref()
+                    .map_or("an expression statement", |_| "a call statement");
+                let call = projection.map(|projection| projection.call.clone());
+                (Some(node_path), None, call, label, Ok(footprint))
+            }
         };
         let callee_name = statement_value(statement)
             .and_then(call_projection)
@@ -977,7 +979,9 @@ impl<'check> Program<'check> {
 /// read the callee's name back out of it.
 fn statement_value(statement: &CheckedStatement) -> Option<&CheckedExpression> {
     match statement {
-        CheckedStatement::Let { value, .. } => Some(value),
+        CheckedStatement::Let { value, .. }
+        | CheckedStatement::Evaluate { value, .. }
+        | CheckedStatement::DropExpression { value, .. } => Some(value),
         CheckedStatement::Match { scrutinee, .. } => Some(scrutinee),
         _ => None,
     }
@@ -1291,7 +1295,7 @@ fn push_nested_blocks<'check>(
         | CheckedStatement::Set { .. }
         | CheckedStatement::Proof(_)
         | CheckedStatement::DropExpression { .. }
-        | CheckedStatement::Evaluate(_)
+        | CheckedStatement::Evaluate { .. }
         | CheckedStatement::Return { .. }
         | CheckedStatement::Give { .. }
         | CheckedStatement::Break { .. } => {}

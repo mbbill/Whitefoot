@@ -1373,6 +1373,84 @@ fn a_borrowed_read_modify_map_preserves_the_sequential_bytes() {
 
 /// A loop that maps and reduces still selects the Reduction result path. The
 /// full map and all eight reduction bytes are independently observable.
+/// Each iteration fills one proved-disjoint row through a unit helper written
+/// as a [GRAM-4] expression statement, the natural spelling of a call whose
+/// result is `unit`. PAR-2 judges that call by its row exactly as it judges a
+/// let-bound one, so the row loop is split as an independent map.
+const EXPRESSION_STATEMENT_ROWS: &[u8] =
+    br#"fn fill_row(output: &[u64], value: u64) -> result: unit writes(output) {
+  let count = deref(output).len;
+  for (i in 0_u64..count) {
+    set deref(output)[i] = value;
+  }
+  return unit;
+}
+
+fn rows(width: u64) -> result: Box<Array<u64>> pure contract {
+  requires width <= 4096_u64;
+} {
+  let cells = 64_u64 * width;
+  let values = box_array_filled::<u64>(count: cells, value: 0_u64);
+  for (r in 0_u64..64_u64) {
+    let start = r * width;
+    let end = start + width;
+    invariant bounded: end <= cells {
+      use width times (r + 1_u64 <= 64_u64);
+    }
+    let row = &values.inner[start..end];
+    fill_row(output: row, value: r);
+  }
+  return move values;
+}
+
+fn main() -> status: ExitStatus pure {
+  let values = rows(width: 1024_u64);
+  let count = values.inner.len;
+  if count != 65536_u64 {
+    return exit_status(code: 1_u8);
+  }
+  for (i in 0_u64..count) {
+    let seen = values.inner[i];
+    let expected = i / 1024_u64;
+    if seen != expected {
+      return exit_status(code: 2_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+#[test]
+fn an_expression_statement_row_map_is_split_and_keeps_its_rows() {
+    let ledger = super::compile_permission_ledger(EXPRESSION_STATEMENT_ROWS);
+    assert!(
+        ledger
+            .iter()
+            .any(|line| line.starts_with("PAR split") && line.contains(" rows ")),
+        "the row loop must be split as an independent map: {ledger:?}"
+    );
+    let unsplit = emit(EXPRESSION_STATEMENT_ROWS);
+    let split = emit_with_overlap(EXPRESSION_STATEMENT_ROWS);
+    let directory = test_directory();
+    let reference = Command::new(build_executable(&unsplit, &directory))
+        .output()
+        .expect("run the row map that splits nothing");
+    assert_eq!(reference.status.code(), Some(0), "{reference:?}");
+    let executable = build_executable(&split, &directory);
+    for workers in ["0", "1", "4"] {
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run the split row map");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "WF_WORKERS={workers}: every row must hold its own index"
+        );
+    }
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
 #[test]
 fn a_map_and_reduction_preserves_both_results() {
     let source = map_and_reduction_source();

@@ -342,6 +342,20 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   consumption, exits and lowering for all result ordinals rather than granting
   a tuple-specific exception.
 
+- **A releasing expression statement is never a hand-out group member.**
+  PAR-1 and PAR-2 now judge an expression statement by its call's row, as a
+  let-bound call is, and lowering hands out a discarded copy or borrowed
+  result exactly as a let-bound one. A discarded affine result, however, runs
+  its release immediately after the call, reading the value between a
+  hand-out and its join, so `compiler/src/lowering/builder.rs` leaves that call
+  unrecorded and it ends any overlap group through it. It could instead be a
+  group's last member, as an addressed binding already may. No measured
+  program discards an affine result beside an independent call, so the
+  benefit is unverified. Reopen when such a program appears; validate by
+  emitting the call as the join site with its release after the join and
+  comparing published bytes at several worker counts with the sequential
+  lowering.
+
 - **Initialized allocation can impose serial span on parallel work.** The
   [private-outbox representation](../research/investigations/compute-model/DESIGN.md#private-outboxes-without-frontier-compaction)
   requires a fresh C-by-D head matrix each level; its element fill is a

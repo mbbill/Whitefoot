@@ -1,0 +1,48 @@
+fn fill_row(output: &[u64], value: u64) -> result: unit writes(output) {
+  doc "Fills every element of the row it was handed with one value.";
+  let count = deref(output).len;
+  for (i in 0_u64..count) {
+    set deref(output)[i] = value;
+  }
+  return unit;
+}
+
+fn rows(width: u64) -> result: Box<Array<u64>> pure contract {
+  requires width <= 32_u64;
+} {
+  doc "Each iteration fills one proved-disjoint runtime-width row through a unit helper written as an expression statement.";
+  let cells = 3_u64 * width;
+  let values = box_array_filled::<u64>(count: cells, value: 0_u64);
+  for (r in 0_u64..3_u64) {
+    let start = r * width;
+    let end = start + width;
+    invariant bounded: end <= cells {
+      use width times (r + 1_u64 <= 3_u64);
+    }
+    let row = &values.inner[start..end];
+    fill_row(output: row, value: r);
+  }
+  return move values;
+}
+
+fn main() -> status: ExitStatus pure {
+  doc "Every row holds its own index, and zero width is a valid empty assignment.";
+  let values = rows(width: 5_u64);
+  let count = values.inner.len;
+  if count != 15_u64 {
+    return exit_status(code: 1_u8);
+  }
+  for (i in 0_u64..count) {
+    let seen = values.inner[i];
+    let expected = i / 5_u64;
+    if seen != expected {
+      return exit_status(code: 2_u8);
+    }
+  }
+  let empty = rows(width: 0_u64);
+  let zero = empty.inner.len;
+  if zero != 0_u64 {
+    return exit_status(code: 3_u8);
+  }
+  return exit_status(code: 0_u8);
+}

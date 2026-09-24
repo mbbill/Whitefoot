@@ -2318,10 +2318,19 @@ pub(crate) enum CheckedStatement {
         /// a reference rebinding has no owned value to release either.
         displaces_live_value: bool,
     },
-    Evaluate(CheckedExpression),
+    /// [GRAM-4] an expression statement whose discarded result needs no
+    /// release: a copy value or a borrow-mode reference.
+    Evaluate {
+        /// The complete `expr_stmt`, the statement's own site for the
+        /// [PAR-1, PAR-2] footprint judgments, as a `let`'s is.
+        node_path: NodePath,
+        value: CheckedExpression,
+    },
     /// The discarded result of an expression statement, with the
     /// compiler-derived release it runs [STOR-3].
     DropExpression {
+        /// The complete `expr_stmt`, as for [`Self::Evaluate`].
+        node_path: NodePath,
         value: CheckedExpression,
         drops: Vec<CheckedProjectedDrop>,
     },

@@ -567,12 +567,17 @@ impl<'check> Survey<'check, '_> {
                 self.expression(upper);
             }
             CheckedStatement::Loop { .. } => {}
-            // An expression statement is a call [GRAM-4] whose reach no row
-            // projects onto an actual, and a discarded one carries its own
-            // [STOR-3] release.
-            CheckedStatement::Evaluate(_) => self.refuse_form("an expression statement"),
-            CheckedStatement::DropExpression { .. } => {
-                self.refuse_form("a discarded expression statement");
+            // [GRAM-4] an expression statement is one call whose result is
+            // discarded, judged exactly as a `let` binding that call is: its
+            // row's projection, its operand reads, and its by-value
+            // consumptions. It introduces no binding, and the release a
+            // discarded affine result runs contributes no path [STOR-8].
+            CheckedStatement::Evaluate { node_path, value }
+            | CheckedStatement::DropExpression {
+                node_path, value, ..
+            } => {
+                self.moved_places(value, node_path);
+                self.expression(value);
             }
         }
     }
@@ -1299,11 +1304,11 @@ const fn statement_node(statement: &CheckedStatement) -> Option<&NodePath> {
         | CheckedStatement::Return { node_path, .. }
         | CheckedStatement::ValueMatchLet { node_path, .. }
         | CheckedStatement::Give { node_path, .. }
-        | CheckedStatement::CountedRange { node_path, .. } => Some(node_path),
+        | CheckedStatement::CountedRange { node_path, .. }
+        | CheckedStatement::Evaluate { node_path, .. }
+        | CheckedStatement::DropExpression { node_path, .. } => Some(node_path),
         CheckedStatement::Proof(proof) => Some(&proof.node_path),
-        CheckedStatement::Evaluate(_)
-        | CheckedStatement::DropExpression { .. }
-        | CheckedStatement::Match { .. }
+        CheckedStatement::Match { .. }
         | CheckedStatement::Loop { .. }
         | CheckedStatement::Break { .. } => None,
     }
