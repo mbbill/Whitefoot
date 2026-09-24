@@ -5,16 +5,17 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use whitefoot::{
-    Architecture, COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
-    COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_FILE_POSIX_HEADER,
-    COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
-    COMPLETION_WINDOWS_IOCP_HEADER, CompilerLimits, FLOOR_STACK_BYTES, GRAPH_FILE_NAME,
-    HOST_OPTIMIZATION_ARGUMENTS, ModuleEntry, ORDINARY_VALUES_HEADER, ORDINARY_VALUES_LLVM,
-    ORDINARY_VALUES_SOURCE, OverlapLowering, RecursionBudget, SCHED_CORE_HEADER, SCHED_CORE_SOURCE,
-    SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER,
-    check, check_module, check_module_entry, check_module_program, compile_module_program,
-    compile_with_overlap, compile_with_permission_ledger, discover_module_sources,
-    form_module_graph, stack_ledger,
+    Architecture, BuildCache, COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE,
+    COMPLETION_CONTRACT_HEADER, COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
+    COMPLETION_FILE_POSIX_HEADER, COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_RUNTIME_SOURCE,
+    COMPLETION_SOCKET_ADDRESS_HEADER, COMPLETION_WINDOWS_IOCP_HEADER, CheckOutcome, CheckVerdict,
+    CompilerLimits, FLOOR_STACK_BYTES, GRAPH_FILE_NAME, HOST_OPTIMIZATION_ARGUMENTS, ModuleEntry,
+    ORDINARY_VALUES_HEADER, ORDINARY_VALUES_LLVM, ORDINARY_VALUES_SOURCE, OverlapLowering,
+    RecursionBudget, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
+    SCHED_PRIM_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER, build_module_entry, check,
+    check_module_program, compile_with_overlap, compile_with_permission_ledger, content_digest,
+    discover_module_sources, entry_verdict, form_module_graph, module_verdict,
+    running_compiler_identity, stack_ledger,
 };
 
 // `HOST_LINK_LIBRARIES` is here rather than above because its one reader is
@@ -34,7 +35,7 @@ use whitefoot::{
 };
 
 const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-scalar-leaf-limit N|off] [--par-sequential-refusal] [--par-recursive-frontier auto|N|off] [--no-overlap] [--par-ledger] \
-[--stack-ledger] [--check] [-o OUTPUT] (SOURCE... | --graph modules.wfg [--entry NAME | --function pkg::module::name | --check-module pkg::module | --check-interface pkg::module])";
+[--stack-ledger] [--check] [--cache DIR] [--report] [-o OUTPUT] (SOURCE... | --graph modules.wfg [--entry NAME | --function pkg::module::name | --check-module pkg::module | --check-interface pkg::module | --check-modules])";
 
 // The compiler walks typed source and lowering trees recursively. Windows
 // gives the process's primary thread a 1 MiB stack by default, which is small
@@ -226,11 +227,12 @@ fn main() {
 fn run() -> Result<(), String> {
     let arguments: Vec<_> = std::env::args().skip(1).collect();
     let options = Options::parse(&arguments)?;
+    let cache = options.cache.as_deref().map(open_cache).transpose()?;
     if let Some(graph) = &options.graph {
-        let Some(module) = run_module_program(&options, graph)? else {
+        let Some(module) = run_module_program(&options, graph, cache.as_ref())? else {
             return Ok(());
         };
-        return finish(&options, &module);
+        return finish(&options, &module, cache.as_ref());
     }
     let mut paths = Vec::with_capacity(options.sources.len());
     let mut bytes = Vec::with_capacity(options.sources.len());
@@ -270,13 +272,17 @@ fn run() -> Result<(), String> {
         compile_with_overlap(&inputs, CompilerLimits::default(), overlap)
             .map_err(|failure| failure.to_string())?
     };
-    finish(&options, &module)
+    finish(&options, &module, cache.as_ref())
 }
 
 /// Reads a module program's graph and every registered module's records
 /// below the graph's directory, then checks it or compiles its entry
 /// [MOD-1, MOD-2, MOD-9]. `None` is a completed check.
-fn run_module_program(options: &Options, graph_path: &Path) -> Result<Option<String>, String> {
+fn run_module_program(
+    options: &Options,
+    graph_path: &Path,
+    cache: Option<&BuildCache>,
+) -> Result<Option<String>, String> {
     let graph_bytes = std::fs::read(graph_path)
         .map_err(|error| format!("cannot read {}: {error}", graph_path.display()))?;
     let display = graph_path.display().to_string();
@@ -297,15 +303,44 @@ fn run_module_program(options: &Options, graph_path: &Path) -> Result<Option<Str
                 .in_module(source.module, source.role)
         })
         .collect();
+    let limits = CompilerLimits::default();
+    if options.check_modules {
+        let mut verdicts = Vec::new();
+        for record in graph.modules() {
+            let module = record.qualified_name();
+            verdicts.push((
+                "module",
+                module_verdict(&graph, &inputs, &module, false, limits, cache)
+                    .map_err(|failure| failure.to_string())?,
+            ));
+        }
+        for entry in graph.entries() {
+            verdicts.push((
+                "entry",
+                entry_verdict(
+                    &graph,
+                    &inputs,
+                    ModuleEntry::Named(entry.name()),
+                    limits,
+                    cache,
+                )
+                .map_err(|failure| failure.to_string())?,
+            ));
+        }
+        publish_verdicts(options, &verdicts)?;
+        return Ok(None);
+    }
     if let Some(module) = &options.check_module {
-        check_module(
+        let verdict = module_verdict(
             &graph,
             &inputs,
             module,
             options.interface_only,
-            CompilerLimits::default(),
+            limits,
+            cache,
         )
         .map_err(|failure| failure.to_string())?;
+        publish_verdicts(options, &[("module", verdict)])?;
         return Ok(None);
     }
     let entry = if let Some(name) = &options.entry {
@@ -322,28 +357,124 @@ fn run_module_program(options: &Options, graph_path: &Path) -> Result<Option<Str
         // Without an entry, the check covers every registered module; with
         // one, it is that entry's composition check [MOD-8, MOD-9].
         match entry {
-            Some(entry) => check_module_entry(&graph, &inputs, entry, CompilerLimits::default()),
-            None => check_module_program(&graph, &inputs, CompilerLimits::default()),
+            Some(entry) => {
+                let verdict = entry_verdict(&graph, &inputs, entry, limits, cache)
+                    .map_err(|failure| failure.to_string())?;
+                publish_verdicts(options, &[("entry", verdict)])?;
+            }
+            None => check_module_program(&graph, &inputs, limits)
+                .map_err(|failure| failure.to_string())?,
         }
-        .map_err(|failure| failure.to_string())?;
         return Ok(None);
     }
     let entry = entry.ok_or_else(|| {
         "a --graph build selects --entry NAME or --function pkg::module::name".to_owned()
     })?;
-    compile_module_program(
-        &graph,
-        &inputs,
-        entry,
-        CompilerLimits::default(),
-        options.overlap(),
-    )
-    .map(Some)
-    .map_err(|failure| failure.to_string())
+    build_module_entry(&graph, &inputs, entry, limits, options.overlap(), cache)
+        .map(|(module, _)| Some(module))
+        .map_err(|failure| failure.to_string())
+}
+
+/// Opens the build cache directory for this exact compiler.
+fn open_cache(directory: &Path) -> Result<BuildCache, String> {
+    let identity = running_compiler_identity()
+        .map_err(|error| format!("cannot read this compiler's executable: {error}"))?;
+    BuildCache::open(directory, identity)
+        .map_err(|error| format!("cannot open the cache {}: {error}", directory.display()))
+}
+
+/// Prints each verdict, as one line of text or one JSON object per line, and
+/// fails the invocation when any is a rejection. The text is the same
+/// whether a verdict was reused or recomputed, so a cached run and a run
+/// without a cache can be compared line for line; the JSON reports which.
+fn publish_verdicts(options: &Options, verdicts: &[(&str, CheckVerdict)]) -> Result<(), String> {
+    let mut rejected = Vec::new();
+    for (kind, verdict) in verdicts {
+        if options.report {
+            println!("{}", verdict_json(kind, verdict));
+        }
+        match verdict.outcome() {
+            CheckOutcome::Accepted { pending } => {
+                if !options.report {
+                    if pending.is_empty() {
+                        println!("{}: accepted", verdict.subject());
+                    } else {
+                        println!(
+                            "{}: accepted, pending {}",
+                            verdict.subject(),
+                            pending.join(", ")
+                        );
+                    }
+                }
+            }
+            CheckOutcome::Rejected { failure, .. } => {
+                if !options.report {
+                    println!("{}: rejected: {failure}", verdict.subject());
+                }
+                rejected.push(verdict.subject().to_owned());
+            }
+        }
+    }
+    if rejected.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("rejected: {}", rejected.join(", ")))
+    }
+}
+
+/// One verdict as a JSON object.
+fn verdict_json(kind: &str, verdict: &CheckVerdict) -> String {
+    let mut fields = vec![format!("\"{kind}\":{}", json_string(verdict.subject()))];
+    match verdict.outcome() {
+        CheckOutcome::Accepted { pending } => {
+            fields.push("\"verdict\":\"accepted\"".to_owned());
+            fields.push(format!(
+                "\"pending\":[{}]",
+                pending
+                    .iter()
+                    .map(|name| json_string(name))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ));
+        }
+        CheckOutcome::Rejected { rule, failure } => {
+            fields.push("\"verdict\":\"rejected\"".to_owned());
+            fields.push(format!(
+                "\"rule\":{}",
+                rule.as_deref()
+                    .map_or_else(|| "null".to_owned(), json_string)
+            ));
+            fields.push(format!("\"failure\":{}", json_string(failure)));
+        }
+    }
+    fields.push(format!("\"reused\":{}", verdict.reused()));
+    format!("{{{}}}", fields.join(","))
+}
+
+/// A JSON string literal of `text`.
+fn json_string(text: &str) -> String {
+    use std::fmt::Write as _;
+    let mut literal = String::with_capacity(text.len() + 2);
+    literal.push('"');
+    for character in text.chars() {
+        match character {
+            '"' => literal.push_str("\\\""),
+            '\\' => literal.push_str("\\\\"),
+            '\n' => literal.push_str("\\n"),
+            '\r' => literal.push_str("\\r"),
+            '\t' => literal.push_str("\\t"),
+            control if u32::from(control) < 0x20 => {
+                let _ = write!(literal, "\\u{:04x}", u32::from(control));
+            }
+            other => literal.push(other),
+        }
+    }
+    literal.push('"');
+    literal
 }
 
 /// Writes or links one emitted module as the options select.
-fn finish(options: &Options, module: &str) -> Result<(), String> {
+fn finish(options: &Options, module: &str, cache: Option<&BuildCache>) -> Result<(), String> {
     if options.stack_ledger {
         for line in print_stack_ledger(module)? {
             println!("{line}");
@@ -361,6 +492,7 @@ fn finish(options: &Options, module: &str) -> Result<(), String> {
     compile_executable(
         module,
         options.output.as_deref().unwrap_or(Path::new("a.out")),
+        cache,
     )
 }
 
@@ -455,7 +587,7 @@ fn runtime_units() -> (Vec<RuntimeUnit>, Vec<&'static str>) {
 /// Every one of those bytes travels inside this executable, so no installed
 /// path, no build directory, and no environment decides which runtime a
 /// program gets.
-fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
+fn compile_executable(llvm: &str, output: &Path, cache: Option<&BuildCache>) -> Result<(), String> {
     // The ordinary prelude implementation library links its private engine.
     let directory = std::env::temp_dir().join(format!("whitefootc-{}", std::process::id()));
     let result = (|| {
@@ -475,32 +607,200 @@ fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
             std::fs::write(&path, unit.source)
                 .map_err(|error| format!("cannot write runtime {}: {error}", unit.relative_path))?;
         }
+        if let Some(cache) = cache {
+            return link_cached_objects(cache, &directory, &staged, &compiled, llvm, output);
+        }
         let mut command = Command::new(clang_executable());
-        // The compiler-owned C units are written to C11 and the repository
-        // gate compiles them as `-std=c11`. Naming the dialect here too is
-        // what makes that gate a statement about this link: clang's default is
-        // a GNU dialect, which predefines object-like macros such as `linux`
-        // that a C11 source may legitimately use as an identifier.
-        command
-            .arg("-std=c11")
-            .args(TARGET_COMPILE_ARGUMENTS)
-            .arg("-I")
-            .arg(&directory);
-        command.arg("-I").arg(directory.join("completion"));
+        unit_arguments(&mut command, &directory);
         for relative_path in &compiled {
             command
                 .arg("-x")
-                .arg(if relative_path.ends_with(".ll") {
-                    "ir"
-                } else {
-                    "c"
-                })
+                .arg(unit_language(relative_path))
                 .arg(directory.join(relative_path));
         }
         link(&mut command, llvm, output)
     })();
     let _ = std::fs::remove_dir_all(&directory);
     result
+}
+
+/// The arguments every compiler-owned runtime unit compiles with.
+fn unit_arguments(command: &mut Command, directory: &Path) {
+    // The compiler-owned C units are written to C11 and the repository gate
+    // compiles them as `-std=c11`. Naming the dialect here too is what makes
+    // that gate a statement about this link: clang's default is a GNU
+    // dialect, which predefines object-like macros such as `linux` that a C11
+    // source may legitimately use as an identifier.
+    command
+        .arg("-std=c11")
+        .args(TARGET_COMPILE_ARGUMENTS)
+        .arg("-I")
+        .arg(directory)
+        .arg("-I")
+        .arg(directory.join("completion"));
+}
+
+/// The clang input language of one runtime unit.
+fn unit_language(relative_path: &str) -> &'static str {
+    if relative_path.ends_with(".ll") {
+        "ir"
+    } else {
+        "c"
+    }
+}
+
+/// The same link over objects: each runtime unit and the emitted module
+/// compile to an object, reused from the cache when a record exists for
+/// exactly that input, compile arguments and host compiler, and one
+/// ordinary link joins them. The executable is written beside `output` and
+/// renamed over it only after the link succeeds, so a failed build leaves
+/// the previous executable in place.
+fn link_cached_objects(
+    cache: &BuildCache,
+    directory: &Path,
+    staged: &[RuntimeUnit],
+    compiled: &[&str],
+    llvm: &str,
+    output: &Path,
+) -> Result<(), String> {
+    let host = host_compiler_identity()?;
+    let mut runtime = Vec::new();
+    for unit in staged {
+        runtime.extend_from_slice(unit.relative_path.as_bytes());
+        runtime.push(0);
+        runtime.extend_from_slice(unit.source.as_bytes());
+        runtime.push(0);
+    }
+    let runtime = content_digest(&runtime);
+    let mut objects = Vec::with_capacity(compiled.len() + 1);
+    for (index, relative_path) in compiled.iter().enumerate() {
+        let mut material = b"runtime-object 1\n".to_vec();
+        material.extend_from_slice(&host);
+        material.extend_from_slice(&runtime);
+        material.extend_from_slice(
+            format!(
+                "\n{relative_path}\n{TARGET_COMPILE_ARGUMENTS:?} {HOST_OPTIMIZATION_ARGUMENTS:?}\n"
+            )
+            .as_bytes(),
+        );
+        let object = directory.join(format!("unit-{index}.o"));
+        cached_object(cache, "runtime-objects", &material, &object, |command| {
+            if unit_language(relative_path) == "ir" {
+                command
+                    .args(TARGET_COMPILE_ARGUMENTS)
+                    .arg("-Wno-override-module");
+            } else {
+                unit_arguments(command, directory);
+            }
+            command
+                .arg("-x")
+                .arg(unit_language(relative_path))
+                .arg(directory.join(relative_path));
+            None
+        })?;
+        objects.push(object);
+    }
+    let mut material = b"program-object 1\n".to_vec();
+    material.extend_from_slice(&host);
+    material.extend_from_slice(&content_digest(llvm.as_bytes()));
+    material.extend_from_slice(
+        format!("\n{TARGET_COMPILE_ARGUMENTS:?} {HOST_OPTIMIZATION_ARGUMENTS:?}\n").as_bytes(),
+    );
+    let program = directory.join("program.o");
+    cached_object(cache, "program-objects", &material, &program, |command| {
+        command
+            .args(TARGET_COMPILE_ARGUMENTS)
+            .arg("-Wno-override-module")
+            .arg("-x")
+            .arg("ir")
+            .arg("-");
+        Some(llvm)
+    })?;
+    objects.push(program);
+    let partial = output.with_file_name(format!(
+        ".{}.{}.partial",
+        output
+            .file_name()
+            .map_or_else(String::new, |name| name.to_string_lossy().into_owned()),
+        std::process::id()
+    ));
+    let status = Command::new(clang_executable())
+        .args(TARGET_COMPILE_ARGUMENTS)
+        .args(HOST_OPTIMIZATION_ARGUMENTS)
+        .args(&objects)
+        .args(TARGET_LINK_LIBRARIES)
+        .arg("-o")
+        .arg(&partial)
+        .status()
+        .map_err(|error| format!("cannot start {}: {error}", clang_executable()))?;
+    if !status.success() {
+        let _ = std::fs::remove_file(&partial);
+        return Err(format!("clang exited with {status}"));
+    }
+    std::fs::rename(&partial, output)
+        .map_err(|error| format!("cannot write {}: {error}", output.display()))
+}
+
+/// Writes the object a cache records for `material` to `object`, or compiles
+/// it with the arguments `configure` adds, feeding the returned text on
+/// stdin, and records it.
+fn cached_object<'text>(
+    cache: &BuildCache,
+    family: &str,
+    material: &[u8],
+    object: &Path,
+    configure: impl FnOnce(&mut Command) -> Option<&'text str>,
+) -> Result<(), String> {
+    if let Some(bytes) = cache.load(family, material) {
+        return std::fs::write(object, bytes)
+            .map_err(|error| format!("cannot write {}: {error}", object.display()));
+    }
+    let mut command = Command::new(clang_executable());
+    let stdin = configure(&mut command);
+    command
+        .args(HOST_OPTIMIZATION_ARGUMENTS)
+        .arg("-c")
+        .arg("-o")
+        .arg(object)
+        .stdin(if stdin.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        });
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("cannot start {}: {error}", clang_executable()))?;
+    if let Some(text) = stdin {
+        child
+            .stdin
+            .take()
+            .ok_or_else(|| "clang stdin was not available".to_owned())?
+            .write_all(text.as_bytes())
+            .map_err(|error| format!("cannot send LLVM to clang: {error}"))?;
+    }
+    let status = child
+        .wait()
+        .map_err(|error| format!("cannot wait for clang: {error}"))?;
+    if !status.success() {
+        return Err(format!("clang exited with {status}"));
+    }
+    let bytes = std::fs::read(object)
+        .map_err(|error| format!("cannot read {}: {error}", object.display()))?;
+    // A failed publication costs only a later recompilation.
+    let _ = cache.store(family, material, &bytes);
+    Ok(())
+}
+
+/// The host compiler's identity: its path and its own version report.
+fn host_compiler_identity() -> Result<[u8; 32], String> {
+    let version = Command::new(clang_executable())
+        .arg("--version")
+        .output()
+        .map_err(|error| format!("cannot start {}: {error}", clang_executable()))?;
+    let mut identity = clang_executable().as_bytes().to_vec();
+    identity.push(0);
+    identity.extend_from_slice(&version.stdout);
+    Ok(content_digest(&identity))
 }
 
 fn link(command: &mut Command, llvm: &str, output: &Path) -> Result<(), String> {
@@ -662,6 +962,16 @@ struct Options {
     check_module: Option<String>,
     /// Check only that module's interface, before any body exists.
     interface_only: bool,
+    /// Check every registered module against its dependencies' interfaces,
+    /// then every named entry's composition, and report each verdict: the
+    /// impact report [MOD-8].
+    check_modules: bool,
+    /// Report verdicts as one JSON object per line.
+    report: bool,
+    /// The build cache directory whose records this invocation may reuse and
+    /// publish. Without it nothing is reused, which is the differential
+    /// reference for a cached run.
+    cache: Option<PathBuf>,
     output: Option<PathBuf>,
     sources: Vec<PathBuf>,
 }
@@ -682,6 +992,9 @@ impl Options {
         let mut function = None;
         let mut check_module = None;
         let mut interface_only = false;
+        let mut check_modules = false;
+        let mut report = false;
+        let mut cache = None;
         let mut output = None;
         let mut sources = Vec::new();
         let mut cursor = 0;
@@ -737,6 +1050,17 @@ impl Options {
                 }
                 "--no-overlap" => no_overlap = true,
                 "--check" => check = true,
+                "--check-modules" => check_modules = true,
+                "--report" => report = true,
+                "--cache" => {
+                    cursor += 1;
+                    let path = arguments
+                        .get(cursor)
+                        .ok_or_else(|| "--cache requires a directory".to_owned())?;
+                    if cache.replace(PathBuf::from(path)).is_some() {
+                        return Err("--cache may be written only once".to_owned());
+                    }
+                }
                 "--check-module" | "--check-interface" => {
                     let option = arguments[cursor].clone();
                     cursor += 1;
@@ -795,6 +1119,14 @@ impl Options {
         if check_module.is_some() && (graph.is_none() || entry.is_some() || function.is_some()) {
             return Err("--check-module and --check-interface check one module of a --graph program and select no entry".to_owned());
         }
+        if check_modules
+            && (graph.is_none() || entry.is_some() || function.is_some() || check_module.is_some())
+        {
+            return Err("--check-modules checks every module and entry of a --graph program and selects none".to_owned());
+        }
+        if report && !(check_modules || check_module.is_some() || check && graph.is_some()) {
+            return Err("--report reports the verdicts of a --graph check".to_owned());
+        }
         if graph.is_none() && (entry.is_some() || function.is_some()) {
             return Err(
                 "--entry and --function select a module program's entry: write --graph".to_owned(),
@@ -805,6 +1137,7 @@ impl Options {
         }
         if graph.is_some()
             && !check
+            && !check_modules
             && check_module.is_none()
             && entry.is_none()
             && function.is_none()
@@ -863,6 +1196,9 @@ impl Options {
             function,
             check_module,
             interface_only,
+            check_modules,
+            report,
+            cache,
             output,
             sources,
         })

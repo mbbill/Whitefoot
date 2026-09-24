@@ -6,6 +6,7 @@
 
 use core::fmt;
 
+mod cache;
 mod rejection;
 
 pub(crate) mod launcher;
@@ -13,6 +14,8 @@ pub(crate) mod launcher;
 #[cfg(test)]
 mod pinned_sentences;
 
+use cache::Fields;
+pub use cache::{BuildCache, content_digest, running_compiler_identity};
 use rejection::Located;
 
 use crate::backend::{emitter::emit_llvm_with_layout, target::TargetLayout};
@@ -456,15 +459,22 @@ pub fn check_module(
     interface_only: bool,
     limits: CompilerLimits,
 ) -> Result<(), CompilationFailure> {
-    let target = graph.module_named(module).ok_or_else(|| {
-        CompilationFailure::new(
-            CompilationStage::ModuleGraph,
-            CompilationFailureKind::Invocation,
-            format!("the graph registers no module `{module}`"),
-        )
-    })?;
+    let target = registered_module(graph, module)?;
+    let selected = module_check_inputs(graph, inputs, target, interface_only);
+    with_checked_program(&selected, Some(graph.modules()), limits, |_, _| Ok(()))
+}
+
+/// [MOD-8] the records one module's check reads: the module's own records,
+/// or its interface alone, and the interface records of its dependency
+/// closure. No other module's implementation record enters.
+fn module_check_inputs<'input>(
+    graph: &crate::ModuleGraph,
+    inputs: &[SourceInput<'input>],
+    target: crate::ModuleId,
+    interface_only: bool,
+) -> Vec<SourceInput<'input>> {
     let closure = graph.dependency_closure(target);
-    let selected: Vec<_> = inputs
+    inputs
         .iter()
         .copied()
         .filter(|input| {
@@ -474,8 +484,366 @@ pub fn check_module(
                 input.role() == crate::SourceRole::Interface && closure.contains(&input.module())
             }
         })
+        .collect()
+}
+
+/// The module a qualified name registers, or the invocation failure naming it.
+fn registered_module(
+    graph: &crate::ModuleGraph,
+    module: &str,
+) -> Result<crate::ModuleId, CompilationFailure> {
+    graph.module_named(module).ok_or_else(|| {
+        CompilationFailure::new(
+            CompilationStage::ModuleGraph,
+            CompilationFailureKind::Invocation,
+            format!("the graph registers no module `{module}`"),
+        )
+    })
+}
+
+/// One module's source verdict or one entry's composition verdict, as the
+/// module check, the composition check and the impact report publish it
+/// [MOD-8].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckVerdict {
+    subject: String,
+    outcome: CheckOutcome,
+    reused: bool,
+}
+
+/// What one check concluded.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckOutcome {
+    /// Every judgment the check makes holds. For a module, the named
+    /// interface declarations have no definition among its implementation
+    /// records yet, which blocks composition and nothing else [MOD-8]; a
+    /// composition has none.
+    Accepted {
+        /// The pending interface function declarations, in source order.
+        pending: Vec<String>,
+    },
+    /// The module's first source rejection.
+    Rejected {
+        /// The numbered rule the rejection cites.
+        rule: Option<String>,
+        /// The rejection as a fresh check renders it.
+        failure: String,
+    },
+}
+
+impl CheckVerdict {
+    /// What was checked: a module's qualified name, `pkg` or `pkg::a::b`, or
+    /// an entry's name.
+    #[must_use]
+    pub fn subject(&self) -> &str {
+        &self.subject
+    }
+
+    /// What the check concluded.
+    #[must_use]
+    pub const fn outcome(&self) -> &CheckOutcome {
+        &self.outcome
+    }
+
+    /// Whether a verdict recorded for exactly these inputs was reused rather
+    /// than recomputed.
+    #[must_use]
+    pub const fn reused(&self) -> bool {
+        self.reused
+    }
+}
+
+/// The cache family of module verdicts.
+const MODULE_VERDICTS: &str = "module-verdicts";
+
+/// [MOD-8] checks one registered module against its dependencies'
+/// interfaces alone, or its interface records alone, and reports its verdict.
+///
+/// With a cache, a verdict recorded for exactly the same inputs is reused:
+/// the module's selected records and their display names, the interface
+/// records of its dependency closure, the registered module paths, the
+/// closure's edges and the compiler itself. An edit to another module's
+/// implementation records changes none of these, so it never recomputes this
+/// verdict, and an edit to an interface this module reads always does.
+///
+/// # Errors
+///
+/// Returns a failure that is not a source rejection: an unregistered module,
+/// an exhausted limit or a compiler invariant. Such a failure is never
+/// recorded.
+pub fn module_verdict(
+    graph: &crate::ModuleGraph,
+    inputs: &[SourceInput<'_>],
+    module: &str,
+    interface_only: bool,
+    limits: CompilerLimits,
+    cache: Option<&BuildCache>,
+) -> Result<CheckVerdict, CompilationFailure> {
+    let target = registered_module(graph, module)?;
+    let selected = module_check_inputs(graph, inputs, target, interface_only);
+    let mut modules = graph.dependency_closure(target);
+    modules.push(target);
+    modules.sort();
+    let mut material = b"module-verdict 1\n".to_vec();
+    material.extend_from_slice(if interface_only {
+        b"interface-only\n".as_slice()
+    } else {
+        b"complete\n".as_slice()
+    });
+    push_module_line(&mut material, "module", graph, target);
+    push_graph_facts(&mut material, graph, &modules);
+    push_records(&mut material, graph, &selected);
+    recorded_verdict(module, cache, MODULE_VERDICTS, &material, || {
+        with_checked_program(&selected, Some(graph.modules()), limits, |checked, _| {
+            Ok(pending_declarations(&checked, target))
+        })
+    })
+}
+
+/// The verdict recorded for exactly `material`, or the one `check` computes,
+/// which is then recorded. Only a source verdict is recorded: any other
+/// failure returns as it is.
+fn recorded_verdict(
+    subject: &str,
+    cache: Option<&BuildCache>,
+    family: &str,
+    material: &[u8],
+    check: impl FnOnce() -> Result<Vec<String>, CompilationFailure>,
+) -> Result<CheckVerdict, CompilationFailure> {
+    let recorded = cache
+        .and_then(|cache| cache.load(family, material))
+        .and_then(|payload| decode_outcome(&payload));
+    if let Some(outcome) = recorded {
+        return Ok(CheckVerdict {
+            subject: subject.to_owned(),
+            outcome,
+            reused: true,
+        });
+    }
+    let outcome = match check() {
+        Ok(pending) => CheckOutcome::Accepted { pending },
+        Err(failure) if failure.kind() == CompilationFailureKind::Source => {
+            CheckOutcome::Rejected {
+                rule: failure.rule_id().map(str::to_owned),
+                failure: failure.to_string(),
+            }
+        }
+        Err(failure) => return Err(failure),
+    };
+    if let Some(cache) = cache {
+        // A failed publication costs only a later recomputation.
+        let _ = cache.store(family, material, &encode_outcome(&outcome));
+    }
+    Ok(CheckVerdict {
+        subject: subject.to_owned(),
+        outcome,
+        reused: false,
+    })
+}
+
+/// [MOD-9] the records an entry's composition reads: every record of its
+/// module and of that module's dependency closure. A registered module the
+/// entry's module does not depend on is no part of it.
+fn composition_inputs<'input>(
+    graph: &crate::ModuleGraph,
+    inputs: &[SourceInput<'input>],
+    module: crate::ModuleId,
+) -> (Vec<crate::ModuleId>, Vec<SourceInput<'input>>) {
+    let mut modules = graph.dependency_closure(module);
+    modules.push(module);
+    modules.sort();
+    let selected = inputs
+        .iter()
+        .copied()
+        .filter(|input| modules.contains(&input.module()))
         .collect();
-    with_checked_program(&selected, Some(graph.modules()), limits, |_, _| Ok(()))
+    (modules, selected)
+}
+
+/// The key material of one entry's composition: the selection and its
+/// requirement, the graph facts its modules read, and every record of them.
+fn composition_material(
+    family: &str,
+    graph: &crate::ModuleGraph,
+    selection: &Selection<'_>,
+    modules: &[crate::ModuleId],
+    selected: &[SourceInput<'_>],
+) -> Vec<u8> {
+    let mut material = format!("{family} 1\n").into_bytes();
+    push_module_line(&mut material, "entry-module", graph, selection.module);
+    material.extend_from_slice(
+        format!(
+            "function {}\nno_heap {}\nnamed {}\n",
+            selection.name, selection.no_heap, selection.public
+        )
+        .as_bytes(),
+    );
+    push_graph_facts(&mut material, graph, modules);
+    push_records(&mut material, graph, selected);
+    material
+}
+
+/// The cache family of entry composition verdicts.
+const COMPOSITION_VERDICTS: &str = "composition-verdicts";
+
+/// The cache family of entry builds' emitted modules.
+const ENTRY_MODULES: &str = "entry-modules";
+
+/// [MOD-8, MOD-9] checks one entry's composition, its modules' complete
+/// source acceptance and the entry's own requirements, stopping before
+/// lowering, and reports its verdict. With a cache, a verdict recorded for
+/// exactly the same composition is reused.
+///
+/// # Errors
+///
+/// Returns a failure that is not a source rejection: an entry naming no
+/// graph entry or module, an exhausted limit or a compiler invariant.
+pub fn entry_verdict(
+    graph: &crate::ModuleGraph,
+    inputs: &[SourceInput<'_>],
+    entry: ModuleEntry<'_>,
+    limits: CompilerLimits,
+    cache: Option<&BuildCache>,
+) -> Result<CheckVerdict, CompilationFailure> {
+    let subject = match entry {
+        ModuleEntry::Named(name) => name.to_owned(),
+        ModuleEntry::Function { module, function } => format!("{module}::{function}"),
+    };
+    let selection = entry_selection(graph, entry)?;
+    let (modules, selected) = composition_inputs(graph, inputs, selection.module);
+    let material =
+        composition_material(COMPOSITION_VERDICTS, graph, &selection, &modules, &selected);
+    recorded_verdict(&subject, cache, COMPOSITION_VERDICTS, &material, || {
+        with_checked_program(
+            &selected,
+            Some(graph.modules()),
+            limits,
+            |checked, bundle| admit_entry(&checked, bundle, &selection),
+        )
+        .map(|()| Vec::new())
+    })
+}
+
+/// [MOD-8] the interface function declarations of `module` that no
+/// implementation record of it defines, in source order.
+fn pending_declarations(
+    checked: &CheckedProgram<'_, '_, '_>,
+    module: crate::ModuleId,
+) -> Vec<String> {
+    checked
+        ._resolved
+        .interface_functions()
+        .iter()
+        .filter(|function| function.definition().is_none())
+        .filter_map(|function| checked._resolved.declaration(function.declaration()))
+        .filter(|declaration| declaration.module() == Some(module))
+        .map(|declaration| declaration.spelling().to_owned())
+        .collect()
+}
+
+fn push_module_line(
+    material: &mut Vec<u8>,
+    label: &str,
+    graph: &crate::ModuleGraph,
+    module: crate::ModuleId,
+) {
+    let name = graph
+        .modules()
+        .get(module.index())
+        .map_or_else(String::new, crate::ModuleRecord::qualified_name);
+    material.extend_from_slice(format!("{label} {name}\n").as_bytes());
+}
+
+/// The graph facts a check over `modules` reads: every registered path, in
+/// row order, which prefix resolution and the MOD-3 slot check compare with,
+/// and each of those modules' direct dependencies. Entries, comments and
+/// spacing of the graph file are not among them [MOD-1, MOD-5].
+fn push_graph_facts(
+    material: &mut Vec<u8>,
+    graph: &crate::ModuleGraph,
+    modules: &[crate::ModuleId],
+) {
+    material.extend_from_slice(b"registered");
+    for module in graph.modules() {
+        material.push(b' ');
+        material.extend_from_slice(module.qualified_name().as_bytes());
+    }
+    material.push(b'\n');
+    for module in modules {
+        let Some(record) = graph.modules().get(module.index()) else {
+            continue;
+        };
+        material.extend_from_slice(format!("edges {}:", record.qualified_name()).as_bytes());
+        for dependency in record.dependencies() {
+            if let Some(dependency) = graph.modules().get(dependency.index()) {
+                material.push(b' ');
+                material.extend_from_slice(dependency.qualified_name().as_bytes());
+            }
+        }
+        material.push(b'\n');
+    }
+}
+
+/// Each record a check reads, in the order it reads them: its module, role,
+/// logical and display names, and bytes.
+fn push_records(material: &mut Vec<u8>, graph: &crate::ModuleGraph, inputs: &[SourceInput<'_>]) {
+    for input in inputs {
+        let module = graph
+            .modules()
+            .get(input.module().index())
+            .map_or_else(String::new, crate::ModuleRecord::qualified_name);
+        let role = match input.role() {
+            crate::SourceRole::Interface => "interface",
+            crate::SourceRole::Implementation => "implementation",
+        };
+        let mut fields = Fields::default();
+        fields
+            .push(module.as_bytes())
+            .push(role.as_bytes())
+            .push(input.logical_path().as_bytes())
+            .push(input.display_path().as_bytes())
+            .push(input.bytes());
+        material.extend_from_slice(b"record ");
+        material.extend_from_slice(&fields.into_bytes());
+        material.push(b'\n');
+    }
+}
+
+fn encode_outcome(outcome: &CheckOutcome) -> Vec<u8> {
+    let mut fields = Fields::default();
+    match outcome {
+        CheckOutcome::Accepted { pending } => {
+            fields.push(b"accepted");
+            for name in pending {
+                fields.push(name.as_bytes());
+            }
+        }
+        CheckOutcome::Rejected { rule, failure } => {
+            fields
+                .push(b"rejected")
+                .push(rule.as_deref().unwrap_or_default().as_bytes())
+                .push(failure.as_bytes());
+        }
+    }
+    fields.into_bytes()
+}
+
+fn decode_outcome(payload: &[u8]) -> Option<CheckOutcome> {
+    let fields = Fields::parse(payload)?;
+    let text = |field: &[u8]| String::from_utf8(field.to_vec()).ok();
+    match fields.as_slice() {
+        [b"accepted", pending @ ..] => Some(CheckOutcome::Accepted {
+            pending: pending
+                .iter()
+                .map(|name| text(name))
+                .collect::<Option<Vec<_>>>()?,
+        }),
+        [b"rejected", rule, failure] => Some(CheckOutcome::Rejected {
+            rule: (!rule.is_empty()).then(|| text(rule)).flatten(),
+            failure: text(failure)?,
+        }),
+        _ => None,
+    }
 }
 
 /// Checks a module program through complete source acceptance and admits
@@ -487,9 +855,13 @@ pub fn check_module_entry(
     limits: CompilerLimits,
 ) -> Result<(), CompilationFailure> {
     let selection = entry_selection(graph, entry)?;
-    with_checked_program(inputs, Some(graph.modules()), limits, |checked, bundle| {
-        admit_entry(&checked, bundle, &selection)
-    })
+    let (_, selected) = composition_inputs(graph, inputs, selection.module);
+    with_checked_program(
+        &selected,
+        Some(graph.modules()),
+        limits,
+        |checked, bundle| admit_entry(&checked, bundle, &selection),
+    )
 }
 
 /// The function a module program entry names [MOD-9].
@@ -536,9 +908,48 @@ pub fn compile_module_program(
     limits: CompilerLimits,
     overlap: crate::OverlapLowering,
 ) -> Result<String, CompilationFailure> {
+    build_module_entry(graph, inputs, entry, limits, overlap, None).map(|(module, _)| module)
+}
+
+/// Compiles one entry's composition to textual LLVM [MOD-9, PROG-3], reusing
+/// the module a cache recorded for exactly the same composition, lowering
+/// options and compiler, and reporting whether it did. Only a successful
+/// build is recorded.
+///
+/// # Errors
+///
+/// Returns the build's failure, which no cache record ever stands in for.
+pub fn build_module_entry(
+    graph: &crate::ModuleGraph,
+    inputs: &[SourceInput<'_>],
+    entry: ModuleEntry<'_>,
+    limits: CompilerLimits,
+    overlap: crate::OverlapLowering,
+    cache: Option<&BuildCache>,
+) -> Result<(String, bool), CompilationFailure> {
     let selection = entry_selection(graph, entry)?;
-    compile_selected(inputs, Some(graph.modules()), limits, overlap, &selection)
-        .map(|reported| reported.module)
+    let (modules, selected) = composition_inputs(graph, inputs, selection.module);
+    let mut material = composition_material(ENTRY_MODULES, graph, &selection, &modules, &selected);
+    material.extend_from_slice(format!("overlap {overlap:?}\n").as_bytes());
+    if let Some(module) = cache
+        .and_then(|cache| cache.load(ENTRY_MODULES, &material))
+        .and_then(|payload| String::from_utf8(payload).ok())
+    {
+        return Ok((module, true));
+    }
+    let module = compile_selected(
+        &selected,
+        Some(graph.modules()),
+        limits,
+        overlap,
+        &selection,
+    )?
+    .module;
+    if let Some(cache) = cache {
+        // A failed publication costs only a later rebuild.
+        let _ = cache.store(ENTRY_MODULES, &material, module.as_bytes());
+    }
+    Ok((module, false))
 }
 
 /// One compilation's module and the developer-channel text it produced.
@@ -1092,6 +1503,304 @@ mod tests {
                 SourceInput::new(path, bytes).in_module(module, role)
             })
             .collect()
+    }
+
+    /// A fresh cache directory for one test, removed by the returned guard.
+    struct CacheDirectory(std::path::PathBuf);
+
+    impl CacheDirectory {
+        fn new(name: &str) -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "whitefoot-driver-cache-{}-{name}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&path);
+            Self(path)
+        }
+
+        fn open(&self) -> super::BuildCache {
+            super::BuildCache::open(&self.0, [7; 32]).expect("the cache opens")
+        }
+    }
+
+    impl Drop for CacheDirectory {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// A three-module program: `pkg::base` publishes a function with a
+    /// requirement, `pkg::user` calls it, and `pkg::tool` is independent.
+    const PROGRAM_GRAPH: &[u8] =
+        b"pkg::base: [];\npkg::user: [pkg::base];\npkg::tool: [];\npkg: [pkg::base, pkg::user];\n\nentry app = pkg::main;\n";
+    const BASE_INTERFACE: &[u8] = b"public fn half(value: u8) -> result: u8 pure contract {\n  requires value > 1_u8;\n} doc \"Halves a value above one.\";\n";
+    const BASE_BODY: &[u8] = b"fn half(value: u8) -> result: u8 pure contract {\n  requires value > 1_u8;\n} {\n  let result = value / 2_u8;\n  return result;\n}\n";
+    const USER_INTERFACE: &[u8] = b"public fn use_half() -> result: u8 pure;\n";
+    const USER_BODY: &[u8] = b"fn use_half() -> result: u8 pure {\n  let result = pkg::base::half(value: 8_u8);\n  return result;\n}\n";
+    const TOOL_INTERFACE: &[u8] = b"public fn spare() -> result: u8 pure;\n";
+    const TOOL_BODY: &[u8] = b"fn spare() -> result: u8 pure {\n  return 1_u8;\n}\n";
+    const ROOT_INTERFACE: &[u8] = b"public fn main() -> status: ExitStatus pure;\n";
+    const ROOT_BODY: &[u8] = b"fn main() -> status: ExitStatus pure {\n  let code = pkg::user::use_half();\n  return exit_status(code: code);\n}\n";
+
+    /// Every module's verdict and every entry's composition verdict, with
+    /// and without the cache; the two must agree apart from reuse.
+    fn verdicts(
+        graph_bytes: &[u8],
+        records: &[(&str, &[u8])],
+        cache: Option<&super::BuildCache>,
+    ) -> Vec<(String, super::CheckOutcome, bool)> {
+        let graph = crate::form_module_graph(
+            SourceInput::new("modules.wfg", graph_bytes),
+            CompilerLimits::default(),
+        )
+        .expect("the graph forms");
+        let inputs = module_inputs(&graph, records);
+        let mut verdicts = Vec::new();
+        for record in graph.modules() {
+            let verdict = super::module_verdict(
+                &graph,
+                &inputs,
+                &record.qualified_name(),
+                false,
+                CompilerLimits::default(),
+                cache,
+            )
+            .expect("a module verdict");
+            verdicts.push((
+                verdict.subject().to_owned(),
+                verdict.outcome().clone(),
+                verdict.reused(),
+            ));
+        }
+        for entry in graph.entries() {
+            let verdict = super::entry_verdict(
+                &graph,
+                &inputs,
+                super::ModuleEntry::Named(entry.name()),
+                CompilerLimits::default(),
+                cache,
+            )
+            .expect("a composition verdict");
+            verdicts.push((
+                verdict.subject().to_owned(),
+                verdict.outcome().clone(),
+                verdict.reused(),
+            ));
+        }
+        verdicts
+    }
+
+    /// The subjects a cached run recomputed, after asserting that its
+    /// verdicts equal a run without any cache.
+    fn recomputed(
+        graph_bytes: &[u8],
+        records: &[(&str, &[u8])],
+        cache: &super::BuildCache,
+    ) -> Vec<String> {
+        let cached = verdicts(graph_bytes, records, Some(cache));
+        let cold = verdicts(graph_bytes, records, None);
+        assert_eq!(
+            cached
+                .iter()
+                .map(|(subject, outcome, _)| (subject, outcome))
+                .collect::<Vec<_>>(),
+            cold.iter()
+                .map(|(subject, outcome, _)| (subject, outcome))
+                .collect::<Vec<_>>(),
+            "a cached run reports what a run without a cache reports"
+        );
+        assert!(cold.iter().all(|(_, _, reused)| !reused));
+        cached
+            .into_iter()
+            .filter(|(_, _, reused)| !reused)
+            .map(|(subject, _, _)| subject)
+            .collect()
+    }
+
+    /// [MOD-8] a recorded verdict is reused exactly while every input its
+    /// check read is unchanged: an implementation edit recomputes its own
+    /// module and the compositions that contain it, an interface edit also
+    /// recomputes its dependents, an edit outside a composition recomputes
+    /// nothing in it, and every cached run reports what a cold run does,
+    /// including after an interface edit that breaks a client.
+    #[test]
+    fn a_recorded_verdict_is_reused_exactly_while_its_inputs_are_unchanged() {
+        let directory = CacheDirectory::new("reuse");
+        let cache = directory.open();
+        let records = |base_interface: &'static [u8],
+                       base_body: &'static [u8],
+                       tool_body: &'static [u8]|
+         -> Vec<(&'static str, &'static [u8])> {
+            vec![
+                ("base/module.wfm", base_interface),
+                ("base/half.wf", base_body),
+                ("user/module.wfm", USER_INTERFACE),
+                ("user/use.wf", USER_BODY),
+                ("tool/module.wfm", TOOL_INTERFACE),
+                ("tool/spare.wf", tool_body),
+                ("module.wfm", ROOT_INTERFACE),
+                ("main.wf", ROOT_BODY),
+            ]
+        };
+        let all = ["pkg::base", "pkg::user", "pkg::tool", "pkg", "app"]
+            .map(str::to_owned)
+            .to_vec();
+        let original = records(BASE_INTERFACE, BASE_BODY, TOOL_BODY);
+        assert_eq!(recomputed(PROGRAM_GRAPH, &original, &cache), all);
+        assert_eq!(
+            recomputed(PROGRAM_GRAPH, &original, &cache),
+            Vec::<String>::new()
+        );
+        // A body edit that keeps the interface: only its module and the
+        // compositions containing it.
+        let body = b"fn half(value: u8) -> result: u8 pure contract {\n  requires value > 1_u8;\n} {\n  let result = value / 4_u8;\n  return result;\n}\n";
+        assert_eq!(
+            recomputed(
+                PROGRAM_GRAPH,
+                &records(BASE_INTERFACE, body, TOOL_BODY),
+                &cache
+            ),
+            ["pkg::base", "app"].map(str::to_owned).to_vec()
+        );
+        // The tool is no part of the entry's composition.
+        let tool = b"fn spare() -> result: u8 pure {\n  return 2_u8;\n}\n";
+        assert_eq!(
+            recomputed(
+                PROGRAM_GRAPH,
+                &records(BASE_INTERFACE, BASE_BODY, tool),
+                &cache
+            ),
+            ["pkg::tool"].map(str::to_owned).to_vec()
+        );
+        // An interface edit that its client's call no longer satisfies: the
+        // implementation fails correspondence, the client fails its call,
+        // and the cached report equals the cold one.
+        let interface = b"public fn half(value: u8) -> result: u8 pure contract {\n  requires value > 9_u8;\n} doc \"Halves a value above nine.\";\n";
+        let edited = records(interface, BASE_BODY, TOOL_BODY);
+        assert_eq!(
+            recomputed(PROGRAM_GRAPH, &edited, &cache),
+            ["pkg::base", "pkg::user", "pkg", "app"]
+                .map(str::to_owned)
+                .to_vec()
+        );
+        let rules = verdicts(PROGRAM_GRAPH, &edited, Some(&cache))
+            .into_iter()
+            .map(|(subject, outcome, _)| {
+                let rule = match outcome {
+                    super::CheckOutcome::Rejected { rule, .. } => rule,
+                    super::CheckOutcome::Accepted { .. } => None,
+                };
+                (subject, rule)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            rules,
+            vec![
+                ("pkg::base".to_owned(), Some("MOD-7".to_owned())),
+                ("pkg::user".to_owned(), Some("FN-8".to_owned())),
+                ("pkg::tool".to_owned(), None),
+                ("pkg".to_owned(), None),
+                ("app".to_owned(), Some("MOD-7".to_owned())),
+            ]
+        );
+        // Reverting restores every earlier record without recomputing.
+        assert_eq!(
+            recomputed(PROGRAM_GRAPH, &original, &cache),
+            Vec::<String>::new()
+        );
+    }
+
+    /// [MOD-1, MOD-5] deleting a dependency edge changes the graph facts the
+    /// client's check read, so its recorded verdict is not reused and the
+    /// recomputed one refuses the now unpermitted reference.
+    #[test]
+    fn deleting_a_graph_edge_recomputes_the_modules_that_read_it() {
+        let directory = CacheDirectory::new("edge");
+        let cache = directory.open();
+        let records: Vec<(&str, &[u8])> = vec![
+            ("base/module.wfm", BASE_INTERFACE),
+            ("base/half.wf", BASE_BODY),
+            ("user/module.wfm", USER_INTERFACE),
+            ("user/use.wf", USER_BODY),
+            ("tool/module.wfm", TOOL_INTERFACE),
+            ("tool/spare.wf", TOOL_BODY),
+            ("module.wfm", ROOT_INTERFACE),
+            ("main.wf", ROOT_BODY),
+        ];
+        let _ = recomputed(PROGRAM_GRAPH, &records, &cache);
+        let without_edge: &[u8] =
+            b"pkg::base: [];\npkg::user: [];\npkg::tool: [];\npkg: [pkg::base, pkg::user];\n\nentry app = pkg::main;\n";
+        assert_eq!(
+            recomputed(without_edge, &records, &cache),
+            ["pkg::user", "pkg", "app"].map(str::to_owned).to_vec()
+        );
+        let user = verdicts(without_edge, &records, Some(&cache))
+            .into_iter()
+            .find(|(subject, _, _)| subject == "pkg::user")
+            .expect("the user module's verdict");
+        assert!(
+            matches!(&user.1, super::CheckOutcome::Rejected { rule: Some(rule), .. } if rule == "MOD-5"),
+            "{user:?}"
+        );
+        // A graph edit that changes no fact a check reads, such as the
+        // entry list, recomputes no module verdict.
+        let reworded: &[u8] =
+            b"pkg::base: [];\npkg::user: [pkg::base];\npkg::tool: [];\npkg: [pkg::base, pkg::user];\n\nentry app = pkg::main;\n\nentry spare = pkg::tool::spare;\n";
+        assert_eq!(
+            recomputed(reworded, &records, &cache),
+            ["spare"].map(str::to_owned).to_vec()
+        );
+    }
+
+    /// [MOD-9] an entry build is reused for an unchanged composition and
+    /// emits the same module a build without a cache emits; an edit outside
+    /// its composition does not rebuild it.
+    #[test]
+    fn an_entry_build_is_reused_for_an_unchanged_composition() {
+        let directory = CacheDirectory::new("build");
+        let cache = directory.open();
+        let graph = crate::form_module_graph(
+            SourceInput::new("modules.wfg", PROGRAM_GRAPH),
+            CompilerLimits::default(),
+        )
+        .expect("the graph forms");
+        let build = |tool_body: &'static [u8]| {
+            let records: Vec<(&str, &[u8])> = vec![
+                ("base/module.wfm", BASE_INTERFACE),
+                ("base/half.wf", BASE_BODY),
+                ("user/module.wfm", USER_INTERFACE),
+                ("user/use.wf", USER_BODY),
+                ("tool/module.wfm", TOOL_INTERFACE),
+                ("tool/spare.wf", tool_body),
+                ("module.wfm", ROOT_INTERFACE),
+                ("main.wf", ROOT_BODY),
+            ];
+            let inputs = module_inputs(&graph, &records);
+            let cached = super::build_module_entry(
+                &graph,
+                &inputs,
+                super::ModuleEntry::Named("app"),
+                CompilerLimits::default(),
+                OverlapLowering::Off,
+                Some(&cache),
+            )
+            .expect("the entry builds");
+            let cold = super::compile_module_program(
+                &graph,
+                &inputs,
+                super::ModuleEntry::Named("app"),
+                CompilerLimits::default(),
+                OverlapLowering::Off,
+            )
+            .expect("the entry builds");
+            assert_eq!(cached.0, cold);
+            cached.1
+        };
+        assert!(!build(TOOL_BODY));
+        assert!(build(TOOL_BODY));
+        assert!(build(
+            b"fn spare() -> result: u8 pure {\n  return 3_u8;\n}\n"
+        ));
     }
 
     /// [FN-2, MOD-8] a rejection raised while checking a concrete instance

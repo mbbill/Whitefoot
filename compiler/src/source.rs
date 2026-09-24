@@ -270,6 +270,21 @@ impl<'input> SourceInput<'input> {
         self.role
     }
 
+    /// The program's own name for this input, the key that orders a bundle.
+    pub(crate) const fn logical_path(&self) -> &'input str {
+        self.logical_path
+    }
+
+    /// The name diagnostics print for this input.
+    pub(crate) const fn display_path(&self) -> &'input str {
+        self.display_path
+    }
+
+    /// The exact source bytes.
+    pub(crate) const fn bytes(&self) -> &'input [u8] {
+        self.bytes
+    }
+
     /// Places this input in one module of a module program with its role
     /// [MOD-2]. An input made by [`SourceInput::new`] or
     /// [`SourceInput::from_host_path`] is an implementation record of a source

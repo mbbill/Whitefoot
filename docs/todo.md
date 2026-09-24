@@ -15,15 +15,28 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   and [complete specimen](../research/investigations/modular-compilation/demo/README.md).
   Specification v0.70 and the compiler now implement the module grammar, graph
   formation and record discovery, module inventories with forward visibility,
-  file aliases, qualified references with edge and access checks, publication
-  and its public-signature closure, interface/definition correspondence,
-  pending declarations, type-owned variants, module-relative `readonly`,
-  named and unnamed entries with the per-entry no-heap closure, and module
-  program conformance cases (`whitefootc --graph`). Remaining: field access
-  across modules in code and annotations, CALL-4 result projections,
-  per-module summary publication over conservative components, the module
-  check against dependency interfaces alone, qualified groups in `gparam` and
-  `binding_decl` (an alias works today), and slices 3, 5 and 6.
+  file aliases, qualified references with edge and access checks in code and
+  annotations (fields, constructions, destructuring, arms, contracts and
+  effect rows), publication with its public-signature closure over
+  declarations and fields, interface/definition correspondence, pending
+  declarations, type-owned variants, module-relative `readonly`, CALL-4
+  result projections through struct fields and `Box` contents, per-module
+  summary publication over conservative components, module checks against
+  dependency interfaces alone and interface-only checks, named and unnamed
+  entries whose composition is the entry module's dependency closure, the
+  per-entry no-heap closure over calls and layout with component attribution
+  and closure-only output (a heap-free entry's executable names no
+  allocator), instance failures that name the requesting call, and a
+  content-addressed build cache (`whitefootc --cache DIR`) reusing module and
+  composition verdicts, entry modules, runtime objects and program objects,
+  with `--check-modules --report` as the impact report. Remaining:
+  declaration- and component-granular queries and proof fragments with
+  remapping (today an edit rechecks every body of the module it touches and
+  of each composition containing it), stable instance symbols, optimized LLVM
+  fragments with stock ThinLTO planning and its object cache (slice 5), the
+  cost and quality measurements (slice 6), qualified groups in `gparam` and
+  `binding_decl` (an alias works today), and the GrowVector
+  wrapper/function-kind witness.
   Follow the design's ordered implementation slices and discriminating
   acceptance matrix: graph/alias/visibility and correspondence; complete
   representations, module-relative readonly and imported capability/release;
