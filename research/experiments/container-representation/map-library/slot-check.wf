@@ -16,18 +16,18 @@ struct SlotOwnerLedger {
   visits: u64;
 }
 
-fn slot_owned_make(id: own u64, serial: own u64) -> result: own SlotOwnedNode pure {
+fn slot_owned_make(id: u64, serial: u64) -> result: SlotOwnedNode pure {
   let record = SlotOwnedRecord(id: id, serial: serial);
   let child = box_new::<SlotOwnedRecord>(value: record);
   return SlotOwnedNode(child: move child);
 }
 
-fn slot_owned_fail(ledger: &SlotOwnerLedger) -> result: own unit writes(ledger) {
+fn slot_owned_fail(ledger: &SlotOwnerLedger) -> result: unit writes(ledger) {
   set deref(ledger).failures = deref(ledger).failures +wrap 1_u64;
   return unit;
 }
 
-fn slot_owned_release(value: own SlotOwnedNode, ledger: &SlotOwnerLedger) -> result: own unit writes(ledger) {
+fn slot_owned_release(value: SlotOwnedNode, ledger: &SlotOwnerLedger) -> result: unit writes(ledger) {
   let SlotOwnedNode(child: owned_child) = move value;
   let serial = owned_child.inner.serial;
   if serial < deref(ledger).releases.len {
@@ -38,21 +38,21 @@ fn slot_owned_release(value: own SlotOwnedNode, ledger: &SlotOwnerLedger) -> res
   return unit;
 }
 
-fn slot_owned_consume(env: &SlotOwnerLedger, key: own SlotOwnedNode, value: own SlotOwnedNode) -> result: own unit writes(env) {
+fn slot_owned_consume(env: &SlotOwnerLedger, key: SlotOwnedNode, value: SlotOwnedNode) -> result: unit writes(env) {
   slot_owned_release(value: move key, ledger: env);
   slot_owned_release(value: move value, ledger: env);
   return unit;
 }
 
-fn slot_owned_hash(env: &SlotOwnerEnv, key: &SlotOwnedNode) -> result: own u64 reads(key) {
+fn slot_owned_hash(env: &SlotOwnerEnv, key: &SlotOwnedNode) -> result: u64 reads(key) {
   return deref(key).child.inner.id % 1_u64;
 }
 
-fn slot_owned_equal(env: &SlotOwnerEnv, left: &SlotOwnedNode, right: &SlotOwnedNode) -> result: own Bool reads(left), reads(right) {
+fn slot_owned_equal(env: &SlotOwnerEnv, left: &SlotOwnedNode, right: &SlotOwnedNode) -> result: Bool reads(left), reads(right) {
   return deref(left).child.inner.id == deref(right).child.inner.id;
 }
 
-fn slot_owned_read(env: &SlotOwnerLedger, key: &SlotOwnedNode, value: &SlotOwnedNode) -> result: own u64 reads(key), reads(value), writes(env) {
+fn slot_owned_read(env: &SlotOwnerLedger, key: &SlotOwnedNode, value: &SlotOwnedNode) -> result: u64 reads(key), reads(value), writes(env) {
   if deref(key).child.inner.serial != 4_u64 {
     slot_owned_fail(ledger: env);
   }
@@ -63,7 +63,7 @@ fn slot_owned_read(env: &SlotOwnerLedger, key: &SlotOwnedNode, value: &SlotOwned
   return deref(value).child.inner.id;
 }
 
-fn slot_owned_increment(env: &SlotOwnerLedger, key: &SlotOwnedNode, value: &SlotOwnedNode) -> result: own u64 reads(key), writes(env), writes(value) {
+fn slot_owned_increment(env: &SlotOwnerLedger, key: &SlotOwnedNode, value: &SlotOwnedNode) -> result: u64 reads(key), writes(env), writes(value) {
   if deref(key).child.inner.serial != 4_u64 {
     slot_owned_fail(ledger: env);
   }
@@ -84,7 +84,7 @@ binding SlotOwnedConsume : SlotConsume<SlotOwnedNode, SlotOwnedNode, SlotOwnerLe
   consume = slot_owned_consume;
 }
 
-fn slot_owned_check_pair(pair: &SlotPair<SlotOwnedNode, SlotOwnedNode>, key: own u64, value: own u64, ledger: &SlotOwnerLedger) -> result: own unit reads(pair), writes(ledger) {
+fn slot_owned_check_pair(pair: &SlotPair<SlotOwnedNode, SlotOwnedNode>, key: u64, value: u64, ledger: &SlotOwnerLedger) -> result: unit reads(pair), writes(ledger) {
   if deref(pair).key.child.inner.id != key {
     slot_owned_fail(ledger: ledger);
   }
@@ -94,7 +94,7 @@ fn slot_owned_check_pair(pair: &SlotPair<SlotOwnedNode, SlotOwnedNode>, key: own
   return unit;
 }
 
-fn slot_owned_outcome(outcome: own SlotPut<SlotOwnedNode, SlotOwnedNode>, expected: own u64, key: own u64, value: own u64, ledger: &SlotOwnerLedger) -> result: own unit writes(ledger) {
+fn slot_owned_outcome(outcome: SlotPut<SlotOwnedNode, SlotOwnedNode>, expected: u64, key: u64, value: u64, ledger: &SlotOwnerLedger) -> result: unit writes(ledger) {
   match outcome {
     SlotInserted() => {
       if expected != 0_u64 {
@@ -125,7 +125,7 @@ fn slot_owned_outcome(outcome: own SlotPut<SlotOwnedNode, SlotOwnedNode>, expect
   return unit;
 }
 
-fn slot_owned_admission() -> status: own u64 pure {
+fn slot_owned_admission() -> status: u64 pure {
   doc "Temporary prefix adaptation of the existing own-child ledger; no new allocation oracle or benchmark harness.";
   let releases = array_filled::<u64, 32>(value: 0_u64);
   let ledger = SlotOwnerLedger(releases: releases, failures: 0_u64, visits: 0_u64);
@@ -233,16 +233,16 @@ struct SlotScalarSeen {
   observed: u64;
 }
 
-fn slot_scalar_fail(seen: &SlotScalarSeen) -> result: own unit writes(seen) {
+fn slot_scalar_fail(seen: &SlotScalarSeen) -> result: unit writes(seen) {
   set deref(seen).failures = deref(seen).failures +wrap 1_u64;
   return unit;
 }
 
-fn slot_scalar_hash(env: &SlotScalarEnv, key: &u64) -> result: own u64 reads(key) {
+fn slot_scalar_hash(env: &SlotScalarEnv, key: &u64) -> result: u64 reads(key) {
   return deref(key);
 }
 
-fn slot_scalar_equal(env: &SlotScalarEnv, left: &u64, right: &u64) -> result: own Bool reads(left), reads(right) {
+fn slot_scalar_equal(env: &SlotScalarEnv, left: &u64, right: &u64) -> result: Bool reads(left), reads(right) {
   return deref(left) == deref(right);
 }
 
@@ -251,7 +251,7 @@ binding SlotScalarKey : SlotKey<u64, SlotScalarEnv> {
   equal = slot_scalar_equal;
 }
 
-fn slot_scalar_consume(env: &SlotScalarSeen, key: own u64, value: own u64) -> result: own unit writes(env) {
+fn slot_scalar_consume(env: &SlotScalarSeen, key: u64, value: u64) -> result: unit writes(env) {
   set deref(env).consumed = deref(env).consumed +wrap 1_u64;
   set deref(env).key_sum = deref(env).key_sum +wrap key;
   set deref(env).value_sum = deref(env).value_sum +wrap value;
@@ -262,22 +262,22 @@ binding SlotScalarConsume : SlotConsume<u64, u64, SlotScalarSeen> {
   consume = slot_scalar_consume;
 }
 
-fn slot_scalar_observe(env: &SlotScalarSeen, key: &u64, value: &u64) -> result: own u64 reads(value) {
+fn slot_scalar_observe(env: &SlotScalarSeen, key: &u64, value: &u64) -> result: u64 reads(value) {
   return deref(value);
 }
 
-fn slot_scalar_edit(env: &SlotScalarSeen, key: &u64, value: &u64) -> result: own u64 writes(value) {
+fn slot_scalar_edit(env: &SlotScalarSeen, key: &u64, value: &u64) -> result: u64 writes(value) {
   set deref(value) = deref(value) +wrap 1_u64;
   return deref(value);
 }
 
-fn slot_scalar_visit(env: &SlotScalarSeen, key: &u64, value: &u64) -> result: own unit reads(value), writes(env) {
+fn slot_scalar_visit(env: &SlotScalarSeen, key: &u64, value: &u64) -> result: unit reads(value), writes(env) {
   set deref(env).visits = deref(env).visits +wrap 1_u64;
   set deref(env).observed = deref(env).observed +wrap deref(value);
   return unit;
 }
 
-fn slot_scalar_outcome(outcome: own SlotPut<u64, u64>, expected: own u64, key: own u64, value: own u64, seen: &SlotScalarSeen) -> result: own unit writes(seen) {
+fn slot_scalar_outcome(outcome: SlotPut<u64, u64>, expected: u64, key: u64, value: u64, seen: &SlotScalarSeen) -> result: unit writes(seen) {
   match outcome {
     SlotInserted() => {
       if expected != 0_u64 {
@@ -312,7 +312,7 @@ fn slot_scalar_outcome(outcome: own SlotPut<u64, u64>, expected: own u64, key: o
   return unit;
 }
 
-fn slot_scalar_expect(found: own Result<u64, unit>, value: own u64, seen: &SlotScalarSeen) -> result: own unit writes(seen) {
+fn slot_scalar_expect(found: Result<u64, unit>, value: u64, seen: &SlotScalarSeen) -> result: unit writes(seen) {
   match found {
     Ok(value: observed) => {
       if observed != value {
@@ -326,7 +326,7 @@ fn slot_scalar_expect(found: own Result<u64, unit>, value: own u64, seen: &SlotS
   return unit;
 }
 
-fn slot_scalar_admission() -> failures: own u64 pure {
+fn slot_scalar_admission() -> failures: u64 pure {
   let seen = SlotScalarSeen(failures: 0_u64, consumed: 0_u64, key_sum: 0_u64, value_sum: 0_u64, visits: 0_u64, observed: 0_u64);
   let env = SlotScalarEnv();
   let map = slot_map_new::<u64, u64, 4>(capacity: 0_u64);
@@ -422,7 +422,7 @@ fn slot_scalar_admission() -> failures: own u64 pure {
   return seen.failures;
 }
 
-fn main() -> status: own ExitStatus pure {
+fn main() -> status: ExitStatus pure {
   let owned = slot_owned_admission();
   let scalar = slot_scalar_admission();
   if owned == 0_u64 {

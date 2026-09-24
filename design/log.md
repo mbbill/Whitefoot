@@ -5,6 +5,20 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-23 Adopt the measured priority queue and ordered-map baselines
+
+Nodes: language/data-model/priority-queue-storage, language/data-model/ordered-map-storage
+
+Owner-approved: The owner explicitly accepted the recommendations for PRs #102, #103 and #104, including the exact priority-queue and ordered-map amendments.
+
+Summary: Apply the three priority-queue decisions and the ordered-map decision with its rejected alternatives unchanged. Retain the owning boxed heap, distinct ordered draining and physical cleanup, and shared plain/indexed sift core under the recorded maintenance and measurement qualifications. Retain bundled boxed B-tree nodes as the reusable measured ordered-map baseline, with both exact insertion candidates rejected and no default-tree or native-parity claim. The [priority comparison](../research/experiments/container-representation/priority-library/RESULTS.md), [indexed comparison](../research/experiments/container-representation/indexed-library/RESULTS.md#measured-result) and [ordered comparison](../research/experiments/container-representation/ordered-library/RESULTS.md) supply the grounds. Remove the two accepted amendments and correct only relative evidence links for their live-node locations. No specification rule changes; this ruling does not authorize a merge.
+
+## 2026-09-23 Decline inactive-payload destination initialization
+
+Nodes: compiler/storage-representation
+
+Summary: The owner accepted the recommendation to reject PR #101's inactive-payload initialization amendment. Its [retained same-source comparison](https://github.com/mbbill/Whitefoot/blob/055ec61d12b781712de1ee3bce73e35e29bb9d70/research/experiments/container-representation/map-library/RESULTS.md#completed-comparison-gains-with-unresolved-regressions) fails the prospective selection criterion: wide-map rebuild gains accompany repeated normal wide replacement and retained scalar Slab lookup regressions. Retain the experimental evidence and the existing compiler storage-representation decisions; do not adopt the proposed omission of inactive-payload clearing. This refusal selects the existing lowering without changing source-language rules.
+
 ## 2026-09-23 Adopt uniform exact numeric conversions
 
 Nodes: language/numeric-conversion, compiler/numeric-conversion-lowering

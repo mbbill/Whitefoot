@@ -6,7 +6,7 @@
    return unit;
 +}
 +
-+fn sparse_map_is_available<K, V>(slot: &SparseSlot<K, V>) -> result: own Bool reads(slot) {
++fn sparse_map_is_available<K, V>(slot: &SparseSlot<K, V>) -> result: Bool reads(slot) {
 +  match deref(slot) {
 +    SparseVacant() => {
 +      return True();
@@ -20,7 +20,7 @@
 +  }
  }
 
- fn sparse_map_rebuild<interface SparseKey<K, E>, V, const ceiling: u64>(map: &SparseMap<K, V, ceiling>, capacity: own u64, env: &E) -> result: own Result<unit, unit> reads(env), writes(map) contract {
+ fn sparse_map_rebuild<interface SparseKey<K, E>, V, const ceiling: u64>(map: &SparseMap<K, V, ceiling>, capacity: u64, env: &E) -> result: Result<unit, unit> reads(env), writes(map) contract {
    requires ceiling <= 2305843009213693951_u64;
 -  ensures deref(map).cells.inner.len >= deref(entry(map)).cells.inner.len;
  } {
@@ -104,7 +104,7 @@
 +  return Ok<unit, unit>(value: unit);
  }
 
- fn sparse_map_reserve<interface SparseKey<K, E>, V, const ceiling: u64>(map: &SparseMap<K, V, ceiling>, capacity: own u64, env: &E) -> result: own Result<unit, unit> reads(env), writes(map) contract {
+ fn sparse_map_reserve<interface SparseKey<K, E>, V, const ceiling: u64>(map: &SparseMap<K, V, ceiling>, capacity: u64, env: &E) -> result: Result<unit, unit> reads(env), writes(map) contract {
    requires ceiling <= 2305843009213693951_u64;
 -  ensures deref(map).cells.inner.len >= deref(entry(map)).cells.inner.len;
  } {
@@ -112,7 +112,7 @@
      return Err<unit, unit>(error: unit);
 @@ -443,7 +494,6 @@
 
- fn sparse_map_rehash<interface SparseKey<K, E>, V, const ceiling: u64>(map: &SparseMap<K, V, ceiling>, env: &E) -> result: own Result<unit, unit> reads(env), writes(map) contract {
+ fn sparse_map_rehash<interface SparseKey<K, E>, V, const ceiling: u64>(map: &SparseMap<K, V, ceiling>, env: &E) -> result: Result<unit, unit> reads(env), writes(map) contract {
    requires ceiling <= 2305843009213693951_u64;
 -  ensures deref(map).cells.inner.len >= deref(entry(map)).cells.inner.len;
  } {

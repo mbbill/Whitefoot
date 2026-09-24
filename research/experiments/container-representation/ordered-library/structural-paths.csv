@@ -1,0 +1,12 @@
+path,count
+borrow-left-leaf,23
+borrow-left-internal,1
+borrow-right-leaf,9
+borrow-right-internal,1
+merge-leaf,17
+merge-internal,1
+predecessor,0
+successor,19
+root-contraction,2
+root-split,2
+nonroot-split,16

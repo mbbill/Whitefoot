@@ -482,6 +482,105 @@ fn main() -> status: ExitStatus pure {
     assert_accepts(concrete_replays);
 }
 
+/// A factory can receive a nominal that still contains its caller's opaque
+/// parameter. Its nominal identity does not make the allocation layout known.
+#[test]
+fn transitive_nominal_allocation_layouts_remain_symbolic_until_replay() {
+    let source = r#"struct Slab<T> {
+  cells: Box<Slots<T>>;
+}
+
+struct Envelope<T> {
+  payload: T;
+}
+
+fn slab_new<T>() -> result: Slab<T> pure {
+  let cells = box_slots_new::<T>(capacity: 0_u64);
+  return Slab<T>(cells: move cells);
+}
+
+fn slab_free<T, fn consume(value: T) -> result: unit pure>(slab: Slab<T>) -> result: unit pure {
+  let Slab(cells: cells) = move slab;
+  loop @cleanup {
+    if cells.inner.len == 0_u64 {
+      break @cleanup;
+    }
+    let value = take_back(window: &cells.inner);
+    consume(value: move value);
+  }
+  free_empty(window: move cells);
+  return unit;
+}
+
+fn release_envelope<T, fn consume(value: T) -> result: unit pure>(value: Envelope<T>) -> result: unit pure {
+  let Envelope(payload: owned_payload) = move value;
+  consume(value: move owned_payload);
+  return unit;
+}
+
+fn empty_store<T, fn consume(value: T) -> result: unit pure>() -> result: unit pure {
+  let store = slab_new::<Envelope<T>>();
+  slab_free::<Envelope<T>, fn release_envelope::<T, fn consume>>(slab: move store);
+  return unit;
+}
+
+fn consume_word(value: u64) -> result: unit pure {
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_accepts(source.as_bytes());
+    assert_accepts(
+        source
+            .replace(
+                "  return exit_status(code: 0_u8);",
+                "  empty_store::<u64, fn consume_word>();\n  return exit_status(code: 0_u8);",
+            )
+            .as_bytes(),
+    );
+
+    // The same transitive nominal path still owes its actual size bound
+    // once U is concrete. Envelope<u64>'s ceiling has a 16-byte stride.
+    let source = |upper| {
+        format!(
+            r#"struct Envelope<T> {{
+  payload: T;
+  tag: u8;
+}}
+
+fn allocate<T>(count: u64) -> result: unit pure contract {{
+  requires count <= {upper}_u64;
+}} {{
+  let cells = box_slots_new::<T>(capacity: count);
+  free_empty(window: move cells);
+  return unit;
+}}
+
+fn relay<U>(count: u64) -> result: unit pure contract {{
+  requires count <= {upper}_u64;
+}} {{
+  allocate::<Envelope<U>>(count: count);
+  return unit;
+}}
+
+fn main() -> status: ExitStatus pure {{
+  relay::<u64>(count: {upper}_u64);
+  return exit_status(code: 0_u8);
+}}
+"#
+        )
+    };
+    let limit = u64::MAX / 16;
+    assert_accepts(source(limit).as_bytes());
+    assert_op9_allocation_fit(
+        source(limit + 1).as_bytes(),
+        "concrete replay of a transitive nominal allocation",
+    );
+}
+
 /// [ENT-1, FN-2, OP-9] only a layout depending on an unresolved parameter may
 /// take the source-schema deferral. When a generic relay instantiates that same
 /// allocation template with a numeric type or a fixed-layout wrapper, the

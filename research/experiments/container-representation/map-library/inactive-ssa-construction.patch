@@ -1,0 +1,158 @@
+diff --git a/compiler/src/backend/emitter/operations.rs b/compiler/src/backend/emitter/operations.rs
+index 1a3c95412..61b3ee9f5 100644
+--- a/compiler/src/backend/emitter/operations.rs
++++ b/compiler/src/backend/emitter/operations.rs
+@@ -252 +252 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
+-            result,
++            &self.value_name(result),
+@@ -253,0 +254,2 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
++            "zeroinitializer",
++            None,
+@@ -299 +300,0 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
+-        let mut inserts = vec![(0_usize, None)];
+@@ -301 +302,5 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
+-        inserts.extend(
++        self.emit_insert_sequence(
++            &self.value_name(result),
++            ty,
++            "zeroinitializer",
++            Some(variant),
+@@ -305,3 +310,3 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
+-                .map(|(index, value)| (base + index, Some(*value))),
+-        );
+-        self.emit_enum_insert_sequence(result, ty, variant, inserts)
++                .map(|(index, value)| (base + index, *value))
++                .collect(),
++        )
+@@ -309,0 +315,2 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
++    /// Render already-materialized components without writing their backing
++    /// storage. Callers choose the inactive-field seed and the result name.
+@@ -312 +319 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
+-        result: IrValueId,
++        result: &str,
+@@ -313,0 +321,2 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
++        seed: &str,
++        tag: Option<u32>,
+@@ -317,8 +326,3 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
+-        if fields.is_empty() {
+-            writeln!(
+-                self.output,
+-                "  {} = select i1 true, {aggregate_ty} zeroinitializer, {aggregate_ty} zeroinitializer",
+-                self.value_name(result)
+-            )
+-            .map_err(|_| BackendFailure::TextEmission)?;
+-            return Ok(());
++        let mut inserts = Vec::with_capacity(fields.len() + usize::from(tag.is_some()));
++        if let Some(tag) = tag {
++            inserts.push((0, format!("i32 {tag}")));
+@@ -326,3 +330 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
+-        let mut base = "zeroinitializer".to_owned();
+-        let total = fields.len();
+-        for (ordinal, (index, value)) in fields.into_iter().enumerate() {
++        for (index, value) in fields {
+@@ -333,5 +335,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
+-            let output = if ordinal + 1 == total {
+-                self.value_name(result)
+-            } else {
+-                format!("%{}", self.next_temporary()?)
+-            };
++            inserts.push((
++                index,
++                format!(
++                    "{} {}",
++                    llvm_type(self.program, field_ty)?,
++                    self.value_name(value)
++                ),
++            ));
++        }
++        if inserts.is_empty() {
+@@ -340,3 +347 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
+-                "  {output} = insertvalue {aggregate_ty} {base}, {} {}, {index}",
+-                llvm_type(self.program, field_ty)?,
+-                self.value_name(value)
++                "  {result} = select i1 true, {aggregate_ty} {seed}, {aggregate_ty} {seed}"
+@@ -345 +350 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
+-            base = output;
++            return Ok(());
+@@ -347,12 +352 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
+-        Ok(())
+-    }
+-
+-    pub(super) fn emit_enum_insert_sequence(
+-        &mut self,
+-        result: IrValueId,
+-        ty: IrType,
+-        tag: u32,
+-        inserts: Vec<(usize, Option<IrValueId>)>,
+-    ) -> Result<(), BackendFailure> {
+-        let aggregate_ty = llvm_type(self.program, ty)?;
+-        let mut base = "zeroinitializer".to_owned();
++        let mut base = seed.to_owned();
+@@ -360 +354 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
+-        for (ordinal, (index, value)) in inserts.into_iter().enumerate() {
++        for (ordinal, (index, operand)) in inserts.into_iter().enumerate() {
+@@ -362 +356 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
+-                self.value_name(result)
++                result.to_owned()
+@@ -366,22 +360,5 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
+-            match value {
+-                Some(value) => {
+-                    let field_ty = self
+-                        .function
+-                        .value_type(value)
+-                        .ok_or(BackendFailure::InvalidIr)?;
+-                    writeln!(
+-                        self.output,
+-                        "  {output} = insertvalue {aggregate_ty} {base}, {} {}, {index}",
+-                        llvm_type(self.program, field_ty)?,
+-                        self.value_name(value)
+-                    )
+-                    .map_err(|_| BackendFailure::TextEmission)?;
+-                }
+-                None => {
+-                    writeln!(
+-                        self.output,
+-                        "  {output} = insertvalue {aggregate_ty} {base}, i32 {tag}, {index}"
+-                    )
+-                    .map_err(|_| BackendFailure::TextEmission)?;
+-                }
+-            }
++            writeln!(
++                self.output,
++                "  {output} = insertvalue {aggregate_ty} {base}, {operand}, {index}"
++            )
++            .map_err(|_| BackendFailure::TextEmission)?;
+diff --git a/compiler/src/backend/emitter/places.rs b/compiler/src/backend/emitter/places.rs
+index f5a58cfe6..6ef6f35b4 100644
+--- a/compiler/src/backend/emitter/places.rs
++++ b/compiler/src/backend/emitter/places.rs
+@@ -297,15 +297,14 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
+-        // Every struct field, or the enum's tag and selected payload, is
+-        // initialized below. Other variant fields hold no source value and
+-        // need no write, even when this destination reuses old storage.
+-        // Complete representation transfers may carry those inactive bytes;
+-        // source operations and cleanup observe only initialized active state.
+-        if let Some(tag) = tag {
+-            let address = self.aggregate_field_pointer(ty, &destination, 0)?;
+-            writeln!(self.output, "  store i32 {tag}, ptr {address}")
+-                .map_err(|_| BackendFailure::TextEmission)?;
+-        }
+-        for (field, value) in fields {
+-            let address = self.aggregate_field_pointer(ty, &destination, field)?;
+-            self.store_value_at(value, &address)?;
+-        }
+-        Ok(())
++        // Capture every operand before the complete store: the destination
++        // may overlap a consumed input or one of its fields. Every struct
++        // field, or the enum's tag and selected payload, replaces its seed.
++        // Inactive components hold no source value; transfers may carry them,
++        // but source operations and cleanup observe only defined active state.
++        self.materialize_operands(fields.iter().map(|(_, value)| *value))?;
++        let aggregate = format!("%{}", self.next_temporary()?);
++        self.emit_insert_sequence(&aggregate, ty, "poison", tag, fields)?;
++        writeln!(
++            self.output,
++            "  store {} {aggregate}, ptr {destination}",
++            llvm_type(self.program, ty)?,
++        )
++        .map_err(|_| BackendFailure::TextEmission)

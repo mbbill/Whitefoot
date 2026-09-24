@@ -1180,7 +1180,8 @@ static uint64_t oracle(bool wide, uint64_t count, uint64_t rounds,
 }
 
 typedef uint64_t (*Trace)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-enum { WF_VARIANT = 1, REBUILD_VARIANT = 2, ZERO_REHASH_NOOP = 4, LIBRARY_VARIANT = 8 };
+enum { WF_VARIANT = 1, REBUILD_VARIANT = 2, ZERO_REHASH_NOOP = 4,
+       LIBRARY_VARIANT = 8, INACTIVE_CONTROL_VARIANT = 16 };
 typedef struct {
     const char *name;
     bool wide, dense, planned;
@@ -1190,8 +1191,8 @@ typedef struct {
     unsigned flags;
 } Variant;
 static const Variant variants[] = {
-    {"word-sparse-direct", false, false, false, sizeof(word_sparse_Cell), 0, word_sparse_trace, word_sparse_small_policy_check, 0},
-    {"record-sparse-direct", true, false, false, sizeof(record_sparse_Cell), 0, record_sparse_trace, record_sparse_small_policy_check, 0},
+    {"word-sparse-direct", false, false, false, sizeof(word_sparse_Cell), 0, word_sparse_trace, word_sparse_small_policy_check, INACTIVE_CONTROL_VARIANT},
+    {"record-sparse-direct", true, false, false, sizeof(record_sparse_Cell), 0, record_sparse_trace, record_sparse_small_policy_check, INACTIVE_CONTROL_VARIANT},
     {"word-dense-tagged", false, true, false, sizeof(word_tagged_Entry), sizeof(TaggedIndex), word_tagged_trace, word_tagged_small_policy_check, 0},
     {"record-dense-tagged", true, true, false, sizeof(record_tagged_Entry), sizeof(TaggedIndex), record_tagged_trace, record_tagged_small_policy_check, 0},
     {"word-dense-compact", false, true, false, sizeof(word_compact_Entry), sizeof(uint64_t), word_compact_trace, word_compact_small_policy_check, 0},
@@ -1212,8 +1213,8 @@ static const Variant variants[] = {
     {"record-slot-direct", true, false, false, sizeof(record_single_Cell), 0, record_single_trace, NULL, REBUILD_VARIANT | ZERO_REHASH_NOOP},
     {"word-slot-matched", false, false, false, sizeof(word_slot_Cell), 0, word_slot_trace, NULL, REBUILD_VARIANT | ZERO_REHASH_NOOP},
     {"record-slot-matched", true, false, false, sizeof(record_slot_Cell), 0, record_slot_trace, NULL, REBUILD_VARIANT | ZERO_REHASH_NOOP},
-    {"word-staged-matched", false, false, false, sizeof(word_staged_Cell), 0, word_staged_trace, NULL, REBUILD_VARIANT | ZERO_REHASH_NOOP},
-    {"record-staged-matched", true, false, false, sizeof(record_staged_Cell), 0, record_staged_trace, NULL, REBUILD_VARIANT | ZERO_REHASH_NOOP},
+    {"word-staged-matched", false, false, false, sizeof(word_staged_Cell), 0, word_staged_trace, NULL, REBUILD_VARIANT | ZERO_REHASH_NOOP | INACTIVE_CONTROL_VARIANT},
+    {"record-staged-matched", true, false, false, sizeof(record_staged_Cell), 0, record_staged_trace, NULL, REBUILD_VARIANT | ZERO_REHASH_NOOP | INACTIVE_CONTROL_VARIANT},
 #if defined(WITH_WF)
     {"word-wf-slot", false, false, false, sizeof(word_slot_Cell), 0, wf_map_cost_slot_word_trace, NULL, WF_VARIANT | REBUILD_VARIANT | ZERO_REHASH_NOOP},
     {"record-wf-slot", true, false, false, sizeof(record_slot_Cell), 0, wf_map_cost_slot_record_trace, NULL, WF_VARIANT | REBUILD_VARIANT | ZERO_REHASH_NOOP},
@@ -1313,12 +1314,29 @@ static uint64_t nanoseconds(void) {
 #endif
 }
 
+static uint64_t clock_quantum(void) {
+    uint64_t quantum = UINT64_MAX, previous = nanoseconds();
+    for (unsigned probe = 0; probe < 10000; ++probe) {
+        uint64_t current = nanoseconds();
+        require(current >= previous, "monotonic clock order");
+        uint64_t delta = current - previous;
+        if (delta != 0 && delta < quantum) quantum = delta;
+        previous = current;
+    }
+    require(quantum != UINT64_MAX, "positive clock delta within 10000 probes");
+    return quantum;
+}
+
 /* Timings are complete, independently checked traces. Growth is one real
  * reserve; rehash includes deletion, verification and reinsertion. No setup
  * baseline is subtracted to invent an isolated operation latency. */
-enum { PRIMARY_SET, BOUNDARY_SET, EDIT_SET, REBUILD_SET, LIBRARY_SET };
+enum { PRIMARY_SET, BOUNDARY_SET, EDIT_SET, REBUILD_SET, LIBRARY_SET, INACTIVE_SET };
 static bool selected_cohort(unsigned set, bool wide, uint64_t capacity,
                             unsigned occupancy, bool collide, unsigned path) {
+    if (set == INACTIVE_SET)
+        return occupancy == 1 && !collide
+            && ((capacity == 4096 && (path == GROW || path == REHASH || path == SETUP))
+                || (capacity == 64 && (path == REPLACE || path == CHURN || path == HIT || path == EDIT)));
     if (set == LIBRARY_SET)
         return occupancy == 1 && !collide
             && ((capacity == 4096 && (path == GROW || path == REHASH))
@@ -1341,6 +1359,9 @@ static bool selected_cohort(unsigned set, bool wide, uint64_t capacity,
 }
 
 static bool selected_variant(unsigned set, unsigned path, const Variant *variant) {
+    if (set == INACTIVE_SET)
+        return (variant->flags & (LIBRARY_VARIANT | INACTIVE_CONTROL_VARIANT))
+            && (!(variant->flags & REBUILD_VARIANT) || path == GROW || path == REHASH);
     if (variant->flags & LIBRARY_VARIANT) return set == LIBRARY_SET;
     if (set == LIBRARY_SET)
         return !(variant->flags & REBUILD_VARIANT) || path == GROW || path == REHASH;
@@ -1405,11 +1426,16 @@ static void measure(unsigned cohort, unsigned set, const char *source_shape) {
 #endif
 
 int main(int argc, char **argv) {
-    require(argc >= 2, "usage: map-costs check | measure 0|1 primary|boundary|edit|rebuild|library original|compact");
+    require(argc >= 2, "usage: map-costs check | clock-quantum | measure 0|1 primary|boundary|edit|rebuild|library|inactive original|compact");
     if (strcmp(argv[1], "check") == 0) {
         require(argc == 2, "check takes no arguments"); check();
     }
 #if defined(WITH_WF)
+    else if (strcmp(argv[1], "clock-quantum") == 0) {
+        require(argc == 2, "clock-quantum takes no arguments");
+        printf("map costs: %s minimum positive monotonic delta over 10000 probes: %" PRIu64 " ns\n",
+               CONTRACT, clock_quantum());
+    }
     else if (strcmp(argv[1], "measure") == 0) {
         require(argc == 5 && (strcmp(argv[2], "0") == 0 || strcmp(argv[2], "1") == 0),
                 "measure requires cohort 0 or 1, a named set and source shape");
@@ -1418,11 +1444,14 @@ int main(int argc, char **argv) {
         else if (strcmp(argv[3], "edit") == 0) set = EDIT_SET;
         else if (strcmp(argv[3], "rebuild") == 0) set = REBUILD_SET;
         else if (strcmp(argv[3], "library") == 0) set = LIBRARY_SET;
+        else if (strcmp(argv[3], "inactive") == 0) set = INACTIVE_SET;
         else require(strcmp(argv[3], "primary") == 0, "unknown measurement set");
         require(strcmp(argv[4], "original") == 0 || strcmp(argv[4], "compact") == 0,
                 "unknown source shape");
         require(set != LIBRARY_SET || strcmp(argv[4], "original") == 0,
                 "library set uses the original comparison sources");
+        require(set != INACTIVE_SET || strcmp(argv[4], "original") == 0,
+                "inactive set uses the original comparison sources");
         measure((unsigned)(argv[2][0] - '0'), set, argv[4]);
     }
 #endif

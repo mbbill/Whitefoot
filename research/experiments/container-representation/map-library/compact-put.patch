@@ -36,7 +36,7 @@
 +  return DenseReturned<K, V>(kind: outcome_kind, pair: move offered);
  }
 
- fn dense_map_plan_index(indexes: &Box<Array<DenseIndex>>, hash: own u64, index: own u64) -> result: own Bool writes(indexes) contract {
+ fn dense_map_plan_index(indexes: &Box<Array<DenseIndex>>, hash: u64, index: u64) -> result: Bool writes(indexes) contract {
 @@ -282,33 +288,40 @@
      DenseInserted() => {
        return DenseInserted<K, V>();
@@ -141,7 +141,7 @@
 +  return SparseReturned<K, V>(kind: outcome_kind, pair: move offered);
  }
 
- fn sparse_map_claim(used: &Box<Array<Bool>>, hash: own u64) -> result: own Result<u64, unit> writes(used) contract {
+ fn sparse_map_claim(used: &Box<Array<Bool>>, hash: u64) -> result: Result<u64, unit> writes(used) contract {
 @@ -458,33 +464,40 @@
      SparseInserted() => {
        return SparseInserted<K, V>();

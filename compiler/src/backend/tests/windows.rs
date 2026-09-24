@@ -42,6 +42,23 @@ use crate::backend::target::{
 use super::system::with_ir;
 use super::*;
 
+/// The baseline clears the complete empty-window representation, including
+/// every descriptor word. This checks the shared row, not its callers.
+fn assert_empty_window_zeroed(module: &str, row: &str, header_fields: usize) {
+    let body = emitted_prelude_row(module, row);
+    assert!(!body.contains("poison"), "{body}");
+    assert!(!body.contains("undef"), "{body}");
+    let store = body
+        .lines()
+        .map(str::trim)
+        .find(|line| line.ends_with(" zeroinitializer, ptr %wf.result"))
+        .expect("the complete empty window is initialized in its result destination");
+    assert!(
+        store.starts_with(&format!("store {{ {}[", "i64, ".repeat(header_fields))),
+        "the zero aggregate includes every descriptor word before its slots: {body}"
+    );
+}
+
 const AFFINE_INVARIANT_BOUNDED_ALLOCATION: &[u8] =
     br#"fn allocate(n: u64, half: u64) -> result: unit pure contract {
   requires half <= 500_u64;
@@ -151,6 +168,32 @@ fn slots_addresses_use_proved_offsets_and_ring_addresses_still_wrap() {
             }
         }
     }
+}
+
+#[test]
+fn empty_fixed_windows_initialize_descriptors_before_return() {
+    let source = br#"fn main() -> status: ExitStatus pure {
+  let slots = slots_new::<Array<u64, 32>, 4>();
+  let ring = ring_new::<Array<u64, 32>, 4>();
+  if slots.len != 0_u64 {
+    return exit_status(code: 1_u8);
+  }
+  if ring.len != 0_u64 {
+    return exit_status(code: 2_u8);
+  }
+  if ring.head != 0_u64 {
+    return exit_status(code: 3_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let module = compile(source);
+    assert_empty_window_zeroed(&module, "slots_new", 1);
+    assert_empty_window_zeroed(&module, "ring_new", 2);
+    let output = compile_and_run(&module);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
 }
 
 /// A take changes the descriptor even when no element bytes exist. Ring's
@@ -297,6 +340,9 @@ fn main() -> status: ExitStatus pure {
   if ring.head != 0_u64 {
     return exit_status(code: 3_u8);
   }
+  if ring.len != 0_u64 {
+    return exit_status(code: 7_u8);
+  }
   let length = empty_length(values: &slots[0_u64..0_u64]);
   if length != 0_u64 {
     return exit_status(code: 4_u8);
@@ -362,6 +408,8 @@ fn main() -> status: ExitStatus pure {
         );
         module
     });
+    assert_empty_window_zeroed(&module, "slots_new", 1);
+    assert_empty_window_zeroed(&module, "ring_new", 2);
     let observed = super::owned_places::retain_calls(&module)
         .replace("@malloc(", "@wf_observe_window_allocate(");
     let observer = r#"
@@ -891,9 +939,9 @@ fn a_referenced_pool_tree_preserves_range_reference_and_result_abi() {
     for function in [build, checksum] {
         let header = function.lines().next().expect("helper signature");
         assert_eq!(header.matches("{ ptr, i64 }").count(), 2);
-        assert!(function.lines().any(|line| {
-            line.trim_start().starts_with("store %wf.t") && line.ends_with(", ptr %wf.result")
-        }));
+        // The result pointer still addresses the tag, u64 success payload
+        // and three-variant PoolError, each written on its selected route.
+        assert_scalar_result_fields(&llvm, function, &["i32", "i64", "i32"]);
     }
     assert!(
         build

@@ -1,0 +1,1156 @@
+interface IndexedPayload<T> {
+  fn make(serial: u64) -> value: T pure;
+  fn read(value: &T) -> serial: u64 reads(value);
+  fn consume(value: T) -> result: unit pure;
+}
+
+struct IndexedChild {
+  serial: u64;
+  check: u64;
+}
+
+nodrop struct IndexedWide {
+  child: Box<IndexedChild>;
+  a: u64;
+  b: u64;
+  c: u64;
+  d: u64;
+  e: u64;
+  f: u64;
+  g: u64;
+}
+
+fn indexed_child(serial: u64) -> value: Box<IndexedChild> pure {
+  let check = serial +wrap 101_u64;
+  let child = IndexedChild(serial: serial, check: check);
+  return box_new::<IndexedChild>(value: child);
+}
+
+fn indexed_child_read(value: &Box<IndexedChild>) -> serial: u64 reads(value) {
+  let serial = deref(value).inner.serial;
+  let expected = serial +wrap 101_u64;
+  if deref(value).inner.check != expected {
+    return 18446744073709551615_u64;
+  }
+  return serial;
+}
+
+fn indexed_child_consume(value: Box<IndexedChild>) -> result: unit pure {
+  return unit;
+}
+
+binding IndexedDropPayload : IndexedPayload<Box<IndexedChild>> {
+  make = indexed_child;
+  read = indexed_child_read;
+  consume = indexed_child_consume;
+}
+
+fn indexed_wide(serial: u64) -> value: IndexedWide pure {
+  let child = indexed_child(serial: serial);
+  let a = serial +wrap 11_u64;
+  let b = serial +wrap 22_u64;
+  let c = serial +wrap 33_u64;
+  let d = serial +wrap 44_u64;
+  let e = serial +wrap 55_u64;
+  let f = serial +wrap 66_u64;
+  let g = serial +wrap 77_u64;
+  return IndexedWide(child: move child, a: a, b: b, c: c, d: d, e: e, f: f, g: g);
+}
+
+fn indexed_wide_read(value: &IndexedWide) -> serial: u64 reads(value) {
+  let serial = indexed_child_read(value: &deref(value).child);
+  let a = serial +wrap 11_u64;
+  let b = serial +wrap 22_u64;
+  let c = serial +wrap 33_u64;
+  let d = serial +wrap 44_u64;
+  let e = serial +wrap 55_u64;
+  let f = serial +wrap 66_u64;
+  let g = serial +wrap 77_u64;
+  if deref(value).a != a {
+    return 18446744073709551615_u64;
+  }
+  if deref(value).b != b {
+    return 18446744073709551615_u64;
+  }
+  if deref(value).c != c {
+    return 18446744073709551615_u64;
+  }
+  if deref(value).d != d {
+    return 18446744073709551615_u64;
+  }
+  if deref(value).e != e {
+    return 18446744073709551615_u64;
+  }
+  if deref(value).f != f {
+    return 18446744073709551615_u64;
+  }
+  if deref(value).g != g {
+    return 18446744073709551615_u64;
+  }
+  return serial;
+}
+
+fn indexed_wide_consume(value: IndexedWide) -> result: unit pure {
+  let IndexedWide(child: child, a: a, b: b, c: c, d: d, e: e, f: f, g: g) = move value;
+  return unit;
+}
+
+binding IndexedWidePayload : IndexedPayload<IndexedWide> {
+  make = indexed_wide;
+  read = indexed_wide_read;
+  consume = indexed_wide_consume;
+}
+
+struct IndexedRow {
+  live: Bool;
+  id: u64;
+  serial: u64;
+  member: Bool;
+  scheduled: Bool;
+  deadline: u64;
+  handle: RecordHandle;
+}
+
+struct IndexedOracle {
+  rows: Array<IndexedRow, 32>;
+}
+
+struct IndexedLedger {
+  ids: Array<u64, 64>;
+  released: Array<u64, 64>;
+  sequence: Array<u64, 32>;
+  count: u64;
+  next: u64;
+  ordered: Bool;
+  failures: u64;
+}
+
+fn indexed_ledger() -> result: IndexedLedger pure {
+  let ids = array_filled::<u64, 64>(value: 0_u64);
+  let released = array_filled::<u64, 64>(value: 0_u64);
+  let sequence = array_filled::<u64, 32>(value: 0_u64);
+  let ordered = False();
+  return IndexedLedger(ids: ids, released: released, sequence: sequence, count: 0_u64, next: 0_u64, ordered: ordered, failures: 0_u64);
+}
+
+fn indexed_oracle() -> result: IndexedOracle pure {
+  let absent = False();
+  let object = SlabHandle(index: 18446744073709551615_u64, generation: 0_u64);
+  let handle = RecordHandle(store_id: 0_u64, object: object);
+  let row = IndexedRow(live: absent, id: 0_u64, serial: 0_u64, member: absent, scheduled: absent, deadline: 0_u64, handle: handle);
+  let rows = array_filled::<IndexedRow, 32>(value: row);
+  return IndexedOracle(rows: rows);
+}
+
+fn indexed_fail(ledger: &IndexedLedger) -> result: unit writes(ledger.failures) {
+  set deref(ledger).failures = deref(ledger).failures +wrap 1_u64;
+  return unit;
+}
+
+fn indexed_status(ledger: &IndexedLedger, actual: RecordStatus, expected: u64) -> result: unit writes(ledger.failures) {
+  let code = match actual {
+    RecordDone() => {
+      give 0_u64;
+    }
+    RecordAlready() => {
+      give 1_u64;
+    }
+    RecordMissing() => {
+      give 2_u64;
+    }
+    RecordExpired() => {
+      give 3_u64;
+    }
+    RecordWrongStore() => {
+      give 4_u64;
+    }
+    RecordConflict() => {
+      give 5_u64;
+    }
+    RecordFull() => {
+      give 6_u64;
+    }
+    RecordUnscheduled() => {
+      give 7_u64;
+    }
+    RecordInvalidPosition() => {
+      give 8_u64;
+    }
+    RecordBusy() => {
+      give 9_u64;
+    }
+  }
+  if code != expected {
+    indexed_fail(ledger: ledger);
+  }
+  return unit;
+}
+
+fn indexed_release<T, fn read(value: &T) -> serial: u64 reads(value), fn consume(value: T) -> result: unit pure>(env: &IndexedLedger, value: Record<T>) -> result: unit writes(env) {
+  let Record(id: id, payload: payload, id_member: old_member, position: old_position) = move value;
+  let serial = read(value: &payload);
+  if serial < 64_u64 {
+    if deref(env).ids[serial] != id {
+      indexed_fail(ledger: env);
+    }
+    set deref(env).released[serial] = deref(env).released[serial] +wrap 1_u64;
+  } else {
+    indexed_fail(ledger: env);
+  }
+  if deref(env).ordered {
+    if old_member {
+      indexed_fail(ledger: env);
+    }
+    if old_position != 8_u64 {
+      indexed_fail(ledger: env);
+    }
+    let at = deref(env).next;
+    if at < deref(env).count {
+      if at < 32_u64 {
+        if deref(env).sequence[at] != serial {
+          indexed_fail(ledger: env);
+        }
+      } else {
+        indexed_fail(ledger: env);
+      }
+    } else {
+      indexed_fail(ledger: env);
+    }
+    set deref(env).next = at +wrap 1_u64;
+  }
+  consume(value: move payload);
+  return unit;
+}
+
+fn indexed_release_payload<T, fn read(value: &T) -> serial: u64 reads(value), fn consume(value: T) -> result: unit pure>(ledger: &IndexedLedger, id: u64, payload: T) -> result: unit writes(ledger) {
+  let absent = False();
+  let record = Record<T>(id: id, payload: move payload, id_member: absent, position: 8_u64);
+  indexed_release::<T, fn read, fn consume>(env: ledger, value: move record);
+  return unit;
+}
+
+fn indexed_read<T, fn read(value: &T) -> serial: u64 reads(value)>(env: &RecordEmpty, value: &Record<T>) -> result: u64 reads(value) {
+  return read(value: &deref(value).payload);
+}
+
+fn indexed_accept<interface IndexedPayload<T>>(store: &RecordStore<T, 8, 2>, oracle: &IndexedOracle, ledger: &IndexedLedger, row: u64, id: u64, serial: u64, payload: T) -> result: unit writes(store), writes(oracle), writes(ledger) contract {
+  requires row < 32_u64;
+  requires serial < 64_u64;
+} {
+  set deref(ledger).ids[serial] = id;
+  let inserted = record_store_insert::<T, 8, 2>(store: store, id: id, payload: move payload);
+  match move inserted {
+    Ok(value: handle) => {
+      let present = True();
+      let absent = False();
+      let expected = IndexedRow(live: present, id: id, serial: serial, member: absent, scheduled: absent, deadline: 0_u64, handle: handle);
+      set deref(oracle).rows[row] = expected;
+    }
+    Err(error: returned) => {
+      indexed_fail(ledger: ledger);
+      indexed_release_payload::<T, fn IndexedPayload::read, fn IndexedPayload::consume>(ledger: ledger, id: id, payload: move returned);
+    }
+  }
+  return unit;
+}
+
+fn indexed_attach<T>(store: &RecordStore<T, 8, 2>, oracle: &IndexedOracle, ledger: &IndexedLedger, row: u64) -> result: unit writes(store), writes(oracle), writes(ledger) contract {
+  requires row < 32_u64;
+} {
+  let expected = deref(oracle).rows[row];
+  let status = record_store_attach::<T, 8, 2>(store: store, handle: expected.handle);
+  indexed_status(ledger: ledger, actual: status, expected: 0_u64);
+  for (index in 0_u64..32_u64) {
+    if deref(oracle).rows[index].id == expected.id {
+      set deref(oracle).rows[index].member = False();
+    }
+  }
+  set deref(oracle).rows[row].member = True();
+  return unit;
+}
+
+fn indexed_schedule<T>(store: &RecordStore<T, 8, 2>, oracle: &IndexedOracle, ledger: &IndexedLedger, row: u64, deadline: u64) -> result: unit writes(store), writes(oracle), writes(ledger) contract {
+  requires row < 32_u64;
+} {
+  let status = record_store_schedule::<T, 8, 2>(store: store, handle: deref(oracle).rows[row].handle, deadline: deadline);
+  indexed_status(ledger: ledger, actual: status, expected: 0_u64);
+  set deref(oracle).rows[row].scheduled = True();
+  set deref(oracle).rows[row].deadline = deadline;
+  return unit;
+}
+
+fn indexed_cancel<T>(store: &RecordStore<T, 8, 2>, oracle: &IndexedOracle, ledger: &IndexedLedger, row: u64) -> result: unit writes(store), writes(oracle), writes(ledger) contract {
+  requires row < 32_u64;
+} {
+  let status = record_store_cancel::<T, 8, 2>(store: store, handle: deref(oracle).rows[row].handle);
+  indexed_status(ledger: ledger, actual: status, expected: 0_u64);
+  set deref(oracle).rows[row].scheduled = False();
+  return unit;
+}
+
+fn indexed_detach<T>(store: &RecordStore<T, 8, 2>, oracle: &IndexedOracle, ledger: &IndexedLedger, row: u64) -> result: unit writes(store), writes(oracle), writes(ledger) contract {
+  requires row < 32_u64;
+} {
+  let expected = deref(oracle).rows[row];
+  let status = record_store_detach::<T, 8, 2>(store: store, id: expected.id, handle: expected.handle);
+  indexed_status(ledger: ledger, actual: status, expected: 0_u64);
+  set deref(oracle).rows[row].member = False();
+  return unit;
+}
+
+fn indexed_delete<interface IndexedPayload<T>>(store: &RecordStore<T, 8, 2>, oracle: &IndexedOracle, ledger: &IndexedLedger, row: u64, expected_status: u64) -> result: unit writes(store), writes(oracle), writes(ledger) contract {
+  requires row < 32_u64;
+} {
+  let removed = record_store_delete::<T, 8, 2>(store: store, handle: deref(oracle).rows[row].handle);
+  match move removed {
+    Ok(value: record) => {
+      if expected_status != 0_u64 {
+        indexed_fail(ledger: ledger);
+      }
+      let serial = IndexedPayload::read(value: &record.payload);
+      if serial != deref(oracle).rows[row].serial {
+        indexed_fail(ledger: ledger);
+      }
+      indexed_release::<T, fn IndexedPayload::read, fn IndexedPayload::consume>(env: ledger, value: move record);
+      set deref(oracle).rows[row].live = False();
+    }
+    Err(error: reason) => {
+      indexed_status(ledger: ledger, actual: reason, expected: expected_status);
+    }
+  }
+  return unit;
+}
+
+fn indexed_check<interface IndexedPayload<T>>(store: &RecordStore<T, 8, 2>, oracle: &IndexedOracle, ledger: &IndexedLedger) -> result: unit reads(store), reads(oracle), writes(ledger) {
+  doc "The dictionary model is a flat array keyed by external ID and insertion identity. It never reads the map's buckets or the heap's entries. Every live record is checked through borrowed application APIs, and each scheduled reverse position must validate against its own complete identity.";
+  let empty = RecordEmpty();
+  for (index in 0_u64..32_u64) {
+    let expected = deref(oracle).rows[index];
+    if expected.serial > 0_u64 {
+      let info = record_store_info::<T, 8, 2>(store: store, handle: expected.handle);
+      match info {
+        Ok(value: present) => {
+          if expected.live {
+            if present.id != expected.id {
+              indexed_fail(ledger: ledger);
+            }
+            if present.id_member {
+              if expected.member {
+              } else {
+                indexed_fail(ledger: ledger);
+              }
+            } else if expected.member {
+              indexed_fail(ledger: ledger);
+            }
+            let readback = record_store_visit::<T, RecordEmpty, u64, fn indexed_read::<T, fn IndexedPayload::read>, 8, 2>(store: store, handle: expected.handle, env: &empty);
+            match readback {
+              Ok(value: serial) => {
+                if serial != expected.serial {
+                  indexed_fail(ledger: ledger);
+                }
+              }
+              Err(error: reason) => {
+                indexed_fail(ledger: ledger);
+              }
+            }
+            let position = record_store_position::<T, 8, 2>(store: store, handle: expected.handle);
+            match position {
+              Ok(value: at) => {
+                if expected.scheduled {
+                } else {
+                  indexed_fail(ledger: ledger);
+                }
+              }
+              Err(error: reason) => {
+                if expected.scheduled {
+                  indexed_fail(ledger: ledger);
+                } else {
+                  indexed_status(ledger: ledger, actual: reason, expected: 7_u64);
+                }
+              }
+            }
+          } else {
+            indexed_fail(ledger: ledger);
+          }
+        }
+        Err(error: reason) => {
+          if expected.live {
+            indexed_fail(ledger: ledger);
+          } else {
+            indexed_status(ledger: ledger, actual: reason, expected: 3_u64);
+          }
+        }
+      }
+      let member = 32_u64;
+      for (other in 0_u64..32_u64) {
+        if deref(oracle).rows[other].id == expected.id {
+          if deref(oracle).rows[other].member {
+            set member = other;
+          }
+        }
+      }
+      let lookup = record_store_lookup::<T, 8, 2>(store: store, id: expected.id);
+      match lookup {
+        Ok(value: handle) => {
+          if member < 32_u64 {
+            let desired = deref(oracle).rows[member];
+            if desired.handle.object.index != handle.object.index {
+              indexed_fail(ledger: ledger);
+            }
+            if desired.handle.object.generation != handle.object.generation {
+              indexed_fail(ledger: ledger);
+            }
+            if desired.handle.store_id != handle.store_id {
+              indexed_fail(ledger: ledger);
+            }
+            if desired.live {
+            } else {
+              indexed_fail(ledger: ledger);
+            }
+          } else {
+            indexed_fail(ledger: ledger);
+          }
+        }
+        Err(error: reason) => {
+          if member < 32_u64 {
+            if deref(oracle).rows[member].live {
+              indexed_fail(ledger: ledger);
+            } else {
+              indexed_status(ledger: ledger, actual: reason, expected: 3_u64);
+            }
+          } else {
+            indexed_status(ledger: ledger, actual: reason, expected: 2_u64);
+          }
+        }
+      }
+    }
+  }
+  return unit;
+}
+
+fn indexed_before(left: IndexedRow, right: IndexedRow) -> before: Bool pure {
+  if left.deadline != right.deadline {
+    return left.deadline < right.deadline;
+  }
+  if left.id != right.id {
+    return left.id < right.id;
+  }
+  if left.handle.object.index != right.handle.object.index {
+    return left.handle.object.index < right.handle.object.index;
+  }
+  return left.handle.object.generation < right.handle.object.generation;
+}
+
+fn indexed_expire<interface IndexedPayload<T>>(store: &RecordStore<T, 8, 2>, oracle: &IndexedOracle, ledger: &IndexedLedger, now: u64) -> result: unit writes(store), writes(oracle), writes(ledger) {
+  doc "An independent insertion sort orders the flat model's due entries, including stale generations. Only live model rows enter the expected consume sequence. This oracle calls neither the shared comparator nor a heap operation.";
+  let order = array_filled::<u64, 32>(value: 0_u64);
+  for (index in 0_u64..32_u64) {
+    set order[index] = index;
+    let at = index;
+    loop @sort (
+      invariant bounded: at < 32_u64
+    ) {
+      if at == 0_u64 {
+        break @sort;
+      }
+      let previous = at - 1_u64;
+      let left = order[at];
+      let right = order[previous];
+      if left < 32_u64 {
+        if right < 32_u64 {
+          let before = indexed_before(left: deref(oracle).rows[left], right: deref(oracle).rows[right]);
+          if before {
+            set order[previous] = left;
+            set order[at] = right;
+            set at = previous;
+          } else {
+            break @sort;
+          }
+        } else {
+          indexed_fail(ledger: ledger);
+          break @sort;
+        }
+      } else {
+        indexed_fail(ledger: ledger);
+        break @sort;
+      }
+    }
+  }
+  set deref(ledger).count = 0_u64;
+  set deref(ledger).next = 0_u64;
+  for (index in 0_u64..32_u64) {
+    let row = order[index];
+    if row < 32_u64 {
+      let expected = deref(oracle).rows[row];
+      if expected.scheduled {
+        if expected.deadline <= now {
+          set deref(oracle).rows[row].scheduled = False();
+          set deref(oracle).rows[row].member = False();
+          if expected.live {
+            let at = deref(ledger).count;
+            if at < 32_u64 {
+              set deref(ledger).sequence[at] = expected.serial;
+              set deref(ledger).count = at + 1_u64;
+            } else {
+              indexed_fail(ledger: ledger);
+            }
+            set deref(oracle).rows[row].live = False();
+          }
+        }
+      }
+    } else {
+      indexed_fail(ledger: ledger);
+    }
+  }
+  set deref(ledger).ordered = True();
+  let count = record_store_expire::<T, IndexedLedger, fn indexed_release::<T, fn IndexedPayload::read, fn IndexedPayload::consume>, 8, 2>(store: store, now: now, env: ledger);
+  if count != deref(ledger).count {
+    indexed_fail(ledger: ledger);
+  }
+  if deref(ledger).next != deref(ledger).count {
+    indexed_fail(ledger: ledger);
+  }
+  set deref(ledger).ordered = False();
+  indexed_check::<IndexedPayload<T>>(store: store, oracle: oracle, ledger: ledger);
+  return unit;
+}
+
+fn indexed_cancel_position<interface IndexedPayload<T>>(store: &RecordStore<T, 8, 2>, oracle: &IndexedOracle, ledger: &IndexedLedger, position: u64) -> result: unit writes(store), writes(oracle), writes(ledger) {
+  let selected = 32_u64;
+  for (index in 0_u64..32_u64) {
+    if deref(oracle).rows[index].live {
+      let found = record_store_info::<T, 8, 2>(store: store, handle: deref(oracle).rows[index].handle);
+      match found {
+        Ok(value: info) => {
+          if info.position == position {
+            set selected = index;
+          }
+        }
+        Err(error: reason) => {
+          indexed_fail(ledger: ledger);
+        }
+      }
+    }
+  }
+  if selected < 32_u64 {
+    let deadline = deref(oracle).rows[selected].deadline;
+    indexed_cancel::<T>(store: store, oracle: oracle, ledger: ledger, row: selected);
+    indexed_check::<IndexedPayload<T>>(store: store, oracle: oracle, ledger: ledger);
+    indexed_schedule::<T>(store: store, oracle: oracle, ledger: ledger, row: selected, deadline: deadline);
+  } else {
+    indexed_fail(ledger: ledger);
+  }
+  return unit;
+}
+
+fn indexed_trace<interface IndexedPayload<T>>(retained: Bool) -> failures: u64 pure {
+  doc "Eight simultaneous owners use one collision chain. Both payload kinds run both policies through public store operations. The model advances from requested successful transitions, independently of the implementation's map and heap representation. Deliberately corrupted reverse positions must be refused before access; retained deletion remains Busy with an invalid non-sentinel position even after ID detachment.";
+  let ledger = indexed_ledger();
+  let oracle = indexed_oracle();
+  let store = record_store_new::<T, 8, 2>(store_id: 71_u64, retained: retained, record_capacity: 8_u64, index_capacity: 0_u64, heap_capacity: 0_u64, hash_modulus: 0_u64);
+  for (index in 0_u64..8_u64) {
+    let id = index + 10_u64;
+    let serial = index + 1_u64;
+    let payload = IndexedPayload::make(serial: serial);
+    indexed_accept::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger, row: index, id: id, serial: serial, payload: move payload);
+    indexed_attach::<T>(store: &store, oracle: &oracle, ledger: &ledger, row: index);
+    let shifted = index * 10_u64;
+    let deadline = shifted + 100_u64;
+    indexed_schedule::<T>(store: &store, oracle: &oracle, ledger: &ledger, row: index, deadline: deadline);
+  }
+  indexed_check::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger);
+  let again_id = record_store_attach::<T, 8, 2>(store: &store, handle: oracle.rows[0_u64].handle);
+  indexed_status(ledger: &ledger, actual: again_id, expected: 1_u64);
+  let again_due = record_store_schedule::<T, 8, 2>(store: &store, handle: oracle.rows[0_u64].handle, deadline: 99_u64);
+  indexed_status(ledger: &ledger, actual: again_due, expected: 1_u64);
+  indexed_cancel_position::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger, position: 0_u64);
+  indexed_check::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger);
+  indexed_cancel_position::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger, position: 4_u64);
+  indexed_check::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger);
+  indexed_cancel_position::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger, position: 7_u64);
+  indexed_check::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger);
+  let other = record_store_new::<T, 8, 2>(store_id: 72_u64, retained: retained, record_capacity: 1_u64, index_capacity: 0_u64, heap_capacity: 0_u64, hash_modulus: 0_u64);
+  let empty = RecordEmpty();
+  let foreign_payload = IndexedPayload::make(serial: 15_u64);
+  set ledger.ids[15_u64] = 901_u64;
+  let foreign_insert = record_store_insert::<T, 8, 2>(store: &other, id: 901_u64, payload: move foreign_payload);
+  match move foreign_insert {
+    Ok(value: foreign_handle) => {
+      if foreign_handle.object.index != oracle.rows[0_u64].handle.object.index {
+        indexed_fail(ledger: &ledger);
+      }
+      if foreign_handle.object.generation != oracle.rows[0_u64].handle.object.generation {
+        indexed_fail(ledger: &ledger);
+      }
+      let wrong_attach = record_store_attach::<T, 8, 2>(store: &store, handle: foreign_handle);
+      indexed_status(ledger: &ledger, actual: wrong_attach, expected: 4_u64);
+      let wrong_cancel = record_store_cancel::<T, 8, 2>(store: &store, handle: foreign_handle);
+      indexed_status(ledger: &ledger, actual: wrong_cancel, expected: 4_u64);
+      let wrong_schedule = record_store_schedule::<T, 8, 2>(store: &store, handle: foreign_handle, deadline: 1_u64);
+      indexed_status(ledger: &ledger, actual: wrong_schedule, expected: 4_u64);
+      let wrong_reschedule = record_store_reschedule::<T, 8, 2>(store: &store, handle: foreign_handle, deadline: 1_u64);
+      indexed_status(ledger: &ledger, actual: wrong_reschedule, expected: 4_u64);
+      let wrong_detach = record_store_detach::<T, 8, 2>(store: &store, id: 10_u64, handle: foreign_handle);
+      indexed_status(ledger: &ledger, actual: wrong_detach, expected: 4_u64);
+      let wrong_delete = record_store_delete::<T, 8, 2>(store: &store, handle: foreign_handle);
+      match move wrong_delete {
+        Ok(value: unexpected) => {
+          indexed_fail(ledger: &ledger);
+          indexed_release::<T, fn IndexedPayload::read, fn IndexedPayload::consume>(env: &ledger, value: move unexpected);
+        }
+        Err(error: reason) => {
+          indexed_status(ledger: &ledger, actual: reason, expected: 4_u64);
+        }
+      }
+      let foreign_read = record_store_visit::<T, RecordEmpty, u64, fn indexed_read::<T, fn IndexedPayload::read>, 8, 2>(store: &other, handle: foreign_handle, env: &empty);
+      match foreign_read {
+        Ok(value: serial) => {
+          if serial != 15_u64 {
+            indexed_fail(ledger: &ledger);
+          }
+        }
+        Err(error: reason) => {
+          indexed_fail(ledger: &ledger);
+        }
+      }
+    }
+    Err(error: returned) => {
+      indexed_fail(ledger: &ledger);
+      indexed_release_payload::<T, fn IndexedPayload::read, fn IndexedPayload::consume>(ledger: &ledger, id: 901_u64, payload: move returned);
+    }
+  }
+  let offered = IndexedPayload::make(serial: 9_u64);
+  set ledger.ids[9_u64] = 10_u64;
+  let full = record_store_insert::<T, 8, 2>(store: &store, id: 10_u64, payload: move offered);
+  if retained {
+    indexed_delete::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger, row: 0_u64, expected_status: 9_u64);
+    indexed_detach::<T>(store: &store, oracle: &oracle, ledger: &ledger, row: 0_u64);
+    indexed_delete::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger, row: 0_u64, expected_status: 9_u64);
+    indexed_cancel::<T>(store: &store, oracle: &oracle, ledger: &ledger, row: 0_u64);
+  }
+  indexed_delete::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger, row: 0_u64, expected_status: 0_u64);
+  match move full {
+    Ok(value: unexpected) => {
+      indexed_fail(ledger: &ledger);
+    }
+    Err(error: returned) => {
+      let serial = IndexedPayload::read(value: &returned);
+      if serial != 9_u64 {
+        indexed_fail(ledger: &ledger);
+      }
+      indexed_accept::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger, row: 8_u64, id: 10_u64, serial: 9_u64, payload: move returned);
+    }
+  }
+  if oracle.rows[8_u64].handle.object.index != oracle.rows[0_u64].handle.object.index {
+    indexed_fail(ledger: &ledger);
+  }
+  if oracle.rows[8_u64].handle.object.generation != 1_u64 {
+    indexed_fail(ledger: &ledger);
+  }
+  indexed_attach::<T>(store: &store, oracle: &oracle, ledger: &ledger, row: 8_u64);
+  if retained {
+  } else {
+    let full_due = record_store_schedule::<T, 8, 2>(store: &store, handle: oracle.rows[8_u64].handle, deadline: 1000_u64);
+    indexed_status(ledger: &ledger, actual: full_due, expected: 6_u64);
+  }
+  indexed_cancel::<T>(store: &store, oracle: &oracle, ledger: &ledger, row: 1_u64);
+  if retained {
+    indexed_delete::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger, row: 1_u64, expected_status: 9_u64);
+  }
+  indexed_detach::<T>(store: &store, oracle: &oracle, ledger: &ledger, row: 1_u64);
+  indexed_delete::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger, row: 1_u64, expected_status: 0_u64);
+  indexed_schedule::<T>(store: &store, oracle: &oracle, ledger: &ledger, row: 8_u64, deadline: 1000_u64);
+  let old_cancel = record_store_cancel::<T, 8, 2>(store: &store, handle: oracle.rows[0_u64].handle);
+  indexed_status(ledger: &ledger, actual: old_cancel, expected: 3_u64);
+  let old_reschedule = record_store_reschedule::<T, 8, 2>(store: &store, handle: oracle.rows[0_u64].handle, deadline: 1_u64);
+  indexed_status(ledger: &ledger, actual: old_reschedule, expected: 3_u64);
+  let old_detach = record_store_detach::<T, 8, 2>(store: &store, id: 10_u64, handle: oracle.rows[0_u64].handle);
+  indexed_status(ledger: &ledger, actual: old_detach, expected: 5_u64);
+  let duplicate = IndexedPayload::make(serial: 10_u64);
+  indexed_accept::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger, row: 9_u64, id: 12_u64, serial: 10_u64, payload: move duplicate);
+  let conflict = record_store_attach::<T, 8, 2>(store: &store, handle: oracle.rows[9_u64].handle);
+  indexed_status(ledger: &ledger, actual: conflict, expected: 5_u64);
+  indexed_delete::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger, row: 9_u64, expected_status: 0_u64);
+  let replacement = IndexedPayload::make(serial: 11_u64);
+  set ledger.ids[11_u64] = 12_u64;
+  let replaced = record_store_replace::<T, 8, 2>(store: &store, id: 12_u64, payload: move replacement);
+  let RecordReplacement(status: replaced_status, payload: previous) = move replaced;
+  indexed_status(ledger: &ledger, actual: replaced_status, expected: 0_u64);
+  let previous_serial = IndexedPayload::read(value: &previous);
+  if previous_serial != 3_u64 {
+    indexed_fail(ledger: &ledger);
+  }
+  indexed_release_payload::<T, fn IndexedPayload::read, fn IndexedPayload::consume>(ledger: &ledger, id: 12_u64, payload: move previous);
+  set oracle.rows[2_u64].serial = 11_u64;
+  let absent_payload = IndexedPayload::make(serial: 12_u64);
+  set ledger.ids[12_u64] = 999_u64;
+  let missing = record_store_replace::<T, 8, 2>(store: &store, id: 999_u64, payload: move absent_payload);
+  let RecordReplacement(status: missing_status, payload: returned_payload) = move missing;
+  indexed_status(ledger: &ledger, actual: missing_status, expected: 2_u64);
+  let returned_serial = IndexedPayload::read(value: &returned_payload);
+  if returned_serial != 12_u64 {
+    indexed_fail(ledger: &ledger);
+  }
+  indexed_release_payload::<T, fn IndexedPayload::read, fn IndexedPayload::consume>(ledger: &ledger, id: 999_u64, payload: move returned_payload);
+  let raised = record_store_reschedule::<T, 8, 2>(store: &store, handle: oracle.rows[2_u64].handle, deadline: 1_u64);
+  indexed_status(ledger: &ledger, actual: raised, expected: 0_u64);
+  set oracle.rows[2_u64].deadline = 1_u64;
+  let top = record_store_position::<T, 8, 2>(store: &store, handle: oracle.rows[2_u64].handle);
+  match top {
+    Ok(value: at) => {
+      if at != 0_u64 {
+        indexed_fail(ledger: &ledger);
+      }
+    }
+    Err(error: reason) => {
+      indexed_fail(ledger: &ledger);
+    }
+  }
+  let lowered = record_store_reschedule::<T, 8, 2>(store: &store, handle: oracle.rows[2_u64].handle, deadline: 2000_u64);
+  indexed_status(ledger: &ledger, actual: lowered, expected: 0_u64);
+  set oracle.rows[2_u64].deadline = 2000_u64;
+  let lowered_position = record_store_position::<T, 8, 2>(store: &store, handle: oracle.rows[2_u64].handle);
+  match lowered_position {
+    Ok(value: at) => {
+      if at == 0_u64 {
+        indexed_fail(ledger: &ledger);
+      }
+    }
+    Err(error: reason) => {
+      indexed_fail(ledger: &ledger);
+    }
+  }
+  indexed_check::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger);
+  let restored = record_store_reschedule::<T, 8, 2>(store: &store, handle: oracle.rows[2_u64].handle, deadline: 130_u64);
+  indexed_status(ledger: &ledger, actual: restored, expected: 0_u64);
+  set oracle.rows[2_u64].deadline = 130_u64;
+  indexed_detach::<T>(store: &store, oracle: &oracle, ledger: &ledger, row: 8_u64);
+  let good_position = record_store_info::<T, 8, 2>(store: &store, handle: oracle.rows[8_u64].handle);
+  match good_position {
+    Ok(value: info) => {
+      let bad_position = 99_u64;
+      let changed = slab_edit::<Record<T>, u64, unit, fn record_set_position::<T>, 8, 2>(slab: &store.objects, handle: oracle.rows[8_u64].handle.object, env: &bad_position);
+      let refused_cancel = record_store_cancel::<T, 8, 2>(store: &store, handle: oracle.rows[8_u64].handle);
+      indexed_status(ledger: &ledger, actual: refused_cancel, expected: 8_u64);
+      if retained {
+        indexed_delete::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger, row: 8_u64, expected_status: 9_u64);
+      }
+      let wrong_position = 0_u64;
+      let changed_again = slab_edit::<Record<T>, u64, unit, fn record_set_position::<T>, 8, 2>(slab: &store.objects, handle: oracle.rows[8_u64].handle.object, env: &wrong_position);
+      let refused_move = record_store_reschedule::<T, 8, 2>(store: &store, handle: oracle.rows[8_u64].handle, deadline: 1_u64);
+      indexed_status(ledger: &ledger, actual: refused_move, expected: 8_u64);
+      let repaired = slab_edit::<Record<T>, u64, unit, fn record_set_position::<T>, 8, 2>(slab: &store.objects, handle: oracle.rows[8_u64].handle.object, env: &info.position);
+    }
+    Err(error: reason) => {
+      indexed_fail(ledger: &ledger);
+    }
+  }
+  indexed_attach::<T>(store: &store, oracle: &oracle, ledger: &ledger, row: 8_u64);
+  indexed_check::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger);
+  indexed_expire::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger, now: 150_u64);
+  let after_old = record_store_lookup::<T, 8, 2>(store: &store, id: 10_u64);
+  match after_old {
+    Ok(value: handle) => {
+      if handle.object.index != oracle.rows[8_u64].handle.object.index {
+        indexed_fail(ledger: &ledger);
+      }
+      if handle.object.generation != oracle.rows[8_u64].handle.object.generation {
+        indexed_fail(ledger: &ledger);
+      }
+    }
+    Err(error: reason) => {
+      indexed_fail(ledger: &ledger);
+    }
+  }
+  indexed_expire::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger, now: 18446744073709551615_u64);
+  indexed_expire::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger, now: 18446744073709551615_u64);
+  let final_indexed = IndexedPayload::make(serial: 13_u64);
+  indexed_accept::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger, row: 10_u64, id: 313_u64, serial: 13_u64, payload: move final_indexed);
+  indexed_attach::<T>(store: &store, oracle: &oracle, ledger: &ledger, row: 10_u64);
+  indexed_schedule::<T>(store: &store, oracle: &oracle, ledger: &ledger, row: 10_u64, deadline: 10_u64);
+  let final_unheld = IndexedPayload::make(serial: 14_u64);
+  indexed_accept::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger, row: 11_u64, id: 314_u64, serial: 14_u64, payload: move final_unheld);
+  indexed_check::<IndexedPayload<T>>(store: &store, oracle: &oracle, ledger: &ledger);
+  record_store_free::<T, IndexedLedger, fn indexed_release::<T, fn IndexedPayload::read, fn IndexedPayload::consume>, 8, 2>(store: move store, env: &ledger);
+  record_store_free::<T, IndexedLedger, fn indexed_release::<T, fn IndexedPayload::read, fn IndexedPayload::consume>, 8, 2>(store: move other, env: &ledger);
+  for (serial in 0_u64..64_u64) {
+    let expected = 0_u64;
+    if ledger.ids[serial] > 0_u64 {
+      set expected = 1_u64;
+    }
+    if ledger.released[serial] != expected {
+      indexed_fail(ledger: &ledger);
+    }
+  }
+  return ledger.failures;
+}
+
+struct IndexedWords {
+  count: u64;
+  sum: u64;
+}
+
+fn indexed_word_consume(env: &IndexedWords, value: Record<u64>) -> result: unit writes(env) {
+  set deref(env).count = deref(env).count +wrap 1_u64;
+  set deref(env).sum = deref(env).sum +wrap value.payload;
+  return unit;
+}
+
+fn indexed_word_insert<const ceiling: u64, const generation_limit: u64>(store: &RecordStore<u64, ceiling, generation_limit>, ledger: &IndexedLedger, id: u64, value: u64) -> handle: RecordHandle writes(store), writes(ledger) {
+  let inserted = record_store_insert::<u64, ceiling, generation_limit>(store: store, id: id, payload: value);
+  match inserted {
+    Ok(value: handle) => {
+      return handle;
+    }
+    Err(error: returned) => {
+      indexed_fail(ledger: ledger);
+      let object = SlabHandle(index: ceiling, generation: 0_u64);
+      return RecordHandle(store_id: deref(store).store_id, object: object);
+    }
+  }
+}
+
+fn indexed_capacity_and_retirement() -> failures: u64 pure {
+  doc "Stale weak memberships independently fill the ID map and expiry heap while the Slab has room. Explicit detach and stale expiry release that capacity, so the same live owner can retry. A separate generation-limited store retires its exhausted slot, and a zero-ceiling store admits no owner.";
+  let ledger = indexed_ledger();
+  let weak = False();
+  let store = record_store_new::<u64, 2, 1>(store_id: 81_u64, retained: weak, record_capacity: 2_u64, index_capacity: 2_u64, heap_capacity: 2_u64, hash_modulus: 0_u64);
+  let first = indexed_word_insert::<2, 1>(store: &store, ledger: &ledger, id: 10_u64, value: 11_u64);
+  let second = indexed_word_insert::<2, 1>(store: &store, ledger: &ledger, id: 20_u64, value: 22_u64);
+  let first_id = record_store_attach::<u64, 2, 1>(store: &store, handle: first);
+  indexed_status(ledger: &ledger, actual: first_id, expected: 0_u64);
+  let second_id = record_store_attach::<u64, 2, 1>(store: &store, handle: second);
+  indexed_status(ledger: &ledger, actual: second_id, expected: 0_u64);
+  let first_due = record_store_schedule::<u64, 2, 1>(store: &store, handle: first, deadline: 10_u64);
+  indexed_status(ledger: &ledger, actual: first_due, expected: 0_u64);
+  let second_due = record_store_schedule::<u64, 2, 1>(store: &store, handle: second, deadline: 20_u64);
+  indexed_status(ledger: &ledger, actual: second_due, expected: 0_u64);
+  let removed = record_store_delete::<u64, 2, 1>(store: &store, handle: first);
+  match removed {
+    Ok(value: owner) => {
+      if owner.payload != 11_u64 {
+        indexed_fail(ledger: &ledger);
+      }
+    }
+    Err(error: reason) => {
+      indexed_fail(ledger: &ledger);
+    }
+  }
+  let replacement = indexed_word_insert::<2, 1>(store: &store, ledger: &ledger, id: 30_u64, value: 33_u64);
+  let id_full = record_store_attach::<u64, 2, 1>(store: &store, handle: replacement);
+  indexed_status(ledger: &ledger, actual: id_full, expected: 6_u64);
+  let due_full = record_store_schedule::<u64, 2, 1>(store: &store, handle: replacement, deadline: 30_u64);
+  indexed_status(ledger: &ledger, actual: due_full, expected: 6_u64);
+  let info = record_store_info::<u64, 2, 1>(store: &store, handle: replacement);
+  match info {
+    Ok(value: present) => {
+      if present.id_member {
+        indexed_fail(ledger: &ledger);
+      }
+      if present.position != 2_u64 {
+        indexed_fail(ledger: &ledger);
+      }
+    }
+    Err(error: reason) => {
+      indexed_fail(ledger: &ledger);
+    }
+  }
+  let stale_detach = record_store_detach::<u64, 2, 1>(store: &store, id: 10_u64, handle: first);
+  indexed_status(ledger: &ledger, actual: stale_detach, expected: 0_u64);
+  let id_retry = record_store_attach::<u64, 2, 1>(store: &store, handle: replacement);
+  indexed_status(ledger: &ledger, actual: id_retry, expected: 0_u64);
+  let words = IndexedWords(count: 0_u64, sum: 0_u64);
+  let stale_expiry = record_store_expire::<u64, IndexedWords, fn indexed_word_consume, 2, 1>(store: &store, now: 10_u64, env: &words);
+  if stale_expiry != 0_u64 {
+    indexed_fail(ledger: &ledger);
+  }
+  if words.count != 0_u64 {
+    indexed_fail(ledger: &ledger);
+  }
+  let due_retry = record_store_schedule::<u64, 2, 1>(store: &store, handle: replacement, deadline: 30_u64);
+  indexed_status(ledger: &ledger, actual: due_retry, expected: 0_u64);
+  record_store_free::<u64, IndexedWords, fn indexed_word_consume, 2, 1>(store: move store, env: &words);
+  if words.count != 2_u64 {
+    indexed_fail(ledger: &ledger);
+  }
+  if words.sum != 55_u64 {
+    indexed_fail(ledger: &ledger);
+  }
+  let limited = record_store_new::<u64, 1, 1>(store_id: 82_u64, retained: weak, record_capacity: 1_u64, index_capacity: 0_u64, heap_capacity: 0_u64, hash_modulus: 0_u64);
+  let old = indexed_word_insert::<1, 1>(store: &limited, ledger: &ledger, id: 1_u64, value: 111_u64);
+  let removed_old = record_store_delete::<u64, 1, 1>(store: &limited, handle: old);
+  match removed_old {
+    Ok(value: owner) => {
+      if owner.payload != 111_u64 {
+        indexed_fail(ledger: &ledger);
+      }
+    }
+    Err(error: reason) => {
+      indexed_fail(ledger: &ledger);
+    }
+  }
+  let last = indexed_word_insert::<1, 1>(store: &limited, ledger: &ledger, id: 2_u64, value: 222_u64);
+  if last.object.index != old.object.index {
+    indexed_fail(ledger: &ledger);
+  }
+  if last.object.generation != 1_u64 {
+    indexed_fail(ledger: &ledger);
+  }
+  let removed_last = record_store_delete::<u64, 1, 1>(store: &limited, handle: last);
+  match removed_last {
+    Ok(value: owner) => {
+      if owner.payload != 222_u64 {
+        indexed_fail(ledger: &ledger);
+      }
+    }
+    Err(error: reason) => {
+      indexed_fail(ledger: &ledger);
+    }
+  }
+  let retired = record_store_insert::<u64, 1, 1>(store: &limited, id: 3_u64, payload: 333_u64);
+  match retired {
+    Ok(value: handle) => {
+      indexed_fail(ledger: &ledger);
+    }
+    Err(error: owner) => {
+      if owner != 333_u64 {
+        indexed_fail(ledger: &ledger);
+      }
+    }
+  }
+  let expired = record_store_schedule::<u64, 1, 1>(store: &limited, handle: old, deadline: 1_u64);
+  indexed_status(ledger: &ledger, actual: expired, expected: 3_u64);
+  record_store_free::<u64, IndexedWords, fn indexed_word_consume, 1, 1>(store: move limited, env: &words);
+  let zero = record_store_new::<u64, 0, 0>(store_id: 83_u64, retained: weak, record_capacity: 0_u64, index_capacity: 0_u64, heap_capacity: 0_u64, hash_modulus: 0_u64);
+  let refused = record_store_insert::<u64, 0, 0>(store: &zero, id: 4_u64, payload: 444_u64);
+  match refused {
+    Ok(value: handle) => {
+      indexed_fail(ledger: &ledger);
+    }
+    Err(error: owner) => {
+      if owner != 444_u64 {
+        indexed_fail(ledger: &ledger);
+      }
+    }
+  }
+  let empty_count = record_store_expire::<u64, IndexedWords, fn indexed_word_consume, 0, 0>(store: &zero, now: 18446744073709551615_u64, env: &words);
+  if empty_count != 0_u64 {
+    indexed_fail(ledger: &ledger);
+  }
+  record_store_free::<u64, IndexedWords, fn indexed_word_consume, 0, 0>(store: move zero, env: &words);
+  if words.count != 2_u64 {
+    indexed_fail(ledger: &ledger);
+  }
+  return ledger.failures;
+}
+
+struct IndexedPositions {
+  positions: Array<u64, 8>;
+  calls: Array<u64, 8>;
+  failures: u64;
+}
+
+fn indexed_placed(env: &IndexedPositions, value: &RecordDue, index: u64) -> result: unit reads(value), writes(env) {
+  let id = deref(value).id;
+  if id < 8_u64 {
+    set deref(env).positions[id] = index;
+    set deref(env).calls[id] = deref(env).calls[id] +wrap 1_u64;
+  } else {
+    set deref(env).failures = deref(env).failures +wrap 1_u64;
+  }
+  return unit;
+}
+
+fn indexed_heapify_reports() -> failures: u64 pure {
+  doc "Nonempty heapify reports every initial identity, even the untouched final leaf. A subsequent last-entry removal makes no placement call. After repair, all remaining reverse positions name their actual current heap entry.";
+  let storage = box_slots_new::<RecordDue>(capacity: 7_u64);
+  for (index in 0_u64..7_u64) {
+    let deadline = 6_u64 - index;
+    if index == 6_u64 {
+      set deadline = 1000_u64;
+    }
+    let handle = SlabHandle(index: index, generation: 0_u64);
+    let due_item = RecordDue(deadline: deadline, id: index, handle: handle);
+    if storage.inner.len < storage.inner.cap {
+      place_back(window: &storage.inner, value: due_item);
+    }
+  }
+  let positions = array_filled::<u64, 8>(value: 8_u64);
+  let calls = array_filled::<u64, 8>(value: 0_u64);
+  let log = IndexedPositions(positions: positions, calls: calls, failures: 0_u64);
+  let empty = RecordEmpty();
+  let queue = priority_queue_heapify_indexed::<RecordDueOrder, IndexedPositions, fn indexed_placed, 7>(storage: move storage, order_env: &empty, position_env: &log);
+  let length = priority_queue_len::<RecordDue, 7>(queue: &queue);
+  if length != 7_u64 {
+    set log.failures = log.failures +wrap 1_u64;
+  }
+  for (index in 0_u64..length) {
+    let due_item = priority_queue_peek_at::<RecordDue, RecordEmpty, RecordDue, fn record_read_due, 7>(queue: &queue, index: index, env: &empty);
+    if due_item.id < 8_u64 {
+      if log.positions[due_item.id] != index {
+        set log.failures = log.failures +wrap 1_u64;
+      }
+      if log.calls[due_item.id] == 0_u64 {
+        set log.failures = log.failures +wrap 1_u64;
+      }
+    } else {
+      set log.failures = log.failures +wrap 1_u64;
+    }
+  }
+  if log.positions[6_u64] != 6_u64 {
+    set log.failures = log.failures +wrap 1_u64;
+  }
+  if log.calls[6_u64] != 1_u64 {
+    set log.failures = log.failures +wrap 1_u64;
+  }
+  let before = log.calls;
+  if length > 0_u64 {
+    let last = length - 1_u64;
+    let removed = priority_queue_remove_at_indexed::<RecordDueOrder, IndexedPositions, fn indexed_placed, 7>(queue: &queue, index: last, order_env: &empty, position_env: &log);
+    if removed.id != 6_u64 {
+      set log.failures = log.failures +wrap 1_u64;
+    }
+  }
+  for (index in 0_u64..8_u64) {
+    if log.calls[index] != before[index] {
+      set log.failures = log.failures +wrap 1_u64;
+    }
+  }
+  loop @remove {
+    let remaining = priority_queue_len::<RecordDue, 7>(queue: &queue);
+    if remaining == 0_u64 {
+      break @remove;
+    }
+    let removed = priority_queue_remove_at_indexed::<RecordDueOrder, IndexedPositions, fn indexed_placed, 7>(queue: &queue, index: 0_u64, order_env: &empty, position_env: &log);
+    let after = priority_queue_len::<RecordDue, 7>(queue: &queue);
+    for (index in 0_u64..after) {
+      let due_item = priority_queue_peek_at::<RecordDue, RecordEmpty, RecordDue, fn record_read_due, 7>(queue: &queue, index: index, env: &empty);
+      if due_item.id < 8_u64 {
+        if log.positions[due_item.id] != index {
+          set log.failures = log.failures +wrap 1_u64;
+        }
+      } else {
+        set log.failures = log.failures +wrap 1_u64;
+      }
+    }
+  }
+  priority_queue_free::<RecordDue, RecordEmpty, fn record_discard_due, 7>(queue: move queue, env: &empty);
+  return log.failures;
+}
+
+struct IndexedEdit {
+  calls: u64;
+}
+
+fn indexed_edit_owner(env: &IndexedEdit, value: &IndexedWide) -> result: IndexedWide writes(env), writes(value) {
+  set deref(env).calls = deref(env).calls +wrap 1_u64;
+  let replacement = indexed_wide(serial: 41_u64);
+  swap(first: &replacement, second: value);
+  return move replacement;
+}
+
+fn indexed_edit_consume(env: &IndexedWords, value: IndexedWide) -> result: unit writes(env) {
+  let serial = indexed_wide_read(value: &value);
+  set deref(env).count = deref(env).count +wrap 1_u64;
+  set deref(env).sum = deref(env).sum +wrap serial;
+  indexed_wide_consume(value: move value);
+  return unit;
+}
+
+fn indexed_edit_result() -> failures: u64 pure {
+  doc "The borrowed Slab editor replaces a nodrop payload and returns the previous nodrop owner. Once removed, an expired handle invokes no callback and therefore creates no replacement allocation or result owner.";
+  let ledger = indexed_ledger();
+  let slab = slab_new::<IndexedWide, 1, 0>(capacity: 1_u64);
+  let payload = indexed_wide(serial: 40_u64);
+  let inserted = slab_insert::<IndexedWide, 1, 0>(slab: &slab, value: move payload);
+  let edit = IndexedEdit(calls: 0_u64);
+  let consumed = IndexedWords(count: 0_u64, sum: 0_u64);
+  match move inserted {
+    Ok(value: handle) => {
+      let changed = slab_edit::<IndexedWide, IndexedEdit, IndexedWide, fn indexed_edit_owner, 1, 0>(slab: &slab, handle: handle, env: &edit);
+      match move changed {
+        Ok(value: previous) => {
+          let serial = indexed_wide_read(value: &previous);
+          if serial != 40_u64 {
+            indexed_fail(ledger: &ledger);
+          }
+          indexed_edit_consume(env: &consumed, value: move previous);
+        }
+        Err(error: missing) => {
+          indexed_fail(ledger: &ledger);
+        }
+      }
+      let removed = slab_remove::<IndexedWide, 1, 0>(slab: &slab, handle: handle);
+      match move removed {
+        Some(value: previous) => {
+          let serial = indexed_wide_read(value: &previous);
+          if serial != 41_u64 {
+            indexed_fail(ledger: &ledger);
+          }
+          indexed_edit_consume(env: &consumed, value: move previous);
+        }
+        None() => {
+          indexed_fail(ledger: &ledger);
+        }
+      }
+      let expired = slab_edit::<IndexedWide, IndexedEdit, IndexedWide, fn indexed_edit_owner, 1, 0>(slab: &slab, handle: handle, env: &edit);
+      match move expired {
+        Ok(value: unexpected) => {
+          indexed_fail(ledger: &ledger);
+          indexed_edit_consume(env: &consumed, value: move unexpected);
+        }
+        Err(error: missing) => {
+        }
+      }
+    }
+    Err(error: returned) => {
+      indexed_fail(ledger: &ledger);
+      indexed_edit_consume(env: &consumed, value: move returned);
+    }
+  }
+  slab_free::<IndexedWide, IndexedWords, fn indexed_edit_consume, 1, 0>(slab: move slab, env: &consumed);
+  if edit.calls != 1_u64 {
+    indexed_fail(ledger: &ledger);
+  }
+  if consumed.count != 2_u64 {
+    indexed_fail(ledger: &ledger);
+  }
+  if consumed.sum != 81_u64 {
+    indexed_fail(ledger: &ledger);
+  }
+  return ledger.failures;
+}
+
+fn main() -> status: ExitStatus pure {
+  let weak = False();
+  let retained = True();
+  let drop_weak = indexed_trace::<IndexedDropPayload>(retained: weak);
+  if drop_weak != 0_u64 {
+    return exit_status(code: 1_u8);
+  }
+  let drop_retained = indexed_trace::<IndexedDropPayload>(retained: retained);
+  if drop_retained != 0_u64 {
+    return exit_status(code: 2_u8);
+  }
+  let wide_weak = indexed_trace::<IndexedWidePayload>(retained: weak);
+  if wide_weak != 0_u64 {
+    return exit_status(code: 3_u8);
+  }
+  let wide_retained = indexed_trace::<IndexedWidePayload>(retained: retained);
+  if wide_retained != 0_u64 {
+    return exit_status(code: 4_u8);
+  }
+  let capacity = indexed_capacity_and_retirement();
+  if capacity != 0_u64 {
+    return exit_status(code: 5_u8);
+  }
+  let positions = indexed_heapify_reports();
+  if positions != 0_u64 {
+    return exit_status(code: 6_u8);
+  }
+  let edited = indexed_edit_result();
+  if edited != 0_u64 {
+    return exit_status(code: 7_u8);
+  }
+  return exit_status(code: 0_u8);
+}

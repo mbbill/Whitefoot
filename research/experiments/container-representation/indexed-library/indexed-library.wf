@@ -1,0 +1,402 @@
+struct IndexedCostLog {
+  values: Box<Slots<u64>>;
+  digest: u64;
+  used: u64;
+}
+
+nodrop struct IndexedCostWord {
+  identity: u64;
+}
+
+nodrop struct IndexedCostWide {
+  words: Array<u64, 32>;
+}
+
+interface IndexedCostElement<T> {
+  fn make(identity: u64, seed: u64) -> value: T pure;
+  fn observe(env: &IndexedCostLog, value: &T) -> result: unit reads(value), writes(env);
+  fn consume(env: &IndexedCostLog, value: T) -> result: unit writes(env);
+}
+
+fn indexed_cost_word(env: &IndexedCostLog, value: u64) -> result: unit writes(env) {
+  let prefix = deref(env).digest *wrap 131_u64;
+  set deref(env).digest = prefix +wrap value;
+  set deref(env).used = deref(env).used +wrap 1_u64;
+  if deref(env).values.inner.len < deref(env).values.inner.cap {
+    place_back(window: &deref(env).values.inner, value: value);
+  }
+  return unit;
+}
+
+fn indexed_cost_small_make(identity: u64, seed: u64) -> value: IndexedCostWord pure {
+  return IndexedCostWord(identity: identity);
+}
+
+fn indexed_cost_small_observe(env: &IndexedCostLog, value: &IndexedCostWord) -> result: unit reads(value), writes(env) {
+  indexed_cost_word(env: env, value: deref(value).identity);
+  return unit;
+}
+
+fn indexed_cost_small_consume(env: &IndexedCostLog, value: IndexedCostWord) -> result: unit writes(env) {
+  let IndexedCostWord(identity: identity) = move value;
+  indexed_cost_word(env: env, value: identity);
+  return unit;
+}
+
+fn indexed_cost_wide_make(identity: u64, seed: u64) -> value: IndexedCostWide pure {
+  let words = array_filled::<u64, 32>(value: identity);
+  let base = identity *wrap 11400714819323198485_u64;
+  for (index in 1_u64..32_u64) {
+    let salted = base +wrap seed;
+    set words[index] = salted +wrap index;
+  }
+  return IndexedCostWide(words: words);
+}
+
+fn indexed_cost_wide_observe(env: &IndexedCostLog, value: &IndexedCostWide) -> result: unit reads(value), writes(env) {
+  for (index in 0_u64..32_u64) {
+    indexed_cost_word(env: env, value: deref(value).words[index]);
+  }
+  return unit;
+}
+
+fn indexed_cost_wide_consume(env: &IndexedCostLog, value: IndexedCostWide) -> result: unit writes(env) {
+  let IndexedCostWide(words: words) = move value;
+  for (index in 0_u64..32_u64) {
+    indexed_cost_word(env: env, value: words[index]);
+  }
+  return unit;
+}
+
+binding IndexedCostSmall : IndexedCostElement<IndexedCostWord> {
+  make = indexed_cost_small_make;
+  observe = indexed_cost_small_observe;
+  consume = indexed_cost_small_consume;
+}
+
+binding IndexedCostLarge : IndexedCostElement<IndexedCostWide> {
+  make = indexed_cost_wide_make;
+  observe = indexed_cost_wide_observe;
+  consume = indexed_cost_wide_consume;
+}
+
+fn indexed_cost_status(status: RecordStatus) -> value: u64 pure {
+  match status {
+    RecordDone() => {
+      return 0_u64;
+    }
+    RecordAlready() => {
+      return 1_u64;
+    }
+    RecordMissing() => {
+      return 2_u64;
+    }
+    RecordExpired() => {
+      return 3_u64;
+    }
+    RecordWrongStore() => {
+      return 4_u64;
+    }
+    RecordConflict() => {
+      return 5_u64;
+    }
+    RecordFull() => {
+      return 6_u64;
+    }
+    RecordUnscheduled() => {
+      return 7_u64;
+    }
+    RecordInvalidPosition() => {
+      return 8_u64;
+    }
+    RecordBusy() => {
+      return 9_u64;
+    }
+  }
+}
+
+fn indexed_cost_outcome(env: &IndexedCostLog, operation: u64, id: u64, status: RecordStatus) -> result: unit writes(env) {
+  indexed_cost_word(env: env, value: 1_u64);
+  indexed_cost_word(env: env, value: operation);
+  indexed_cost_word(env: env, value: id);
+  let number = indexed_cost_status(status: status);
+  indexed_cost_word(env: env, value: number);
+  return unit;
+}
+
+fn indexed_cost_handle(env: &IndexedCostLog, handle: RecordHandle) -> result: unit writes(env) {
+  indexed_cost_word(env: env, value: 2_u64);
+  indexed_cost_word(env: env, value: handle.store_id);
+  indexed_cost_word(env: env, value: handle.object.index);
+  indexed_cost_word(env: env, value: handle.object.generation);
+  return unit;
+}
+
+fn indexed_cost_offer(env: &IndexedCostLog, identity: u64) -> result: unit writes(env) {
+  indexed_cost_word(env: env, value: 3_u64);
+  indexed_cost_word(env: env, value: identity);
+  return unit;
+}
+
+fn indexed_cost_accept<interface IndexedCostElement<T>>(env: &IndexedCostLog, id: u64, payload: T) -> result: unit writes(env) {
+  indexed_cost_word(env: env, value: 4_u64);
+  indexed_cost_word(env: env, value: id);
+  IndexedCostElement::consume(env: env, value: move payload);
+  return unit;
+}
+
+fn indexed_cost_consume<interface IndexedCostElement<T>>(env: &IndexedCostLog, value: Record<T>) -> result: unit writes(env) {
+  let Record(id: id, payload: payload, id_member: member, position: position) = move value;
+  indexed_cost_accept::<IndexedCostElement<T>>(env: env, id: id, payload: move payload);
+  return unit;
+}
+
+fn indexed_cost_observe<interface IndexedCostElement<T>>(env: &IndexedCostLog, value: &Record<T>) -> result: unit reads(value), writes(env) {
+  indexed_cost_word(env: env, value: 5_u64);
+  indexed_cost_word(env: env, value: deref(value).id);
+  IndexedCostElement::observe(env: env, value: &deref(value).payload);
+  return unit;
+}
+
+fn indexed_cost_id(index: u64) -> id: u64 pure {
+  let doubled = index *wrap 2_u64;
+  let collision_group = index % 8_u64;
+  if collision_group == 1_u64 {
+    return doubled +wrap 8191_u64;
+  }
+  return doubled +wrap 1_u64;
+}
+
+fn indexed_cost_next(value: u64) -> next: u64 pure {
+  let multiplied = value *wrap 6364136223846793005_u64;
+  return multiplied +wrap 1442695040888963407_u64;
+}
+
+fn indexed_cost_insert<interface IndexedCostElement<T>>(store: &RecordStore<T, 8192, 18446744073709551615>, env: &IndexedCostLog, id: u64, identity: u64, seed: u64, deadline: u64) -> result: unit writes(store), writes(env) {
+  indexed_cost_offer(env: env, identity: identity);
+  let payload = IndexedCostElement::make(identity: identity, seed: seed);
+  let inserted = record_store_insert::<T, 8192, 18446744073709551615>(store: store, id: id, payload: move payload);
+  match move inserted {
+    Ok(value: handle) => {
+      let done = RecordDone();
+      indexed_cost_outcome(env: env, operation: 1_u64, id: id, status: done);
+      indexed_cost_handle(env: env, handle: handle);
+      let attached = record_store_attach::<T, 8192, 18446744073709551615>(store: store, handle: handle);
+      indexed_cost_outcome(env: env, operation: 2_u64, id: id, status: attached);
+      let scheduled = record_store_schedule::<T, 8192, 18446744073709551615>(store: store, handle: handle, deadline: deadline);
+      indexed_cost_outcome(env: env, operation: 4_u64, id: id, status: scheduled);
+    }
+    Err(error: refused) => {
+      let full = RecordFull();
+      indexed_cost_outcome(env: env, operation: 1_u64, id: id, status: full);
+      indexed_cost_accept::<IndexedCostElement<T>>(env: env, id: id, payload: move refused);
+    }
+  }
+  return unit;
+}
+
+fn indexed_cost_lookup<T>(store: &RecordStore<T, 8192, 18446744073709551615>, env: &IndexedCostLog, id: u64) -> result: Result<RecordHandle, RecordStatus> reads(store), writes(env) {
+  let found = record_store_lookup::<T, 8192, 18446744073709551615>(store: store, id: id);
+  match found {
+    Ok(value: handle) => {
+      let done = RecordDone();
+      indexed_cost_outcome(env: env, operation: 3_u64, id: id, status: done);
+      indexed_cost_handle(env: env, handle: handle);
+      return Ok<RecordHandle, RecordStatus>(value: handle);
+    }
+    Err(error: status) => {
+      indexed_cost_outcome(env: env, operation: 3_u64, id: id, status: status);
+      return Err<RecordHandle, RecordStatus>(error: status);
+    }
+  }
+}
+
+fn indexed_cost_delete<interface IndexedCostElement<T>>(store: &RecordStore<T, 8192, 18446744073709551615>, env: &IndexedCostLog, id: u64, handle: RecordHandle) -> result: unit writes(store), writes(env) {
+  let deleted = record_store_delete::<T, 8192, 18446744073709551615>(store: store, handle: handle);
+  match move deleted {
+    Ok(value: old) => {
+      let done = RecordDone();
+      indexed_cost_outcome(env: env, operation: 9_u64, id: id, status: done);
+      indexed_cost_consume::<IndexedCostElement<T>>(env: env, value: move old);
+    }
+    Err(error: status) => {
+      indexed_cost_outcome(env: env, operation: 9_u64, id: id, status: status);
+    }
+  }
+  return unit;
+}
+
+fn indexed_cost_trace<interface IndexedCostElement<T>>(count: u64, seed: u64, retained: u64, path: u64, env: &IndexedCostLog) -> result: u64 writes(env) contract {
+  requires count > 0_u64;
+  requires count <= 4096_u64;
+} {
+  let reserved_capacity = count + count;
+  invariant reserved_bound: reserved_capacity <= 8192_u64;
+  let index_capacity = reserved_capacity;
+  if path != 0_u64 {
+    set index_capacity = 0_u64;
+  }
+  let retain_members = retained != 0_u64;
+  let store = record_store_new::<T, 8192, 18446744073709551615>(store_id: 17_u64, retained: retain_members, record_capacity: count, index_capacity: index_capacity, heap_capacity: index_capacity, hash_modulus: 8192_u64);
+  let state = seed;
+  let range = count * 4_u64;
+  for (index in 0_u64..count) {
+    set state = indexed_cost_next(value: state);
+    let shifted = ishr(state, 32_u32);
+    let offset = shifted % range;
+    let deadline = range +wrap offset;
+    let id = indexed_cost_id(index: index);
+    let identity = index +wrap 1_u64;
+    indexed_cost_insert::<IndexedCostElement<T>>(store: &store, env: env, id: id, identity: identity, seed: seed, deadline: deadline);
+  }
+  let refused_identity = count +wrap 1_u64;
+  indexed_cost_insert::<IndexedCostElement<T>>(store: &store, env: env, id: 18446744073709551615_u64, identity: refused_identity, seed: seed, deadline: 0_u64);
+  if path == 0_u64 {
+    for (index in 0_u64..count) {
+      let id = indexed_cost_id(index: index);
+      let found = indexed_cost_lookup::<T>(store: &store, env: env, id: id);
+      match found {
+        Ok(value: handle) => {
+          let visited = record_store_visit::<T, IndexedCostLog, unit, fn indexed_cost_observe::<IndexedCostElement<T>>, 8192, 18446744073709551615>(store: &store, handle: handle, env: env);
+          match visited {
+            Ok(value: done) => {
+              let present = RecordDone();
+              indexed_cost_outcome(env: env, operation: 12_u64, id: id, status: present);
+            }
+            Err(error: status) => {
+              indexed_cost_outcome(env: env, operation: 12_u64, id: id, status: status);
+            }
+          }
+          let identity = count +wrap 2_u64;
+          set identity = identity +wrap index;
+          indexed_cost_offer(env: env, identity: identity);
+          let payload = IndexedCostElement::make(identity: identity, seed: seed);
+          let replaced = record_store_replace::<T, 8192, 18446744073709551615>(store: &store, id: id, payload: move payload);
+          let RecordReplacement(status: status, payload: old) = move replaced;
+          indexed_cost_outcome(env: env, operation: 5_u64, id: id, status: status);
+          indexed_cost_accept::<IndexedCostElement<T>>(env: env, id: id, payload: move old);
+          let deadline = index;
+          let parity = index % 2_u64;
+          if parity != 0_u64 {
+            let late = count *wrap 16_u64;
+            set deadline = late +wrap index;
+          }
+          let changed = record_store_reschedule::<T, 8192, 18446744073709551615>(store: &store, handle: handle, deadline: deadline);
+          indexed_cost_outcome(env: env, operation: 6_u64, id: id, status: changed);
+        }
+        Err(error: absent) => {
+        }
+      }
+    }
+    for (index in 0_u64..count) {
+      let cancellation_group = index % 4_u64;
+      if cancellation_group == 0_u64 {
+        let id = indexed_cost_id(index: index);
+        let found = indexed_cost_lookup::<T>(store: &store, env: env, id: id);
+        match found {
+          Ok(value: handle) => {
+            let cancelled = record_store_cancel::<T, 8192, 18446744073709551615>(store: &store, handle: handle);
+            indexed_cost_outcome(env: env, operation: 7_u64, id: id, status: cancelled);
+            let late = count *wrap 8_u64;
+            let deadline = late +wrap index;
+            let scheduled = record_store_schedule::<T, 8192, 18446744073709551615>(store: &store, handle: handle, deadline: deadline);
+            indexed_cost_outcome(env: env, operation: 4_u64, id: id, status: scheduled);
+          }
+          Err(error: absent) => {
+          }
+        }
+      }
+    }
+    for (index in 0_u64..count) {
+      let deletion_group = index % 8_u64;
+      if deletion_group == 0_u64 {
+        let id = indexed_cost_id(index: index);
+        let found = indexed_cost_lookup::<T>(store: &store, env: env, id: id);
+        match found {
+          Ok(value: handle) => {
+            indexed_cost_delete::<IndexedCostElement<T>>(store: &store, env: env, id: id, handle: handle);
+            if retained != 0_u64 {
+              let detach_order = index % 16_u64;
+              if detach_order == 0_u64 {
+                let detached = record_store_detach::<T, 8192, 18446744073709551615>(store: &store, id: id, handle: handle);
+                indexed_cost_outcome(env: env, operation: 8_u64, id: id, status: detached);
+                indexed_cost_delete::<IndexedCostElement<T>>(store: &store, env: env, id: id, handle: handle);
+                let cancelled = record_store_cancel::<T, 8192, 18446744073709551615>(store: &store, handle: handle);
+                indexed_cost_outcome(env: env, operation: 7_u64, id: id, status: cancelled);
+              } else {
+                let cancelled = record_store_cancel::<T, 8192, 18446744073709551615>(store: &store, handle: handle);
+                indexed_cost_outcome(env: env, operation: 7_u64, id: id, status: cancelled);
+                indexed_cost_delete::<IndexedCostElement<T>>(store: &store, env: env, id: id, handle: handle);
+                let detached = record_store_detach::<T, 8192, 18446744073709551615>(store: &store, id: id, handle: handle);
+                indexed_cost_outcome(env: env, operation: 8_u64, id: id, status: detached);
+              }
+              indexed_cost_delete::<IndexedCostElement<T>>(store: &store, env: env, id: id, handle: handle);
+            } else {
+              let expired = indexed_cost_lookup::<T>(store: &store, env: env, id: id);
+              let cancelled = record_store_cancel::<T, 8192, 18446744073709551615>(store: &store, handle: handle);
+              indexed_cost_outcome(env: env, operation: 7_u64, id: id, status: cancelled);
+            }
+            let identity = count *wrap 2_u64;
+            set identity = identity +wrap 2_u64;
+            set identity = identity +wrap index;
+            let late = count *wrap 8_u64;
+            let deadline = late +wrap index;
+            indexed_cost_insert::<IndexedCostElement<T>>(store: &store, env: env, id: id, identity: identity, seed: seed, deadline: deadline);
+          }
+          Err(error: absent) => {
+          }
+        }
+      }
+    }
+    let boundary = count *wrap 4_u64;
+    let now = boundary -wrap 1_u64;
+    let expired = record_store_expire::<T, IndexedCostLog, fn indexed_cost_consume::<IndexedCostElement<T>>, 8192, 18446744073709551615>(store: &store, now: now, env: env);
+    indexed_cost_word(env: env, value: 6_u64);
+    indexed_cost_word(env: env, value: expired);
+    for (index in 0_u64..count) {
+      let expiry_group = index % 4_u64;
+      if expiry_group == 2_u64 {
+        let id = indexed_cost_id(index: index);
+        let missing = indexed_cost_lookup::<T>(store: &store, env: env, id: id);
+        let identity = count *wrap 3_u64;
+        set identity = identity +wrap 2_u64;
+        set identity = identity +wrap index;
+        let late = count *wrap 8_u64;
+        let deadline = late +wrap index;
+        indexed_cost_insert::<IndexedCostElement<T>>(store: &store, env: env, id: id, identity: identity, seed: seed, deadline: deadline);
+      }
+    }
+    let stale_boundary = count *wrap 9_u64;
+    let stale_now = stale_boundary -wrap 1_u64;
+    let retired = record_store_expire::<T, IndexedCostLog, fn indexed_cost_consume::<IndexedCostElement<T>>, 8192, 18446744073709551615>(store: &store, now: stale_now, env: env);
+    indexed_cost_word(env: env, value: 6_u64);
+    indexed_cost_word(env: env, value: retired);
+  } else {
+    let expired = record_store_expire::<T, IndexedCostLog, fn indexed_cost_consume::<IndexedCostElement<T>>, 8192, 18446744073709551615>(store: &store, now: 18446744073709551615_u64, env: env);
+    indexed_cost_word(env: env, value: 6_u64);
+    indexed_cost_word(env: env, value: expired);
+  }
+  record_store_free::<T, IndexedCostLog, fn indexed_cost_consume::<IndexedCostElement<T>>, 8192, 18446744073709551615>(store: move store, env: env);
+  return deref(env).digest;
+}
+
+fn indexed_cost_small_trace(count: u64, seed: u64, retained: u64, path: u64, env: &IndexedCostLog) -> result: u64 writes(env) contract {
+  requires count > 0_u64;
+  requires count <= 4096_u64;
+} {
+  return indexed_cost_trace::<IndexedCostSmall>(count: count, seed: seed, retained: retained, path: path, env: env);
+}
+
+fn indexed_cost_wide_trace(count: u64, seed: u64, retained: u64, path: u64, env: &IndexedCostLog) -> result: u64 writes(env) contract {
+  requires count > 0_u64;
+  requires count <= 4096_u64;
+} {
+  return indexed_cost_trace::<IndexedCostLarge>(count: count, seed: seed, retained: retained, path: path, env: env);
+}
+
+fn main() -> status: ExitStatus pure {
+  let values = box_slots_new::<u64>(capacity: 0_u64);
+  let env = IndexedCostLog(values: move values, digest: 101_u64, used: 0_u64);
+  let digest = indexed_cost_small_trace(count: 16_u64, seed: 101_u64, retained: 0_u64, path: 0_u64, env: &env);
+  return exit_status(code: 0_u8);
+}

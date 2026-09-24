@@ -1,5 +1,14 @@
 # Slab library costs
 
+The later [same-source inactive-storage compiler comparison](../map-library/RESULTS.md#completed-comparison-gains-with-unresolved-regressions)
+preserves this experiment's complete matrix in
+[raw samples](measurements-inactive-raw.tar.gz) and a
+[paired summary](measurements-inactive-summary.csv). It finds wide-churn
+improvements and retained scalar lookup regressions; its results and compiler
+identities are separate from the historical measurements below. The owner
+rejected that compiler optimization and its bounded SSA follow-up; production
+retains baseline clearing, while these samples preserve the negative evidence.
+
 This explicit experiment bundles [`slab.wf`](../../../../lib/containers/slab.wf).
 It is outside daily correctness CI. `make check` verifies the operation traces;
 `make measure` checks them first and writes interleaved timing samples under

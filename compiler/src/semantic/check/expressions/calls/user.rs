@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::syntax::NodeId;
 use crate::{
@@ -369,7 +369,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 requirements: Vec::new(),
                 result,
                 result_borrow: None,
-                allocation: self.allocation_fit_of_call(function, signature)?,
+                allocation: self.allocation_fit_of_call(signature)?,
             },
             mode: result_mode,
             // [REF-3] no call delivers a reference: FN-1 returns owned values
@@ -395,7 +395,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// obligation.
     fn allocation_fit_of_call(
         &self,
-        caller: &FunctionSignature,
         signature: &FunctionSignature,
     ) -> Result<Option<super::super::super::super::model::CheckedAllocationFit>, CheckStop> {
         let (count, cell) = match signature.name.as_str() {
@@ -413,13 +412,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         let layout_ceiling = match self.instantiated_layout_ceiling(element) {
             Some(ceiling) => ceiling,
-            None if !caller.substitution.is_concrete(&self.elements.borrow()) => {
+            None if self
+                .stabilize_substitution_with_visiting(
+                    &signature.substitution,
+                    0,
+                    &mut HashSet::new(),
+                    false,
+                )?
+                .is_none() =>
+            {
                 // [ENT-1, FN-2] only a layout depending on an unresolved
                 // type or const parameter may defer the schema obligation.
                 // This includes an opaque parameter inside an aggregate,
                 // but not a fixed-layout Box shell or a known AboveU64
-                // ceiling. No deferred record grants proof or lowering
-                // authority; every concrete replay recomputes its bound.
+                // ceiling. Inspect the operation's substitution recursively:
+                // a nominal argument can still contain a schema parameter.
+                // No deferred record grants proof or lowering authority;
+                // every concrete replay recomputes its bound.
                 return Ok(None);
             }
             None => return Err(SemanticCompilerFailure::InvalidResolution.into()),

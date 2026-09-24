@@ -270,3 +270,74 @@ fn hash_map_operations_preserve_owned_pairs_in_both_lowering_modes() {
     // Box returned by the borrowed edit callback and consumed by its caller.
     execute_container_program("hash-map", &sources, 28, false);
 }
+
+#[test]
+fn priority_queue_orders_and_preserves_every_owner_in_both_lowering_modes() {
+    let sources: [(&str, &[u8]); 2] = [
+        (
+            "lib/containers/priority-queue.wf",
+            include_bytes!("../../../lib/containers/priority-queue.wf"),
+        ),
+        (
+            "containers/priority-queue-program.wf",
+            include_bytes!("../../../tests/programs/containers/priority-queue-program.wf"),
+        ),
+    ];
+    // Twenty-three backings and forty payload Boxes. The independent source
+    // oracle sorts a separate array and checks each owner identity. The native
+    // ledger additionally observes actual releases, including growth, refused
+    // owner retry, zero capacity and zero-sized u64-max logical capacity.
+    execute_container_program("priority-queue", &sources, 63, false);
+}
+
+#[test]
+fn indexed_memberships_match_the_model_and_release_every_owner_in_both_lowering_modes() {
+    let sources: [(&str, &[u8]); 5] = [
+        (
+            "lib/containers/slab.wf",
+            include_bytes!("../../../lib/containers/slab.wf"),
+        ),
+        (
+            "lib/containers/hash-map.wf",
+            include_bytes!("../../../lib/containers/hash-map.wf"),
+        ),
+        (
+            "lib/containers/priority-queue.wf",
+            include_bytes!("../../../lib/containers/priority-queue.wf"),
+        ),
+        (
+            "containers/indexed-store.wf",
+            include_bytes!("../../../tests/programs/containers/indexed-store.wf"),
+        ),
+        (
+            "containers/indexed-membership-program.wf",
+            include_bytes!("../../../tests/programs/containers/indexed-membership-program.wf"),
+        ),
+    ];
+    // Four policy/payload traces each allocate six initial store backings,
+    // eight index growth backings and fifteen payload Boxes: 116 total.
+    // Capacity/refusal, retirement and zero capacity add nine backings;
+    // direct indexed heapify adds one; the nodrop SlabEdit result adds one
+    // backing and two payload Boxes. The source model independently checks
+    // dictionary membership, sorted expiration and exact owner identities.
+    execute_container_program("indexed-membership", &sources, 129, false);
+}
+
+#[test]
+fn ordered_map_mutations_match_sorted_oracle_and_preserve_every_owner_in_both_lowering_modes() {
+    let sources: [(&str, &[u8]); 2] = [
+        (
+            "lib/containers/ordered-map.wf",
+            include_bytes!("../../../lib/containers/ordered-map.wf"),
+        ),
+        (
+            "containers/ordered-map-program.wf",
+            include_bytes!("../../../tests/programs/containers/ordered-map-program.wf"),
+        ),
+    ];
+    // Twenty-two scalar nodes, six owning nodes, and seventy-five payload
+    // Boxes. The additional owning map checks leaf and internal replacement
+    // below its ceiling: three nodes and thirty-six payloads add 39 to the
+    // original 64-allocation public mutation and traversal chain.
+    execute_container_program("ordered-map", &sources, 103, false);
+}
