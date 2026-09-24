@@ -2676,7 +2676,7 @@ fn main() -> status: ExitStatus pure {
         assert!(detail.contains(r#"extra: ["reads(data)"]"#), "{detail}");
         assert!(
             detail.contains(
-                r#"mechanical_fix: "declare exactly the row the body exhibits: add every missing category and path and remove every extra one; EFF-2 admits no wider and no narrower declaration than the union of the body-syntactic and release contributions""#
+                r#"mechanical_fix: "declare expected_row: it covers every access the body exhibits, carries no entry the body does not exhibit, and no call refuses two of its entries against each other [EFF-5]; missing names the entries it adds and extra the declared entries the body never exhibits""#
             ),
             "{detail}"
         );

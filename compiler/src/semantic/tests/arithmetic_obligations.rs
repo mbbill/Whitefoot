@@ -16,6 +16,9 @@ use super::super::model::{CheckedFunction, CheckedIntegerOperation, IntegerType}
 use super::with_semantics;
 
 const OVERFLOW_FIX: &str = "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic";
+/// The [OP-2] repair when the facts at the operation prove its `.defined`
+/// normalization false: no added proof establishes it.
+const REFUTED_DOMAIN_FIX: &str = "the facts that reach this operation prove its `.defined` normalization false, so the exact operation cannot succeed as written and no added invariant or proof step establishes it: change its operands or the state that reaches it, or use an available total non-exact row; guard it with a dominating branch only when its false edge is intended program behavior";
 
 fn named<'functions>(
     functions: &'functions [CheckedFunction],
@@ -349,7 +352,7 @@ fn a_ground_obligation_discharges_in_range_and_rejects_on_inevitable_overflow() 
             &SemanticIssueKind::UndischargedIntegerDomainObligation {
                 residual: "255_u8 +defined 1_u8".to_owned(),
                 disposition: StaticObligationDisposition::Refuted,
-                mechanical_fix: OVERFLOW_FIX,
+                mechanical_fix: REFUTED_DOMAIN_FIX,
             },
         );
     });

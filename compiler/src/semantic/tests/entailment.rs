@@ -10419,6 +10419,63 @@ fn main() -> status: ExitStatus pure {
     });
 }
 
+/// [FN-8] a refuted goal is false in the facts that reach the call, so its
+/// restructuring changes what reaches the call instead of asking for a proof
+/// that cannot exist; an unproved goal keeps the establish-the-fact repair.
+#[test]
+fn a_refuted_call_requirement_names_a_repair_no_proof_can_supply() {
+    let source = br#"fn positive(value: u8) -> result: unit pure contract {
+  requires value < 10_u8;
+} {
+  return unit;
+}
+
+fn caller() -> result: unit pure {
+  positive(value: 20_u8);
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the refuted goal must reject at FN-8: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Fn8);
+        let SemanticIssueKind::UndischargedCallRequirement(detail) = issue.kind() else {
+            panic!("expected FN-8 payload, got {:?}", issue.kind());
+        };
+        assert_eq!(detail.disposition, CallRequirementDisposition::Refuted);
+        assert_eq!(detail.instantiated_goal, "20_u8 < 10_u8");
+        assert_eq!(
+            detail.mechanical_fix,
+            "the facts that reach this call prove the instantiated requirement false, so the call cannot succeed as written and no added invariant or proof step establishes it: change the call's arguments or the state that reaches the call; guard the call with a dominating branch only when rejection is intended program behavior"
+        );
+    });
+}
+
+/// [FN-8, FN-2] the payload names the callee instance as a call writes it,
+/// with its type and const arguments, never by the internal symbol that
+/// keys its lowering.
+#[test]
+fn a_call_requirement_names_the_generic_instance_as_written() {
+    let source = include_bytes!(
+        "../../../../tests/conformance/cases/blk0-neg-full-array-freeze-requires-fullness.wf"
+    );
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the partial freeze must reject at FN-8: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Fn8);
+        let SemanticIssueKind::UndischargedCallRequirement(detail) = issue.kind() else {
+            panic!("expected FN-8 payload, got {:?}", issue.kind());
+        };
+        assert_eq!(detail.concrete_callee, "slots_into_array::<u64, 2>");
+    });
+}
+
 #[test]
 fn actual_obligations_precede_fn8_and_admitted_index_goals_use_the_source_fix() {
     let admitted_actual = br#"const values: Array<u8, 2> =[3_u8, 3_u8];

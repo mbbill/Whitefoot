@@ -34,19 +34,25 @@ pub(super) const STOR8_NO_HEAP: &str =
     "use a constant-capacity shape, or withdraw the no-heap declaration";
 
 const OPTION_TARGS_EXPECTED: &str = "Option with its type argument written: as a type `Option<u64>`, and as a variant constructor `Some<u64>(value: v)`";
-/// [EFF-1]'s five row conditions, each with the repair it admits.
+/// [EFF-1]'s six row conditions, each with the repair it admits.
 ///
 /// The rule text carries every one of these sentences; the diagnostic did not,
 /// and the blind-writer trial of 2026-08-28 recorded a writer meeting the
 /// repeated-category one — `writes(cwd), writes(out)` — with nothing but the
 /// rule number to work from. The field-of-non-struct condition is cited at two
-/// sites, so five conditions cover six rejections.
+/// sites, so six conditions cover seven rejections.
 const EFF1_CATEGORY_ORDER: &str =
     "a row is written in the canonical order, every `reads` entry before every `writes` entry";
 const EFF1_CATEGORY_ORDER_FIX: &str = "move every `reads` entry ahead of the first `writes` entry; a category may appear more than once";
 const EFF1_REPEATED_PATH: &str =
     "a row lists each path at most once per category, and this entry repeats one";
 const EFF1_REPEATED_PATH_FIX: &str = "delete the repeated entry; `writes(p)` already subsumes `reads(p)`, so the pair is never written for one path";
+/// [EFF-1] "`writes(p)` subsumes `reads(p)`, so the pair is never written for
+/// one path": the `reads` entry is the second spelling of a read the `writes`
+/// entry already states, which [FORM-1] refuses.
+const EFF1_SUBSUMED_READ: &str = "`writes(p)` subsumes `reads(p)`, so the pair is never written for one path, and this `reads` entry names a path the row also writes";
+const EFF1_SUBSUMED_READ_FIX: &str =
+    "delete this `reads` entry; the `writes` entry for the same path already states the read";
 const EFF1_NON_PARAMETER_ROOT: &str = "every effect path is rooted at one formal value parameter of the same callable, and this root is not one";
 const EFF1_NON_PARAMETER_ROOT_FIX: &str = "root the path at a parameter of this function; a local, a result binder, a region, and an unrelated declaration are never effect roots";
 const EFF1_FIELD_OF_NON_STRUCT: &str = "each effect-path suffix must select a field, payload, measure, window part, or indexed position admitted by its prefix type";
@@ -626,6 +632,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut previous = None;
         let mut declared = EffectSet::NONE;
         let mut written = [Vec::new(), Vec::new()];
+        // The `effect` node of each `reads` entry, so a later `writes` of the
+        // same path is refused where the redundant read is written.
+        let mut read_nodes = Vec::new();
         for effect in effects {
             let ordinal = if self.has_fixed(effect, FixedTerminal::Reads)? {
                 0_usize
@@ -662,8 +671,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                     );
                 }
+                // [EFF-1] "`writes(p)` subsumes `reads(p)`, so the pair is
+                // never written for one path." Canonical order puts the read
+                // first, so the pair is complete when its write arrives.
+                if ordinal == 1
+                    && let Some((_, read)) =
+                        read_nodes.iter().find(|(read_path, _)| *read_path == path)
+                {
+                    return self.issue_node(
+                        SemanticRule::Eff1,
+                        *read,
+                        SemanticIssueKind::InvalidEffectRow {
+                            reason: EFF1_SUBSUMED_READ,
+                            mechanical_fix: EFF1_SUBSUMED_READ_FIX,
+                        },
+                    );
+                }
                 written[ordinal].push(path.clone());
                 if ordinal == 0 {
+                    read_nodes.push((path.clone(), effect));
                     declared.add_read(path);
                 } else {
                     declared.add_write(path);

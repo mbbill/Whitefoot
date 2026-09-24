@@ -512,6 +512,9 @@ pub struct UndischargedPostconditionDetail {
     pub relation: String,
     /// The exact non-discharged disposition.
     pub disposition: PostconditionProofDisposition,
+    /// The restructuring that disposition admits: a refuted relation is
+    /// false in the facts at that return, and an unproved one lacks a fact.
+    pub mechanical_fix: &'static str,
 }
 
 /// Structured reason for one semantic rejection.
@@ -1023,12 +1026,15 @@ pub enum SemanticIssueKind {
     },
     /// The written effect row differs from syntactically exhibited effects.
     EffectMismatch {
-        /// The row the body exhibits, in EFF-1 canonical spelling. This is
-        /// exactly what the declaration must say.
+        /// A row EFF-2 admits for the body, in EFF-1 canonical spelling, that
+        /// no call refuses against itself [EFF-5]: the exhibited row with
+        /// every subsumed entry dropped and every pair of entries on one
+        /// parameter that a call always refuses merged into one write.
         expected_row: String,
         /// The row the declaration writes, in the same spelling.
         found_row: String,
-        /// Exhibited categories and paths the declaration does not carry.
+        /// The entries of `expected_row` that cover an exhibited access the
+        /// declaration does not cover.
         missing: Vec<String>,
         /// Declared categories and paths the body does not exhibit.
         extra: Vec<String>,

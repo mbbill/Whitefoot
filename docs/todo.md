@@ -752,6 +752,38 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   explicit override, for example an environment variable, without changing
   which clang CI uses. Close when the owner decides for or against the
   override and, if accepted, its implementation lands.
+- **The entailment fragment keeps a second resolved-place renderer.** Checker
+  payloads (EFF-5, OP-12, REF-2) spell resolved places through
+  `render_resolved_place` in `compiler/src/semantic/check/expressions/places.rs`,
+  while ENT-6 residuals and goals use `render_place` in
+  `compiler/src/semantic/entailment/flow.rs`, which still renders a payload
+  step by its variant and field ordinals and a literal subscript offset
+  without its `_u64` suffix. One renderer shared through a small naming seam
+  would remove the drift that produced the `<binding:N>` leak; the cost is
+  touching every pinned residual that spells a subscript or payload. Validate
+  by rendering both families from one function with the pinned-sentence
+  corpus unchanged except for the corrected spellings. Deferred from the
+  source-spelling fix because no current residual reaches either form in the
+  pinned corpus; reopen when one does or when either renderer next changes.
+- **A computed call argument has no source spelling in an EFF-5 path.** An
+  index position substituted from an argument that is neither a literal, a
+  const nor a binding, such as `first: indices[0_u64]`, renders as `?`,
+  because the checker captures only the value's identity and not the
+  argument's text. Rendering the argument's source extent would name it
+  exactly; validate that the extent is available at every capture site and
+  that capture identity stays unchanged. Deferred because the separation
+  proof already needs a binding there and the rejection names the call;
+  reopen when a writer report shows the `?` blocking a repair.
+- **DIAG-1's FN-8 restructuring is one sentence for both dispositions.** The
+  specification states one required restructuring for an FN-8 rejection,
+  `establish the complete callee requirement with one dominating branch or
+  one preceding proved invariant before the call`, and the checker's texts
+  already elaborate it. A refuted goal is false in the facts that reach the
+  call, so no added invariant establishes it; the checker now names a
+  refuted-specific repair for FN-8, OP-2, OP-6 and FN-9. The owner should
+  decide whether DIAG-1 states the refuted restructuring, or whether the
+  diagnostic texts return to the single sentence. Close with that ruling and,
+  if the specification changes, the matching pinned sentences.
 
 ## Open language questions
 
@@ -870,6 +902,24 @@ each is resolved by a discussion and a tree change.
   zero, one, and two premises and no more without a written certificate. Why
   the line sits at two, against one or three, is not remembered and needs a
   study before it is recorded.
+- **A row whose entries on one parameter overlap is admitted but never
+  callable.** [EFF-5] compares every pair of a call's substituted entries,
+  including two that one argument supplies, so `reads(p), writes(p.x)`,
+  `reads(p.x), writes(p)` and `writes(p), writes(p.x)` are refused at every
+  call, while [EFF-2]'s covering relation admits each at the declaration and
+  [EFF-1] forbids only the same-path pair `reads(p), writes(p)`. The checker
+  now refuses that pair at the declaration (EFF-1's "the pair is never
+  written for one path"), and EFF-2's suggested row merges every such pair
+  into one write of their common path, so a suggestion is always callable.
+  The remaining declarations still fail only at their first call, as the
+  uncalled rows in `ref2-pos-bystander-preservation.wf` show. Two spec
+  directions remove the dead end: EFF-1 or EFF-2 refusing any row with two
+  overlapping entries on one parameter where one writes, or EFF-5 exempting a
+  pair that one argument supplies unless the two entries differ only in index
+  or range positions. The first keeps EFF-5's per-call guarantee and makes those
+  conformance rows rejections; the second changes what a single-parameter
+  row promises about aliasing inside the callee. Decide with the owner;
+  validate against the bystander cases and the container library rows.
 
 ## Ownership redesign (candidate x1) follow-ups
 

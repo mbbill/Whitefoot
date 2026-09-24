@@ -673,7 +673,48 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "EFF-2",
         sentences: &[
-            r#"EffectMismatch { expected_row: "reads(data.len)", found_row: "pure", missing: ["reads(data.len)"], extra: [], mechanical_fix: "declare exactly the row the body exhibits: add every missing category and path and remove every extra one; EFF-2 admits no wider and no narrower declaration than the union of the body-syntactic and release contributions" }"#,
+            r#"EffectMismatch { expected_row: "reads(data.len)", found_row: "pure", missing: ["reads(data.len)"], extra: [], mechanical_fix: "declare expected_row: it covers every access the body exhibits, carries no entry the body does not exhibit, and no call refuses two of its entries against each other [EFF-5]; missing names the entries it adds and extra the declared entries the body never exhibits" }"#,
+        ],
+    },
+    Probe {
+        // The suggestion drops the read a write of the same path subsumes
+        // [EFF-1] and spells one path per entry; the declared row names two.
+        name: "declared-row-misses-a-read-modify-write.wf",
+        source: br#"struct Stats {
+  count: u64;
+  total: u64;
+}
+
+fn record(stats: &Stats) -> result: unit writes(stats.count), writes(stats.total) {
+  let old = deref(stats).count;
+  set deref(stats).count = old +wrap 1_u64;
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "EFF-2",
+        sentences: &[
+            r#"expected_row: "writes(stats.count)", found_row: "writes(stats.count), writes(stats.total)", missing: [], extra: ["writes(stats.total)"]"#,
+        ],
+    },
+    Probe {
+        name: "read-subsumed-by-a-write-of-the-same-path.wf",
+        source: br#"fn bump(value: &u64) -> out: u64 reads(value), writes(value) {
+  let old = deref(value);
+  set deref(value) = old +wrap 1_u64;
+  return old;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "EFF-1",
+        sentences: &[
+            r#"InvalidEffectRow { reason: "`writes(p)` subsumes `reads(p)`, so the pair is never written for one path, and this `reads` entry names a path the row also writes", mechanical_fix: "delete this `reads` entry; the `writes` entry for the same path already states the read" }"#,
         ],
     },
     // -------------------------------------------------------------------
@@ -938,7 +979,7 @@ fn main() -> status: ExitStatus pure {
 }
 "#,
         rule: "FN-8",
-        sentences: &[r#"instantiated_goal: "flt(v, Float { ty: F64, bits: 4607182418800017408 })""#],
+        sentences: &[r#"instantiated_goal: "flt(v, 1.0_f64)""#],
     },
     Probe {
         name: "goal-over-an-admitted-index-actual.wf",
@@ -980,6 +1021,91 @@ fn main() -> status: ExitStatus pure {
         // the renderer currently drops the `deref`. The pinned sentence is the
         // specification spelling and stays failing until the renderer is fixed.
         sentences: &[r#"instantiated_goal: "9_u64 <= deref(names).len""#],
+    },
+    Probe {
+        // A refuted goal is false in the facts that reach the call, so the
+        // repair changes what reaches it; and a generic callee is named as a
+        // call writes it.
+        name: "refuted-goal-of-a-generic-instance.wf",
+        source: br#"fn need<const n: u64>(x: u64) -> out: u64 pure contract {
+  requires x < n;
+} {
+  return x;
+}
+
+fn main() -> status: ExitStatus pure {
+  let r = need::<4>(x: 9_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "FN-8",
+        sentences: &[
+            r#"concrete_callee: "need::<4>""#,
+            r#"disposition: Refuted, mechanical_fix: "the facts that reach this call prove the instantiated requirement false, so the call cannot succeed as written and no added invariant or proof step establishes it: change the call's arguments or the state that reaches the call; guard the call with a dominating branch only when rejection is intended program behavior""#,
+        ],
+    },
+    // -------------------------------------------------------------------
+    // [OP-2], [OP-6] and [FN-9]: a refuted goal names a different repair.
+    // -------------------------------------------------------------------
+    Probe {
+        name: "refuted-exact-addition.wf",
+        source: br#"fn main() -> status: ExitStatus pure {
+  let x = 255_u8 + 1_u8;
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "OP-2",
+        sentences: &[
+            r#"disposition: Refuted, mechanical_fix: "the facts that reach this operation prove its `.defined` normalization false, so the exact operation cannot succeed as written and no added invariant or proof step establishes it: change its operands or the state that reaches it, or use an available total non-exact row; guard it with a dominating branch only when its false edge is intended program behavior""#,
+        ],
+    },
+    Probe {
+        name: "refuted-exact-conversion.wf",
+        source: br#"fn main() -> status: ExitStatus pure {
+  let narrow = cvt::<u32, u8>(256_u32);
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "OP-6",
+        sentences: &[
+            r#"disposition: Refuted, mechanical_fix: "the facts that reach this conversion prove its cvt.defined domain false, so the exact conversion cannot succeed as written and no added invariant or proof step establishes it: change the converted value or the state that reaches it, or use cvt.checked to return the failed conversion; guard it with a dominating cvt.defined condition only when refusal is intended behavior""#,
+        ],
+    },
+    Probe {
+        name: "refuted-postcondition-of-a-generic-instance.wf",
+        source: br#"fn bad<T: Int>(value: T) -> result: T pure contract {
+  ensures result < value;
+} {
+  return value;
+}
+
+fn main() -> status: ExitStatus pure {
+  let ignored = bad::<u8>(value: 0_u8);
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "FN-9",
+        sentences: &[
+            r#"concrete_function: "bad::<u8>""#,
+            r#"disposition: Refuted, mechanical_fix: "the facts at this return prove the ensures relation false, so the return cannot satisfy it as written and no added invariant or proof step establishes it: change the returned value or the state that reaches this return, or state in the ensures clause only what every return establishes""#,
+        ],
+    },
+    Probe {
+        name: "unproved-postcondition.wf",
+        source: br#"fn pass(value: u64, bound: u64) -> result: u64 pure contract {
+  ensures result < bound;
+} {
+  return value;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "FN-9",
+        sentences: &[
+            r#"disposition: Unproved, mechanical_fix: "establish the ensures relation at this return with a verified requirement, a source invariant, or explicit finite proof steps; otherwise restructure the return, or state in the ensures clause only what every return establishes""#,
+        ],
     },
     // [FORM-8] one canonical region spelling: each position a region can
     // occupy, written exactly where the surrounding text does not fix it.

@@ -36,6 +36,14 @@ fn assert_fn9_unproved(source: &[u8]) {
             detail.disposition,
             crate::PostconditionProofDisposition::Unproved
         );
+        // An unproved relation lacks a fact the writer can supply.
+        assert!(
+            detail
+                .mechanical_fix
+                .starts_with("establish the ensures relation at this return"),
+            "{}",
+            detail.mechanical_fix
+        );
     });
 }
 
@@ -51,6 +59,15 @@ fn assert_fn9_refuted(source: &[u8]) {
         assert_eq!(
             detail.disposition,
             crate::PostconditionProofDisposition::Refuted
+        );
+        // A refuted relation is false in the facts at that return, so no
+        // added proof establishes it and the repair changes the return.
+        assert!(
+            detail
+                .mechanical_fix
+                .starts_with("the facts at this return prove the ensures relation false"),
+            "{}",
+            detail.mechanical_fix
         );
     });
 }
@@ -3496,7 +3513,9 @@ fn main() -> status: ExitStatus pure {
             detail.disposition,
             crate::PostconditionProofDisposition::Refuted
         );
-        assert!(detail.concrete_function.contains("bad"));
+        // [FN-2] the instance is named as a call writes it, never by the
+        // internal symbol that keys its lowering.
+        assert_eq!(detail.concrete_function, "bad::<u8>");
     });
 }
 
