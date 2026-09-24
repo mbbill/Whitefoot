@@ -1,9 +1,9 @@
 # Task completion review
 
 The items an independent reviewer checks when a task completes. The
-[completion-review skill](skills/completion-review/SKILL.md) owns
-when the review runs, who runs it, how findings are routed and where the report
-goes. Merge conditions remain in [AGENTS.md](../AGENTS.md#branch-and-main-boundary).
+[completion-review skill](skills/completion-review/SKILL.md) owns when the
+review runs, who runs it, how findings are routed and where the report goes.
+Merge conditions remain in [AGENTS.md](../AGENTS.md#branch-and-main-boundary).
 
 ## How to review
 
@@ -118,17 +118,18 @@ Source: [specification and test integrity](../AGENTS.md#specification-and-test-i
 
 - [ ] **T1 — Language evidence.** For a specification amendment, the outgoing
   active bytes are archived unchanged, released archives are untouched, and
-  the active title advances the version. The change declares its specification delta
-  (rules, tokens, spellings, exceptions) and evidence/minimality selection
-  ground. `make static` checks the archive name, its bytes and the title
-  mechanically. Affected cases/verdicts, generated syntax, compiler and
-  documentation follow the amendment. For changed rules or constitutional premises, apply
-  R3–R4 below. For conformance changes,
-  the PR explains the normative expectation and how the changed evidence tests
-  it. The conformance runner checks unique rule IDs and resolving references;
-  inspect semantic duplication, exception clauses, and whether non-authoritative
-  review inventories match their normative definitions.
-  The approval boundary remains [AGENTS.md rule 4](../AGENTS.md#branch-and-main-boundary).
+  the active title advances the version. The change declares its
+  specification delta (rules, tokens, spellings, exceptions) and
+  evidence/minimality selection ground. `make static` checks the archive
+  name, its bytes and the title mechanically. Affected cases/verdicts,
+  generated syntax, compiler and documentation follow the amendment. For
+  changed rules or constitutional premises, apply R3–R4 below. For
+  conformance changes, the PR explains the normative expectation and how the
+  changed evidence tests it. The conformance runner checks unique rule IDs
+  and resolving references; inspect semantic duplication, exception clauses,
+  and whether non-authoritative review inventories match their normative
+  definitions. The approval boundary remains
+  [AGENTS.md rule 4](../AGENTS.md#branch-and-main-boundary).
 - [ ] **T2 — Preserved checks.** Every removed, skipped, narrowed, regenerated
   or weakened test/check has a technical reason consistent with the requested
   change. An implementation gap, crash, timeout or unsupported feature has not

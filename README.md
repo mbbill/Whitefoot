@@ -158,8 +158,9 @@ subprocess. Nested or parallel rows are not additive suite wall time. See the
 [measured build/test investigation](research/investigations/test-economy/build-and-test.md).
 
 The [gate workflow](.github/workflows/gate.yml) runs those groups on Linux and
-macOS, and the [design-readiness workflow](.github/workflows/design-readiness.yml)
-rejects pending design amendments on a pull request that is ready for review.
+macOS, and the
+[design-readiness workflow](.github/workflows/design-readiness.yml) rejects
+pending design amendments on a pull request that is ready for review.
 `make review-scope` lists what a completion review covers. Additional
 [I/O host checks](.github/workflows/io-hosts.yml) and
 [benchmarks](.github/workflows/io-bench.yml) own their platform-specific
