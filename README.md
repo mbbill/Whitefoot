@@ -1,41 +1,169 @@
 # Whitefoot
 
-Whitefoot is a programming language designed as a harness for AI agents.
-It serves human-directed systems development with implementation delegated to
-agents, using constraints, explicit interfaces, and machine-checked proofs to
-guide authors toward safe, efficient programs.
-The compiler checks required source evidence and erases it before execution;
-writers have no unchecked
-escape hatch. The [specification](spec/kernel-spec.md) defines the exact
-guarantees and trusted boundary.
+Whitefoot is a research systems programming language. A program the compiler
+accepts cannot reach undefined behavior, a panic, or a silent integer overflow
+at run time, provided the trusted base listed below is correct.
 
-## Purpose
+It gets there without runtime checks. Every indexing, arithmetic, conversion,
+division and allocation-size operation needs a proof that it is in range. The
+compiler finds most proofs itself with a fixed procedure and no SMT solver.
+When it cannot, you add a branch or state one more fact, and the compiler
+checks that fact too.
 
-The target is a serious research compiler that compiles real programs and
-lets us test language and performance ideas. Whitefoot uses restrictions,
-interfaces, and writer guidance to make ordinary implementations fall into
-efficient, verifiable classes and to expose architectural mistakes early.
-The goal is useful default performance, not a guarantee that every accepted
-program is globally optimal.
+```
+fn drop_spaces(out: &[u8], src: &[u8]) -> count: u64 reads(src), writes(out) contract {
+  requires deref(out).len >= deref(src).len;
+} {
+  let kept = 0_u64;
+  for (
+    i in 0_u64..deref(src).len,
+    invariant behind: kept <= i
+  ) {
+    let byte = deref(src)[i];
+    if byte != 32_u8 {
+      set deref(out)[kept] = byte;
+      set kept = kept + 1_u64;
+    }
+  }
+  return kept;
+}
+```
 
-Ease of manual source authorship is not an independent goal. Additional source
-and proof effort can be worthwhile when they improve performance or correctness,
-while usable feedback and enough information to complete the task still matter.
-Changing the intended author opens alternatives; experiments must establish
-which mechanisms work under their stated conditions.
+Without the `invariant` line, the program is rejected:
 
-The [constitution](docs/constitution.md) owns the objectives and
-tradeoffs; [Agent instructions](AGENTS.md) own project priorities and workflow.
+```text
+drop_spaces.wf:8:21: error[OP-4]: UndischargedBoundsObligation
+  ...
+  source:       set deref(out)[kept] = byte;
+  marker:                     ^^^^^^
+  residual: kept < deref(out).len
+  mechanical_fix: when the relation must hold, establish the residual with a verified requirement, a source invariant, ...
+```
 
-## Start here
+With it, the loop has no bounds check. `out.len` arrives in `%rsi` and is
+never compared; the register is reused as `i` (x86-64, clang -O2):
 
-Read the material that owns the question you are working on:
+```text
+.LBB0_9:
+	movzbl	(%rdx,%rsi), %r9d       # byte = src[i]
+	cmpb	$32, %r9b
+	je	.LBB0_11
+	movb	%r9b, (%rdi,%rax)       # out[kept] = byte
+	incq	%rax                    # kept + 1, proved not to overflow
+```
+
+A caller that passes a 5-byte `out` for 6 bytes of input is rejected at the
+call, with the callee's requirement it fails:
+
+```text
+  requires_clause: drop_spaces.wf:2:3 "requires deref(out).len >= deref(src).len;"
+  instantiated_goal: buffer[0..5].len >= text[0..6].len
+  disposition: Refuted
+```
+
+## What an accepted program cannot do, and what it still can
+
+When the trusted base is correct, an accepted program cannot:
+
+- read or write out of bounds, use freed memory, or read uninitialized memory;
+- overflow an integer silently. Each operation states its meaning (`+wrap`,
+  `+checked`, `+sat`), and a bare `+` must be proved not to overflow;
+- lose a value in a narrowing conversion, or divide by zero;
+- panic, abort, throw or unwind. The language has no such construct; expected
+  failures are values (`Result`, `Option`) the caller handles;
+- behave differently between a debug and a release build. There is one build.
+
+It still can:
+
+- run out of stack. It then stops with the fixed record
+  `{"resource":"stack"}`, the same way on every run, and `--stack-ledger`
+  reports each function's frame and how many levels each recursive cycle
+  fits;
+- run out of heap. The allocator stops the program; on Linux with
+  overcommit, the kernel's OOM killer may act first;
+- loop forever, or compute the wrong answer. Contracts describe what was
+  written down, not what was meant;
+- be miscompiled. The trusted base is the Whitefoot compiler, LLVM and clang,
+  the runtime and allocator, C functions linked in as trusted definitions,
+  libc and the operating system ([SCOPE-3](spec/kernel-spec.md)).
+
+## What you write
+
+Contracts on functions (`requires`, `ensures`), `reads`/`writes` effect rows
+on signatures, loop invariants, and occasionally an explicit proof step. The
+test programs and container library (94 files, 23.6k lines, about 800
+functions: a recursive grep, a DEFLATE decoder, a B-tree, a hash map, a
+priority queue, a TCP echo server, a directory walker and more) contain 200
+contract blocks, 294 invariants and 41 explicit proof steps. The 1,363-line
+grep has 3 invariants and no explicit proof step.
+
+The proof procedure is fixed: difference-bound closure, trying zero, one or
+two premises per goal ([ENT-1](spec/kernel-spec.md)). There is no timeout and
+no work budget, so every machine gives the same verdict. A proof step the
+compiler did not need is itself an error, so proofs do not accumulate as
+noise.
+
+## Status
+
+Whitefoot is about three months old and is a research compiler, not a
+product. One person makes the design rulings; most of the code is written by
+AI agents and checked against the specification, the conformance suite and
+review. Do not use it for anything that matters.
+
+You cannot yet write:
+
+- calls to C from source; C enters only as trusted linked definitions;
+- modules or separate compilation (being designed);
+- servers with connection-level concurrency;
+- explicit threads, async or SIMD. Under `--par` the compiler runs statements
+  or loop iterations in parallel when its proofs show them independent, the
+  result equals the sequential one, and `--par-ledger` explains each loop.
+
+## Try it
+
+Requires Rust stable (see [Running the compiler](#running-the-compiler)) and
+clang.
+
+```sh
+git clone https://github.com/mbbill/Whitefoot.git && cd Whitefoot
+cargo build --release --manifest-path compiler/Cargo.toml
+compiler/target/release/whitefootc tests/programs/wfgrep.wf -o wfgrep
+./wfgrep invariant tests/programs/wfgrep.wf
+compiler/target/release/whitefootc tests/conformance/cases/op4-neg-index-undischarged.wf
+```
+
+The last command shows a rejection; `--diagnostic-format json` prints it as
+JSON.
+
+## Evidence
+
+- [Specification](spec/kernel-spec.md): 121 numbered rules. Every rejection
+  cites one rule and one location.
+- [Conformance suite](tests/conformance/): 1,214 cases, 568 of which must be
+  rejected under a named rule (61 distinct rules).
+- [Programs](tests/programs/) built and run by the test gate.
+- [Known defects and follow-up work](docs/todo.md), including compiler bugs.
+- [Experiments](research/experiments/README.md), negative results included.
+
+## Related work
+
+| | Borrowed | Different |
+|---|---|---|
+| Rust | ownership, `Result`, no null | no `unsafe` in source; bounds and overflow are proved, not checked at run time |
+| SPARK | proving the absence of runtime errors | no SMT solver; what the fixed procedure cannot prove is written as explicit steps |
+| Wuffs | a proof checker instead of a solver | a general-purpose language with heap data and effects |
+| Dafny, Verus | contracts and invariants | the goal is runtime safety, not full functional correctness |
+
+## Working on the project
+
+The [constitution](docs/constitution.md) owns the objectives and tradeoffs;
+[AGENTS.md](AGENTS.md) owns priorities and workflow, including how agents work
+under the owner's rulings. Read the material that owns your question:
 
 | Question | Source |
 |---|---|
 | What does the language admit? | [Active kernel specification](spec/kernel-spec.md) |
 | What does this compiler implement, and how do I run it? | [Running the compiler](#running-the-compiler) below; the conformance report states the implemented surface |
-| What are the project goals and design principles? | [Constitution](docs/constitution.md) |
 | How do I work on a branch and prepare a merge? | [AGENTS.md](AGENTS.md) |
 | Which writer forms should I try? | [Patterns](docs/patterns.md) |
 | How should I investigate, verify, and maintain documentation? | [Engineering practice](docs/practice.md) |
@@ -47,7 +175,7 @@ Research and dated essays provide evidence and ideas; they do not add approval
 requirements. The reading and authority rules are in
 [AGENTS.md](AGENTS.md#authority-and-reading).
 
-## Repository
+Repository layout:
 
 - [compiler/](compiler/): the Rust compiler, LLVM emission, and native
   runtime support.
@@ -63,7 +191,7 @@ requirements. The reading and authority rules are in
 - [design/](design/): live design decisions with their reasons, and the
   procedure that maintains them.
 - [governance/](governance/): archive-protection hooks and specification-change
-  design evidence. The old approval ledger is retired.
+  design evidence.
 - [.github/](.github/): CI and the pull-request template.
 - [archive/](archive/): frozen historical material. Active source, builds,
   tests, and tools do not depend on it.
