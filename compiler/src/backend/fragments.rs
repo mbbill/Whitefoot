@@ -182,8 +182,8 @@ pub fn split_module(
 /// definitions it names. An entry is a local definition no group reaches
 /// and no other such definition names, or else the first member of a cycle
 /// nothing outside it names. A local definition the source dominates
-/// directly, which more than one group reaches or which is such an entry,
-/// owns a fragment.
+/// directly, which is such an entry or which more than one group or entry
+/// reaches, owns a fragment.
 fn owners(
     module: &Module<'_>,
     groups: &[Vec<usize>],
