@@ -62,7 +62,11 @@
 //! A **proved range reference** is `&r[s*i+b..s*i+b+s]` [REF-4] passed as an
 //! ordinary argument, whose discharged endpoint domain retains the exact
 //! images `[s*i+b, s*i+b+s)` with `s` and `b` fixed throughout L and both
-//! proved nonnegative. For distinct indices `i < j`, discreteness gives
+//! proved nonnegative, formed over an indexable place or range reference
+//! declared outside B, so that every iteration's range is relative to one
+//! origin. A range formed inside B from anything else is no proved range of
+//! its own; it inherits one only by lying within it. For distinct indices
+//! `i < j`, discreteness gives
 //! `i+1 <= j` and nonnegative `s` gives `s*i+b+s <= s*j+b`, so the half-open
 //! ranges do not overlap under [OWN-7]. Proved range references reached by
 //! writes and whose origins overlap must name the same origin and carry
@@ -741,6 +745,19 @@ impl<'check> Survey<'check, '_> {
 
     /// One range formation whose resolved places are `resolved`, against the
     /// proved-range family.
+    ///
+    /// "The indexable place or range reference it is formed from is declared
+    /// outside B and retains its resolved origin" [PAR-2]. The partition
+    /// `[s*i+b, s*i+b+s)` is relative to that origin, so only an origin fixed
+    /// throughout L makes two iterations' ranges disjoint: a source bound
+    /// inside B may carry a range step whose endpoints change with i, and
+    /// [OWN-7] leaves two different frames overlapping whatever lies below
+    /// them. A formation over such a source is recorded as nothing of its
+    /// own. "A range reference formed inside B instead inherits an existing
+    /// proved range reference only when its complete origin path is a
+    /// descendant of that range reference", which is the containment
+    /// `record_range_write` asks of every write; anything else it writes is
+    /// a shared write.
     fn record_range_formation(
         &mut self,
         resolved: &[ResolvedPlace],
@@ -748,6 +765,7 @@ impl<'check> Survey<'check, '_> {
         node: &NodePath,
     ) {
         let CheckedExpression::RangeOf {
+            source,
             obligation,
             captured,
             ..
@@ -755,6 +773,12 @@ impl<'check> Survey<'check, '_> {
         else {
             return;
         };
+        if source
+            .binding()
+            .is_some_and(|binding| self.introduced.contains(&binding))
+        {
+            return;
+        }
         let [place] = resolved else {
             self.shared.get_or_insert(node.clone());
             return;
