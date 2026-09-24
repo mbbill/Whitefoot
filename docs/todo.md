@@ -6,6 +6,10 @@ opportunity is a validation task: state its expected benefit, uncertainty, and
 criterion for deciding whether to pursue it. Entries do not select a design.
 Remove an item when its implementation and checks land, or its validation
 concludes with a recorded disposition; retain any selected follow-up work here.
+Add an item at the end of the section that owns its topic, so parallel branches
+rarely insert at the same place.
+
+## Numeric conversions and value evidence
 
 - **Select the modular conversion companion.** The
   [conversion comparison](../research/investigations/numeric-conversions/DESIGN.md#companion-operations-and-explicit-deferrals)
@@ -66,6 +70,8 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   Results or wider storage support makes this cost material. The language
   extensions below remain a separate question.
 
+## Checker precision and proof cost
+
 - **Joined reference proofs lose useful target-relative information.** A
   reference selecting either of two freshly empty Slots cannot establish the
   append precondition from both constructors' facts; captured disjoint ranges
@@ -94,16 +100,6 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   this consumer change to the joined-reference work above; reopen when that
   work establishes point-current target authority or a real proof needs it.
 
-- **Validate reuse of selected-target element layouts during emission.**
-  [Zero-stride addressing](../compiler/src/backend/target.rs) currently queries
-  the ordinary layout calculator afresh for each element-address step. Repeated
-  accesses to a deeply nested nominal element may recompute the same layout.
-  Compare checking/emission cost on repeated nested-element accesses before
-  introducing shared layout storage; require identical qualification and emitted
-  addresses. The benefit and material cost are unmeasured, so keep the simple
-  query for now and reopen when measuring target-emission cost or extending its
-  layout consumers.
-
 - **Expose a failed callee proof behind an unavailable summary.** The
   [partially concrete reserve probe](../research/investigations/containers-and-resources/X1-LIBRARY.md#partially-concrete-reserve-diagnostic)
   reports INV-1 at `room` after `priority_queue_make_room<ProbeDue, ceiling>`.
@@ -116,6 +112,77 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   without changing acceptance. Its benefit and exact attribution remain
   unverified; defer this diagnostic work while the admitted generic standalone
   control serves the experiment, and reopen when improving call-proof reports.
+
+- **Descendant references retain precision opportunities.** A write through a
+  widened range can discard its previously established length facts, and
+  independent cursors within one descendant cover cannot use suffix spelling
+  alone to establish separation. The
+  [cursor investigation](../research/investigations/wildcard-path/DESIGN.md)
+  records these limits and the current checking-cost qualification. Preserving
+  unaffected extent facts or proving a relation between independently selected
+  targets could reduce repeated bound proofs and admit more range-edit programs;
+  the benefit and a sound representation remain unverified. Defer this work
+  because the maintained list/tree/cursor program needs neither extension.
+  Reopen when a concrete program needs that precision. Validate the proposed
+  gain with positive editing cases, ancestor/window/stale-capture negative
+  controls and the investigation's checking-cost criterion; do not equate
+  targets merely because their covers agree. Close this item when the gain is
+  implemented and qualified or the measured tradeoff supports declining it.
+
+- **Pair-scoped parallel proofs need scaling and coverage work.** The current
+  PAR-1 planner constructs questions for every ordered source pair in a segment
+  and retains range separation only for that pair's first-statement state;
+  repeated visits meet with logical AND. A segment of n members has n(n-1)/2
+  pairs, but that logical requirement does not mandate quadratic repeated
+  proof work. General index mapping through the first member's `ensures` is
+  still unavailable; missing evidence keeps sequential lowering. Investigate
+  indexing and reuse without losing statement identity, captured endpoints,
+  flow context or all-pairs composition. Close this item when larger segments
+  have measured costs and the intended proof coverage, retaining guarded,
+  nonadjacent and stale-capture negative controls.
+
+- **Large entering proof contexts still have substantial checking cost.**
+  In the [post-x1 comparison](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#post-x1-selection),
+  256 independent inequality pairs with 256 uses still take a median 2.337 s;
+  the same context with only three uses takes 0.264 s. Reusing the ordered
+  affine index within a certificate removes repeated premise preparation,
+  but complete matrix/index construction and long-target AUTO traversal
+  remain. This is not certificate-length cost alone: a fixed three-pair
+  context admits all 4096 uses in 377 ms. The 512-pair context was accepted
+  in exploratory runs; these results establish neither linear total cost
+  nor a universal cost for the full use ceiling.
+  Preserve the complete [ENT-6]/[PRF-1] rules when investigating that cost.
+
+- **Ordinary-fallback views still copy a fact state per materialization.**
+  The [current comparison](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#post-x1-selection)
+  checks `tests/programs/fixed_run_library.wf` in 134 ms and
+  `tests/programs/wfgrep.wf` in 834 ms. In `materialize_closure_at` in
+  [`semantic/entailment/state.rs`](../compiler/src/semantic/entailment/state.rs):
+  whenever a selected proof depends on a postcondition call, it clones the
+  state, removes the call-dependent candidates and closes that view again.
+  A [query-only ordinary projection](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#ordinary-fallback-attribution-and-candidate)
+  passed the transition checks but improved fixed-run only 1.03x and left
+  wfgrep unchanged, so it was not retained. Revisit the representation when
+  a current workload attributes a substantial share to this path. Kill-time
+  edge insertion and derivation interning for recreated cells also remain.
+
+- **Acyclic generic instantiation has no established practical bound.**
+  D7's unchanged-argument cycle rule establishes termination while acyclic
+  fan-out may still require exponentially many instances relative to written
+  source. The owner deferred this question in D7, whereas the current language
+  design rules out exponential checking work. The
+  [behavior investigation](../research/investigations/containers-and-resources/BEHAVIOR.md#shared-semantic-boundary-and-exact-deltas)
+  records the accepted 1343-byte / 2047-instance witness, same-instance controls,
+  stage measurements and unresolved correspondence finding. No budget, timeout, new
+  source refusal, or measured asymptotic guarantee has been selected.
+  Reopen when generic container/behavior composition makes instance count or
+  checking cost material. Recheck the distinct-instance and repeated-instance
+  controls on that composition, separating semantic checking, lowering and
+  emitted-code size; faster duplicate lookup alone cannot close the bound.
+  The broader admission or sharing question remains deferred to an explicit
+  choice supported by those controls and a complexity argument.
+
+## Containers and storage lowering
 
 - **Validate a shared Ring wrap calculation independent of layout bounds.**
   The corrected front predecessor handles every admitted capacity. Remaining
@@ -167,19 +234,6 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   tuning while this causal question is open; reopen for a workload dominated
   by retained reverse calls, a native-toolchain change or another material
   regression under the matched comparison.
-
-- **Upstream LLVM on Darwin does not yet support the selected stack-probe
-  spelling.** The [Deque comparison](../research/experiments/container-representation/deque-library/RESULTS.md)
-  records LLVM 22.1.8 rejecting native construction of the unchanged baseline
-  with `Unsupported stack probing method`; the emitted
-  `"probe-stack"="__chkstk_darwin"` remains present. Parsing and optimization
-  succeed, and the native builder's Apple Clang path works, so this does not
-  establish a failure of the new address fact. Before offering upstream LLVM
-  as a native Darwin consumer, determine the supported probe form and link
-  requirements and validate large-frame and recursive exhaustion through the
-  existing floor tests. Disabling probes is not an acceptable workaround.
-  Defer this separate toolchain extension while the current native path is
-  supported; reopen when another native Darwin consumer is required.
 
 - **Slab aggregate results retain extra transfers and layout overhead.**
   The [Slab comparison](../research/experiments/container-representation/slab-library/RESULTS.md)
@@ -312,6 +366,32 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   than a container-specific compiler path. Defer a change until these
   construction/consumption paths isolate its benefit; reopen when the transfers
   materially affect a measured consumer or lowering work reaches those paths.
+
+- **Box/window representation costs remain unqualified.** The current runtime-
+  capacity Box is one pointer to one header-first allocation; `grow` uses
+  allocation, memmove and free. A one-word owner, one allocation and header
+  placement are distinct choices: a fat descriptor can also own one element
+  allocation and make measure reads direct, while widening transport and
+  capture storage. Neither alternative is established as generally faster.
+  Keep the current implementation while separating owner width, measure loads,
+  allocation count, copying and linked layout in representative single-thread
+  and parallel comparisons. The successful bounded capture repair above is
+  evidence about the synthesized task ABI; it neither attributes the earlier
+  `records` failure nor proves that any one general layout choice caused it.
+  Keep the deferred general representation study separate, and close this item
+  only when the relevant costs and chosen tradeoffs have discriminating evidence.
+
+## Parallel lowering and runtime
+
+- **Validate reuse of selected-target element layouts during emission.**
+  [Zero-stride addressing](../compiler/src/backend/target.rs) currently queries
+  the ordinary layout calculator afresh for each element-address step. Repeated
+  accesses to a deeply nested nominal element may recompute the same layout.
+  Compare checking/emission cost on repeated nested-element accesses before
+  introducing shared layout storage; require identical qualification and emitted
+  addresses. The benefit and material cost are unmeasured, so keep the simple
+  query for now and reopen when measuring target-emission cost or extending its
+  layout consumers.
 
 - **Parallel footprints omit ordinary result-list bindings.** The
   [sparse-routing trial](../research/investigations/compute-model/DESIGN.md#sparse-destination-routing-trial-2026-09-21)
@@ -596,69 +676,27 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   until the observations and measurement/detection tradeoff are explained by
   discriminating evidence, rather than a later pass or changed threshold.
 
-- **Box/window representation costs remain unqualified.** The current runtime-
-  capacity Box is one pointer to one header-first allocation; `grow` uses
-  allocation, memmove and free. A one-word owner, one allocation and header
-  placement are distinct choices: a fat descriptor can also own one element
-  allocation and make measure reads direct, while widening transport and
-  capture storage. Neither alternative is established as generally faster.
-  Keep the current implementation while separating owner width, measure loads,
-  allocation count, copying and linked layout in representative single-thread
-  and parallel comparisons. The successful bounded capture repair above is
-  evidence about the synthesized task ABI; it neither attributes the earlier
-  `records` failure nor proves that any one general layout choice caused it.
-  Keep the deferred general representation study separate, and close this item
-  only when the relevant costs and chosen tradeoffs have discriminating evidence.
-- **Descendant references retain precision opportunities.** A write through a
-  widened range can discard its previously established length facts, and
-  independent cursors within one descendant cover cannot use suffix spelling
-  alone to establish separation. The
-  [cursor investigation](../research/investigations/wildcard-path/DESIGN.md)
-  records these limits and the current checking-cost qualification. Preserving
-  unaffected extent facts or proving a relation between independently selected
-  targets could reduce repeated bound proofs and admit more range-edit programs;
-  the benefit and a sound representation remain unverified. Defer this work
-  because the maintained list/tree/cursor program needs neither extension.
-  Reopen when a concrete program needs that precision. Validate the proposed
-  gain with positive editing cases, ancestor/window/stale-capture negative
-  controls and the investigation's checking-cost criterion; do not equate
-  targets merely because their covers agree. Close this item when the gain is
-  implemented and qualified or the measured tradeoff supports declining it.
-- **Pair-scoped parallel proofs need scaling and coverage work.** The current
-  PAR-1 planner constructs questions for every ordered source pair in a segment
-  and retains range separation only for that pair's first-statement state;
-  repeated visits meet with logical AND. A segment of n members has n(n-1)/2
-  pairs, but that logical requirement does not mandate quadratic repeated
-  proof work. General index mapping through the first member's `ensures` is
-  still unavailable; missing evidence keeps sequential lowering. Investigate
-  indexing and reuse without losing statement identity, captured endpoints,
-  flow context or all-pairs composition. Close this item when larger segments
-  have measured costs and the intended proof coverage, retaining guarded,
-  nonadjacent and stale-capture negative controls.
+- **A `propagate` statement cannot be a [PAR-1] window member.** The rule
+  admits only `let`-bound and scrutinee calls, so `let a = f(); let b =
+  propagate g();` never overlaps. Allowing a `propagate` second member would
+  need the lowering to join the hand-out before the `Err` return; a future
+  investigation, taken up when a real program shows the gap.
 
-- **Large entering proof contexts still have substantial checking cost.**
-  In the [post-x1 comparison](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#post-x1-selection),
-  256 independent inequality pairs with 256 uses still take a median 2.337 s;
-  the same context with only three uses takes 0.264 s. Reusing the ordered
-  affine index within a certificate removes repeated premise preparation,
-  but complete matrix/index construction and long-target AUTO traversal
-  remain. This is not certificate-length cost alone: a fixed three-pair
-  context admits all 4096 uses in 377 ms. The 512-pair context was accepted
-  in exploratory runs; these results establish neither linear total cost
-  nor a universal cost for the full use ceiling.
-  Preserve the complete [ENT-6]/[PRF-1] rules when investigating that cost.
-- **Ordinary-fallback views still copy a fact state per materialization.**
-  The [current comparison](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#post-x1-selection)
-  checks `tests/programs/fixed_run_library.wf` in 134 ms and
-  `tests/programs/wfgrep.wf` in 834 ms. In `materialize_closure_at` in
-  [`semantic/entailment/state.rs`](../compiler/src/semantic/entailment/state.rs):
-  whenever a selected proof depends on a postcondition call, it clones the
-  state, removes the call-dependent candidates and closes that view again.
-  A [query-only ordinary projection](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#ordinary-fallback-attribution-and-candidate)
-  passed the transition checks but improved fixed-run only 1.03x and left
-  wfgrep unchanged, so it was not retained. Revisit the representation when
-  a current workload attributes a substantial share to this path. Kill-time
-  edge insertion and derivation interning for recreated cells also remain.
+## Platforms and host interfaces
+
+- **Upstream LLVM on Darwin does not yet support the selected stack-probe
+  spelling.** The [Deque comparison](../research/experiments/container-representation/deque-library/RESULTS.md)
+  records LLVM 22.1.8 rejecting native construction of the unchanged baseline
+  with `Unsupported stack probing method`; the emitted
+  `"probe-stack"="__chkstk_darwin"` remains present. Parsing and optimization
+  succeed, and the native builder's Apple Clang path works, so this does not
+  establish a failure of the new address fact. Before offering upstream LLVM
+  as a native Darwin consumer, determine the supported probe form and link
+  requirements and validate large-frame and recursive exhaustion through the
+  existing floor tests. Disabling probes is not an acceptable workaround.
+  Defer this separate toolchain extension while the current native path is
+  supported; reopen when another native Darwin consumer is required.
+
 - **Connection-level concurrency is not supplied by ordinary source order.**
   A loop that accepts and serves connections in source order
   completes the current handler before entering the next, so a handler waiting
@@ -671,31 +709,12 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   record that noncompletion without a throughput result. No replacement
   interface has been chosen. `WF_STACKS` is inert: the runtime has no
   switchable-stack pool for it to size, so it is neither read nor validated.
-- **Acyclic generic instantiation has no established practical bound.**
-  D7's unchanged-argument cycle rule establishes termination while acyclic
-  fan-out may still require exponentially many instances relative to written
-  source. The owner deferred this question in D7, whereas the current language
-  design rules out exponential checking work. The
-  [behavior investigation](../research/investigations/containers-and-resources/BEHAVIOR.md#shared-semantic-boundary-and-exact-deltas)
-  records the accepted 1343-byte / 2047-instance witness, same-instance controls,
-  stage measurements and unresolved correspondence finding. No budget, timeout, new
-  source refusal, or measured asymptotic guarantee has been selected.
-  Reopen when generic container/behavior composition makes instance count or
-  checking cost material. Recheck the distinct-instance and repeated-instance
-  controls on that composition, separating semantic checking, lowering and
-  emitted-code size; faster duplicate lookup alone cannot close the bound.
-  The broader admission or sharing question remains deferred to an explicit
-  choice supported by those controls and a complexity argument.
+
 - **At most eight peers may wait at once on a host without a native ring.**
   On Darwin, and under `WF_IO_NO_NATIVE_RING`, a peer wait beyond the eighth
   concurrent one has no helper and queues with no timeout. The readiness-
   driven adapter that would lift this, one poll over every queued descriptor
   from inside the park, was never built.
-- **A `propagate` statement cannot be a [PAR-1] window member.** The rule
-  admits only `let`-bound and scrutinee calls, so `let a = f(); let b =
-  propagate g();` never overlaps. Allowing a `propagate` second member would
-  need the lowering to join the hand-out before the `Err` return; a future
-  investigation, taken up when a real program shows the gap.
 
 ## Open language questions
 
