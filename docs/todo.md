@@ -1154,3 +1154,23 @@ condition under which it is taken up.
   spelling `1.0_f64` (pinned in `driver::pinned_sentences` beside the integer
   goals). The goal renderer should print the constant's canonical FORM-5
   spelling, as it does for integers; update that pin with the fix.
+- **Validate the default diagnostic rendering.** Text by default is
+  provisional. The [readable-diagnostics investigation](../research/investigations/readable-diagnostics/DESIGN.md#default-format-text-with-json-on-request)
+  selected it on reading cost for an agent (the lean OP-4 and FN-8 records
+  measured there are 13-17% smaller than their JSON objects) and on the
+  familiar summary-line shape, not on a measured repair loop. Run a writer trial over a fixed set of rejections
+  covering lexical, grammar, canonical-form and proof families, comparing text
+  and JSON defaults and a caret marker against a quoted span, with compile
+  rounds to a fix as the criterion. Reopen the default, and the marker form,
+  when that trial or an agent harness shows a difference.
+- **Structured fields for stops that are not source rejections: declined.**
+  Resource, invocation, internal-invariant, target-layout and backend stops
+  print their stage value's `Debug` text as one `payload` field. They have no
+  writer repair, and no consumer reads their fields separately. Reopen when a
+  harness or experiment acts on one of them, for example a resource ceiling a
+  writer can raise.
+- **Text lists are ambiguous when an item contains `, `.** A diagnostic list
+  such as `relations: [a, b]` prints items unquoted, so an item holding `, `
+  cannot be split exactly from text. The JSON form carries each item as its
+  own string and covers exact parsing; reopen only if an agent misreads such a
+  list in practice.

@@ -2,8 +2,8 @@
 //! family a writer meets, in both formats.
 //!
 //! The per-rule sentences are pinned by `driver::pinned_sentences`; these
-//! pin the shape around them: the summary line, the envelope labels and their
-//! order, the marker, related positions, escaping, and the JSON object.
+//! pin the shape around them: the summary line, the marked source line,
+//! related positions, escaping, and the complete JSON object.
 
 use super::{DiagnosticFormat, render_driver_failure};
 use crate::{CompilationFailure, CompilerLimits, SourceInput, check};
@@ -51,12 +51,6 @@ fn an_undischarged_subscript_prints_its_residual_under_a_marked_line() {
     let failure = stop("bounds.wf", BOUNDS);
     let expected = format!(
         "bounds.wf:11:21: error[OP-4]: UndischargedBoundsObligation
-  rule: OP-4
-  kind: UndischargedBoundsObligation
-  category: Source
-  stage: Semantics
-  at: bounds.wf:11:21
-  bytes: 377..383
   source:       set deref(out)[kept] = byte;
   marker:                     ^^^^^^
   residual: kept < deref(out).len
@@ -66,8 +60,10 @@ fn an_undischarged_subscript_prints_its_residual_under_a_marked_line() {
     assert_no_internal_identity(&expected);
 }
 
+/// The text form is lean; JSON is complete, with the envelope the text
+/// leaves in its summary line and the byte interval it omits.
 #[test]
-fn the_json_record_carries_the_same_fields_on_one_line() {
+fn the_json_record_is_complete_on_one_line() {
     let failure = stop("bounds.wf", BOUNDS);
     let expected = format!(
         r#"{{"rule":"OP-4","kind":"UndischargedBoundsObligation","category":"Source","stage":"Semantics","at":{{"file":"bounds.wf","line":11,"column":21}},"bytes":{{"start":377,"end":383}},"source":"      set deref(out)[kept] = byte;","detail":{{"residual":"kept < deref(out).len","mechanical_fix":"{OP4_FIX}"}}}}"#
@@ -83,7 +79,7 @@ fn the_json_record_carries_the_same_fields_on_one_line() {
 }
 
 #[test]
-fn a_call_requirement_names_the_callee_clause_as_a_position() {
+fn a_call_requirement_names_the_callee_clause_by_its_position_and_text() {
     let source =
         br#"fn drop_spaces(out: &[u8], src: &[u8]) -> kept: u64 reads(src), writes(out) contract {
   requires deref(out).len >= deref(src).len;
@@ -115,12 +111,6 @@ fn main() -> status: ExitStatus pure {
     let failure = stop("caller.wf", source);
     let expected = format!(
         "caller.wf:24:14: error[FN-8]: UndischargedCallRequirement
-  rule: FN-8
-  kind: UndischargedCallRequirement
-  category: Source
-  stage: Semantics
-  at: caller.wf:24:14
-  bytes: 646..711
   source:   let kept = drop_spaces(out: &buffer[0_u64..5_u64], src: &text[0_u64..6_u64]);
   marker:              {}
   concrete_callee: drop_spaces
@@ -132,13 +122,74 @@ fn main() -> status: ExitStatus pure {
     );
     assert_eq!(failure.to_string(), expected);
     assert_no_internal_identity(&expected);
-    // The related position is an object with the envelope's own field names.
+    // The related position is an object with `at`, `bytes` and its own text.
     assert!(
         failure.render(DiagnosticFormat::Json).contains(
-            r#""requires_clause":{"at":{"file":"caller.wf","line":2,"column":3},"bytes":{"start":89,"end":131},"source":"requires deref(out).len >= deref(src).len;"}"#
+            r#""requires_clause":{"at":{"file":"caller.wf","line":2,"column":3},"bytes":{"start":89,"end":131},"text":"requires deref(out).len >= deref(src).len;"}"#
         ),
         "{}",
         failure.render(DiagnosticFormat::Json)
+    );
+}
+
+/// A requirement of a compiler-supplied declaration is quoted too, under a
+/// name no writer will try to open as a file.
+#[test]
+fn a_prelude_requirement_is_named_as_the_prelude() {
+    let source = br#"fn walk(factory: &HandleFactory, root: &DirectoryRead, name: &[u8]) -> result: u8 reads(root), reads(name), writes(factory) {
+  match open_file(factory: factory, root: root, name: name, start: 0_u64, end: 1_u64) {
+    Ok(value: handle) => {
+      close_read(factory: factory, file: move handle);
+    }
+    Err(error: problem) => {
+    }
+  }
+  return 0_u8;
+}
+"#;
+    let detail = stop("walk.wf", source).detail();
+    assert!(
+        detail.contains(
+            "requires_clause: <prelude>/open_file.wf:3:3 \"requires end <= deref(name).len;\"\n"
+        ),
+        "{detail}"
+    );
+}
+
+/// Each node an FN-9 payload names prints its own text: the clause and the
+/// selector, not the header line they sit on.
+#[test]
+fn a_postcondition_names_its_clause_and_selector_by_their_own_text() {
+    let source = br#"fn unproved(value: i32, choose: Bool) -> result: i32 pure contract {
+  ensures result == value;
+} {
+  if choose {
+    return 0_i32;
+  } else {
+    return value;
+  }
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let failure = stop("ensures.wf", source);
+    assert_eq!(
+        failure.to_string(),
+        r#"ensures.wf:5:5: error[FN-9]: UndischargedPostcondition
+  source:     return 0_i32;
+  marker:     ^^^^^^^^^^^^^
+  concrete_function: unproved
+  postcondition: ensures.wf:2:3 "ensures result == value;"
+  conjunct: 0
+  selector: ensures.wf:1:42 "result: i32"
+  relation: 0 = value
+  disposition: Unproved"#
+    );
+    assert_eq!(
+        failure.render(DiagnosticFormat::Json),
+        r#"{"rule":"FN-9","kind":"UndischargedPostcondition","category":"Source","stage":"Semantics","at":{"file":"ensures.wf","line":5,"column":5},"bytes":{"start":118,"end":131},"source":"    return 0_i32;","detail":{"concrete_function":"unproved","postcondition":{"at":{"file":"ensures.wf","line":2,"column":3},"bytes":{"start":71,"end":95},"text":"ensures result == value;"},"conjunct":0,"selector":{"at":{"file":"ensures.wf","line":1,"column":42},"bytes":{"start":41,"end":52},"text":"result: i32"},"relation":"0 = value","disposition":"Unproved"}}"#
     );
 }
 
@@ -169,16 +220,9 @@ fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    let failure = stop("invariant.wf", source);
     assert_eq!(
-        failure.to_string(),
+        stop("invariant.wf", source).to_string(),
         "invariant.wf:9:5: error[INV-1]: UndischargedLoopInvariant
-  rule: INV-1
-  kind: UndischargedLoopInvariant
-  category: Source
-  stage: Semantics
-  at: invariant.wf:9:5
-  bytes: 297..325
   source:     invariant behind: kept <= at
   marker:     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   name: behind
@@ -188,20 +232,47 @@ fn main() -> status: ExitStatus pure {
     );
 }
 
+/// A certificate part that carries use ordinals prints them as its fields,
+/// not as a `Debug` spelling.
+#[test]
+fn a_failed_certificate_part_prints_its_use_ordinal_as_a_field() {
+    let source = br#"fn increment(x: u8, middle: u8) -> result: u8 pure contract {
+  requires middle <= 254_u8;
+} {
+  invariant upper_bound: x <= 254_u8 {
+    use (x <= middle);
+    use (middle <= 254_u8);
+  }
+  return x;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let failure = stop("premise.wf", source);
+    assert!(
+        failure
+            .detail()
+            .contains("\nobligation: Premise {use_index: 0}\n"),
+        "{failure}"
+    );
+    assert!(
+        failure
+            .render(DiagnosticFormat::Json)
+            .contains(r#""obligation":{"kind":"Premise","use_index":0}"#),
+        "{}",
+        failure.render(DiagnosticFormat::Json)
+    );
+}
+
 #[test]
 fn a_grammar_rejection_quotes_the_expected_terminals_and_the_token_it_found() {
     let source = b"fn main() -> status: ExitStatus pure {\n  let a = 42;\n  return exit_status(code: 0_u8);\n}\n";
-    let failure = stop("suffix.wf", source);
     // A fixed terminal is quoted as its spelling; a token class is named.
     assert_eq!(
-        failure.to_string(),
+        stop("suffix.wf", source).to_string(),
         r#"suffix.wf:2:11: error[FORM-5]: UnexpectedToken
-  rule: FORM-5
-  kind: UnexpectedToken
-  category: Source
-  stage: Parsing
-  at: suffix.wf:2:11
-  bytes: 49..51
   source:   let a = 42;
   marker:           ^^
   expected: [TYPEID, IDENT, "&", "move", "if", "propagate", "match", literal, "musttail", OPNAME, "deref", "entry"]
@@ -216,24 +287,15 @@ fn a_canonical_rejection_quotes_the_trivia_and_marks_the_line_it_ends_in() {
     assert_eq!(
         failure.to_string(),
         r#"indent.wf:2:1: error[FORM-2]: NonCanonicalTrivia
-  rule: FORM-2
-  kind: NonCanonicalTrivia
-  category: Source
-  stage: CanonicalSource
-  at: indent.wf:2:1
-  bytes: 38..43
   source:     let a = 1_i32;
   marker: ^^^^
   expected: "\n  "
   found: "\n    ""#
     );
-    // JSON carries the trivia itself, in JSON's own escapes.
-    assert!(
-        failure
-            .render(DiagnosticFormat::Json)
-            .ends_with(r#""detail":{"expected":"\n  ","found":"\n    "}}"#),
-        "{}",
-        failure.render(DiagnosticFormat::Json)
+    // JSON carries the same escaped spelling the text form quotes.
+    assert_eq!(
+        failure.render(DiagnosticFormat::Json),
+        r#"{"rule":"FORM-2","kind":"NonCanonicalTrivia","category":"Source","stage":"CanonicalSource","at":{"file":"indent.wf","line":2,"column":1},"bytes":{"start":38,"end":43},"source":"    let a = 1_i32;","detail":{"expected":"\\n  ","found":"\\n    "}}"#
     );
 }
 
@@ -249,68 +311,83 @@ fn a_multi_byte_scalar_is_marked_as_one_character_and_escaped_where_quoted() {
     assert_eq!(
         failure.to_string(),
         "utf8.wf:2:11: error[FORM-1]: UnexpectedByte
-  rule: FORM-1
-  kind: UnexpectedByte
-  category: Source
-  stage: Lexing
-  at: utf8.wf:2:11
-  bytes: 49..52
   source:   let x = \u{2192} caf\u{e9};
   marker:           ^
   found: \"\\u{2192}\""
     );
-    // JSON carries the scalar itself, and the same character column.
     assert_eq!(
         failure.render(DiagnosticFormat::Json),
-        "{\"rule\":\"FORM-1\",\"kind\":\"UnexpectedByte\",\"category\":\"Source\",\"stage\":\"Lexing\",\"at\":{\"file\":\"utf8.wf\",\"line\":2,\"column\":11},\"bytes\":{\"start\":49,\"end\":52},\"source\":\"  let x = \u{2192} caf\u{e9};\",\"detail\":{\"found\":\"\u{2192}\"}}"
+        "{\"rule\":\"FORM-1\",\"kind\":\"UnexpectedByte\",\"category\":\"Source\",\"stage\":\"Lexing\",\"at\":{\"file\":\"utf8.wf\",\"line\":2,\"column\":11},\"bytes\":{\"start\":49,\"end\":52},\"source\":\"  let x = \u{2192} caf\u{e9};\",\"detail\":{\"found\":\"\\\\u{2192}\"}}"
     );
 }
 
-/// A byte that is not a scalar, or a scalar that is not source text, is often
-/// invisible, so the field that quotes it escapes it.
+/// A byte that is not a scalar is escaped both where the line is shown and
+/// where it is quoted, and JSON carries the same spelling rather than a
+/// replacement character.
 #[test]
-fn an_invalid_byte_is_escaped_where_it_is_quoted() {
+fn an_invalid_byte_is_escaped_in_both_formats() {
     let failure = stop(
         "byte.wf",
         b"fn main() -> status: ExitStatus pure {\n  let x = \xff;\n  return exit_status(code: 0_u8);\n}\n",
     );
-    let rendered = failure.to_string();
-    assert!(
-        rendered.starts_with("byte.wf:2:11: error[FORM-2]: InvalidUtf8\n"),
-        "{rendered}"
+    assert_eq!(
+        failure.to_string(),
+        "byte.wf:2:11: error[FORM-2]: InvalidUtf8
+  source:   let x = \\xff;
+  marker:           ^^^^
+  found: \"\\xff\""
     );
-    assert!(
-        rendered.contains("\n  source:   let x = \u{fffd};\n"),
-        "{rendered}"
+    assert_eq!(
+        failure.render(DiagnosticFormat::Json),
+        r#"{"rule":"FORM-2","kind":"InvalidUtf8","category":"Source","stage":"Lexing","at":{"file":"byte.wf","line":2,"column":11},"bytes":{"start":49,"end":50},"source":"  let x = \\xff;","detail":{"found":"\\xff"}}"#
     );
-    assert!(rendered.ends_with("\n  found: \"\\xff\""), "{rendered}");
-    assert_eq!(failure.detail(), "found: \"\\xff\"");
+}
+
+/// A control or bidirectional formatting character later on the quoted line
+/// is escaped, so the line cannot read differently from its bytes and the
+/// marker stays under the defect.
+#[test]
+fn a_quoted_line_escapes_control_and_reordering_characters() {
+    let source = "fn main() -> status: ExitStatus pure {\n  let x = @ \t\u{202e}y;\n  return exit_status(code: 0_u8);\n}\n";
+    assert_eq!(
+        stop("bidi.wf", source.as_bytes()).to_string(),
+        "bidi.wf:2:11: error[FORM-3]: MissingLabelName
+  source:   let x = @ \\t\\u{202e}y;
+  marker:           ^
+  found: \"@\""
+    );
 }
 
 #[test]
-fn a_capability_stop_is_located_but_never_cites_a_rule() {
+fn a_capability_stop_names_its_stage_and_never_cites_a_rule() {
     let failure = stop(
         "arms.wf",
         b"enum Flag {\n  A();\n  B();\n}\n\nfn main() -> status: ExitStatus pure {\n  let flag = A();\n  match flag {\n    A() => {\n    }\n    A() => {\n    }\n    B() => {\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
     );
     let rendered = failure.to_string();
     assert!(
-        rendered.starts_with("arms.wf:11:5: unsupported capability: DuplicateMatchArm\n  kind: DuplicateMatchArm\n  category: Unsupported\n  stage: Semantics\n  at: arms.wf:11:5\n"),
+        rendered.starts_with(
+            "arms.wf:11:5: unsupported capability in Semantics: DuplicateMatchArm\n  source:     A() => {\n"
+        ),
         "{rendered}"
     );
-    assert!(!rendered.contains("rule:"), "{rendered}");
+    assert!(!rendered.contains("error["), "{rendered}");
     assert_no_internal_identity(&rendered);
+    assert!(
+        failure.render(DiagnosticFormat::Json).starts_with(
+            r#"{"kind":"DuplicateMatchArm","category":"Unsupported","stage":"Semantics","at":"#
+        ),
+        "{}",
+        failure.render(DiagnosticFormat::Json)
+    );
 }
 
 #[test]
-fn a_compiler_facing_stop_keeps_its_payload_under_its_category() {
+fn a_compiler_facing_stop_keeps_its_payload_under_its_category_and_stage() {
     let failure = check(&[], CompilerLimits::default()).expect_err("no source record");
     assert_eq!(
         failure.to_string(),
-        "whitefootc: invocation failure: EmptySourceSequence
-  kind: EmptySourceSequence
-  category: Invocation
-  stage: SourceEnvelope
+        "whitefootc: invocation failure in SourceEnvelope: EmptySourceSequence
   payload: EmptySourceSequence"
     );
     assert_eq!(
