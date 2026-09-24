@@ -811,7 +811,11 @@ fn compile_executable(
     report: &mut BuildReport,
 ) -> Result<(), String> {
     // The ordinary prelude implementation library links its private engine.
-    let directory = std::env::temp_dir().join(format!("whitefootc-{}", std::process::id()));
+    // Each build stages in its own directory, so two builds of one process
+    // never share or remove each other's inputs.
+    static BUILDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let build = BUILDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let directory = std::env::temp_dir().join(format!("whitefootc-{}-{build}", std::process::id()));
     let result = (|| {
         let (staged, compiled) = runtime_units();
         std::fs::create_dir_all(&directory)
