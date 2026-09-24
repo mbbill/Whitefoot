@@ -677,9 +677,10 @@ fn main() -> status: ExitStatus pure {
         ],
     },
     Probe {
-        // The suggestion drops the read a write of the same path subsumes
-        // [EFF-1] and spells one path per entry; the declared row names two.
-        name: "declared-row-misses-a-read-modify-write.wf",
+        // The body reads and writes `stats.count` and never touches
+        // `stats.total`: the suggestion drops the read the write subsumes
+        // [EFF-1], nothing is missing, and the untouched write is extra.
+        name: "declared-row-writes-an-unexhibited-field.wf",
         source: br#"struct Stats {
   count: u64;
   total: u64;
@@ -1058,6 +1059,40 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "FN-9",
         sentences: &[r#"concrete_function: "bad::<u8>""#],
+    },
+    // -------------------------------------------------------------------
+    // [PROV-6] and [GRAM-8]: a generic nominal instance is named as its
+    // type is written [GRAM-3], never by the key the checker interned it
+    // under.
+    // -------------------------------------------------------------------
+    Probe {
+        name: "unconsumed-instance-of-a-generic-nodrop-struct.wf",
+        source: br#"nodrop struct Token<T> {
+  value: T;
+}
+
+fn main() -> status: ExitStatus pure {
+  let token = Token<u64>(value: 1_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "PROV-6",
+        sentences: &[r#"binding: "token", obligation: "Token<u64>""#],
+    },
+    Probe {
+        name: "const-of-a-generic-struct-with-a-wrong-field.wf",
+        source: br#"struct Wrap<T> {
+  value: T;
+}
+
+const w: Wrap<u64> = Wrap<u64>(other: 1_u64);
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "GRAM-8",
+        sentences: &[r#"InvalidConstructionFields { constructor: "Wrap<u64>", declared_fields: ["value"] }"#],
     },
     // [FORM-8] one canonical region spelling: each position a region can
     // occupy, written exactly where the surrounding text does not fix it.

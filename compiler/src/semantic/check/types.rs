@@ -1324,7 +1324,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticIssueKind::InvalidConstValue,
             );
         };
-        let (constructor_name, declared_fields) = {
+        let declared_fields = {
             let nominal = self.nominal(id)?;
             let super::super::model::CheckedNominalKind::Struct { fields } = &nominal.kind else {
                 return self.issue_node(
@@ -1333,8 +1333,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     SemanticIssueKind::InvalidConstValue,
                 );
             };
-            (nominal.name.clone(), fields.clone())
+            fields.clone()
         };
+        // The constructor is named as the source writes its type, with an
+        // instance's type and const arguments [GRAM-3].
+        let constructor_name = self.checked_type_name(expected)?;
         let (expected_template, expected_arguments) = self
             .source_nominal_instances
             .get(id.0 as usize)

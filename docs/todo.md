@@ -803,14 +803,60 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   prescribe none print one anyway: EFF-1's row conditions carry a
   `mechanical_fix` on main, and EFF-2's `EffectMismatch` prints "declare
   exactly the row the body exhibits: ..." though EFF-2 requires no
-  restructuring, and that wording no longer describes `expected_row`, which
-  merges entries a call would refuse. (EFF-1's subsumed-read rejection,
-  which requires no restructuring, carries none.) Audit every rejection in
-  one pass, rule by rule, and either update the specification's text or the
-  compiler's; the criterion is that every restructuring the
-  specification prescribes equals the printed one, and a printed fix exists
-  only where a rule requires one or the specification is amended to allow
-  it. Pinned sentences and unit tests that assert the texts change with it.
+  restructuring. (EFF-1's subsumed-read rejection, which requires no
+  restructuring, carries none.) Two of these printed fixes, applied
+  literally, lead to a further rejection:
+  (a) EFF-2's "add every missing category and path and remove every extra
+  one" no longer describes `expected_row`, which merges entries a call
+  would refuse. A body that reads `stats` and writes `stats.count`,
+  declared `writes(stats.count)`, gets `expected_row: "writes(stats)"`,
+  `missing: ["writes(stats)"]` and `extra: []`; adding the missing entry
+  and removing nothing gives `writes(stats), writes(stats.count)`, which
+  EFF-1 and EFF-2 admit and EFF-5 refuses at every call. Declaring
+  `expected_row` itself is callable.
+  (b) EFF-1's category-order fix turns `writes(v), reads(v)` into
+  `reads(v), writes(v)`, which then meets the subsumed-read rejection, one
+  more compile round for a repair that should have deleted the read.
+  Audit every rejection in one pass, rule by rule, and either update the
+  specification's text or the compiler's; the criterion is that every
+  restructuring the specification prescribes equals the printed one, and a
+  printed fix exists only where a rule requires one or the specification is
+  amended to allow it, and never leads to a further rejection of the same
+  construct. Pinned sentences and unit tests that assert the texts change
+  with it.
+- **Question for the owner, raised during the source-spelling fix: should a
+  row whose entries on one parameter overlap be admitted?** [EFF-5] compares
+  every pair of a call's substituted entries, including two that one
+  argument supplies, so `reads(p), writes(p.x)`, `reads(p.x), writes(p)` and
+  `writes(p), writes(p.x)` are refused at every call, while [EFF-2]'s
+  covering relation admits each at the declaration and [EFF-1] forbids only
+  the same-path pair `reads(p), writes(p)`. The checker refuses that pair at
+  the declaration (EFF-1's "the pair is never written for one path"), and
+  EFF-2's suggested row merges every such pair into one write of their
+  common path, so a suggestion is always callable. The remaining
+  declarations still fail only at their first call, as the uncalled rows in
+  `ref2-pos-bystander-preservation.wf` show. Two specification directions
+  remove the dead end: EFF-1 or EFF-2 refusing any row with two overlapping
+  entries on one parameter where one writes, or EFF-5 exempting a pair that
+  one argument supplies unless the two entries differ only in index or range
+  positions. The first keeps EFF-5's per-call guarantee and makes those
+  conformance rows rejections; the second changes what a single-parameter
+  row promises about aliasing inside the callee. Close with the owner's
+  choice; validate it against the bystander cases and the container library
+  rows.
+- **A few payload strings still carry non-source forms.** The source-spelling
+  fix left three: the FN-9 `relation` field prints the normalized relation
+  with unsuffixed literals, such as `"w.value - 0 <= -1"` for
+  `ensures result < 0_T`; the goal-literal renderer in
+  `compiler/src/semantic/entailment/flow.rs` falls back to
+  `format!("{other:?}")` for a value it has no source form for, such as an
+  array or struct constant; and the SET-1 `InvalidSetTarget` payload prints
+  `root_class: format!("{class:?}")`, a resolver class name. Render each in
+  its source form, the relation through the same normalized-relation
+  renderer with suffixed literals; validate by the pinned-sentence corpus,
+  whose only change is the corrected spellings. Deferred because each needs
+  its own rendering decision and none blocked the reported repairs; close
+  when all three print source forms.
 
 ## Open language questions
 
@@ -929,24 +975,6 @@ each is resolved by a discussion and a tree change.
   zero, one, and two premises and no more without a written certificate. Why
   the line sits at two, against one or three, is not remembered and needs a
   study before it is recorded.
-- **A row whose entries on one parameter overlap is admitted but never
-  callable.** [EFF-5] compares every pair of a call's substituted entries,
-  including two that one argument supplies, so `reads(p), writes(p.x)`,
-  `reads(p.x), writes(p)` and `writes(p), writes(p.x)` are refused at every
-  call, while [EFF-2]'s covering relation admits each at the declaration and
-  [EFF-1] forbids only the same-path pair `reads(p), writes(p)`. The checker
-  now refuses that pair at the declaration (EFF-1's "the pair is never
-  written for one path"), and EFF-2's suggested row merges every such pair
-  into one write of their common path, so a suggestion is always callable.
-  The remaining declarations still fail only at their first call, as the
-  uncalled rows in `ref2-pos-bystander-preservation.wf` show. Two spec
-  directions remove the dead end: EFF-1 or EFF-2 refusing any row with two
-  overlapping entries on one parameter where one writes, or EFF-5 exempting a
-  pair that one argument supplies unless the two entries differ only in index
-  or range positions. The first keeps EFF-5's per-call guarantee and makes those
-  conformance rows rejections; the second changes what a single-parameter
-  row promises about aliasing inside the callee. Decide with the owner;
-  validate against the bystander cases and the container library rows.
 
 ## Ownership redesign (candidate x1) follow-ups
 
