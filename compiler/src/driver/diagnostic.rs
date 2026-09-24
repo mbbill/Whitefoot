@@ -336,11 +336,40 @@ impl Place {
             width(&self.bytes[self.anchor..self.covered_end]).max(1),
         )
     }
+}
 
-    /// The node's own text: its extent's first line, without surrounding
-    /// blanks.
-    fn covered(&self) -> &[u8] {
-        self.bytes[self.anchor..self.covered_end].trim_ascii()
+/// A position a payload names, quoted by the node it belongs to.
+///
+/// One rule serves every related position: `at` is where the payload's
+/// coordinate points, and the quote is the first line of `node`, the
+/// production that coordinate belongs to, without surrounding blanks. For a
+/// clause or selector the two are the same node; for a declaration origin,
+/// `at` is the declared name and `node` the declaration, so the quote shows
+/// what the other declaration is, not the name the record already spells.
+struct Related {
+    at: SyntaxCoordinate,
+    node: SyntaxCoordinate,
+}
+
+impl FieldValue for Related {
+    fn value(&self, bundle: &SourceBundle) -> Option<Value> {
+        let Some(place) = Place::resolve(bundle, self.at, Anchor::Start) else {
+            return Some(Value::Text("an unresolved coordinate".to_owned()));
+        };
+        let quote = bundle
+            .file(self.node.source())
+            .and_then(|file| {
+                let start = usize::try_from(self.node.start().value()).ok()?;
+                let end = usize::try_from(self.node.end().value()).ok()?;
+                let extent = file.bytes().get(start..end)?;
+                let first_line = extent
+                    .iter()
+                    .position(|byte| *byte == b'\n')
+                    .map_or(extent, |line_end| &extent[..line_end]);
+                Some(first_line.trim_ascii().to_vec())
+            })
+            .unwrap_or_default();
+        Some(Value::Place(Box::new(place), quote))
     }
 }
 
@@ -368,8 +397,9 @@ enum Value {
     Exact(Vec<u8>),
     Number(u64),
     List(Vec<Value>),
-    /// Another source position the payload names.
-    Place(Box<Place>),
+    /// Another source position the payload names, with the first line of
+    /// the node it belongs to.
+    Place(Box<Place>, Vec<u8>),
     /// A structured payload element, such as one declaration conflict.
     Fields(Vec<(&'static str, Value)>),
     /// A classification variant that carries fields of its own.
@@ -525,24 +555,26 @@ impl FieldValue for Spelled {
     }
 }
 
-impl FieldValue for SyntaxCoordinate {
-    fn value(&self, bundle: &SourceBundle) -> Option<Value> {
-        Some(Place::resolve(bundle, *self, Anchor::Start).map_or_else(
-            || Value::Text("an unresolved coordinate".to_owned()),
-            |place| Value::Place(Box::new(place)),
-        ))
-    }
-}
-
+/// A node location's coordinate is the node's complete extent.
 impl FieldValue for SemanticLocation {
     fn value(&self, bundle: &SourceBundle) -> Option<Value> {
-        self.coordinate().value(bundle)
+        Related {
+            at: self.coordinate(),
+            node: self.coordinate(),
+        }
+        .value(bundle)
     }
 }
 
+/// An origin points at its role's spelling and belongs to its owning
+/// production.
 impl FieldValue for SourceOrigin {
     fn value(&self, bundle: &SourceBundle) -> Option<Value> {
-        self.coordinate().value(bundle)
+        Related {
+            at: self.coordinate(),
+            node: self.extent(),
+        }
+        .value(bundle)
     }
 }
 
@@ -935,12 +967,12 @@ fn write_text(text: &mut String, value: &Value) {
             }
             text.push(']');
         }
-        // Another position a payload names: where it is, and the node's own
-        // text there -- the clause, selector or declaration itself.
-        Value::Place(place) => {
+        // Another position a payload names: where it is, and the node it
+        // belongs to -- the clause, selector or declaration itself.
+        Value::Place(place, quote) => {
             push_position(text, place);
             text.push_str(" \"");
-            push_escaped(text, place.covered());
+            push_escaped(text, quote);
             text.push('"');
         }
         Value::Fields(fields) => push_fields(text, fields),
@@ -954,14 +986,22 @@ fn write_text(text: &mut String, value: &Value) {
     }
 }
 
-/// Whether a character is invisible or reorders the text around it: a
-/// control character, or a bidirectional formatting character [Unicode
-/// UAX #9], which can make a quoted line read differently from its bytes.
+/// Whether a character is invisible, breaks a line, or reorders the text
+/// around it: a control character, a zero-width character or byte-order
+/// mark, a line or paragraph separator, or a bidirectional formatting
+/// character [Unicode UAX #9]. Any of them can make a quoted line read
+/// differently from its bytes.
 fn is_invisible(character: char) -> bool {
     character.is_control()
         || matches!(
             character,
-            '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'
+            '\u{061c}'
+                | '\u{200b}'..='\u{200f}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202a}'..='\u{202e}'
+                | '\u{2066}'..='\u{2069}'
+                | '\u{feff}'
         )
 }
 
@@ -1097,13 +1137,14 @@ fn push_json_value(json: &mut String, value: &Value) {
             }
             json.push(']');
         }
-        // A related position: `at`, `bytes`, and the node's own `text`.
-        Value::Place(place) => {
+        // A related position: `at`, `bytes`, and its node's first line as
+        // `text`.
+        Value::Place(place, quote) => {
             json.push('{');
             push_json_position(json, place);
             push_json_key(json, "text", false);
             let mut escaped = String::new();
-            push_escaped(&mut escaped, place.covered());
+            push_escaped(&mut escaped, quote);
             push_json_string(json, &escaped);
             json.push('}');
         }
