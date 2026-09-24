@@ -11,6 +11,15 @@ whitefootc --graph modules.wfg --entry kernel -o kernel
 whitefootc --graph modules.wfg --entry inspect -o inspect
 ```
 
+Each module also checks alone against its dependencies' interfaces, and each
+entry's composition checks without a build:
+
+```sh
+whitefootc --graph modules.wfg --check-module pkg::runtime
+whitefootc --graph modules.wfg --check-interface pkg::runtime::queue
+whitefootc --graph modules.wfg --check --entry kernel
+```
+
 No incremental timing is implied: persistent reuse is a later slice.
 
 The application processes two jobs through a four-slot FIFO. The `kernel`
@@ -213,10 +222,12 @@ are not a recommendation to split production work this finely.
 
 ## The proof and execution story
 
-The following is the **intended argument**, not a compiler verification result.
-The selected visibility, readonly and result-projection rules are described
-in [LANGUAGE.md](../LANGUAGE.md); their compiler implementation remains
-outstanding.
+The compiler verifies the following argument under the visibility, readonly
+and result-projection rules of specification v0.70 [MOD-5, MOD-6, TYPE-2,
+CALL-4]. Deleting a clause it relies on fails the check where the missing fact
+was needed: without `new`'s `ensures made.storage.len == 0_u64`, the kernel's
+first `push` is refused under FN-8 because `pending.storage.len < capacity` is
+unproved.
 
 | Point in either entry | Queue length known from the public contracts | Why the next operation is permitted |
 |---|---|---|
@@ -262,32 +273,30 @@ mismatched first tag, second tag, digest or remaining count respectively.
 These checks test application results; they do not repair a failed source
 proof. The written contracts state occupancy safety, not a formal sequence
 model of FIFO contents or the exact report fields; the `pop` description states
-the ordering for its implementer. The report expectations follow from these
-complete bodies and the ring operations and still need execution tests once the
-module path exists.
+the ordering for its implementer. Both built entries return 0.
 
 The kernel's source composition includes `data`, the queue, `runtime` and
 `kernel`. Every definition in those modules receives ordinary checking,
-including the allocating generic helper's schema. Its conservative execution
-closure never selects `boxed_copy`, `Box<Report>` or their release path, so
-that helper does not impose a heap requirement on this entry. The separate
-tool module is not part of the kernel's selected source composition.
+including the allocating generic helper's schema. Its execution closure never
+selects `boxed_copy`, `Box<Report>` or their release path, so that helper does
+not impose a heap requirement on this entry [STOR-8]. The separate tool module
+is not part of the kernel's selected source composition.
 
 The inspect entry selects the same three library modules and its own entry
 module. It instantiates `boxed_copy<Report>`, allocates one report cell and
 releases it on every return edge. Both `boxed_copy` and the entry write `pure`,
 which in WF does not mean allocation-free. `no_heap` belongs to the kernel
-entry in the graph, not to any of these reusable modules or functions. If the
-kernel ever reached an allocation, the failure would name the allocating
-function and its module, with the call path from `start`.
+entry in the graph, not to any of these reusable modules or functions. Adding
+`no_heap` to the `inspect` entry is refused under STOR-8 at `boxed_copy` in
+`data/heap.wf`, with the call path from `pkg::tools::inspect::run`.
 
-Generated object selection and native/runtime supplies must respect that
-distinction as well. An object emitted for the shared module must not force
-the kernel to resolve an unused allocator symbol merely because the tool's
-helper was compiled. This specimen states that required result; it does not
-demonstrate a linker or backend achieving it.
+Generated code and native/runtime supplies respect that distinction as well.
+An entry's build emits only the functions its execution reaches, so the
+kernel's LLVM declares no allocator and `nm kernel` lists no `malloc` or
+`free`, while `inspect` references both. The compiler-owned runtime units call
+no allocator; a unit test pins that.
 
-## Proposed notation used here
+## Notation used here
 
 These sources follow the selected [boundary rules](../LANGUAGE.md) and the
 active specification's module grammar [GRAM-2, GRAM-3, GRAM-5].
@@ -300,22 +309,23 @@ active specification's module grammar [GRAM-2, GRAM-3, GRAM-5].
 | `public readonly storage` | A field every module with an edge may read, in code and annotations, and only the declaring module writes or constructs |
 | `reads(...)` / `writes(queue.storage)` | Exact structural effects over accessible paths, repeatable in external wrapper and formal rows |
 | `deref(entry(queue)).storage.len` | Frozen mathematical entry value, independent of later mutation |
-| `made.storage.len` | Result projection admitted by the proposed CALL-4 extension, queried at the return and instantiated at the caller's result destination |
+| `made.storage.len` | Result projection admitted by CALL-4, queried at the return and instantiated at the caller's result destination |
 
 Callers still cannot write, pass to a writing parameter or construct the
 queue's ring, and they cannot name a private field in any role. No `observe`,
 `use view`, footprint declaration, getter in a contract, trusted axiom,
 implicit type invariant, runtime snapshot or mandatory box is needed.
 
-Implementing these rules must make both entries check and execute, qualify the
-rejection probes below, and include the larger GrowVector wrapper/function-kind
-witness from LANGUAGE.md. The FIFO alone is not evidence for all containers,
-precise effect combinations or incremental performance.
+Both entries check and execute under these rules. The larger GrowVector
+wrapper/function-kind witness from LANGUAGE.md is still to be built; the FIFO
+alone is not evidence for all containers, precise effect combinations or
+incremental performance.
 
 ## Edits to try while reading
 
-These are predicted consequences to qualify in the future implementation,
-not measured invalidation results. Each experiment starts from this specimen.
+The source results in the middle column can be tried with the compiler; the
+incremental work in the last column is the design's prediction, not a
+measured invalidation result. Each experiment starts from this specimen.
 
 | Edit | Intended source result | Incremental work that must follow |
 |---|---|---|
@@ -340,8 +350,9 @@ changing only `push`'s implementation contract, placing a function body in
 `Job.tag` while its external uses remain, repeating the `Queue` definition in
 `.wf`, rebinding `pkg`, moving an interface to the former sibling location, or
 adding an edge to a later graph row. Each should fail for that specific
-boundary; an unrelated earlier syntax failure is not evidence for it. These
-are review exercises until the real compiler implements the proposed forms.
+boundary; an unrelated earlier syntax failure is not evidence for it. The
+module-form conformance cases pin the access, publication, correspondence and
+graph-order boundaries among them under their rules.
 
 A future review aid should compare the resolved public API, not only changed
 lines containing `public`. Changing a published field type or a contract
@@ -349,8 +360,7 @@ without editing its modifier must still be reported. Private field changes
 that alter public capabilities also matter; layout-only effects can be reported
 separately. No comparison script or new review gate is implemented here.
 
-The eventual executable qualification must check both entries, the rejection
-probes, no allocator dependency in the kernel artifact, and cold/incremental
-agreement for these edits. The current validation is source/design review
-and repository structural checks only. There are no module compilation,
-execution, runtime-performance or incremental-work measurements here.
+Both entries check and run, the rejection probes reject under their rules and
+the kernel artifact has no allocator dependency. Cold/incremental agreement for
+these edits, and incremental-work and runtime-performance measurements, remain
+to be qualified.

@@ -21,8 +21,8 @@ use crate::{
     CanonicalSyntaxUnit, CheckedProgram, FinalizeLimits, FinalizeOutcome, LexLimits, LexOutcome,
     LoweringFailure, ParseLimits, ParseOutcome, ResolutionOutcome, SemanticLocation,
     SemanticOutcome, SourceBundle, SourceInput, SourceLimits, TerminalLimits, TerminalOutcome,
-    audit_canonical, check_semantics, classify_terminals, finalize, lex, lower_checked_with_layout,
-    parse, parse_graph, resolve,
+    audit_canonical, check_semantics, classify_terminals, finalize, lex, parse, parse_graph,
+    resolve,
 };
 
 /// Host-compiler optimization arguments for every Whitefoot executable.
@@ -646,12 +646,20 @@ fn admit_entry(
         )));
     }
     if selection.no_heap
-        && let Some(path) = checked.heap_introducer(function.id)
+        && let Some(path) = checked.heap_introducer(function.id, |function| {
+            crate::lowering::holds_heap_storage(&checked.data, function)
+        })
     {
+        // The path names each function by its module's path and its source
+        // name; an instance keeps its template's name, since the walk passes
+        // through it with its supplied actuals.
         let names = path
             .iter()
             .filter_map(|id| checked.data.functions.get(id.0 as usize))
-            .map(|function| function.symbol.clone())
+            .map(|function| match bundle.module(function.module) {
+                Some(module) => format!("{}::{}", module.qualified_name(), function.name),
+                None => function.name.clone(),
+            })
             .collect::<Vec<_>>()
             .join(" -> ");
         let introducer = path
@@ -659,7 +667,7 @@ fn admit_entry(
             .and_then(|id| checked.data.functions.get(id.0 as usize))
             .and_then(|function| checked._resolved.declaration(function.declaration));
         let detail = format!(
-            "the entry states no_heap, and its execution closure reaches a heap allocation along {names}; the last function on that path introduces it"
+            "the entry states no_heap, and its execution closure requires the heap along {names}; the last function on that path introduces the requirement by allocating or by holding a Box or runtime-capacity value"
         );
         return Err(match introducer {
             Some(declaration) => {
@@ -678,9 +686,6 @@ fn admit_entry(
     Ok(())
 }
 
-/// Runs the one source front end and lends its checked program to one
-/// projection while every borrowed stage input remains alive. Both `check`
-/// and `compile` enter here; neither reconstructs a source verdict.
 /// Runs the syntax stages over one bundle, from raw lexical formation through
 /// the canonical [FORM-2] audit, and lends the canonical unit to one
 /// continuation while every borrowed stage input remains alive. A module
@@ -844,6 +849,9 @@ where
     continuation(canonical)
 }
 
+/// Runs the one source front end and lends its checked program to one
+/// projection while every borrowed stage input remains alive. Both `check`
+/// and `compile` enter here; neither reconstructs a source verdict.
 fn with_checked_program<T, F>(
     inputs: &[SourceInput<'_>],
     modules: Option<&[crate::ModuleRecord]>,
@@ -896,10 +904,12 @@ where
                 let rule_id = issue.rule_id();
                 let SemanticLocation::SourceNode(_, coordinate) = issue.location();
                 let coordinate = *coordinate;
+                let request = issue.request();
                 return Err(CompilationFailure::at_source(
                     CompilationStage::Semantics,
                     rule_id,
-                    Located::new(issue, classified.source_bundle(), coordinate),
+                    Located::new(issue, classified.source_bundle(), coordinate)
+                        .requested_at(classified.source_bundle(), request),
                     &bundle,
                     coordinate.source(),
                 ));
@@ -990,8 +1000,17 @@ fn lower_selected(
     let permission_ledger = checked.data.permission_ledger.clone();
     let target =
         TargetLayout::host().map_err(|failure| CompilationFailure::lowering(failure.into()))?;
-    let ir = lower_checked_with_layout(checked, overlap, target)
-        .map_err(CompilationFailure::lowering)?;
+    // [MOD-9] a module program entry's build emits what that entry's run
+    // reaches; the other entries' code is checked but is not this
+    // executable's. A source bundle keeps every definition.
+    let roots = modules.and(entry).map(|function| [function.id]);
+    let ir = crate::lower_checked_from(
+        checked,
+        overlap,
+        target,
+        roots.as_ref().map(|roots| roots.as_slice()),
+    )
+    .map_err(CompilationFailure::lowering)?;
     // What this lowering did with each permission it was given, appended after
     // the judgment's own lines. The judgment reports the same verdicts with or
     // without `--par`; these lines report an actualization, which only a
@@ -1043,6 +1062,125 @@ mod tests {
         compile_with_permission_ledger,
     };
     use crate::{OverlapLowering, RecursionBudget, SourceInput};
+
+    /// Places each record in the module its directory names, in the
+    /// interface role when it is that directory's `module.wfm` [MOD-2].
+    fn module_inputs<'a>(
+        graph: &crate::ModuleGraph,
+        records: &'a [(&'a str, &'a [u8])],
+    ) -> Vec<SourceInput<'a>> {
+        records
+            .iter()
+            .map(|(path, bytes)| {
+                let (directory, file) = path.rsplit_once('/').unwrap_or(("", path));
+                let components: Vec<&str> = if directory.is_empty() {
+                    Vec::new()
+                } else {
+                    directory.split('/').collect()
+                };
+                let module = graph
+                    .modules()
+                    .iter()
+                    .position(|module| module.path() == components.as_slice())
+                    .and_then(crate::ModuleId::from_index)
+                    .expect("every record lies in a registered module");
+                let role = if file == "module.wfm" {
+                    crate::SourceRole::Interface
+                } else {
+                    crate::SourceRole::Implementation
+                };
+                SourceInput::new(path, bytes).in_module(module, role)
+            })
+            .collect()
+    }
+
+    /// [FN-2, MOD-8] a rejection raised while checking a concrete instance
+    /// stays at the template's source, in the module that owns it, and names
+    /// the call in another module that requested the instance. Here the
+    /// `Bool` instance's `ensures` has no fragment result datum.
+    #[test]
+    fn an_instance_failure_names_the_template_and_its_requesting_call() {
+        let graph = crate::form_module_graph(
+            SourceInput::new(
+                "modules.wfg",
+                b"pkg::lib: [];\npkg: [pkg::lib];\n\nentry app = pkg::main;\n",
+            ),
+            CompilerLimits::default(),
+        )
+        .expect("the graph forms");
+        let records: [(&str, &[u8]); 4] = [
+            (
+                "lib/module.wfm",
+                b"public fn same<T: copy>(value: T) -> result: T pure contract {\n  ensures result == value;\n} doc \"Returns its argument.\";\n",
+            ),
+            (
+                "lib/same.wf",
+                b"fn same<T: copy>(value: T) -> result: T pure contract {\n  ensures result == value;\n} {\n  return value;\n}\n",
+            ),
+            ("module.wfm", b"public fn main() -> status: ExitStatus pure;\n"),
+            (
+                "main.wf",
+                b"fn main() -> status: ExitStatus pure {\n  let small = pkg::lib::same::<u8>(value: 3_u8);\n  let yes = True();\n  let flag = pkg::lib::same::<Bool>(value: yes);\n  return exit_status(code: small);\n}\n",
+            ),
+        ];
+        let inputs = module_inputs(&graph, &records);
+        let failure = crate::check_module_program(&graph, &inputs, CompilerLimits::default())
+            .expect_err("the Bool instance's ensures has no fragment result datum");
+        assert_eq!(failure.rule_id(), Some("FN-9"));
+        let detail = failure.to_string();
+        assert!(detail.contains(" at lib/same.wf:1:"), "{detail}");
+        assert!(
+            detail.contains("in the instance requested at main.wf:4:14"),
+            "{detail}"
+        );
+    }
+
+    /// [STOR-8, MOD-9] a no-heap entry's build emits its execution closure
+    /// alone, so neither the other entry's allocating module nor an unused
+    /// allocating helper of its own module leaves an allocator reference in
+    /// its output, while the heap-using entry of the same graph keeps one.
+    #[test]
+    fn a_no_heap_entry_build_names_no_allocator_that_its_sibling_entry_uses() {
+        let graph = crate::form_module_graph(
+            SourceInput::new(
+                "modules.wfg",
+                b"pkg: [];\npkg::tools: [];\n\nentry kernel = pkg::start {\n  no_heap;\n}\n\nentry tool = pkg::tools::run;\n",
+            ),
+            CompilerLimits::default(),
+        )
+        .expect("the graph forms");
+        let records: [(&str, &[u8]); 4] = [
+            ("module.wfm", b"public fn start() -> status: ExitStatus pure;\n"),
+            (
+                "start.wf",
+                b"fn spare() -> result: u8 pure {\n  let cell = box_new::<u8>(value: 1_u8);\n  return 0_u8;\n}\n\nfn start() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+            ),
+            ("tools/module.wfm", b"public fn run() -> status: ExitStatus pure;\n"),
+            (
+                "tools/run.wf",
+                b"fn run() -> status: ExitStatus pure {\n  let cell = box_new::<u8>(value: 7_u8);\n  return exit_status(code: 0_u8);\n}\n",
+            ),
+        ];
+        let inputs = module_inputs(&graph, &records);
+        let build = |entry| {
+            super::compile_module_program(
+                &graph,
+                &inputs,
+                super::ModuleEntry::Named(entry),
+                CompilerLimits::default(),
+                OverlapLowering::Off,
+            )
+            .expect("the entry builds")
+        };
+        let kernel = build("kernel");
+        assert!(!kernel.contains("@malloc"), "{kernel}");
+        assert!(!kernel.contains("@free"), "{kernel}");
+        assert!(!kernel.contains("spare"), "{kernel}");
+        assert!(!kernel.contains("wf_tools.run"), "{kernel}");
+        let tool = build("tool");
+        assert!(tool.contains("call ptr @malloc"), "{tool}");
+        assert!(tool.contains("@wf_tools.run("), "{tool}");
+    }
 
     #[test]
     fn public_compilation_requires_a_source_record_before_adding_the_prelude() {

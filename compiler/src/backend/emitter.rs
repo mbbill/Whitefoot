@@ -271,10 +271,11 @@ pub(super) fn emit_llvm_with_window_address_facts(
     let drop_helpers = emit_resource_drop_helpers(program, target)?;
     let has_heap_storage = !drop_helpers.is_empty()
         || program.functions().iter().any(IrFunction::contains_buffer)
-        || program
-            .nominals()
-            .iter()
-            .any(|nominal| matches!(nominal.kind(), IrNominalKind::Box { .. }));
+        || cleanup::program_types(program)?.into_iter().any(|ty| {
+            matches!(ty, IrType::Nominal(id) if program
+                .nominal(id)
+                .is_some_and(|nominal| matches!(nominal.kind(), IrNominalKind::Box { .. })))
+        });
     let heap_record_type = TargetStorageType::bytes(
         u64::try_from(HEAP_RECORD.len()).map_err(|_| BackendFailure::CounterOverflow)?,
     );

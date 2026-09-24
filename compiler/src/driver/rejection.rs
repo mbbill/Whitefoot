@@ -23,6 +23,9 @@ pub(super) struct Located<Issue> {
     issue: Issue,
     at: String,
     source_line: String,
+    /// Where the concrete generic instance whose check failed was requested,
+    /// and that line, when the rejection arose in one [FN-2, MOD-8].
+    requested: Option<(String, String)>,
 }
 
 impl<Issue: fmt::Debug> fmt::Debug for Located<Issue> {
@@ -31,7 +34,14 @@ impl<Issue: fmt::Debug> fmt::Debug for Located<Issue> {
             formatter,
             "{:?} at {} in line {:?}",
             self.issue, self.at, self.source_line
-        )
+        )?;
+        if let Some((at, line)) = &self.requested {
+            write!(
+                formatter,
+                ", in the instance requested at {at} in line {line:?}"
+            )?;
+        }
+        Ok(())
     }
 }
 
@@ -73,7 +83,21 @@ impl<Issue> Located<Issue> {
             issue,
             at,
             source_line,
+            requested: None,
         }
+    }
+
+    /// Adds the call that requested the concrete generic instance whose
+    /// check produced this rejection: the rejection stays at the template,
+    /// which owns it, and names who asked for the instance [FN-2, MOD-8].
+    pub(super) fn requested_at(
+        mut self,
+        bundle: &SourceBundle,
+        coordinate: Option<SyntaxCoordinate>,
+    ) -> Self {
+        self.requested =
+            coordinate.and_then(|coordinate| context(bundle, coordinate, Anchor::Start));
+        self
     }
 }
 

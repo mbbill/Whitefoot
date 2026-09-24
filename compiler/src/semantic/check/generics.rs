@@ -640,6 +640,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             .is_some_and(|instance| instance.substitution == substitution)
                     });
                 if !already_present {
+                    self.record_instance_request(template.node, &substitution, call);
                     let result = if tolerate_source_failure {
                         self.instantiate_function_signature_for_postconditions(
                             template_index,
@@ -647,7 +648,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         )
                     } else {
                         self.instantiate_function_signature(template_index, substitution)
-                    };
+                    }
+                    .map_err(|stop| self.attribute_to_call(call, stop));
                     match result {
                         Ok(()) => {}
                         Err(

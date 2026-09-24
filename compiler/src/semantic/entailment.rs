@@ -1468,7 +1468,7 @@ fn collect_expression_calls(
     }
 }
 
-fn strongly_connected_components(graph: &[Vec<usize>]) -> Vec<Vec<usize>> {
+pub(super) fn strongly_connected_components(graph: &[Vec<usize>]) -> Vec<Vec<usize>> {
     struct Tarjan<'graph> {
         graph: &'graph [Vec<usize>],
         next_index: usize,

@@ -12,8 +12,9 @@ use whitefoot::{
     HOST_OPTIMIZATION_ARGUMENTS, ModuleEntry, ORDINARY_VALUES_HEADER, ORDINARY_VALUES_LLVM,
     ORDINARY_VALUES_SOURCE, OverlapLowering, RecursionBudget, SCHED_CORE_HEADER, SCHED_CORE_SOURCE,
     SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER,
-    check, check_module, check_module_program, compile_module_program, compile_with_overlap,
-    compile_with_permission_ledger, discover_module_sources, form_module_graph, stack_ledger,
+    check, check_module, check_module_entry, check_module_program, compile_module_program,
+    compile_with_overlap, compile_with_permission_ledger, discover_module_sources,
+    form_module_graph, stack_ledger,
 };
 
 // `HOST_LINK_LIBRARIES` is here rather than above because its one reader is
@@ -307,20 +308,29 @@ fn run_module_program(options: &Options, graph_path: &Path) -> Result<Option<Str
         .map_err(|failure| failure.to_string())?;
         return Ok(None);
     }
-    if options.check {
-        check_module_program(&graph, &inputs, CompilerLimits::default())
-            .map_err(|failure| failure.to_string())?;
-        return Ok(None);
-    }
     let entry = if let Some(name) = &options.entry {
-        ModuleEntry::Named(name)
-    } else {
-        let written = options.function.as_deref().unwrap_or_default();
+        Some(ModuleEntry::Named(name))
+    } else if let Some(written) = options.function.as_deref() {
         let (module, function) = written
             .rsplit_once("::")
             .ok_or_else(|| format!("--function names pkg::module::name, not {written}"))?;
-        ModuleEntry::Function { module, function }
+        Some(ModuleEntry::Function { module, function })
+    } else {
+        None
     };
+    if options.check {
+        // Without an entry, the check covers every registered module; with
+        // one, it is that entry's composition check [MOD-8, MOD-9].
+        match entry {
+            Some(entry) => check_module_entry(&graph, &inputs, entry, CompilerLimits::default()),
+            None => check_module_program(&graph, &inputs, CompilerLimits::default()),
+        }
+        .map_err(|failure| failure.to_string())?;
+        return Ok(None);
+    }
+    let entry = entry.ok_or_else(|| {
+        "a --graph build selects --entry NAME or --function pkg::module::name".to_owned()
+    })?;
     compile_module_program(
         &graph,
         &inputs,

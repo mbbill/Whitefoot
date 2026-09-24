@@ -299,16 +299,6 @@ fn assert_rule(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind) {
     });
 }
 
-/// Asserts a rejection's rule and which issue kind it cited, without pinning a
-/// payload the call site does not state.
-///
-/// These call sites predate the payloads batch 0100 gave `TypeMismatch`,
-/// `EffectMismatch`, `InvalidEffectRow`, and `InvalidBorrowLifetime`, and each
-/// asserts here exactly what it asserted when those kinds were unit variants:
-/// which rule rejected, and which kind it cited. Nothing was narrowed. The
-/// payload text those kinds carry is pinned by
-/// `driver::pinned_sentences`, one row per sentence, which is where a change
-/// to the wording has to be made deliberately.
 /// Checks a module program from its graph and its records, each placed in
 /// the module its logical path's directory names and in the interface role
 /// when it is that directory's `module.wfm` [MOD-1, MOD-2].
@@ -368,6 +358,16 @@ fn check_case_directory(case: &str) -> Result<(), crate::CompilationFailure> {
     crate::check_module_program(&graph, &inputs, crate::CompilerLimits::default())
 }
 
+/// Asserts a rejection's rule and which issue kind it cited, without pinning a
+/// payload the call site does not state.
+///
+/// These call sites predate the payloads batch 0100 gave `TypeMismatch`,
+/// `EffectMismatch`, `InvalidEffectRow`, and `InvalidBorrowLifetime`, and each
+/// asserts here exactly what it asserted when those kinds were unit variants:
+/// which rule rejected, and which kind it cited. Nothing was narrowed. The
+/// payload text those kinds carry is pinned by
+/// `driver::pinned_sentences`, one row per sentence, which is where a change
+/// to the wording has to be made deliberately.
 fn assert_rule_kind(source: &[u8], rule: SemanticRule, kind: fn(&SemanticIssueKind) -> bool) {
     with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {

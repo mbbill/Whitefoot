@@ -2289,7 +2289,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         )
     }
 
+    /// [FN-9, CALL-4] admits one clause's selector for one signature; a
+    /// rejection raised for a requested concrete instance names its requester
+    /// [FN-2, MOD-8].
     fn admit_postcondition_selector(
+        &self,
+        record: &PostconditionResolutionRecord,
+        signature: &FunctionSignature,
+        symbolic: bool,
+    ) -> Result<CheckedPostconditionSelector, CheckStop> {
+        self.admit_postcondition_selector_unattributed(record, signature, symbolic)
+            .map_err(|stop| self.attribute_to_request(signature.id, stop))
+    }
+
+    fn admit_postcondition_selector_unattributed(
         &self,
         record: &PostconditionResolutionRecord,
         signature: &FunctionSignature,
@@ -2538,6 +2551,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             rule,
             location: SemanticLocation::SourceNode(origin.node().clone(), origin.coordinate()),
             kind,
+            request: None,
         }))
     }
 

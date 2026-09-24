@@ -25,11 +25,14 @@ pub(super) fn emit_resource_drop_helpers(
     target: TargetLayout,
 ) -> Result<String, BackendFailure> {
     let mut output = String::new();
-    for nominal in program.nominals() {
+    for ty in program_types(program)? {
+        let IrType::Nominal(id) = ty else {
+            continue;
+        };
+        let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
         let IrNominalKind::Enum { variants } = nominal.kind() else {
             continue;
         };
-        let ty = IrType::Nominal(nominal.id());
         if !type_requires_cleanup(program, ty)? {
             continue;
         }
@@ -216,14 +219,34 @@ fn run_drop_helper(
         .map(run_drop_helper_symbol))
 }
 
-/// Every type reachable from the program's declarations and values, including
-/// arbitrary run nesting, in deterministic discovery order. Ownership cycles
-/// through descriptors or nominal references visit each exact type once.
-fn program_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, BackendFailure> {
-    let mut pending = Vec::new();
-    for nominal in program.nominals() {
-        pending.push(IrType::Nominal(nominal.id()));
-    }
+/// Every type reachable from the program's functions and constants,
+/// including arbitrary run nesting, in deterministic discovery order: nominal
+/// types first in declaration order, then the rest. Ownership cycles through
+/// descriptors or nominal references visit each exact type once. A nominal no
+/// emitted function or constant reaches gets no helper, so a module program
+/// entry's build names nothing its execution closure does not use [MOD-9].
+pub(super) fn program_types(
+    program: &IrProgram<'_, '_, '_>,
+) -> Result<Vec<IrType>, BackendFailure> {
+    let reached = reachable_types(program, Vec::new())?
+        .into_iter()
+        .collect::<HashSet<_>>();
+    let seeds = program
+        .nominals()
+        .iter()
+        .map(|nominal| IrType::Nominal(nominal.id()))
+        .filter(|ty| reached.contains(ty))
+        .collect();
+    reachable_types(program, seeds)
+}
+
+/// The types reachable from `seeds` and then from the program's constants
+/// and functions, in discovery order.
+fn reachable_types(
+    program: &IrProgram<'_, '_, '_>,
+    seeds: Vec<IrType>,
+) -> Result<Vec<IrType>, BackendFailure> {
+    let mut pending = seeds;
     for constant in program.constants() {
         pending.push(constant.ty());
     }

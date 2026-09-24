@@ -39,10 +39,24 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
 
 /// Select optional target-fitting loop shapes after semantic acceptance, using
 /// the same target that will qualify and emit their transported signatures.
+#[cfg(test)]
 pub(crate) fn lower_checked_with_layout<'classified, 'lexed, 'source>(
     checked: CheckedProgram<'classified, 'lexed, 'source>,
     overlap: OverlapLowering,
     target: TargetLayout,
+) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
+    lower_checked_from(checked, overlap, target, None)
+}
+
+/// Select optional target-fitting loop shapes after semantic acceptance, using
+/// the same target that will qualify and emit their transported signatures,
+/// emitting only the functions `roots` reach through their calls when roots
+/// are given: a module program entry's build [MOD-9].
+pub(crate) fn lower_checked_from<'classified, 'lexed, 'source>(
+    checked: CheckedProgram<'classified, 'lexed, 'source>,
+    overlap: OverlapLowering,
+    target: TargetLayout,
+    roots: Option<&[crate::semantic::FunctionId]>,
 ) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
     let sequential_compute_refusal = matches!(
         overlap,
@@ -97,7 +111,7 @@ pub(crate) fn lower_checked_with_layout<'classified, 'lexed, 'source>(
     };
     let base_nominals = lower_nominals(base_types, &checked.data)?;
     let constants = lower_constants(base_types, &checked.data)?;
-    let physical = specialize::PhysicalFunctions::build(&checked.data)?;
+    let physical = specialize::PhysicalFunctions::build_from(&checked.data, roots)?;
     let mut types = physical_types::PhysicalTypes::new(
         &checked.data,
         base_nominals,

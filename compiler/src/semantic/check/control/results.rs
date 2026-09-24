@@ -435,6 +435,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         self.tree.coordinate(*expression_node)?,
                     ),
                     kind: SemanticIssueKind::ReturnMismatch,
+                    request: None,
                 }));
             }
             // [REF-3] a result ordinal is owned, so a reference written at

@@ -210,6 +210,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 rule,
                 location: SemanticLocation::SourceNode(path.clone(), coordinate),
                 kind,
+                request: None,
             }),
             _ => CheckStop::Compiler(SemanticCompilerFailure::InvalidCanonicalTree),
         }
@@ -236,6 +237,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             rule,
             location: SemanticLocation::SourceNode(path, coordinate),
             kind,
+            request: None,
         }))
     }
 

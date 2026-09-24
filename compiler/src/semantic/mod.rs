@@ -1101,6 +1101,11 @@ pub struct SemanticIssue {
     rule: SemanticRule,
     location: SemanticLocation,
     kind: SemanticIssueKind,
+    /// The call that requested the concrete generic instance whose check
+    /// produced this rejection, when one did. The location stays at the
+    /// template's source, which owns the failure, and this names the
+    /// requester [FN-2, MOD-8].
+    request: Option<crate::SyntaxCoordinate>,
 }
 
 impl SemanticIssue {
@@ -1131,6 +1136,13 @@ impl SemanticIssue {
     #[cfg(test)]
     pub const fn kind(&self) -> &SemanticIssueKind {
         &self.kind
+    }
+
+    /// Returns the call that requested the concrete generic instance whose
+    /// check produced this rejection, when one did [FN-2, MOD-8].
+    #[must_use]
+    pub const fn request(&self) -> Option<crate::SyntaxCoordinate> {
+        self.request
     }
 }
 
@@ -1195,71 +1207,152 @@ pub struct CheckedProgram<'classified, 'lexed, 'source> {
 }
 
 impl CheckedProgram<'_, '_, '_> {
-    /// [STOR-8, MOD-9] the call path from an entry to the first function of
-    /// its execution closure that introduces a heap requirement, when one
-    /// does.
-    ///
-    /// The closure is every function the entry's checked body reaches through
-    /// its calls, in every branch. A function introduces the requirement when
-    /// it allocates and none of the source functions it calls does, so the
-    /// path ends at the source function whose own body calls an allocating
-    /// operation. Uncalled definitions stay outside the closure and impose
-    /// nothing on the entry.
-    pub(crate) fn heap_introducer(&self, entry: FunctionId) -> Option<Vec<FunctionId>> {
-        let functions = &self.data.functions;
-        let callees = |function: FunctionId| {
-            let mut calls = Vec::new();
-            if let Some(body) = functions
-                .get(function.0 as usize)
-                .and_then(|checked| checked.body.as_deref())
-            {
-                entailment::collect_statement_calls(function, body, &mut calls);
+    /// [STOR-8, MOD-9] the functions one run of `function` can call next:
+    /// every callee its checked concrete body names, in every branch. An
+    /// instance's body names the function-kind actuals it calls; erased proof
+    /// annotations call nothing.
+    fn closure_successors(&self, function: FunctionId) -> Vec<FunctionId> {
+        let mut calls = Vec::new();
+        if let Some(body) = self
+            .data
+            .functions
+            .get(function.0 as usize)
+            .and_then(|checked| checked.body.as_deref())
+        {
+            entailment::collect_statement_calls(function, body, &mut calls);
+        }
+        calls.into_iter().map(|call| call.callee).collect()
+    }
+
+    /// [MOD-9, STOR-8] an entry's execution closure, in breadth-first order
+    /// from the entry: every function its run can reach through calls.
+    /// Definitions outside it never run for that entry.
+    pub(crate) fn execution_closure(&self, entry: FunctionId) -> Vec<FunctionId> {
+        let mut order = vec![entry];
+        let mut seen = std::collections::HashSet::from([entry]);
+        let mut cursor = 0;
+        while let Some(function) = order.get(cursor).copied() {
+            cursor += 1;
+            for successor in self.closure_successors(function) {
+                if seen.insert(successor) {
+                    order.push(successor);
+                }
             }
-            calls
-                .into_iter()
-                .map(|call| call.callee)
-                .collect::<Vec<_>>()
-        };
-        let allocates = |function: FunctionId| {
+        }
+        order
+    }
+
+    /// [STOR-8, MOD-9] the call path from an entry to the function of its
+    /// execution closure that introduces a heap requirement, when one does.
+    ///
+    /// A function of the closure uses the heap on its own when it calls an
+    /// allocating prelude row or `holds_heap_storage` finds heap storage in
+    /// its own concrete layout; it requires the heap when it uses it on its
+    /// own or reaches a function that requires it. The introducing component
+    /// is the first requiring component of the closure's call graph, in a
+    /// breadth-first walk from the entry, that reaches no other requiring
+    /// component, and the path ends at its first member in that walk that
+    /// uses the heap on its own. Uncalled definitions stay outside the
+    /// closure and impose nothing on the entry.
+    pub(crate) fn heap_introducer(
+        &self,
+        entry: FunctionId,
+        holds_heap_storage: impl Fn(&CheckedFunction) -> bool,
+    ) -> Option<Vec<FunctionId>> {
+        let functions = &self.data.functions;
+        let closure = self.execution_closure(entry);
+        let position = closure
+            .iter()
+            .enumerate()
+            .map(|(index, function)| (*function, index))
+            .collect::<std::collections::HashMap<_, _>>();
+        let successors = closure
+            .iter()
+            .map(|function| {
+                self.closure_successors(*function)
+                    .into_iter()
+                    .filter_map(|successor| position.get(&successor).copied())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let allocating_leaf = |index: usize| {
             functions
-                .get(function.0 as usize)
-                .is_some_and(|checked| checked.allocates)
+                .get(closure[index].0 as usize)
+                .is_some_and(|callee| callee.body.is_none() && callee.allocates)
         };
-        let has_body = |function: FunctionId| {
-            functions
-                .get(function.0 as usize)
-                .is_some_and(|checked| checked.body.is_some())
-        };
-        if !allocates(entry) {
+        let own = closure
+            .iter()
+            .zip(&successors)
+            .map(|(function, successors)| {
+                functions.get(function.0 as usize).is_some_and(|checked| {
+                    checked.body.is_some()
+                        && (holds_heap_storage(checked)
+                            || successors.iter().any(|callee| allocating_leaf(*callee)))
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut requires = own.clone();
+        loop {
+            let mut changed = false;
+            for index in (0..closure.len()).rev() {
+                if !requires[index] && successors[index].iter().any(|callee| requires[*callee]) {
+                    requires[index] = true;
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        if !requires.first().copied().unwrap_or(false) {
             return None;
         }
-        let mut parents: std::collections::HashMap<FunctionId, FunctionId> =
-            std::collections::HashMap::new();
-        let mut queue = std::collections::VecDeque::from([entry]);
-        let mut seen = std::collections::HashSet::from([entry]);
-        while let Some(function) = queue.pop_front() {
-            let next = callees(function)
-                .into_iter()
-                .filter(|callee| allocates(*callee) && has_body(*callee))
-                .collect::<Vec<_>>();
-            if next.is_empty() {
-                let mut path = vec![function];
-                let mut current = function;
-                while let Some(parent) = parents.get(&current) {
-                    path.push(*parent);
-                    current = *parent;
-                }
-                path.reverse();
-                return Some(path);
+        let components = entailment::strongly_connected_components(&successors);
+        let mut component_of = vec![0; closure.len()];
+        for (component, members) in components.iter().enumerate() {
+            for member in members {
+                component_of[*member] = component;
             }
-            for callee in next {
-                if seen.insert(callee) {
-                    parents.insert(callee, function);
-                    queue.push_back(callee);
+        }
+        let introducing = |component: usize| {
+            components[component].iter().all(|member| {
+                requires[*member]
+                    && successors[*member]
+                        .iter()
+                        .all(|callee| component_of[*callee] == component || !requires[*callee])
+            })
+        };
+        let mut parents = vec![None; closure.len()];
+        let mut seen = vec![false; closure.len()];
+        let mut order = vec![0];
+        seen[0] = true;
+        let mut cursor = 0;
+        while let Some(node) = order.get(cursor).copied() {
+            cursor += 1;
+            for callee in &successors[node] {
+                if requires[*callee] && !seen[*callee] {
+                    seen[*callee] = true;
+                    parents[*callee] = Some(node);
+                    order.push(*callee);
                 }
             }
         }
-        None
+        let component = order
+            .iter()
+            .map(|node| component_of[*node])
+            .find(|component| introducing(*component))?;
+        let introducer = order
+            .iter()
+            .copied()
+            .find(|node| component_of[*node] == component && own[*node])?;
+        let mut path = vec![closure[introducer]];
+        let mut current = introducer;
+        while let Some(parent) = parents[current] {
+            path.push(closure[parent]);
+            current = parent;
+        }
+        path.reverse();
+        Some(path)
     }
 
     #[cfg(test)]

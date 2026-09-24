@@ -552,6 +552,11 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// records it here; the `&mut self` driver builds the signature and
     /// retries the function, exactly as it does for a derived nominal.
     pending_instances: RefCell<Vec<(usize, generics::GenericSubstitution)>>,
+    /// [FN-2, MOD-8] the call that first requested each concrete generic
+    /// instance, keyed by its template node and substitution, in the
+    /// deterministic discovery order, so a rejection raised while checking
+    /// that instance names its requester.
+    instance_requests: RefCell<Vec<(NodeId, generics::GenericSubstitution, NodeId)>>,
     /// [PROV-1] the region an elided store brand denotes at the position
     /// being parsed: the enclosing nominal's sole region parameter while a
     /// `struct_decl` or `enum_decl` body is being read, and `None`
@@ -1369,6 +1374,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             musttail_rejections: RefCell::new(Vec::new()),
             pending_nominals: RefCell::new(Vec::new()),
             pending_instances: RefCell::new(Vec::new()),
+            instance_requests: RefCell::new(Vec::new()),
             elided_store_brand: std::cell::Cell::new(None),
             template_spelling_authority: std::cell::Cell::new(false),
             commit_read_outs: RefCell::new(Vec::new()),
@@ -1499,7 +1505,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if self.reject_entailment {
             let mut rejections = Vec::new();
             for function in &baseline_functions {
-                match self.entailment_rejection(function) {
+                match self
+                    .entailment_rejection(function)
+                    .map_err(|stop| self.attribute_to_request(function.id, stop))
+                {
                     Ok(()) => {}
                     Err(CheckStop::Issue(issue)) => {
                         let path = Self::source_issue_path(&issue)?.clone();
@@ -1962,8 +1971,65 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         return Err(SemanticCompilerFailure::InvalidResolution.into());
                     }
                 }
-                outcome => return outcome,
+                outcome => {
+                    return outcome.map_err(|stop| match u32::try_from(index) {
+                        Ok(ordinal) => self.attribute_to_request(FunctionId(ordinal), stop),
+                        Err(_) => stop,
+                    });
+                }
             }
+        }
+    }
+
+    /// [FN-2, MOD-8] records `call` as the requester of the instance of
+    /// `template` at `substitution`, unless an earlier call already is.
+    pub(super) fn record_instance_request(
+        &self,
+        template: NodeId,
+        substitution: &generics::GenericSubstitution,
+        call: NodeId,
+    ) {
+        let mut requests = self.instance_requests.borrow_mut();
+        if !requests
+            .iter()
+            .any(|(node, known, _)| *node == template && known == substitution)
+        {
+            requests.push((template, substitution.clone(), call));
+        }
+    }
+
+    /// [FN-2, MOD-8] names `call` as the requester on a rejection that names
+    /// none yet. The rejection keeps its location in the template.
+    pub(super) fn attribute_to_call(&self, call: NodeId, stop: CheckStop) -> CheckStop {
+        match stop {
+            CheckStop::Issue(mut issue) if issue.request.is_none() => {
+                issue.request = self.tree.coordinate(call).ok();
+                CheckStop::Issue(issue)
+            }
+            stop => stop,
+        }
+    }
+
+    /// [FN-2, MOD-8] names the call that requested `function` on a rejection
+    /// raised while checking it, when `function` is a requested concrete
+    /// instance of a generic template.
+    pub(super) fn attribute_to_request(&self, function: FunctionId, stop: CheckStop) -> CheckStop {
+        let request = self
+            .signatures
+            .get(function.0 as usize)
+            .filter(|signature| signature.id == function)
+            .and_then(|signature| {
+                self.instance_requests
+                    .borrow()
+                    .iter()
+                    .find(|(node, substitution, _)| {
+                        *node == signature.node && *substitution == signature.substitution
+                    })
+                    .map(|(_, _, call)| *call)
+            });
+        match request {
+            Some(call) => self.attribute_to_call(call, stop),
+            None => stop,
         }
     }
 
@@ -2179,6 +2245,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     self.tree.closing_brace_coordinate(signature.node)?,
                 ),
                 kind: SemanticIssueKind::FunctionFallthrough,
+                request: None,
             }));
         }
         let exhibited = self.written_body_effects(signature, checked.effects.clone());
@@ -3723,6 +3790,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             required_relation,
                             mechanical_fix,
                         },
+                        request: None,
                     }))
                 }
                 Rejection::SourceProof(outcome) => {
@@ -3758,6 +3826,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 reason,
                                 mechanical_fix,
                             },
+                            request: None,
                         }));
                     }
                     if !outcome.certificate_written {
@@ -3780,6 +3849,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 name: outcome.name.clone(),
                                 mechanical_fix: "weaken or correct this invariant, or establish the missing facts before this statement so AUTO proves its target in the entering context",
                             },
+                            request: None,
                         }));
                     }
                     let failure_obligation = |failure| match failure {
@@ -3859,6 +3929,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             obligation,
                             mechanical_fix,
                         },
+                        request: None,
                     }))
                 }
                 Rejection::Obligation(outcome) => {
@@ -3882,6 +3953,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 residual,
                                 mechanical_fix: "when the relation must hold, establish the residual with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise restructure the access",
                             },
+                            request: None,
                         },
                         super::entailment::ObligationFamily::IntegerDomain => SemanticIssue {
                             rule: SemanticRule::Op2,
@@ -3895,6 +3967,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 },
                                 mechanical_fix: "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic",
                             },
+                            request: None,
                         },
                         super::entailment::ObligationFamily::AllocationFit => SemanticIssue {
                             rule: SemanticRule::Op9,
@@ -3903,6 +3976,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 residual,
                                 mechanical_fix: "the allocation's own size arithmetic must stay inside u64: bound the count with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when the refusal is intended program behavior; otherwise restructure the allocation",
                             },
+                            request: None,
                         },
                         super::entailment::ObligationFamily::ConversionDomain => SemanticIssue {
                             rule: SemanticRule::Op6,
@@ -3916,6 +3990,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 },
                                 mechanical_fix: "establish this cvt.defined domain with a verified requirement, an integer range invariant, or explicit finite proof steps; use a dominating cvt.defined condition when refusal is intended behavior, or use cvt.checked to return the failed conversion",
                             },
+                            request: None,
                         },
                         super::entailment::ObligationFamily::CallSeparation
                         | super::entailment::ObligationFamily::ExchangeSeparation => {
@@ -3932,6 +4007,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                     residual,
                                     mechanical_fix: "prove the two positions distinct before this call, or pass one of them",
                                 },
+                                request: None,
                             }
                         }
                         super::entailment::ObligationFamily::ReferencePreservation(query) => {
@@ -3948,6 +4024,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                     event: use_site.event,
                                     mechanical_fix: references::REF2_FORM_AGAIN,
                                 },
+                                request: None,
                             }
                         }
                         super::entailment::ObligationFamily::RangeFormation => SemanticIssue {
@@ -3957,6 +4034,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 residual,
                                 mechanical_fix: "establish lo <= hi and hi <= x.len with a verified requirement, a source invariant, or explicit finite proof steps; otherwise restructure the range",
                             },
+                            request: None,
                         },
                     }))
                 }
@@ -3995,6 +4073,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 residual: outcome.rendered_goal.clone(),
                                 mechanical_fix: "empty the window and establish its zero length at this point; otherwise take every element out and consume it",
                             },
+                            request: None,
                         }));
                     }
                     let mechanical_fix = if first_ephemeral_argument(&outcome.goal.root).is_some() {
@@ -4017,6 +4096,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 mechanical_fix,
                             },
                         )),
+                        request: None,
                     }))
                 }
             };
@@ -4048,6 +4128,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     kind: SemanticIssueKind::NoSelectedNormalExit {
                         residual: "no selected normal exit",
                     },
+                    request: None,
                 }));
             }
             let Some(exit) = proof.exits.iter().find(|exit| {
@@ -4086,6 +4167,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         disposition,
                     },
                 )),
+                request: None,
             }));
         }
         Ok(())
