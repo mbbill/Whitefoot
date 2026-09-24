@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-24 Adopt retained component evidence, the legacy bundle entry and per-module summary publication
+
+Nodes: compiler/incremental-compilation, language/checks-and-proofs, language, language/name-resolution, language/effects, language/data-model/readonly-field, compiler
+
+Owner-approved: After the handoff for PR #85 at c7696ff1 that showed the exact text of the three amendments with a Chinese translation, the owner explicitly approved all three.
+
+Summary: Add the three reviewed decisions unchanged. compiler/incremental-compilation retains checked evidence in per-component fragments assembled into a receipt that alone grants lowering authority, with unrelated valid fragments surviving a failed build, and keeps a legacy source-bundle entry during integration as one synthetic module checked by the same checker, retired only as an explained interface change that keeps conformance coverage. language/checks-and-proofs publishes the summaries of the members a module's own check verifies once all of them verify, while composition still requires every member of a recursive component to verify, so a module's verdict never waits for another module's instance. The [cache publication design](../research/investigations/modular-compilation/DESIGN.md#cache-authority-and-publication), the [implementation slices](../research/investigations/modular-compilation/DESIGN.md#ordered-implementation-slices-and-completion-evidence) and the [module-verdict rule](../research/investigations/modular-compilation/LANGUAGE.md#module-verdicts-and-proof-availability) supply the grounds. The other nodes named here are unchanged by this entry and carry the earlier modular ruling below; they are listed because this PR changes them. Remove the resolved amendments and their directory. The specification and compiler are unchanged; this ruling does not authorize a merge.
+
 ## 2026-09-24 Adopt modular compilation for large projects and parallel agent work
 
 Nodes: language, language/name-resolution, language/checks-and-proofs, language/effects, language/data-model/readonly-field, compiler, compiler/incremental-compilation

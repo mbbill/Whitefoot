@@ -2185,9 +2185,9 @@ generator, including a prefix check that it keeps every active form. The source
 demo, container argument and cold/warm transition matrix are design evidence;
 no execution or controlled performance measurement is claimed.
 The live specification is unchanged. The owner approved the module, name,
-visibility, readonly, proof, effect and compiler decisions into the live design
-trees; three amendments, for retained evidence, the legacy source-bundle entry
-and per-module summary publication, await their own ruling. Exact spec
+visibility, readonly, proof, effect and compiler decisions, including retained
+component evidence, the legacy source-bundle entry and per-module summary
+publication, into the live design trees. Exact spec
 rule/token deltas and new version identity are
 computed against the integration revision, not copied from this branch after
 other language work has merged. The maintained TODO records the implementation
