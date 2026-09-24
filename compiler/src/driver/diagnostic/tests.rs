@@ -358,6 +358,49 @@ fn a_quoted_line_escapes_control_and_reordering_characters() {
     );
 }
 
+/// Zero-width characters, the byte-order mark, and the line and paragraph
+/// separators are escaped on the quoted line too: each is invisible or breaks
+/// the line in some reader. The first is the defect, so the marker covers its
+/// printed escape.
+#[test]
+fn a_quoted_line_escapes_zero_width_and_separator_characters() {
+    let source = "fn main() -> status: ExitStatus pure {\n  let x = \u{200b}y\u{2028}z\u{feff}\u{2029}\u{200d};\n  return exit_status(code: 0_u8);\n}\n";
+    assert_eq!(
+        stop("zero-width.wf", source.as_bytes()).to_string(),
+        "zero-width.wf:2:11: error[FORM-1]: UnexpectedByte
+  source:   let x = \\u{200b}y\\u{2028}z\\u{feff}\\u{2029}\\u{200d};
+  marker:           ^^^^^^^^
+  found: \"\\u{200b}\""
+    );
+}
+
+/// A declaration origin points at the declared name and quotes the
+/// declaration it belongs to, so the record shows what the other declaration
+/// is rather than repeating the spelling it already names.
+#[test]
+fn a_declaration_origin_quotes_its_declaration() {
+    let source = b"fn scale(factor: u64) -> result: u64 pure {\n  let factor = 2_u64;\n  return factor;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    let failure = stop("shadow.wf", source);
+    let rendered = failure.to_string();
+    assert!(
+        rendered.starts_with("shadow.wf:2:7: error[TYPE-6]: DeclarationCollision\n"),
+        "{rendered}"
+    );
+    assert!(rendered.contains("\n  spelling: factor\n"), "{rendered}");
+    assert!(
+        rendered.contains(r#"origin: shadow.wf:1:10 "factor: u64""#),
+        "{rendered}"
+    );
+    // JSON keeps the name's own coordinate in `at` and `bytes`.
+    assert!(
+        failure.render(DiagnosticFormat::Json).contains(
+            r#""origin":{"at":{"file":"shadow.wf","line":1,"column":10},"bytes":{"start":9,"end":15},"text":"factor: u64"}"#
+        ),
+        "{}",
+        failure.render(DiagnosticFormat::Json)
+    );
+}
+
 #[test]
 fn a_capability_stop_names_its_stage_and_never_cites_a_rule() {
     let failure = stop(

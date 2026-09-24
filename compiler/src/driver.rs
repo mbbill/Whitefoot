@@ -1169,12 +1169,12 @@ fn main() -> status: ExitStatus pure {
             rendered.contains("\n  source:     let permit = 2_u64;\n"),
             "{rendered}"
         );
-        // The earlier declaration is a position too, never a node path,
-        // quoted by the text its coordinate covers: the declared name.
+        // The earlier declaration is a position too, never a node path: its
+        // name's position, quoted by the declaration it belongs to.
         assert!(
             failure
                 .detail()
-                .contains(&format!(r#"origin: {host}:2:7 "permit""#)),
+                .contains(&format!(r#"origin: {host}:2:7 "let permit = 1_u64;""#)),
             "{rendered}"
         );
         assert!(!rendered.contains("input0.wf"), "{rendered}");

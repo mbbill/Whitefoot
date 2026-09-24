@@ -93,7 +93,12 @@ complete, carrying every envelope field and the byte interval for tools.
 
 Measured on the two records above, the lean text is 448 and 756 bytes, the
 JSON objects 540 and 869 bytes (13-17% larger), and the old `Debug` records
-644 and 894 bytes. The `mechanical_fix` sentence dominates every form.
+644 and 894 bytes. The `mechanical_fix` sentence dominates every form. The
+sources are the renderer tests' `BOUNDS` program and FN-8 caller program in
+`compiler/src/driver/diagnostic/tests.rs`, compiled as
+`ex1_bounds_noinv.wf` and `ex1_caller_short.wf`, so the figures reproduce
+with `whitefootc --emit-llvm -o /dev/null FILE 2>&1 | wc -c`, adding
+`--diagnostic-format json` for the objects.
 
 Values are typed by how a reader must read them:
 
@@ -106,10 +111,13 @@ Values are typed by how a reader must read them:
   `found: "\xff"`), and fixed terminals in an expected set. A token class in
   an expected set is named instead of quoted, so `[TYPEID, "(", literal]`
   distinguishes the class `literal` from a fixed terminal.
-- A position the payload names prints as `file:line:column "text"`, where the
-  text is the node's own: the first line of its extent, trimmed. FN-9's
-  selector prints `"result: i32"`, not the `fn` header it sits on; a
-  declaration conflict prints the declared name.
+- A position the payload names prints as `file:line:column "text"`: the
+  position is where the payload's coordinate points, and the text is the
+  first line of the node that coordinate belongs to, trimmed. FN-9's selector
+  prints `"result: i32"`, not the `fn` header it sits on. A declaration origin
+  points at the declared name and quotes its declaration, e.g.
+  `origin: a.wf:2:7 "let permit = 1_u64;"`, so the record shows what the
+  other declaration is rather than repeating the spelling.
 - A classification prints its variant name; one with fields prints them too,
   e.g. `obligation: Premise {use_index: 0}`.
 - Lists print as `[a, b]`; structured list items as `{label: value, ...}`.
@@ -121,8 +129,10 @@ related position is an object with `at`, `bytes` and the node's `text`; a
 classification with fields is an object whose `kind` names the variant.
 
 The `source:` line is shown as written, except that control characters,
-bidirectional formatting characters, and bytes that begin no valid scalar are
-escaped, so a quoted line cannot display differently from its bytes. The
+zero-width characters (U+200B-U+200D) and the byte-order mark (U+FEFF), the
+line and paragraph separators (U+2028, U+2029), bidirectional formatting
+characters, and bytes that begin no valid scalar are escaped, so a quoted
+line cannot display differently from its bytes. The
 column counts characters, a byte that begins no scalar counting as one, and
 the marker is drawn over the printed line; `bytes` in JSON is the exact
 interval. Source is ASCII up to its first defect [DIAG-1], so a multi-byte
