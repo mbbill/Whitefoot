@@ -99,24 +99,19 @@ compile time, and `off` emits no family so every node offers. `whitefootc
 --help` prints the full usage. At run time `WF_WORKERS` selects compute
 participation; `WF_STACKS` is inert.
 
-A rejection prints the cited rule, the location with the marked source line,
-and every payload field under a stable label:
+A rejection prints the location, the cited rule and the kind, the marked
+source line, and every payload field under a stable label:
 
 ```text
 bounds.wf:11:21: error[OP-4]: UndischargedBoundsObligation
-  rule: OP-4
-  kind: UndischargedBoundsObligation
-  category: Source
-  stage: Semantics
-  at: bounds.wf:11:21
-  bytes: 377..383
   source:       set deref(out)[kept] = byte;
   marker:                     ^^^^^^
   residual: kept < deref(out).len
   mechanical_fix: when the relation must hold, establish the residual with ...
 ```
 
-`--diagnostic-format json` prints the same fields as one JSON object per line.
+`--diagnostic-format json` prints the complete record, category, stage and
+byte interval included, as one JSON object per line.
 The [readable-diagnostics investigation](research/investigations/readable-diagnostics/DESIGN.md)
 describes the record.
 

@@ -4,19 +4,25 @@
 //! resolved to the file the caller named, and the stage payload as labeled
 //! fields. The driver adds the envelope it already owns -- category, stage,
 //! and the numbered rule of a source rejection [DIAG-1] -- and renders the
-//! whole record one of two ways. [`DiagnosticFormat::Text`] is a block whose
-//! first line has the `file:line:column: error[RULE]: Kind` shape and whose
-//! every other line is one `label: value`; [`DiagnosticFormat::Json`] prints
-//! the same fields as one JSON object on one line.
+//! record one of two ways.
 //!
-//! The payload types list their fields once, here, by exhaustive
-//! destructuring. A field added to a payload fails to compile until it is
-//! listed, so no payload value can silently drop out of what a writer reads,
-//! and every label is the field's own name. A node path reaches this module
-//! only beside its coordinate, and is printed as that coordinate's position:
-//! child ordinals, source ordinals and byte offsets are identities a writer
-//! cannot act on, and the blind-writer trial of 2026-08-28 recorded a writer
-//! running `head -c` on their own program to decode them.
+//! [`DiagnosticFormat::Text`] is lean: a summary line in the
+//! `file:line:column: error[RULE]: Kind` shape, the source line with a marker
+//! under the span, then one `label: value` line per payload field. Every
+//! envelope fact a writer can act on is in the summary line; the category and
+//! stage of a source rejection, and the byte interval, are not repeated there.
+//! [`DiagnosticFormat::Json`] is complete: one object on one line carrying the
+//! envelope, the location with its byte interval, and the same payload fields.
+//!
+//! Every payload type lists its fields once, here, by exhaustive
+//! destructuring, and every closed classification it names lists its
+//! variants. A field or variant added to a payload fails to compile until it
+//! is listed, so no payload value can silently drop out of what a writer
+//! reads, and every label is the field's own name. A node path reaches this
+//! module only beside its coordinate and is printed as that coordinate's
+//! position: child ordinals, source ordinals and byte offsets are identities a
+//! writer cannot act on, and a writer trial recorded a writer running `head
+//! -c` on their own program to decode them.
 //!
 //! Stops that are not source rejections -- resource ceilings, invocation
 //! envelopes, internal invariants, target layout, backend -- carry
@@ -31,20 +37,22 @@ use crate::{
     CallRequirementDisposition, CanonicalIssue, ContractShapeIssue, DeclarationClass,
     DeclarationConflict, DeclarationDomain, DeclarationOrigin, ExpectedTerminals, LexicalUseRole,
     LookaheadPredicate, LoopInvariantProofObligation, PostconditionProofDisposition,
-    ReservedDeclarationRole, ReservedNameClass, ResolutionIssueKind, SemanticIssueKind,
-    SemanticLocation, SemanticUnsupported, SourceIssue, SourceOrigin, SourceProofObligation,
-    StaticObligationDisposition, SyntaxCoordinate, SyntaxIssue, TerminalIssue,
-    UndischargedCallRequirementDetail, UndischargedPostconditionDetail,
+    ReservedDeclarationRole, ReservedNameClass, ResolutionIssue, ResolutionIssueKind,
+    SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticUnsupported, SourceIssue,
+    SourceIssueKind, SourceOrigin, SourceProofObligation, StaticObligationDisposition,
+    SyntaxCoordinate, SyntaxIssue, TerminalIssue, UndischargedCallRequirementDetail,
+    UndischargedPostconditionDetail, UnsupportedSemanticFeature,
 };
 
 /// How a caller asks for compiler stops to be printed.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum DiagnosticFormat {
-    /// A summary line in the `file:line:column: error[RULE]: Kind` shape,
-    /// then one indented `label: value` line per field.
+    /// A summary line in the `file:line:column: error[RULE]: Kind` shape, the
+    /// marked source line, then one `label: value` line per payload field.
     #[default]
     Text,
-    /// One JSON object on one line, carrying the same field names.
+    /// One JSON object on one line: the complete envelope, the location with
+    /// its byte interval, and the same payload fields.
     Json,
 }
 
@@ -75,8 +83,8 @@ pub fn render_driver_failure(category: &str, message: &str, format: DiagnosticFo
 
 /// The envelope the driver owns for one record.
 pub(super) struct Head<'envelope> {
-    /// The summary-line verdict: `error[RULE]` for a source rejection, the
-    /// category in words otherwise.
+    /// The summary line's verdict: `error[RULE]` for a source rejection, and
+    /// the category and stage in words for every other stop.
     pub(super) verdict: String,
     pub(super) category: &'envelope str,
     pub(super) stage: &'envelope str,
@@ -106,7 +114,7 @@ impl Record {
         };
         let kind = issue.report(&mut fields);
         Self {
-            kind: Some(kind),
+            kind: Some(kind.to_owned()),
             at: Place::resolve(bundle, coordinate, anchor),
             detail: fields.detail,
         }
@@ -141,7 +149,8 @@ impl Record {
         text
     }
 
-    /// The text block: one summary line, then one indented line per field.
+    /// The lean text block: the summary line, the marked source line, then
+    /// one indented line per payload field.
     pub(super) fn text(&self, head: &Head<'_>) -> String {
         let mut text = String::new();
         match &self.at {
@@ -154,22 +163,11 @@ impl Record {
             text.push_str(": ");
             text.push_str(kind);
         }
-        if let Some(rule) = head.rule {
-            push_line(&mut text, "rule", rule);
-        }
-        if let Some(kind) = &self.kind {
-            push_line(&mut text, "kind", kind);
-        }
-        push_line(&mut text, "category", head.category);
-        push_line(&mut text, "stage", head.stage);
         if let Some(place) = &self.at {
-            text.push_str("\n  at: ");
-            push_position(&mut text, place);
-            let _ = write!(text, "\n  bytes: {}..{}", place.start, place.end);
             // `source:` and `marker:` are the same width, so the marker's
-            // carets sit under the bytes the coordinate names.
+            // carets sit under the characters the coordinate names.
             text.push_str("\n  source: ");
-            push_printable(&mut text, &place.text);
+            text.push_str(&place.line_text());
             text.push_str("\n  marker: ");
             let (offset, width) = place.marker();
             text.extend(core::iter::repeat_n(' ', offset));
@@ -182,10 +180,13 @@ impl Record {
         text
     }
 
-    /// One JSON object on one line, with the text rendering's field names.
+    /// One JSON object on one line: the complete envelope in the order
+    /// `rule`, `kind`, `category`, `stage`, then `at`, `bytes`, `source` and
+    /// the payload fields under `detail`.
     ///
-    /// The marker is omitted: it is the text rendering of `at` and `bytes`,
-    /// which the object carries as numbers.
+    /// Strings carry the text rendering's spelling, escapes included, so an
+    /// exact value reads the same in both forms. The marker is omitted: it is
+    /// the text rendering of `at` and `bytes`, which the object carries.
     pub(super) fn json(&self, head: &Head<'_>) -> String {
         let mut envelope = Vec::with_capacity(4);
         if let Some(rule) = head.rule {
@@ -203,7 +204,9 @@ impl Record {
         }
         if let Some(place) = &self.at {
             json.push(',');
-            push_json_place(&mut json, place, &place.text);
+            push_json_position(&mut json, place);
+            push_json_key(&mut json, "source", false);
+            push_json_string(&mut json, &place.line_text());
         }
         push_json_key(&mut json, "detail", false);
         push_json_fields(&mut json, &self.detail);
@@ -228,10 +231,12 @@ pub(super) enum Anchor {
 /// One source coordinate in the terms the caller typed.
 ///
 /// The file is the display path, so a record names the file the caller
-/// named. The line is one-based. The column is one-based and counts
-/// characters, and the marker is drawn in characters, so both agree with
-/// what a terminal shows when the quoted line holds a multi-byte scalar; the
-/// byte interval stays exact in `start` and `end`.
+/// named; a compiler-supplied prelude declaration, which exists in no file a
+/// writer can open, is named `<prelude>/...`. The line is one-based. The
+/// column is one-based and counts characters -- a byte that begins no valid
+/// scalar counts as one -- and the marker is drawn over the printed line, so
+/// both agree with what a terminal shows. The byte interval stays exact in
+/// `start` and `end`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Place {
     file: String,
@@ -239,12 +244,12 @@ struct Place {
     column: u64,
     start: u64,
     end: u64,
-    /// The complete source line holding the anchor, decoded lossily.
-    text: String,
-    /// Characters of `text` before the anchor.
+    /// The complete source line holding the anchor, as raw bytes.
+    bytes: Vec<u8>,
+    /// Bytes of `bytes` before the anchor.
     anchor: usize,
-    /// Characters of `text` the coordinate covers on this line.
-    covered: usize,
+    /// Byte of `bytes` where the coordinate's part of this line ends.
+    covered_end: usize,
 }
 
 impl Place {
@@ -287,36 +292,71 @@ impl Place {
             .filter(|byte| **byte == b'\n')
             .count()
             .saturating_add(1);
-        let characters = |range: &[u8]| String::from_utf8_lossy(range).chars().count();
-        let before = characters(&bytes[line_start..anchored]);
+        let before = source_characters(&bytes[line_start..anchored]);
+        let display_path = file.display_path();
+        let file_name = match file.prelude() {
+            Some(_) => format!(
+                "<prelude>/{}",
+                display_path
+                    .strip_prefix("prelude/")
+                    .unwrap_or(display_path)
+            ),
+            None => display_path.to_owned(),
+        };
         Some(Self {
-            file: file.display_path().to_owned(),
+            file: file_name,
             line: u64::try_from(line).ok()?,
             column: u64::try_from(before.saturating_add(1)).ok()?,
             start: coordinate.start().value(),
             end: coordinate.end().value(),
-            text: String::from_utf8_lossy(&bytes[line_start..line_end]).into_owned(),
-            anchor: before,
-            covered: characters(&bytes[anchored..end.min(line_end).max(anchored)]),
+            bytes: bytes[line_start..line_end].to_vec(),
+            anchor: anchored.saturating_sub(line_start),
+            covered_end: end.min(line_end).max(anchored).saturating_sub(line_start),
         })
     }
 
-    /// The marker's display offset and width under the printable line; a
-    /// zero-width coordinate is one caret at its position.
-    fn marker(&self) -> (usize, usize) {
-        let width = |characters: &mut dyn Iterator<Item = char>| {
-            characters
-                .map(|character| {
-                    let mut escaped = String::new();
-                    push_printable_char(&mut escaped, character);
-                    escaped.chars().count()
-                })
-                .sum::<usize>()
-        };
-        let offset = width(&mut self.text.chars().take(self.anchor));
-        let covered = width(&mut self.text.chars().skip(self.anchor).take(self.covered));
-        (offset, covered.max(1))
+    /// The whole line, printed as written with invisible and reordering
+    /// characters escaped.
+    fn line_text(&self) -> String {
+        let mut text = String::new();
+        push_source(&mut text, &self.bytes);
+        text
     }
+
+    /// The marker's offset and width under [`Place::line_text`]; a zero-width
+    /// coordinate is one caret at its position.
+    fn marker(&self) -> (usize, usize) {
+        let width = |bytes: &[u8]| {
+            let mut text = String::new();
+            push_source(&mut text, bytes);
+            text.chars().count()
+        };
+        (
+            width(&self.bytes[..self.anchor]),
+            width(&self.bytes[self.anchor..self.covered_end]).max(1),
+        )
+    }
+
+    /// The node's own text: its extent's first line, without surrounding
+    /// blanks.
+    fn covered(&self) -> &[u8] {
+        self.bytes[self.anchor..self.covered_end].trim_ascii()
+    }
+}
+
+/// Characters as the column counts them: each scalar, and each byte that
+/// begins no valid scalar.
+fn source_characters(bytes: &[u8]) -> usize {
+    bytes
+        .utf8_chunks()
+        .map(|chunk| {
+            chunk
+                .valid()
+                .chars()
+                .count()
+                .saturating_add(chunk.invalid().len())
+        })
+        .sum()
 }
 
 /// One field value, typed by how a reader must read it.
@@ -332,6 +372,8 @@ enum Value {
     Place(Box<Place>),
     /// A structured payload element, such as one declaration conflict.
     Fields(Vec<(&'static str, Value)>),
+    /// A classification variant that carries fields of its own.
+    Variant(&'static str, Vec<(&'static str, Value)>),
 }
 
 /// The fields one payload contributes, in declaration order.
@@ -352,12 +394,48 @@ impl Fields<'_> {
 /// A payload that lists its own fields and names its own kind.
 pub(super) trait Report {
     /// Adds every payload field to `fields` and returns the kind name.
-    fn report(&self, fields: &mut Fields<'_>) -> String;
+    fn report(&self, fields: &mut Fields<'_>) -> &'static str;
 }
 
 /// A payload structure whose fields flatten into the record that holds it.
 trait FieldList {
     fn fields(&self, fields: &mut Fields<'_>);
+}
+
+/// Lists every variant of one payload enum with its fields.
+///
+/// `Variant { a, b }` adds fields `a` and `b`; `Variant(name)` adds its one
+/// value as field `name`; `Variant[detail]` flattens a detail structure's
+/// fields into the record. The match has no wildcard and the patterns have no
+/// rest, so the listing cannot fall behind the enum. It evaluates to the
+/// variant name.
+macro_rules! report_variants {
+    ($enum:ident, $value:expr, $fields:ident;
+     $( $variant:ident
+        $( { $($field:ident),* $(,)? } )?
+        $( ( $single:ident ) )?
+        $( [ $flat:ident ] )?
+     ; )*
+    ) => {
+        match $value {
+            $(
+                $enum::$variant $( { $($field),* } )? $( ( $single ) )? $( ( $flat ) )? => {
+                    $( $( $fields.field(stringify!($field), $field); )* )?
+                    $( $fields.field(stringify!($single), $single); )?
+                    $( FieldList::fields(&**$flat, $fields); )?
+                    stringify!($variant)
+                }
+            )*
+        }
+    };
+}
+
+/// Lists every field of one payload structure, in declaration order.
+macro_rules! list_fields {
+    ($value:expr, $fields:ident; $name:ident { $($field:ident),* $(,)? }) => {{
+        let $name { $($field),* } = $value;
+        $( $fields.field(stringify!($field), $field); )*
+    }};
 }
 
 /// One payload value as a [`Value`].
@@ -485,9 +563,7 @@ impl FieldValue for DeclarationConflict {
             bundle,
             detail: Vec::new(),
         };
-        fields.field("domain", &self.domain());
-        fields.field("class", &self.class());
-        fields.field("origin", self.origin());
+        list_fields!(self, fields; DeclarationConflict { domain, class, origin });
         Some(Value::Fields(fields.detail))
     }
 }
@@ -511,67 +587,88 @@ impl FieldValue for ExpectedTerminals {
     }
 }
 
-/// Closed classifications whose `Debug` spelling is their variant name and
-/// whose data, where any, is a small source ordinal.
-macro_rules! named_by_debug {
-    ($($name:ty),* $(,)?) => {
+/// A closed classification printed by its variant name.
+trait VariantName {
+    fn name(&self) -> &'static str;
+}
+
+/// Lists every variant of each fieldless classification. The match has no
+/// wildcard and unit patterns, so a variant added to one, or given data,
+/// fails to compile until it is listed here.
+macro_rules! variant_names {
+    ($($enum:ident { $($variant:ident),* $(,)? })*) => {
         $(
-            impl FieldValue for $name {
+            impl VariantName for $enum {
+                fn name(&self) -> &'static str {
+                    match self {
+                        $( $enum::$variant => stringify!($variant), )*
+                    }
+                }
+            }
+
+            impl FieldValue for $enum {
                 fn value(&self, _: &SourceBundle) -> Option<Value> {
-                    Some(Value::Text(format!("{self:?}")))
+                    Some(Value::Text(self.name().to_owned()))
                 }
             }
         )*
     };
 }
 
-named_by_debug!(
-    CallRequirementDisposition,
-    ContractShapeIssue,
-    DeclarationClass,
-    DeclarationDomain,
-    LexicalUseRole,
-    LoopInvariantProofObligation,
-    PostconditionProofDisposition,
-    ReservedDeclarationRole,
-    ReservedNameClass,
-    SourceProofObligation,
-    StaticObligationDisposition,
-);
-
-/// Lists every variant of one payload enum with its fields.
-///
-/// `Variant { a, b }` adds fields `a` and `b`; `Variant(name)` adds its one
-/// value as field `name`; `Variant[detail]` flattens a detail structure's
-/// fields into the record. The match has no wildcard and the patterns have no
-/// rest, so the listing cannot fall behind the enum.
-macro_rules! report_variants {
-    ($enum:ident, $value:expr, $fields:ident;
-     $( $variant:ident
-        $( { $($field:ident),* $(,)? } )?
-        $( ( $single:ident ) )?
-        $( [ $flat:ident ] )?
-     ; )*
-    ) => {
-        match $value {
-            $(
-                $enum::$variant $( { $($field),* } )? $( ( $single ) )? $( ( $flat ) )? => {
-                    $( $( $fields.field(stringify!($field), $field); )* )?
-                    $( $fields.field(stringify!($single), $single); )?
-                    $( FieldList::fields(&**$flat, $fields); )?
-                    stringify!($variant).to_owned()
-                }
-            )*
-        }
-    };
+variant_names! {
+    CallRequirementDisposition { Refuted, Unproved }
+    ContractShapeIssue { MissingClause }
+    DeclarationClass {
+        Function, FunctionParameter, NamedConst, ConstGeneric, Value, GenericType, NominalType,
+        StructConstructor, EnumVariant, NumericBound, Interface, Binding, Label, Invariant,
+        OperationFamily,
+    }
+    DeclarationDomain { LexicalIdentifier, NominalType, Constructor, NumericBound, Label, Invariant }
+    LexicalUseRole {
+        Type, GenericBound, FormalGroup, TypeArgument, Construct, ArmVariant, EnsuresVariant,
+        EffectRoot, EffectIndex, BreakLabel, Const, ConstValue, PlaceBase, IdentifierCallee,
+        OperationCallee, FunctionBinding, GenericNumericSuffix, InvariantValue, ProofValue,
+        InvariantFact,
+    }
+    LoopInvariantProofObligation { Base, Backedge }
+    PostconditionProofDisposition { Refuted, Unproved }
+    ReservedDeclarationRole {
+        Function, NamedConst, Parameter, Let, ContractDefinition, ForBinder, MatchBinder,
+        PlainResultSelector, VariantResultSelector, Field, VariantField,
+    }
+    ReservedNameClass { DotlessOperation, ModeWord }
+    SourceIssueKind {
+        InvalidUtf8, UnexpectedByte, MissingLabelName, UnterminatedString, InvalidStringByte,
+        InvalidStringEscape, InvalidSourceByte, CommentPrefix,
+    }
+    StaticObligationDisposition { Refuted, Unproved }
+    UnsupportedSemanticFeature {
+        Generics, PreludeNominalValues, ReferenceFormation, CompositeValues,
+        RecursiveNominalLayout, OwnershipJoin, DuplicateMatchArm, OperationFamily,
+    }
 }
 
-/// Lists every field of one payload structure, in declaration order.
-macro_rules! list_fields {
-    ($value:expr, $fields:ident; $name:ident { $($field:ident),* $(,)? }) => {{
-        let $name { $($field),* } = $value;
-        $( $fields.field(stringify!($field), $field); )*
-    }};
+/// A failed certificate part: its variant, with the use ordinals or
+/// capacities it carries as fields.
+impl FieldValue for SourceProofObligation {
+    fn value(&self, bundle: &SourceBundle) -> Option<Value> {
+        let mut fields = Fields {
+            bundle,
+            detail: Vec::new(),
+        };
+        let name = report_variants!(SourceProofObligation, self, fields;
+            Premise(use_index);
+            Combination;
+            RedundantUseBlock;
+            RepeatedUse { first, repeated };
+            UseCapacity { maximum, actual };
+            CertificateArithmeticOverflow;
+            CertificateFormationCapacity;
+            InvalidUseFactor { use_index };
+            NonlinearCertificateSum;
+        );
+        Some(Value::Variant(name, fields.detail))
+    }
 }
 
 impl FieldList for UndischargedCallRequirementDetail {
@@ -599,8 +696,20 @@ impl FieldList for UndischargedPostconditionDetail {
     }
 }
 
+/// The rule and location are the envelope's; the kind carries the payload.
+impl Report for SemanticIssue {
+    fn report(&self, fields: &mut Fields<'_>) -> &'static str {
+        let Self {
+            rule: _,
+            location: _,
+            kind,
+        } = self;
+        kind.report(fields)
+    }
+}
+
 impl Report for SemanticIssueKind {
-    fn report(&self, fields: &mut Fields<'_>) -> String {
+    fn report(&self, fields: &mut Fields<'_>) -> &'static str {
         report_variants!(SemanticIssueKind, self, fields;
             InvalidIntegerLiteral;
             InvalidFloatLiteral;
@@ -687,9 +796,15 @@ impl Report for SemanticIssueKind {
     }
 }
 
-impl Report for ResolutionIssueKind {
-    fn report(&self, fields: &mut Fields<'_>) -> String {
-        report_variants!(ResolutionIssueKind, self, fields;
+/// The rule and origin are the envelope's; the kind carries the payload.
+impl Report for ResolutionIssue {
+    fn report(&self, fields: &mut Fields<'_>) -> &'static str {
+        let Self {
+            rule: _,
+            origin: _,
+            kind,
+        } = self;
+        report_variants!(ResolutionIssueKind, kind, fields;
             ContractShape(shape);
             MisplacedHeapDeclaration { admitted };
             ReservedName { spelling, declaration_role, class, inventory_ordinal };
@@ -705,8 +820,8 @@ impl Report for ResolutionIssueKind {
 /// [DIAG-1]'s raw lexical defects: the kind is the defect shape, and the
 /// offending bytes are printed escaped because they are often invisible.
 impl Report for SourceIssue<'_> {
-    fn report(&self, fields: &mut Fields<'_>) -> String {
-        let span = self.span();
+    fn report(&self, fields: &mut Fields<'_>) -> &'static str {
+        let Self { span, kind } = self;
         fields.field(
             "found",
             &Spelled(SyntaxCoordinate::new(
@@ -715,14 +830,15 @@ impl Report for SourceIssue<'_> {
                 span.end(),
             )),
         );
-        format!("{:?}", self.kind())
+        kind.name()
     }
 }
 
-/// A formed token that satisfies no terminal predicate [GRAM-1].
+/// A formed token that satisfies no terminal predicate [GRAM-1]; its owner
+/// is the envelope's rule.
 impl Report for TerminalIssue<'_> {
-    fn report(&self, fields: &mut Fields<'_>) -> String {
-        let token = self.token();
+    fn report(&self, fields: &mut Fields<'_>) -> &'static str {
+        let Self { token, owner: _ } = self;
         fields.field(
             "found",
             &Spelled(SyntaxCoordinate::new(
@@ -731,14 +847,14 @@ impl Report for TerminalIssue<'_> {
                 token.end(),
             )),
         );
-        "UnclassifiedToken".to_owned()
+        "UnclassifiedToken"
     }
 }
 
 /// The grammar's expected-terminal set at the failure boundary and what the
 /// source has there instead [DIAG-1].
 impl Report for SyntaxIssue {
-    fn report(&self, fields: &mut Fields<'_>) -> String {
+    fn report(&self, fields: &mut Fields<'_>) -> &'static str {
         let Self {
             rule: _,
             coordinate,
@@ -748,14 +864,14 @@ impl Report for SyntaxIssue {
         fields.field("expected", expected);
         fields.field("found", &Spelled(*coordinate));
         fields.field("mechanical_fix", mechanical_fix);
-        "UnexpectedToken".to_owned()
+        "UnexpectedToken"
     }
 }
 
 /// The trivia bytes [FORM-2] requires between two terminals and the bytes the
 /// source carries there.
 impl Report for CanonicalIssue {
-    fn report(&self, fields: &mut Fields<'_>) -> String {
+    fn report(&self, fields: &mut Fields<'_>) -> &'static str {
         let Self {
             location: _,
             expected,
@@ -763,22 +879,17 @@ impl Report for CanonicalIssue {
         } = self;
         fields.field("expected", &Exact(expected));
         fields.field("found", &Exact(found));
-        "NonCanonicalTrivia".to_owned()
+        "NonCanonicalTrivia"
     }
 }
 
-/// A valid source that needs a semantic family the compiler has not built.
+/// A valid source that needs a semantic family the compiler has not built;
+/// the node is the record's location.
 impl Report for SemanticUnsupported {
-    fn report(&self, _: &mut Fields<'_>) -> String {
-        format!("{:?}", self.feature())
+    fn report(&self, _: &mut Fields<'_>) -> &'static str {
+        let Self { feature, node: _ } = self;
+        feature.name()
     }
-}
-
-fn push_line(text: &mut String, label: &str, value: &str) {
-    text.push_str("\n  ");
-    text.push_str(label);
-    text.push_str(": ");
-    text.push_str(value);
 }
 
 fn push_field(text: &mut String, label: &str, value: &Value) {
@@ -791,11 +902,26 @@ fn push_position(text: &mut String, place: &Place) {
     let _ = write!(text, "{}:{}:{}", place.file, place.line, place.column);
 }
 
-/// Text-rendering of one value; a value never spans two lines.
+fn push_fields(text: &mut String, fields: &[(&'static str, Value)]) {
+    text.push('{');
+    for (index, (label, value)) in fields.iter().enumerate() {
+        if index > 0 {
+            text.push_str(", ");
+        }
+        push_field(text, label, value);
+    }
+    text.push('}');
+}
+
+/// Text rendering of one value; a value never spans two lines.
 fn write_text(text: &mut String, value: &Value) {
     match value {
         Value::Text(value) => push_printable(text, value),
-        Value::Exact(bytes) => push_quoted(text, bytes),
+        Value::Exact(bytes) => {
+            text.push('"');
+            push_escaped(text, bytes);
+            text.push('"');
+        }
         Value::Number(number) => {
             let _ = write!(text, "{number}");
         }
@@ -809,68 +935,91 @@ fn write_text(text: &mut String, value: &Value) {
             }
             text.push(']');
         }
-        // Another position a payload names: where it is, and its line with
-        // the indentation removed, which is the clause or declaration there.
+        // Another position a payload names: where it is, and the node's own
+        // text there -- the clause, selector or declaration itself.
         Value::Place(place) => {
             push_position(text, place);
-            text.push(' ');
-            push_quoted(text, place.text.trim().as_bytes());
+            text.push_str(" \"");
+            push_escaped(text, place.covered());
+            text.push('"');
         }
-        Value::Fields(fields) => {
-            text.push('{');
-            for (index, (label, value)) in fields.iter().enumerate() {
-                if index > 0 {
-                    text.push_str(", ");
-                }
-                push_field(text, label, value);
+        Value::Fields(fields) => push_fields(text, fields),
+        Value::Variant(name, fields) => {
+            text.push_str(name);
+            if !fields.is_empty() {
+                text.push(' ');
+                push_fields(text, fields);
             }
-            text.push('}');
         }
     }
 }
 
-/// Source text as written, with control bytes escaped so one field stays one
-/// line and a tab cannot shift the marker.
-fn push_printable(text: &mut String, value: &str) {
-    for character in value.chars() {
-        push_printable_char(text, character);
-    }
+/// Whether a character is invisible or reorders the text around it: a
+/// control character, or a bidirectional formatting character [Unicode
+/// UAX #9], which can make a quoted line read differently from its bytes.
+fn is_invisible(character: char) -> bool {
+    character.is_control()
+        || matches!(
+            character,
+            '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'
+        )
 }
 
-fn push_printable_char(text: &mut String, character: char) {
+fn push_invisible(text: &mut String, character: char) {
     match character {
         '\n' => text.push_str("\\n"),
         '\r' => text.push_str("\\r"),
         '\t' => text.push_str("\\t"),
-        control if control.is_ascii_control() => {
-            let _ = write!(text, "\\x{:02x}", u32::from(control));
+        ascii if ascii.is_ascii() => {
+            let _ = write!(text, "\\x{:02x}", u32::from(ascii));
         }
-        other => text.push(other),
+        other => {
+            let _ = write!(text, "\\u{{{:x}}}", u32::from(other));
+        }
     }
 }
 
-/// Exact bytes in quotes, every byte that is not printable ASCII escaped: a
+/// Rendered prose, printed as written with invisible characters escaped so
+/// one field stays one line.
+fn push_printable(text: &mut String, value: &str) {
+    for character in value.chars() {
+        if is_invisible(character) {
+            push_invisible(text, character);
+        } else {
+            text.push(character);
+        }
+    }
+}
+
+/// A source line as written: visible scalars unchanged, invisible or
+/// reordering ones escaped, and a byte that begins no valid scalar as `\x..`.
+fn push_source(text: &mut String, bytes: &[u8]) {
+    for chunk in bytes.utf8_chunks() {
+        push_printable(text, chunk.valid());
+        for byte in chunk.invalid() {
+            let _ = write!(text, "\\x{byte:02x}");
+        }
+    }
+}
+
+/// Exact bytes with every byte that is not printable ASCII escaped: a
 /// non-ASCII scalar as `\u{...}` and a byte that begins no valid scalar as
-/// `\x..`, so an invisible or confusable defect is visible.
-fn push_quoted(text: &mut String, bytes: &[u8]) {
-    text.push('"');
+/// `\x..`, so an invisible or confusable defect is visible. The text form
+/// quotes this spelling, and JSON carries it unchanged.
+fn push_escaped(text: &mut String, bytes: &[u8]) {
     for chunk in bytes.utf8_chunks() {
         for character in chunk.valid().chars() {
             match character {
                 '"' => text.push_str("\\\""),
                 '\\' => text.push_str("\\\\"),
                 ' '..='~' => text.push(character),
-                control if control.is_ascii_control() => push_printable_char(text, control),
-                other => {
-                    let _ = write!(text, "\\u{{{:x}}}", u32::from(other));
-                }
+                other => push_invisible(text, other),
             }
         }
         for byte in chunk.invalid() {
             let _ = write!(text, "\\x{byte:02x}");
         }
     }
-    text.push('"');
 }
 
 fn push_json_key(json: &mut String, key: &str, first: bool) {
@@ -901,9 +1050,8 @@ fn push_json_string(json: &mut String, value: &str) {
     json.push('"');
 }
 
-/// A position as the three fields every located record carries: `at`,
-/// `bytes`, and `source`.
-fn push_json_place(json: &mut String, place: &Place, source: &str) {
+/// A position's `at` and `bytes` members.
+fn push_json_position(json: &mut String, place: &Place) {
     push_json_key(json, "at", true);
     json.push('{');
     push_json_key(json, "file", true);
@@ -913,8 +1061,6 @@ fn push_json_place(json: &mut String, place: &Place, source: &str) {
         ",\"line\":{},\"column\":{}}},\"bytes\":{{\"start\":{},\"end\":{}}}",
         place.line, place.column, place.start, place.end
     );
-    push_json_key(json, "source", false);
-    push_json_string(json, source);
 }
 
 fn push_json_fields(json: &mut String, fields: &[(&'static str, Value)]) {
@@ -928,8 +1074,16 @@ fn push_json_fields(json: &mut String, fields: &[(&'static str, Value)]) {
 
 fn push_json_value(json: &mut String, value: &Value) {
     match value {
-        Value::Text(value) => push_json_string(json, value),
-        Value::Exact(bytes) => push_json_string(json, &String::from_utf8_lossy(bytes)),
+        Value::Text(value) => {
+            let mut printable = String::new();
+            push_printable(&mut printable, value);
+            push_json_string(json, &printable);
+        }
+        Value::Exact(bytes) => {
+            let mut escaped = String::new();
+            push_escaped(&mut escaped, bytes);
+            push_json_string(json, &escaped);
+        }
         Value::Number(number) => {
             let _ = write!(json, "{number}");
         }
@@ -943,12 +1097,30 @@ fn push_json_value(json: &mut String, value: &Value) {
             }
             json.push(']');
         }
+        // A related position: `at`, `bytes`, and the node's own `text`.
         Value::Place(place) => {
             json.push('{');
-            push_json_place(json, place, place.text.trim());
+            push_json_position(json, place);
+            push_json_key(json, "text", false);
+            let mut escaped = String::new();
+            push_escaped(&mut escaped, place.covered());
+            push_json_string(json, &escaped);
             json.push('}');
         }
         Value::Fields(fields) => push_json_fields(json, fields),
+        // A variant with fields is an object naming it as `kind`; one without
+        // fields is its name.
+        Value::Variant(name, fields) if fields.is_empty() => push_json_string(json, name),
+        Value::Variant(name, fields) => {
+            json.push('{');
+            push_json_key(json, "kind", true);
+            push_json_string(json, name);
+            for (label, value) in fields {
+                push_json_key(json, label, false);
+                push_json_value(json, value);
+            }
+            json.push('}');
+        }
     }
 }
 

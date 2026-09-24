@@ -752,7 +752,7 @@ fn op9_overflow_is_rejected_before_lowering() {
     assert!(
         failure
             .to_string()
-            .contains("\n  kind: UndischargedAllocationFitObligation\n")
+            .contains("]: UndischargedAllocationFitObligation\n")
     );
 }
 
@@ -1349,7 +1349,7 @@ fn a_runtime_capacity_window_op9_overflow_is_rejected_before_lowering() {
     assert!(
         failure
             .to_string()
-            .contains("\n  kind: UndischargedAllocationFitObligation\n")
+            .contains("]: UndischargedAllocationFitObligation\n")
     );
 }
 

@@ -1099,9 +1099,9 @@ impl SemanticIssueKind {
 /// One deterministic post-resolution source-language rejection.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SemanticIssue {
-    rule: SemanticRule,
-    location: SemanticLocation,
-    kind: SemanticIssueKind,
+    pub(crate) rule: SemanticRule,
+    pub(crate) location: SemanticLocation,
+    pub(crate) kind: SemanticIssueKind,
 }
 
 impl SemanticIssue {
@@ -1129,6 +1129,7 @@ impl SemanticIssue {
 
     /// Returns the structured rejection premise.
     #[must_use]
+    #[cfg(test)]
     pub const fn kind(&self) -> &SemanticIssueKind {
         &self.kind
     }
@@ -1161,21 +1162,16 @@ pub enum UnsupportedSemanticFeature {
 /// Exact source node at which an unimplemented compiler family was required.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SemanticUnsupported {
-    feature: UnsupportedSemanticFeature,
-    node: SemanticLocation,
+    pub(crate) feature: UnsupportedSemanticFeature,
+    pub(crate) node: SemanticLocation,
 }
 
 impl SemanticUnsupported {
     /// Returns the unimplemented semantic family.
     #[must_use]
+    #[cfg(test)]
     pub const fn feature(&self) -> UnsupportedSemanticFeature {
         self.feature
-    }
-
-    /// Returns the source node that required it, with that node's extent.
-    #[must_use]
-    pub const fn location(&self) -> &SemanticLocation {
-        &self.node
     }
 }
 

@@ -297,21 +297,33 @@ impl CompilationFailure {
         self.record.detail_text()
     }
 
-    /// Renders the complete record in the selected format.
+    /// Renders the record in the selected format.
     ///
-    /// The text form is a summary line in the `file:line:column:
-    /// error[RULE]: Kind` shape followed by one indented `label: value` line
-    /// per field; the JSON form is one object on one line with the same field
+    /// The text form is lean: a summary line in the `file:line:column:
+    /// error[RULE]: Kind` shape -- `whitefootc: compiler failure in Stage:
+    /// Kind` for a stop that is not a source rejection -- the marked source
+    /// line, then one indented `label: value` line per payload field. The JSON
+    /// form is one complete object on one line with the same payload field
     /// names. Both are deterministic for one compiler executable.
     #[must_use]
     pub fn render(&self, format: DiagnosticFormat) -> String {
         let category = format!("{:?}", self.kind);
         let stage = format!("{:?}", self.stage);
+        // A source rejection is always in the source stages, so its rule is
+        // what a writer acts on; every other stop names its stage, because
+        // the stage is where the capability, limit or defect lives.
         let verdict = match (self.kind, self.rule_id) {
             (CompilationFailureKind::Source, Some(rule)) => format!("error[{rule}]"),
-            (CompilationFailureKind::Unsupported, _) => "unsupported capability".to_owned(),
-            (CompilationFailureKind::TargetLayout, _) => "target layout failure".to_owned(),
-            (kind, _) => format!("{} failure", format!("{kind:?}").to_ascii_lowercase()),
+            (CompilationFailureKind::Unsupported, _) => {
+                format!("unsupported capability in {stage}")
+            }
+            (CompilationFailureKind::TargetLayout, _) => {
+                format!("target layout failure in {stage}")
+            }
+            (kind, _) => format!(
+                "{} failure in {stage}",
+                format!("{kind:?}").to_ascii_lowercase()
+            ),
         };
         let head = Head {
             verdict,
@@ -597,7 +609,7 @@ where
             return Err(CompilationFailure::at_source(
                 CompilationStage::Resolution,
                 issue.rule().id(),
-                issue.kind(),
+                &issue,
                 &bundle,
                 issue.origin().coordinate(),
                 Anchor::Start,
@@ -621,7 +633,7 @@ where
             return Err(CompilationFailure::at_source(
                 CompilationStage::Semantics,
                 issue.rule_id(),
-                issue.kind(),
+                &issue,
                 &bundle,
                 issue.location().coordinate(),
                 Anchor::Start,
@@ -631,7 +643,7 @@ where
             return Err(CompilationFailure::at_source(
                 CompilationStage::Resolution,
                 issue.rule().id(),
-                issue.kind(),
+                &issue,
                 &bundle,
                 issue.origin().coordinate(),
                 Anchor::Start,
@@ -647,7 +659,7 @@ where
                 record: Box::new(Record::located(
                     &unsupported,
                     &bundle,
-                    unsupported.location().coordinate(),
+                    unsupported.node.coordinate(),
                     Anchor::Start,
                 )),
             });
@@ -771,9 +783,9 @@ mod tests {
             // as the one `payload` field, under a kind named for it.
             assert_eq!(failure.detail(), "payload: EmptySourceSequence");
             assert!(
-                failure
-                    .to_string()
-                    .starts_with("whitefootc: invocation failure: EmptySourceSequence\n"),
+                failure.to_string().starts_with(
+                    "whitefootc: invocation failure in SourceEnvelope: EmptySourceSequence\n"
+                ),
                 "{failure}"
             );
         }
@@ -1043,7 +1055,7 @@ mod tests {
         assert_eq!(failure.detail(), "expected: \" \"\nfound: \"  \"");
         let rendered = failure.to_string();
         assert!(
-            rendered.contains("\n  at: /absolute/path/report.wf:3:"),
+            rendered.starts_with("/absolute/path/report.wf:3:"),
             "{rendered}"
         );
     }
@@ -1126,10 +1138,6 @@ fn main() -> status: ExitStatus pure {
             "{rendered}"
         );
         assert!(
-            rendered.contains(&format!("\n  at: {host}:7:16\n")),
-            "{rendered}"
-        );
-        assert!(
             rendered.contains("\n  source:   let totals = running;\n"),
             "{rendered}"
         );
@@ -1152,18 +1160,21 @@ fn main() -> status: ExitStatus pure {
         assert_eq!(failure.rule_id(), Some("TYPE-6"));
         let rendered = failure.to_string();
         assert!(
-            rendered.contains(&format!("\n  at: {host}:4:9\n")),
+            rendered.starts_with(&format!(
+                "{host}:4:9: error[TYPE-6]: DeclarationCollision\n"
+            )),
             "{rendered}"
         );
         assert!(
             rendered.contains("\n  source:     let permit = 2_u64;\n"),
             "{rendered}"
         );
-        // The earlier declaration is a position too, never a node path.
+        // The earlier declaration is a position too, never a node path,
+        // quoted by the text its coordinate covers: the declared name.
         assert!(
             failure
                 .detail()
-                .contains(&format!(r#"origin: {host}:2:7 "let permit = 1_u64;""#)),
+                .contains(&format!(r#"origin: {host}:2:7 "permit""#)),
             "{rendered}"
         );
         assert!(!rendered.contains("input0.wf"), "{rendered}");
@@ -2782,7 +2793,10 @@ fn main() -> status: ExitStatus pure {
 "#,
         );
         assert!(detail.contains("[TYPE-5]"), "{detail}");
-        assert!(detail.contains("\n  kind: TypeMismatch\n"), "{detail}");
+        assert!(
+            detail.starts_with("types.wf:4:16: error[TYPE-5]: TypeMismatch\n"),
+            "{detail}"
+        );
         assert!(
             detail.ends_with("\n  expected: own u64\n  found: own u32"),
             "{detail}"
@@ -2866,7 +2880,7 @@ fn main() -> status: ExitStatus pure {
         );
         assert!(
             detail.contains(
-                "\n  at: reference-result.wf:1:33\n  bytes: 32..33\n  source: fn caller(anchor: &u64) -> out: &u64 pure {\n"
+                "reference-result.wf:1:33: error[GRAM-3]: UnexpectedToken\n  source: fn caller(anchor: &u64) -> out: &u64 pure {\n"
             ),
             "{detail}"
         );
@@ -2886,7 +2900,7 @@ fn main() -> status: ExitStatus pure {
         );
         assert!(detail.contains("[FORM-2]"), "{detail}");
         assert!(
-            detail.contains("\n  at: indent.wf:3:1\n  bytes: 69..74\n  source:     let b = a +wrap 2_u64;\n  marker: ^^^^\n"),
+            detail.starts_with("indent.wf:3:1: error[FORM-2]: NonCanonicalTrivia\n  source:     let b = a +wrap 2_u64;\n  marker: ^^^^\n"),
             "{detail}"
         );
 
@@ -2897,8 +2911,8 @@ fn main() -> status: ExitStatus pure {
             b"fn helper(value: u64) -> out: u64 pure {\n  let a = value +wrap 1_u64;\n  let b = a  +wrap 2_u64;\n  return b;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         );
         assert!(
-            inline.contains(&format!(
-                "\n  at: spacing.wf:3:12\n  bytes: 81..83\n  source:   let b = a  +wrap 2_u64;\n  marker: {}^^\n",
+            inline.starts_with(&format!(
+                "spacing.wf:3:12: error[FORM-2]: NonCanonicalTrivia\n  source:   let b = a  +wrap 2_u64;\n  marker: {}^^\n",
                 " ".repeat(11)
             )),
             "{inline}"

@@ -296,7 +296,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "TYPE-6",
         sentences: &[
-            "\n  kind: DeclarationCollision\n",
+            "]: DeclarationCollision\n",
             "\n  spelling: permit\n",
             "a declaration's scope ends with the block that declares it, and not where its value is consumed: a binding whose value was moved is dead as a value while its declaration stays live, so an inner declaration of the same spelling still collides with it. Rename the inner declaration, or close the block that declares the outer one before this point",
         ],
@@ -358,7 +358,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "FN-2",
         sentences: &[
-            "\n  kind: TypeMismatch\n",
+            "]: TypeMismatch\n",
             "\n  expected: 1 written generic argument\n  found: no explicit argument list\n",
         ],
     },
@@ -379,7 +379,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "TYPE-5",
         sentences: &[
-            "\n  kind: TypeMismatch\n",
+            "]: TypeMismatch\n",
             "\n  expected: 1 written generic argument\n  found: no explicit argument list\n",
         ],
     },
@@ -397,7 +397,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "TYPE-5",
         sentences: &[
-            "\n  kind: TypeMismatch\n",
+            "]: TypeMismatch\n",
             "\n  expected: 1 written expanded generic argument\n  found: 2 written expanded generic arguments\n",
         ],
     },
@@ -415,7 +415,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "TYPE-5",
         sentences: &[
-            "\n  kind: TypeMismatch\n",
+            "]: TypeMismatch\n",
             "\n  expected: a type argument occupies this parameter position\n  found: a nonmatching behavior argument\n",
         ],
     },
@@ -432,7 +432,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "TYPE-5",
         sentences: &[
-            "\n  kind: TypeMismatch\n",
+            "]: TypeMismatch\n",
             "\n  expected: a const argument occupies this parameter position\n  found: a nonmatching behavior argument\n",
         ],
     },
@@ -449,7 +449,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "TYPE-5",
         sentences: &[
-            "\n  kind: TypeMismatch\n",
+            "]: TypeMismatch\n",
             "\n  expected: 0 written expanded generic arguments\n  found: 1 written expanded generic argument\n",
         ],
     },
@@ -465,7 +465,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "TYPE-5",
         sentences: &[
-            "\n  kind: TypeMismatch\n",
+            "]: TypeMismatch\n",
             "\n  expected: this type spelled with no type arguments\n  found: a written `<...>` type-argument list on a type that takes none\n",
         ],
     },
@@ -482,7 +482,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "FN-3",
         sentences: &[
-            "\n  kind: TypeMismatch\n",
+            "]: TypeMismatch\n",
             "\n  expected: an integer type, which the parameter's `Int` bound requires\n  found: f64\n",
         ],
     },
@@ -499,7 +499,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "FN-3",
         sentences: &[
-            "\n  kind: TypeMismatch\n",
+            "]: TypeMismatch\n",
             "\n  expected: a float type, which the parameter's `Float` bound requires\n  found: u64\n",
         ],
     },
@@ -518,7 +518,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "TYPE-5",
         sentences: &[
-            "\n  kind: TypeMismatch\n",
+            "]: TypeMismatch\n",
             "\n  expected: Result with both type arguments written: as a type `Result<u64, IoError>`, and as a variant constructor `Ok<u64, IoError>(value: v)`\n  found: Result with no written type-argument list\n",
         ],
     },
@@ -534,7 +534,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "TYPE-5",
         sentences: &[
-            "\n  kind: TypeMismatch\n",
+            "]: TypeMismatch\n",
             "\n  expected: Result<T, E> with exactly two type arguments\n  found: a Result type-argument list of a different length\n",
         ],
     },
@@ -550,7 +550,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "TYPE-5",
         sentences: &[
-            "\n  kind: TypeMismatch\n",
+            "]: TypeMismatch\n",
             "\n  expected: a type in each Result type-argument position\n  found: a const argument in a Result type-argument position\n",
         ],
     },
@@ -566,7 +566,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "TYPE-5",
         sentences: &[
-            "\n  kind: TypeMismatch\n",
+            "]: TypeMismatch\n",
             "\n  expected: Option with its type argument written: as a type `Option<u64>`, and as a variant constructor `Some<u64>(value: v)`\n  found: Option with no written type-argument list\n",
         ],
     },
@@ -582,7 +582,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "TYPE-5",
         sentences: &[
-            "\n  kind: TypeMismatch\n",
+            "]: TypeMismatch\n",
             "\n  expected: Option<T> with exactly one type argument\n  found: an Option type-argument list of a different length\n",
         ],
     },
@@ -598,7 +598,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "TYPE-5",
         sentences: &[
-            "\n  kind: TypeMismatch\n",
+            "]: TypeMismatch\n",
             "\n  expected: a type in the Option type-argument position\n  found: a const argument in the Option type-argument position\n",
         ],
     },
@@ -639,7 +639,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "EFF-1",
         sentences: &[
-            "\n  kind: InvalidEffectRow\n",
+            "]: InvalidEffectRow\n",
             "\n  reason: a row lists each path at most once per category, and this entry repeats one\n  mechanical_fix: delete the repeated entry; `writes(p)` already subsumes `reads(p)`, so the pair is never written for one path\n",
         ],
     },
@@ -655,7 +655,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "EFF-1",
         sentences: &[
-            "\n  kind: InvalidEffectRow\n",
+            "]: InvalidEffectRow\n",
             "\n  reason: each effect-path suffix must select a field, payload, measure, window part, or indexed position admitted by its prefix type\n  mechanical_fix: select a member or position admitted by the prefix type, or name the reference parameter's complete state; use .inner for Box contents\n",
         ],
     },
@@ -676,7 +676,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "EFF-1",
         sentences: &[
-            "\n  kind: InvalidEffectRow\n",
+            "]: InvalidEffectRow\n",
             "\n  reason: an effect-path suffix names a member its selected type does not declare\n  mechanical_fix: name a declared member of that type, or the reference parameter itself\n",
         ],
     },
@@ -692,7 +692,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "EFF-2",
         sentences: &[
-            "\n  kind: EffectMismatch\n",
+            "]: EffectMismatch\n",
             "\n  expected_row: reads(data.len)\n  found_row: pure\n  missing: [reads(data.len)]\n  extra: []\n  mechanical_fix: declare exactly the row the body exhibits: add every missing category and path and remove every extra one; EFF-2 admits no wider and no narrower declaration than the union of the body-syntactic and release contributions\n",
         ],
     },
@@ -708,7 +708,7 @@ fn main() -> status: ExitStatus pure {
 }
 "#,
         rule: "TYPE-5",
-        sentences: &["\n  kind: TypeMismatch\n", "\n  expected: u64\n  found: Bool\n"],
+        sentences: &["]: TypeMismatch\n", "\n  expected: u64\n  found: Bool\n"],
     },
     Probe {
         // Field suffixes after indices are supported; this scalar element
@@ -722,7 +722,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "TYPE-5",
         sentences: &[
-            "\n  kind: TypeMismatch\n",
+            "]: TypeMismatch\n",
             "\n  expected: a source struct, whose declared field this suffix selects\n  found: u8\n",
         ],
     },
@@ -793,7 +793,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "TYPE-5",
         sentences: &[
-            "\n  kind: TypeMismatch\n",
+            "]: TypeMismatch\n",
             "\n  expected: a source struct, whose declared field this suffix selects\n  found: u64\n",
         ],
     },
@@ -814,7 +814,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "TYPE-5",
         sentences: &[
-            "\n  kind: TypeMismatch\n",
+            "]: TypeMismatch\n",
             "\n  expected: a declared field of Pair\n  found: the field name `middle`, which that struct does not declare\n",
         ],
     },
@@ -837,7 +837,7 @@ fn main() -> status: ExitStatus pure {
         // complete `expr` child of the `set_stmt`, carrying expected `own T`
         // and the actual mode and type". A bare type on either side drops the
         // mode the rule names.
-        sentences: &["\n  kind: TypeMismatch\n", "\n  expected: own Ticket\n  found: own u64\n"],
+        sentences: &["]: TypeMismatch\n", "\n  expected: own Ticket\n  found: own u64\n"],
     },
     Probe {
         name: "boolean-operand-is-an-integer.wf",
@@ -847,7 +847,7 @@ fn main() -> status: ExitStatus pure {
 }
 "#,
         rule: "TYPE-5",
-        sentences: &["\n  kind: TypeMismatch\n", "\n  expected: own Bool\n  found: own u64\n"],
+        sentences: &["]: TypeMismatch\n", "\n  expected: own Bool\n  found: own u64\n"],
     },
     Probe {
         name: "match-scrutinee-is-not-an-enum.wf",
@@ -862,7 +862,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "TYPE-5",
         sentences: &[
-            "\n  kind: TypeMismatch\n",
+            "]: TypeMismatch\n",
             "\n  expected: an enum scrutinee, whose variants the arms match\n  found: u64\n",
         ],
     },
@@ -880,7 +880,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "FORM-5",
         sentences: &[
-            "\n  kind: TypeMismatch\n",
+            "]: TypeMismatch\n",
             "\n  expected: an integer or float type, whose 0 and 1 this form names\n",
         ],
     },

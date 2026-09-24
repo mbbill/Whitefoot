@@ -796,9 +796,9 @@ pub enum ContractShapeIssue {
 /// One declaration conflict carried by a TYPE-6 issue.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeclarationConflict {
-    domain: DeclarationDomain,
-    class: DeclarationClass,
-    origin: DeclarationOrigin,
+    pub(crate) domain: DeclarationDomain,
+    pub(crate) class: DeclarationClass,
+    pub(crate) origin: DeclarationOrigin,
 }
 
 impl DeclarationConflict {
@@ -903,9 +903,9 @@ pub enum ResolutionIssueKind {
 /// The first active-specification resolver rejection in specified stage and event order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolutionIssue {
-    rule: ResolutionRule,
-    origin: SourceOrigin,
-    kind: ResolutionIssueKind,
+    pub(crate) rule: ResolutionRule,
+    pub(crate) origin: SourceOrigin,
+    pub(crate) kind: ResolutionIssueKind,
 }
 
 impl ResolutionIssue {
