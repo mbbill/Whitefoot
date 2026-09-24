@@ -3,7 +3,7 @@ alias Work = pkg::data::Job;
 fn new() -> made: Queue pure contract {
   ensures made.storage.len == 0_u64;
 } {
-  doc "The CONSTRUCT and REBIND placements carry the ring's length from the helper's result into the returned queue.";
+  doc "The helper's postcondition reaches storage at its result destination, and the CONSTRUCT placement carries the ring's length into the queue this function returns.";
   let storage = new_storage();
   let built = Queue(storage: move storage);
   return move built;

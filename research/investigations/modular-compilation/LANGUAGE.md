@@ -340,9 +340,11 @@ projection [MSR-3] made of struct-field selections and `Box` `inner` steps, so
 a constructor can state `ensures made.storage.len == 0_u64;`. The measure is
 queried at the selected return over the place that return hands back and
 instantiated at the result destination, exactly as CALL-4 already does for the
-bare result; MSR-3's CONSTRUCT and REBIND placements carry the measures into
-that place. Enum-payload steps are excluded because no route selects a variant
-of an unrouted result. The extension is independent of modules: a single-bundle
+bare result. Inside the callee, a call's own result reaches its binding by that
+same CALL-4 instantiation, and MSR-3's CONSTRUCT and REBIND placements carry
+measures from bare or moved places into the place the return hands back.
+Enum-payload steps are excluded because no route selects a variant of an
+unrouted result. The extension is independent of modules: a single-bundle
 constructor such as `grow_vector_new` cannot state that its vector is empty
 today.
 

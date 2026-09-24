@@ -238,9 +238,11 @@ rule. `batch.wf` reads `deref(queue).storage.len` directly for the report's
 before the verified postconditions supply the new state's facts.
 `deref(entry(queue)).storage.len` is the frozen entry datum in an `ensures`,
 with no runtime snapshot. `made.storage.len` describes the constructor's
-returned value; stating it uses the proposed CALL-4 result-projection
-admission, and MSR-3's construction and binding placements carry it to the
-caller.
+returned value and uses the proposed CALL-4 result-projection admission. In
+`new`, the helper's postcondition reaches `storage` at its result destination,
+MSR-3's CONSTRUCT placement carries the ring's length into `built`, and the
+clause is queried over `built` at the return; at the caller, CALL-4
+instantiates it at the result destination, `pending`.
 
 The FIFO bodies select jobs `(tag: 7, payload: 250)` and
 `(tag: 9, payload: 10)` in that order. The private report helper computes an
@@ -294,7 +296,7 @@ the specimen or establish a compiler implementation.
 | `public readonly storage` | A field every module with an edge may read, in code and annotations, and only the declaring module writes or constructs |
 | `reads(...)` / `writes(queue.storage)` | Exact structural effects over accessible paths, repeatable in external wrapper and formal rows |
 | `deref(entry(queue)).storage.len` | Frozen mathematical entry value, independent of later mutation |
-| `made.storage.len` | Result projection admitted by the proposed CALL-4 extension and carried by construction and binding |
+| `made.storage.len` | Result projection admitted by the proposed CALL-4 extension, queried at the return and instantiated at the caller's result destination |
 
 Callers still cannot write, pass to a writing parameter or construct the
 queue's ring, and they cannot name a private field in any role. No `observe`,
