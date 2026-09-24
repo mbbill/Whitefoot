@@ -1332,6 +1332,34 @@ impl<'program> IrBuilder<'program> {
         for (arm, block) in arms.iter().zip(arm_blocks) {
             self.current = Some(block);
             self.bindings = base_bindings.clone();
+            // [GRAM-10, WIN-3, STOR-3] an own-place arm's covered payloads
+            // take their release on entry, before its binders read the
+            // fields it names: the match is the point at which the scrutinee
+            // ceases to exist.
+            if !arm.covered.is_empty() {
+                let CheckedEnumType::Nominal(nominal) = enum_type else {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                };
+                let nominal = self.erased(nominal);
+                let mut releases = Vec::with_capacity(arm.covered.len());
+                for drop in &arm.covered {
+                    let [field] = drop.fields.as_slice() else {
+                        return Err(LoweringFailure::InvalidCheckedProgram);
+                    };
+                    let ty = lower_type(self.erasure, drop.ty)?;
+                    let payload = self.define(
+                        ty,
+                        IrOperation::ProjectVariant {
+                            aggregate: scrutinee,
+                            nominal,
+                            variant: arm.tag,
+                            field: *field,
+                        },
+                    )?;
+                    releases.push(self.lower_drop_subject(payload, &[], ty)?);
+                }
+                self.append_drops(releases)?;
+            }
             for binder in &arm.binders {
                 let CheckedEnumType::Nominal(nominal) = enum_type else {
                     return Err(LoweringFailure::InvalidCheckedProgram);

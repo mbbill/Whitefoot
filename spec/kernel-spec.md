@@ -368,7 +368,8 @@ Nesting and let-splitting are not two spellings of one computation; there is no 
 `borrow_expr` is an `atom`, so references passed as arguments need no binding and [REF-1] is untouched.
 
 [GRAM-10] Named match binders.
-An `arm` for variant K writes every declared field of K exactly once as `IDENT ":" IDENT` (the declared field name, then a fresh binder), in declared order; a missing, extra, repeated, misspelled, or out-of-order field name is a hard error citing GRAM-10 and K's declared field list.
+An `arm` for variant K writes declared fields of K, each at most once as `IDENT ":" IDENT` (the declared field name, then a fresh binder), in declared order, and a final `..` covers every declared field the arm does not write; a missing field name with no `..`, an extra, a repeated, a misspelled, or an out-of-order field name is a hard error citing GRAM-10 and K's declared field list.
+In an own-place match [OWN-13] each covered field takes its compiler-derived release on entry to the arm [STOR-3], and a covered field of linear type is a hard error citing WIN-3 at the `arm` [PROV-6]; a reference-mode match covers a field without releasing it.
 The binder is a fresh IDENT chosen by the writer and distinct from the field name, so TYPE-6 no-shadowing is never engaged by two arms binding fields of the same name.
 Binder modes remain derived by [OWN-13] (not written), a reference-mode binder naming the scrutinee path extended by its payload step [REF-1].
 A nullary variant is written `K()`.
@@ -770,7 +771,7 @@ This vocabulary is ordinary: a user function may declare the same rows a built-i
 
 [WIN-3] There is no take operation and no hole.
 A move out of a field or out of `Box` content consumes the whole owner: the owner ceases to exist, its other affine parts take their compiler-derived release [STOR-3], and a remaining linear part is a hard error citing WIN-3 at the complete consumed `place`, with the restructuring `take it in the same destructuring: let N(f: a, ..) = move v;`.
-A destructuring consume binds the fields it names and covers the rest with `..` [GRAM-4].
+A destructuring consume binds the fields it names and covers the rest with `..` [GRAM-4], and an own-place `arm` does the same [GRAM-10].
 A move out of a window slot or an array element is a hard error citing WIN-3 at that `place`, with the restructuring `use take_back, remove_at, or swap [OP-10, OP-11]`.
 Assigning over any owned place releases the old value when it is affine and is a hard error citing WIN-3 at the target `place` when it is linear.
 At scope exit the compiler releases the slots inside the window recursively and frees the block; an `Array` releases every slot.
@@ -1594,7 +1595,7 @@ A record may name its own module and the modules its module's graph row lists; n
 The final name resolves in the named module's inventory in the grammar-selected domain [TYPE-6]; a name that inventory does not declare is a hard error citing MOD-5, and so is a declaration of another module that is not public [MOD-6].
 One accessibility rule serves executable code and annotations: every name and field selection in a body, a contract clause or `define`, an invariant, a `use` premise, an effect row and a function-kind formal must be accessible where it is written.
 A private declaration or field is accessible only in its declaring module; a public one also in each module whose graph row lists its declaring module. PRE-1 declarations and members keep their ordinary availability.
-A construction names every field [GRAM-8], so a construction outside the declaring module requires every field to be public and supplies no readonly field [TYPE-2]; a destructuring consume or an `arm` outside it binds only public fields, a destructuring consume covering the rest with `..`. Each inaccessible selection, binding or construction is a hard error citing MOD-5 at its `psuffix`, `effect_path`, `fieldbind`, `arm`, `call` or `cvalue`.
+A construction names every field [GRAM-8], so a construction outside the declaring module requires every field to be public and supplies no readonly field [TYPE-2]; a destructuring consume or an `arm` outside it binds only public fields, covering the rest with `..`. Each inaccessible selection, binding or construction is a hard error citing MOD-5 at its `psuffix`, `effect_path`, `fieldbind`, `arm`, `call` or `cvalue`.
 
 [MOD-6] `public` is written only in an interface record, on a top-level declaration, a struct `field` or an enum `vfield`; a declaration or field without it is private to its module, and a public enum's variants are public.
 `public` in an implementation record or a source bundle, and `public` on a field or payload field of a private type, are each a hard error citing MOD-6 at that `item`, `field` or `vfield`; so is `readonly` on a field that is not `public` [TYPE-2].

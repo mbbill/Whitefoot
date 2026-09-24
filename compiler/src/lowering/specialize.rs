@@ -511,6 +511,7 @@ impl FunctionDependencies {
                     for arm in arms {
                         self.types
                             .extend(arm.binders.iter().map(|binder| binder.ty));
+                        self.types.extend(arm.covered.iter().map(|drop| drop.ty));
                         self.types
                             .extend(arm.fallthrough_drops.iter().map(|drop| drop.ty));
                         self.statements(&arm.body);

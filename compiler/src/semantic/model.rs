@@ -2180,6 +2180,11 @@ pub(crate) struct CheckedMatchBinder {
 pub(crate) struct CheckedMatchArm {
     pub(crate) tag: u32,
     pub(crate) binders: Vec<CheckedMatchBinder>,
+    /// [GRAM-10, WIN-3, STOR-3] in an own-place match, the release of each
+    /// payload field a final `..` covers, taken on entry to the arm: one
+    /// whole-field drop, its path the field's ordinal, for every covered
+    /// field whose release is non-empty. A reference match releases nothing.
+    pub(crate) covered: Vec<CheckedProjectedDrop>,
     pub(crate) body: Vec<CheckedStatement>,
     pub(crate) fallthrough_drops: Vec<CheckedDrop>,
 }
