@@ -8917,12 +8917,11 @@ fn real_sources_retain_complete_proof_roots_without_counted_false_positives() {
                 assert_real_read_bits_routes(&program.data);
                 assert_real_raw_append_routes(&program.data);
             }
-            if program
-                .data
-                .functions
-                .iter()
-                .any(|function| function.name == "report_failure")
-            {
+            // Selected by bundle, which the list above fixes, rather than by
+            // the presence of a function name: a name probe skipped these
+            // assertions without failing when `report_failure` was renamed
+            // `assemble_failure`. A missing anchor function now fails inside.
+            if bundle == 2 {
                 assert_real_wfgrep_routes(&program.data);
             }
         });
@@ -9259,11 +9258,12 @@ fn assert_real_raw_append_routes(program: &CheckedProgramData) {
 /// searching `wfgrep` retains.
 ///
 /// One route per source `append_slice` call site, and the count is derived
-/// from source, never from the module: `report_failure` appends the prefix
-/// and then, after the A10 clamp, the separator and six reasons — eight
-/// sites. `main` has the three startup-message sites plus the defensive
-/// root-length route introduced when `append_slice` gained its static input
-/// contract — four more sites.
+/// from source, never from the module: every site has the direct-receiver
+/// form `set x = append_slice(filled: x, ...)`. `assemble_failure` appends the
+/// prefix and then, after the A10 clamp, the separator and ten reasons —
+/// twelve sites. `exercise` has the three startup-message sites plus the
+/// defensive root-length route introduced when `append_slice` gained its
+/// static input contract — four more sites.
 fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
     let proof_nodes: u64 = program
         .functions
@@ -9276,10 +9276,14 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
         .map(|function| u64::from(function.entailment.derivations.metrics.parent_edges))
         .sum();
     // A wall-clock assertion would vary with the host and with the Rust
-    // profile.  These two deterministic sizes guard the cost shape instead:
-    // the current source retains 27,460 nodes and 53,423 parent edges, with a
-    // small margin for ordinary proof evolution.  A return to the former
-    // million-node shape fails here on every machine.
+    // profile.  These two deterministic sizes guard the cost shape instead,
+    // with a small margin for ordinary proof evolution.  A return to the
+    // former million-node shape fails here on every machine.  The history
+    // below records how the retained size moved; the last paragraph states
+    // the current measurement and ceilings.
+    //
+    // When this check was written the source retained 27,460 nodes and
+    // 53,423 parent edges.
     //
     // The counts rose from 23,394 and 45,669 when a `set` to a fragment place
     // gained the commit-value image [ENT-3.S5]: each such statement now
@@ -9305,13 +9309,32 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
     // search: no derivation family and no candidate set grew. The ceilings
     // keep the same proportional margin, and the million-node shape still
     // fails here.
+    //
+    // These assertions then stopped running: they were selected by the name
+    // `report_failure`, which b7bccc3f5 renamed `assemble_failure`, and no
+    // later change re-measured them. Re-measured at 803f37668 (main before the
+    // wfgrep directory-walk fix), wfgrep retained 3,796 nodes and 6,392 edges,
+    // about a twelfth of the v0.45 figures; the proof-engine changes in
+    // between were not attributed one by one, but the 52,000 and 100,000
+    // ceilings sat more than twelve times above the measurement and would
+    // have missed any regression short of that.
+    // The directory-walk fix raised the program to 4,040 nodes and 6,692
+    // edges: `assemble_failure` +114/+144 for its four new reason appends,
+    // `walk` +99/+141 for entry collection and the output-refusal paths, the
+    // new helpers `search_root`, `publish_oversized`, `widen_window`,
+    // `push_byte`, `push_word` and `keep_entry` +72/+61, the two `grow`
+    // instances +4/+0, while the retired `zeroed_words` -39/-32, `exercise`
+    // -6/-13 and `search_file` -0/-1. `append_slice` is unchanged at
+    // 2,600/5,124 and is still most of the total. The ceilings are tightened
+    // to 4,500 and 7,400, about the ten-percent margin the earlier ceilings
+    // kept above their measurement.
     assert!(
-        proof_nodes <= 52_000,
-        "wfgrep retained {proof_nodes} proof nodes; expected at most 52,000"
+        proof_nodes <= 4_500,
+        "wfgrep retained {proof_nodes} proof nodes; expected at most 4,500"
     );
     assert!(
-        proof_edges <= 100_000,
-        "wfgrep retained {proof_edges} proof edges; expected at most 100,000"
+        proof_edges <= 7_400,
+        "wfgrep retained {proof_edges} proof edges; expected at most 7,400"
     );
     let shift = program
         .functions
@@ -9353,15 +9376,15 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
                 DerivationRootKind::PostconditionDirectReceiver { .. }
             ))
             .count(),
-        12,
-        "wfgrep has exactly twelve append_slice receiver routes",
+        16,
+        "wfgrep has exactly sixteen append_slice receiver routes",
     );
 
     let report = program
         .functions
         .iter()
-        .find(|function| function.name == "report_failure")
-        .expect("report_failure function");
+        .find(|function| function.name == "assemble_failure")
+        .expect("wfgrep's diagnostic assembly, assemble_failure, anchors these routes");
     let mut delivery_receivers = report
         .entailment
         .derivations
@@ -9373,13 +9396,14 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
         })
         .collect::<Vec<_>>();
     // A10 survives the searching rewrite because the diagnostic still wants
-    // the shape: `report_failure` assembles `wfgrep: PATH: reason` in one
-    // reusable buffer and publishes it with one host write, so it has to
-    // clamp the assembled length against the buffer's capacity, and a
-    // `value_if` over the fits test is how that clamp is written. Publishing
-    // the three pieces separately would drop the clamp — and the delivery
-    // route with it — at the price of three host writes for one diagnostic
-    // and no guarantee that the pieces stay adjacent in a shared sink.
+    // the shape: `assemble_failure` assembles `wfgrep: PATH: reason` in one
+    // reusable range and hands the assembled length back for its caller to
+    // publish with one host write, so it has to clamp that length against the
+    // range's capacity, and a `value_if` over the fits test is how that clamp
+    // is written. Publishing the three pieces separately would drop the
+    // clamp — and the delivery route with it — at the price of three host
+    // writes for one diagnostic and no guarantee that the pieces stay
+    // adjacent in a shared sink.
     assert!(
         !delivery_receivers.is_empty(),
         "A10 must deliver one receiver"
@@ -9389,7 +9413,7 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
         delivery_receivers
             .drain(..)
             .all(|receiver| receiver == bounded_length),
-        "A10 is the only value_if delivery in report_failure",
+        "A10 is the only value_if delivery in assemble_failure",
     );
     let mut bounded_routes = report
         .entailment
@@ -9412,8 +9436,8 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
     bounded_routes.sort_by(|left, right| left.0.components().cmp(right.0.components()));
     assert_eq!(
         bounded_routes.len(),
-        7,
-        "the separator and six following reason appends use bounded_length",
+        11,
+        "the separator and ten following reason appends use bounded_length",
     );
     for (_, parent) in &bounded_routes {
         assert!(
@@ -9422,31 +9446,45 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
                 DerivationNode::PostconditionDeliveryJoin { detail }
                     if detail.receiver == bounded_length
             )),
-            "each A11-A16 receiver chain must descend from A10",
+            "each receiver chain after the clamp must descend from A10",
         );
     }
 
+    // The clamped length is what the caller publishes: `assemble_failure`
+    // makes no host write of its own, and its one return hands back the
+    // binding A10 delivered, which its `result <= capacity` postcondition
+    // then carries to each caller's `publish_all` requirement.
     let publish = program
         .functions
         .iter()
         .find(|function| function.name == "publish_all")
         .expect("publish_all function")
         .id;
+    let body = report.body.as_deref().expect("WF body");
     let mut publish_calls = Vec::new();
-    collect_direct_calls(
-        report.body.as_deref().expect("WF body"),
-        publish,
-        &mut publish_calls,
+    collect_direct_calls(body, publish, &mut publish_calls);
+    assert!(
+        publish_calls.is_empty(),
+        "assemble_failure hands its length back instead of publishing"
     );
-    assert_eq!(publish_calls.len(), 1);
-    assert!(matches!(
-        &publish_calls[0].1[2],
-        CheckedExpression::Binding {
-            binding,
-            consume_root: false,
-            ..
-        } if *binding == bounded_length
-    ));
+    let returns = body
+        .iter()
+        .filter_map(|statement| match statement {
+            CheckedStatement::Return { value, .. } => Some(value),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        matches!(
+            returns.as_slice(),
+            [CheckedExpression::Binding {
+                binding,
+                consume_root: false,
+                ..
+            }] if *binding == bounded_length
+        ),
+        "assemble_failure returns the clamped length once"
+    );
 }
 
 #[test]
