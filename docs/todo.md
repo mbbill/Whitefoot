@@ -66,6 +66,23 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   Results or wider storage support makes this cost material. The language
   extensions below remain a separate question.
 
+- **Some ENT-3 sources read no measure operand.** S7's constant-offset,
+  checked-offset, exact-division, remainder and unsigned `iand` rows read an
+  operand the specification calls an admitted term or constant through the
+  flow's tracked-place and constant reader, which omits ENT-2 clause (b)
+  measure terms; S5/S6 copies, S1 comparisons and S11 counted captures do
+  read measures. So `let r = x % deref(src).len;` establishes no
+  `r < deref(src).len`, and a following `deref(src)[r]` is rejected under
+  OP-4 although binding the length first is accepted. Other flow readers of
+  the same shape (subscript offset terms, S13 index captures, allocation
+  lengths, range-formation operands, integer-domain operands, the ENT-5 `Ok`
+  payload) are unverified; affine images already cover some of them. Repair
+  with one complete ENT-2 term reader, and validate it with paired direct and
+  let-bound cases for each source, including a write that kills the measure,
+  requiring no other verdict change. Deferred from the counted-endpoint
+  repair, which changed only S11's reading; reopen with the next entailment
+  change or when a program needs the direct form.
+
 - **Joined reference proofs lose useful target-relative information.** A
   reference selecting either of two freshly empty Slots cannot establish the
   append precondition from both constructors' facts; captured disjoint ranges
