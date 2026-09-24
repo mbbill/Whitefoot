@@ -39,34 +39,32 @@ probably not the next work.
 
 ## Authority and reading
 
-| Question | Owner |
-|---|---|
-| Language and toolchain judgments | `spec/kernel-spec.md`, including its normative worked example; repository process, version history and future-work bookkeeping stay out of it |
-| What the compiler implements | The conformance results |
-| Why a design was chosen | `design/`: the language and compiler trees, each decision with its reason and refused alternatives, and `design/log.md` with one entry per ruling |
-| Purpose, objectives, tradeoffs and conditional design principles | `docs/constitution.md`; a concrete choice needs its own grounds, not just a constitutional ancestor |
-| Engineering and evidence method | `docs/practice.md`, which adds no approval or merge requirement |
-| Completion checks and document roles | `docs/review-checklist.md` |
-| Known defects and follow-up work | `docs/todo.md` |
-| Writer forms | `docs/patterns.md`, which adds no acceptance rule |
-| Candidate mechanisms and questions | `docs/ideas.md`: not a work queue; a listed idea grants or withholds nothing |
-| Investigations and experiments | `research/`: a selected direction gets `research/investigations/<name>/` for its design, measurements and rejected alternatives, and its surviving decision goes to the design tree |
-| Navigation | `README.md`, never a second specification or implementation inventory |
+The [workflow map](docs/workflow.md) shows the development loop, who decides
+what, where each check runs, and every document's role.
 
-Work is not planned in a document up front. Read only the material relevant to
-the task, and do not turn historical research into an implied implementation
-requirement. Compiler behavior, tests, archived code and design prose do not
-define the language.
+The active specification `spec/kernel-spec.md`, including its normative worked
+example, defines the language and toolchain judgments, and the conformance
+results state what the compiler implements. `design/` holds the decisions with
+their reasons and refused alternatives. `docs/constitution.md` owns purpose,
+objectives, tradeoffs and conditional design principles; a concrete choice
+needs its own grounds, not just a constitutional ancestor.
+
+Work is not planned in a document up front: a selected direction gets
+`research/investigations/<name>/` for its design, measurements and rejected
+alternatives, and its surviving decision goes to the design tree. Read only
+the material relevant to the task, and do not turn historical research into an
+implied implementation requirement. Compiler behavior, tests, archived code
+and design prose do not define the language.
 
 A finished task is not evidence: a claim cites the specification, a
 conformance case, a measured result under `research/experiments/`, a design
 under `research/investigations/`, or a design-tree decision where the
-checklist's citation boundaries permit. `archive/` is frozen historical
-evidence and rationale that is not written to, and its retired per-batch
-record `archive/done/` is not cited. Process wording in any historical
-artifact is superseded by the rules below. Words such as *validation* or
-*ratification* in language and design artifacts describe evidence, not a
-workflow step.
+[citation boundaries](docs/workflow.md#citation-boundaries) permit. `archive/`
+is frozen historical evidence and rationale that is not written to, and its
+retired per-batch record `archive/done/` is not cited. Process wording in any
+historical artifact is superseded by the rules below. Words such as
+*validation* or *ratification* in language and design artifacts describe
+evidence, not a workflow step.
 
 ## How work proceeds
 

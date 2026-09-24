@@ -44,7 +44,7 @@ owner and design subtree.
 A recorded reason names its material premises and dependent rules or interfaces
 where known. Follow these links and search changed rule IDs or concepts to
 find consumers; a search supplements reading and cannot prove completeness.
-Choose where to write using the [document roles](review-checklist.md#document-roles).
+Choose where to write using the [document roles](workflow.md#document-roles).
 The design-tree procedure determines whether a node is warranted; not every
 task or engineering choice needs one.
 
@@ -88,7 +88,7 @@ choice; adding more process without a demonstrated use is not the remedy.
 
 ## Documentation and local context
 
-Use the [document roles and citation boundaries](review-checklist.md#document-roles)
+Use the [document roles and citation boundaries](workflow.md#document-roles)
 when choosing where to write. Keep a summary short enough to point to its
 owner instead of copying the owner's changing details.
 

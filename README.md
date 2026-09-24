@@ -36,6 +36,7 @@ Read the material that owns the question you are working on:
 | What does the language admit? | [Active kernel specification](spec/kernel-spec.md) |
 | What does this compiler implement, and how do I run it? | [Running the compiler](#running-the-compiler) below; the conformance report states the implemented surface |
 | What are the project goals and design principles? | [Constitution](docs/constitution.md) |
+| What happens when in development, where, and who decides? | [Workflow map](docs/workflow.md) |
 | How do I work on a branch and prepare a merge? | [AGENTS.md](AGENTS.md) |
 | How do I amend the specification, finish a task, or hand work back? | [Agent skills](.agents/skills/) |
 | Which writer forms should I try? | [Patterns](docs/patterns.md) |

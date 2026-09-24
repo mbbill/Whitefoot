@@ -7,6 +7,8 @@
 - Every skill is discoverable by both supported agents: each entry under
   .agents/skills (Codex) has a .claude/skills entry (Claude Code) resolving to
   the same directory, and its SKILL.md names that entry and describes itself.
+- The workflow map names every CI workflow, skill and guidance document, so it
+  cannot silently fall behind the process it maps.
 
 A green run says only that these references resolve. Whether the guidance is
 correct, current and well placed is review item D.
@@ -20,12 +22,13 @@ import unittest
 
 CHECKLIST = "docs/review-checklist.md"
 DESIGN_SKILL = "design/skill/SKILL.md"
+MAP = "docs/workflow.md"
 # Documents that cite review items. Skills are added from the skill directory.
-CITING = ["AGENTS.md", "docs/practice.md", CHECKLIST, DESIGN_SKILL,
+CITING = ["AGENTS.md", "docs/practice.md", CHECKLIST, MAP, DESIGN_SKILL,
           ".github/pull_request_template.md"]
 # Entry documents whose backticked repository paths must exist. The design-tree
 # skill is excluded: it names its roles generically for reuse in any project.
-PATHS = ["AGENTS.md", "README.md", "docs/practice.md", CHECKLIST,
+PATHS = ["AGENTS.md", "README.md", "docs/practice.md", CHECKLIST, MAP,
          ".github/pull_request_template.md"]
 # Paths that exist only in some states of the tree.
 TRANSIENT = {"design/amendments/"}
@@ -171,12 +174,30 @@ def skill_findings(root):
     return findings
 
 
+def map_findings(root):
+    path = root / MAP
+    if not path.is_file():
+        return [f"{MAP} does not exist"]
+    text = path.read_text()
+    expected = [(name, f"document {name}") for name in ("AGENTS.md", "README.md")]
+    for document in sorted((root / "docs").glob("*.md")):
+        expected.append((f"docs/{document.name}", f"document docs/{document.name}"))
+    for workflow in sorted((root / ".github/workflows").glob("*.yml")):
+        expected.append((workflow.name, f"workflow {workflow.name}"))
+    skills = root / SKILL_ROOTS[0]
+    for skill in sorted(skills.iterdir()) if skills.is_dir() else []:
+        expected.append((f"`{skill.name}`", f"skill {skill.name}"))
+    return [f"{MAP}: {what} is not on the map" for token, what in expected
+            if token not in text]
+
+
 def check(root):
-    findings = item_findings(root) + path_findings(root) + skill_findings(root)
+    findings = (item_findings(root) + path_findings(root) + skill_findings(root)
+                + map_findings(root))
     for finding in findings:
         print("guidance: " + finding, file=sys.stderr)
     if not findings:
-        print("guidance: cited review items, entry-document paths and skill links resolve")
+        print("guidance: cited review items, entry-document paths, skill links and the workflow map resolve")
     return int(bool(findings))
 
 
@@ -221,6 +242,20 @@ class GuidanceTests(unittest.TestCase):
                                         "`spec/kernel-spec-vN.md` and `lib/<name>/`.\n")
         self.assertEqual(path_findings(root), ["AGENTS.md:1: `tools/` does not exist",
                                                "AGENTS.md:1: `conformance/` does not exist"])
+
+    def test_workflow_map_names_every_workflow_skill_and_document(self):
+        root = self.fixture()
+        (root / ".github/workflows").mkdir(parents=True)
+        (root / ".github/workflows/gate.yml").write_text("on: push\n")
+        (root / ".github/workflows/bench.yml").write_text("on: workflow_dispatch\n")
+        (root / MAP).write_text("AGENTS.md README.md docs/review-checklist.md "
+                                "docs/workflow.md gate.yml bench.yml\n")
+        self.assertEqual(map_findings(root), [f"{MAP}: skill design-tree is not on the map"])
+        (root / MAP).write_text("AGENTS.md docs/workflow.md `design-tree` gate.yml\n")
+        self.assertEqual(map_findings(root), [
+            f"{MAP}: document README.md is not on the map",
+            f"{MAP}: document docs/review-checklist.md is not on the map",
+            f"{MAP}: workflow bench.yml is not on the map"])
 
     def test_skill_missing_for_one_agent(self):
         root = self.fixture()

@@ -11,7 +11,8 @@ Read the task's requested outcome and constraints, the complete diff from the
 base to the reviewed revision (including uncommitted and new files, but not
 the archived specification copies `make review-scope` lists as excluded), and
 the actual validation results. Read changed sections in context, the relevant
-document roles below, and directly affected definitions, callers, or cases.
+[document roles](workflow.md#document-roles), and directly affected
+definitions, callers, or cases.
 Do not load the whole repository or require a separate review packet.
 
 Judge the artifacts against the task and current owners, not just the author's
@@ -31,48 +32,6 @@ or missing evidence, and a short reason; quote both sides of a contradiction.
 Summarize clean groups together and link detailed evidence instead of copying
 logs or this checklist. Later edits invalidate review of the affected content,
 not unrelated completed checks.
-
-## Document roles
-
-Use the row for the file being edited. A brief summary or relevant technical
-explanation is useful; duplicating another document's changing inventory or
-mixing in the editing conversation is not. A file needs no new status banner
-or self-description merely to satisfy this table.
-
-| Document | Content that serves its reader | Content that does not belong |
-|---|---|---|
-| Root README | Project introduction, getting started, navigation | Detailed compiler inventory, a second specification, task history |
-| `docs/constitution.md` | Complete statements of purpose, chosen objectives, obligations, prohibitions, tradeoffs, and applicable conditions that can guide a choice and test its grounds | Who requested an edit and when, agent conversations, implementation progress, maintenance instructions, abbreviated labels in place of clauses, per-clause usage checklists, a selected mechanism asserted as an inevitable consequence of the purpose |
-| `spec/kernel-spec.md` | Normative syntax, semantics, judgments, boundaries and relevant examples | Compiler convenience presented as law, task status, editing history |
-| `docs/todo.md` | Defects, costs, improvement opportunities and their validation tasks, removed when resolved | Settled decisions, claims of implemented capability, progress logs |
-| `docs/patterns.md` | Writer problems, usable forms, examples, applicability and costs | Additional acceptance rules, unsupported universal performance claims, project administration |
-| `AGENTS.md` | Agent entry: goal and priorities, authority map, the approval and merge rules, integrity and hygiene rules, and pointers to skills and detailed guidance | Research narration, a procedure a skill owns, a second detailed checklist or compiler inventory |
-| `.agents/skills/` (linked from `.claude/skills/`) | One recurring procedure per skill: its trigger, steps, commands and formats, loaded when the task matches its description | Project rules that AGENTS.md owns, language semantics, a copy of this checklist |
-| `docs/practice.md` / this checklist | Engineering methods and decision-update triggers / completion checks and document boundaries | Language semantics, task-specific outcomes, new owner approval requirements |
-| `research/`; `governance/spec-evolution/` | Questions, alternatives, designs, change proposals, reproducible experiments, results and limitations; the research README provides navigation | Task completion as technical evidence, a proposal presented as an implemented rule, daily test implementations or inputs retained in research |
-| `docs/ideas.md`; `docs/why-whitefoot.md` | Candidate mechanisms, open questions and experiment sketches; explanatory essays and dated rationale respectively | A live work queue, invented present-day measurements, contributor process inserted into an essay |
-| `design/` | Live design decisions with their reasons and refused alternatives, one log entry per approved tree change, and the procedure that maintains them | Module inventories, implementation transcripts, task progress, history |
-| PR description | This change's problem, resulting behavior, selection grounds, validation and limitations | An obsolete description of an earlier diff, a new permanent source of project rules |
-
-Citation boundaries:
-
-- Definitions point to their current owner; technical claims point to the
-  specification, source/cases, a relevant design, or reproducible evidence.
-  The linked passage must support the claim, not merely discuss the topic.
-- The constitution, specification, writer patterns and explanatory essays
-  must be usable without consulting the design trees.
-  Do not link to `design/` from those documents or use it as their
-  authority. State the relevant principle or explanation in the document and
-  cite direct technical evidence when needed.
-- Maintainer navigation (README, agent instructions, practice, research index)
-  may point to the design trees. Research records, derivation evidence,
-  and PRs may refer to relevant decisions as historical rationale, not as
-  language definitions or proof of an empirical claim. A tree node may cite
-  specifications, designs and evidence in its reason. Prefer the directory
-  for navigation; node paths can move when decisions are replaced.
-- Historical references may name their historical versions and conditions.
-  Current guidance uses the active specification's stable path. Frozen
-  archives keep their historical content; do not rewrite them to look current.
 
 ## A. Scope and repository layout — every change
 
@@ -100,14 +59,17 @@ Source: [repository hygiene](../AGENTS.md#repository-structure-and-hygiene).
 ## D. Documentation — changed Markdown, comments or examples
 
 - [ ] **D1 — Purpose.** Each added or changed passage serves the containing
-  document or code's reader. Check against the role table, including editorial
-  history and process instructions inserted into substantive documents. For
+  document or code's reader. Check against the
+  [document roles](workflow.md#document-roles), including editorial history
+  and process instructions inserted into substantive documents. For
   constitutional changes, check that complete clauses state the relevant
   obligations and conditions; a chosen prohibition is not merely a report of
   current implementation behavior.
 - [ ] **D2 — References.** Changed references resolve to the intended file,
-  heading or symbol, obey the citation boundaries, and support their claim.
-  A correct relative path does not make an inappropriate citation acceptable.
+  heading or symbol, obey the
+  [citation boundaries](workflow.md#citation-boundaries), and support their
+  claim. A correct relative path does not make an inappropriate citation
+  acceptable.
 - [ ] **D3 — Current meaning.** Changed claims agree with their owning source
   and directly affected guidance. Update an obsolete standing statement, not
   only a later correction beneath it. Distinguish a goal, proposal, specified
