@@ -736,16 +736,70 @@ fn synthesized(module: &str, prefix: &str) -> String {
     only.clone()
 }
 
+/// [MOD-8] a split's helpers and the thunks their halves hand out are named by
+/// the function they came from and their number among its own, so another
+/// function gaining a permitted loop leaves every one of them, and the
+/// function that calls them, byte for byte as it was.
+#[test]
+fn split_helpers_keep_their_symbols_when_another_function_gains_a_split() {
+    let base = fold_module(true);
+    let source = std::str::from_utf8(PERMITTED_FOLD).expect("the fixture is text");
+    let refolded = source
+        .split_once("fn folded(")
+        .and_then(|(_, rest)| rest.split_once("\n}\n"))
+        .map(|(body, _)| format!("fn refolded({body}\n}}\n\n"))
+        .expect("the fixture defines folded");
+    let extended = emit_with_overlap(
+        source
+            .replacen("fn folded(", &format!("{refolded}fn folded("), 1)
+            .as_bytes(),
+    );
+    let splitters = synthesized_symbols(&base, "@wf__par_split_");
+    let chunks = synthesized_symbols(&base, "@wf__par_chunk_");
+    assert_eq!(splitters, ["@wf__par_split_folded.0"], "{base}");
+    assert_eq!(chunks, ["@wf__par_chunk_folded.1"], "{base}");
+    assert_eq!(
+        synthesized_symbols(&extended, "@wf__par_split_").len(),
+        2,
+        "the added function splits its own loop:\n{extended}"
+    );
+    let thunks = base
+        .lines()
+        .filter_map(|line| line.strip_prefix("define internal void @wf__par_thunk_"))
+        .filter_map(|rest| rest.split_once('('))
+        .map(|(name, _)| format!("@wf__par_thunk_{name}"))
+        .collect::<Vec<_>>();
+    assert!(!thunks.is_empty(), "{base}");
+    for symbol in splitters
+        .iter()
+        .chain(&chunks)
+        .chain(&thunks)
+        .map(String::as_str)
+        .chain(["@wf_folded"])
+    {
+        assert_eq!(
+            function_body(&base, symbol),
+            function_body(&extended, symbol),
+            "{symbol} must keep its text"
+        );
+    }
+}
+
 /// Every synthesized definition bearing `prefix`, without runtime helpers or
-/// sequential-clone spellings that merely contain a similar suffix.
+/// sequential-clone spellings that merely contain a similar suffix. A
+/// synthesized symbol names its source function and its number among that
+/// function's helpers.
 fn synthesized_symbols(module: &str, prefix: &str) -> Vec<String> {
     let mut found: Vec<String> = module
         .lines()
         .filter_map(|line| line.split_once(prefix))
         .filter_map(|(head, tail)| head.starts_with("define ").then_some(tail))
         .filter_map(|tail| tail.split_once('('))
-        .filter(|(ordinal, _)| ordinal.parse::<u32>().is_ok())
-        .map(|(ordinal, _)| format!("{prefix}{ordinal}"))
+        .filter(|(name, _)| {
+            name.rsplit_once('.')
+                .is_some_and(|(_, number)| number.parse::<u32>().is_ok())
+        })
+        .map(|(name, _)| format!("{prefix}{name}"))
         .collect();
     found.sort_unstable();
     found.dedup();
