@@ -22,6 +22,8 @@ amendment as one change; `make static` checks its archive and title.
 3. **Edit the rules.** State each normative fact once, as total positive rules
    or table data without exception clauses; define each rule ID once and keep
    bracketed references resolving; a surface name labels a checked invariant.
+   A rule chosen among viable alternatives is a language decision: record it
+   with the `design-tree` skill.
 4. **Bring derived material along in the same work:** conformance cases,
    verdicts and manifest entries (a changed expectation states its normative
    ground in the PR), the parser, lexer and generated syntax data, compiler

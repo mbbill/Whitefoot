@@ -30,7 +30,7 @@ flowchart TD
 |---|---|---|---|---|---|
 | 1 | Start or resume | A task arrives or resumes | Read the requested outcome and the affected owners; on resumption, verify the worktree and PR state; open a Draft PR | Draft PR | `AGENTS.md`, [decision practice](practice.md#decision-work) |
 | 2 | Investigate | The task needs evidence or a direction | State the question, the alternatives and the result that would distinguish them before measuring | `research/investigations/<name>/`, `research/experiments/` | [Evidence guidance](practice.md#evidence-guidance) |
-| 3 | Decide | A material choice: accepted behavior, safety or trust, a shared interface or representation, a performance commitment, a standing project rule | Record its ground; a design-tree change stays an amendment until the owner rules | `design/amendments/`, then `design/language/`, `design/compiler/`, `design/log.md` | `design-tree` skill |
+| 3 | Decide | A [material choice](practice.md#decision-work) | Record its ground; a design-tree change stays an amendment until the owner rules | `design/amendments/`, then `design/language/`, `design/compiler/`, `design/log.md` | `design-tree` skill |
 | 4 | Amend the specification | The task changes language rules | Archive, retitle, bring derived material along, explain the rule changes | `spec/kernel-spec.md`, `tests/conformance/` | `spec-amendment` skill |
 | 5 | Implement | Code, test or library changes | One general path; read the design subtree and its ancestors first; wrap heavy commands | `compiler/`, `lib/`, `tests/` | `AGENTS.md` compiler rules, `design/compiler/` |
 | 6 | Record follow-up work | A defect, cost or opportunity is deferred | Add it at the end of its topic section with impact, validation criterion and reopening condition | `docs/todo.md` | `design-tree` skill workflow, review item G3 |
@@ -50,7 +50,7 @@ branch. [AGENTS.md](../AGENTS.md#branch-and-main-boundary) holds the rules.
 |---|---|---|
 | A new repository-root entry | Owner approval | The PR |
 | A live design-tree change | Owner ruling | `design/log.md` |
-| A review finding that would change a decision, an amendment, a specification rule or the agreed scope | Owner direction | The PR and the conversation |
+| A review finding whose resolution would change a design decision or amendment, a specification rule, or the agreed scope | Owner direction | The PR and the conversation |
 | A merge into `main` | Owner approval of the exact revision | The merge |
 | Code, tests, documentation, specification edits and gate wiring on a work branch | Agent | Commits and the PR description |
 

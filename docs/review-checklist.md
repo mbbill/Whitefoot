@@ -1,7 +1,7 @@
 # Task completion review
 
 The items an independent reviewer checks when a task completes. The
-[completion-review skill](../.agents/skills/completion-review/SKILL.md) owns
+[completion-review skill](skills/completion-review/SKILL.md) owns
 when the review runs, who runs it, how findings are routed and where the report
 goes. Merge conditions remain in [AGENTS.md](../AGENTS.md#branch-and-main-boundary).
 

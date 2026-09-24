@@ -1,6 +1,6 @@
 ---
 name: design-tree
-description: Record, propose or apply design decisions in the project's design tree and run Design Correspondence Review (DCR). Use when a task chooses between viable alternatives the tree should record, edits the design tree, its amendments or its log, applies an owner's ruling, checks an implementation against recorded decisions, or is asked for dcr. Not for implementing a recorded decision unchanged or for a routine fix.
+description: Record, propose or apply design decisions in the project's design tree, and define the design checks of Design Correspondence Review (DCR). Use when a task chooses between viable alternatives the tree should record (a new or changed language rule included), edits the design tree, its amendments or its log, applies an owner's ruling, or reviews an implementation against recorded decisions. Not for implementing a recorded decision unchanged or for a routine fix.
 ---
 
 # Design tree
@@ -149,7 +149,7 @@ normally a small or mid-sized model with bounded inputs. It reads actual
 artifacts and reports scope, revision, findings, evidence, and uncertainty.
 
 Route each finding by what resolving it would change. A finding whose
-resolution would change a decision or amendment, a governing specification
+resolution would change a design decision or amendment, a specification
 rule, or the agreed scope goes to the owner with the primary agent's
 assessment and recommended response, and waits for direction, including
 during unattended work. Fix every other

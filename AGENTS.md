@@ -117,7 +117,7 @@ These are the complete approval and merge rules:
    documentation, except that new repository-root entries require owner
    approval, changes to the live design tree require the owner's ruling under
    the design-tree skill, and a review finding whose resolution would change a
-   design decision or amendment, a specification rule or the agreed scope
+   design decision or amendment, a specification rule, or the agreed scope
    requires the owner's direction. Unapproved design choices remain amendments while
    implementation continues.
 2. Every change merged into `main` requires owner approval of the exact
