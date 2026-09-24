@@ -413,6 +413,46 @@ fn a_constant_nonempty_range_is_not_an_iteration_partition() {
     ));
 }
 
+/// The runtime partition with its range formed at the call argument instead
+/// of bound first.
+fn inline_partition_source() -> String {
+    let source = RUNTIME_PARTITION_SOURCE.replace(
+        "    let row = &values.inner[start..end];\n    let painted = paint(output: row);",
+        "    let painted = paint(output: &values.inner[start..end]);",
+    );
+    assert_ne!(source, RUNTIME_PARTITION_SOURCE);
+    source
+}
+
+/// [PAR-2]: "A proved range reference is a range reference
+/// `&r[s*i+b..s*i+b+s]` [REF-4] passed as an ordinary argument." A range the
+/// argument forms at the call is that reference as much as a bound one is, so
+/// the runtime partition keeps its permission and its independent map.
+#[test]
+fn a_range_formed_at_the_call_argument_is_a_proved_range_reference() {
+    assert_eq!(
+        permitted(inline_partition_source().as_bytes(), "partition").actualization,
+        Some(LoopActualization::IndependentMap)
+    );
+}
+
+/// The control for the inline formation: with a constant offset the formed
+/// range is no iteration partition, so the helper's write through it is an
+/// ordinary shared write exactly as it is for the bound spelling.
+#[test]
+fn a_constant_range_formed_at_the_call_argument_is_not_a_partition() {
+    let source = inline_partition_source()
+        .replace("    let offset = i * stride;", "    let offset = 0_u64 * stride;")
+        .replace(
+            "    invariant bounded: end <= total {\n      use stride times (i + 1_u64 <= 6_u64);\n    }",
+            "    invariant bounded: end <= total;",
+        );
+    assert!(matches!(
+        denied(source.as_bytes(), "partition", 2),
+        LoopDenial::SharedWrite { .. }
+    ));
+}
+
 /// A stride recomputed from the current index is not fixed throughout L, so
 /// the endpoint images are not affine in the binder and the family refuses
 /// rather than starting a search.

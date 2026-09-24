@@ -119,8 +119,8 @@ use super::model::{
     CheckedType, WindowShape, expression_children,
 };
 use super::permission::{
-    Footprint, Program, call_projection, collect_consumed_places, container_steps, field_steps,
-    set_target_place, visit_read_bindings,
+    Footprint, Program, argument_places, call_projection, collect_consumed_places, container_steps,
+    field_steps, set_target_place, visit_read_bindings,
 };
 use super::places::{PlaceMap, PlaceRoot, PlaceStep, ResolvedPlace, UnprovedSeparations};
 use crate::NodePath;
@@ -711,6 +711,42 @@ impl<'check> Survey<'check, '_> {
         value: &CheckedExpression,
         node: &NodePath,
     ) {
+        if !matches!(value, CheckedExpression::RangeOf { .. }) {
+            return;
+        }
+        let resolved = self.places.resolve(PlaceRoot::Binding(binding), &[]);
+        self.record_range_formation(&resolved, value, node);
+    }
+
+    /// Every range one call forms at its own arguments [REF-4, PAR-2].
+    ///
+    /// "A range reference `&r[s*i+b..s*i+b+s]` passed as an ordinary
+    /// argument" is the family's formation whether a `let` names it first or
+    /// the argument forms it at the call; the argument then names the same
+    /// path the bound reference would [EFF-5]. An argument whose places do
+    /// not resolve records nothing here: the call's own footprint carries it
+    /// as unresolved, which is condition 3's denial.
+    fn record_range_arguments(&mut self, arguments: &[CheckedExpression]) {
+        for argument in arguments {
+            if !matches!(argument, CheckedExpression::RangeOf { .. }) {
+                continue;
+            }
+            let Some(resolved) = argument_places(self.places, argument) else {
+                continue;
+            };
+            let node = self.cite.clone();
+            self.record_range_formation(&resolved, argument, &node);
+        }
+    }
+
+    /// One range formation whose resolved places are `resolved`, against the
+    /// proved-range family.
+    fn record_range_formation(
+        &mut self,
+        resolved: &[ResolvedPlace],
+        value: &CheckedExpression,
+        node: &NodePath,
+    ) {
         let CheckedExpression::RangeOf {
             obligation,
             captured,
@@ -719,8 +755,7 @@ impl<'check> Survey<'check, '_> {
         else {
             return;
         };
-        let resolved = self.places.resolve(PlaceRoot::Binding(binding), &[]);
-        let [place] = resolved.as_slice() else {
+        let [place] = resolved else {
             self.shared.get_or_insert(node.clone());
             return;
         };
@@ -1047,6 +1082,7 @@ impl<'check> Survey<'check, '_> {
     /// footprint by the shape of the statement that holds it.
     fn calls(&mut self, expression: &CheckedExpression) {
         if let Some(projection) = call_projection(expression) {
+            self.record_range_arguments(projection.arguments);
             let footprint = self.program.footprint(self.places, &projection);
             self.record_writes(&footprint);
         }
