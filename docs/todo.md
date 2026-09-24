@@ -1101,3 +1101,20 @@ condition under which it is taken up.
   required source work from removable lowering cost. Defer a broad repeat of all
   eight engineering tasks until it answers a concrete selection question;
   a passing new library does not dispose of the remaining matrix claims.
+- **One rejection per compilation.** The pipeline stops at its first
+  violation, so an agent with several independent defects — two unproved
+  subscripts in different functions, say — meets them one compile at a time.
+  [DIAG-1] already leaves the order of violations at distinct nodes open, and
+  the [diagnostic record](../research/investigations/readable-diagnostics/DESIGN.md#the-record)
+  and its one-object-per-line JSON form can carry several. Reporting more than
+  one needs the semantic checker to continue past a `CheckStop` without
+  letting a later judgment consume an earlier failed premise, and stays
+  deterministic. Unverified benefit: validate with a writer trial counting
+  repair rounds on programs with two or more independent defects; reopen when
+  such a trial or an agent harness shows the extra rounds dominate.
+- **A float constant in a rendered goal prints its internal form.** An FN-8
+  `instantiated_goal` over a float constant renders it as
+  `Float { ty: F64, bits: 4607182418800017408 }` instead of its source
+  spelling `1.0_f64` (pinned in `driver::pinned_sentences` beside the integer
+  goals). The goal renderer should print the constant's canonical FORM-5
+  spelling, as it does for integers; update that pin with the fix.

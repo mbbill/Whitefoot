@@ -10396,7 +10396,7 @@ fn main() -> status: ExitStatus pure {
             );
         };
         assert_eq!(detail.concrete_callee, "guarded");
-        assert!(!detail.requires_clause.components().is_empty());
+        assert!(!detail.requires_clause.path().components().is_empty());
         // The alpha-expanded requirement in the terms the caller wrote, with
         // the caller's own binder in it. The structural dump this replaced
         // opened `Boolean(And)<types=[], consts=[]>(Integer { operation:

@@ -3658,6 +3658,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             },
                         }));
                     }
+                    let requires_clause = self.node_location(&outcome.requires_clause)?;
                     let mechanical_fix = if first_ephemeral_argument(&outcome.goal.root).is_some() {
                         "bind that argument or referent value with one preceding ordinary let, establish the entire instantiated requirement over that binding, and pass the binding, borrowing it when the parameter mode requires a borrow"
                     } else {
@@ -3672,7 +3673,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         kind: SemanticIssueKind::UndischargedCallRequirement(Box::new(
                             crate::UndischargedCallRequirementDetail {
                                 concrete_callee: signature.symbol.clone(),
-                                requires_clause: outcome.requires_clause.clone(),
+                                requires_clause,
                                 instantiated_goal: outcome.rendered_goal.clone(),
                                 disposition,
                                 mechanical_fix,
@@ -3740,9 +3741,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 kind: SemanticIssueKind::UndischargedPostcondition(Box::new(
                     crate::UndischargedPostconditionDetail {
                         concrete_function: function.symbol.clone(),
-                        postcondition: proof.block.clone(),
+                        postcondition: self.node_location(&proof.block)?,
                         conjunct: proof.relation_ordinal,
-                        selector: proof.selector.clone(),
+                        selector: self.node_location(&proof.selector)?,
                         relation: exit.residual.clone(),
                         disposition,
                     },

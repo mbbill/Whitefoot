@@ -6,22 +6,23 @@
 
 use core::fmt;
 
-mod rejection;
+mod diagnostic;
 
 pub(crate) mod launcher;
 /// The probe corpus that pins every diagnostic sentence by its rendered text.
 #[cfg(test)]
 mod pinned_sentences;
 
-use rejection::Located;
+use diagnostic::{Anchor, Head, Record};
+pub use diagnostic::{DiagnosticFormat, render_driver_failure};
 
 use crate::backend::{emitter::emit_llvm_with_layout, target::TargetLayout};
 use crate::{
     ACTIVE_KERNEL_SPEC_HASH, BackendFailure, CanonicalLimits, CanonicalOutcome, CheckedProgram,
     FinalizeLimits, FinalizeOutcome, LexLimits, LexOutcome, LoweringFailure, ParseLimits,
-    ParseOutcome, ResolutionOutcome, SemanticLocation, SemanticOutcome, SourceBundle, SourceInput,
-    SourceLimits, TerminalLimits, TerminalOutcome, audit_canonical, check_semantics,
-    classify_terminals, finalize, lex, lower_checked_with_layout, parse, resolve,
+    ParseOutcome, ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput, SourceLimits,
+    TerminalLimits, TerminalOutcome, audit_canonical, check_semantics, classify_terminals,
+    finalize, lex, lower_checked_with_layout, parse, resolve,
 };
 
 /// Host-compiler optimization arguments for every Whitefoot executable.
@@ -174,13 +175,15 @@ pub enum CompilationFailureKind {
     Backend,
 }
 
-/// One compiler stop with its category preserved in the detail text.
+/// One compiler stop: its stage, its category, the numbered rule when it is a
+/// source rejection, and the record a reader is shown.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CompilationFailure {
     stage: CompilationStage,
     kind: CompilationFailureKind,
     rule_id: Option<&'static str>,
-    detail: String,
+    /// Boxed so a successful compilation's `Result` stays small.
+    record: Box<Record>,
 }
 
 impl CompilationFailure {
@@ -207,12 +210,14 @@ impl CompilationFailure {
         Self::new(CompilationStage::SourceEnvelope, kind, failure)
     }
 
+    /// A stop whose payload is a compiler-facing stage value with no writer
+    /// repair; the record carries that value's `Debug` text.
     fn new(stage: CompilationStage, kind: CompilationFailureKind, detail: impl fmt::Debug) -> Self {
         Self {
             stage,
             kind,
             rule_id: None,
-            detail: format!("{detail:?}"),
+            record: Box::new(Record::opaque(&detail)),
         }
     }
 
@@ -235,36 +240,40 @@ impl CompilationFailure {
         Self::new(stage, kind, failure)
     }
 
-    /// One source-language rejection carrying the rule its stage attributed.
+    /// One source-language rejection carrying the rule its stage attributed,
+    /// or, when the offending bytes belong to a compiler-supplied prelude
+    /// declaration, the pipeline defect that is instead.
     ///
     /// Every stage that can reject source already selects exactly one numbered
     /// rule under DIAG-1; this constructor only publishes that selection, so a
     /// caller comparing cited rules sees the same attribution at every stage.
-    fn source(stage: CompilationStage, rule_id: &'static str, detail: impl fmt::Debug) -> Self {
-        Self {
-            stage,
-            kind: CompilationFailureKind::Source,
-            rule_id: Some(rule_id),
-            detail: format!("{detail:?}"),
-        }
-    }
-
-    /// A malformed compiler-supplied declaration is a pipeline defect, not a
-    /// rejection of the writer's source bundle.
-    fn at_source(
+    /// The record is located at the coordinate that rule selected.
+    fn at_source<Issue: diagnostic::Report + ?Sized>(
         stage: CompilationStage,
         rule: &'static str,
-        detail: impl fmt::Debug,
+        issue: &Issue,
         bundle: &SourceBundle,
-        source: crate::SourceId,
+        coordinate: crate::SyntaxCoordinate,
+        anchor: Anchor,
     ) -> Self {
+        let record = Box::new(Record::located(issue, bundle, coordinate, anchor));
         if bundle
-            .file(source)
+            .file(coordinate.source())
             .is_some_and(|file| file.prelude().is_some())
         {
-            Self::new(stage, CompilationFailureKind::Compiler, detail)
+            Self {
+                stage,
+                kind: CompilationFailureKind::Compiler,
+                rule_id: None,
+                record,
+            }
         } else {
-            Self::source(stage, rule, detail)
+            Self {
+                stage,
+                kind: CompilationFailureKind::Source,
+                rule_id: Some(rule),
+                record,
+            }
         }
     }
 
@@ -280,10 +289,40 @@ impl CompilationFailure {
         self.kind
     }
 
-    /// Returns the structured debug detail retained by that stage.
+    /// Returns the payload fields as the text rendering prints them, one
+    /// `label: value` per line: the kind-specific fields of a rejection, or
+    /// the `payload` of a stop that carries a compiler-facing stage value.
     #[must_use]
-    pub fn detail(&self) -> &str {
-        &self.detail
+    pub fn detail(&self) -> String {
+        self.record.detail_text()
+    }
+
+    /// Renders the complete record in the selected format.
+    ///
+    /// The text form is a summary line in the `file:line:column:
+    /// error[RULE]: Kind` shape followed by one indented `label: value` line
+    /// per field; the JSON form is one object on one line with the same field
+    /// names. Both are deterministic for one compiler executable.
+    #[must_use]
+    pub fn render(&self, format: DiagnosticFormat) -> String {
+        let category = format!("{:?}", self.kind);
+        let stage = format!("{:?}", self.stage);
+        let verdict = match (self.kind, self.rule_id) {
+            (CompilationFailureKind::Source, Some(rule)) => format!("error[{rule}]"),
+            (CompilationFailureKind::Unsupported, _) => "unsupported capability".to_owned(),
+            (CompilationFailureKind::TargetLayout, _) => "target layout failure".to_owned(),
+            (kind, _) => format!("{} failure", format!("{kind:?}").to_ascii_lowercase()),
+        };
+        let head = Head {
+            verdict,
+            category: &category,
+            stage: &stage,
+            rule: self.rule_id,
+        };
+        match format {
+            DiagnosticFormat::Text => self.record.text(&head),
+            DiagnosticFormat::Json => self.record.json(&head),
+        }
     }
 
     /// Returns the exact numbered source rule this rejection cites.
@@ -298,21 +337,11 @@ impl CompilationFailure {
     }
 }
 
+/// The default text rendering, [`CompilationFailure::render`] with
+/// [`DiagnosticFormat::Text`].
 impl fmt::Display for CompilationFailure {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(rule_id) = self.rule_id {
-            write!(
-                formatter,
-                "{:?}/{:?} [{rule_id}]: {}",
-                self.stage, self.kind, self.detail
-            )
-        } else {
-            write!(
-                formatter,
-                "{:?}/{:?}: {}",
-                self.stage, self.kind, self.detail
-            )
-        }
+        formatter.write_str(&self.render(DiagnosticFormat::Text))
     }
 }
 
@@ -421,12 +450,14 @@ where
     let lexed = match lex(&bundle, limits.lexer) {
         LexOutcome::Complete(complete) => complete,
         LexOutcome::SourceIssue(issue) => {
+            let span = issue.span();
             return Err(CompilationFailure::at_source(
                 CompilationStage::Lexing,
                 issue.kind().rule_id(),
-                issue,
+                &issue,
                 &bundle,
-                issue.span().source(),
+                crate::SyntaxCoordinate::new(span.source(), span.start(), span.end()),
+                Anchor::Start,
             ));
         }
         LexOutcome::ResourceFailure(failure) => {
@@ -447,12 +478,14 @@ where
     let classified = match classify_terminals(&lexed, ACTIVE_KERNEL_SPEC_HASH, limits.terminals) {
         TerminalOutcome::Complete(complete) => complete,
         TerminalOutcome::SourceIssue(issue) => {
+            let token = issue.token();
             return Err(CompilationFailure::at_source(
                 CompilationStage::TerminalClassification,
                 issue.owner().id(),
-                issue,
+                &issue,
                 &bundle,
-                issue.token().source(),
+                crate::SyntaxCoordinate::new(token.source(), token.start(), token.end()),
+                Anchor::Start,
             ));
         }
         TerminalOutcome::ResourceFailure(failure) => {
@@ -480,13 +513,13 @@ where
     let parsed = match parse(&classified, limits.parser) {
         ParseOutcome::Complete(complete) => complete,
         ParseOutcome::SourceIssue(issue) => {
-            let coordinate = issue.coordinate();
             return Err(CompilationFailure::at_source(
                 CompilationStage::Parsing,
                 issue.rule().id(),
-                Located::new(issue, classified.source_bundle(), coordinate),
+                &issue,
                 &bundle,
-                coordinate.source(),
+                issue.coordinate(),
+                Anchor::Start,
             ));
         }
         ParseOutcome::ResourceFailure(failure) => {
@@ -534,13 +567,13 @@ where
             // FORM-2's coordinate is the trivia gap between two terminals, not
             // a written construct, so the reader is anchored inside the gap
             // rather than at its first byte.
-            let coordinate = issue.location().coordinate();
             return Err(CompilationFailure::at_source(
                 CompilationStage::CanonicalSource,
                 issue.rule().id(),
-                Located::in_gap(issue, classified.source_bundle(), coordinate),
+                &issue,
                 &bundle,
-                coordinate.source(),
+                issue.location().coordinate(),
+                Anchor::LastLineOfGap,
             ));
         }
         CanonicalOutcome::ResourceFailure(failure) => {
@@ -561,13 +594,13 @@ where
     let resolved = match resolve(canonical) {
         ResolutionOutcome::Complete(complete) => complete,
         ResolutionOutcome::SourceIssue { issue, .. } => {
-            let coordinate = issue.origin().coordinate();
             return Err(CompilationFailure::at_source(
                 CompilationStage::Resolution,
                 issue.rule().id(),
-                Located::new(issue, classified.source_bundle(), coordinate),
+                issue.kind(),
                 &bundle,
-                coordinate.source(),
+                issue.origin().coordinate(),
+                Anchor::Start,
             ));
         }
         ResolutionOutcome::CompilerFailure { failure, .. } => {
@@ -582,37 +615,42 @@ where
         SemanticOutcome::Complete(complete) => *complete,
         SemanticOutcome::SourceIssue { issue, .. } => {
             // A semantic rejection carries the richest payload in the
-            // toolchain and, until now, the poorest location: `SourceId(0)`
-            // and a byte offset. The coordinate the rule already selected
-            // names a line of the file the caller named, so it is printed the
-            // same way a syntax rejection's is.
-            let rule_id = issue.rule_id();
-            let SemanticLocation::SourceNode(_, coordinate) = issue.location();
-            let coordinate = *coordinate;
+            // toolchain; the coordinate the rule already selected names a line
+            // of the file the caller named, so it is printed the same way a
+            // syntax rejection's is.
             return Err(CompilationFailure::at_source(
                 CompilationStage::Semantics,
-                rule_id,
-                Located::new(issue, classified.source_bundle(), coordinate),
+                issue.rule_id(),
+                issue.kind(),
                 &bundle,
-                coordinate.source(),
+                issue.location().coordinate(),
+                Anchor::Start,
             ));
         }
         SemanticOutcome::ResolutionIssue { issue, .. } => {
-            let coordinate = issue.origin().coordinate();
             return Err(CompilationFailure::at_source(
                 CompilationStage::Resolution,
                 issue.rule().id(),
-                Located::new(issue, classified.source_bundle(), coordinate),
+                issue.kind(),
                 &bundle,
-                coordinate.source(),
+                issue.origin().coordinate(),
+                Anchor::Start,
             ));
         }
         SemanticOutcome::Unsupported { unsupported, .. } => {
-            return Err(CompilationFailure::new(
-                CompilationStage::Semantics,
-                CompilationFailureKind::Unsupported,
-                unsupported,
-            ));
+            // A capability stop is never a source verdict, but the node that
+            // needed the capability is still where the writer looks.
+            return Err(CompilationFailure {
+                stage: CompilationStage::Semantics,
+                kind: CompilationFailureKind::Unsupported,
+                rule_id: None,
+                record: Box::new(Record::located(
+                    &unsupported,
+                    &bundle,
+                    unsupported.location().coordinate(),
+                    Anchor::Start,
+                )),
+            });
         }
         SemanticOutcome::CompilerFailure { failure, .. } => {
             return Err(CompilationFailure::new(
@@ -658,8 +696,10 @@ fn lower_selected(
         with_caller.push(SourceInput::new(&bundle_name, source.as_bytes()));
         match compile_selected(&with_caller, limits, overlap, &name) {
             Ok(reported) => return Ok(reported),
+            // The JSON rendering is one line by construction, which is what an
+            // LLVM comment can hold.
             Err(failure) if failure.kind() == CompilationFailureKind::Source => {
-                caller_failure = Some(failure.to_string());
+                caller_failure = Some(failure.render(DiagnosticFormat::Json));
             }
             Err(failure) => return Err(failure),
         }
@@ -693,10 +733,7 @@ fn lower_selected(
                 module: module.into_string()
                     + &launch
                     + &caller_failure.map_or_else(String::new, |failure| {
-                        format!(
-                            "\n; Executable caller was not admitted: {}\n",
-                            failure.replace(['\n', '\r'], " ")
-                        )
+                        format!("\n; Executable caller was not admitted: {failure}\n")
                     }),
                 ledger,
             })
@@ -730,7 +767,15 @@ mod tests {
             assert_eq!(failure.stage(), CompilationStage::SourceEnvelope);
             assert_eq!(failure.kind(), CompilationFailureKind::Invocation);
             assert_eq!(failure.rule_id(), None);
-            assert_eq!(failure.detail(), "EmptySourceSequence");
+            // A stop that is not a source rejection carries its stage value
+            // as the one `payload` field, under a kind named for it.
+            assert_eq!(failure.detail(), "payload: EmptySourceSequence");
+            assert!(
+                failure
+                    .to_string()
+                    .starts_with("whitefootc: invocation failure: EmptySourceSequence\n"),
+                "{failure}"
+            );
         }
 
         let empty = check(
@@ -777,7 +822,7 @@ mod tests {
                 assert_eq!(failure.stage(), CompilationStage::SourceEnvelope);
                 assert_eq!(failure.kind(), CompilationFailureKind::Resource);
                 assert_eq!(failure.rule_id(), None);
-                assert_eq!(failure.detail(), detail);
+                assert_eq!(failure.detail(), format!("payload: {detail}"));
             }
         }
     }
@@ -805,7 +850,7 @@ mod tests {
                 assert_eq!(failure.stage(), CompilationStage::SourceEnvelope);
                 assert_eq!(failure.kind(), CompilationFailureKind::Invocation);
                 assert_eq!(failure.rule_id(), None);
-                assert_eq!(failure.detail(), detail);
+                assert_eq!(failure.detail(), format!("payload: {detail}"));
             }
         }
     }
@@ -829,7 +874,7 @@ mod tests {
             assert_eq!(failure.stage(), CompilationStage::SourceEnvelope);
             assert_eq!(failure.kind(), CompilationFailureKind::Resource);
             assert_eq!(failure.rule_id(), None);
-            assert_eq!(failure.detail(), detail);
+            assert_eq!(failure.detail(), format!("payload: {detail}"));
         }
     }
 
@@ -911,10 +956,20 @@ mod tests {
             "{detail}"
         );
         // The line the writer wrote, and where in it the parser stopped.
+        let rendered = failure.to_string();
         assert!(
-            detail.contains(r#"at /absolute/path/wc.wf:5:26 in line "  let skip = bor(dotted, bnot(addressable));""#),
-            "{detail}"
+            rendered.starts_with("/absolute/path/wc.wf:5:26: error[GRAM-9]: UnexpectedToken\n"),
+            "{rendered}"
         );
+        // The marker sits under `bnot(`, the forbidden call start [DIAG-1].
+        assert!(
+            rendered.contains(&format!(
+                "\n  source:   let skip = bor(dotted, bnot(addressable));\n  marker: {}^^^^^\n",
+                " ".repeat(25)
+            )),
+            "{rendered}"
+        );
+        assert!(detail.contains(r#"found: "bnot(""#), "{detail}");
     }
 
     #[test]
@@ -985,9 +1040,12 @@ mod tests {
         )
         .expect_err("a double space is not canonical form");
         assert_eq!(failure.rule_id(), Some("FORM-2"));
-        let detail = failure.detail();
-        assert!(detail.contains(r#"expected: " ", found: "  ""#), "{detail}");
-        assert!(detail.contains("/absolute/path/report.wf:3:"), "{detail}");
+        assert_eq!(failure.detail(), "expected: \" \"\nfound: \"  \"");
+        let rendered = failure.to_string();
+        assert!(
+            rendered.contains("\n  at: /absolute/path/report.wf:3:"),
+            "{rendered}"
+        );
     }
 
     /// An ordinary reference parameter keeps its later call requirement.
@@ -1062,10 +1120,20 @@ fn main() -> status: ExitStatus pure {
         )
         .expect_err("a bare affine use is rejected");
         assert_eq!(failure.rule_id(), Some("OWN-1"));
-        let detail = failure.detail();
-        assert!(detail.contains(&format!("{host}:7:16")), "{detail}");
-        assert!(detail.contains("let totals = running;"), "{detail}");
-        assert!(!detail.contains("input0.wf"), "{detail}");
+        let rendered = failure.to_string();
+        assert!(
+            rendered.starts_with(&format!("{host}:7:16: error[OWN-1]: BareAffineUse\n")),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains(&format!("\n  at: {host}:7:16\n")),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains("\n  source:   let totals = running;\n"),
+            "{rendered}"
+        );
+        assert!(!rendered.contains("input0.wf"), "{rendered}");
 
         // [TYPE-6], reached in the resolver.
         let collision = br#"fn main() -> status: ExitStatus pure {
@@ -1082,9 +1150,23 @@ fn main() -> status: ExitStatus pure {
         )
         .expect_err("a redeclared binder is rejected");
         assert_eq!(failure.rule_id(), Some("TYPE-6"));
-        let detail = failure.detail();
-        assert!(detail.contains(&format!("{host}:4:9")), "{detail}");
-        assert!(detail.contains("let permit = 2_u64;"), "{detail}");
+        let rendered = failure.to_string();
+        assert!(
+            rendered.contains(&format!("\n  at: {host}:4:9\n")),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains("\n  source:     let permit = 2_u64;\n"),
+            "{rendered}"
+        );
+        // The earlier declaration is a position too, never a node path.
+        assert!(
+            failure
+                .detail()
+                .contains(&format!(r#"origin: {host}:2:7 "let permit = 1_u64;""#)),
+            "{rendered}"
+        );
+        assert!(!rendered.contains("input0.wf"), "{rendered}");
     }
 
     /// A lexical rejection names the host path too.
@@ -1107,9 +1189,14 @@ fn main() -> status: ExitStatus pure {
         )
         .expect_err("a non-source byte is rejected");
         assert_eq!(failure.rule_id(), Some("FORM-1"));
-        let detail = failure.detail();
-        assert!(detail.contains(host), "{detail}");
-        assert!(!detail.contains("input0.wf"), "{detail}");
+        let rendered = failure.to_string();
+        assert!(
+            rendered.starts_with(&format!("{host}:2:11: error[FORM-1]: UnexpectedByte\n")),
+            "{rendered}"
+        );
+        assert!(!rendered.contains("input0.wf"), "{rendered}");
+        // The scalar is invisible on many terminals, so it is also escaped.
+        assert_eq!(failure.detail(), r#"found: "\u{a3}""#);
     }
 
     /// A source read from a host path the closed logical spelling cannot hold
@@ -2525,16 +2612,13 @@ fn main() -> status: ExitStatus pure {
     // to be made here on purpose.
     // -----------------------------------------------------------------------
 
-    /// The numbered rule and the rendered detail of one compilation that must
-    /// fail, in the shape `whitefootc` prints them.
+    /// The complete record of one compilation that must fail, exactly as
+    /// `whitefootc` prints it: its summary line cites `error[RULE]`, and every
+    /// field is one `\n  label: value` line.
     fn rejection(name: &str, source: &[u8]) -> String {
-        let failure = compile(&[SourceInput::new(name, source)], CompilerLimits::default())
-            .expect_err("this fixture exists to be rejected");
-        format!(
-            "[{}] {}",
-            failure.rule_id().unwrap_or("no rule"),
-            failure.detail()
-        )
+        compile(&[SourceInput::new(name, source)], CompilerLimits::default())
+            .expect_err("this fixture exists to be rejected")
+            .to_string()
     }
 
     /// [GRAM-9] names the binding form its grammar position admits.
@@ -2564,7 +2648,7 @@ fn main() -> status: ExitStatus pure {
         assert!(body.contains("[GRAM-9]"), "{body}");
         assert!(
             body.contains(
-                r#"mechanical_fix: "a `call` or `construct` in an atom position does not derive [GRAM-9]: bind the inner call with its own preceding `let` in this body and write that binder in the atom position — `let inner = f(x: 0_u64); let outer = g(y: inner);`""#
+                "\n  mechanical_fix: a `call` or `construct` in an atom position does not derive [GRAM-9]: bind the inner call with its own preceding `let` in this body and write that binder in the atom position — `let inner = f(x: 0_u64); let outer = g(y: inner);`"
             ),
             "{body}"
         );
@@ -2585,7 +2669,7 @@ fn main() -> status: ExitStatus pure {
         assert!(contract.contains("[GRAM-9]"), "{contract}");
         assert!(
             contract.contains(
-                r#"mechanical_fix: "a `call` or `construct` in an atom position does not derive [GRAM-9]: a `contract_block` has no `let`, so bind the inner call with a preceding `define` in this same block and write that binder in the atom position — `define inner = f(x: 0_u64); requires g(y: inner);`""#
+                "\n  mechanical_fix: a `call` or `construct` in an atom position does not derive [GRAM-9]: a `contract_block` has no `let`, so bind the inner call with a preceding `define` in this same block and write that binder in the atom position — `define inner = f(x: 0_u64); requires g(y: inner);`"
             ),
             "{contract}"
         );
@@ -2640,13 +2724,13 @@ fn main() -> status: ExitStatus pure {
         assert!(detail.contains("[EFF-1]"), "{detail}");
         assert!(
             detail.contains(
-                r#"reason: "a row lists each path at most once per category, and this entry repeats one""#
+                "\n  reason: a row lists each path at most once per category, and this entry repeats one\n"
             ),
             "{detail}"
         );
         assert!(
             detail.contains(
-                r#"mechanical_fix: "delete the repeated entry; `writes(p)` already subsumes `reads(p)`, so the pair is never written for one path""#
+                "\n  mechanical_fix: delete the repeated entry; `writes(p)` already subsumes `reads(p)`, so the pair is never written for one path"
             ),
             "{detail}"
         );
@@ -2670,13 +2754,15 @@ fn main() -> status: ExitStatus pure {
 "#,
         );
         assert!(detail.contains("[EFF-2]"), "{detail}");
-        assert!(detail.contains(r#"expected_row: "pure""#), "{detail}");
-        assert!(detail.contains(r#"found_row: "reads(data)""#), "{detail}");
-        assert!(detail.contains("missing: []"), "{detail}");
-        assert!(detail.contains(r#"extra: ["reads(data)"]"#), "{detail}");
         assert!(
             detail.contains(
-                r#"mechanical_fix: "declare exactly the row the body exhibits: add every missing category and path and remove every extra one; EFF-2 admits no wider and no narrower declaration than the union of the body-syntactic and release contributions""#
+                "\n  expected_row: pure\n  found_row: reads(data)\n  missing: []\n  extra: [reads(data)]\n"
+            ),
+            "{detail}"
+        );
+        assert!(
+            detail.ends_with(
+                "\n  mechanical_fix: declare exactly the row the body exhibits: add every missing category and path and remove every extra one; EFF-2 admits no wider and no narrower declaration than the union of the body-syntactic and release contributions"
             ),
             "{detail}"
         );
@@ -2696,8 +2782,9 @@ fn main() -> status: ExitStatus pure {
 "#,
         );
         assert!(detail.contains("[TYPE-5]"), "{detail}");
+        assert!(detail.contains("\n  kind: TypeMismatch\n"), "{detail}");
         assert!(
-            detail.contains(r#"TypeMismatch { expected: "own u64", found: "own u32" }"#),
+            detail.ends_with("\n  expected: own u64\n  found: own u32"),
             "{detail}"
         );
     }
@@ -2724,7 +2811,7 @@ fn main() -> status: ExitStatus pure {
         assert!(detail.contains("[TYPE-5]"), "{detail}");
         assert!(
             detail.contains(
-                r#"expected: "Result with both type arguments written: as a type `Result<u64, IoError>`, and as a variant constructor `Ok<u64, IoError>(value: v)`", found: "Result with no written type-argument list""#
+                "\n  expected: Result with both type arguments written: as a type `Result<u64, IoError>`, and as a variant constructor `Ok<u64, IoError>(value: v)`\n  found: Result with no written type-argument list"
             ),
             "{detail}"
         );
@@ -2773,13 +2860,13 @@ fn main() -> status: ExitStatus pure {
         assert!(detail.contains("[GRAM-3]"), "{detail}");
         assert!(
             detail.contains(
-                r#"expected: ["TYPEID", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "unit"]"#
+                r#"expected: [TYPEID, "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "unit"]"#
             ),
             "{detail}"
         );
         assert!(
             detail.contains(
-                r#"at reference-result.wf:1:33 in line "fn caller(anchor: &u64) -> out: &u64 pure {""#
+                "\n  at: reference-result.wf:1:33\n  bytes: 32..33\n  source: fn caller(anchor: &u64) -> out: &u64 pure {\n"
             ),
             "{detail}"
         );
@@ -2799,7 +2886,7 @@ fn main() -> status: ExitStatus pure {
         );
         assert!(detail.contains("[FORM-2]"), "{detail}");
         assert!(
-            detail.contains(r#"at indent.wf:3:1 in line "    let b = a +wrap 2_u64;""#),
+            detail.contains("\n  at: indent.wf:3:1\n  bytes: 69..74\n  source:     let b = a +wrap 2_u64;\n  marker: ^^^^\n"),
             "{detail}"
         );
 
@@ -2810,7 +2897,10 @@ fn main() -> status: ExitStatus pure {
             b"fn helper(value: u64) -> out: u64 pure {\n  let a = value +wrap 1_u64;\n  let b = a  +wrap 2_u64;\n  return b;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         );
         assert!(
-            inline.contains(r#"at spacing.wf:3:12 in line "  let b = a  +wrap 2_u64;""#),
+            inline.contains(&format!(
+                "\n  at: spacing.wf:3:12\n  bytes: 81..83\n  source:   let b = a  +wrap 2_u64;\n  marker: {}^^\n",
+                " ".repeat(11)
+            )),
             "{inline}"
         );
     }

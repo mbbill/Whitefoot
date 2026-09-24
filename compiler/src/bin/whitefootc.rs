@@ -8,11 +8,11 @@ use whitefoot::{
     Architecture, COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_FILE_POSIX_HEADER,
     COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
-    COMPLETION_WINDOWS_IOCP_HEADER, CompilerLimits, FLOOR_STACK_BYTES, HOST_OPTIMIZATION_ARGUMENTS,
-    ORDINARY_VALUES_HEADER, ORDINARY_VALUES_LLVM, ORDINARY_VALUES_SOURCE, OverlapLowering,
-    RecursionBudget, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
-    SCHED_PRIM_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER, compile_with_overlap,
-    compile_with_permission_ledger, stack_ledger,
+    COMPLETION_WINDOWS_IOCP_HEADER, CompilationFailure, CompilerLimits, DiagnosticFormat,
+    FLOOR_STACK_BYTES, HOST_OPTIMIZATION_ARGUMENTS, ORDINARY_VALUES_HEADER, ORDINARY_VALUES_LLVM,
+    ORDINARY_VALUES_SOURCE, OverlapLowering, RecursionBudget, SCHED_CORE_HEADER, SCHED_CORE_SOURCE,
+    SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER,
+    compile_with_overlap, compile_with_permission_ledger, render_driver_failure, stack_ledger,
 };
 
 // `HOST_LINK_LIBRARIES` is here rather than above because its one reader is
@@ -32,7 +32,7 @@ use whitefoot::{
 };
 
 const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-scalar-leaf-limit N|off] [--par-sequential-refusal] [--par-recursive-frontier auto|N|off] [--no-overlap] [--par-ledger] \
-[--stack-ledger] [-o OUTPUT] SOURCE...";
+[--stack-ledger] [--diagnostic-format text|json] [-o OUTPUT] SOURCE...";
 
 // The compiler walks typed source and lowering trees recursively. Windows
 // gives the process's primary thread a 1 MiB stack by default, which is small
@@ -197,21 +197,24 @@ const TARGET_LINK_LIBRARIES: &[&str] = HOST_LINK_LIBRARIES;
 const TARGET_LINK_LIBRARIES: &[&str] = &["-lws2_32", "-lshell32"];
 
 fn main() {
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    let format = requested_format(&arguments);
     let driver = match std::thread::Builder::new()
         .name("whitefootc-driver".to_owned())
         .stack_size(COMPILER_DRIVER_STACK_BYTES)
-        .spawn(run)
+        .spawn(move || run(&arguments))
     {
         Ok(driver) => driver,
         Err(error) => {
-            eprintln!("whitefootc: cannot start the compiler driver: {error}");
+            let message = format!("cannot start the compiler driver: {error}");
+            eprintln!("{}", render_driver_failure("Resource", &message, format));
             std::process::exit(1);
         }
     };
     match driver.join() {
         Ok(Ok(())) => {}
-        Ok(Err(message)) => {
-            eprintln!("whitefootc: {message}");
+        Ok(Err(stop)) => {
+            eprintln!("{}", stop.render(format));
             std::process::exit(1);
         }
         // The panic hook on the driver thread has already printed the panic.
@@ -221,16 +224,73 @@ fn main() {
     }
 }
 
-fn run() -> Result<(), String> {
-    let arguments: Vec<_> = std::env::args().skip(1).collect();
-    let options = Options::parse(&arguments)?;
+/// The rendering this invocation asks for.
+///
+/// It is read before the other options so that an invalid option is reported
+/// in the requested form too. A missing or invalid value selects text, and
+/// [`Options::parse`] then reports that value as the invalid option it is.
+fn requested_format(arguments: &[String]) -> DiagnosticFormat {
+    let value = arguments
+        .iter()
+        .position(|argument| argument == "--diagnostic-format")
+        .and_then(|index| arguments.get(index.saturating_add(1)));
+    match value.map(String::as_str) {
+        Some("json") => DiagnosticFormat::Json,
+        _ => DiagnosticFormat::Text,
+    }
+}
+
+/// Why one invocation stopped.
+enum Stop {
+    /// The compilation pipeline stopped; its record carries the rule, the
+    /// location and the payload.
+    Compilation(CompilationFailure),
+    /// The driver stopped outside the pipeline, on one sentence: an invalid
+    /// invocation, an unwritable output, or a host toolchain step.
+    Driver {
+        category: &'static str,
+        message: String,
+    },
+}
+
+impl Stop {
+    fn invocation(message: String) -> Self {
+        Self::Driver {
+            category: "Invocation",
+            message,
+        }
+    }
+
+    fn output(message: String) -> Self {
+        Self::Driver {
+            category: "Output",
+            message,
+        }
+    }
+
+    fn toolchain(message: String) -> Self {
+        Self::Driver {
+            category: "Toolchain",
+            message,
+        }
+    }
+
+    fn render(&self, format: DiagnosticFormat) -> String {
+        match self {
+            Self::Compilation(failure) => failure.render(format),
+            Self::Driver { category, message } => render_driver_failure(category, message, format),
+        }
+    }
+}
+
+fn run(arguments: &[String]) -> Result<(), Stop> {
+    let options = Options::parse(arguments).map_err(Stop::invocation)?;
     let mut paths = Vec::with_capacity(options.sources.len());
     let mut bytes = Vec::with_capacity(options.sources.len());
     for (index, source) in options.sources.iter().enumerate() {
-        bytes.push(
-            std::fs::read(source)
-                .map_err(|error| format!("cannot read {}: {error}", source.display()))?,
-        );
+        bytes.push(std::fs::read(source).map_err(|error| {
+            Stop::invocation(format!("cannot read {}: {error}", source.display()))
+        })?);
         paths.push(source_names(source, index));
     }
     let inputs: Vec<_> = paths
@@ -249,24 +309,25 @@ fn run() -> Result<(), String> {
         // adds lines to this ledger rather than changing any of them.
         let (module, ledger) =
             compile_with_permission_ledger(&inputs, CompilerLimits::default(), overlap)
-                .map_err(|failure| failure.to_string())?;
+                .map_err(Stop::Compilation)?;
         for line in &ledger {
             println!("{line}");
         }
         module
     } else {
         compile_with_overlap(&inputs, CompilerLimits::default(), overlap)
-            .map_err(|failure| failure.to_string())?
+            .map_err(Stop::Compilation)?
     };
     if options.stack_ledger {
-        for line in print_stack_ledger(&module)? {
+        for line in print_stack_ledger(&module).map_err(Stop::toolchain)? {
             println!("{line}");
         }
     }
     if options.emit_llvm {
         if let Some(output) = options.output {
-            std::fs::write(&output, &module)
-                .map_err(|error| format!("cannot write {}: {error}", output.display()))?;
+            std::fs::write(&output, &module).map_err(|error| {
+                Stop::output(format!("cannot write {}: {error}", output.display()))
+            })?;
         } else {
             print!("{module}");
         }
@@ -276,6 +337,7 @@ fn run() -> Result<(), String> {
         &module,
         options.output.as_deref().unwrap_or(Path::new("a.out")),
     )
+    .map_err(Stop::toolchain)
 }
 
 /// Compiles the module once more, to assembly, purely to read the two things
@@ -578,12 +640,28 @@ impl Options {
         let mut no_overlap = false;
         let mut par_ledger = false;
         let mut stack_ledger = false;
+        let mut diagnostic_format = false;
         let mut output = None;
         let mut sources = Vec::new();
         let mut cursor = 0;
         while cursor < arguments.len() {
             match arguments[cursor].as_str() {
                 "--emit-llvm" => emit_llvm = true,
+                // Read by `requested_format` before parsing; validated here
+                // like every other option.
+                "--diagnostic-format" => {
+                    cursor += 1;
+                    if !matches!(
+                        arguments.get(cursor).map(String::as_str),
+                        Some("text" | "json")
+                    ) {
+                        return Err("--diagnostic-format requires text or json".to_owned());
+                    }
+                    if diagnostic_format {
+                        return Err("--diagnostic-format may be written only once".to_owned());
+                    }
+                    diagnostic_format = true;
+                }
                 "--par" => par = true,
                 "--par-scalar-leaf-limit" => {
                     cursor += 1;
@@ -738,7 +816,10 @@ mod tests {
     use std::collections::HashSet;
     use std::path::{Component, Path, PathBuf};
 
-    use super::{Options, OverlapLowering, RecursionBudget, runtime_units, source_names};
+    use super::{
+        DiagnosticFormat, Options, OverlapLowering, RecursionBudget, Stop, requested_format,
+        runtime_units, source_names,
+    };
 
     fn parse(arguments: &[&str]) -> Result<Options, String> {
         let owned: Vec<String> = arguments.iter().map(|value| (*value).to_owned()).collect();
@@ -1198,6 +1279,70 @@ mod tests {
             .expect("opposite lowerings may not be written together");
         assert!(message.contains("--no-overlap"), "{message}");
         assert!(message.contains("--par"), "{message}");
+    }
+
+    /// The diagnostic format is one option with two values, read before the
+    /// other options so an invalid option is reported in the requested form,
+    /// and validated with them so a misspelled value is refused rather than
+    /// silently selecting text.
+    #[test]
+    fn the_diagnostic_format_is_one_option_with_two_values() {
+        let owned = |arguments: &[&str]| -> Vec<String> {
+            arguments.iter().map(|value| (*value).to_owned()).collect()
+        };
+        assert_eq!(
+            requested_format(&owned(&["value.wf"])),
+            DiagnosticFormat::Text
+        );
+        assert_eq!(
+            requested_format(&owned(&["--diagnostic-format", "json", "value.wf"])),
+            DiagnosticFormat::Json
+        );
+        assert_eq!(
+            requested_format(&owned(&["--diagnostic-format", "text", "value.wf"])),
+            DiagnosticFormat::Text
+        );
+        // An unknown option is still reported in the requested format.
+        assert_eq!(
+            requested_format(&owned(&["--diagnostic-format", "json", "--bogus"])),
+            DiagnosticFormat::Json
+        );
+        assert!(parse(&["--bogus", "value.wf"]).is_err());
+
+        for value in ["text", "json"] {
+            parse(&["--diagnostic-format", value, "value.wf"]).expect("both formats are accepted");
+        }
+        assert!(super::USAGE.contains("--diagnostic-format text|json"));
+        for arguments in [
+            vec!["--diagnostic-format", "xml", "value.wf"],
+            vec!["--diagnostic-format", "JSON", "value.wf"],
+            vec!["value.wf", "--diagnostic-format"],
+            vec![
+                "--diagnostic-format",
+                "json",
+                "--diagnostic-format",
+                "text",
+                "value.wf",
+            ],
+        ] {
+            let message = parse(&arguments).err().expect("an invalid format");
+            assert!(message.contains("--diagnostic-format"), "{message}");
+        }
+    }
+
+    /// A stop outside the pipeline keeps its one-sentence text form and gains
+    /// the common envelope in JSON.
+    #[test]
+    fn a_driver_stop_renders_in_either_format() {
+        let stop = Stop::invocation("cannot read missing.wf: not found".to_owned());
+        assert_eq!(
+            stop.render(DiagnosticFormat::Text),
+            "whitefootc: cannot read missing.wf: not found"
+        );
+        assert_eq!(
+            stop.render(DiagnosticFormat::Json),
+            r#"{"category":"Invocation","stage":"Driver","detail":{"message":"cannot read missing.wf: not found"}}"#
+        );
     }
 
     /// The usage text is one definition, so the option list a reader is shown
