@@ -13,10 +13,10 @@
 
 use super::super::super::goal::CheckedRequirement;
 use super::super::super::model::{
-    BindingId, CheckedArrayRoot, CheckedConst, CheckedEnumType, CheckedExpression,
-    CheckedIntegerArgumentSource, CheckedIntegerOperation, CheckedMatchArm, CheckedMeasure,
-    CheckedNominalKind, CheckedPlaceStep, CheckedSetTarget, CheckedType, CheckedValue, IntegerType,
-    MeasuredKind, NominalId,
+    BindingId, CheckedArrayRoot, CheckedConst, CheckedConversionMode, CheckedEnumType,
+    CheckedExpression, CheckedIntegerArgumentSource, CheckedIntegerOperation, CheckedMatchArm,
+    CheckedMeasure, CheckedNominalKind, CheckedNumericType, CheckedPlaceStep, CheckedSetTarget,
+    CheckedType, CheckedValue, IntegerType, MeasuredKind, NominalId,
 };
 use super::super::super::places::CapturedTerm;
 use super::super::fragment_type;
@@ -35,15 +35,16 @@ use super::super::{
 };
 use super::{Analyzer, ArmFacts, ProofFlowState};
 /// Which term one evaluated value's [ENT-3] image is established on: the
-/// place a `let` binder introduces, or the compiler-owned commit value of one
-/// `set` occurrence, named by that statement's NodePath [ENT-2].
-/// The sources below are written once against this destination so that a
-/// commit's right-hand side receives exactly the image the same initializer
-/// receives at a `let`.
+/// place a `let` binder introduces, the compiler-owned commit value of one
+/// `set` occurrence, or a checked integer conversion's private success
+/// payload [ENT-2, ENT-5].
+/// These destinations use the same admitted source image; a conditional
+/// payload interprets it only inside its own success context.
 #[derive(Clone, Copy)]
 pub(super) enum ValueImage<'a> {
     Binding(BindingId),
     Commit(&'a crate::NodePath),
+    ResultPayload(TermId),
 }
 
 /// The three S11 terms installed for one counted range.
@@ -382,9 +383,8 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    /// The term one evaluated value's image is established on, when its type
-    /// is one fragment type: a freshly bound integer place, or the commit
-    /// value of one `set` occurrence.
+    /// The term one evaluated value's image is established on: a freshly
+    /// bound integer place, a commit value, or a private success payload.
     fn bound_term(
         &mut self,
         destination: ValueImage<'_>,
@@ -393,6 +393,7 @@ impl Analyzer<'_, '_> {
         match destination {
             ValueImage::Binding(binding) => self.writable_place_term(binding, &[], value.ty()),
             ValueImage::Commit(node_path) => self.commit_value_term(node_path, value),
+            ValueImage::ResultPayload(payload) => Some(payload),
         }
     }
 
@@ -401,6 +402,7 @@ impl Analyzer<'_, '_> {
         match destination {
             ValueImage::Binding(binding) => S7Subject::Binding(binding),
             ValueImage::Commit(node_path) => S7Subject::Commit(node_path.clone()),
+            ValueImage::ResultPayload(payload) => S7Subject::ResultPayload(payload),
         }
     }
 
@@ -441,20 +443,20 @@ impl Analyzer<'_, '_> {
     }
 
     /// The value image shared by an ordinary let and a direct-place SET-1
-    /// commit. A narrowing conversion and every computed expression outside
-    /// this finite S5 table have no image.
+    /// commit. Every admitted exact integer conversion preserves its input's
+    /// mathematical value; checked and defined rows have another result type.
     fn copy_source(&mut self, value: &CheckedExpression) -> Option<TermId> {
         match value {
             CheckedExpression::NumericConversion {
-                source,
-                destination,
+                mode: CheckedConversionMode::Exact,
+                source: CheckedNumericType::Integer(_),
+                destination: CheckedNumericType::Integer(_),
                 value: operand,
                 ..
-            } => source
-                .converts_totally_to(*destination)
-                .then(|| self.read_operand(operand))
-                .flatten(),
-            _ => self.read_operand(value),
+            } => self.copy_source(operand),
+            _ => self
+                .measure_operand(value)
+                .or_else(|| self.read_operand(value)),
         }
     }
 
@@ -486,7 +488,7 @@ impl Analyzer<'_, '_> {
 
     /// [ENT-3] S5: `let x: T = lit;` establishes x = value(lit);
     /// `let x: T = p;` with p a term establishes x = p; and
-    /// `let y: Dst = cvt::<Src, Dst>(p);` over a total [OP-6] pair
+    /// `let y: Dst = cvt::<Src, Dst>(p);` after its [OP-6] domain proof
     /// establishes y = p, the conversion being exactly value-preserving.
     /// [MSR-3] the rebind placement, first half: at the pre-transfer point of
     /// one `let` or one [LIV-2] `set` whose right-hand side is a measured

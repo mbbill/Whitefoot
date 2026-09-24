@@ -178,6 +178,8 @@ impl EntailmentCallee {
 
 /// Program-level context the per-function analysis reads.
 pub(crate) struct EntailmentContext<'check> {
+    /// Existing resolved declarations, borrowed for source names in residuals.
+    pub(crate) declarations: &'check [crate::DeclarationRecord],
     /// Callee projections indexed by [`FunctionId`].
     pub(crate) callees: &'check [EntailmentCallee],
     pub(crate) constants: &'check [CheckedConstant],
@@ -279,6 +281,8 @@ pub(crate) enum ObligationFamily {
     /// One canonical `.defined` goal for a proof-required exact integer
     /// operation [OP-2, ENT-6].
     IntegerDomain,
+    /// One exact numeric conversion's `cvt.defined` domain [OP-6].
+    ConversionDomain,
     /// A runtime-sized buffer allocation's canonical fit predicate [OP-9].
     AllocationFit,
     /// One range-reference formation goal `lo <= hi` or `hi <= x.len`,
@@ -862,12 +866,13 @@ pub(crate) enum RemainderEndpoint {
     Maximum,
 }
 
-/// The value one retained S7 image was established on: the `let` binder that
-/// introduced it, or the commit value of one `set` occurrence [ENT-2].
+/// The value one retained S7 image was established on: a `let` binder, a
+/// `set` commit value, or a checked conversion's conditional payload.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum S7Subject {
     Binding(BindingId),
     Commit(NodePath),
+    ResultPayload(TermId),
 }
 
 /// One required unused-or-consumed S7 source root.

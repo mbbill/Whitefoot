@@ -1,5 +1,5 @@
 fn main() -> status: ExitStatus pure {
-  match cvt::<f32, u8>(1.0_f32) {
+  match cvt.checked::<f32, u8>(1.0_f32) {
     Ok(value: byte) => {
     }
     Err(error: narrow_error) => {

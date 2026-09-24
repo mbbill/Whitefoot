@@ -11,8 +11,9 @@ use super::super::goal::{
     CheckedRequirement, GoalDatum, GoalExpression, GoalOperation, GoalProjection, GoalTemplate,
 };
 use super::super::model::{
-    BindingId, CheckedConst, CheckedExpression, CheckedFloatOperation, CheckedIntegerOperation,
-    CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedStatement, CheckedType, CheckedValue,
+    BindingId, CheckedConst, CheckedConversionMode, CheckedExpression, CheckedFloatOperation,
+    CheckedIntegerOperation, CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedStatement,
+    CheckedType, CheckedValue, expression_children,
 };
 use super::super::postcondition::PostconditionConstantOrigin;
 use super::{CheckStop, Checker, ControlCounters, ControlScope, FunctionSignature, LocalBinding};
@@ -245,6 +246,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let CheckedStatement::Let { binding, value, .. } = &checked.statement else {
                 return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
             };
+            self.validate_clause_conversion_domains(ClauseKind::Requires, definition, value)?;
             self.validate_clause_copy_local(ClauseKind::Requires, definition, *binding, bindings)?;
             let expanded =
                 self.build_clause_expression(expression, value, bindings, &expanded_bindings)?;
@@ -261,6 +263,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let condition = self
                 .check_expression(function, expression, bindings, 0)
                 .map_err(Self::clause_conditional_repair)?;
+            self.validate_clause_conversion_domains(
+                ClauseKind::Requires,
+                clause,
+                &condition.expression,
+            )?;
             if condition.mode != CheckedMode::Own || condition.expression.ty() != CheckedType::Bool
             {
                 return self.issue_node(
@@ -392,6 +399,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 arguments.as_slice(),
             )),
             CheckedExpression::NumericConversion {
+                mode,
                 source,
                 destination,
                 value,
@@ -399,6 +407,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ..
             } => Some((
                 GoalOperation::NumericConversion {
+                    mode: *mode,
                     source: *source,
                     destination: *destination,
                 },
@@ -1316,6 +1325,32 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok((expression, false, false));
         }
         Ok((expression, holder_pending, range_referent))
+    }
+
+    /// [FN-8] an erased exact conversion is admitted by the whole endpoint
+    /// types, not by another clause or a particular operand's value. Numeric
+    /// bounds remain symbolic here and use the same finite-domain totality
+    /// judgment as executable conversion obligations.
+    pub(super) fn validate_clause_conversion_domains(
+        &self,
+        clause: ClauseKind<'_>,
+        entry: NodeId,
+        expression: &CheckedExpression,
+    ) -> Result<(), CheckStop> {
+        if let CheckedExpression::NumericConversion {
+            mode: CheckedConversionMode::Exact,
+            source,
+            destination,
+            ..
+        } = expression
+            && !source.converts_totally_to(*destination)
+        {
+            return self.invalid_clause(clause, entry);
+        }
+        for child in expression_children(expression) {
+            self.validate_clause_conversion_domains(clause, entry, child)?;
+        }
+        Ok(())
     }
 
     /// Holds a clause local to [FN-8]'s "own copy value", judged on the type

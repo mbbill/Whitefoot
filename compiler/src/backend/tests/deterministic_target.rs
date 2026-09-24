@@ -773,7 +773,7 @@ const READS_ITS_ARGUMENTS: &[u8] =
   let Inputs(args: args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
   close_directory(factory: &entry_factory, directory: move unused_cwd);
   let total = args_count(args: &args);
-  let narrowed = cvt::<u64, u8>(total);
+  let narrowed = cvt.checked::<u64, u8>(total);
   match narrowed {
     Ok(value: code) => {
       return exit_status(code: code);
@@ -796,7 +796,7 @@ const WRITES_THEN_RELEASES_BOTH: &[u8] =
   let payload = &bytes[0_u64..3_u64];
   match write_once(factory: entry_factory, output: out, source: payload, start: 0_u64, end: 3_u64) {
     Ok(value: written) => {
-      let narrowed = cvt::<u64, u8>(written);
+      let narrowed = cvt.checked::<u64, u8>(written);
       match narrowed {
         Ok(value: code) => {
           return exit_status(code: code);
@@ -996,7 +996,7 @@ fn an_inspection_error_survives_a_failed_provisional_close() {
     let source = opens_one_file(
         &[(
             "DeviceFailure",
-            "if o == 4_u8 {\n  let narrowed = cvt::<u32, u8>(c);\n  match narrowed {\n    Ok(value: code) => {\n      return exit_status(code: code);\n    }\n    Err(error: overflowed) => {\n      return exit_status(code: 250_u8);\n    }\n  }\n} else {\n  return exit_status(code: 251_u8);\n}",
+            "if o == 4_u8 {\n  let narrowed = cvt.checked::<u32, u8>(c);\n  match narrowed {\n    Ok(value: code) => {\n      return exit_status(code: code);\n    }\n    Err(error: overflowed) => {\n      return exit_status(code: 250_u8);\n    }\n  }\n} else {\n  return exit_status(code: 251_u8);\n}",
         )],
         "return exit_status(code: 199_u8);",
     );
@@ -1346,7 +1346,7 @@ pub(super) fn assert_zero_write_outcome() {
   let window = &bytes[0_u64..2_u64];
   match write_once(factory: &factory, output: &out, source: window, start: 0_u64, end: 2_u64) {{
     Ok(value: written) => {{
-      let narrowed = cvt::<u64, u8>(written);
+      let narrowed = cvt.checked::<u64, u8>(written);
       match narrowed {{
         Ok(value: code) => {{
           return exit_status(code: code);

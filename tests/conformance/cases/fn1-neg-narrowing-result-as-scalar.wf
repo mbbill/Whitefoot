@@ -1,5 +1,5 @@
 fn narrow_direct(x: i32) -> result: i8 pure {
-  let narrowed = cvt::<i32, i8>(x);
+  let narrowed = cvt.checked::<i32, i8>(x);
   return narrowed;
 }
 

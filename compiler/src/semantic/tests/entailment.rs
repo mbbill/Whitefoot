@@ -23,8 +23,8 @@ use super::super::entailment::{
 };
 use super::super::goal::{GoalExpression, GoalOperation};
 use super::super::model::{
-    CheckedBodyDisposition, CheckedExpression, CheckedIntegerOperation, CheckedMeasure,
-    CheckedProgramData, CheckedStatement, CheckedValue, FunctionId, IntegerType,
+    CheckedBodyDisposition, CheckedConversionMode, CheckedExpression, CheckedIntegerOperation,
+    CheckedMeasure, CheckedProgramData, CheckedStatement, CheckedValue, FunctionId, IntegerType,
 };
 // [REF-1] the v0.59 `PlaceProjection` is retired; one resolved path step is a
 // `PlaceStep`, and a term's place carries the whole resolved path rather than
@@ -237,6 +237,10 @@ fn s7_result_names_subject(
             TermKind::CommitValue { commit_path, ty }
                 if commit_path.as_slice() == commit.components() && *ty == source.row
         ),
+        S7Subject::ResultPayload(payload) => {
+            result == *payload
+                && matches!(retained_term(summary, result), TermKind::ResultPayload(_))
+        }
     }
 }
 
@@ -1203,6 +1207,34 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert!(!parents.is_empty());
                 DerivationConclusion::IntegerDomain(*goal)
             }
+            DerivationNode::ConversionDomain { goal, parents } => {
+                let retained = &summary.inventory.goals[goal.0 as usize];
+                assert!(matches!(
+                    retained.expression,
+                    GoalExpression::Operation {
+                        row: GoalOperation::NumericConversion {
+                            mode: CheckedConversionMode::Defined,
+                            ..
+                        },
+                        ..
+                    }
+                ));
+                assert_eq!(
+                    parents.len(),
+                    2,
+                    "conversion interval proves upper then lower"
+                );
+                for parent in parents {
+                    assert!(matches!(
+                        retained_conclusion(&conclusions, *parent),
+                        DerivationConclusion::Relation(_) | DerivationConclusion::AffineConsequence
+                    ));
+                }
+                DerivationConclusion::Goal {
+                    goal: *goal,
+                    sign: GoalSign::Positive,
+                }
+            }
             DerivationNode::AffineConsequence {
                 relation,
                 premises,
@@ -2000,7 +2032,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     ObligationFamily::RangeFormation => {
                         assert!(outcome.conjunct <= 1)
                     }
-                    ObligationFamily::IntegerDomain => {
+                    ObligationFamily::IntegerDomain | ObligationFamily::ConversionDomain => {
                         panic!("integer-domain roots use their own root class")
                     }
                 }
@@ -2176,6 +2208,29 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert!(outcome.discharged);
                 assert_eq!(outcome.derivation, Some(root.node));
                 assert!(matches!(conclusion, DerivationConclusion::IntegerDomain(_)));
+            }
+            DerivationRootKind::ConversionDomainObligation(ordinal) => {
+                let ordinal = ordinal as usize;
+                let outcome = &summary.obligations[ordinal];
+                assert!(!seen_obligations[ordinal], "one exact root per obligation");
+                seen_obligations[ordinal] = true;
+                assert_eq!(outcome.family, ObligationFamily::ConversionDomain);
+                assert!(outcome.discharged);
+                assert_eq!(outcome.conjunct, 0);
+                assert_eq!(outcome.derivation, Some(root.node));
+                match conclusion {
+                    DerivationConclusion::Goal {
+                        goal,
+                        sign: GoalSign::Positive,
+                    } => {
+                        assert_eq!(
+                            Some(&summary.inventory.goals[goal.0 as usize].expression),
+                            outcome.canonical_goal.as_ref()
+                        );
+                    }
+                    DerivationConclusion::Contradiction => assert!(outcome.contradictory),
+                    other => panic!("a conversion root must conclude its domain: {other:?}"),
+                }
             }
             DerivationRootKind::CallGoal(ordinal) => {
                 let ordinal = ordinal as usize;
@@ -6747,10 +6802,10 @@ fn main() -> status: ExitStatus pure {
             .iter()
             .map(|outcome| outcome.discharged)
             .collect::<Vec<_>>(),
-        vec![true, true],
-        "j = k = 2 and widened = narrow = 3, both below values.len"
+        vec![true, true, true],
+        "the total conversion discharges; j = k = 2 and widened = narrow = 3 are below values.len"
     );
-    for ordinal in 0..2 {
+    for ordinal in 1..3 {
         assert_root_has_event_kind(
             &summary,
             obligation_root(&summary, ordinal),
@@ -7037,16 +7092,16 @@ fn main() -> status: ExitStatus pure {
 }
 
 #[test]
-fn a_narrowing_conversion_carries_no_equality_into_its_ok_arm() {
-    // [OP-6] narrowing is not a total pair, so [ENT-3] S5 does not apply and
-    // the `Ok` binder inherits only its own type range.
+fn a_checked_narrowing_conversion_carries_its_input_equality_into_the_ok_arm() {
+    // [OP-6, ENT-5] the checked conversion's private success context retains
+    // the input value; delivery substitutes its payload into ordinary L0.
     let source = br#"const count: u64 = 4_u64;
 
 const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(n: u64) -> result: i32 pure {
   if n < 4_u64 {
-    match cvt::<u64, u8>(n) {
+    match cvt.checked::<u64, u8>(n) {
       Ok(value: small) => {
         let widened = cvt::<u8, u64>(small);
         return values[widened];
@@ -7066,14 +7121,117 @@ fn main() -> status: ExitStatus pure {
 "#;
     assert_eq!(
         discharge_flags(source, "read"),
-        vec![false],
-        "small keeps no tie to n, so widened is bounded only by u8's range"
+        vec![true, true],
+        "the exact widening and the index both discharge from the captured small value"
     );
+}
+
+#[test]
+fn conversion_domain_goals_keep_operand_support_and_loop_lifetimes() {
+    let source = br#"fn ignored(value: f64) -> result: i32 pure {
+  let allowed = cvt.defined::<f64, i32>(value);
+  return cvt::<f64, i32>(value);
+}
+
+fn other_operand(value: f64, other: f64) -> result: i32 pure {
+  if cvt.defined::<f64, i32>(value) {
+    return cvt::<f64, i32>(other);
+  }
+  return 0_i32;
+}
+
+fn alias_write(value: f64) -> result: i32 pure {
+  let allowed = cvt.defined::<f64, i32>(value);
+  let alias = &value;
+  set deref(alias) = 1.5_f64;
+  if allowed {
+    return cvt::<f64, i32>(value);
+  }
+  return 0_i32;
+}
+
+fn backedge(value: f64, stop: Bool) -> result: unit pure {
+  let allowed = cvt.defined::<f64, i32>(value);
+  loop @again {
+    if allowed {
+      let converted = cvt::<f64, i32>(value);
+    }
+    if stop {
+      break @again;
+    }
+    set value = 1.5_f64;
+  }
+  return unit;
+}
+
+fn fresh(value: f64, stop: Bool) -> result: unit pure {
+  loop @again {
+    if cvt.defined::<f64, i32>(value) {
+      let converted = cvt::<f64, i32>(value);
+    }
+    if stop {
+      break @again;
+    }
+    set value = 1.5_f64;
+  }
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    for (name, discharged) in [
+        ("ignored", false),
+        ("other_operand", false),
+        ("alias_write", false),
+        ("backedge", false),
+        ("fresh", true),
+    ] {
+        let summary = entailment(source, name);
+        validate_derivations(&summary);
+        assert_eq!(summary.obligations.len(), 1, "{name}");
+        let outcome = &summary.obligations[0];
+        assert_eq!(outcome.family, ObligationFamily::ConversionDomain);
+        assert_eq!(outcome.discharged, discharged, "{name}");
+        assert!(
+            !outcome.contradictory,
+            "a stale goal cannot invent contradiction"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------
 // [ENT-3] S7 constant-offset arithmetic
 // ---------------------------------------------------------------------
+
+#[test]
+fn a_conversion_of_an_affine_value_retains_both_ordered_domain_parents() {
+    let source = br#"fn sum(left: u32, right: u32) -> result: u8 pure contract {
+  requires left <= 127_u32;
+  requires right <= 128_u32;
+} {
+  let total = left + right;
+  return cvt::<u32, u8>(total);
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = accepted_entailment(source, "sum");
+    validate_derivations(&summary);
+    assert_eq!(summary.obligations.len(), 2);
+    let conversion = &summary.obligations[1];
+    assert_eq!(conversion.family, ObligationFamily::ConversionDomain);
+    assert!(conversion.discharged);
+    assert_root_contains(
+        &summary,
+        conversion.derivation.unwrap(),
+        |node| matches!(node, DerivationNode::ConversionDomain { parents, .. } if parents.len() == 2),
+        "the ordered upper and lower conversion-domain parents",
+    );
+}
 
 #[test]
 fn unsigned_remainder_publishes_its_strict_divisor_bound() {

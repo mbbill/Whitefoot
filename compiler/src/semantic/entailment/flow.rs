@@ -13,6 +13,7 @@
 //! kills, the joins, and the obligation judgment, and calls into the sources
 //! at each establishment point.
 
+mod conversions;
 mod results;
 mod sources;
 
@@ -31,11 +32,12 @@ use super::super::model::expression_children;
 use super::super::model::{
     BindingId, CheckedAffineExpression, CheckedAffineExpressionKind, CheckedAffineRelation,
     CheckedArrayRoot, CheckedBooleanOperation, CheckedConst, CheckedConstructor,
-    CheckedContainerRoot, CheckedEnumType, CheckedExpression, CheckedFloatOperation,
-    CheckedFunction, CheckedIntegerOperation, CheckedLoopId, CheckedLoopInvariant, CheckedMatchArm,
-    CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedPlaceStep,
-    CheckedProofMultiplicity, CheckedProofUseSource, CheckedRangeSource, CheckedSetTarget,
-    CheckedStatement, CheckedType, CheckedValue, FloatType, IntegerType, MeasureCell, MeasuredKind,
+    CheckedContainerRoot, CheckedConversionMode, CheckedEnumType, CheckedExpression,
+    CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation, CheckedLoopId,
+    CheckedLoopInvariant, CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominalKind,
+    CheckedNumericType, CheckedPlaceStep, CheckedProofMultiplicity, CheckedProofUseSource,
+    CheckedRangeSource, CheckedSetTarget, CheckedStatement, CheckedType, CheckedValue, FloatType,
+    IntegerType, MeasureCell, MeasuredKind,
 };
 use super::super::permission::{PermissionSeparationProof, PermissionSeparationQuery};
 use super::super::places::{
@@ -381,6 +383,11 @@ enum ProofGoal<'a> {
     /// the one fixed two-operand interval-product rule. The consumer chooses
     /// none of those routes and performs no second query.
     IntegerDomain(IntegerDomainGoal<'a>),
+    ConversionDomain {
+        canonical: &'a GoalExpression,
+        operand: Option<TermId>,
+        image: Option<&'a AffineForm>,
+    },
     /// One exact relation `left - right <= bound`. OP-4 submits the
     /// same proposition through this entry; the finite signed form and the
     /// explicitly prepared affine forms are alternate representations of
@@ -2042,13 +2049,14 @@ impl Analyzer<'_, '_> {
             GoalExpression::Operation {
                 row:
                     GoalOperation::NumericConversion {
-                        source: CheckedNumericType::Integer(source),
-                        destination: CheckedNumericType::Integer(destination),
+                        mode: CheckedConversionMode::Exact,
+                        source: CheckedNumericType::Integer(_),
+                        destination: CheckedNumericType::Integer(_),
                     },
                 arguments,
                 result: CheckedType::Integer(_),
                 ..
-            } if source == destination || source.converts_totally_to(*destination) => {
+            } => {
                 let [value] = arguments.as_slice() else {
                     return None;
                 };
@@ -5149,6 +5157,7 @@ impl Analyzer<'_, '_> {
                     .collect::<Option<Vec<_>>>()?,
             ),
             CheckedExpression::NumericConversion {
+                mode,
                 source,
                 destination,
                 value,
@@ -5156,6 +5165,7 @@ impl Analyzer<'_, '_> {
                 ..
             } => build_operation(
                 GoalOperation::NumericConversion {
+                    mode: *mode,
                     source: *source,
                     destination: *destination,
                 },
@@ -7063,6 +7073,31 @@ impl Analyzer<'_, '_> {
                         && self.obligations_since_discharged(obligation_start),
                 }
             }
+            CheckedExpression::NumericConversion {
+                carrier,
+                mode: CheckedConversionMode::Exact,
+                source,
+                destination,
+                value,
+                ..
+            } => {
+                let reaches_operation = self.judge_children_reach_parent([value.as_ref()], states);
+                let obligation_start = self.obligations.len();
+                if reaches_operation {
+                    self.judge_conversion_domain_obligation(
+                        *source,
+                        *destination,
+                        value,
+                        carrier,
+                        states,
+                    );
+                }
+                ExpressionJudgment {
+                    prepared_call: None,
+                    reached: reaches_operation
+                        && self.obligations_since_discharged(obligation_start),
+                }
+            }
             _ => {
                 let reached =
                     self.judge_children_reach_parent(expression_children(expression), states);
@@ -7258,6 +7293,11 @@ impl Analyzer<'_, '_> {
                 self.prove_ordering(context, relation, affine)
             }
             ProofGoal::IntegerDomain(goal) => self.prove_integer_domain(context, goal),
+            ProofGoal::ConversionDomain {
+                canonical,
+                operand,
+                image,
+            } => self.prove_conversion_domain(context, canonical, operand, image),
             ProofGoal::BoundedRelation(goal) => self.prove_bounded_relation(context, goal),
             ProofGoal::NormalizedOrdering {
                 goal,
@@ -7329,6 +7369,34 @@ impl Analyzer<'_, '_> {
                 disposition: ProofDisposition::Proved,
                 route: Some(ProofRoute::Contradiction),
                 derivation: closed.contradiction_proof(),
+                numeric_upper_bound: None,
+                product_interval: None,
+            };
+        }
+
+        // Conversion domains give an established negative identity priority
+        // over the independent sufficient-range normalization.
+        if matches!(
+            expression,
+            GoalExpression::Operation {
+                row: GoalOperation::NumericConversion {
+                    mode: CheckedConversionMode::Defined,
+                    ..
+                },
+                ..
+            }
+        ) && closed.holds_opaque(goal, GoalSign::Negative)
+            && !closed.holds_opaque(goal, GoalSign::Positive)
+        {
+            return ProofResult {
+                disposition: ProofDisposition::Refuted,
+                route: Some(ProofRoute::SignedOrdinary {
+                    opaque: true,
+                    projection: false,
+                    normalization: false,
+                    introduction: false,
+                }),
+                derivation: None,
                 numeric_upper_bound: None,
                 product_interval: None,
             };
@@ -7511,6 +7579,16 @@ impl Analyzer<'_, '_> {
         }
 
         let proof = match expression {
+            GoalExpression::Operation {
+                row:
+                    GoalOperation::NumericConversion {
+                        mode: CheckedConversionMode::Defined,
+                        ..
+                    },
+                ..
+            } if sign == GoalSign::Positive => {
+                self.conversion_goal_bound_proof(context, expression, goal)
+            }
             GoalExpression::Operation {
                 row: GoalOperation::Boolean(operation),
                 arguments,
@@ -9943,6 +10021,9 @@ impl Analyzer<'_, '_> {
     /// a fixed L0 interpretation. Integer domains may use a small DNF;
     /// AllocationFit is one conjunction containing its ceiling comparison.
     fn goal_normalization(&mut self, expression: &GoalExpression) -> Option<GoalNormalization> {
+        if let Some(normalization) = self.conversion_goal_normalization(expression) {
+            return Some(normalization);
+        }
         if let Some(plan) = self.goal_integer_domain_plan(expression) {
             return Some(plan.normalization());
         }
@@ -10860,13 +10941,12 @@ impl Analyzer<'_, '_> {
                 }
             }
             CheckedExpression::NumericConversion {
-                source: CheckedNumericType::Integer(source),
-                destination: CheckedNumericType::Integer(destination),
+                mode: CheckedConversionMode::Exact,
+                source: CheckedNumericType::Integer(_),
+                destination: CheckedNumericType::Integer(_),
                 value,
                 ..
-            } if source == destination || source.converts_totally_to(*destination) => {
-                self.affine_pre_domain_form(value, state)
-            }
+            } => self.affine_pre_domain_form(value, state),
             CheckedExpression::IntegerOperation {
                 operation,
                 arguments,
@@ -12094,13 +12174,12 @@ impl Analyzer<'_, '_> {
                 }
             }
             CheckedExpression::NumericConversion {
-                source: CheckedNumericType::Integer(source),
-                destination: CheckedNumericType::Integer(destination),
+                mode: CheckedConversionMode::Exact,
+                source: CheckedNumericType::Integer(_),
+                destination: CheckedNumericType::Integer(_),
                 value,
                 ..
-            } if source == destination || source.converts_totally_to(*destination) => {
-                self.affine_pure_expression_form(value, state)
-            }
+            } => self.affine_pure_expression_form(value, state),
             CheckedExpression::IntegerOperation {
                 operation,
                 arguments,
@@ -16101,7 +16180,7 @@ impl Analyzer<'_, '_> {
                     .iter()
                     .map(|argument| self.render_concrete_goal(argument))
                     .collect::<Vec<_>>();
-                render_goal_row(row, &arguments)
+                render_goal_row(row, &arguments, self.context.declarations)
             }
         }
     }
@@ -16481,7 +16560,11 @@ fn element_write_place(mut base: ResolvedPlace, offset: CapturedValue) -> Resolv
 /// An operation whose [OP-1] spelling is a call name renders as a call; the
 /// arithmetic rows, whose only spelling is the infix operator [GRAM-6], render
 /// as the infix expression a writer would have to write.
-fn render_goal_row(row: &GoalOperation, arguments: &[String]) -> String {
+fn render_goal_row(
+    row: &GoalOperation,
+    arguments: &[String],
+    declarations: &[crate::DeclarationRecord],
+) -> String {
     match row {
         GoalOperation::Integer { operation, .. } => {
             render_operation_spelling(operation.spelling(), arguments)
@@ -16496,12 +16579,18 @@ fn render_goal_row(row: &GoalOperation, arguments: &[String]) -> String {
             render_operation_spelling(if *equal { "eeq" } else { "ene" }, arguments)
         }
         GoalOperation::NumericConversion {
+            mode,
             source,
             destination,
         } => format!(
-            "cvt::<{}, {}>({})",
-            numeric_type_name(*source),
-            numeric_type_name(*destination),
+            "{}::<{}, {}>({})",
+            match mode {
+                CheckedConversionMode::Exact => "cvt",
+                CheckedConversionMode::Checked => "cvt.checked",
+                CheckedConversionMode::Defined => "cvt.defined",
+            },
+            numeric_type_name(*source, declarations),
+            numeric_type_name(*destination, declarations),
             arguments.join(", ")
         ),
         GoalOperation::Reinterpret {
@@ -16509,8 +16598,8 @@ fn render_goal_row(row: &GoalOperation, arguments: &[String]) -> String {
             destination,
         } => format!(
             "reinterpret::<{}, {}>({})",
-            numeric_type_name(*source),
-            numeric_type_name(*destination),
+            numeric_type_name(*source, declarations),
+            numeric_type_name(*destination, declarations),
             arguments.join(", ")
         ),
         // [OP-15, MSR-1]: one quantity, one name, term and reader alike, and
@@ -16542,11 +16631,18 @@ fn render_operation_spelling(spelling: &str, arguments: &[String]) -> String {
     }
 }
 
-const fn numeric_type_name(ty: CheckedNumericType) -> &'static str {
+fn numeric_type_name(ty: CheckedNumericType, declarations: &[crate::DeclarationRecord]) -> String {
     match ty {
-        CheckedNumericType::Integer(integer) => integer_type_name(integer),
-        CheckedNumericType::Float(FloatType::F32) => "f32",
-        CheckedNumericType::Float(FloatType::F64) => "f64",
+        CheckedNumericType::Integer(integer) => integer_type_name(integer).to_owned(),
+        CheckedNumericType::Float(FloatType::F32) => "f32".to_owned(),
+        CheckedNumericType::Float(FloatType::F64) => "f64".to_owned(),
+        CheckedNumericType::GenericInteger(declaration)
+        | CheckedNumericType::GenericFloat(declaration) => {
+            declarations.get(declaration.index()).map_or_else(
+                || format!("<type-parameter:{}>", declaration.index()),
+                |record| record.spelling().to_owned(),
+            )
+        }
     }
 }
 
@@ -16680,6 +16776,7 @@ mod indexed_goal_kill_tests {
         let constant_ids = HashMap::new();
         let const_parameter_types = HashMap::new();
         let context = EntailmentContext {
+            declarations: &[],
             callees: &[],
             constants: &[],
             constant_ids: &constant_ids,

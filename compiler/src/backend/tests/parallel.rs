@@ -141,7 +141,7 @@ fn odd(v: u64) -> result: Bool pure {
 
 fn last_byte(v: u64) -> result: u8 pure {
   let low = iand(v, 255_u64);
-  match cvt::<u64, u8>(low) {
+  match cvt.checked::<u64, u8>(low) {
     Ok(value: byte) => {
       return byte;
     }
@@ -618,7 +618,7 @@ fn main() -> status: ExitStatus pure {
     set acc = acc +wrap 1_u64;
     set i = i +wrap 1_u64;
   }
-  match cvt::<u64, u8>(acc) {
+  match cvt.checked::<u64, u8>(acc) {
     Ok(value: code) => {
       return exit_status(code: code);
     }
@@ -773,7 +773,7 @@ fn main() -> status: ExitStatus pure {
   let total = spine(depth: DEPTH_u64, v: 1.0009765625_f64);
   let bits = reinterpret::<f64, u64>(total);
   let low = iand(bits, 1_u64);
-  match cvt::<u64, u8>(low) {
+  match cvt.checked::<u64, u8>(low) {
     Ok(value: byte) => {
       return exit_status(code: byte);
     }

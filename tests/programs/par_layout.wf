@@ -153,17 +153,11 @@ fn layout_banded(node: &Box<LNode>, words: &[f64], count: u64, inh: f64) -> resu
 fn hex_digit(v: u64) -> result: u8 pure {
   let nibble = iand(v, 15_u64);
   let small = nibble < 10_u64;
-  match cvt::<u64, u8>(nibble) {
-    Ok(value: byte) => {
-      if small {
-        return byte +wrap 48_u8;
-      }
-      return byte +wrap 87_u8;
-    }
-    Err(error: wide) => {
-      return 63_u8;
-    }
+  let byte = cvt::<u64, u8>(nibble);
+  if small {
+    return byte +wrap 48_u8;
   }
+  return byte +wrap 87_u8;
 }
 
 fn spell_hex(destination: &[u8], at: u64, value: u64) -> result: u64 writes(destination) {

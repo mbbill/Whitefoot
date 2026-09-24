@@ -5,6 +5,7 @@ impl FunctionEmitter<'_, '_> {
         &mut self,
         result: IrValueId,
         result_type: IrType,
+        mode: IrConversionMode,
         source_type: IrType,
         destination_type: IrType,
         value: IrValueId,
@@ -13,6 +14,7 @@ impl FunctionEmitter<'_, '_> {
             (IrType::Integer { .. }, IrType::Float { .. }) => self.emit_integer_to_float(
                 result,
                 result_type,
+                mode,
                 source_type,
                 destination_type,
                 value,
@@ -20,13 +22,19 @@ impl FunctionEmitter<'_, '_> {
             (IrType::Float { .. }, IrType::Integer { .. }) => self.emit_float_to_integer(
                 result,
                 result_type,
+                mode,
                 source_type,
                 destination_type,
                 value,
             ),
-            (IrType::Float { .. }, IrType::Float { .. }) => {
-                self.emit_float_to_float(result, result_type, source_type, destination_type, value)
-            }
+            (IrType::Float { .. }, IrType::Float { .. }) => self.emit_float_to_float(
+                result,
+                result_type,
+                mode,
+                source_type,
+                destination_type,
+                value,
+            ),
             _ => Err(BackendFailure::InvalidIr),
         }
     }
@@ -35,6 +43,7 @@ impl FunctionEmitter<'_, '_> {
         &mut self,
         result: IrValueId,
         result_type: IrType,
+        mode: IrConversionMode,
         source_type: IrType,
         destination_type: IrType,
         value: IrValueId,
@@ -56,10 +65,17 @@ impl FunctionEmitter<'_, '_> {
         }
         let total = (destination_width == 32 && source_width <= 16)
             || (destination_width == 64 && source_width <= 32);
-        let converted = if total {
-            if result_type != destination_type {
-                return Err(BackendFailure::InvalidIr);
-            }
+        if total && mode == IrConversionMode::Defined {
+            return self.emit_conversion_outcome(
+                result,
+                result_type,
+                mode,
+                destination_type,
+                "",
+                "true",
+            );
+        }
+        let converted = if mode == IrConversionMode::Exact {
             self.value_name(result)
         } else {
             format!("%{}", self.next_temporary()?)
@@ -73,8 +89,18 @@ impl FunctionEmitter<'_, '_> {
             self.value_name(value)
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-        if total {
+        if mode == IrConversionMode::Exact {
             return Ok(());
+        }
+        if total {
+            return self.emit_conversion_outcome(
+                result,
+                result_type,
+                mode,
+                destination_type,
+                &converted,
+                "true",
+            );
         }
 
         let recovered = self.next_temporary()?;
@@ -103,9 +129,10 @@ impl FunctionEmitter<'_, '_> {
             self.value_name(value)
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-        self.emit_narrow_result(
+        self.emit_conversion_outcome(
             result,
             result_type,
+            mode,
             destination_type,
             &converted,
             &format!("%{valid}"),
@@ -116,6 +143,7 @@ impl FunctionEmitter<'_, '_> {
         &mut self,
         result: IrValueId,
         result_type: IrType,
+        mode: IrConversionMode,
         source_type: IrType,
         destination_type: IrType,
         value: IrValueId,
@@ -137,14 +165,25 @@ impl FunctionEmitter<'_, '_> {
         }
         let source_ty = llvm_type(self.program, source_type)?;
         let destination_ty = llvm_type(self.program, destination_type)?;
-        let converted = self.next_temporary()?;
-        let reverse = self.next_temporary()?;
-        let equal = self.next_temporary()?;
         let opcode = if destination_signed {
             "fptosi"
         } else {
             "fptoui"
         };
+        if mode == IrConversionMode::Exact {
+            // The checked source obligation establishes the raw instruction's
+            // complete finite, integral and in-range domain.
+            return writeln!(
+                self.output,
+                "  {} = {opcode} {source_ty} {} to {destination_ty}",
+                self.value_name(result),
+                self.value_name(value)
+            )
+            .map_err(|_| BackendFailure::TextEmission);
+        }
+        let converted = self.next_temporary()?;
+        let reverse = self.next_temporary()?;
+        let equal = self.next_temporary()?;
         let intrinsic = format!("llvm.{opcode}.sat.i{destination_width}.f{source_width}");
         self.intrinsics.insert(IntrinsicDeclaration::UnaryCast {
             name: intrinsic.clone(),
@@ -190,9 +229,10 @@ impl FunctionEmitter<'_, '_> {
             .map_err(|_| BackendFailure::TextEmission)?;
             format!("%{valid}")
         };
-        self.emit_narrow_result(
+        self.emit_conversion_outcome(
             result,
             result_type,
+            mode,
             destination_type,
             &format!("%{converted}"),
             &valid,
@@ -203,6 +243,7 @@ impl FunctionEmitter<'_, '_> {
         &mut self,
         result: IrValueId,
         result_type: IrType,
+        mode: IrConversionMode,
         source_type: IrType,
         destination_type: IrType,
         value: IrValueId,
@@ -218,64 +259,77 @@ impl FunctionEmitter<'_, '_> {
         else {
             return Err(BackendFailure::InvalidIr);
         };
-        if (source_width, destination_width) == (32, 64) {
-            if result_type != destination_type {
-                return Err(BackendFailure::InvalidIr);
-            }
-            return self.emit_widened_float(result, source_type, destination_type, value);
-        }
-        if (source_width, destination_width) != (64, 32) {
-            return Err(BackendFailure::InvalidIr);
+        let opcode = match (source_width, destination_width) {
+            (32, 64) => "fpext",
+            (64, 32) => "fptrunc",
+            _ => return Err(BackendFailure::InvalidIr),
+        };
+        let total = source_width < destination_width;
+        if total && mode == IrConversionMode::Defined {
+            return self.emit_conversion_outcome(
+                result,
+                result_type,
+                mode,
+                destination_type,
+                "",
+                "true",
+            );
         }
 
         let source_ty = llvm_type(self.program, source_type)?;
         let destination_ty = llvm_type(self.program, destination_type)?;
         let converted = self.next_temporary()?;
-        let widened = self.next_temporary()?;
-        let exact = self.next_temporary()?;
         let nan = self.next_temporary()?;
-        let valid = self.next_temporary()?;
-        let selected = self.next_temporary()?;
-        let canonical_nan = canonical_nan_operand(destination_type)?;
         writeln!(
             self.output,
-            "  %{converted} = fptrunc {source_ty} {} to {destination_ty}\n  %{widened} = fpext {destination_ty} %{converted} to {source_ty}\n  %{exact} = fcmp oeq {source_ty} {}, %{widened}\n  %{nan} = fcmp uno {source_ty} {}, {}\n  %{valid} = or i1 %{nan}, %{exact}\n  %{selected} = select i1 %{nan}, {destination_ty} {canonical_nan}, {destination_ty} %{converted}",
-            self.value_name(value),
+            "  %{converted} = {opcode} {source_ty} {} to {destination_ty}\n  %{nan} = fcmp uno {source_ty} {}, {}",
             self.value_name(value),
             self.value_name(value),
             self.value_name(value)
         )
         .map_err(|_| BackendFailure::TextEmission)?;
-        self.emit_narrow_result(
-            result,
-            result_type,
-            destination_type,
-            &format!("%{selected}"),
-            &format!("%{valid}"),
-        )
-    }
-
-    fn emit_widened_float(
-        &mut self,
-        result: IrValueId,
-        source_type: IrType,
-        destination_type: IrType,
-        value: IrValueId,
-    ) -> Result<(), BackendFailure> {
-        let source_ty = llvm_type(self.program, source_type)?;
-        let destination_ty = llvm_type(self.program, destination_type)?;
-        let widened = self.next_temporary()?;
-        let nan = self.next_temporary()?;
-        let canonical_nan = canonical_nan_operand(destination_type)?;
-        writeln!(
-            self.output,
-            "  %{widened} = fpext {source_ty} {} to {destination_ty}\n  %{nan} = fcmp uno {source_ty} {}, {}\n  {} = select i1 %{nan}, {destination_ty} {canonical_nan}, {destination_ty} %{widened}",
-            self.value_name(value),
-            self.value_name(value),
-            self.value_name(value),
-            self.value_name(result)
-        )
-        .map_err(|_| BackendFailure::TextEmission)
+        let valid = if total || mode == IrConversionMode::Exact {
+            "true".to_owned()
+        } else {
+            let widened = self.next_temporary()?;
+            let exact = self.next_temporary()?;
+            let valid = self.next_temporary()?;
+            writeln!(
+                self.output,
+                "  %{widened} = fpext {destination_ty} %{converted} to {source_ty}\n  %{exact} = fcmp oeq {source_ty} {}, %{widened}\n  %{valid} = or i1 %{nan}, %{exact}",
+                self.value_name(value)
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+            format!("%{valid}")
+        };
+        let selected = if mode == IrConversionMode::Defined {
+            String::new()
+        } else {
+            let selected = if mode == IrConversionMode::Exact {
+                self.value_name(result)
+            } else {
+                format!("%{}", self.next_temporary()?)
+            };
+            let canonical_nan = canonical_nan_operand(destination_type)?;
+            writeln!(
+                self.output,
+                "  {selected} = select i1 %{nan}, {destination_ty} {canonical_nan}, {destination_ty} %{converted}"
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+            selected
+        };
+        if mode == IrConversionMode::Exact {
+            Ok(())
+        } else {
+            self.emit_conversion_outcome(
+                result,
+                result_type,
+                mode,
+                destination_type,
+                &selected,
+                &valid,
+            )
+        }
     }
 }
 

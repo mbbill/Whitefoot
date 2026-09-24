@@ -274,7 +274,7 @@ fn mix(seed: u64, salt: u64, rounds: u64) -> result: u64 pure {
 
 fn low_byte(v: u64) -> result: u8 pure {
   let low = iand(v, 255_u64);
-  match cvt::<u64, u8>(low) {
+  match cvt.checked::<u64, u8>(low) {
     Ok(value: byte) => {
       return byte;
     }
@@ -363,7 +363,7 @@ const INDEPENDENT_MAP: &[u8] = br#"fn mix(seed: u64) -> result: u64 pure {
 
 fn low_byte(v: u64) -> result: u8 pure {
   let low = iand(v, 255_u64);
-  match cvt::<u64, u8>(low) {
+  match cvt.checked::<u64, u8>(low) {
     Ok(value: byte) => {
       return byte;
     }
@@ -1668,7 +1668,7 @@ const COMBINE_PRELUDE: &str = r#"fn mix(seed: u64) -> result: u64 pure {
 
 fn low_byte(v: u64) -> result: u8 pure {
   let low = iand(v, 255_u64);
-  match cvt::<u64, u8>(low) {
+  match cvt.checked::<u64, u8>(low) {
     Ok(value: byte) => {
       return byte;
     }

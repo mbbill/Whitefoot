@@ -12,6 +12,12 @@ fn main() -> status: ExitStatus pure {
   doc "The caller.";
   let cell = Cell(count: 4_u64);
   let seen = drain(cell: &cell);
-  let code = cvt::<u64, u8>(seen);
-  return exit_status(code: code);
+  match cvt.checked::<u64, u8>(seen) {
+    Ok(value: code) => {
+      return exit_status(code: code);
+    }
+    Err(error: refused) => {
+      return exit_status(code: 1_u8);
+    }
+  }
 }

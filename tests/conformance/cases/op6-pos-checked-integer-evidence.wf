@@ -1,0 +1,62 @@
+const values: Array<u8, 4> =[10_u8, 20_u8, 30_u8, 40_u8];
+
+fn captured(index: u64) -> result: u8 pure contract {
+  requires index < 4_u64;
+} {
+  let pending = cvt.checked::<u64, u8>(index);
+  let saved = pending;
+  set index = 1000_u64;
+  match saved {
+    Ok(value: small) => {
+      let old_index = cvt::<u8, u64>(small);
+      return values[old_index];
+    }
+    Err(error: refused) => {
+      return 0_u8;
+    }
+  }
+}
+
+fn joined(value: u64, narrow: Bool) -> result: Result<u8, NarrowError> pure contract {
+  requires value < 8_u64;
+  ensures when Ok(value: payload): payload < 8_u8;
+} {
+  let outcome = if narrow {
+    let low = iand(value, 3_u64);
+    give cvt.checked::<u64, u8>(low);
+  } else {
+    give cvt.checked::<u64, u8>(value);
+  }
+  return outcome;
+}
+
+fn main() -> status: ExitStatus pure {
+  doc "Checked integer conversion captures the evaluated input before mutation, keeps its ordinary L0 bounds through a copied Result, and joins weaker success bounds through existing give and forwarded-return transport.";
+  let selected = captured(index: 2_u64);
+  if selected != 30_u8 {
+    return exit_status(code: 1_u8);
+  }
+  let narrow = True();
+  match joined(value: 7_u64, narrow: narrow) {
+    Ok(value: small) => {
+      if small != 3_u8 {
+        return exit_status(code: 2_u8);
+      }
+    }
+    Err(error: refused) => {
+      return exit_status(code: 3_u8);
+    }
+  }
+  let wide = False();
+  match joined(value: 7_u64, narrow: wide) {
+    Ok(value: small) => {
+      if small != 7_u8 {
+        return exit_status(code: 4_u8);
+      }
+    }
+    Err(error: refused) => {
+      return exit_status(code: 5_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

@@ -320,7 +320,7 @@ const ALL_HEAP_FORMS: &[u8] = br#"fn shapes(n: u64) -> result: u64 pure {
 
 fn main() -> status: ExitStatus pure {
   let total = shapes(n: 4_u64);
-  match cvt::<u64, u8>(total) {
+  match cvt.checked::<u64, u8>(total) {
     Ok(value: byte) => {
       return exit_status(code: byte);
     }
@@ -651,7 +651,7 @@ fn main(inputs: Inputs) -> status: ExitStatus pure {
   close_directory(factory: &entry_factory, directory: move unused_cwd);
   let count = 0_u64;
   set count = args_count(args: &args);
-  match cvt::<u64, u8>(count) {
+  match cvt.checked::<u64, u8>(count) {
     Ok(value: idx) => {
       let depth = count *wrap 20000_u64;
       let r = spine(depth: depth, v: 3_u64, i: idx);

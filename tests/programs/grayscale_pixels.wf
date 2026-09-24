@@ -9,7 +9,7 @@ fn grayscale_value(red: u8, green: u8, blue: u8) -> result: Result<u8, NarrowErr
   let total = fadd.strict(red_green, blue_float);
   let average = fdiv.strict(total, 3.0_f32);
   let rounded = froundeven(average);
-  return cvt::<f32, u8>(rounded);
+  return cvt.checked::<f32, u8>(rounded);
 }
 
 fn grayscale(input: &[u8], output: &[u8]) -> result: Result<unit, NarrowError> reads(input), writes(output) contract {

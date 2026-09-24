@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-23 Adopt uniform exact numeric conversions
+
+Nodes: language/numeric-conversion, compiler/numeric-conversion-lowering
+
+Owner-approved: After the final PR #99 handoff and clean DCR at 5d29d4665, the owner explicitly agreed to the revisions: adopt the complete language and compiler proposals, retaining the independent modular-conversion proposal for later work.
+
+Summary: Apply the two reviewed proposal bodies unchanged: uniform exact, checked and domain-query interfaces, same-type bit copies, captured integer Result equality, explicit conversion modes, direct proved lowering and positive-only sufficient bounds within the existing proof machinery. Name the compiler node numeric-conversion-lowering to preserve globally unique node names. The [conversion comparison](../research/investigations/numeric-conversions/DESIGN.md#design-alternatives) records the alternatives and grounds. Defer integer `cvt.wrap` to the maintained TODO because it selects a separate result policy beyond this exact-conversion scope; do not adopt it into the language or this implementation. Remove all three resolved amendments and their directory. The specification and implementation are unchanged by this ruling; it does not authorize a merge.
+
 ## 2026-09-23 Fit aggregate loop captures to the selected target
 
 Nodes: compiler/parallel-lowering/two-worlds

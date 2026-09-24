@@ -218,10 +218,292 @@ fn main() -> status: ExitStatus pure {
 }
 
 #[test]
-fn generic_conversion_is_reported_as_unsupported_instead_of_invalid_source() {
-    let source = br#"fn convert<T: Int>(value: T) -> result: unit pure {
-  cvt::<T, u64>(value);
+fn unused_generic_exact_conversion_requires_the_complete_bound_domain() {
+    // Numeric generics now have ordinary OP-6 obligations. A safe concrete
+    // call cannot authorize the unused or canonical symbolic body's cast.
+    for call in ["", "  let result = convert::<u8>(value: 7_u8);\n"] {
+        let source = format!(
+            "fn convert<T: Int>(value: T) -> result: u64 pure {{
+  return cvt::<T, u64>(value);
+}}
+
+fn main() -> status: ExitStatus pure {{
+{call}  return exit_status(code: 0_u8);
+}}
+"
+        );
+        assert_rule_kind(source.as_bytes(), SemanticRule::Op6, |kind| {
+            matches!(
+                kind,
+                SemanticIssueKind::UndischargedConversionDomainObligation { .. }
+            )
+        });
+    }
+}
+
+#[test]
+fn generic_conversion_interfaces_accept_each_numeric_bound_pair() {
+    for (source_bound, destination_bound, source_type, destination_type, literal) in [
+        ("Int", "Int", "u32", "u8", "7_u32"),
+        ("Int", "Float", "u32", "f32", "7_u32"),
+        ("Float", "Int", "f64", "i32", "7.0_f64"),
+        ("Float", "Float", "f64", "f32", "7.0_f64"),
+    ] {
+        let source = format!(
+            "fn attempt<S: {source_bound}, D: {destination_bound}>(value: S) -> result: Result<D, NarrowError> pure {{
+  return cvt.checked::<S, D>(value);
+}}
+
+fn convert<S: {source_bound}, D: {destination_bound}>(value: S) -> result: D pure contract {{
+  requires cvt.defined::<S, D>(value);
+}} {{
+  let local_attempt = cvt.checked::<S, D>(value);
+  let permitted = cvt.defined::<S, D>(value);
+  return cvt::<S, D>(value);
+}}
+
+fn forward<A: {source_bound}, B: {destination_bound}>(value: A) -> result: B pure contract {{
+  requires cvt.defined::<A, B>(value);
+}} {{
+  return convert::<A, B>(value: value);
+}}
+
+fn main() -> status: ExitStatus pure {{
+  let attempted = attempt::<{source_type}, {destination_type}>(value: {literal});
+  let result = forward::<{source_type}, {destination_type}>(value: {literal});
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::Complete(checked) = outcome else {
+                panic!("{source_bound} to {destination_bound} conversion must check: {outcome:?}");
+            };
+            lower_checked(*checked, OverlapLowering::Off)
+                .expect("concrete conversion endpoints must lower");
+        });
+    }
+}
+
+#[test]
+fn generic_total_conversions_preserve_repeated_type_identity() {
+    let source = br#"fn same_integer<T: Int>(value: T) -> result: T pure {
+  let attempt_result = cvt.checked::<T, T>(value);
+  return cvt::<T, T>(value);
+}
+
+fn same_float<T: Float>(value: T) -> result: T pure {
+  let attempt_result = cvt.checked::<T, T>(value);
+  return cvt::<T, T>(value);
+}
+
+fn widen_float<T: Float>(value: T) -> result: f64 pure {
+  return cvt::<T, f64>(value);
+}
+
+fn small_float<T: Float>(value: u8) -> result: T pure {
+  return cvt::<u8, T>(value);
+}
+
+fn main() -> status: ExitStatus pure {
+  let integer = same_integer::<i64>(value: -1_i64);
+  let floating = same_float::<f32>(value: -0.0_f32);
+  let wide = widen_float::<f32>(value: floating);
+  let same = widen_float::<f64>(value: wide);
+  let small = small_float::<f32>(value: 255_u8);
+  let large = small_float::<f64>(value: 255_u8);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("correlated and universally total numeric pairs must check: {outcome:?}");
+        };
+        lower_checked(*checked, OverlapLowering::Off)
+            .expect("universally total conversion instances must lower");
+    });
+}
+
+#[test]
+fn generic_conversion_constants_use_exact_values_without_selecting_widths() {
+    let source = br#"const small: u32 = 127_u32;
+
+const exact_integer: u32 = 16777218_u32;
+
+const half: f64 = 0.5_f64;
+
+fn integer_identities<T: Int, D: Int>() -> result: D pure {
+  let zero = cvt::<T, D>(0_T);
+  return cvt::<T, D>(1_T);
+}
+
+fn integer_float_identities<T: Int, D: Float>() -> result: D pure {
+  let zero = cvt::<T, D>(0_T);
+  return cvt::<T, D>(1_T);
+}
+
+fn float_integer_identities<T: Float, D: Int>() -> result: D pure {
+  let zero = cvt::<T, D>(0_T);
+  return cvt::<T, D>(1_T);
+}
+
+fn float_identities<T: Float, D: Float>() -> result: D pure {
+  let zero = cvt::<T, D>(0_T);
+  return cvt::<T, D>(1_T);
+}
+
+fn small_integer<D: Int>() -> result: D pure {
+  return cvt::<u32, D>(small);
+}
+
+fn sparse_float<D: Float>() -> result: D pure {
+  return cvt::<u32, D>(exact_integer);
+}
+
+fn integral_float<D: Int>() -> result: D pure {
+  return cvt::<f64, D>(1.0_f64);
+}
+
+fn fractional_float<D: Float>() -> result: D pure {
+  return cvt::<f64, D>(half);
+}
+
+fn require_exact<D: Float>(value: u32) -> result: unit pure contract {
+  requires cvt.defined::<u32, D>(value);
+} {
   return unit;
+}
+
+fn forward_exact<D: Float>() -> result: unit pure {
+  return require_exact::<D>(value: 16777218_u32);
+}
+
+fn main() -> status: ExitStatus pure {
+  let integer = integer_identities::<u64, i8>();
+  let integer_float = integer_float_identities::<i64, f32>();
+  let float_integer = float_integer_identities::<f64, u8>();
+  let floating = float_identities::<f64, f32>();
+  let small_value = small_integer::<i8>();
+  let sparse = sparse_float::<f32>();
+  let integral = integral_float::<u8>();
+  let half_value = fractional_float::<f32>();
+  let forwarded = forward_exact::<f32>();
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("uniform symbolic constant domains must check: {outcome:?}");
+        };
+        lower_checked(*checked, OverlapLowering::Off)
+            .expect("symbolic constant conversion instances must lower");
+    });
+}
+
+#[test]
+fn mixed_generic_constant_domains_prove_neither_truth_sign() {
+    let exact = br#"fn invalid<D: Float>() -> result: D pure {
+  return cvt::<u32, D>(16777217_u32);
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(exact, SemanticRule::Op6, |kind| {
+        matches!(
+            kind,
+            SemanticIssueKind::UndischargedConversionDomainObligation {
+                disposition: crate::StaticObligationDisposition::Unproved,
+                ..
+            }
+        )
+    });
+    let positive_requirement = br#"fn invalid<D: Float>(value: f64) -> result: i32 pure contract {
+  requires cvt.defined::<u32, D>(16777217_u32);
+} {
+  return cvt::<f64, i32>(value);
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(positive_requirement, SemanticRule::Op6, |kind| {
+        matches!(
+            kind,
+            SemanticIssueKind::UndischargedConversionDomainObligation { .. }
+        )
+    });
+    let negative_requirement = br#"fn require_inexact<D: Float>() -> result: unit pure contract {
+  define exact = cvt.defined::<u32, D>(16777217_u32);
+  requires bnot(exact);
+} {
+  return unit;
+}
+
+fn invalid<D: Float>() -> result: unit pure {
+  return require_inexact::<D>();
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(negative_requirement, SemanticRule::Fn8, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedCallRequirement { .. })
+    });
+}
+
+#[test]
+fn distinct_generic_numeric_parameters_keep_their_domain_identity() {
+    for (bound, source_type, destination_type, literal) in [
+        ("Int", "u8", "u16", "1_u8"),
+        ("Float", "f32", "f64", "1.0_f32"),
+    ] {
+        let source = format!(
+            "fn invalid<S: {bound}, D: {bound}>(value: S) -> result: D pure {{
+  return cvt::<S, D>(value);
+}}
+
+fn main() -> status: ExitStatus pure {{
+  let result = invalid::<{source_type}, {destination_type}>(value: {literal});
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        assert_rule_kind(source.as_bytes(), SemanticRule::Op6, |kind| {
+            matches!(
+                kind,
+                SemanticIssueKind::UndischargedConversionDomainObligation { residual, .. }
+                    if residual == "cvt.defined::<S, D>(value)"
+            )
+        });
+    }
+}
+
+#[test]
+fn numeric_conversion_does_not_grant_an_unbounded_type_numeric_capability() {
+    let source = br#"fn invalid<T>(value: T) -> result: u64 pure {
+  return cvt::<T, u64>(value);
+}
+
+fn main() -> status: ExitStatus pure {
+  let result = invalid::<u8>(value: 7_u8);
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule(
+        source,
+        SemanticRule::Op1,
+        SemanticIssueKind::InvalidOperation,
+    );
+}
+
+#[test]
+fn generic_reinterpret_keeps_its_existing_capability_boundary() {
+    let source = br#"fn reinterpret_value<T: Int>(value: T) -> result: u32 pure {
+  return reinterpret::<T, u32>(value);
 }
 
 fn main() -> status: ExitStatus pure {
@@ -229,6 +511,113 @@ fn main() -> status: ExitStatus pure {
 }
 "#;
     assert_unsupported(source, UnsupportedSemanticFeature::Generics);
+}
+
+#[test]
+fn generic_conversion_requirements_follow_forwarded_const_arguments() {
+    let source = br#"fn convert<const value: u32>() -> result: u8 pure contract {
+  requires cvt.defined::<u32, u8>(value);
+} {
+  return cvt::<u32, u8>(value);
+}
+
+fn forward<const value: u32>() -> result: u8 pure contract {
+  requires cvt.defined::<u32, u8>(value);
+} {
+  return convert::<value>();
+}
+
+fn main() -> status: ExitStatus pure {
+  let result = forward::<7>();
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+    let out_of_range = std::str::from_utf8(source)
+        .unwrap()
+        .replace("forward::<7>", "forward::<256>");
+    assert_rule_kind(out_of_range.as_bytes(), SemanticRule::Fn8, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
+    });
+}
+
+#[test]
+fn conversion_clause_definitions_admit_only_universally_total_exact_pairs() {
+    let source = br#"fn same<T: Float>(value: T) -> result: T pure contract {
+  define copied = cvt::<T, T>(value);
+  requires cvt.defined::<T, T>(copied);
+} {
+  return value;
+}
+
+fn small<T: Float>(value: u8) -> result: T pure contract {
+  define widened = cvt::<u8, T>(value);
+  requires cvt.defined::<T, f64>(widened);
+} {
+  return cvt::<u8, T>(value);
+}
+
+fn main() -> status: ExitStatus pure {
+  let same_value = same::<f64>(value: 1.0_f64);
+  let converted = small::<f32>(value: 7_u8);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "{outcome:?}"
+        );
+    });
+    for (source_type, destination_type) in [("u32", "u8"), ("S", "D")] {
+        let parameters = if source_type == "S" {
+            "<S: Int, D: Int>"
+        } else {
+            ""
+        };
+        let source = format!(
+            "fn invalid{parameters}(value: {source_type}, witness: {destination_type}) -> result: unit pure contract {{
+  requires cvt.defined::<{source_type}, {destination_type}>(value);
+  requires cvt::<{source_type}, {destination_type}>(value) == witness;
+}} {{
+  return unit;
+}}
+
+fn main() -> status: ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        assert_rule(
+            source.as_bytes(),
+            SemanticRule::Fn8,
+            SemanticIssueKind::InvalidRequires,
+        );
+    }
+}
+
+#[test]
+fn conversion_defined_does_not_extend_the_postcondition_relation_fragment() {
+    let source = br#"fn invalid<T: Float>(value: T) -> result: u8 pure contract {
+  ensures cvt.defined::<T, T>(value);
+} {
+  return 0_u8;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule(
+        source,
+        SemanticRule::Fn9,
+        SemanticIssueKind::InvalidPostconditionRelation,
+    );
 }
 
 #[test]

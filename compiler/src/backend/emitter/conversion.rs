@@ -7,17 +7,48 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         &mut self,
         result: IrValueId,
         result_type: IrType,
+        mode: IrConversionMode,
         source_type: IrType,
         destination_type: IrType,
         value: IrValueId,
     ) -> Result<(), BackendFailure> {
-        if source_type == destination_type || self.value_type(value) != Some(source_type) {
+        if self.value_type(value) != Some(source_type)
+            || (mode == IrConversionMode::Exact && result_type != destination_type)
+            || (mode == IrConversionMode::Defined && result_type != IrType::Bool)
+        {
             return Err(BackendFailure::InvalidIr);
+        }
+        if source_type == destination_type {
+            if !matches!(source_type, IrType::Integer { .. } | IrType::Float { .. }) {
+                return Err(BackendFailure::InvalidIr);
+            }
+            if mode == IrConversionMode::Exact {
+                let ty = llvm_type(self.program, source_type)?;
+                // `select` is a representation copy. Floating arithmetic here
+                // could quiet a signaling NaN or change a signed zero.
+                return writeln!(
+                    self.output,
+                    "  {} = select i1 true, {ty} {}, {ty} {}",
+                    self.value_name(result),
+                    self.value_name(value),
+                    self.value_name(value)
+                )
+                .map_err(|_| BackendFailure::TextEmission);
+            }
+            return self.emit_conversion_outcome(
+                result,
+                result_type,
+                mode,
+                destination_type,
+                &self.value_name(value),
+                "true",
+            );
         }
         match (source_type, destination_type) {
             (IrType::Integer { .. }, IrType::Integer { .. }) => self.emit_integer_conversion(
                 result,
                 result_type,
+                mode,
                 source_type,
                 destination_type,
                 value,
@@ -27,6 +58,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             | (IrType::Float { .. }, IrType::Float { .. }) => self.emit_float_endpoint_conversion(
                 result,
                 result_type,
+                mode,
                 source_type,
                 destination_type,
                 value,
@@ -39,6 +71,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         &mut self,
         result: IrValueId,
         result_type: IrType,
+        mode: IrConversionMode,
         source_type: IrType,
         destination_type: IrType,
         value: IrValueId,
@@ -58,40 +91,74 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         };
         let total = source_width < destination_width
             && (source_signed == destination_signed || (!source_signed && destination_signed));
-        let converted = if total {
-            if result_type != destination_type {
-                return Err(BackendFailure::InvalidIr);
-            }
-            self.value_name(result)
-        } else {
-            format!("%{}", self.next_temporary()?)
-        };
-        self.emit_integer_cast(
-            &converted,
-            value,
-            source_width,
-            source_signed,
-            destination_width,
-            destination_signed,
-        )?;
-        if total {
-            return Ok(());
+        if mode == IrConversionMode::Exact {
+            return self.emit_integer_cast(
+                &self.value_name(result),
+                value,
+                source_width,
+                source_signed,
+                destination_width,
+            );
         }
-
-        let valid = self.emit_integer_conversion_validity(
-            value,
-            source_width,
-            source_signed,
-            destination_width,
-            destination_signed,
-        )?;
-        self.emit_narrow_result(
+        let valid = if total {
+            "true".to_owned()
+        } else {
+            format!(
+                "%{}",
+                self.emit_integer_conversion_validity(
+                    value,
+                    source_width,
+                    source_signed,
+                    destination_width,
+                    destination_signed,
+                )?
+            )
+        };
+        let converted = if mode == IrConversionMode::Checked {
+            let converted = format!("%{}", self.next_temporary()?);
+            self.emit_integer_cast(
+                &converted,
+                value,
+                source_width,
+                source_signed,
+                destination_width,
+            )?;
+            converted
+        } else {
+            // A domain-only integer conversion needs no converted payload.
+            String::new()
+        };
+        self.emit_conversion_outcome(
             result,
             result_type,
+            mode,
             destination_type,
             &converted,
-            &format!("%{valid}"),
+            &valid,
         )
+    }
+
+    fn emit_conversion_outcome(
+        &mut self,
+        result: IrValueId,
+        result_type: IrType,
+        mode: IrConversionMode,
+        destination_type: IrType,
+        converted: &str,
+        valid: &str,
+    ) -> Result<(), BackendFailure> {
+        match mode {
+            IrConversionMode::Checked => {
+                self.emit_narrow_result(result, result_type, destination_type, converted, valid)
+            }
+            IrConversionMode::Defined if result_type == IrType::Bool => writeln!(
+                self.output,
+                "  {} = or i1 {valid}, false",
+                self.value_name(result)
+            )
+            .map_err(|_| BackendFailure::TextEmission),
+            _ => Err(BackendFailure::InvalidIr),
+        }
     }
 
     fn emit_narrow_result(
@@ -125,12 +192,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         source_width: u8,
         source_signed: bool,
         destination_width: u8,
-        destination_signed: bool,
     ) -> Result<(), BackendFailure> {
         let source = self.value_name(value);
         let opcode = if source_width > destination_width {
             "trunc"
-        } else if source_width < destination_width && source_signed && destination_signed {
+        } else if source_width < destination_width && source_signed {
             "sext"
         } else if source_width < destination_width {
             "zext"

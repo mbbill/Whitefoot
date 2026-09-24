@@ -533,3 +533,38 @@ does not assert that it is Ok. A branch join keeps only common consequences:
 `payload < 8` on one path and `payload < 10` on another retain `payload < 10`.
 An unchanged outcome can cross a loop head; one changed by a continuing
 backedge cannot reuse the initial payload's evidence there.
+
+`cvt.checked` between integer types supplies the same kind of conditional
+evidence: its success payload equals the input value evaluated by that call.
+Saving the outcome before changing the input preserves the old payload's
+bounds. A conversion involving a float supplies no such numeric relation or
+domain fact; use its payload directly or test `cvt.defined` on the input.
+
+## P16. Choose a conversion interface from the intended behavior
+
+Use bare `cvt` when the surrounding invariant proves exact representability.
+Its result is always the destination type, and its proof adds no runtime
+validity branch [OP-6, ENT-6].
+
+```whitefoot
+fn byte(value: u32) -> result: u8 pure contract {
+  requires value <= 255_u32;
+} {
+  return cvt::<u32, u8>(value);
+}
+```
+
+Use `cvt.checked::<Src, Dst>(value)` when out-of-domain input is an intended
+failure; it always returns `Result<Dst, NarrowError>`, including widening and
+identity pairs. Use `cvt.defined::<Src, Dst>(value)` when the program needs a
+Boolean domain answer. Its true branch proves a bare conversion of that same
+value and type pair; calculating and ignoring the Bool proves nothing.
+
+Integer bounds can prove narrowing or signedness changes. For conversion to
+f32, the interval from -2^24 through 2^24 is a sufficient automatic proof;
+larger exactly representable constants also work. A float's integer range
+alone does not prove integrality: branch on the exact domain query or declare
+that query as a requirement. Generic helpers can use `Int` or `Float` endpoint
+bounds and a `cvt.defined` requirement without changing their return type when
+the selected pair changes. Same-type conversion copies bits, while conversion
+between float formats uses the destination's canonical quiet NaN [OP-6].

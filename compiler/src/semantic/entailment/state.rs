@@ -90,6 +90,14 @@ pub(crate) struct GoalNormalization {
 }
 
 impl GoalNormalization {
+    /// A sufficient positive conjunction. Its failure says nothing about the
+    /// domain's complement, so it supplies no negative clause.
+    pub(crate) fn sufficient_conjunction(components: Vec<Option<Relation>>) -> Self {
+        let mut normalization = Self::conjunction(components);
+        normalization.negative_clauses.clear();
+        normalization
+    }
+
     /// A fixed conjunction and its exact De Morgan negation.
     pub(crate) fn conjunction(components: Vec<Option<Relation>>) -> Self {
         let count = u32::try_from(components.len())
@@ -404,6 +412,12 @@ pub(crate) enum DerivationNode {
     /// component proofs in ordinal order.
     IntegerDomain {
         goal: Option<GoalId>,
+        parents: Vec<DerivationId>,
+    },
+    /// An OP-6 domain established from the evaluated operand's upper and
+    /// lower bounds, in that order. The same rule answers FN-8 queries.
+    ConversionDomain {
+        goal: GoalId,
         parents: Vec<DerivationId>,
     },
     /// One fixed affine consequence used by an integer-domain, bounds,
@@ -760,6 +774,7 @@ impl DerivationNode {
             }
             Self::PostconditionAggregate { parents, .. }
             | Self::IntegerDomain { parents, .. }
+            | Self::ConversionDomain { parents, .. }
             | Self::AffineConsequence { parents, .. }
             | Self::GoalNormalization { parents, .. }
             | Self::BooleanIntroduction { parents, .. } => {
@@ -818,6 +833,7 @@ impl DerivationNode {
             Self::PostconditionDeliveryJoin { detail } => detail.parents.len(),
             Self::PostconditionAggregate { parents, .. } => parents.len(),
             Self::IntegerDomain { parents, .. }
+            | Self::ConversionDomain { parents, .. }
             | Self::AffineConsequence { parents, .. }
             | Self::GoalNormalization { parents, .. }
             | Self::BooleanIntroduction { parents, .. } => parents.len(),
@@ -854,6 +870,7 @@ impl DerivationNode {
         match self {
             Self::ResultTransport { .. } => 42,
             Self::ResultErr { .. } => 43,
+            Self::ConversionDomain { .. } => 44,
             Self::UnsignedDivisionProduct { .. } => 36,
             Self::SourceBound { .. } => 0,
             Self::SourceDistinct { .. } => 1,
@@ -926,6 +943,7 @@ pub(crate) enum DerivationRootKind {
         base: bool,
     },
     IntegerDomainObligation(u32),
+    ConversionDomainObligation(u32),
     CallGoal(u32),
     CallContract(u32),
     /// One declaration-only [FN-4] compatibility query. Its ledger and dense
@@ -1502,6 +1520,7 @@ impl DerivationLedger {
                         parents.capacity() * size_of::<DerivationId>()
                     }
                     DerivationNode::IntegerDomain { parents, .. }
+                    | DerivationNode::ConversionDomain { parents, .. }
                     | DerivationNode::GoalNormalization { parents, .. } => {
                         parents.capacity() * size_of::<DerivationId>()
                     }
@@ -1672,6 +1691,9 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
                     .map(|parent| parent.0)
             })
         }
+        DerivationNode::ConversionDomain { goal, parents } => (index == 0)
+            .then_some(goal.0)
+            .or_else(|| parents.get(index.checked_sub(1)?).map(|parent| parent.0)),
         DerivationNode::AffineConsequence {
             premises, parents, ..
         } => {
@@ -1952,6 +1974,7 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
             remap_id(negative, remap);
         }
         DerivationNode::IntegerDomain { parents, .. }
+        | DerivationNode::ConversionDomain { parents, .. }
         | DerivationNode::AffineConsequence { parents, .. }
         | DerivationNode::GoalNormalization { parents, .. }
         | DerivationNode::BooleanIntroduction { parents, .. } => {

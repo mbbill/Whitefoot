@@ -548,7 +548,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .first_child_with(call, Production::Callee)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let spelling = self.tree.direct_spelling(callee)?;
-            if spelling == b"cvt" {
+            if spelling == b"cvt.checked" {
                 self.ensure_conversion_result(call, substitution)?;
                 continue;
             }
@@ -616,19 +616,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             self.parse_type_with(source_node, substitution)?,
             self.parse_type_with(destination_node, substitution)?,
         );
-        let source = match source {
-            CheckedType::Integer(ty) => CheckedNumericType::Integer(ty),
-            CheckedType::Float(ty) => CheckedNumericType::Float(ty),
-            _ => return Ok(()),
-        };
-        let destination = match destination {
-            CheckedType::Integer(ty) => CheckedNumericType::Integer(ty),
-            CheckedType::Float(ty) => CheckedNumericType::Float(ty),
-            _ => return Ok(()),
-        };
-        if source == destination || source.converts_totally_to(destination) {
+        let (Some(_), Some(destination)) = (
+            CheckedNumericType::from_type(source),
+            CheckedNumericType::from_type(destination),
+        ) else {
             return Ok(());
-        }
+        };
         let error = CheckedType::Nominal(self.prelude_nominal(PreludeType::NarrowError)?);
         self.intern_prelude_nominal(PreludeType::Result(destination.ty(), error))?;
         Ok(())

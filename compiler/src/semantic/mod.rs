@@ -39,8 +39,8 @@ pub(crate) use loop_permission::{LoopActualization, LoopCombine, LoopPermission}
 
 pub(crate) use model::{
     BindingId, CheckedArrayRoot, CheckedBodyDisposition, CheckedBooleanOperation,
-    CheckedBufferRoot, CheckedConst, CheckedContainerRoot, CheckedDrop, CheckedElement,
-    CheckedEnumType, CheckedExpression, CheckedFloatOperation, CheckedFunction,
+    CheckedBufferRoot, CheckedConst, CheckedContainerRoot, CheckedConversionMode, CheckedDrop,
+    CheckedElement, CheckedEnumType, CheckedExpression, CheckedFloatOperation, CheckedFunction,
     CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedLoopId,
     CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedNumericType,
     CheckedOwnedTakeCleanup, CheckedParameter, CheckedPlaceStep, CheckedProgramData,
@@ -799,6 +799,12 @@ pub enum SemanticIssueKind {
         /// The exact non-discharged disposition.
         disposition: StaticObligationDisposition,
         /// The mechanical fix OP-2 names.
+        mechanical_fix: &'static str,
+    },
+    /// One exact numeric conversion lacks its OP-6 domain proof.
+    UndischargedConversionDomainObligation {
+        residual: String,
+        disposition: StaticObligationDisposition,
         mechanical_fix: &'static str,
     },
     /// A runtime-sized buffer allocation lacks an OP-9 fit proof.

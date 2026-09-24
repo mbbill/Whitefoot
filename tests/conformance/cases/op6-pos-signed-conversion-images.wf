@@ -3,7 +3,7 @@ fn widen_ok(x: u16) -> result: i32 pure {
 }
 
 fn to_unsigned(x: i32) -> result: u32 pure {
-  match cvt::<i32, u32>(x) {
+  match cvt.checked::<i32, u32>(x) {
     Ok(value: v) => {
       return v;
     }
