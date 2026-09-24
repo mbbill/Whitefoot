@@ -1,0 +1,8 @@
+Node: compiler/backend-facts
+
+Decision: Pass a range-reference parameter across every call boundary as its element pointer and count, and give that pointer the reference facts except `dereferenceable`, because an LLVM aggregate parameter cannot carry pointer attributes, every admitted target already passes the `{ ptr, i64 }` pair's two words as independent arguments, and the [range-reference fact investigation](../../research/investigations/range-reference-facts/DESIGN.md#alternatives) shows the host vectorizer then drops its runtime overlap check, instead of withholding the EFF-5 disjointness from range references or restating it on every access. The range's extent is its runtime `len`, possibly zero, so no extent is stated; bodies keep the pointer/count pair of compiler/storage-representation, and linked definitions and host adapters take the same split, so WF and linked bodies keep one callable ABI.
+
+Rejected:
+- Scoped `!alias.scope`/`!noalias` metadata on each access through a range parameter: rejected because it needs every emitted access's provenance, a metadata table and per-activation scope declarations to survive inlining and unrolling, while the parameter attribute states the same fact once and LLVM's inliner converts it to scoped metadata.
+- An `llvm.assume` `separate_storage` bundle between range pointers: rejected because it asserts distinct underlying allocations, which two admitted disjoint ranges of one array do not have.
+- An internal split-parameter body behind an aggregate-taking wrapper: rejected because it doubles every range-taking symbol and relies on inlining for the fact, while the split alone changes no machine calling convention.

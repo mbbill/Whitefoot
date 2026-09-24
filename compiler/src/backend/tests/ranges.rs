@@ -874,10 +874,12 @@ fn stable_scatter_matches_an_independent_oracle_and_hands_out_output_work() {
                 &partition_entry,
                 &partition_entry.replace("@wf_write_chunk(", "@wf_scatter_original_partition("),
             );
+            // Each range reference crosses these calls as its element pointer
+            // and count, the ordinary callable ABI (compiler/backend-facts).
             llvm.push_str(
                 "\ndeclare void @wf_scatter_partition_done(i64)\n\
-define i64 @wf_write_chunk({ ptr, i64 } %input, i32 %bit, { ptr, i64 } %output) {\n\
-  %n = call i64 @wf_scatter_original_partition({ ptr, i64 } %input, i32 %bit, { ptr, i64 } %output)\n\
+define i64 @wf_write_chunk(ptr %input, i64 %input.len, i32 %bit, ptr %output, i64 %output.len) {\n\
+  %n = call i64 @wf_scatter_original_partition(ptr %input, i64 %input.len, i32 %bit, ptr %output, i64 %output.len)\n\
   call void @wf_scatter_partition_done(i64 %n)\n\
   ret i64 %n\n}\n",
             );
@@ -896,9 +898,9 @@ define i64 @wf_write_chunk({ ptr, i64 } %input, i32 %bit, { ptr, i64 } %output) 
             llvm.push_str(
                 "\ndeclare void @wf_scatter_pack_begin()\n\
 declare void @wf_scatter_pack_end()\n\
-define i64 @wf_pack_chunks(ptr %chunks, i64 %first, { ptr, i64 } %low, { ptr, i64 } %high) {\n\
+define i64 @wf_pack_chunks(ptr %chunks, i64 %first, ptr %low, i64 %low.len, ptr %high, i64 %high.len) {\n\
   call void @wf_scatter_pack_begin()\n\
-  %r = call i64 @wf_scatter_original_pack(ptr %chunks, i64 %first, { ptr, i64 } %low, { ptr, i64 } %high)\n\
+  %r = call i64 @wf_scatter_original_pack(ptr %chunks, i64 %first, ptr %low, i64 %low.len, ptr %high, i64 %high.len)\n\
   call void @wf_scatter_pack_end()\n\
   ret i64 %r\n}\n",
             );
@@ -915,8 +917,8 @@ define i64 @wf_pack_chunks(ptr %chunks, i64 %first, { ptr, i64 } %low, { ptr, i6
             // packing caller; a stolen empty task is insufficient evidence.
             llvm.push_str(
                 "\ndeclare void @wf_scatter_copy_done(i64)\n\
-define i64 @wf_copy_run(ptr %values, { ptr, i64 } %output) {\n\
-  %n = call i64 @wf_scatter_original_copy(ptr %values, { ptr, i64 } %output)\n\
+define i64 @wf_copy_run(ptr %values, ptr %output, i64 %output.len) {\n\
+  %n = call i64 @wf_scatter_original_copy(ptr %values, ptr %output, i64 %output.len)\n\
   call void @wf_scatter_copy_done(i64 %n)\n\
   ret i64 %n\n}\n",
             );
@@ -1129,6 +1131,112 @@ fn main() -> status: ExitStatus pure {
             assert!(output.stdout.is_empty(), "{output:?}");
             assert!(output.stderr.is_empty(), "{output:?}");
         }
+    }
+}
+
+const RANGE_ALIAS_FACTS: &str = r#"fn add_into(dst: &[u32], src: &[u32]) -> result: unit reads(src), writes(dst) contract {
+  requires deref(dst).len <= deref(src).len;
+} {
+  let n = deref(dst).len;
+  for (i in 0_u64..n) {
+    let a = deref(dst)[i];
+    let b = deref(src)[i];
+    set deref(dst)[i] = a +wrap b;
+  }
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  let x = array_filled::<u32, 16>(value: 1_u32);
+  let y = array_filled::<u32, 16>(value: 2_u32);
+  add_into(dst: &x[0_u64..16_u64], src: &y[0_u64..16_u64]);
+  set x[9_u64] = 5_u32;
+  add_into(dst: &x[0_u64..8_u64], src: &x[8_u64..16_u64]);
+  if x[0_u64] != 6_u32 {
+    return exit_status(code: 1_u8);
+  }
+  if x[1_u64] != 8_u32 {
+    return exit_status(code: 2_u8);
+  }
+  if x[9_u64] != 5_u32 {
+    return exit_status(code: 3_u8);
+  }
+  if y[15_u64] != 2_u32 {
+    return exit_status(code: 4_u8);
+  }
+  let first = box_new::<u64>(value: 1_u64);
+  let second = box_new::<u64>(value: 2_u64);
+  swap(first: &first, second: &second);
+  if first.inner != 2_u64 {
+    return exit_status(code: 5_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+/// A range-reference parameter carries the reference facts on the element
+/// pointer it crosses the call as (compiler/backend-facts). [EFF-5] rejects
+/// every call whose written range may overlap another argument's path, the
+/// fact LLVM's `noalias` needs, so the host vectorizer needs no runtime
+/// overlap check; two disjoint ranges of one array remain an admitted call,
+/// and `swap` [OP-11] keeps its exception.
+#[test]
+fn range_reference_parameters_state_the_call_site_disjointness_fact() {
+    let overlapping = RANGE_ALIAS_FACTS.replace("src: &x[8_u64..16_u64]", "src: &x[4_u64..12_u64]");
+    assert_eq!(
+        compile_rejection(overlapping.as_bytes()).rule_id(),
+        Some("EFF-5"),
+        "the fact rests on the call-site disjointness check"
+    );
+
+    let llvm = compile(RANGE_ALIAS_FACTS.as_bytes());
+    let add_into = emitted_function(&llvm, "add_into");
+    let header = add_into.lines().next().expect("add_into signature");
+    let no_capture = env!("WHITEFOOT_NO_CAPTURE_ATTRIBUTE");
+    // The written and the read-only range alike: `noalias` constrains only
+    // memory the call modifies. A range's extent is its runtime `len`, which
+    // may be zero, so no `dereferenceable` extent is stated.
+    assert!(
+        header.starts_with(&format!(
+            "define i8 @wf_add_into(ptr noalias nonnull {no_capture} %wf.arg.v0.data, \
+             i64 %wf.arg.v0.len, ptr noalias nonnull {no_capture} %wf.arg.v1.data, \
+             i64 %wf.arg.v1.len)"
+        )),
+        "{header}"
+    );
+    assert!(!header.contains("dereferenceable"), "{header}");
+    assert!(
+        add_into.contains("%v0 = insertvalue { ptr, i64 } %v0.data, i64 %wf.arg.v0.len, 1"),
+        "the body reassembles its ordinary range pair: {add_into}"
+    );
+    let main = emitted_function(&llvm, "main");
+    assert_eq!(main.matches("call i8 @wf_add_into(ptr %").count(), 2);
+    let swap = emitted_prelude_row(&llvm, "swap");
+    let swap_header = swap.lines().next().expect("swap signature");
+    assert!(!swap_header.contains("noalias"), "{swap_header}");
+    assert_eq!(swap_header.matches(" nonnull ").count(), 2, "{swap_header}");
+
+    let optimized = host_optimized_module(&llvm);
+    let start = optimized
+        .lines()
+        .position(|line| line.starts_with("define ") && line.contains(" @wf_add_into("))
+        .expect("optimized add_into definition");
+    let body = optimized
+        .lines()
+        .skip(start)
+        .take_while(|line| *line != "}")
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        body.contains("vector.body") && !body.contains("vector.memcheck"),
+        "the host vectorizer runs without a runtime overlap check: {body}"
+    );
+
+    for module in [&llvm, &super::owned_places::retain_calls(&llvm)] {
+        let output = compile_and_run(module);
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        assert!(output.stdout.is_empty(), "{output:?}");
+        assert!(output.stderr.is_empty(), "{output:?}");
     }
 }
 
