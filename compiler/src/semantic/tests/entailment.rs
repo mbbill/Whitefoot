@@ -8894,10 +8894,11 @@ fn real_sources_retain_complete_proof_roots_without_counted_false_positives() {
                     (1, "decode_fixed") => 1,
                     (1, "exercise") => 4,
                     (1, "main") => 0,
-                    // `wfgrep.wf`'s two fill helpers, which carry the zero
-                    // fill its runs took from `buffer_new` before B7c4b.
+                    // `wfgrep.wf`'s fill helper, which carries the zero fill
+                    // its runs took from `buffer_new` before B7c4b. Its word
+                    // helper retired when the walk's fixed visit order became
+                    // a growable offset store.
                     (2, "zeroed_bytes") => 1,
-                    (2, "zeroed_words") => 1,
                     _ => 0,
                 };
                 assert_eq!(
