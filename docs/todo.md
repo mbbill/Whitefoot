@@ -799,10 +799,15 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   with one dominating branch or one preceding proved invariant before the
   call` and prints "when the call is required to succeed, establish the entire
   instantiated callee requirement with a verified requirement, ..."; OP-6's
-  printed repair likewise elaborates its prescribed one, and rules that
-  prescribe none, such as EFF-1 and EFF-2, print one anyway. Audit every
-  rejection in one pass, rule by rule, and either update the specification's
-  text or the compiler's; the criterion is that every restructuring the
+  printed repair likewise elaborates its prescribed one; and rules that
+  prescribe none print one anyway: EFF-1's row conditions carry a
+  `mechanical_fix` on main, and EFF-2's `EffectMismatch` prints "declare
+  exactly the row the body exhibits: ..." though EFF-2 requires no
+  restructuring, and that wording no longer describes `expected_row`, which
+  merges entries a call would refuse. (EFF-1's subsumed-read rejection,
+  which requires no restructuring, carries none.) Audit every rejection in
+  one pass, rule by rule, and either update the specification's text or the
+  compiler's; the criterion is that every restructuring the
   specification prescribes equals the printed one, and a printed fix exists
   only where a rule requires one or the specification is amended to allow
   it. Pinned sentences and unit tests that assert the texts change with it.

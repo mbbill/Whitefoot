@@ -1021,6 +1021,13 @@ pub enum SemanticIssueKind {
         /// Exact repair required by EFF-1 for that condition.
         mechanical_fix: &'static str,
     },
+    /// A row carries `reads(p)` beside `writes(p)` for one path, which
+    /// EFF-1 never writes because `writes(p)` subsumes `reads(p)`. EFF-1
+    /// names no restructuring for it, so the rejection carries none.
+    SubsumedEffectRead {
+        /// The redundant `reads` entry as the row writes it.
+        entry: String,
+    },
     /// The written effect row differs from syntactically exhibited effects.
     EffectMismatch {
         /// A row EFF-2 admits for the body, in EFF-1 canonical spelling, that

@@ -814,8 +814,8 @@ fn a_read_the_same_rows_write_subsumes_is_an_eff1_rejection() {
         "let old = deref(stats).count;\n  set deref(stats).count = old +wrap 1_u64;",
     );
     assert_rule_kind(source.as_bytes(), SemanticRule::Eff1, |kind| {
-        matches!(kind, SemanticIssueKind::InvalidEffectRow { reason, .. }
-            if reason.contains("this `reads` entry names a path the row also writes"))
+        matches!(kind, SemanticIssueKind::SubsumedEffectRead { entry }
+            if entry == "reads(stats.count)")
     });
     super::assert_rule_at(source.as_bytes(), SemanticRule::Eff1, "reads(stats.count)");
     // A read and a write of different paths remain one row.

@@ -422,11 +422,8 @@ impl TypedExpression {
     }
 }
 
-/// [EFF-2]'s repair: declare the suggested row, which EFF-2 admits for the
-/// body and every call can satisfy [EFF-5]. Following `missing` and `extra`
-/// alone can keep a declared entry that EFF-2 admits but a call refuses
-/// against another entry of the same parameter.
-const EFF2_ROW_FIX: &str = "declare expected_row: it covers every access the body exhibits, carries no entry the body does not exhibit, and no call refuses two of its entries against each other [EFF-5]; missing names the entries it adds and extra the declared entries the body never exhibits";
+/// [EFF-2]'s only repair: the declaration must equal the exhibited row.
+const EFF2_ROW_FIX: &str = "declare exactly the row the body exhibits: add every missing category and path and remove every extra one; EFF-2 admits no wider and no narrower declaration than the union of the body-syntactic and release contributions";
 
 /// One ordinary resolved-place contribution to the enclosing effect row.
 #[derive(Clone, Debug)]
