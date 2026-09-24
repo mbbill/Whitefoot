@@ -1064,8 +1064,7 @@ condition under which it is taken up.
   `captures(none)` or `nocapture` by a build-time probe, `inbounds`, and
   `nuw`/`nsw` on the exact family. A `&[T]` range parameter crosses calls as
   its element pointer and count, and the pointer carries the same facts
-  except `dereferenceable` (pending amendment
-  `design/amendments/range-reference-facts.md`; the
+  except `dereferenceable` (`compiler/backend-facts`; the
   [range-reference fact investigation](../research/investigations/range-reference-facts/DESIGN.md)
   records the derivation and the removed vectorizer overlap check). The later
   qualified Ring payload-address
