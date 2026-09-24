@@ -75,8 +75,10 @@ Prerequisites: a Rust stable toolchain at least the version in
 stable` on an older installed stable — rustup does not update it on its own),
 and clang available at `/usr/bin/clang` on Linux/macOS or as `clang` on PATH
 on Windows. A cached build that links ThinLTO fragments (`--cache DIR
---fragments module|function`) also needs LLD on Linux and Windows; the macOS
-toolchain's linker does ThinLTO itself.
+--fragments module|function`), and a `--full-lto` build, which optimizes the
+program and its runtime as one region for runtime comparisons, also need LLD
+on Linux and Windows; the macOS toolchain's linker does link-time
+optimization itself.
 
 From `compiler/`:
 

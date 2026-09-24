@@ -36,7 +36,7 @@ use whitefoot::{
 };
 
 const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-scalar-leaf-limit N|off] [--par-sequential-refusal] [--par-recursive-frontier auto|N|off] [--no-overlap] [--par-ledger] \
-[--stack-ledger] [--check] [--cache DIR [--fragments module|function]] [--report] [-o OUTPUT] (SOURCE... | --graph modules.wfg [--entry NAME | --function pkg::module::name | --check-module pkg::module | --check-interface pkg::module | --check-modules | --render-interface pkg::module | --compare-interface pkg::module --against OTHER/modules.wfg])";
+[--stack-ledger] [--check] [--cache DIR [--fragments module|function] | --full-lto] [--report] [-o OUTPUT] (SOURCE... | --graph modules.wfg [--entry NAME | --function pkg::module::name | --check-module pkg::module | --check-interface pkg::module | --check-modules | --render-interface pkg::module | --compare-interface pkg::module --against OTHER/modules.wfg])";
 
 // The compiler walks typed source and lowering trees recursively. Windows
 // gives the process's primary thread a 1 MiB stack by default, which is small
@@ -192,20 +192,20 @@ const TARGET_COMPILE_ARGUMENTS: &[&str] = &["-pthread"];
 #[cfg(target_os = "windows")]
 const TARGET_COMPILE_ARGUMENTS: &[&str] = &[];
 
-/// The linker a ThinLTO link of fragments runs on this host, and the
-/// argument prefix naming the directory where it keeps the optimized objects
-/// it produces: the host's own linker on macOS, whose LTO support ships with
-/// its toolchain, and LLD elsewhere.
+/// The linker a link-time-optimized link runs on this host, and the
+/// argument prefix naming the directory where a ThinLTO link of fragments
+/// keeps the optimized objects it produces: the host's own linker on macOS,
+/// whose LTO support ships with its toolchain, and LLD elsewhere.
 #[cfg(target_os = "macos")]
-const THIN_LINKER: &[&str] = &[];
+const LTO_LINKER: &[&str] = &[];
 #[cfg(target_os = "macos")]
 const THIN_LINK_CACHE: &str = "-Wl,-cache_path_lto,";
 #[cfg(target_os = "windows")]
-const THIN_LINKER: &[&str] = &["-fuse-ld=lld"];
+const LTO_LINKER: &[&str] = &["-fuse-ld=lld"];
 #[cfg(target_os = "windows")]
 const THIN_LINK_CACHE: &str = "-Wl,/lldltocache:";
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-const THIN_LINKER: &[&str] = &["-fuse-ld=lld"];
+const LTO_LINKER: &[&str] = &["-fuse-ld=lld"];
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 const THIN_LINK_CACHE: &str = "-Wl,--thinlto-cache-dir=";
 
@@ -683,6 +683,7 @@ fn finish(
         options.output.as_deref().unwrap_or(Path::new("a.out")),
         cache,
         options.fragments,
+        options.full_lto,
         report,
     )?;
     if options.report {
@@ -806,6 +807,7 @@ fn compile_executable(
     output: &Path,
     cache: Option<&BuildCache>,
     fragments: Option<FragmentGranularity>,
+    full_lto: bool,
     report: &mut BuildReport,
 ) -> Result<(), String> {
     // The ordinary prelude implementation library links its private engine.
@@ -840,6 +842,9 @@ fn compile_executable(
                 .arg("-x")
                 .arg(unit_language(relative_path))
                 .arg(directory.join(relative_path));
+        }
+        if full_lto {
+            command.args(LTO_LINKER).arg("-flto=full");
         }
         let linked = link(&mut command, llvm, output);
         report.link = linking.elapsed();
@@ -998,7 +1003,7 @@ fn link_cached_objects(
         let mut cache_argument = std::ffi::OsString::from(THIN_LINK_CACHE);
         cache_argument.push(&optimized);
         command
-            .args(THIN_LINKER)
+            .args(LTO_LINKER)
             .arg("-flto=thin")
             .arg(cache_argument);
     }
@@ -1297,6 +1302,10 @@ struct Options {
     cache: Option<PathBuf>,
     /// Split the emitted module into ThinLTO link fragments.
     fragments: Option<FragmentGranularity>,
+    /// Link the program and every runtime unit as one full link-time
+    /// optimization region: the runtime-quality comparator that the
+    /// modular compilation design measures fragment builds against.
+    full_lto: bool,
     /// Print this module's resolved public interface [MOD-6, MOD-8].
     render_interface: Option<String>,
     /// The other revision's graph the rendered interface is compared with.
@@ -1325,6 +1334,7 @@ impl Options {
         let mut report = false;
         let mut cache = None;
         let mut fragments = None;
+        let mut full_lto = false;
         let mut render_interface = None;
         let mut against = None;
         let mut output = None;
@@ -1381,6 +1391,7 @@ impl Options {
                     sequential_refusal = true;
                 }
                 "--no-overlap" => no_overlap = true,
+                "--full-lto" => full_lto = true,
                 "--check" => check = true,
                 "--check-modules" => check_modules = true,
                 "--report" => report = true,
@@ -1516,6 +1527,16 @@ impl Options {
                 "--fragments splits a cached link: write --cache and no --emit-llvm".to_owned(),
             );
         }
+        if full_lto
+            && (cache.is_some()
+                || emit_llvm
+                || check
+                || check_modules
+                || check_module.is_some()
+                || render_interface.is_some())
+        {
+            return Err("--full-lto links one optimization region over a whole build: write no --cache, --emit-llvm or check".to_owned());
+        }
         if graph.is_none() && (entry.is_some() || function.is_some()) {
             return Err(
                 "--entry and --function select a module program's entry: write --graph".to_owned(),
@@ -1590,6 +1611,7 @@ impl Options {
             report,
             cache,
             fragments,
+            full_lto,
             render_interface,
             against,
             output,
@@ -2209,9 +2231,25 @@ mod tests {
         let bundle = parse(&["--cache", "cache", "--report", "value.wf"])
             .expect("a reported source-bundle build");
         assert!(bundle.report && bundle.graph.is_none());
+        // The full link-time optimization comparator links a whole build and
+        // nothing else.
+        assert!(
+            parse(&["--graph", "modules.wfg", "--entry", "app", "--full-lto"])
+                .expect("a full-LTO build")
+                .full_lto
+        );
+        for refused in [
+            &["--full-lto", "--cache", "cache", "value.wf"][..],
+            &["--full-lto", "--emit-llvm", "value.wf"][..],
+            &["--full-lto", "--check", "value.wf"][..],
+            &["--graph", "modules.wfg", "--check-modules", "--full-lto"][..],
+        ] {
+            assert!(parse(refused).is_err(), "{refused:?} must be refused");
+        }
         for option in [
             "--cache",
             "--fragments",
+            "--full-lto",
             "--report",
             "--check-modules",
             "--render-interface",
@@ -2281,6 +2319,7 @@ mod tests {
                     &executable,
                     Some(&cache),
                     Some(granularity),
+                    false,
                     &mut report,
                 )
                 .expect("the fragments link");
@@ -2307,6 +2346,37 @@ mod tests {
             );
             assert_eq!(status(), Some(6), "{granularity:?}");
         }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The full link-time optimization comparator links the program with
+    /// every runtime unit into an executable that runs as the program says.
+    #[test]
+    fn a_full_lto_build_runs_the_program() {
+        use whitefoot::{CompilerLimits, SourceInput, compile};
+        let source = b"fn select(index: u64) -> result: u64 pure {\n  let result = index *wrap 3_u64;\n  return result;\n}\n\nfn main() -> status: ExitStatus pure {\n  let chosen = select(index: 3_u64);\n  match cvt.checked::<u64, u8>(chosen) {\n    Ok(value: code) => {\n      return exit_status(code: code);\n    }\n    Err(error: refused) => {\n      return exit_status(code: 255_u8);\n    }\n  }\n}\n";
+        let llvm = compile(
+            &[SourceInput::new("lto.wf", source)],
+            CompilerLimits::default(),
+        )
+        .expect("the program compiles");
+        let root = std::env::temp_dir().join(format!("whitefootc-full-lto-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create the test directory");
+        let executable = root.join("program");
+        super::compile_executable(
+            &llvm,
+            &executable,
+            None,
+            None,
+            true,
+            &mut super::BuildReport::default(),
+        )
+        .expect("the full-LTO link");
+        let status = std::process::Command::new(&executable)
+            .status()
+            .expect("run the program");
+        assert_eq!(status.code(), Some(9));
         let _ = std::fs::remove_dir_all(&root);
     }
 
