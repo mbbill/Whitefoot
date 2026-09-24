@@ -696,6 +696,37 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   propagate g();` never overlaps. Allowing a `propagate` second member would
   need the lowering to join the hand-out before the `Err` return; a future
   investigation, taken up when a real program shows the gap.
+- **Acceptance and check removal are trusted to the whole checker.** Every
+  lowering authorization (a subscript without a check, an exact operation, a
+  discharged call goal) is issued by the same entailment engine that decides
+  acceptance, so the trusted base for "no unproved partial operation" is the
+  full front end plus entailment. The
+  [certificate packet](../research/investigations/proof-certificate-architecture/PACKET.md)
+  (v0.26, before the x1 ownership redesign) selects a staged route: the engine
+  records a positive derivation for every discharged obligation, and a small
+  verifier over a trusted proof-flow extraction checks them and jointly issues
+  the lowering capability, while rejections stay with the engine because a
+  missing certificate does not prove non-derivability. The compiler keeps a
+  derivation ledger; no verifier, extraction boundary or joint issuer exists.
+  Re-derive the packet's Envelope B against the current specification, then
+  prototype the verifier on `tests/programs/` and measure its size, proof size
+  and added compile time; a corrupted or missing certificate must never
+  authorize lowering. Close when a verifier jointly issues the capability, or
+  when the packet's stop gates record why the unified engine remains.
+- **There is no source-level foreign-function boundary.** C enters only as a
+  trusted linked definition of an ordinary declaration [PRE-1, SCOPE-3], which
+  the checker cannot inspect, and a C program cannot call Whitefoot code
+  through a stated ABI. A real systems program needs both directions: calling
+  an existing C library and exporting a Whitefoot component. The
+  [C ABI capsule idea](ideas.md#safe-c-abi-capsules) sketches export through
+  opaque validated handles; import needs an explicit contract for ownership,
+  layout, callbacks, foreign threads and failure, and a statement of what the
+  compiler trusts. Validate on one real dependency in each direction, starting
+  with the capsule experiment's misuse tests (stale handles, double drop,
+  overlapping buffers, short outputs, allocation failure). This interacts with
+  the module design for separate compilation. Close when a specified boundary
+  and its conformance cases land, or the owner records why a narrower
+  boundary suffices.
 
 ## Open language questions
 
