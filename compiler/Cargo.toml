@@ -3,6 +3,8 @@ name = "whitefoot"
 version = "0.1.0"
 edition = "2024"
 publish = false
+# The oldest stable that builds the compiler (let chains, slice::as_chunks).
+rust-version = "1.88"
 
 [lib]
 doctest = false
