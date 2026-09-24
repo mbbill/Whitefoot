@@ -155,21 +155,86 @@ for modules in 8 32; do
     builds "chain-$modules" "$generated" app "$middle/body.wf" 's/+wrap \([0-9]*\)_u64;/+wrap 99_u64;/'
 done
 
-# Runtime quality: the same benchmark built in every mode, five runs each.
-for mode in none image module function; do
-    tree=$scratch/rng-$mode
-    rm -rf "$tree"
-    cp -R "$here/rng" "$tree"
-    cd "$tree"
-    arguments=(--graph modules.wfg --entry bench -o "$scratch/rng-$mode.bin")
-    [ "$mode" = none ] || arguments+=(--cache "$scratch/rng-$mode.cache")
-    case $mode in module | function) arguments+=(--fragments "$mode") ;; esac
-    "$compiler" "${arguments[@]}"
-    cd "$here"
-    for run in 1 2 3 4 5; do
-        start=$(milliseconds)
-        "$scratch/rng-$mode.bin" || true
-        end=$(milliseconds)
-        printf 'rng\t%s\trun-%d\t%d\t\n' "$mode" "$run" $((end - start))
+# A hot path that crosses many fragments: a chain of `depth` modules whose
+# `step` mixes the result of the previous module's, called once per
+# iteration of the root module's loop, so every step is a call into another
+# module's fragment unless the link imports and inlines it.
+generate_crossing() {
+    local root=$1 depth=$2
+    rm -rf "$root"
+    mkdir -p "$root"
+    local graph=$root/modules.wfg previous=""
+    : > "$graph"
+    for ((m = 0; m < depth; m++)); do
+        local name=s$m directory=$root/s$m
+        mkdir -p "$directory"
+        if [ -z "$previous" ]; then
+            printf 'pkg::%s: [];\n' "$name" >> "$graph"
+        else
+            printf 'pkg::%s: [pkg::%s];\n' "$name" "$previous" >> "$graph"
+        fi
+        printf 'public fn step(state: u64) -> result: u64 pure doc "Step %d of the crossing chain.";\n' \
+            "$m" > "$directory/module.wfm"
+        {
+            printf 'fn step(state: u64) -> result: u64 pure {\n'
+            if [ -z "$previous" ]; then
+                printf '  let shifted = ishl.wrap(state, 13_u32);\n'
+                printf '  let result = ixor(state, shifted);\n'
+            else
+                printf '  let inner = pkg::%s::step(state: state);\n' "$previous"
+                printf '  let shifted = ishr(inner, %d_u32);\n' $((m % 7 + 1))
+                printf '  let result = ixor(inner, shifted);\n'
+            fi
+            printf '  return result;\n}\n'
+        } > "$directory/step.wf"
+        previous=$name
+    done
+    printf 'pkg: [pkg::%s];\n\nentry bench = pkg::main;\n' "$previous" >> "$graph"
+    printf 'public fn main() -> status: ExitStatus pure doc "Runs the crossing loop and exits with the low bits of its state.";\n' \
+        > "$root/module.wfm"
+    {
+        printf 'fn main() -> status: ExitStatus pure {\n'
+        printf '  let state = 88172645463325252_u64;\n'
+        printf '  for @spin (index in 0_u64..100000000_u64) {\n'
+        printf '    let next = pkg::%s::step(state: state);\n' "$previous"
+        printf '    set state = next;\n  }\n'
+        printf '  let low = iand(state, 127_u64);\n'
+        printf '  match cvt.checked::<u64, u8>(low) {\n'
+        printf '    Ok(value: code) => {\n      return exit_status(code: code);\n    }\n'
+        printf '    Err(error: refused) => {\n      return exit_status(code: 255_u8);\n    }\n'
+        printf '  }\n}\n'
+    } > "$root/main.wf"
+}
+
+# Runtime quality: each benchmark built in every mode, five runs each. `full`
+# is the full link-time optimization comparator, which optimizes the program
+# and its runtime units as one region.
+crossing=$scratch/crossing-source
+generate_crossing "$crossing" 8
+for workload in rng crossing; do
+    case $workload in
+        rng) source=$here/rng ;;
+        crossing) source=$crossing ;;
+    esac
+    for mode in none image module function full; do
+        tree=$scratch/$workload-$mode
+        rm -rf "$tree"
+        cp -R "$source" "$tree"
+        cd "$tree"
+        arguments=(--graph modules.wfg --entry bench -o "$scratch/$workload-$mode.bin")
+        case $mode in
+            none) ;;
+            full) arguments+=(--full-lto) ;;
+            *) arguments+=(--cache "$scratch/$workload-$mode.cache") ;;
+        esac
+        case $mode in module | function) arguments+=(--fragments "$mode") ;; esac
+        "$compiler" "${arguments[@]}"
+        cd "$here"
+        for run in 1 2 3 4 5; do
+            start=$(milliseconds)
+            "$scratch/$workload-$mode.bin" || true
+            end=$(milliseconds)
+            printf '%s\t%s\trun-%d\t%d\t\n' "$workload" "$mode" "$run" $((end - start))
+        done
     done
 done

@@ -14,26 +14,30 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   [source rules](../research/investigations/modular-compilation/LANGUAGE.md)
   and [complete specimen](../research/investigations/modular-compilation/demo/README.md);
   the [build-cost measurements](../research/experiments/modular-build-cost/RESULTS.md)
-  record what the module-granular implementation costs. Remaining, each with
-  the measurement or limit that shows it: declaration- and component-granular
-  queries and proof fragments with remapping (an edit rechecks and relowers
-  the whole composition, 375 ms of a 550 ms body-edit rebuild of a 32-module
-  chain, a cold build without a cache checks each module and then the whole
-  closure, and the impact report finds each further failing body by checking
-  its module again with the earlier ones set aside);
-  interface keys that ignore `doc` entries, so a documentation edit does not
-  recheck every dependent; a full-LTO comparator including the runtime units
-  and a workload whose hot path crosses many fragments; an executable runner
-  for entries that take other parameters than `Inputs` or return other
-  results than `ExitStatus` or `unit`, which build only as libraries
-  (`--emit-llvm`); and the GrowVector wrapper/function-kind witness.
-  Extract useful cases into formal test ownership as each finer mechanism
-  lands; no daily gate depends on the research probe or specimen. Compare
-  clean/warm verdicts and executables across edits, including changed
-  summary availability with unchanged headers, a callee body that starts
-  calling a supplied actual, published-field versus private-field changes,
-  hidden layout/heap changes, rejected import candidates becoming profitable,
-  and failed builds. Measure input-validation I/O, source/proof/planning/
+  record what the implementation costs. Remaining, each with the measurement
+  or limit that shows it: an incremental composition, whose formation,
+  lookup, instance, heap-summary and lowering queries reuse their results by
+  recorded reads as the dependency-recording decision states, where a build
+  of an edited entry now forms, resolves and type-checks the whole closure
+  and reuses only its proof analyses (about 350 ms of a 590 to 620 ms
+  body-edit build of a 32-module chain, growing with the program; lowering
+  and emission rerun too, about 3 ms of it), which needs an instance check
+  that runs without the whole closure's bodies; a cold build without a cache,
+  which checks each module and then the whole closure; the impact report,
+  which finds each further failing body by checking its module again with
+  the earlier ones set aside; ThinLTO's import threshold, which decays along
+  a deep cross-fragment call chain and left the innermost step of the
+  crossing benchmark's runtime-entry copy out of line (no measurable cost
+  there yet; watch for a workload where it shows, and compare import limits
+  or grouping); and an executable runner for entries that take other
+  parameters than `Inputs` or return other results than `ExitStatus` or
+  `unit`, which build only as libraries (`--emit-llvm`). Extract useful cases
+  into formal test ownership as each finer mechanism lands; no daily gate
+  depends on the research probe or specimen. Compare clean/warm verdicts and
+  executables across edits, including changed summary availability with
+  unchanged headers, published-field versus private-field changes, hidden
+  layout/heap changes, rejected import candidates becoming profitable, and
+  failed builds. Measure input-validation I/O, source/proof/planning/
   backend/link work, runtime quality and peak memory separately on the queue,
   GrowVector, wfgrep, SHA-256, a generic-heavy consumer and controlled
   dependency scaling; an exploratory run found source checking and runtime
