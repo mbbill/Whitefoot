@@ -734,21 +734,19 @@ each is resolved by a discussion and a tree change.
   These language extensions are deferred because the selected ordinary
   local composition rule can be validated without widening the storage or
   predicate vocabulary.
-- **Ownership transfer and reference-access forms.** Audit unnecessary
-  owner-in/owner-out APIs now expressible with reference parameters and exact
-  effect rows, the differing consumption spellings of calls, returns, matches
-  and `propagate`, and repeated `deref`/`&deref` paths. `move` still marks a
-  consumption boundary; `deref` distinguishes a reference holder from its
-  referent and from owned `Box.inner`, so neither is redundant solely because
-  the signature `own` qualifier was. Compare the same container and owned-link
-  operations under proposed forms, preserving copy/drop capabilities,
-  whole-owner consumption, atomic replacement, reference rebinding,
-  invalidation and effect separation.
-  Require the ordinary positive and invalid-use examples to remain explainable
-  by one rule per operation, with no additional runtime checks or transfers.
-  Reduced ceremony is an opportunity, not an established gain. Defer these
-  interface and syntax choices to a dedicated discussion; reopen with those
-  same-operation comparisons.
+- **Ownership transfer and reference-access forms.** The
+  [same-operation comparison](../research/investigations/contract-surface/OWNERSHIP.md)
+  proposes explicit `move` at every consuming use of an existing noncopy owned
+  place, including match and propagation, and postfix `.*` instead of
+  `deref(place)`. The proposals await selection; shorter paths and fewer
+  context-specific rules do not establish a writer-quality or performance gain.
+  Reopen implementation after the owner rules on these forms. Validate copy
+  and template-bound spelling, temporary and borrowed matches, whole-owner
+  cleanup, linear residuals, reference rebinding, entry paths, invalidation
+  and effect separation; retire superseded acceptance forms in the same
+  specification/compiler/conformance change. Keep the current container APIs
+  pending the replacement-and-measure work below: a weaker contract or loss
+  of `nodrop` support is not an equivalent reference interface.
 - **Expression composition and canonical source policy.** Reassess mandatory
   three-address computation and intermediate names together with the ban on
   comments and rejection of noncanonical formatting. Compare authoring,
@@ -888,7 +886,7 @@ condition under which it is taken up.
   negative goals, alias invalidation and deterministic checking cost. Defer
   a rule change while the exact paired-bound interface supplies the needed
   proof without runtime or ownership cost.
-- **Whole-owner swap does not publish exchanged descriptor facts.** PRE-1's
+- **Container replacement and measure transport.** PRE-1's
   `swap` declares writes to both referents and no postcondition; MSR-3's
   placement rules do not include swap. Exchanging two boxed windows therefore
   kills their supported length/capacity facts without connecting the incoming
@@ -898,8 +896,22 @@ condition under which it is taken up.
   Reopen with the contract-publication work: retain scalar-only and nested
   owner controls, alias invalidation and input/output swaps, and compare the
   source/proof benefit with checking cost before selecting a general relation.
-  Defer a language extension while ordinary reads suffice for the map;
-  do not manufacture an impossible branch to satisfy a postcondition.
+  The [Deque reference-rebuild probes](../research/investigations/contract-surface/OWNERSHIP.md#deque-reference-rebuild-probes)
+  expose a stronger consumer: swapping in the completed backing loses the
+  emptied old backing's zero length needed by `free_empty`. An OP-12 wrapper
+  instead rejects an unbounded element type under WIN-3 because its target
+  may be linear; adding `T: drop` excludes supported elements and still leaves
+  its exact length postcondition unproved under FN-9. Classify that latter
+  establishment limit against the current rules before choosing a compiler
+  fix or a language extension. Compare a general swap relation with measured
+  atomic-result publication and possible linear atomic updates, retaining
+  no-hole ownership, no implicit linear release, failure-exit rules and
+  reference invalidation. Use the existing scalar/boxed/nodrop/unit Deque
+  oracle and its exact length/capacity/head contract; no extra runtime proof
+  branch may count as the same-contract success. Defer changes from the
+  syntax investigation while the owned rebase meets that contract; reopen
+  when selecting its reference counterpart. Do not manufacture an impossible
+  branch or weaken a postcondition to complete the comparison.
 - **Conditional measure preservation needs a precise remaining diagnosis.**
   A counted-loop control calling a length/capacity-preserving helper in only
   one arm rejects its backedge facts. Capturing both measures before the
