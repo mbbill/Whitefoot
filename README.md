@@ -37,7 +37,6 @@ Without the `invariant` line, the program is rejected:
 
 ```text
 drop_spaces.wf:8:21: error[OP-4]: UndischargedBoundsObligation
-  ...
   source:       set deref(out)[kept] = byte;
   marker:                     ^^^^^^
   residual: kept < deref(out).len
@@ -60,6 +59,8 @@ A caller that passes a 5-byte `out` for 6 bytes of input is rejected at the
 call, with the callee's requirement it fails:
 
 ```text
+drop_spaces.wf:22:14: error[FN-8]: UndischargedCallRequirement
+  ...
   requires_clause: drop_spaces.wf:2:3 "requires deref(out).len >= deref(src).len;"
   instantiated_goal: buffer[0..5].len >= text[0..6].len
   disposition: Refuted
