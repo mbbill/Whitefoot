@@ -33,10 +33,9 @@ token_of() {
     head -n 1 | sed -n "s/^$TITLE\\(v[0-9][0-9]*\\.[0-9][0-9]*\\)\$/\\1/p"
 }
 
+# awk reads the parts as decimal, so a zero-padded minor stays decimal.
 successor_of() {
-    major=${1#v}; major=${major%%.*}
-    minor=${1##*.}
-    printf 'v%s.%s v%s.0\n' "$major" "$((minor + 1))" "$((major + 1))"
+    printf '%s\n' "${1#v}" | awk -F . '{ printf "v%d.%d v%d.0\n", $1, $2 + 1, $1 + 1 }'
 }
 
 check() {
@@ -100,6 +99,11 @@ self_test() {
     git add -A && git commit -qm base
 
     passed=0
+    test "$(successor_of v0.69)" = 'v0.70 v1.0' &&
+        test "$(successor_of v1.08)" = 'v1.9 v2.0' || {
+        echo 'spec archives self-test: successor_of reads versions as decimal' >&2
+        exit 1
+    }
     expect() { # expect pass|reject PATTERN DESCRIPTION
         outcome=pass
         sh "$script" main > "$work/out" 2>&1 || outcome=reject

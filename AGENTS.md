@@ -78,9 +78,13 @@ which also defines the material-choice boundary and the affected-set procedure:
    record a discriminating experiment's criterion before using it to choose.
 3. **Update:** when a conclusion or its grounds change, update current guidance
    and material dependents in the same work. A design revision is an
-   owner-ruled tree change or a pending amendment.
-4. **Finish:** run the completion review (checks, one independent review,
-   finding routing, publication), then hand off to the owner.
+   owner-ruled tree change or a pending amendment: load the `design-tree`
+   skill whenever a task makes, proposes or applies a design decision or edits
+   `design/`.
+4. **Finish:** load the `completion-review` skill before marking a PR ready or
+   reporting completion (checks, one independent review, finding routing,
+   publication), and the `owner-handoff` skill whenever you stop for the
+   owner.
 
 Routine fixes under unchanged design need no decision record. Record reasons
 when choices settle, not by reconstructing them at task completion.
@@ -88,17 +92,21 @@ when choices settle, not by reconstructing them at task completion.
 Use a PR as the owner's ongoing review surface from the start, as a Draft
 until the design-tree workflow makes it ready. Push coherent progress to the
 same branch and keep its description and actual validation results current;
-publish the reviewed result before reporting completion and link it. Updating
-a work-branch PR never authorizes a merge into `main`.
+publish the reviewed result before reporting completion and link it. Do not
+wait for another request to update the PR or leave the reviewable result only
+in the local worktree. Updating a work-branch PR never authorizes a merge into
+`main`.
 
 Before stopping work, explain the task's specification revisions in the
 conversation: which rules changed, their before/after behavior, and why those
 changes were selected. A version number or PR link does not replace this.
 
-Recurring procedures are skills, loaded when a task matches: `design-tree`
-(decisions, amendments, DCR), `spec-amendment`, `completion-review` and
-`owner-handoff`. Codex reads them from `.agents/skills/`; Claude Code reads
-`.claude/skills/`, whose entries link to the same directories.
+Recurring procedures are skills: `design-tree`, `spec-amendment`,
+`completion-review` and `owner-handoff`. Their bodies live in the project, in
+`docs/skills/` and `design/skill/`; `.agents/skills/` (Codex) and
+`.claude/skills/` (Claude Code) hold only links to them. Each skill's
+description stays in context and its body loads when its step above
+arrives, never at session start.
 
 ## Branch and main boundary
 
@@ -109,8 +117,8 @@ These are the complete approval and merge rules:
    documentation, except that new repository-root entries require owner
    approval, changes to the live design tree require the owner's ruling under
    the design-tree skill, and a review finding whose resolution would change a
-   design decision, a specification rule or the agreed scope requires the
-   owner's direction. Unapproved design choices remain amendments while
+   design decision or amendment, a specification rule or the agreed scope
+   requires the owner's direction. Unapproved design choices remain amendments while
    implementation continues.
 2. Every change merged into `main` requires owner approval of the exact
    revision to be merged.
@@ -148,8 +156,10 @@ shape, is an approval or merge precondition.
 - The active specification `spec/kernel-spec.md` is editable on a work branch;
   released `spec/kernel-spec-vN.md` archives are immutable, and
   `compiler/build.rs` derives the active identity from its bytes. An amendment
-  lands as one change, the outgoing bytes archived and the title advanced
-  (spec-amendment skill), and `make check` verifies both. There is no
+  lands as one change, the outgoing bytes archived and the title advanced;
+  load the `spec-amendment` skill before editing `spec/kernel-spec.md`.
+  `make check` verifies the archive and title, and the optional hook from
+  `make install-hooks` reports an archive edit earlier. There is no
   candidate state: a branch carrying an amendment is merge-ready when its gate
   is green. A spec/compiler discrepancy is a technical defect; implementation
   convenience never selects language behavior.
@@ -185,17 +195,24 @@ not a reason to pause on every file.
   in the existing directory that owns its kind; if none fits, ask.
 - Every new file, directory, script, or document earns its place before it is
   created: name the compiler capability or experiment it serves, its existing
-  home, and the condition under which it is removed. A script ships wired to a
-  caller, a gate target or an explicit one-shot deleted after use; a document
-  ships into an existing home and is kept current or deleted. No bulk dumps.
+  home, and the condition under which it is removed. If you cannot name all
+  three, do not create it.
+- No bulk dumps: do not add many scripts or documents in one change and leave
+  them unmaintained. A script ships wired to a caller, a gate target or an
+  explicit one-shot deleted after use; a document ships into an existing home
+  and is kept current or deleted. Material with no owner and no reader is rot
+  the moment it lands.
 - Prefer native tooling. Check the Rust compiler with `cargo test`,
   `cargo clippy` and the workspace `forbid(unsafe_code)` lint, never with a
   Python script that re-implements them or a script forked per spec version.
-  Python belongs only to genuinely compiler-independent tooling, and a new
-  script states why the native path cannot do the job.
+  Python belongs only to genuinely compiler-independent tooling. A new
+  script must justify why the native path cannot do the job; if it cannot, it
+  does not ship.
 - Supersede in place: when new material replaces old, update, merge, or delete
-  the old in the same change. Frozen archives and useful dated evidence keep
-  their history under their own rules.
+  the old in the same change, and do not accumulate parallel versions, stale
+  dossiers, or abandoned experiments beside their replacements. Frozen
+  archives and useful dated evidence keep their history under their own
+  rules.
 - Keep important folders, such as `spec/`, `compiler/`, `tests/` and the
   research directories, as clean as the root. Do not undertake structural
   churn that no current work needs, and never relocate a load-bearing path

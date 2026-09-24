@@ -5,8 +5,9 @@
   in docs/review-checklist.md or the design-tree skill.
 - Repository paths written in backticks in the entry documents exist.
 - Every skill is discoverable by both supported agents: each entry under
-  .agents/skills (Codex) has a .claude/skills entry (Claude Code) resolving to
-  the same directory, and its SKILL.md names that entry and describes itself.
+  .agents/skills (Codex) and .claude/skills (Claude Code) is a link to the same
+  skill directory elsewhere in the project, and its SKILL.md names that entry
+  and says when to use it and when not to.
 - The workflow map names every CI workflow, skill and guidance document, so it
   cannot silently fall behind the process it maps.
 
@@ -155,8 +156,17 @@ def skill_findings(root):
             missing = SKILL_ROOTS[0] if name not in codex else SKILL_ROOTS[1]
             findings.append(f"skill {name}: no {missing}/{name} entry; both agents must discover every skill")
             continue
+        if not (codex[name].is_symlink() and claude[name].is_symlink()):
+            findings.append(f"skill {name}: both entries must link to a skill directory kept in the project")
+            continue
         if codex[name].resolve() != claude[name].resolve():
             findings.append(f"skill {name}: {SKILL_ROOTS[0]}/{name} and {SKILL_ROOTS[1]}/{name} resolve to different directories")
+            continue
+        home = codex[name].resolve()
+        inside = [p for p in (root.resolve(), *(root.resolve() / r for r in SKILL_ROOTS))
+                  if home == p or p in home.parents]
+        if inside != [root.resolve()]:
+            findings.append(f"skill {name}: its directory must sit in the project, outside the agents' skill directories")
             continue
         skill = codex[name] / "SKILL.md"
         if not skill.is_file():
@@ -171,6 +181,8 @@ def skill_findings(root):
         description = fields.get("description", "")
         if not description or len(description) > 1024:
             findings.append(f"skill {name}: frontmatter needs a description of at most 1024 characters")
+        elif "Use when" not in description or "Not for" not in description:
+            findings.append(f"skill {name}: the description must say when to use the skill ('Use when') and when not ('Not for')")
     return findings
 
 
@@ -201,6 +213,9 @@ def check(root):
     return int(bool(findings))
 
 
+DESCRIPTION = "Do a thing. Use when the thing is due. Not for other things."
+
+
 class GuidanceTests(unittest.TestCase):
     def fixture(self):
         temporary = tempfile.TemporaryDirectory()
@@ -210,7 +225,7 @@ class GuidanceTests(unittest.TestCase):
         (root / "design/skill").mkdir(parents=True)
         (root / CHECKLIST).write_text("- [ ] **A1 — Fit.** x\n- [ ] **A2 — New.** x\n"
                                       "- [ ] **M1 — Design.** x\n")
-        (root / DESIGN_SKILL).write_text("---\nname: design-tree\ndescription: d\n---\n"
+        (root / DESIGN_SKILL).write_text("---\nname: design-tree\ndescription: " + DESCRIPTION + "\n---\n"
                                          "Keep proposals in `amendments/`.\n"
                                          "G1. Decision test.\nDC1. Decisions in code.\n")
         (root / "AGENTS.md").write_text("Use `docs/review-checklist.md`.\n")
@@ -257,10 +272,24 @@ class GuidanceTests(unittest.TestCase):
             f"{MAP}: document docs/review-checklist.md is not on the map",
             f"{MAP}: workflow bench.yml is not on the map"])
 
+    def test_skill_bodies_live_in_the_project_behind_links(self):
+        root = self.fixture()
+        inline = root / ".agents/skills/inline"
+        inline.mkdir()
+        (inline / "SKILL.md").write_text("---\nname: inline\ndescription: " + DESCRIPTION + "\n---\n")
+        (root / ".claude/skills/inline").symlink_to("../../.agents/skills/inline")
+        (root / "vague").mkdir()
+        (root / "vague/SKILL.md").write_text("---\nname: vague\ndescription: Helps with things.\n---\n")
+        for skill_root in SKILL_ROOTS:
+            (root / skill_root / "vague").symlink_to("../../vague")
+        self.assertEqual(skill_findings(root), [
+            "skill inline: both entries must link to a skill directory kept in the project",
+            "skill vague: the description must say when to use the skill ('Use when') and when not ('Not for')"])
+
     def test_skill_missing_for_one_agent(self):
         root = self.fixture()
         (root / "extra").mkdir()
-        (root / "extra/SKILL.md").write_text("---\nname: extra\ndescription: d\n---\n")
+        (root / "extra/SKILL.md").write_text("---\nname: extra\ndescription: " + DESCRIPTION + "\n---\n")
         (root / ".agents/skills/extra").symlink_to("../../extra")
         self.assertEqual(skill_findings(root), [
             "skill extra: no .claude/skills/extra entry; both agents must discover every skill"])
@@ -269,7 +298,7 @@ class GuidanceTests(unittest.TestCase):
         root = self.fixture()
         for name, declared in (("one", "one"), ("two", "other")):
             (root / name).mkdir()
-            (root / name / "SKILL.md").write_text(f"---\nname: {declared}\ndescription: d\n---\n")
+            (root / name / "SKILL.md").write_text(f"---\nname: {declared}\ndescription: {DESCRIPTION}\n---\n")
         (root / ".agents/skills/one").symlink_to("../../one")
         (root / ".claude/skills/one").symlink_to("../../two")
         (root / ".agents/skills/two").symlink_to("../../two")

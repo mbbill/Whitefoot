@@ -159,7 +159,7 @@ guidance:
 
 # What a completion review covers: base, depth, groups and excluded paths.
 review-scope:
-	@sh .agents/skills/completion-review/scripts/review-scope.sh main
+	@sh docs/skills/completion-review/scripts/review-scope.sh main
 
 spec-append-only-staged:
 	@changes="$$(git diff --cached --name-status --diff-filter=MDRCT -- 'spec/kernel-spec-v*.md')" || exit 1; \

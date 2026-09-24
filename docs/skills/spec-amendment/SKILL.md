@@ -1,6 +1,6 @@
 ---
 name: spec-amendment
-description: Amend the Whitefoot kernel specification as one change. Archive the outgoing version byte for byte, retitle the active file to the next version, bring conformance cases, generated syntax, tests and documentation along, resolve a version collision with main, and explain the rule changes. Use whenever a task edits spec/kernel-spec.md, including a merge of main into a branch that already amends it.
+description: Amend the Whitefoot kernel specification as one change - archive the outgoing version, retitle the next, bring conformance cases, syntax data, tests and docs along, and explain the rule changes. Use when a task edits spec/kernel-spec.md or merges main into a branch that already amends it. Not for reading or citing the specification.
 ---
 
 # Specification amendment

@@ -79,7 +79,7 @@ or self-description merely to satisfy this table.
 | Root `README.md` | Project introduction, getting started, navigation | Detailed compiler inventory, a second specification, task history |
 | `AGENTS.md` | Agent entry: goal and priorities, authority, the approval and merge rules, integrity and hygiene rules, and pointers to this map, skills and detailed guidance | Research narration, a procedure a skill owns, a second detailed checklist or compiler inventory |
 | `docs/workflow.md` | The development loop, decision rights, checks, document roles and process health signals, each pointing to its owner | A rule, procedure or check stated in full, which its owner holds |
-| `.agents/skills/` (linked from `.claude/skills/`) | One recurring procedure per skill: its trigger, steps, commands and formats, loaded when the task matches its description | Project rules that `AGENTS.md` owns, language semantics, a copy of the review checklist |
+| `docs/skills/`, `design/skill/` (linked from `.agents/skills/` and `.claude/skills/`) | One recurring procedure per skill: its trigger, steps, commands and formats, loaded when the task matches its description | Project rules that `AGENTS.md` owns, language semantics, a copy of the review checklist |
 | `docs/constitution.md` | Complete statements of purpose, chosen objectives, obligations, prohibitions, tradeoffs, and applicable conditions that can guide a choice and test its grounds | Who requested an edit and when, agent conversations, implementation progress, maintenance instructions, abbreviated labels in place of clauses, per-clause usage checklists, a selected mechanism asserted as an inevitable consequence of the purpose |
 | `spec/kernel-spec.md` | Normative syntax, semantics, judgments, boundaries and relevant examples | Compiler convenience presented as law, task status, editing history |
 | `docs/practice.md` / `docs/review-checklist.md` | Engineering methods and decision-update triggers / completion checks | Language semantics, task-specific outcomes, new owner approval requirements |
@@ -120,10 +120,16 @@ Change the owner of the part you change, and this map, in the same change:
 | Goal, priorities, authority, approval and merge rules | `AGENTS.md` |
 | Engineering and evidence method, test boundary | `docs/practice.md` |
 | Review items | `docs/review-checklist.md` |
-| Recurring procedures | `.agents/skills/`; `design-tree` lives in `design/skill/` |
+| Recurring procedures and their triggers | `docs/skills/` and `design/skill/`, linked from `.agents/skills/` and `.claude/skills/` |
 | Checks and CI | `Makefile`, `.github/` |
 | Pull request form | `.github/pull_request_template.md` |
 | Loop, decision rights and document roles | `docs/workflow.md` |
+
+A skill triggers in two ways: its description, which both agents keep in
+context, says when to use it and when not to, and `AGENTS.md` names it at its
+step. Its body loads only then. Change a trigger by editing both together, and
+check that the skill neither goes unused where its step arrives nor loads
+where it has nothing to do.
 
 Revisit the method when a task exposes a missed dependency, an unsupported
 conclusion, repeated owner correction, or upkeep that displaces compiler work

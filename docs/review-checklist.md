@@ -234,8 +234,9 @@ Source: [evidence practice](practice.md#evidence-guidance) and
   `make check` for the exact merge tree under the existing four rules; neither
   a fast review nor a focused test run substitutes for them.
 - [ ] **V4 — Existing PR updated.** The reviewed task changes are committed
-  and pushed to the existing PR branch; its remote head contains the delivered
-  revision, and its description and validation reflect the current diff. The
+  and pushed to the existing PR branch without waiting for a reminder; its
+  remote head contains the delivered revision, and its description and
+  validation reflect the current diff. The
   reply links the PR. A failed publication is an explicit delivery blocker,
   not a completed update. This check runs after the content review and push.
 

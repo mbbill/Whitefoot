@@ -1,6 +1,6 @@
 ---
 name: completion-review
-description: Finish a Whitefoot task with its one completion review. Run the applicable checks, have an independent agent review the change against docs/review-checklist.md at a depth set by what changed, route each finding to the owner or fix it, and publish the reviewed result to the PR. Use before marking a PR ready, before reporting a task complete, or when asked for a review, completion review or dcr.
+description: Finish a Whitefoot task - run the checks, get one independent review at the depth the change needs, route its findings, and publish the result to the PR. Use when about to mark a PR ready or report a task complete, or when asked for a review, completion review or dcr. Not for opening a PR or pushing work in progress.
 ---
 
 # Completion review
@@ -65,10 +65,9 @@ Validation already run: <commands, results, tested revision>
 
 Read the diff from the base (git diff <base>, plus untracked files, without
 the excluded paths), the changed sections in context, and "How to review" in
-docs/review-checklist.md. Check each listed group. For M1, apply
-design/skill/SKILL.md: design checks G1-G3 and correspondence checks DC1-DC4
-against the relevant tree nodes and their ancestors. Do not rerun green
-suites.
+docs/review-checklist.md. Check each listed group. For M1, apply the design
+and correspondence checks in design/skill/SKILL.md against the relevant tree
+nodes and their ancestors. Do not rerun green suites.
 
 Mark items pass, finding, unverified or not applicable. Report Scope (your
 model, base..head, groups checked and skipped), Checks (what you ran) and

@@ -1,6 +1,6 @@
 ---
 name: owner-handoff
-description: Report to the Whitefoot owner in the owner's language when handing back work, asking for a design ruling or other decision, or presenting findings that await direction. Leads with compact decision cards, then the result, specification revisions and a design-suitability note. Use at the end of every task and whenever the owner must decide something.
+description: Hand work back to the Whitefoot owner in the owner's language - decision cards first, then the result, specification revisions and design suitability. Use when stopping for the owner - a task is done, an amendment needs a ruling, or a finding awaits direction. Not for progress notes while work continues.
 ---
 
 # Owner handoff

@@ -29,7 +29,7 @@ function area(path) {
     if (path == "spec/kernel-spec.md") return "spec"
     if (path ~ /(^|\/)Makefile$|\.mk$/ || (path ~ /^\.github\// && path != ".github/pull_request_template.md")) return "gate"
     if (path ~ /^design\//) return "design"
-    if (path ~ /^(AGENTS\.md|README\.md|docs\/(practice|review-checklist|constitution)\.md|\.github\/pull_request_template\.md)$/ || path ~ /^\.(agents|claude)\//) return "guidance"
+    if (path ~ /^(AGENTS\.md|README\.md|docs\/(practice|review-checklist|constitution|workflow)\.md|\.github\/pull_request_template\.md)$/ || path ~ /^(\.agents|\.claude|docs\/skills)\//) return "guidance"
     if (path ~ /^research\//) return "research"
     if (path ~ /\.md$/) return "prose"
     return "other"
@@ -37,6 +37,7 @@ function area(path) {
 {
     kind = area($2)
     if (kind == "archive" && $1 == "A") { excluded[++excluded_count] = $2; next }
+    if (kind == "archive") kind = "spec"
     count[kind]++
     if (count[kind] <= 3) sample[kind] = sample[kind] (count[kind] > 1 ? ", " : "") $2
     total++

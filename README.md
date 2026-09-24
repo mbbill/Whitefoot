@@ -38,7 +38,7 @@ Read the material that owns the question you are working on:
 | What are the project goals and design principles? | [Constitution](docs/constitution.md) |
 | What happens when in development, where, and who decides? | [Workflow map](docs/workflow.md) |
 | How do I work on a branch and prepare a merge? | [AGENTS.md](AGENTS.md) |
-| How do I amend the specification, finish a task, or hand work back? | [Agent skills](.agents/skills/) |
+| How do I amend the specification, finish a task, or hand work back? | [Agent skills](docs/skills/) |
 | Which writer forms should I try? | [Patterns](docs/patterns.md) |
 | How should I investigate, verify, and maintain documentation? | [Engineering practice](docs/practice.md) |
 | Why was a design chosen? | [Design trees](design/), with reasons and refused alternatives |
@@ -58,8 +58,8 @@ requirements. The reading and authority rules are in
 - [spec/](spec/): the active language and its immutable version archives.
 - [tests/](tests/): normative conformance evidence, executable programs,
   code-generation evidence, and the separate performance regression suite.
-- [docs/](docs/): principles, writer guidance, engineering practice, and
-  reference material.
+- [docs/](docs/): principles, writer guidance, engineering practice, the
+  workflow map, agent skills, and reference material.
 - [research/](research/README.md): investigations and experiments with their
   designs, measurements, and rejected alternatives.
 - [design/](design/): live design decisions with their reasons, and the
@@ -67,8 +67,9 @@ requirements. The reading and authority rules are in
 - [governance/](governance/): archive-protection hooks and specification-change
   design evidence. The old approval ledger is retired.
 - [.github/](.github/): CI, repository checks and the pull-request template.
-- [.agents/skills/](.agents/skills/): recurring agent procedures, read by
-  Codex; `.claude/skills/` links the same skills for Claude Code.
+- [.agents/skills/](.agents/skills/) and [.claude/skills/](.claude/skills/):
+  links through which Codex and Claude Code discover the skills kept in
+  `docs/skills/` and `design/skill/`.
 - [archive/](archive/): frozen historical material. Active source, builds,
   tests, and tools do not depend on it.
 
