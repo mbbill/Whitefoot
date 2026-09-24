@@ -1101,6 +1101,17 @@ condition under which it is taken up.
   elements of two calls. Substitute the formal on both sides, then add a
   case whose caller publishes over two different offsets and must not equate
   them.
+- **Clause subscripts owe no judged bounds obligation.** ENT-2 submits each
+  subscript in a clause (b) place to MSR-4 where the place is formed, but a
+  `requires` or `define` place such as `deref(rows)[i].len` is never judged:
+  `requires k < deref(rows)[i].len` is accepted with `i` unconstrained. No
+  unsound discharge follows, because a term over an element that does not
+  exist gains facts only from standing type facts or from other requirements,
+  and the body still owes the bound at every read; but the rule and the
+  compiler disagree. Decide where a clause place is formed (body entry after
+  the earlier requirements, as the existing tests write it, or the caller's
+  instantiation) and judge it there; validate with a clause whose offset is
+  unbounded and one bounded by an earlier requirement.
 - **Tracked-place offsets with projections are not captured.** ENT-2 admits
   an offset that is a live own integer tracked place, but the compiler
   captures only literals, consts and bare bindings. A measure read such as
