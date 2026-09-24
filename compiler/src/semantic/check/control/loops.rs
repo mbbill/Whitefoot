@@ -8,8 +8,8 @@ use crate::{
 };
 
 use super::super::super::model::{
-    BindingId, CheckedLoopId, CheckedLoopInvariant, CheckedMode, CheckedStatement, CheckedType,
-    IntegerType,
+    BindingId, CheckedExpression, CheckedLoopId, CheckedLoopInvariant, CheckedMode,
+    CheckedStatement, CheckedType, IntegerType,
 };
 use super::super::references::{
     InvalidationEvent, LoopReferenceToken, ReferenceValidity, RequiredReferent,
@@ -873,7 +873,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ),
             );
         }
-        if !self.counted_endpoint_is_term_or_constant(node)? {
+        if !self.counted_endpoint_is_term_or_constant(node, &endpoint.expression)? {
             return self.issue_node(
                 SemanticRule::Ent2,
                 node,
@@ -886,9 +886,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// After TYPE-5, the only atom shapes still capable of producing `own
-    /// u64` are a literal or a place. ENT-2 admits the literal and exactly a
-    /// tracked place with field/deref wrappers but no subscript at any depth.
-    fn counted_endpoint_is_term_or_constant(&self, node: NodeId) -> Result<bool, CheckStop> {
+    /// u64` are a literal or a place. ENT-2 admits the literal, a clause (b)
+    /// measure term [MSR-1], whose measure place may contain subscripts, and
+    /// a tracked place with field/deref wrappers but no subscript at any
+    /// depth.
+    fn counted_endpoint_is_term_or_constant(
+        &self,
+        node: NodeId,
+        endpoint: &CheckedExpression,
+    ) -> Result<bool, CheckStop> {
+        if matches!(
+            endpoint,
+            CheckedExpression::ArrayMeasure { .. }
+                | CheckedExpression::BufferMeasure { .. }
+                | CheckedExpression::RangeMeasure { .. }
+                | CheckedExpression::RangeElementMeasure { .. }
+                | CheckedExpression::ContainerMeasure { .. }
+        ) {
+            return Ok(true);
+        }
         let Some(place) = self.tree.first_child_with(node, Production::Place)? else {
             // TYPE-5 has already excluded a borrow expression, so the
             // remaining non-place atom is an integer literal constant.
