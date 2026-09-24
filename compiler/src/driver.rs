@@ -3100,6 +3100,58 @@ mod tests {
         );
     }
 
+    /// [MOD-8] a declaration a verdict reaches only through the types of
+    /// what it names is still read: the importer matches the variants of an
+    /// enum it never writes, the type of a result it calls for, so a new
+    /// variant recomputes and rejects it, while the root, which reaches no
+    /// part of that enum, keeps its verdict.
+    #[test]
+    fn a_declaration_reached_through_a_result_type_is_read() {
+        const GRAPH: &[u8] = b"pkg::leaf: [];\npkg::base: [pkg::leaf];\npkg::user: [pkg::base, pkg::leaf];\npkg: [pkg::user];\n\nentry app = pkg::main;\n";
+        const TWO: &[u8] = b"public enum Shade {\n  Dark();\n  Light();\n}\n\npublic fn first() -> shade: Shade pure doc \"The first shade.\";\n";
+        const THREE: &[u8] = b"public enum Shade {\n  Dark();\n  Light();\n  Dim();\n}\n\npublic fn first() -> shade: Shade pure doc \"The first shade.\";\n";
+        const LEAF_BODY: &[u8] = b"fn first() -> shade: Shade pure {\n  return Shade::Dark();\n}\n";
+        const BASE_INTERFACE: &[u8] =
+            b"public fn pick() -> shade: pkg::leaf::Shade pure doc \"Picks a shade.\";\n";
+        const BASE_BODY: &[u8] = b"fn pick() -> shade: pkg::leaf::Shade pure {\n  return pkg::leaf::Shade::Light();\n}\n";
+        const USER_INTERFACE: &[u8] =
+            b"public fn tone() -> result: u8 pure doc \"Tells the picked shade apart.\";\n";
+        const USER_BODY: &[u8] = b"fn tone() -> result: u8 pure {\n  let shade = pkg::base::pick();\n  match shade {\n    Dark() => {\n      return 1_u8;\n    }\n    Light() => {\n      return 2_u8;\n    }\n  }\n}\n";
+        const MAIN_BODY: &[u8] = b"fn main() -> status: ExitStatus pure {\n  let code = pkg::user::tone();\n  return exit_status(code: code);\n}\n";
+        let directory = CacheDirectory::new("result-type");
+        let cache = directory.open();
+        let records = |leaf_interface: &'static [u8]| -> Vec<(&'static str, &'static [u8])> {
+            vec![
+                ("leaf/module.wfm", leaf_interface),
+                ("leaf/first.wf", LEAF_BODY),
+                ("base/module.wfm", BASE_INTERFACE),
+                ("base/pick.wf", BASE_BODY),
+                ("user/module.wfm", USER_INTERFACE),
+                ("user/tone.wf", USER_BODY),
+                ("module.wfm", ROOT_INTERFACE),
+                ("main.wf", MAIN_BODY),
+            ]
+        };
+        assert_eq!(
+            recomputed(GRAPH, &records(TWO), &cache),
+            ["pkg::leaf", "pkg::base", "pkg::user", "pkg", "app"]
+                .map(str::to_owned)
+                .to_vec()
+        );
+        assert_eq!(
+            recomputed(GRAPH, &records(THREE), &cache),
+            ["pkg::leaf", "pkg::base", "pkg::user", "app"]
+                .map(str::to_owned)
+                .to_vec()
+        );
+        let rejected = verdicts(GRAPH, &records(THREE), Some(&cache))
+            .into_iter()
+            .filter(|(_, outcome, _)| matches!(outcome, super::CheckOutcome::Rejected { .. }))
+            .map(|(subject, _, _)| subject)
+            .collect::<Vec<_>>();
+        assert_eq!(rejected, ["pkg::user", "app"].map(str::to_owned).to_vec());
+    }
+
     /// [MOD-1, MOD-5] deleting a dependency edge changes the graph facts the
     /// client's check read, so its recorded verdict is not reused and the
     /// recomputed one refuses the now unpermitted reference.

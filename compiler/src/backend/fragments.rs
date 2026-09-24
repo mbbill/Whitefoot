@@ -177,10 +177,13 @@ pub fn split_module(
 
 /// The owner of every entity: an externally visible function belongs to its
 /// group; a local definition belongs to the fragment of its immediate
-/// dominator, where the graph's source reaches every group and every local
-/// definition no group reaches, and a definition reaches the local
-/// definitions it names. A local definition the source dominates directly,
-/// which more than one group reaches or none does, owns a fragment.
+/// dominator, where the graph's source reaches every group and every entry
+/// of the part no group reaches, and a definition reaches the local
+/// definitions it names. An entry is a local definition no group reaches
+/// and no other such definition names, or else the first member of a cycle
+/// nothing outside it names. A local definition the source dominates
+/// directly, which more than one group reaches or which is such an entry,
+/// owns a fragment.
 fn owners(
     module: &Module<'_>,
     groups: &[Vec<usize>],
@@ -219,14 +222,34 @@ fn owners(
         }
     }
     // A local definition no group reaches is still written, and what it
-    // names must still reach it: the source reaches it directly.
+    // names must still reach it: the source reaches the entries of that
+    // part, so a definition only another unreached one names stays beside it.
+    let reach = |successors: &[BTreeSet<usize>], reached: &mut [bool]| {
+        for node in reverse_postorder(successors) {
+            reached[node] = true;
+        }
+    };
     let mut reached = vec![false; nodes];
-    for node in reverse_postorder(&successors) {
-        reached[node] = true;
+    reach(&successors, &mut reached);
+    let unreached = node_of_local
+        .values()
+        .copied()
+        .filter(|node| !reached[*node])
+        .collect::<Vec<_>>();
+    let named = unreached
+        .iter()
+        .flat_map(|node| successors[*node].iter().copied())
+        .collect::<BTreeSet<_>>();
+    for node in &unreached {
+        if !named.contains(node) {
+            successors[0].insert(*node);
+        }
     }
-    for node in node_of_local.values() {
+    reach(&successors, &mut reached);
+    for node in &unreached {
         if !reached[*node] {
             successors[0].insert(*node);
+            reach(&successors, &mut reached);
         }
     }
     let immediate = immediate_dominators(&successors);
@@ -991,6 +1014,56 @@ attributes #0 = { nounwind }
                 "{fragment}"
             );
         }
+    }
+
+    /// A dead helper chain keeps its shape: the helper only another dead
+    /// helper calls stays local beside it, and a dead cycle is owned by its
+    /// first member.
+    #[test]
+    fn an_unreached_chain_keeps_its_callee_beside_it() {
+        let module = "target triple = \"x86_64-unknown-linux-gnu\"
+define i32 @wf_a.f() #0 {
+entry:
+  ret i32 0
+}
+define private void @wf.drop.t.b() #0 {
+entry:
+  ret void
+}
+define private void @wf.drop.t.a() #0 {
+entry:
+  call void @wf.drop.t.b()
+  ret void
+}
+define private void @wf.cycle.one() #0 {
+entry:
+  call void @wf.cycle.two()
+  ret void
+}
+define private void @wf.cycle.two() #0 {
+entry:
+  call void @wf.cycle.one()
+  ret void
+}
+attributes #0 = { nounwind }
+";
+        let fragments =
+            split_module(module, FragmentGranularity::Function).expect("the module splits");
+        assert_eq!(fragments.len(), 3, "{fragments:#?}");
+        let chain = defining(&fragments, "define hidden void @wf.drop.t.a(");
+        assert_eq!(chain.len(), 1, "{fragments:#?}");
+        assert!(
+            chain[0].contains("define private void @wf.drop.t.b("),
+            "{}",
+            chain[0]
+        );
+        let cycle = defining(&fragments, "define hidden void @wf.cycle.one(");
+        assert_eq!(cycle.len(), 1, "{fragments:#?}");
+        assert!(
+            cycle[0].contains("define private void @wf.cycle.two("),
+            "{}",
+            cycle[0]
+        );
     }
 
     /// A source module's functions share a fragment, and the local
