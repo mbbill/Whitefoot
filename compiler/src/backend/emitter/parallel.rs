@@ -430,11 +430,13 @@ impl FunctionEmitter<'_, '_> {
             let parameter_type = llvm_type(self.program, parameter.ty())?;
             let operand = self.value_operand(*argument)?;
             operands.push(format!("{parameter_type} {operand}"));
+            // The frame keeps a range reference's pair whole; the refused
+            // edge's own call receives it split, like every other call.
             call_arguments.push(if parameter.is_indirect() {
                 let address = self.value_place(*argument)?;
                 format!("ptr {address}")
             } else {
-                format!("{parameter_type} {operand}")
+                self.value_argument(*parameter, &operand)?
             });
             field_types.push(parameter_type);
         }
@@ -594,11 +596,8 @@ impl FunctionEmitter<'_, '_> {
                 let address = self.value_place(*capture)?;
                 format!("ptr {address}")
             } else {
-                format!(
-                    "{} {}",
-                    llvm_type(self.program, parameter.ty())?,
-                    self.value_name(*capture)
-                )
+                let operand = self.value_name(*capture);
+                self.value_argument(*parameter, &operand)?
             });
         }
 
@@ -902,6 +901,16 @@ fn thunk_definition(
             // The field still owns the complete argument payload. The callee
             // snapshots this content into its own activation before mutation.
             rendered.push(format!("ptr %p{index}"));
+        } else if parameter.is_range() {
+            // A range reference's pair crosses the call as its element
+            // pointer and count, the same split every call route passes.
+            let _ = writeln!(
+                body,
+                "  %a{index} = load {field_type}, ptr %p{index}\n  \
+                 %a{index}.data = extractvalue {field_type} %a{index}, 0\n  \
+                 %a{index}.len = extractvalue {field_type} %a{index}, 1"
+            );
+            rendered.push(format!("ptr %a{index}.data, i64 %a{index}.len"));
         } else {
             let _ = writeln!(body, "  %a{index} = load {field_type}, ptr %p{index}");
             rendered.push(format!("{field_type} %a{index}"));

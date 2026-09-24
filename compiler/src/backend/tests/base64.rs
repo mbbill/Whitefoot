@@ -9,7 +9,11 @@ fn base64_has_typed_results_and_no_host_allocation() {
     let main = emitted_function(&llvm, "main");
     // All three input/output pairs are inline arrays, so nothing in this
     // program reaches the host allocator and no edge carries a free.
-    assert!(encode.starts_with("define void @wf_encode(ptr %wf.result, { ptr, i64 } "));
+    // Each range reference crosses the call as its element pointer, carrying
+    // the reference facts, and its count (compiler/backend-facts).
+    assert!(encode.starts_with("define void @wf_encode(ptr %wf.result, ptr noalias nonnull "));
+    assert!(encode.contains(" %wf.arg.v0.data, i64 %wf.arg.v0.len, ptr noalias nonnull "));
+    assert!(encode.contains(" %wf.arg.v1.data, i64 %wf.arg.v1.len)"));
     // Both result routes initialize the caller's typed destination: tag,
     // u64 success, and fieldless one-bit IndexError on the error route.
     assert_scalar_result_fields(&llvm, encode, &["i32", "i64", "i1"]);
