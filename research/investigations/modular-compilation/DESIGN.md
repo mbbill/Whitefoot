@@ -1165,8 +1165,8 @@ These families name responsibilities, not a proposed public Rust API:
 | Final link action | Selected objects, runtime, linker/options and entry | Executable; ordinary full link when inputs change |
 
 Module is the source/distribution boundary; a function or concrete instance is
-the ordinary body-check boundary; one module's members of a recursive component
-form an atomic proof publication boundary. Query granularity is not forced to
+the ordinary body-check boundary; the members of a recursive component that one
+module's check verifies form an atomic proof publication boundary. Query granularity is not forced to
 whole modules. An
 edited file can be reparsed while unchanged item values stop downstream
 invalidation. Token-level editor parsing is not necessary to avoid checking
@@ -1318,9 +1318,9 @@ calling component.
 
 Such a component can contain another module's instance, which only composition
 checks, so FN-9's atomic publication applies to each module's members rather
-than to the whole component: a module publishes its own members' clauses for
-its verdict once all of them verify, and composition requires every member of
-the component to verify. Because no member's proof uses a same-component
+than to the whole component: the members that a module's own check verifies
+publish their clauses for its verdict once all of them verify, and composition
+requires every member of the component to verify. Because no member's proof uses a same-component
 summary, publishing one module's verified members admits no circular proof;
 within one module this is FN-9's existing rule.
 
@@ -1602,7 +1602,7 @@ must update the affected rules together, not merely remove PROG-1's prohibition.
 | Public declaration correspondence / type representation | No separate interface or public/private source boundary | Declarations and struct fields default private; only .wfm permits public. Every public source struct has one complete definition there, with private support; functions retain declaration-only interfaces with an optional doc entry and exact normalized body correspondence without repeating public |
 | TYPE-2 | A readonly field is never a write target anywhere in the program | Only the declaring module writes a readonly field; outside it the field is never a write target or a construction argument; readonly requires public; prelude measures unchanged |
 | Type/ownership/release consumers | Descriptions in one inventory | Same judgments over imported descriptions; privacy grants no storage or release exemption |
-| FN-2/4/6/9, ENT-3.S12 | Whole-unit instances and summary identities; a component publishes its summaries only after every member verifies | Same instance and SCC rules across modules, with current cached claims and availability; components treat another module's generic instance as calling its function-kind actuals; each module publishes its own component members' summaries once all of them verify, and composition requires every member to verify; instance failures reported at the template |
+| FN-2/4/6/9, ENT-3.S12 | Whole-unit instances and summary identities; a component publishes its summaries only after every member verifies | Same instance and SCC rules across modules, with current cached claims and availability; components treat another module's generic instance as calling its function-kind actuals; the component members that one module's check verifies publish their summaries once all of them verify, and composition requires every member to verify; instance failures reported at the template |
 | DIAG-2 | One exact-program value owns/discards all evidence | Checked component fragments and assembled receipt; failed composition grants no authority, unrelated valid entries survive |
 | STOR-8 | A no-heap unit rejects forbidden type/call spellings throughout its source | An entry target withdraws heap capability from its conservative concrete call/value/layout/release/native closure, reporting the introducing function; ordinary checking still covers every definition in selected modules |
 | STOR-6, EFF-3, PAR-1/2 | Whole-program target/allocation/parallel metadata | Same rules over complete tracked layout, allocation and call-summary dependencies |

@@ -381,10 +381,11 @@ FN-9 also publishes a component's summaries atomically, only after every member
 verifies. A component formed under this rule can contain another module's
 instance, whose body only composition checks, so atomic publication would hold
 the calling module's own summaries, and with them its verdict, until
-composition. Publication is therefore per module: once every member that a
-module contributes to a component verifies, those members' summaries are
-available to the module's other proofs, and composition still requires every
-member of the component to verify. Same-component summaries stay unavailable
+composition. Publication is therefore per module: the members that a module's
+own check verifies publish their summaries to the module's other proofs once all
+of them verify, another module's instance never delays that publication, and
+composition still requires every member of the component to verify.
+Same-component summaries stay unavailable
 during checking, so no member's proof depends on another member's result, and
 publishing one module's verified members admits no circular proof. For a
 component within one module this is FN-9's existing rule.
