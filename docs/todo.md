@@ -1053,3 +1053,12 @@ condition under which it is taken up.
   required source work from removable lowering cost. Defer a broad repeat of all
   eight engineering tasks until it answers a concrete selection question;
   a passing new library does not dispose of the remaining matrix claims.
+
+- **The driver's clang lookup is a fixed path.** `clang_executable()` in
+  `compiler/src/bin/whitefootc.rs` hard-codes `/usr/bin/clang` on Linux/macOS
+  (`clang` on PATH on Windows), so a host whose clang lives only elsewhere —
+  a versioned-only `clang-18`, a Nix profile, or Homebrew LLVM — cannot run
+  the driver even with clang installed. Validate whether to accept an
+  explicit override, for example an environment variable, without changing
+  which clang CI uses. Close when the owner decides for or against the
+  override and, if accepted, its implementation lands.

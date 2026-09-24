@@ -3,6 +3,13 @@ name = "whitefoot"
 version = "0.1.0"
 edition = "2024"
 publish = false
+# Minimum stable toolchain that builds the compiler. An `if let` match guard
+# (semantic/entailment/flow.rs) needs the `if_let_guard` stabilization that
+# landed in 1.95.0; rustc 1.94.x rejects it with E0658 and no hint to update.
+# This makes cargo print "package requires rustc 1.95 or newer" instead of a
+# confusing feature-gate error on an installed-but-stale stable toolchain
+# (rustup does not update an installed stable on its own).
+rust-version = "1.95"
 
 [lib]
 doctest = false

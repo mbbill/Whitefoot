@@ -72,6 +72,12 @@ requirements. The reading and authority rules are in
 
 ## Running the compiler
 
+Prerequisites: a Rust stable toolchain at least the version in
+[compiler/Cargo.toml](compiler/Cargo.toml)'s `rust-version` (`rustup update
+stable` on an older installed stable — rustup does not update it on its own),
+and clang available at `/usr/bin/clang` on Linux/macOS or as `clang` on PATH
+on Windows.
+
 From `compiler/`:
 
 ```sh
@@ -96,6 +102,9 @@ compile time, and `off` emits no family so every node offers. `whitefootc
 participation; `WF_STACKS` is inert.
 
 ## Verification
+
+The guarded wrapper `.github/run-check.pl`, used below and throughout this
+section, additionally needs `/usr/bin/time` (Debian/Ubuntu package `time`).
 
 From the repository root:
 
