@@ -4,13 +4,22 @@
 //! travel as values and which travel as a pointer to their storage. A
 //! declaration and a definition use the same ABI.
 //!
+//! A `&[T]` range reference [REF-4] is the one value that crosses a call
+//! boundary as two arguments: its element pointer and its count. Inside a
+//! body it stays the `{ ptr, i64 }` pair compiler/storage-representation
+//! selects, and every admitted target already passes that aggregate's two
+//! words as two independent arguments, so the split changes no machine
+//! calling convention. It exists so that the pointer can carry the facts
+//! below, which an LLVM aggregate parameter cannot.
+//!
 //! Representation is not the whole signature. A parameter's *source mode*
 //! does select the aliasing facts its emitted signature carries
-//! (compiler/backend-facts): a reference parameter is `noalias`, `nonnull`,
-//! `dereferenceable` and non-capturing, because [REF-1] through [REF-3] and
-//! [EFF-5] already proved each of those, and `swap` [OP-11] is the one row
-//! whose two arguments may name the same place. The emitter reads the source
-//! signature, not this representation table, to decide that.
+//! (compiler/backend-facts): a reference parameter's pointer, and a range
+//! reference's element pointer, is `noalias`, `nonnull` and non-capturing,
+//! and a reference's is also `dereferenceable`, because [REF-1] through
+//! [REF-4] and [EFF-5] already proved each of those, and `swap` [OP-11] is
+//! the one row whose two arguments may name the same place. The emitter reads
+//! the source signature, not this representation table, to decide that.
 
 use crate::{IrFunction, IrProgram, IrType};
 
@@ -31,6 +40,12 @@ impl ParameterAbi {
 
     pub(crate) const fn is_indirect(self) -> bool {
         matches!(self, Self::ContentPointer(_))
+    }
+
+    /// Whether this parameter crosses the call boundary as a range
+    /// reference's element pointer and count rather than as one value.
+    pub(crate) const fn is_range(self) -> bool {
+        matches!(self, Self::Value(IrType::Range { .. }))
     }
 }
 

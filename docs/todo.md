@@ -744,6 +744,14 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   the module design for separate compilation. Close when a specified boundary
   and its conformance cases land, or the owner records why a narrower
   boundary suffices.
+- **The driver's clang lookup is a fixed path.** `clang_executable()` in
+  `compiler/src/bin/whitefootc.rs` hard-codes `/usr/bin/clang` on Linux/macOS
+  (`clang` on PATH on Windows), so a host whose clang lives only elsewhere —
+  a versioned-only `clang-18`, a Nix profile, or Homebrew LLVM — cannot run
+  the driver even with clang installed. Validate whether to accept an
+  explicit override, for example an environment variable, without changing
+  which clang CI uses. Close when the owner decides for or against the
+  override and, if accepted, its implementation lands.
 
 ## Open language questions
 
@@ -1062,13 +1070,41 @@ condition under which it is taken up.
 - **Handing checker facts to the backend.** Emitted since the v0.60 port:
   `noalias` (not on `swap`), `nonnull`, `dereferenceable`,
   `captures(none)` or `nocapture` by a build-time probe, `inbounds`, and
-  `nuw`/`nsw` on the exact family. The later qualified Ring payload-address
+  `nuw`/`nsw` on the exact family. A `&[T]` range parameter crosses calls as
+  its element pointer and count, and the pointer carries the same facts
+  except `dereferenceable` (`compiler/backend-facts`; the
+  [range-reference fact investigation](../research/investigations/range-reference-facts/DESIGN.md)
+  records the derivation and the removed vectorizer overlap check). The later
+  qualified Ring payload-address
   `llvm.assume` is measured in the [Deque comparison](../research/experiments/container-representation/deque-library/RESULTS.md);
   its remaining costs are tracked above. Not emitted: `memory(argmem: ...)` (the
   IR carries neither the declared row nor the allocation fact), scoped
   alias metadata and `llvm.loop.parallel_accesses` (the emitter has no
   metadata table). Build the metadata subsystem as its own step with a
   before/after benchmark.
+- **Alias facts for worker-run loop chunks.** A synthesized loop-split chunk
+  or splitter has no source signature, so its range and reference captures
+  carry no `noalias`. The sequential world inlines the chunk into its source
+  function, which has the facts; a chunk run as a worker lane does not, so a
+  vectorizable chunk loop may keep a runtime overlap check. The facts would
+  need their own derivation from PAR-2 independence and the enclosing call's
+  EFF-5 result, since sibling chunks write other parts of the same captured
+  range concurrently. Impact and whether any current kernel pays such a check
+  are unmeasured. Validate by inspecting the optimized worker chunks of the
+  formal compute kernels for `vector.memcheck` and, where one appears,
+  comparing chunk time with and without a hand-added fact. Deferred because
+  the range-reference change covers source signatures only; reopen when a
+  measured parallel kernel shows the check.
+- **Compute-bench private adapters still pass aggregate ranges.**
+  `research/experiments/compute-bench/array_reference_host.ll`,
+  `first_index_host.ll`, `dag_fanin_host.ll` and the first-index observation
+  rewrite in that Makefile spell a range argument as one `{ ptr, i64 }`
+  aggregate. The compiler now passes it as pointer and count; the machine code
+  is identical on the admitted targets, but LLVM text bound into a WF module
+  must use the split form, and the first-index rewrite no longer matches the
+  emitted head and refuses. These dated research inputs were left unchanged;
+  update them before running those experiments with a compiler that includes
+  the split, keeping an older baseline arm on its own adapter.
 - **Subscripted integer places as terms.** A place with subscripts is a
   term only when its last step is a readonly field, a measure or a writer's
   own (v0.70, [investigation](../research/investigations/readonly-field-terms/DESIGN.md#alternatives)).
@@ -1086,8 +1122,8 @@ condition under which it is taken up.
   `requires deref(nodes)[i].first + deref(nodes)[i].count <= deref(kids).len`
   gives the body no usable affine premise. FN-9 needs the formal offset
   substituted on both the body and the caller side first (see the next
-  entry); affine images need their kill to follow the term's support, as
-  measure atoms do. Validate with paired published and local cases, a kill of
+  entry) and clause subscripts judged (the entry after it); affine images
+  need their kill to follow the term's support, as measure atoms do. Validate with paired published and local cases, a kill of
   each support member, and unchanged verdicts elsewhere; reopen when an
   index-based program needs one of these surfaces.
 - **FN-9 relations read a formal subscript as an unknown offset.** A
@@ -1104,23 +1140,52 @@ condition under which it is taken up.
 - **Clause subscripts owe no judged bounds obligation.** ENT-2 submits each
   subscript in a clause (b) place to MSR-4 where the place is formed, but a
   `requires` or `define` place such as `deref(rows)[i].len` is never judged:
-  `requires k < deref(rows)[i].len` is accepted with `i` unconstrained. No
-  unsound discharge follows, because a term over an element that does not
-  exist gains facts only from standing type facts or from other requirements,
-  and the body still owes the bound at every read; but the rule and the
-  compiler disagree. Decide where a clause place is formed (body entry after
-  the earlier requirements, as the existing tests write it, or the caller's
-  instantiation) and judge it there; validate with a clause whose offset is
-  unbounded and one bounded by an earlier requirement.
+  `requires k < deref(rows)[i].len` is accepted with `i` unconstrained. The
+  callee body then holds facts over an element that may not exist, and the
+  WIN-2 separation below lets such a fact survive the operation that creates
+  that element: with `requires i == deref(rows).len` and
+  `requires deref(rows)[i].width <= deref(cells).len`, a body that calls
+  `place_back` with a wide element and loops to `deref(rows)[i].width` is
+  accepted (review probe p50; v0.69 refused the clause under FN-8). It is not
+  reachable from an accepted caller today only because a caller can
+  discharge a requirement over an element that does not exist solely from
+  value-independent standing facts, which stay true of whatever element is
+  created: any other fact about an element needs its subscript discharged
+  where the place is formed, and every body event keeps that element live or
+  kills the fact. Decide where a clause place is formed (body entry after the
+  earlier requirements, as the existing tests write it, or the caller's
+  instantiation) and judge it there; validate with p50 (must reject), a
+  clause whose offset is unbounded, and one bounded by an earlier
+  requirement. The FN-9 extension above waits on this, because a published
+  relation would hand such a fact to a caller.
+- **WIN-2 separates a subscript from `next` and `free` without proving it
+  live.** The overlap relation answers `r[i]` against `r.next` and `r.free`
+  as separate because a live `r[i]` has `i < r.len`, but it never asks
+  whether `i < r.len` holds at the event: a fact over `r[i]` with `i` equal to
+  the length survives `place_back`, which writes exactly that slot. Every
+  body subscript is discharged where its place is formed and every later
+  event keeps it live or kills its facts, so only the clause route above
+  reaches the gap. Make the answer conditional on proving `i < r.len` in the
+  event's context, as `r.last` already is on `i != r.len - 1`; validate that
+  p50 is rejected even with clause subscripts still unjudged, and that the
+  window programs, containers and conformance corpus keep their verdicts.
 - **Tracked-place offsets with projections are not captured.** ENT-2 admits
-  an offset that is a live own integer tracked place, but the compiler
-  captures only literals, consts and bare bindings. A measure read such as
-  `table[s.k].len` is reported unsupported; a readonly-field place such as
-  `nodes[n.parent].count` forms no term (a counted endpoint over it is
-  reported unsupported) and so derives nothing. Capture such offsets with
-  their own support (the field place) so OWN-7 separation and ENT-5 kills
-  read them; validate with a write to the offset's field and to its root.
-  Until then, bind the offset with `let` first.
+  any clause (a) term as an offset, but the compiler captures only literals,
+  consts and bare bindings. A measure read such as `table[s.k].len` and a
+  readonly-field read such as `nodes[n.parent_slot].count` or
+  `deref(nodes)[deref(r)].count` are reported unsupported, never rejected, and
+  so is such a place in a contract clause. Capture such offsets with their own
+  support (the field place, the reference's referent) and a spelling identity
+  that keeps `n.a` and `n.b` apart, so OWN-7 separation and ENT-5 kills read
+  them; validate with a write to the offset's field, to its root and to a
+  sibling field. Until then, bind the offset with `let` first.
+- **Readonly-field offsets.** ENT-2 admits a clause (a) or (c) term as an
+  offset. A clause (b) term, such as `nodes[nodes[i].parent].count` in a tree
+  with parent indices, is equally tracked by the fact system and would be a
+  principled recursive extension; it is refused today (no term) to keep the
+  offset rule non-recursive. Reopen when an index-based program needs it,
+  after the capture above; validate with kills of the inner element, the
+  inner offset and the outer element.
 - **Member names `len`, `cap` and `head` are classified by spelling in two
   paths.** Contract clauses and subscripted body places pick the measure
   route by the member's name before its type is known, so a writer's field

@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-24 Pass range references as pointer and count with their facts
+
+Nodes: compiler/backend-facts
+
+Owner-approved: The owner explicitly approved PR #112's range-reference-facts amendment as written and agreed to leave the compute-bench research adapters unchanged.
+
+Summary: Add the decision that a range-reference parameter crosses every call boundary as its element pointer and count, the pointer carrying the reference facts except `dereferenceable`, with its three rejected alternatives: scoped alias metadata, a `separate_storage` assumption, and an aggregate wrapper around a split body. The [range-reference fact investigation](../research/investigations/range-reference-facts/DESIGN.md#alternatives) supplies the derivation, prototypes and target ABI check. Remove the accepted amendment. No specification rule changes; this ruling does not authorize a merge.
+
 ## 2026-09-23 Adopt the measured priority queue and ordered-map baselines
 
 Nodes: language/data-model/priority-queue-storage, language/data-model/ordered-map-storage

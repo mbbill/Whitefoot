@@ -9872,12 +9872,10 @@ impl Analyzer<'_, '_> {
         match self.terms.kind(term).clone() {
             TermKind::Zero => Some(AffineForm::constant(0)),
             TermKind::Constant(value) => Some(AffineForm::constant(value)),
-            TermKind::Place(place, _)
-                if place.path.is_empty()
-                    && let PlaceRoot::Binding(binding) = place.root =>
-            {
-                state.values.get(&binding).cloned()
-            }
+            TermKind::Place(place, _) if place.path.is_empty() => match place.root {
+                PlaceRoot::Binding(binding) => state.values.get(&binding).cloned(),
+                _ => None,
+            },
             // [MSR-4] a measure term's image is its own compiler-owned atom,
             // [MSR-3] a measure datum inherits the atom of the term it
             // denotes, and [MSR-6] gives one immutable image to a symbolic

@@ -24,7 +24,7 @@ mod slice;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write;
 
-use super::abi::FunctionAbi;
+use super::abi::{FunctionAbi, ParameterAbi};
 pub use super::runtime::*;
 use super::storage::{FunctionStoragePlan, is_stored_aggregate};
 use super::target::{
@@ -481,17 +481,43 @@ fn ordinary_call_arguments(
         arguments.push("ptr %wf.result".to_owned());
     }
     for ((value, _), parameter) in function.parameters().iter().zip(abi.parameters()) {
-        arguments.push(if parameter.is_indirect() {
-            format!("ptr %wf.arg.v{}", value.ordinal())
-        } else {
-            format!(
-                "{} {}",
-                llvm_type(program, parameter.ty())?,
-                value_name(*value)
-            )
-        });
+        arguments.push(incoming_parameter(program, *value, *parameter, "")?);
     }
     Ok(arguments.join(", "))
+}
+
+/// One parameter as the emitting function receives it: its head's
+/// declaration with `facts` after the pointer's type, or, with no facts, the
+/// operands a same-signature forward passes on unchanged.
+///
+/// A range reference arrives as its element pointer and count (see
+/// [`super::abi`]); the body reassembles its `{ ptr, i64 }` pair at entry.
+fn incoming_parameter(
+    program: &IrProgram<'_, '_, '_>,
+    value: IrValueId,
+    parameter: ParameterAbi,
+    facts: &str,
+) -> Result<String, BackendFailure> {
+    Ok(if parameter.is_indirect() {
+        format!("ptr %wf.arg.v{}", value.ordinal())
+    } else if parameter.is_range() {
+        let (pointer, count) = incoming_range_parts(value);
+        format!("ptr{facts} {pointer}, i64 {count}")
+    } else {
+        format!(
+            "{}{facts} {}",
+            llvm_type(program, parameter.ty())?,
+            value_name(value)
+        )
+    })
+}
+
+/// The element pointer and count a range-reference parameter arrives as.
+fn incoming_range_parts(value: IrValueId) -> (String, String) {
+    (
+        format!("%wf.arg.v{}.data", value.ordinal()),
+        format!("%wf.arg.v{}.len", value.ordinal()),
+    )
 }
 
 /// A budgeted component's ordinary entry: obtain the initial budget and enter
@@ -526,22 +552,10 @@ fn emit_recursion_budget_entry(
         source_symbol(function.name())
     )
     .map_err(|_| BackendFailure::TextEmission)?;
-    let mut parameters = Vec::with_capacity(abi.parameters().len() + 1);
-    if abi.result().uses_destination() {
-        parameters.push("ptr %wf.result".to_owned());
-    }
-    for ((value, _), parameter) in function.parameters().iter().zip(abi.parameters()) {
-        parameters.push(if parameter.is_indirect() {
-            format!("ptr %wf.arg.v{}", value.ordinal())
-        } else {
-            format!(
-                "{} {}",
-                llvm_type(program, parameter.ty())?,
-                value_name(*value)
-            )
-        });
-    }
-    output.push_str(&parameters.join(", "));
+    // The entry forwards its parameters unchanged, so its head declares
+    // exactly the operands it passes on.
+    let mut arguments = ordinary_call_arguments(program, function, &abi)?;
+    output.push_str(&arguments);
     output.push_str(") {\nentry:\n");
     let budget = match frontiers.initial().ok_or(BackendFailure::InvalidIr)? {
         crate::RecursionBudget::Off => return Err(BackendFailure::InvalidIr),
@@ -552,7 +566,6 @@ fn emit_recursion_budget_entry(
             "%wf.budget".to_owned()
         }
     };
-    let mut arguments = ordinary_call_arguments(program, function, &abi)?;
     if !arguments.is_empty() {
         arguments.push_str(", ");
     }
@@ -1206,13 +1219,26 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     /// `swap` is the stated exception: [OP-11] admits the one call whose two
     /// arguments name the same place, so its two parameters carry every fact
     /// but that one.
+    ///
+    /// A `&[T]` range reference [REF-4] is a reference too, and the facts go
+    /// on the element pointer it arrives as. LLVM's `noalias` constrains only
+    /// memory the call modifies, and [EFF-5] proved every written path of the
+    /// call disjoint from every other substituted path; the callee reaches
+    /// caller storage only through its reference parameters, whose accesses
+    /// its exact row covers [EFF-2]. Two read-only ranges may overlap, which
+    /// `noalias` permits because neither is modified. The pointer addresses
+    /// storage that exists while the range is valid, even for an empty range,
+    /// so it is `nonnull`. Its extent is `len` elements, known only at run
+    /// time and possibly zero, so it states no `dereferenceable` extent.
     fn reference_parameter_facts(
         &self,
         index: usize,
         ty: IrType,
     ) -> Result<String, BackendFailure> {
-        let IrType::Address(referent) = ty else {
-            return Ok(String::new());
+        let (mode, referent) = match ty {
+            IrType::Address(referent) => (crate::IrSourceMode::Reference, Some(referent)),
+            IrType::Range { .. } => (crate::IrSourceMode::Range, None),
+            _ => return Ok(String::new()),
         };
         // A synthesized function has no source signature, and a fact whose
         // derivation is missing is simply not emitted.
@@ -1220,7 +1246,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             .function
             .source_signature()
             .and_then(|signature| signature.parameters().get(index).copied())
-            != Some(crate::IrSourceMode::Reference)
+            != Some(mode)
         {
             return Ok(String::new());
         }
@@ -1233,11 +1259,13 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         // The referent's own selected-target extent. A shape whose block
         // extends past its statically typed header states only the header it
         // is sure of, which is the direction `dereferenceable` needs.
-        if let Ok(layout) = crate::backend::target::validate_static_storage(
-            self.target,
-            self.program,
-            &crate::backend::target::TargetStorageType::source(referent.ty()),
-        ) && layout.size() > 0
+        if let Some(referent) = referent
+            && let Ok(layout) = crate::backend::target::validate_static_storage(
+                self.target,
+                self.program,
+                &crate::backend::target::TargetStorageType::source(referent.ty()),
+            )
+            && layout.size() > 0
         {
             write!(facts, " dereferenceable({})", layout.size())
                 .map_err(|_| BackendFailure::TextEmission)?;
@@ -1362,23 +1390,31 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             if index != 0 || result_address {
                 self.output.push_str(", ");
             }
-            if parameter.is_indirect() {
-                write!(self.output, "ptr %wf.arg.v{}", value.ordinal())
-                    .map_err(|_| BackendFailure::TextEmission)?;
-                continue;
-            }
-            write!(
-                self.output,
-                "{}{} {}",
-                llvm_type(self.program, parameter.ty())?,
-                self.reference_parameter_facts(index, parameter.ty())?,
-                self.value_name(*value)
-            )
-            .map_err(|_| BackendFailure::TextEmission)?;
+            let facts = self.reference_parameter_facts(index, parameter.ty())?;
+            let incoming = incoming_parameter(self.program, *value, *parameter, &facts)?;
+            self.output.push_str(&incoming);
         }
         if declaration {
             self.output.push_str(")\n\n");
             return Ok(self.output);
+        }
+        // A range reference arrives as its element pointer and count; the
+        // body reads its ordinary `{ ptr, i64 }` pair, reassembled once in
+        // the entry block beside the frame's slots, where it dominates every
+        // use, including a self-tail transfer's parameterized body entry.
+        for ((value, _), parameter) in self.function.parameters().iter().zip(abi.parameters()) {
+            if !parameter.is_range() {
+                continue;
+            }
+            let (pointer, count) = incoming_range_parts(*value);
+            let pair = llvm_type(self.program, parameter.ty())?;
+            let name = value_name(*value);
+            writeln!(
+                self.entry_prelude,
+                "  {name}.data = insertvalue {pair} poison, ptr {pointer}, 0\n  \
+                 {name} = insertvalue {pair} {name}.data, i64 {count}, 1"
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
         }
         // The variant's hidden trailing budget. Legal because this definition
         // is synthesized and is named by no source call: a writer's own
