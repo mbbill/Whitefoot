@@ -1627,7 +1627,13 @@ fn owned_pair_results_survive_ordinary_join_and_forced_refusal() {
     assert!(module.contains(&format!("{result} = type {{ i64, i64 }}")));
     // The published thunk and the refused edge call the same by-value ABI;
     // both edges join as one value that enters the caller's own storage.
-    let thunk = function_body(&module, "@wf__par_thunk_0");
+    // A thunk is named for the function that hands it out and numbered
+    // among that function's own [MOD-8]: `main`'s first.
+    let thunk = function_body(&module, "@wf__par_thunk_main.0");
+    assert!(
+        main.contains(", ptr @wf__par_thunk_main.0)"),
+        "the call is handed out through this thunk: {main}"
+    );
     assert!(thunk.contains(&format!("%result = call {result} @wf_make(i64 %a0)")));
     assert!(thunk.contains(&format!("store {result} %result, ptr %slot")));
     assert!(main.contains(&format!(" = call {result} @wf_make(i64 ")));
