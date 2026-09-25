@@ -50,6 +50,7 @@ impl Checker<'_, '_, '_, '_> {
                 self.tree.coordinate(node)?,
             ),
             kind: SemanticIssueKind::InvalidMusttail { condition, subject },
+            request: None,
         });
         Ok(())
     }

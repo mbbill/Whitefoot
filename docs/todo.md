@@ -11,6 +11,93 @@ rarely insert at the same place.
 
 ## Numeric conversions and value evidence
 
+- **Finish and qualify the modular incremental design.** The module
+  decisions in the [language](../design/language.md) and
+  [compiler](../design/compiler.md) design trees rest on the
+  [architecture](../research/investigations/modular-compilation/DESIGN.md),
+  [source rules](../research/investigations/modular-compilation/LANGUAGE.md)
+  and [complete specimen](../research/investigations/modular-compilation/demo/README.md);
+  the [build-cost measurements](../research/experiments/modular-build-cost/RESULTS.md)
+  record what the implementation costs. Remaining, each with the measurement
+  or limit that shows it: the later stage of the
+  [composition staging](../research/investigations/modular-compilation/DESIGN.md#composition-staging),
+  persistent formation, lookup, instance, summary and lowering queries inside
+  a composition through module build units, instance units and fact-based
+  entry checks, selected when edit-build measurements show the composition's
+  rerun to limit a current experiment (a build of an edited entry now forms,
+  resolves and type-checks the whole closure and reuses only its proof
+  analyses and unchanged objects: about 350 ms of a 590 to 620 ms body-edit
+  build of a 32-module chain, growing with the program); a cold build without
+  a cache, which checks each module and then the whole closure; the impact report,
+  which finds each further failing body by checking its module again with
+  the earlier ones set aside; ThinLTO's import threshold, which decays along
+  a deep cross-fragment call chain and left the innermost step of the
+  crossing benchmark's runtime-entry copy out of line (no measurable cost
+  there yet; watch for a workload where it shows, and compare import limits
+  or grouping); and an executable runner for entries that take other
+  parameters than `Inputs` or return other results than `ExitStatus` or
+  `unit`, which build only as libraries (`--emit-llvm`). Extract useful cases
+  into formal test ownership as each finer mechanism lands; no daily gate
+  depends on the research probe or specimen. Compare clean/warm verdicts and
+  executables across edits, including changed summary availability with
+  unchanged headers, published-field versus private-field changes, hidden
+  layout/heap changes, rejected import candidates becoming profitable, and
+  failed builds. Measure input-validation I/O, source/proof/planning/
+  backend/link work, runtime quality and peak memory separately on the queue,
+  GrowVector, wfgrep, SHA-256, a generic-heavy consumer and controlled
+  dependency scaling; an exploratory run found source checking and runtime
+  construction ahead of LLVM work at current sizes. A source module is not a
+  compulsory body/proof/object unit. Benefit: independently verified modules
+  for large projects and parallel architect/implementer agents without losing
+  runtime optimization; persistence correctness, LLVM integration cost and real
+  build/runtime and collaboration gains remain unverified. Reopen structural
+  choices when a discriminating control or matched workload fails; remove this
+  entry when the complete implementation evidence lands.
+  Defer resolved-public-surface CI reporting until
+  interface query values exist; its benefit is detecting capability/contract
+  changes that a `public` keyword diff misses. Validate same-identity alias
+  renames, retargeting and published or private representation edits before
+  wiring a report, with no additional approval gate. Named specification
+  projections, effect regions, representation-independent model properties
+  and mathematical functions remain deferred: they could keep client source
+  unchanged across representation edits or express algorithmic models, but add
+  abstraction and possibly termination/proof machinery. Reopen for a type that
+  must publish a quantity without publishing its storage, or a representation
+  migration or contract that makes this cost worthwhile; compare source edits,
+  invalidation, interface size and proof cost with published fields, retaining
+  deterministic polynomial checking and no runtime proof work. Measure the
+  conservative cross-module component rule on real higher-order code; reopen
+  it if it withholds postconditions that ordinary programs need. A persistent
+  LLVM planning adapter waits for warm-build measurements that show stock
+  ThinLTO planning to be a material share of edit latency. External-package
+  resolution and library composition remain deferred by scope; reopen only
+  when selected by the owner, with package identity/version/renaming cases.
+  Subtree-private independently compiled modules remain unselected; reconsider
+  for a concrete privacy consumer that cannot use one module's private
+  implementation files.
+
+- **Rebuild the prelude and a standard library on modules.** The owner
+  selected this as the work after the modular compilation PR: library code
+  becomes registered modules with `module.wfm` interfaces, checked and cached
+  like program modules, and programs reach it through the ordinary qualified
+  path, alias and access rules instead of declarations the compiler injects
+  into every source bundle. Its investigation must settle which prelude parts
+  stay compiler-owned (the PRE-1 operation identities, opaque storage and the
+  runtime units) and which become source modules; how a program names library
+  modules, given that the name-resolution decision defers external
+  dependency-name binding and the modular design keeps the prelude out of an
+  ordinary source package called `std`; whether library modules join every
+  closure or only the entries that name them; and how their verdicts, proof
+  receipts and objects are reused across programs. The measured container
+  libraries under `research/experiments/container-representation/` are the
+  first standard-library candidates. Benefit: one naming and visibility rule
+  for library and program code, library checks reused instead of repeated in
+  every composition, and fewer compiler-owned declaration paths; the cost, the
+  specification changes (PRE-1, PROG-2) and the reuse gain are unverified.
+  Validate with the whole conformance corpus and test programs unchanged in
+  meaning, and a composition's front-end time before and after. Start after
+  the modular compilation PR merges, as its own investigation.
+
 - **Select the modular conversion companion.** The
   [conversion comparison](../research/investigations/numeric-conversions/DESIGN.md#companion-operations-and-explicit-deferrals)
   recommends integer-only `cvt.wrap` for direct low-bit extraction and modular
@@ -126,9 +213,16 @@ rarely insert at the same place.
   the bound in both reserve and caller, propagated through intervening helpers,
   then require the intended OP-9 rejection one element above it. Improve the
   diagnostic to identify the failed callee obligation and unavailable summary
-  without changing acceptance. Its benefit and exact attribution remain
-  unverified; defer this diagnostic work while the admitted generic standalone
-  control serves the experiment, and reopen when improving call-proof reports.
+  without changing acceptance. The GrowVector module witness met the same
+  report: a wrapper generic only over `ceiling` that returns
+  `grow_vector_append::<u64, ceiling>`'s length is refused at its own
+  postcondition (FN-9, identically by main's compiler), while the reserve
+  instance it reaches carries the same unbounded OP-9 `grow` obligation; the
+  conformance case `mod6-pos-grow-vector-boundary` therefore wraps with a
+  wrapper generic over the element type as well. Its benefit and exact
+  attribution remain unverified; defer this diagnostic work while the
+  admitted generic standalone control serves the experiment, and reopen when
+  improving call-proof reports.
 
 - **Descendant references retain precision opportunities.** A write through a
   widened range can discard its previously established length facts, and
@@ -841,21 +935,47 @@ rarely insert at the same place.
   trusted linked definition of an ordinary declaration [PRE-1, SCOPE-3], which
   the checker cannot inspect, and a C program cannot call Whitefoot code
   through a stated ABI. A real systems program needs both directions: calling
-  an existing C library and exporting a Whitefoot component. The
-  [C ABI capsule idea](ideas.md#safe-c-abi-capsules) sketches export through
-  opaque validated handles; import needs an explicit contract for ownership,
-  layout, callbacks, foreign threads and failure, and a statement of what the
-  compiler trusts. Validate on one real dependency in each direction, starting
-  with the capsule experiment's misuse tests (stale handles, double drop,
-  overlapping buffers, short outputs, allocation failure). This interacts with
-  the module design for separate compilation. Close when a specified boundary
-  and its conformance cases land, or the owner records why a narrower
-  boundary suffices.
+  an existing C library, and exporting a Whitefoot component, which the next
+  entry covers. Import needs an explicit contract for ownership, layout,
+  callbacks, foreign threads and failure, and a statement of what the
+  compiler trusts; a checked wrapper and a source-level replacement are the
+  alternatives to compare on one real dependency. This interacts with the
+  module design for separate compilation. Close when a specified import
+  boundary and its conformance cases land, or the owner records why a
+  narrower boundary suffices.
+- **Deliver a Whitefoot component as a safe C library.** The owner wants both
+  delivery forms studied (2026-09-25): a C, C++ or Rust program should use a
+  Whitefoot component the way programs use Wuffs's decoders, without taking
+  on Whitefoot's lifetime and alias rules.
+  (a) Emit C source for the component, as Wuffs does: portable to any C
+  toolchain and reviewable, but the emitted C must never reach C's undefined
+  behavior where Whitefoot's meaning is defined (signed overflow, strict
+  aliasing, oversized shifts, uninitialized reads), may carry a proved fact
+  only through a C construct with the same meaning (`restrict`, an assumption),
+  and puts the C compiler in the trusted base in place of LLVM.
+  (b) Emit an object or static library and a generated header through the
+  existing LLVM backend, with a C-ABI export shim kept apart from the
+  compiler's internal function ABI, which can change without notice.
+  Either way the exported surface is where Whitefoot's guarantees meet an
+  unchecked caller, so, as the
+  [C ABI capsule idea](ideas.md#safe-c-abi-capsules) sketches, boundary code
+  validates every argument before Whitefoot code receives it (requirements,
+  lengths, overlapping buffers, handle generations, ownership transitions,
+  the calling thread), and a violation returns an error value with no partial
+  mutation; nothing a C caller passes is trusted. Validate one component, such
+  as raw DEFLATE decoding or UTF-8 validation, through each route: the capsule
+  misuse tests (stale handles, double drop, overlapping buffers, short
+  outputs, allocation failure), a C test harness, a fuzzing run through the C
+  API, and throughput against the Whitefoot-native build, recording what each
+  boundary check costs. The exported interface builds on the module design.
+  Take it up after the current correctness fixes land; close when one route
+  ships with its boundary specified and tested, or the owner records why one
+  route suffices.
 - **The driver's clang lookup is a fixed path.** `clang_executable()` in
   `compiler/src/bin/whitefootc.rs` hard-codes `/usr/bin/clang` on Linux/macOS
-  (`clang` on PATH on Windows), so a host whose clang lives only elsewhere —
-  a versioned-only `clang-18`, a Nix profile, or Homebrew LLVM — cannot run
-  the driver even with clang installed. Validate whether to accept an
+  (`clang` on PATH on Windows), so a host whose clang lives only elsewhere — a versioned-only `clang-18`, a
+  Nix profile, or Homebrew LLVM — cannot run the driver even with clang
+  installed. Validate whether to accept an
   explicit override, for example an environment variable, without changing
   which clang CI uses. Close when the owner decides for or against the
   override and, if accepted, its implementation lands.
@@ -875,12 +995,6 @@ rarely insert at the same place.
   functions reports only the first non-exhaustive `match` per run. Either
   every ERR-2 site of one enum is listed in a run, or ERR-2's sentence, which
   no other rule defines, is amended to what the toolchain provides.
-- **A float constant in a rendered goal prints its internal form.** An FN-8
-  `instantiated_goal` over a float constant renders it as
-  `Float { ty: F64, bits: 4607182418800017408 }` instead of its source
-  spelling `1.0_f64` (pinned in `driver::pinned_sentences` beside the integer
-  goals). The goal renderer should print the constant's canonical FORM-5
-  spelling, as it does for integers; update that pin with the fix.
 - **Validate the default diagnostic rendering.** Text by default is
   provisional. The [readable-diagnostics investigation](../research/investigations/readable-diagnostics/DESIGN.md#default-format-text-with-json-on-request)
   selected it on reading cost for an agent (the lean OP-4 and FN-8 records
@@ -902,6 +1016,111 @@ rarely insert at the same place.
   cannot be split exactly from text. The JSON form carries each item as its
   own string and covers exact parsing; reopen only if an agent misreads such a
   list in practice.
+- **The entailment fragment keeps a second resolved-place renderer.** Checker
+  payloads (EFF-5, OP-12, REF-2) spell resolved places through
+  `render_resolved_place` in `compiler/src/semantic/check/expressions/places.rs`,
+  while ENT-6 residuals and goals use `render_place` in
+  `compiler/src/semantic/entailment/flow.rs`, which still renders a payload
+  step by its variant and field ordinals and a literal subscript offset
+  without its `_u64` suffix. One renderer shared through a small naming seam
+  would remove the drift that produced the `<binding:N>` leak; the cost is
+  touching every pinned residual that spells a subscript or payload. Validate
+  by rendering both families from one function with the pinned-sentence
+  corpus unchanged except for the corrected spellings. Deferred from the
+  source-spelling fix because no current residual reaches either form in the
+  pinned corpus; reopen when one does or when either renderer next changes.
+- **A computed call argument has no source spelling in an EFF-5 path.** An
+  index position substituted from an argument that is neither a literal, a
+  const nor a binding, such as `first: indices[0_u64]`, renders as `?`,
+  because the checker captures only the value's identity and not the
+  argument's text. Rendering the argument's source extent would name it
+  exactly; validate that the extent is available at every capture site and
+  that capture identity stays unchanged. Deferred because the separation
+  proof already needs a binding there and the rejection names the call;
+  reopen when a writer report shows the `?` blocking a repair.
+- **Proposal: disposition-specific restructurings for proof rejections.** A
+  `refuted` goal is false in the facts where it stands [ENT-4], so no added
+  requirement, invariant or proof step can establish it, yet the FN-8, OP-2
+  and OP-6 texts ask for exactly that for both dispositions, and an FN-9
+  rejection carries no restructuring at all. For an agent that applies
+  the repair literally, a refuted goal should name a change to what reaches
+  the site — the call's arguments, the operands, the returned value or the
+  state that reaches it — or a deliberate guard where rejection is intended
+  behavior, while an unproved goal keeps "establish the fact". This needs a
+  specification amendment of DIAG-1's FN-8 sentence and the FN-8, FN-9, OP-2
+  and OP-6 rejection text (with any FN-9 payload field it adds), followed by
+  the compiler texts, the pinned sentences and the unit tests that assert a
+  disposition's fix; a compiler-only change would diverge from the texts the
+  specification prescribes. Validate on one refuted and one unproved probe per
+  rule, such as `255_u8 + 1_u8`, `cvt::<u32, u8>(256_u32)`, a literal actual
+  outside a callee requirement, and an ensures relation false at its return.
+  Close when the amendment and its derived updates land, or the owner keeps
+  one restructuring per rule.
+- **Printed restructurings have drifted from the specification's texts.**
+  DIAG-1 includes a mechanical fix "exactly where the owning rule requires
+  one", and several rules prescribe its words, but the checker's strings on
+  main differ: FN-8 prescribes `establish the complete callee requirement
+  with one dominating branch or one preceding proved invariant before the
+  call` and prints "when the call is required to succeed, establish the entire
+  instantiated callee requirement with a verified requirement, ..."; OP-6's
+  printed repair likewise elaborates its prescribed one; and rules that
+  prescribe none print one anyway: EFF-1's row conditions carry a
+  `mechanical_fix` on main, and EFF-2's `EffectMismatch` prints "declare
+  exactly the row the body exhibits: ..." though EFF-2 requires no
+  restructuring. (EFF-1's subsumed-read rejection, which requires no
+  restructuring, carries none.) Two of these printed fixes, applied
+  literally, lead to a further rejection:
+  (a) EFF-2's "add every missing category and path and remove every extra
+  one" no longer describes `expected_row`, which merges entries a call
+  would refuse. A body that reads `stats` and writes `stats.count`,
+  declared `writes(stats.count)`, gets `expected_row: "writes(stats)"`,
+  `missing: ["writes(stats)"]` and `extra: []`; adding the missing entry
+  and removing nothing gives `writes(stats), writes(stats.count)`, which
+  EFF-1 and EFF-2 admit and EFF-5 refuses at every call. Declaring
+  `expected_row` itself is callable.
+  (b) EFF-1's category-order fix turns `writes(v), reads(v)` into
+  `reads(v), writes(v)`, which then meets the subsumed-read rejection, one
+  more compile round for a repair that should have deleted the read.
+  Audit every rejection in one pass, rule by rule, and either update the
+  specification's text or the compiler's; the criterion is that every
+  restructuring the specification prescribes equals the printed one, and a
+  printed fix exists only where a rule requires one or the specification is
+  amended to allow it, and never leads to a further rejection of the same
+  construct. Pinned sentences and unit tests that assert the texts change
+  with it.
+- **Question for the owner, raised during the source-spelling fix: should a
+  row whose entries on one parameter overlap be admitted?** [EFF-5] compares
+  every pair of a call's substituted entries, including two that one
+  argument supplies, so `reads(p), writes(p.x)`, `reads(p.x), writes(p)` and
+  `writes(p), writes(p.x)` are refused at every call, while [EFF-2]'s
+  covering relation admits each at the declaration and [EFF-1] forbids only
+  the same-path pair `reads(p), writes(p)`. The checker refuses that pair at
+  the declaration (EFF-1's "the pair is never written for one path"), and
+  EFF-2's suggested row merges every such pair into one write of their
+  common path, so a suggestion is always callable. The remaining
+  declarations still fail only at their first call, as the uncalled rows in
+  `ref2-pos-bystander-preservation.wf` show. Two specification directions
+  remove the dead end: EFF-1 or EFF-2 refusing any row with two overlapping
+  entries on one parameter where one writes, or EFF-5 exempting a pair that
+  one argument supplies unless the two entries differ only in index or range
+  positions. The first keeps EFF-5's per-call guarantee and makes those
+  conformance rows rejections; the second changes what a single-parameter
+  row promises about aliasing inside the callee. Close with the owner's
+  choice; validate it against the bystander cases and the container library
+  rows.
+- **A few payload strings still carry non-source forms.** The source-spelling
+  fix left three: the FN-9 `relation` field prints the normalized relation
+  with unsuffixed literals, such as `"w.value - 0 <= -1"` for
+  `ensures result < 0_T`; the goal-literal renderer in
+  `compiler/src/semantic/entailment/flow.rs` falls back to
+  `format!("{other:?}")` for a value it has no source form for, such as an
+  array or struct constant; and the SET-1 `InvalidSetTarget` payload prints
+  `root_class: format!("{class:?}")`, a resolver class name. Render each in
+  its source form, the relation through the same normalized-relation
+  renderer with suffixed literals; validate by the pinned-sentence corpus,
+  whose only change is the corrected spellings. Deferred because each needs
+  its own rendering decision and none blocked the reported repairs; close
+  when all three print source forms.
 
 - **A directory named through a symbolic link cannot be opened.**
   `open_directory` opens one component without following a link, which the
@@ -952,7 +1171,7 @@ rarely insert at the same place.
 ## Code structure
 
 - **The entailment flow module has outgrown one reader.**
-  `compiler/src/semantic/entailment/flow.rs` has 17,271 lines, 15,040 of them
+  `compiler/src/semantic/entailment/flow.rs` has 17,275 lines, 15,040 of them
   in one `impl Analyzer` block; it grew from 8,670 lines on 2026-09-01 over 154
   commits. `compiler/src/semantic/entailment/state.rs` (7,755 lines, including
   a 1,729-line inline test module) and the tests in
@@ -970,6 +1189,21 @@ rarely insert at the same place.
   and a diff of moved items and module declarations only. Split when no open
   branch has large edits in these files, or one section at a time; close when
   every file named here is under 4,000 lines.
+
+- **The checker's program pass shares one file with its signature and goal
+  code.** `compiler/src/semantic/check.rs` has 4,349 lines, 3,597 of them in
+  one `impl Checker` block; the modular compilation work added about 600
+  (module inventories, supplied function actuals, receipt wiring). `check/`
+  already holds sibling `impl Checker` files, so the split moves methods, not
+  types: the program pass (`check_program`, `analyze_function_inventory`,
+  `function_actual_ids`) into `check/program.rs`, the signature and effect-row
+  checks (`check_function_signature_body`, `effect_row_difference`,
+  `render_effect_path`) into `check/signatures.rs`, and goal instantiation
+  (`instantiate_goal_expression`, `instantiate_goal_operation`,
+  `install_expression_call_requirements`) into `check/goals.rs`. Validate that
+  each move changes no behavior: identical `make check` results and a diff of
+  moved items and module declarations only. Close when the file is under 4,000
+  lines.
 
 ## Open language questions
 

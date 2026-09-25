@@ -1,0 +1,4 @@
+pkg::nodes: [];
+pkg: [pkg::nodes];
+
+entry main = pkg::main;

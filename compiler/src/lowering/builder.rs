@@ -39,10 +39,24 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
 
 /// Select optional target-fitting loop shapes after semantic acceptance, using
 /// the same target that will qualify and emit their transported signatures.
+#[cfg(test)]
 pub(crate) fn lower_checked_with_layout<'classified, 'lexed, 'source>(
     checked: CheckedProgram<'classified, 'lexed, 'source>,
     overlap: OverlapLowering,
     target: TargetLayout,
+) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
+    lower_checked_from(checked, overlap, target, None)
+}
+
+/// Select optional target-fitting loop shapes after semantic acceptance, using
+/// the same target that will qualify and emit their transported signatures,
+/// emitting only the functions `roots` reach through their calls when roots
+/// are given: a module program entry's build [MOD-9].
+pub(crate) fn lower_checked_from<'classified, 'lexed, 'source>(
+    checked: CheckedProgram<'classified, 'lexed, 'source>,
+    overlap: OverlapLowering,
+    target: TargetLayout,
+    roots: Option<&[crate::semantic::FunctionId]>,
 ) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
     let sequential_compute_refusal = matches!(
         overlap,
@@ -97,7 +111,7 @@ pub(crate) fn lower_checked_with_layout<'classified, 'lexed, 'source>(
     };
     let base_nominals = lower_nominals(base_types, &checked.data)?;
     let constants = lower_constants(base_types, &checked.data)?;
-    let physical = specialize::PhysicalFunctions::build(&checked.data)?;
+    let physical = specialize::PhysicalFunctions::build_from(&checked.data, roots)?;
     let mut types = physical_types::PhysicalTypes::new(
         &checked.data,
         base_nominals,
@@ -289,20 +303,59 @@ fn lower_global_value(value: &CheckedValue) -> Result<IrGlobalValue, LoweringFai
     }
 }
 
+/// [MOD-8] the stable link names of a table of entities: each the first
+/// sixteen hexadecimal digits of the SHA-256 of its stable spelling, the
+/// order of first occurrence appended where two spellings agree, and its
+/// ordinal where it has no stable spelling.
+fn link_names<'spelling>(spellings: impl Iterator<Item = Option<&'spelling str>>) -> Vec<String> {
+    use std::fmt::Write as _;
+    let mut used = std::collections::HashMap::<String, usize>::new();
+    spellings
+        .enumerate()
+        .map(|(index, spelling)| {
+            let base = spelling.map_or_else(
+                || format!("n{index}"),
+                |spelling| {
+                    let digest = crate::spec::sha256::digest(spelling.as_bytes());
+                    let mut hex = String::with_capacity(16);
+                    for byte in &digest[..8] {
+                        let _ = write!(hex, "{byte:02x}");
+                    }
+                    hex
+                },
+            );
+            let count = used.entry(base.clone()).or_insert(0);
+            let name = if *count == 0 {
+                base
+            } else {
+                format!("{base}.{count}")
+            };
+            *count += 1;
+            name
+        })
+        .collect()
+}
+
 fn lower_constants(
     erasure: TypeLowering<'_>,
     data: &CheckedProgramData,
 ) -> Result<Vec<IrGlobalConstant>, LoweringFailure> {
+    let names = link_names(
+        (0..data.constants.len())
+            .map(|index| data.constant_spellings.get(index).map(String::as_str)),
+    );
     data.constants
         .iter()
+        .zip(names)
         .enumerate()
-        .map(|(index, constant)| {
+        .map(|(index, (constant, link_name))| {
             if constant.id.0 as usize != index || constant.value.ty() != constant.ty {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }
             Ok(IrGlobalConstant {
                 id: IrConstantId(constant.id.0),
                 name: constant.name.clone(),
+                link_name,
                 ty: lower_type(erasure, constant.ty)?,
                 value: lower_global_value(&constant.value)?,
             })
@@ -314,12 +367,17 @@ fn lower_nominals(
     erasure: TypeLowering<'_>,
     data: &CheckedProgramData,
 ) -> Result<Vec<IrNominal>, LoweringFailure> {
+    let names = link_names(
+        (0..data.executable_nominal_count)
+            .map(|index| data.nominal_spellings.get(index).and_then(Option::as_deref)),
+    );
     data.nominals
         .get(..data.executable_nominal_count)
         .ok_or(LoweringFailure::InvalidCheckedProgram)?
         .iter()
+        .zip(names)
         .enumerate()
-        .map(|(index, nominal)| {
+        .map(|(index, (nominal, link_name))| {
             if nominal.id.0 as usize != index {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }
@@ -363,6 +421,7 @@ fn lower_nominals(
             };
             Ok(IrNominal {
                 name: nominal.name.clone(),
+                link_name,
                 id: IrNominalId(
                     u32::try_from(index).map_err(|_| LoweringFailure::CounterOverflow)?,
                 ),
@@ -1331,6 +1390,34 @@ impl<'program> IrBuilder<'program> {
         for (arm, block) in arms.iter().zip(arm_blocks) {
             self.current = Some(block);
             self.bindings = base_bindings.clone();
+            // [GRAM-10, WIN-3, STOR-3] an own-place arm's covered payloads
+            // take their release on entry, before its binders read the
+            // fields it names: the match is the point at which the scrutinee
+            // ceases to exist.
+            if !arm.covered.is_empty() {
+                let CheckedEnumType::Nominal(nominal) = enum_type else {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                };
+                let nominal = self.erased(nominal);
+                let mut releases = Vec::with_capacity(arm.covered.len());
+                for drop in &arm.covered {
+                    let [field] = drop.fields.as_slice() else {
+                        return Err(LoweringFailure::InvalidCheckedProgram);
+                    };
+                    let ty = lower_type(self.erasure, drop.ty)?;
+                    let payload = self.define(
+                        ty,
+                        IrOperation::ProjectVariant {
+                            aggregate: scrutinee,
+                            nominal,
+                            variant: arm.tag,
+                            field: *field,
+                        },
+                    )?;
+                    releases.push(self.lower_drop_subject(payload, &[], ty)?);
+                }
+                self.append_drops(releases)?;
+            }
             for binder in &arm.binders {
                 let CheckedEnumType::Nominal(nominal) = enum_type else {
                     return Err(LoweringFailure::InvalidCheckedProgram);

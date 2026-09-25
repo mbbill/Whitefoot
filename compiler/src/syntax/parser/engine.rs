@@ -48,12 +48,16 @@ struct Parser<'classified, 'lexed, 'source> {
     elements: Vec<DerivationElement<'source>>,
     terminal_count: u64,
     production_count: u64,
+    /// The grammar start deriving every source of this bundle: `program`
+    /// for interface and implementation records, `graph_file` for the graph.
+    start: Production,
 }
 
 impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
     fn new(
         classified: &'classified ClassifiedBundle<'lexed, 'source>,
         limits: ParseLimits,
+        start: Production,
     ) -> Self {
         Self {
             classified,
@@ -64,6 +68,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
             elements: Vec::new(),
             terminal_count: 0,
             production_count: 0,
+            start,
         }
     }
 
@@ -164,7 +169,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
         start: ByteOffset,
         end: ByteOffset,
     ) -> Result<(), Stop> {
-        if frame.production == Production::Program {
+        if frame.production.is_start() {
             return Ok(());
         }
         match frame.extent {
@@ -227,7 +232,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
                 ParseCompilerFailure::ProductionFrameMismatch,
             ));
         }
-        let extent = if expected == Production::Program {
+        let extent = if expected.is_start() {
             DerivationExtent::BundleRoot
         } else {
             let (source, start, end) = frame.extent.ok_or(Stop::Compiler(
@@ -261,7 +266,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
     }
 
     fn begin_production(&mut self, production: Production, atom_only: bool) -> Result<(), Stop> {
-        if production == Production::Program {
+        if production.is_start() {
             return Err(Stop::Compiler(ParseCompilerFailure::InvalidGrammarData));
         }
         self.push_frame(production, atom_only)?;
@@ -440,7 +445,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
             )))?;
             self.begin_prelude_signature()?;
         } else {
-            self.push_task(Task::Execute(Production::Program.root()))?;
+            self.push_task(Task::Execute(self.start.root()))?;
         }
         let mut cursor = 0_usize;
         while let Some(task) = self.tasks.pop() {
@@ -519,7 +524,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
     }
 
     fn run(mut self) -> Result<DerivationTree<'source>, Stop> {
-        self.push_frame(Production::Program, false)?;
+        self.push_frame(self.start, false)?;
         for (source, file) in self.classified.source_bundle().iter() {
             let tokens = self
                 .classified
@@ -532,7 +537,7 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
                 ));
             }
         }
-        self.finish_production(Production::Program)?;
+        self.finish_production(self.start)?;
         if !self.frames.is_empty() || self.elements.is_empty() {
             return Err(Stop::Compiler(
                 ParseCompilerFailure::ProductionFrameMismatch,
@@ -558,9 +563,11 @@ impl<'classified, 'lexed, 'source> Parser<'classified, 'lexed, 'source> {
                     if *subtree_elements == 0
                         || matches!(
                             (production, extent),
-                            (Production::Program, DerivationExtent::Source { .. })
-                                | (_, DerivationExtent::BundleRoot)
-                                    if *production != Production::Program
+                            (start, DerivationExtent::Source { .. }) if start.is_start()
+                        )
+                        || matches!(
+                            (production, extent),
+                            (other, DerivationExtent::BundleRoot) if !other.is_start()
                         )
                     {
                         return Err(Stop::Compiler(ParseCompilerFailure::InvalidGrammarData));
@@ -606,7 +613,34 @@ pub fn parse<'classified, 'lexed, 'source>(
     if classified.source_bundle().is_empty() {
         return ParseOutcome::InvocationFailure(ParseInvocationFailure::EmptySourceBundle);
     }
-    match Parser::new(classified, limits).run() {
+    parse_from(classified, limits, Production::Program)
+}
+
+/// Derives one module graph source from the `graph_file` start [GRAM-2, MOD-1].
+///
+/// The bundle holds exactly the graph record; the derivation root is the
+/// `graph_file` node, and the same predictive interpreter, limits and
+/// diagnostics apply as for `program` sources.
+#[must_use]
+pub fn parse_graph<'classified, 'lexed, 'source>(
+    classified: &'classified ClassifiedBundle<'lexed, 'source>,
+    limits: ParseLimits,
+) -> ParseOutcome<'classified, 'lexed, 'source> {
+    if classified.spec_hash() != SYNTAX_DATA_SPEC_HASH {
+        return ParseOutcome::InvocationFailure(ParseInvocationFailure::SpecificationMismatch);
+    }
+    if classified.source_bundle().is_empty() {
+        return ParseOutcome::InvocationFailure(ParseInvocationFailure::EmptySourceBundle);
+    }
+    parse_from(classified, limits, Production::GraphFile)
+}
+
+fn parse_from<'classified, 'lexed, 'source>(
+    classified: &'classified ClassifiedBundle<'lexed, 'source>,
+    limits: ParseLimits,
+    start: Production,
+) -> ParseOutcome<'classified, 'lexed, 'source> {
+    match Parser::new(classified, limits, start).run() {
         Ok(tree) => ParseOutcome::Complete(ParsedBundle { classified, tree }),
         Err(Stop::Source(issue)) => ParseOutcome::SourceIssue(issue),
         Err(Stop::Resource(failure)) => ParseOutcome::ResourceFailure(failure),

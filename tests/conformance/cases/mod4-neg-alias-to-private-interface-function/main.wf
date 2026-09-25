@@ -1,0 +1,6 @@
+alias hidden = pkg::data::secret;
+
+fn main() -> status: ExitStatus pure {
+  let code = pkg::data::seven();
+  return exit_status(code: code);
+}

@@ -4,12 +4,12 @@ enum Node {
 }
 
 fn leaf(w: u64) -> result: Box<Node> pure {
-  let node = Leaf(w: w);
+  let node = Node::Leaf(w: w);
   return box_new::<Node>(value: move node);
 }
 
 fn branch(left: Box<Node>, right: Box<Node>) -> result: Box<Node> pure {
-  let node = Branch(left: move left, right: move right, w: 0_u64);
+  let node = Node::Branch(left: move left, right: move right, w: 0_u64);
   return box_new::<Node>(value: move node);
 }
 

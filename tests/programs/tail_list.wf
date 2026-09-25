@@ -18,10 +18,10 @@ fn drain(chain: Box<Chain>, total: u64) -> result: u64 pure {
 }
 
 fn main() -> status: ExitStatus pure {
-  let empty = End();
+  let empty = Chain::End();
   let chain = box_new::<Chain>(value: move empty);
   for (i in 0_u64..100000_u64) {
-    let node = Link(value: i, next: move chain);
+    let node = Chain::Link(value: i, next: move chain);
     set chain = box_new::<Chain>(value: move node);
   }
   let total = drain(chain: move chain, total: 0_u64);

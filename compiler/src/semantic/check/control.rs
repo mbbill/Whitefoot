@@ -285,6 +285,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             self.tree.coordinate(expression_node)?,
                         ),
                         kind: SemanticIssueKind::ReturnMismatch,
+                        request: None,
                     }));
                 }
                 let drops = self.live_affine_drops(bindings, &HashSet::new(), node)?;

@@ -1,0 +1,4 @@
+pkg::frames: [];
+pkg: [pkg::frames];
+
+entry main = pkg::main;

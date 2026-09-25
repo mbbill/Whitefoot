@@ -105,11 +105,14 @@ jobs:
           echo "DESIGN_REVIEW_BASE=$design_review_base" >> "$GITHUB_ENV"
           git log --oneline -1 "$design_review_base"
 
+      # A cached build links its ThinLTO fragments with LLD on Linux; the
+      # macOS toolchain's own linker does ThinLTO itself.
       - name: Install the host toolchain
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
             sudo apt-get update
-            sudo apt-get install -y --no-install-recommends clang
+            sudo apt-get install -y --no-install-recommends clang lld
+            ld.lld --version
           fi
           test -x /usr/bin/clang
           /usr/bin/clang --version

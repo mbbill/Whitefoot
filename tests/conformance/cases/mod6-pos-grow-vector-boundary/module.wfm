@@ -1,0 +1,1 @@
+public fn main() -> status: ExitStatus pure doc "Fills a vector through a wrapper and a supplied push, empties it and frees it.";
