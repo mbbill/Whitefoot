@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-25 Return small stored results in registers behind an entry
+
+Nodes: compiler/result-registers
+
+Owner-approved: The owner approved PR #124's result-registers amendment, 2026-09-25.
+
+Summary: Add the node with its two decisions and ten rejected alternatives unchanged. A stored aggregate result returns as its LLVM first-class value when every scalar leaf of its representation gets its own return register on every admitted target, at most three integer-class words and two floating leaves, and a larger one keeps the caller's destination, because beyond that budget LLVM returns through a hidden pointer anyway or, for a third floating leaf on x86-64, through the x87 stack, which quiets a signaling NaN. A register-returned definition keeps its unchanged destination-form body under an internal symbol behind a public entry that returns the value, so the host optimizes the body as a destination-form definition before inlining it, while joined or per-exit value returns folded `records`' exit test into a select and lost its threaded ASCII loop. The measured gain is the call boundary's, and the merged form's faster hash-map trace came from inlining, not from the register return. The [result-register investigation](../research/investigations/result-registers/DESIGN.md) holds the demotion probe, the lowering comparison and the measurements. Remove the accepted amendment and the amendments directory. No specification rule or conformance evidence changes; this ruling does not authorize a merge.
+
 ## 2026-09-25 Name source constructs in rejection payloads as written
 
 Nodes: compiler/rejection-payloads
