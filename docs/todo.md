@@ -193,6 +193,22 @@ rarely insert at the same place.
   module selects (the investigation's W5). Reopen when that cost limits an
   experiment, or with a change to the standard library's module layout.
 
+- **A small module check is mostly parsing the prelude again.** Checking a
+  one-function module that names no library module executes 66.9 million
+  instructions, of which parsing takes 24.0 million and finalizing 16.5
+  million, and 97 percent of the bytes parsed are the 24 prelude records
+  (4,425 bytes against the module's 105); the parser's arm selection
+  (`row_score` under `select_arm` in `compiler/src/syntax/parser/diagnostic.rs`)
+  alone takes 13.9 million, since it scans every row of a decision
+  ([library-modules measurements](../research/investigations/library-modules/DESIGN.md#measurements-of-the-implemented-split),
+  W1 under callgrind). Impact: a fixed cost of every check and composition,
+  now the largest part of a small module check. Change: select a decision's
+  arm through an index by the first token's terminals instead of a scan, and
+  parse the prelude, which the compiler fixes at build time, once per
+  process rather than once per check. Validate with the same callgrind
+  comparison and unchanged parse outcomes over the corpus. Reopen when check
+  time limits an experiment.
+
 - **Some ENT-3 sources read no measure operand.** S7's constant-offset,
   checked-offset, exact-division, remainder and unsigned `iand` rows read an
   operand the specification calls an admitted term or constant through the
