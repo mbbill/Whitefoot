@@ -180,8 +180,8 @@ impl SourceIssueKind {
 /// One source-local issue found before a canonical tree exists.
 #[derive(Clone, Copy, Debug)]
 pub struct SourceIssue<'source> {
-    span: SourceSpan<'source>,
-    kind: SourceIssueKind,
+    pub(crate) span: SourceSpan<'source>,
+    pub(crate) kind: SourceIssueKind,
 }
 
 impl<'source> SourceIssue<'source> {

@@ -751,8 +751,8 @@ fn op9_overflow_is_rejected_before_lowering() {
     assert_eq!(failure.rule_id(), Some("OP-9"));
     assert!(
         failure
-            .detail()
-            .contains("UndischargedAllocationFitObligation")
+            .to_string()
+            .contains("]: UndischargedAllocationFitObligation\n")
     );
 }
 
@@ -1348,8 +1348,8 @@ fn a_runtime_capacity_window_op9_overflow_is_rejected_before_lowering() {
     assert_eq!(failure.rule_id(), Some("OP-9"));
     assert!(
         failure
-            .detail()
-            .contains("UndischargedAllocationFitObligation")
+            .to_string()
+            .contains("]: UndischargedAllocationFitObligation\n")
     );
 }
 
