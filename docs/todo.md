@@ -15,15 +15,16 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   and [complete specimen](../research/investigations/modular-compilation/demo/README.md);
   the [build-cost measurements](../research/experiments/modular-build-cost/RESULTS.md)
   record what the implementation costs. Remaining, each with the measurement
-  or limit that shows it: an incremental composition, whose formation,
-  lookup, instance, heap-summary and lowering queries reuse their results by
-  recorded reads as the dependency-recording decision states, where a build
-  of an edited entry now forms, resolves and type-checks the whole closure
-  and reuses only its proof analyses (about 350 ms of a 590 to 620 ms
-  body-edit build of a 32-module chain, growing with the program; lowering
-  and emission rerun too, about 3 ms of it), which needs an instance check
-  that runs without the whole closure's bodies; a cold build without a cache,
-  which checks each module and then the whole closure; the impact report,
+  or limit that shows it: the later stage of the
+  [composition staging](../research/investigations/modular-compilation/DESIGN.md#composition-staging),
+  persistent formation, lookup, instance, summary and lowering queries inside
+  a composition through module build units, instance units and fact-based
+  entry checks, selected when a one-body edit build of a program a current
+  experiment builds exceeds one second (a build of an edited entry now forms,
+  resolves and type-checks the whole closure and reuses only its proof
+  analyses and unchanged objects: about 350 ms of a 590 to 620 ms body-edit
+  build of a 32-module chain, growing with the program); a cold build without
+  a cache, which checks each module and then the whole closure; the impact report,
   which finds each further failing body by checking its module again with
   the earlier ones set aside; ThinLTO's import threshold, which decays along
   a deep cross-fragment call chain and left the innermost step of the

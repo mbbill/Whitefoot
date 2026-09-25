@@ -1306,9 +1306,10 @@ struct Options {
     cache: Option<PathBuf>,
     /// Split the emitted module into ThinLTO link fragments.
     fragments: Option<FragmentGranularity>,
-    /// Link the program and every runtime unit as one full link-time
-    /// optimization region: the runtime-quality comparator that the
-    /// modular compilation design measures fragment builds against.
+    /// Research-only: link the program and every runtime unit as one full
+    /// link-time optimization region, the runtime-quality comparator that the
+    /// modular compilation design measures fragment builds against, not a
+    /// build mode for programs.
     full_lto: bool,
     /// Print this module's resolved public interface [MOD-6, MOD-8].
     render_interface: Option<String>,

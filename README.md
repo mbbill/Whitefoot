@@ -75,10 +75,13 @@ Prerequisites: a Rust stable toolchain at least the version in
 stable` on an older installed stable — rustup does not update it on its own),
 and clang available at `/usr/bin/clang` on Linux/macOS or as `clang` on PATH
 on Windows. A cached build that links ThinLTO fragments (`--cache DIR
---fragments module|function`), and a `--full-lto` build, which optimizes the
-program and its runtime as one region for runtime comparisons, also need LLD
-on Linux and Windows; the macOS toolchain's linker does link-time
-optimization itself.
+--fragments module|function`) also needs LLD on Linux and Windows; the macOS
+toolchain's linker does link-time optimization itself. `--full-lto` is
+research-only: it builds the comparator that the
+[build-cost experiment](research/experiments/modular-build-cost/RESULTS.md)
+measures fragment builds against, the program and its runtime optimized as one
+region, with the same linker requirement, and is not a build mode for
+programs.
 
 From `compiler/`:
 

@@ -20,7 +20,10 @@ whitefootc --graph modules.wfg --check-interface pkg::runtime::queue
 whitefootc --graph modules.wfg --check --entry kernel
 ```
 
-No incremental timing is implied: persistent reuse is a later slice.
+With `--cache DIR`, module and entry verdicts, proof analyses and objects are
+reused across invocations; the
+[build-cost measurements](../../../experiments/modular-build-cost/RESULTS.md)
+time this specimen's checks and builds after an edit.
 
 The application processes two jobs through a four-slot FIFO. The `kernel`
 entry keeps everything by value and requires `no_heap`. The `inspect` entry

@@ -1210,6 +1210,9 @@ DIAG-1's stage and within-node rules. Worker completion order never selects the
 reported violation. Source-map changes invalidate diagnostic rendering even
 when they do not invalidate a semantic result.
 
+The [composition staging](#composition-staging) orders which of these queries
+persist first.
+
 ### Cache authority and publication
 
 A cache stores ordinary checker results, not independently asserted facts.
@@ -1265,6 +1268,63 @@ DIAG-2's single-program ownership/discard language therefore needs amendment:
 fact constructors remain unchanged while evidence is retained in components
 and assembled through validated references. There is no second solver or
 proof-replay acceptance path.
+
+### Composition staging
+
+The first implementation makes two of the [query boundaries](#query-boundaries)
+persistent and reruns each changed composition whole:
+
+- A module verdict is recorded under the module's own records, the graph facts
+  its check reads (the normalized dependency rows of its closure, which decide
+  dependency permission; every command validates the graph's earlier-target
+  order before any reuse) and a read set: a digest of each declaration of
+  another interface the check reached, by module, role and spelling, with
+  `doc` strings left out. A reworded `doc` entry rechecks only the edited
+  module; a changed declaration no other module's check read rechecks the
+  edited module and the compositions that contain it.
+- A function's proof analysis is keyed by the canonical text of what it reads:
+  its checked rendering, each callee's written boundary and the postconditions
+  published to it, and the definitions of the types, constants and contract
+  queries it names, all spelled by stable identities. An unchanged key takes
+  the recorded conclusions.
+- An entry's composition is accepted under its closure's implementation
+  records exactly and its interface records by their declaration digests.
+  When either changes, the build forms, resolves, type-checks, instantiates,
+  summarizes and lowers the whole closure again, takes each unchanged analysis
+  from its receipt and compiles only the link fragments whose text changed.
+  That key decides whether the composition reruns as a whole, never whether a
+  body is reused, which receipts and fragment text decide; it is not the
+  refused whole-hash key that selects every body's reuse.
+
+[Measured](../../experiments/modular-build-cost/RESULTS.md#building-one-entry)
+on a 32-module chain of 16-function modules, a one-body edit build takes 590
+to 620 ms. The composition's formation, resolution and type checking take
+about 350 ms of it (54, 99 and 198 ms) and lowering about 3 ms, and that part
+grows with the closure, about 11 ms per such module, so an edit build reaches
+one second near twice that chain. No program a current experiment builds is
+that large: the largest test program, the 1363-line wfgrep source bundle,
+rebuilt in 0.37 to 0.42 s after each of three one-body edits (gate-profile
+`whitefootc` at `6ce90ec5`, `--cache` with function fragments, one analysis
+recorded and 52 reused, one object compiled each time).
+
+The later stage splits the composition into persistent queries when a one-body
+edit build of a program a current experiment builds exceeds one second,
+measured as the build-cost experiment measures it:
+
+1. Module build units: a module check also retains the module's checked
+   bodies, layouts, heap and call facts and lowered fragments under the module
+   verdict's key, and a composition reuses the units of unchanged modules.
+2. Instance units: an instance-only check mode checks a concrete instance in
+   its template module's context from the template and its concrete
+   arguments, without the rest of the closure's bodies, under the build-wide
+   instance identity.
+3. Fact-based entry checks: the no-heap closure and the cross-module FN-9
+   components are computed from the recorded heap and call facts.
+
+The obstacle is structural, not a missing cache family: the checked program is
+one whole-closure structure that borrows its source text and indexes
+declarations densely, so a composition has no module-level checked result to
+reuse. Each step is measured against the stage it replaces.
 
 ## Recursive dependencies and generic instances
 
