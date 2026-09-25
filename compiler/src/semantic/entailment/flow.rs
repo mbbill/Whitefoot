@@ -41,8 +41,8 @@ use super::super::model::{
 };
 use super::super::permission::{PermissionSeparationProof, PermissionSeparationQuery};
 use super::super::places::{
-    BindingSummary, CaptureId, CapturedRange, CapturedTerm, CapturedValue, PlaceMap, PlaceStep,
-    ResolvedPlace, SeparationOracle,
+    BindingSummary, CaptureId, CapturedRange, CapturedTerm, CapturedValue, NamingForm, PlaceMap,
+    PlaceStep, ResolvedPlace, SeparationOracle, named_place,
 };
 use super::super::postcondition::{
     CheckedPostcondition, NormalizedRelation, PostconditionPlaceRoot, PostconditionReturnDatum,
@@ -6544,58 +6544,16 @@ impl Analyzer<'_, '_> {
     /// separates, so a write through it reaches every element fact of that
     /// base unless the paths separate earlier.
     fn argument_referents(&self, argument: &CheckedExpression) -> Vec<(ResolvedPlace, bool)> {
-        let resolve = |root: PlaceRoot, steps: &[PlaceStep]| {
-            let places = self.places.resolve(root, steps);
-            if places.is_empty() {
-                // Keep an event for the unknown path: overlap treats its
-                // unresolved target conservatively instead of losing every
-                // write by iterating an empty candidate set.
-                vec![ResolvedPlace {
-                    root,
-                    path: steps.to_vec(),
-                }]
-            } else {
-                places
-            }
+        let Some(named) = named_place(argument) else {
+            return Vec::new();
         };
-        let (places, through_reference) = match argument {
-            CheckedExpression::BorrowAddressed { root, .. } => {
-                (resolve(root.root, &root.place_path()), false)
-            }
-            CheckedExpression::BorrowRangeIndex { place, .. } => (
-                resolve(PlaceRoot::Binding(place.root.binding), &[])
-                    .into_iter()
-                    .map(|mut resolved| {
-                        resolved.path.push(PlaceStep::Index(place.captured));
-                        resolved
-                            .path
-                            .extend(place.path.iter().map(CheckedPlaceStep::place_step));
-                        resolved
-                    })
-                    .collect(),
-                false,
-            ),
-            CheckedExpression::RangeOf {
-                source, captured, ..
-            } => {
-                let (root, steps) = source.place();
-                (
-                    resolve(root, &steps)
-                        .into_iter()
-                        .map(|mut resolved| {
-                            resolved.path.push(PlaceStep::Range(*captured));
-                            resolved
-                        })
-                        .collect(),
-                    false,
-                )
-            }
-            CheckedExpression::Binding { binding, .. } if self.places.is_reference(*binding) => {
-                (resolve(PlaceRoot::Binding(*binding), &[]), true)
-            }
-            _ => return Vec::new(),
+        let through_reference = match named.form {
+            NamingForm::Binding(binding) if self.places.is_reference(binding) => true,
+            NamingForm::Borrow | NamingForm::Range => false,
+            NamingForm::Binding(_) | NamingForm::Read => return Vec::new(),
         };
-        places
+        named
+            .resolve(&self.places, true)
             .into_iter()
             .map(|place| (place, through_reference))
             .collect()

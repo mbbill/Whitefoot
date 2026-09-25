@@ -254,23 +254,24 @@ rarely insert at the same place.
   a provably disjoint write; close when kill-time separation is implemented and
   qualified or declined on measured cost.
 
-- **Consumers rebuild call-argument referents from expression shape.** The
-  structural checker resolves every actual to its REF-1 places (`actual_paths`,
-  including a formation's range step) and uses them for EFF-5, REF-2 and the
-  EFF-2 projection. The entailment flow (`argument_referents`) and the
-  permission judgments (`argument_places`, PAR-2's range recording) instead
-  rebuild those places from the checked argument expression. A missing
-  expression arm there is silent: inline range actuals once produced no ENT-5
-  kill, and so admitted out-of-bounds reads. Retaining the checker's resolved
-  paths per argument on the checked call and reading them in every consumer
-  would remove the duplicate reconstruction and this defect class, at the cost
-  of a checked-model field and its loop-carried and joined-origin handling,
-  which the flow must still read point-currently. Validate that each consumer
-  reaches its current verdicts on the full corpus with identical kill,
-  permission and ledger results, and that a deliberately removed checker arm
-  fails in one place. Reopen when another argument form is added or another
-  referent omission is found; close when the consumers read one inventory or
-  that inventory is shown unsuitable for point-current flow facts.
+- **Call-argument consumers resolve through the function-wide origin
+  inventory.** The entailment flow (`argument_referents`), the permission
+  judgments (`argument_places`) and the place map now read one exhaustive
+  classification of how an expression names caller storage (`named_place` in
+  `compiler/src/semantic/places.rs`), so a new argument form can no longer be
+  missed by one consumer; dropping its range-formation arm fails five tests
+  across kills, permission and loop permission. They still resolve that place
+  through the function-wide origin inventory, and permission substitutes
+  unknown values for a row's index and range positions, while the structural
+  checker holds each actual's point-current paths and its exact substituted
+  row. `design/compiler/checker-facts.md` records the inventory as an
+  over-approximation, not point-current authority, so reading the checker's
+  facts instead could narrow kills and widen permissions: an acceptance and
+  actualization change, not a refactor. Measure how often the two
+  resolutions differ at calls on the corpus, and what verdicts and
+  permissions change, before proposing it; reopen when a consumer's precision
+  blocks a program or an experiment, and close when that comparison is made
+  and the owner rules on it.
 
 - **The checker/engine acceptance contract is written nowhere.**
   `entailment_rejection` (`compiler/src/semantic/check.rs`, 567 lines) decides

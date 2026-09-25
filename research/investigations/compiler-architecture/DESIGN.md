@@ -303,6 +303,19 @@ now in `design/amendments/compiler-composition-staging.md`.
    medium. Validation: identical verdicts, kill, permission and ledger
    results on the corpus, and a deliberately removed checker arm failing in
    one place, as the existing `docs/todo.md` item states. No tree change.
+   Done on this branch in part. The flow, the permission judgments and the
+   place map now read one exhaustive classification of how an expression
+   names caller storage (`named_place`), in place of three shape matches, and
+   dropping its range-formation arm fails five tests across kills,
+   permission and loop permission. The checker's point-current paths and
+   exact substituted row are not published to them: the consumers resolve
+   through the function-wide origin inventory, which
+   `design/compiler/checker-facts.md` records as an over-approximation, and
+   permission substitutes unknown index values on purpose, so reading the
+   checker's facts could narrow kills and widen permissions. That is an
+   acceptance change, left to a measured comparison and an owner ruling
+   (`docs/todo.md`). The corpus emits identical LLVM, diagnostics, exit codes
+   and permission ledgers.
 2. **Share event formation and transfer.** One kill-event formation for the
    walk and the loop summary, with a gate-profile `debug_assert` that the
    events applied on a continuing path appear in the summary, and one
