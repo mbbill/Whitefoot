@@ -79,7 +79,14 @@ Prerequisites: a Rust stable toolchain at least the version in
 [compiler/Cargo.toml](compiler/Cargo.toml)'s `rust-version` (`rustup update
 stable` on an older installed stable — rustup does not update it on its own),
 and clang available at `/usr/bin/clang` on Linux/macOS or as `clang` on PATH
-on Windows.
+on Windows. A cached build that links ThinLTO fragments (`--cache DIR
+--fragments module|function`) also needs LLD on Linux and Windows; the macOS
+toolchain's linker does link-time optimization itself. `--full-lto` is
+research-only: it builds the comparator that the
+[build-cost experiment](research/experiments/modular-build-cost/RESULTS.md)
+measures fragment builds against, the program and its runtime optimized as one
+region, with the same linker requirement, and is not a build mode for
+programs.
 
 From `compiler/`:
 
@@ -123,7 +130,8 @@ describes the record.
 ## Verification
 
 `make check` also needs `python3` (design lint, repository invariants and the
-conformance runner), and the guarded wrapper `.github/run-check.pl`, used
+conformance runner), LLD on Linux (`ld.lld`, Debian/Ubuntu package `lld`) for
+the fragment-build test, and the guarded wrapper `.github/run-check.pl`, used
 below and throughout this section, needs `/usr/bin/time` (Debian/Ubuntu
 package `time`).
 

@@ -677,9 +677,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ),
                 );
             };
+            let field_type = field.ty;
+            self.reject_inaccessible_field(nominal, None, index, &name, suffix)?;
             let field_index =
                 u32::try_from(index).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
-            let field_type = field.ty;
             place.expression = CheckedExpression::ProjectValue {
                 carrier: self.tree.path(carrier)?.clone(),
                 value: Box::new(place.expression),
@@ -933,7 +934,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     let field = fields
                         .get(index as usize)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    if field.readonly {
+                    if self.field_withholds_writes(nominal, field) {
                         return Ok(Some(field.name.clone()));
                     }
                     ty = PathType::Value(field.ty);
@@ -965,7 +966,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .get(variant as usize)
                         .and_then(|variant| variant.fields.get(field as usize))
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    if field.readonly {
+                    if self.field_withholds_writes(nominal, field) {
                         return Ok(Some(field.name.clone()));
                     }
                     ty = PathType::Value(field.ty);
@@ -1356,7 +1357,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let Some(field) = fields.iter().find(|field| field.name == name) else {
                 return Ok(());
             };
-            if field.readonly {
+            if self.field_withholds_writes(nominal, field) {
                 return self.issue_node(
                     SemanticRule::Type2,
                     target,

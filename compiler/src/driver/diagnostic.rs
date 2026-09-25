@@ -35,11 +35,11 @@ use crate::source::SourceBundle;
 use crate::syntax::terminal::TerminalPredicate;
 use crate::{
     CallRequirementDisposition, CanonicalIssue, ContractShapeIssue, DeclarationClass,
-    DeclarationConflict, DeclarationDomain, DeclarationOrigin, ExpectedTerminals, LexicalUseRole,
-    LookaheadPredicate, LoopInvariantProofObligation, PostconditionProofDisposition,
-    ReservedDeclarationRole, ReservedNameClass, ResolutionIssue, ResolutionIssueKind,
-    SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticUnsupported, SourceIssue,
-    SourceIssueKind, SourceOrigin, SourceProofObligation, StaticObligationDisposition,
+    DeclarationConflict, DeclarationDomain, DeclarationOrigin, ExpectedTerminals, GraphIssue,
+    GraphIssueKind, LexicalUseRole, LookaheadPredicate, LoopInvariantProofObligation,
+    PostconditionProofDisposition, ReservedDeclarationRole, ReservedNameClass, ResolutionIssue,
+    ResolutionIssueKind, SemanticIssue, SemanticIssueKind, SemanticLocation, SemanticUnsupported,
+    SourceIssue, SourceIssueKind, SourceOrigin, SourceProofObligation, StaticObligationDisposition,
     SyntaxCoordinate, SyntaxIssue, TerminalIssue, UndischargedCallRequirementDetail,
     UndischargedPostconditionDetail, UnsupportedSemanticFeature,
 };
@@ -108,6 +108,17 @@ impl Record {
         coordinate: SyntaxCoordinate,
         anchor: Anchor,
     ) -> Self {
+        Self::placed(issue, bundle, Place::resolve(bundle, coordinate, anchor))
+    }
+
+    /// A rejection whose payload lists its own fields, at a place already
+    /// resolved from another record, such as a graph entry's line, or at
+    /// none when nothing written names it [MOD-9, STOR-8].
+    pub(super) fn placed<Issue: Report + ?Sized>(
+        issue: &Issue,
+        bundle: &SourceBundle,
+        at: Option<Place>,
+    ) -> Self {
         let mut fields = Fields {
             bundle,
             detail: Vec::new(),
@@ -115,9 +126,19 @@ impl Record {
         let kind = issue.report(&mut fields);
         Self {
             kind: Some(kind.to_owned()),
-            at: Place::resolve(bundle, coordinate, anchor),
+            at,
             detail: fields.detail,
         }
+    }
+
+    /// The file, line and column the record is located at, as the summary
+    /// line prints them.
+    pub(super) fn location(&self) -> Option<super::SourceLocation> {
+        self.at.as_ref().map(|place| super::SourceLocation {
+            path: place.file.clone(),
+            line: place.line,
+            column: place.column,
+        })
     }
 
     /// A stop whose payload is a compiler-facing stage value.
@@ -238,7 +259,7 @@ pub(super) enum Anchor {
 /// both agree with what a terminal shows. The byte interval stays exact in
 /// `start` and `end`.
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct Place {
+pub(crate) struct Place {
     file: String,
     line: u64,
     column: u64,
@@ -258,7 +279,7 @@ impl Place {
     /// This is presentation: a stage that already has a verdict must still
     /// deliver it, so an unresolvable coordinate leaves the record unlocated
     /// rather than failing the compilation.
-    fn resolve(
+    pub(super) fn resolve(
         bundle: &SourceBundle,
         coordinate: SyntaxCoordinate,
         anchor: Anchor,
@@ -313,6 +334,18 @@ impl Place {
             anchor: anchored.saturating_sub(line_start),
             covered_end: end.min(line_end).max(anchored).saturating_sub(line_start),
         })
+    }
+
+    /// The position, byte interval and line a rendering of this place
+    /// prints, as the bytes a recorded rendering is read against.
+    pub(crate) fn reading(&self) -> Vec<u8> {
+        let mut reading = format!(
+            "{}:{}:{} {}..{}\n",
+            self.file, self.line, self.column, self.start, self.end
+        )
+        .into_bytes();
+        reading.extend_from_slice(&self.bytes);
+        reading
     }
 
     /// The whole line, printed as written with invisible and reordering
@@ -653,11 +686,11 @@ variant_names! {
     DeclarationClass {
         Function, FunctionParameter, NamedConst, ConstGeneric, Value, GenericType, NominalType,
         StructConstructor, EnumVariant, NumericBound, Interface, Binding, Label, Invariant,
-        OperationFamily,
+        OperationFamily, Module,
     }
     DeclarationDomain { LexicalIdentifier, NominalType, Constructor, NumericBound, Label, Invariant }
     LexicalUseRole {
-        Type, GenericBound, FormalGroup, TypeArgument, Construct, ArmVariant, EnsuresVariant,
+        Type, GenericBound, FormalGroup, TypeArgument, Construct, VariantOwner, EnsuresVariant,
         EffectRoot, EffectIndex, BreakLabel, Const, ConstValue, PlaceBase, IdentifierCallee,
         OperationCallee, FunctionBinding, GenericNumericSuffix, InvariantValue, ProofValue,
         InvariantFact,
@@ -728,15 +761,51 @@ impl FieldList for UndischargedPostconditionDetail {
     }
 }
 
-/// The rule and location are the envelope's; the kind carries the payload.
+/// The rule and location are the envelope's; the kind carries the payload,
+/// and a rejection in a concrete generic instance names the call that
+/// requested it, while it stays located at the template [FN-2, MOD-8].
 impl Report for SemanticIssue {
     fn report(&self, fields: &mut Fields<'_>) -> &'static str {
         let Self {
             rule: _,
             location: _,
             kind,
+            request,
         } = self;
-        kind.report(fields)
+        let name = kind.report(fields);
+        fields.field("requested_at", &request.map(|at| Related { at, node: at }));
+        name
+    }
+}
+
+/// A refused graph row or entry is located at its written path; the kind
+/// carries the payload [MOD-1].
+impl Report for GraphIssue {
+    fn report(&self, fields: &mut Fields<'_>) -> &'static str {
+        let kind = self.kind();
+        report_variants!(GraphIssueKind, kind, fields;
+            DuplicateModule { path };
+            SelfDependency { path };
+            DuplicateDependency { path };
+            UnregisteredDependency { path };
+            LaterDependency { path };
+            DuplicateEntry { name };
+            UnregisteredEntryModule { target };
+        )
+    }
+}
+
+/// A composition rejection names what the entry's composition judgment
+/// found [MOD-8, MOD-9, STOR-8].
+impl Report for super::CompositionIssue {
+    fn report(&self, fields: &mut Fields<'_>) -> &'static str {
+        use super::CompositionIssue;
+        report_variants!(CompositionIssue, self, fields;
+            PendingDeclaration { declaration };
+            EntryFunctionMissing { function };
+            EntryFunctionPrivate { function };
+            HeapInClosure { path };
+        )
     }
 }
 
@@ -746,6 +815,9 @@ impl Report for SemanticIssueKind {
             InvalidIntegerLiteral;
             InvalidFloatLiteral;
             InvalidConstValue;
+            InaccessibleField { field, reason };
+            InaccessibleVariant { variant, reason };
+            ConstantCycle { cycle };
             ConstEvalOverflow { operation };
             ConstRuntimeArithmeticMode { mechanical_fix };
             TypeMismatch { expected, found };
@@ -845,6 +917,17 @@ impl Report for ResolutionIssue {
             DeclarationCollision { spelling, conflicts, mechanical_fix };
             InvisibleUse { spelling, role, admissible, origins };
             NonEnclosingLabel { spelling, role, origins };
+            ModuleProgramHeapDeclaration;
+            MisplacedAlias;
+            InvalidAliasTarget { spelling, target, reason };
+            UnknownModule { path };
+            MissingModuleEdge { from, to };
+            QualifiedNameNotFound { spelling, module, role };
+            PrivateDeclaration { spelling, module };
+            UnknownOwnedVariant { spelling, reason };
+            MisplacedPublication { reason };
+            PrivateInPublicSignature { spelling };
+            Correspondence { spelling, reason };
             UnresolvedUse { spelling, role, admissible, available };
         )
     }

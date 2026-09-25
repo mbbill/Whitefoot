@@ -190,11 +190,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if self.has_fixed(node, FixedTerminal::F64)? {
             return Ok(CheckedType::Float(FloatType::F64));
         }
-        if self
-            .tree
-            .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
-            .is_some()
-        {
+        if self.tree.names_nominal(node)? {
             let usage = self.use_at(node, LexicalUseRole::Type)?;
             match usage.target() {
                 ResolvedTarget::Prelude(id) if id == BuiltinPreludeId::BOOL => {
@@ -535,11 +531,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if self.tree.production(owner)? != Production::Type {
             return Ok(false);
         }
-        if self
-            .tree
-            .direct_token_with(owner, TerminalPredicate::TypeIdentifier)?
-            .is_none()
-        {
+        if !self.tree.names_nominal(owner)? {
             return Ok(false);
         }
         let usage = self.use_at(owner, LexicalUseRole::Type)?;
@@ -843,6 +835,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 else {
                     return self.invalid_effect_row(path_node, EFF1_UNKNOWN_FIELD);
                 };
+                self.reject_inaccessible_field(
+                    nominal,
+                    Some(variant_ordinal),
+                    field_ordinal,
+                    field_use.spelling(),
+                    path_node,
+                )?;
                 Ok((
                     CheckedEffectStep::Payload {
                         variant: u32::try_from(variant_ordinal)
@@ -934,6 +933,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 else {
                     return self.invalid_effect_row(path_node, EFF1_UNKNOWN_FIELD);
                 };
+                self.reject_inaccessible_field(nominal, None, ordinal, spelling, path_node)?;
                 Ok((
                     CheckedEffectStep::Field(
                         u32::try_from(ordinal)
@@ -1211,11 +1211,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // The construction shape is decided first: its direct tokens include
         // the field-label IDENTs, so the single-identifier reference reader
         // below must never see it.
-        if self
-            .tree
-            .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
-            .is_some()
-        {
+        if self.tree.names_nominal(node)? {
             return self.parse_const_construction(node, expected);
         }
         if let Some(literal) = self
@@ -1335,6 +1331,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
             fields.clone()
         };
+        // [MOD-5, TYPE-2] a const construction names every field, so outside
+        // the struct's declaring module each must be published and none may
+        // be readonly, exactly as for a runtime construction.
+        for (index, field) in declared_fields.iter().enumerate() {
+            self.reject_inaccessible_field(id, None, index, &field.name, node)?;
+            if field.readonly && self.field_withholds_writes(id, field) {
+                return self.issue_node(
+                    SemanticRule::Mod5,
+                    node,
+                    SemanticIssueKind::InaccessibleField {
+                        field: field.name.clone(),
+                        reason: "a readonly field takes its value only from its declaring module, so a construction outside that module is refused; use one of its operations",
+                    },
+                );
+            }
+        }
         // The constructor is named as the source writes its type, with an
         // instance's type and const arguments [GRAM-3].
         let constructor_name = self.checked_type_name(expected)?;
@@ -1479,11 +1491,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         node: NodeId,
     ) -> Result<Option<crate::ContainerShape>, CheckStop> {
-        if self
-            .tree
-            .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
-            .is_none()
-        {
+        if !self.tree.names_nominal(node)? {
             return Ok(None);
         }
         let ResolvedTarget::Container(id) = self.use_at(node, LexicalUseRole::Type)?.target()

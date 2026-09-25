@@ -335,6 +335,9 @@ pub(crate) fn sequential_clone_set(program: &IrProgram<'_, '_, '_>) -> HashSet<u
 pub(crate) struct ParallelThunks {
     definitions: String,
     count: u32,
+    /// How many thunks each function's emission has registered, which
+    /// numbers the next one's symbol within that function alone.
+    local: std::collections::HashMap<String, u32>,
     /// Whether any emitted function asked the runtime for a split allowance, so
     /// a module that splits no loop names that symbol nowhere.
     queries_split_budget: bool,
@@ -362,9 +365,20 @@ impl ParallelThunks {
         self.queries_recursion_budget
     }
 
-    /// Records one thunk body and returns the symbol that names it.
-    fn register(&mut self, body: impl FnOnce(&str) -> String) -> Result<String, BackendFailure> {
-        let symbol = format!("@wf__par_thunk_{}", self.count);
+    /// Records one thunk body of `parent`'s emission and returns the symbol
+    /// that names it: `parent`'s name and the thunk's number among its own,
+    /// so an unchanged function's thunks keep their symbols when another
+    /// function gains or loses a hand-out [MOD-8].
+    fn register(
+        &mut self,
+        parent: &str,
+        body: impl FnOnce(&str) -> String,
+    ) -> Result<String, BackendFailure> {
+        let local = self.local.entry(parent.to_owned()).or_insert(0);
+        let symbol = format!("@wf__par_thunk_{parent}.{local}");
+        *local = local
+            .checked_add(1)
+            .ok_or(BackendFailure::CounterOverflow)?;
         self.count = self
             .count
             .checked_add(1)
@@ -461,7 +475,7 @@ impl FunctionEmitter<'_, '_> {
             field_types.len() - 1
         });
         let frame_type = format!("{{ {} }}", field_types.join(", "));
-        let thunk = self.parallel.register(|symbol| {
+        let thunk = self.parallel.register(self.function.name(), |symbol| {
             thunk_definition(
                 symbol,
                 &ThunkFrame {

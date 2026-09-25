@@ -1,0 +1,6 @@
+alias Pair = pkg::data::Pair;
+
+fn main() -> status: ExitStatus pure {
+  let pair = Pair(left: 1_u8, right: 2_u8);
+  return exit_status(code: 0_u8);
+}

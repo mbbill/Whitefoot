@@ -73,9 +73,9 @@ fn inspect_loop(values: &Array<BystanderRecord, 4>, i: u64, j: u64) -> result: u
   requires i < j;
 } {
   let selected = &deref(values)[i].value;
-  let alias = selected;
+  let aliased = selected;
   for (round in 0_u64..2_u64) {
-    let observed = deref(alias);
+    let observed = deref(aliased);
     overwrite_bystander(values: values, index: j);
   }
   return unit;

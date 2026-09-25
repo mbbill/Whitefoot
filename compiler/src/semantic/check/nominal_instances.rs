@@ -381,11 +381,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<(), CheckStop> {
         // [TYPE-9] `box<T>` is no longer a grammar atom: `Box<T>` is the
         // prelude's opaque struct and reaches the container branch below.
-        if self
-            .tree
-            .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
-            .is_none()
-        {
+        if !self.tree.names_nominal(node)? {
             return Ok(());
         }
         let usage = self.use_at(node, LexicalUseRole::Type)?;

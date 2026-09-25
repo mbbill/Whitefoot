@@ -408,7 +408,10 @@ fn audit(
                         .topology
                         .node(owner)
                         .ok_or(CanonicalCompilerFailure::InvalidFinalizedTree)?
-                        .format_depth;
+                        .terminal_depth(
+                            u64::try_from(next_ordinal)
+                                .map_err(|_| CanonicalCompilerFailure::CounterOverflow)?,
+                        );
                     (
                         right_token.id().start().value(),
                         Some(right_attachment),

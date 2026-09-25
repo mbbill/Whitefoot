@@ -301,7 +301,7 @@ impl<'parsed, 'classified, 'lexed, 'source> Finalizer<'parsed, 'classified, 'lex
         production: Production,
         children: &[Completed],
     ) -> Result<(FinalizedExtent, u64, u64, u64), Stop> {
-        if production == Production::Program {
+        if production.is_start() {
             let terminal_count = children.iter().try_fold(0_u64, |total, child| {
                 total
                     .checked_add(child.terminal_count)
@@ -382,6 +382,27 @@ impl<'parsed, 'classified, 'lexed, 'source> Finalizer<'parsed, 'classified, 'lex
         Ok(())
     }
 
+    /// A graph root holds module rows and then entries, all from its one source.
+    fn check_graph_shape(children: &[Completed]) -> Result<(), Stop> {
+        let mut graph_source = None;
+        for child in children {
+            let CompletedKind::Production { production, .. } = child.kind else {
+                return Err(FinalizeCompilerFailure::InvalidProductionShape.into());
+            };
+            if !matches!(production, Production::ModuleRow | Production::EntryDecl) {
+                return Err(FinalizeCompilerFailure::InvalidProductionShape.into());
+            }
+            let FinalizedExtent::Source { source, .. } = child.extent else {
+                return Err(FinalizeCompilerFailure::InvalidSourceExtent.into());
+            };
+            if graph_source.is_some_and(|previous| previous != source) {
+                return Err(FinalizeCompilerFailure::InvalidSourceExtent.into());
+            }
+            graph_source = Some(source);
+        }
+        Ok(())
+    }
+
     fn check_program_shape(children: &[Completed]) -> Result<(), Stop> {
         let mut previous_source = None;
         for child in children {
@@ -428,6 +449,8 @@ impl<'parsed, 'classified, 'lexed, 'source> Finalizer<'parsed, 'classified, 'lex
 
         if production == Production::Program {
             Self::check_program_shape(&self.roots[root_start..])?;
+        } else if production == Production::GraphFile {
+            Self::check_graph_shape(&self.roots[root_start..])?;
         } else {
             let FinalizedExtent::Source { source, .. } = extent else {
                 return Err(FinalizeCompilerFailure::InvalidSourceExtent.into());
@@ -691,12 +714,15 @@ impl<'parsed, 'classified, 'lexed, 'source> Finalizer<'parsed, 'classified, 'lex
             return Err(FinalizeCompilerFailure::InvalidRoot.into());
         };
         let CompletedKind::Production {
-            production: Production::Program,
+            production: root_production,
             node: root,
         } = root_completion.kind
         else {
             return Err(FinalizeCompilerFailure::InvalidRoot.into());
         };
+        if !root_production.is_start() {
+            return Err(FinalizeCompilerFailure::InvalidRoot.into());
+        }
         if root_completion.element_start != 0
             || root_completion.element_end.checked_add(1) != Some(self.parsed.tree.elements.len())
         {
@@ -711,7 +737,7 @@ impl<'parsed, 'classified, 'lexed, 'source> Finalizer<'parsed, 'classified, 'lex
         }
         for (index, node) in self.nodes.iter().enumerate() {
             if NodeId::from_index(index) == Some(root) {
-                if node.parent.is_some() || node.production != Production::Program {
+                if node.parent.is_some() || node.production != root_production {
                     return Err(FinalizeCompilerFailure::InvalidRoot.into());
                 }
             } else if node.parent.is_none() {
