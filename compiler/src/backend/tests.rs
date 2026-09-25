@@ -668,6 +668,25 @@ fn optimized_main(module: &str) -> &str {
     &module[start..end]
 }
 
+/// The LLVM type name the emitter gives the nominal whose stable spelling is
+/// `spelling`: `Name` for a root-module declaration, `a.b.Name` for one of
+/// module `pkg::a::b`, then its arguments [MOD-8].
+pub(super) fn nominal_type(spelling: &str) -> String {
+    format!("%wf.t.{}", link_name(spelling))
+}
+
+/// The LLVM global the emitter gives the constant named `spelling` [MOD-8].
+pub(super) fn constant_global(spelling: &str) -> String {
+    format!("@.wf_const.{}", link_name(spelling))
+}
+
+fn link_name(spelling: &str) -> String {
+    crate::spec::sha256::digest(spelling.as_bytes())[..8]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
 fn emitted_function<'module>(module: &'module str, name: &str) -> &'module str {
     let symbol = format!(" @wf_{name}(");
     let function_start = module
@@ -773,19 +792,19 @@ enum Payload {
 }
 
 fn empty_payload() -> result: Payload pure {
-  return Empty();
+  return Payload::Empty();
 }
 
 fn number_payload() -> result: Payload pure {
-  return Value(number: 42_i32);
+  return Payload::Value(number: 42_i32);
 }
 
 fn wide_payload() -> result: Payload pure {
-  return Wide(first: 511_u64, last: 127_u8);
+  return Payload::Wide(first: 511_u64, last: 127_u8);
 }
 
 fn main() -> status: ExitStatus pure {
-  let flag = On();
+  let flag = Flag::On();
   match flag {
     Off() => {
       return exit_status(code: 1_u8);
@@ -847,7 +866,10 @@ fn main() -> status: ExitStatus pure {
     for (name, tag, selected) in constructors {
         let body = emitted_function(&llvm, name);
         assert!(
-            body.contains("store %wf.t1 zeroinitializer, ptr %wf.result"),
+            body.contains(&format!(
+                "store {} zeroinitializer, ptr %wf.result",
+                nominal_type("Payload")
+            )),
             "the baseline constructor initializes the complete result: {body}"
         );
         assert!(!body.contains("poison"), "{body}");
@@ -855,8 +877,10 @@ fn main() -> status: ExitStatus pure {
         for (field, field_type) in ["i32", "i32", "i64", "i8"].iter().enumerate() {
             let address = body.lines().find_map(|line| {
                 let (address, operation) = line.trim().split_once(" = ")?;
-                (operation.starts_with("getelementptr inbounds %wf.t1, ptr ")
-                    && operation.ends_with(&format!(", i32 0, i32 {field}")))
+                (operation.starts_with(&format!(
+                    "getelementptr inbounds {}, ptr ",
+                    nominal_type("Payload")
+                )) && operation.ends_with(&format!(", i32 0, i32 {field}")))
                 .then_some(address)
             });
             if field != 0 && !selected.contains(&field) {
@@ -881,7 +905,7 @@ fn main() -> status: ExitStatus pure {
         }
     }
     assert!(llvm.contains("call void @abort()"));
-    assert!(!llvm.contains("%wf.t0 = type"));
+    assert!(!llvm.contains(&format!("{} = type", nominal_type("Flag"))));
     let output = compile_and_run(&llvm);
     assert!(output.status.success(), "{output:?}");
     assert!(output.stdout.is_empty());
@@ -946,7 +970,7 @@ fn cleanup_match(value: Holder, flag: Bool) -> result: i32 pure {
 fn main() -> status: ExitStatus pure {
   cleanup();
   let cell = Cell(value: 8_i32);
-  let holder = Held(cell: move cell);
+  let holder = Holder::Held(cell: move cell);
   let flag = True();
   cleanup_match(value: move holder, flag: flag);
   return exit_status(code: 0_u8);
@@ -1021,15 +1045,23 @@ fn main() -> status: ExitStatus pure {
     let llvm = emit(source);
     let main = emitted_function(&llvm, "main");
     assert!(main.contains(" = phi i32 "));
-    assert!(main.contains("store %wf.t1 zeroinitializer, ptr "));
-    assert!(main.contains("store %wf.t0 zeroinitializer, ptr "));
+    assert!(main.contains(&format!(
+        "store {} zeroinitializer, ptr ",
+        nominal_type("Outer")
+    )));
+    assert!(main.contains(&format!(
+        "store {} zeroinitializer, ptr ",
+        nominal_type("Inner")
+    )));
     let mut value_addresses = Vec::new();
     for line in main.lines() {
         let Some((address, operation)) = line.trim().split_once(" = ") else {
             continue;
         };
-        let selects_value = operation.starts_with("getelementptr inbounds %wf.t0, ptr ")
-            && operation.ends_with(", i32 0, i32 0");
+        let selects_value = operation.starts_with(&format!(
+            "getelementptr inbounds {}, ptr ",
+            nominal_type("Inner")
+        )) && operation.ends_with(", i32 0, i32 0");
         let aliases_value = operation
             .strip_prefix("getelementptr i8, ptr ")
             .and_then(|tail| tail.strip_suffix(", i64 0"))
@@ -1105,7 +1137,7 @@ struct Envelope {
 
 fn step(value: i32) -> result: Result<i32, StepError> pure {
   if value < 0_i32 {
-    let error = Failed();
+    let error = StepError::Failed();
     return Err<i32, StepError>(error: error);
   } else {
     return Ok<i32, StepError>(value: value);

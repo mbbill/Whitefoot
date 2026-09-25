@@ -48,8 +48,6 @@ struct SubstitutedEntry {
     /// pairwise conflict with each other. Distinct effects still compare when
     /// they came through the same actual argument [EFF-5].
     origin: usize,
-    /// The rendered path the [EFF-5] diagnostic carries.
-    spelling: String,
 }
 
 /// A bound call's row and contract come from the same instantiated formal.
@@ -340,8 +338,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // about the callee's row reaching the updated place, and the target
         // argument's own by-value contribution is exactly the overlap
         // [EFF-5] would otherwise report against that row.
-        let atomic_target = self.check_atomic_update_row(node, &actual_paths, &substituted)?;
-        self.check_call_pairwise_disjointness(node, signature, &substituted)?;
+        let atomic_target =
+            self.check_atomic_update_row(node, &actual_paths, &substituted, bindings)?;
+        self.check_call_pairwise_disjointness(node, signature, &substituted, bindings)?;
         self.invalidate_call_references(node, &substituted, atomic_target.as_ref(), bindings)?;
         Self::invalidate_window_operation_references(signature, &substituted, bindings);
         self.project_call_effects(node, function, &substituted, bindings, &mut effects)?;
@@ -471,34 +470,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    /// One resolved place in the spelling an [EFF-5] diagnostic renders.
-    pub(in crate::semantic::check) fn render_resolved_place(
-        &self,
-        place: &ResolvedPlace,
-    ) -> Result<String, CheckStop> {
-        let mut rendered = match place.root {
-            PlaceRoot::Binding(binding) => format!("<binding:{}>", binding.0),
-            PlaceRoot::Constant(constant) => self.constant(constant)?.name.clone(),
-        };
-        for step in &place.path {
-            match step {
-                PlaceStep::Descendant(_) => rendered.push_str(".**"),
-                PlaceStep::Field(field) => rendered.push_str(&format!(".{field}")),
-                PlaceStep::Deref => rendered = format!("deref({rendered})"),
-                PlaceStep::Payload { variant, field } => {
-                    rendered.push_str(&format!(".{variant}.{field}"));
-                }
-                PlaceStep::Index(_) => rendered.push_str("[.]"),
-                PlaceStep::Range(_) => rendered.push_str("[...]"),
-                PlaceStep::Part(part) => rendered.push_str(&format!(".{}", part.spelling())),
-                PlaceStep::Measure(measure) => {
-                    rendered.push_str(&format!(".{}", measure.spelling()));
-                }
-            }
-        }
-        Ok(rendered)
-    }
-
     /// [EFF-5] the substituted row of one call.
     ///
     /// Each `effect_path` rooted at reference parameter i takes actual
@@ -540,7 +511,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     let mut place = base.clone();
                     place.path.extend_from_slice(&steps);
                     entries.push(SubstitutedEntry {
-                        spelling: self.render_resolved_place(&place)?,
                         place,
                         write,
                         consuming: false,
@@ -565,7 +535,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .is_copy_place_type(signature, index)
                     .is_none_or(|copy| !copy);
                 entries.push(SubstitutedEntry {
-                    spelling: self.render_resolved_place(place)?,
                     place: place.clone(),
                     // A `move` empties the place, which [EFF-1] classes with
                     // the writes; a copy argument observes it.
@@ -582,7 +551,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// One declared `epsuffix*`, with its index and range positions replaced
     /// by the values their own arguments supply [EFF-5].
-    fn substitute_effect_steps(
+    pub(in crate::semantic::check) fn substitute_effect_steps(
         &self,
         signature: &FunctionSignature,
         formal: &CheckedStatePath,
@@ -646,6 +615,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         actual_paths: &[Vec<ResolvedPlace>],
         entries: &[SubstitutedEntry],
+        bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<Option<ResolvedPlace>, CheckStop> {
         let Some(target) = self.atomic_update_target(self.tree.path(node)?) else {
             return Ok(None);
@@ -676,8 +646,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticRule::Op12,
                 node,
                 SemanticIssueKind::AtomicUpdateReachesTargetPrefix {
-                    target: self.render_resolved_place(&target)?,
-                    effect: entry.spelling.clone(),
+                    target: self.render_resolved_place(&target, bindings)?,
+                    effect: self.render_resolved_place(&entry.place, bindings)?,
                     mechanical_fix: "declare a row that reaches no prefix of the updated place: reading anything and writing storage disjoint from it is admitted, and an update whose callee must reach the place is written as ordinary statements instead",
                 },
             );
@@ -699,6 +669,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         signature: &FunctionSignature,
         entries: &[SubstitutedEntry],
+        bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<(), CheckStop> {
         let exchange = self.is_swap_row(signature);
         let oracle = UnprovedSeparations;
@@ -724,8 +695,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             exchange,
                             reference_use: None,
                             positions,
-                            left_spelling: left.spelling.clone(),
-                            right_spelling: right.spelling.clone(),
+                            left_spelling: self.render_resolved_place(&left.place, bindings)?,
+                            right_spelling: self.render_resolved_place(&right.place, bindings)?,
                         });
                     continue;
                 }
@@ -737,8 +708,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     },
                     node,
                     SemanticIssueKind::OverlappingCallEffects {
-                        first: left.spelling.clone(),
-                        second: right.spelling.clone(),
+                        first: self.render_resolved_place(&left.place, bindings)?,
+                        second: self.render_resolved_place(&right.place, bindings)?,
                         mechanical_fix: if exchange {
                             "exchange equal or disjoint places without an ancestor relation"
                         } else {

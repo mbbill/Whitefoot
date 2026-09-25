@@ -736,16 +736,70 @@ fn synthesized(module: &str, prefix: &str) -> String {
     only.clone()
 }
 
+/// [MOD-8] a split's helpers and the thunks their halves hand out are named by
+/// the function they came from and their number among its own, so another
+/// function gaining a permitted loop leaves every one of them, and the
+/// function that calls them, byte for byte as it was.
+#[test]
+fn split_helpers_keep_their_symbols_when_another_function_gains_a_split() {
+    let base = fold_module(true);
+    let source = std::str::from_utf8(PERMITTED_FOLD).expect("the fixture is text");
+    let refolded = source
+        .split_once("fn folded(")
+        .and_then(|(_, rest)| rest.split_once("\n}\n"))
+        .map(|(body, _)| format!("fn refolded({body}\n}}\n\n"))
+        .expect("the fixture defines folded");
+    let extended = emit_with_overlap(
+        source
+            .replacen("fn folded(", &format!("{refolded}fn folded("), 1)
+            .as_bytes(),
+    );
+    let splitters = synthesized_symbols(&base, "@wf__par_split_");
+    let chunks = synthesized_symbols(&base, "@wf__par_chunk_");
+    assert_eq!(splitters, ["@wf__par_split_folded.0"], "{base}");
+    assert_eq!(chunks, ["@wf__par_chunk_folded.1"], "{base}");
+    assert_eq!(
+        synthesized_symbols(&extended, "@wf__par_split_").len(),
+        2,
+        "the added function splits its own loop:\n{extended}"
+    );
+    let thunks = base
+        .lines()
+        .filter_map(|line| line.strip_prefix("define internal void @wf__par_thunk_"))
+        .filter_map(|rest| rest.split_once('('))
+        .map(|(name, _)| format!("@wf__par_thunk_{name}"))
+        .collect::<Vec<_>>();
+    assert!(!thunks.is_empty(), "{base}");
+    for symbol in splitters
+        .iter()
+        .chain(&chunks)
+        .chain(&thunks)
+        .map(String::as_str)
+        .chain(["@wf_folded"])
+    {
+        assert_eq!(
+            function_body(&base, symbol),
+            function_body(&extended, symbol),
+            "{symbol} must keep its text"
+        );
+    }
+}
+
 /// Every synthesized definition bearing `prefix`, without runtime helpers or
-/// sequential-clone spellings that merely contain a similar suffix.
+/// sequential-clone spellings that merely contain a similar suffix. A
+/// synthesized symbol names its source function and its number among that
+/// function's helpers.
 fn synthesized_symbols(module: &str, prefix: &str) -> Vec<String> {
     let mut found: Vec<String> = module
         .lines()
         .filter_map(|line| line.split_once(prefix))
         .filter_map(|(head, tail)| head.starts_with("define ").then_some(tail))
         .filter_map(|tail| tail.split_once('('))
-        .filter(|(ordinal, _)| ordinal.parse::<u32>().is_ok())
-        .map(|(ordinal, _)| format!("{prefix}{ordinal}"))
+        .filter(|(name, _)| {
+            name.rsplit_once('.')
+                .is_some_and(|(_, number)| number.parse::<u32>().is_ok())
+        })
+        .map(|(name, _)| format!("{prefix}{name}"))
         .collect();
     found.sort_unstable();
     found.dedup();
@@ -1368,6 +1422,84 @@ fn a_borrowed_read_modify_map_preserves_the_sequential_bytes() {
     assert!(granted > 0, "the map must execute a real worker callback");
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(output.stdout, runs[0].1);
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// Each iteration fills one proved-disjoint row through a unit helper written
+/// as a [GRAM-4] expression statement, the natural spelling of a call whose
+/// result is `unit`. PAR-2 judges that call by its row exactly as it judges a
+/// let-bound one, so the row loop is split as an independent map.
+const EXPRESSION_STATEMENT_ROWS: &[u8] =
+    br#"fn fill_row(output: &[u64], value: u64) -> result: unit writes(output) {
+  let count = deref(output).len;
+  for (i in 0_u64..count) {
+    set deref(output)[i] = value;
+  }
+  return unit;
+}
+
+fn rows(width: u64) -> result: Box<Array<u64>> pure contract {
+  requires width <= 4096_u64;
+} {
+  let cells = 64_u64 * width;
+  let values = box_array_filled::<u64>(count: cells, value: 0_u64);
+  for (r in 0_u64..64_u64) {
+    let start = r * width;
+    let end = start + width;
+    invariant bounded: end <= cells {
+      use width times (r + 1_u64 <= 64_u64);
+    }
+    let row = &values.inner[start..end];
+    fill_row(output: row, value: r);
+  }
+  return move values;
+}
+
+fn main() -> status: ExitStatus pure {
+  let values = rows(width: 1024_u64);
+  let count = values.inner.len;
+  if count != 65536_u64 {
+    return exit_status(code: 1_u8);
+  }
+  for (i in 0_u64..count) {
+    let seen = values.inner[i];
+    let expected = i / 1024_u64;
+    if seen != expected {
+      return exit_status(code: 2_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+#[test]
+fn an_expression_statement_row_map_is_split_and_keeps_its_rows() {
+    let ledger = super::compile_permission_ledger(EXPRESSION_STATEMENT_ROWS);
+    assert!(
+        ledger
+            .iter()
+            .any(|line| line.starts_with("PAR split") && line.contains(" rows ")),
+        "the row loop must be split as an independent map: {ledger:?}"
+    );
+    let unsplit = emit(EXPRESSION_STATEMENT_ROWS);
+    let split = emit_with_overlap(EXPRESSION_STATEMENT_ROWS);
+    let directory = test_directory();
+    let reference = Command::new(build_executable(&unsplit, &directory))
+        .output()
+        .expect("run the row map that splits nothing");
+    assert_eq!(reference.status.code(), Some(0), "{reference:?}");
+    let executable = build_executable(&split, &directory);
+    for workers in ["0", "1", "4"] {
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run the split row map");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "WF_WORKERS={workers}: every row must hold its own index"
+        );
+    }
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 

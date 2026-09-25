@@ -336,16 +336,19 @@ enum StepSeparation {
     Overlapping,
 }
 
-/// The two [OWN-7] separations that are proofs rather than syntax, and
-/// [WIN-2]'s one conditional answer.
+/// The two [OWN-7] separations that are proofs rather than syntax, [WIN-2]'s
+/// one conditional answer, and whether [WIN-2]'s fixed answers apply at all.
 ///
 /// [OWN-7] decides two index steps "by the fixed [ENT-6] families under
 /// [MSR-4]'s disposition" and two range steps by four named non-strict
 /// orderings, so the relation cannot be purely syntactic. This trait is the
 /// one seam through which it reaches the entailment fragment; every
 /// implementation answers from the fixed families and from nothing else, and
-/// answering `false` is always sound because a pair no admitted family
-/// discharges is overlapping.
+/// answering `false` to any of its questions is always sound because a pair no
+/// admitted family discharges is overlapping. [WIN-2]'s fixed answers hold
+/// only between places that read one `r.len`, so whether they apply is a
+/// question every implementation answers for its own consumer rather than a
+/// default this trait assumes.
 ///
 /// The caller supplies the proof evidence available at the current program
 /// point. Nothing in a resolved path can move under it: the captured index
@@ -367,6 +370,20 @@ pub(crate) trait SeparationOracle {
     /// `i != r.len - 1` is proved. `window` is the resolved place the two
     /// steps hang below, which is the `r` the relation `r.len` is read of.
     fn index_is_not_last(&self, window: &ResolvedPlace, index: CapturedValue) -> bool;
+
+    /// Whether both places are interpreted against one value of `r.len`.
+    ///
+    /// Every [WIN-2] part is defined relative to `r.len`, and a subscript is
+    /// live only below it, so each fixed answer that separates a part from an
+    /// index or from another part holds only when both steps read the same
+    /// length. A consumer comparing places of one program state answers
+    /// `true`. [PAR-1] compares two statements' places in the state before
+    /// the first, where the second's subscript is live only after the
+    /// statements before it have run; when one of those writes `r.len`, an
+    /// index live only after an append is not distinct from the append slot,
+    /// and the answer is `false`. Answering `false` is sound: the pair then
+    /// overlaps. Answering `true` is sound only for places of one state.
+    fn window_length_is_shared(&self, window: &ResolvedPlace) -> bool;
 }
 
 /// One resolved place [OWN-7]: its root and the ordered steps below it.
@@ -697,10 +714,12 @@ fn separation(
                 StepSeparation::Overlapping
             }
         }
+        // Two parts are separated by their definitions against one `r.len`,
+        // and by nothing when the two places read different lengths.
         (PlaceStep::Part(left), PlaceStep::Part(right)) => {
             if left == right {
                 StepSeparation::Same
-            } else if parts_overlap(left, right) {
+            } else if parts_overlap(left, right) || !oracle.window_length_is_shared(window) {
                 StepSeparation::Overlapping
             } else {
                 StepSeparation::Separate
@@ -708,7 +727,13 @@ fn separation(
         }
         // A live `r[i]`, which has `i < r.len`, never overlaps `r.next` or
         // `r.free`, always overlaps `r.filled`, and overlaps `r.last` unless
-        // `i != r.len - 1` is proved [WIN-2].
+        // `i != r.len - 1` is proved [WIN-2]. Liveness bounds the index by the
+        // length the part is defined against only when both read one length.
+        (PlaceStep::Index(_), PlaceStep::Part(_)) | (PlaceStep::Part(_), PlaceStep::Index(_))
+            if !oracle.window_length_is_shared(window) =>
+        {
+            StepSeparation::Overlapping
+        }
         (PlaceStep::Index(index), PlaceStep::Part(part))
         | (PlaceStep::Part(part), PlaceStep::Index(index)) => match part {
             WindowPart::Next | WindowPart::Free => StepSeparation::Separate,
@@ -817,9 +842,16 @@ pub(crate) fn range_separation_candidate(
 
 /// The oracle of a consumer that holds no proof state [OWN-7].
 ///
-/// Every answer is `false`, which is the relation's own default: a pair no
-/// admitted family discharges overlaps. A consumer that needs the proved half
-/// records the pair for the entailment fragment instead of guessing here.
+/// Every proof answer is `false`, which is the relation's own default: a pair
+/// no admitted family discharges overlaps. A consumer that needs the proved
+/// half records the pair for the entailment fragment instead of guessing here.
+///
+/// Every consumer compares places of one program state: the arguments of one
+/// call [EFF-5], a live reference against a write at that write's entry
+/// [REF-2], the planner's candidate search, and one counted body's own
+/// accesses [PAR-2], where a write of an enclosing window's `r.len` has
+/// already denied permission. [WIN-2]'s fixed answers therefore apply. A
+/// consumer comparing two states supplies its own oracle, as [PAR-1] does.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct UnprovedSeparations;
 
@@ -834,6 +866,11 @@ impl SeparationOracle for UnprovedSeparations {
 
     fn index_is_not_last(&self, _window: &ResolvedPlace, _index: CapturedValue) -> bool {
         false
+    }
+
+    /// Every consumer of this oracle compares places of one state.
+    fn window_length_is_shared(&self, _window: &ResolvedPlace) -> bool {
+        true
     }
 }
 
@@ -1106,6 +1143,9 @@ mod tests {
         indices: bool,
         ranges: bool,
         not_last: bool,
+        /// Whether the two places read one `r.len`, which is a question of
+        /// state rather than proof: `true` for places of one state.
+        one_length: bool,
     }
 
     impl SeparationOracle for Proves {
@@ -1120,16 +1160,21 @@ mod tests {
         fn index_is_not_last(&self, _window: &ResolvedPlace, _index: CapturedValue) -> bool {
             self.not_last
         }
+
+        fn window_length_is_shared(&self, _window: &ResolvedPlace) -> bool {
+            self.one_length
+        }
     }
 
     /// The oracle a consumer with no ProofContext in hand would supply
-    /// [OWN-8]: every answer `false`, which denies each separation the fixed
-    /// families might have discharged, so the relation degrades to
-    /// "overlapping" and never to "disjoint".
+    /// [OWN-8] for two places of one state: every proof answer `false`, which
+    /// denies each separation the fixed families might have discharged, so
+    /// the relation degrades to "overlapping" and never to "disjoint".
     const DENIED: Proves = Proves {
         indices: false,
         ranges: false,
         not_last: false,
+        one_length: true,
     };
     /// [OWN-7] two places fail to overlap when some step of their common
     /// prefix provably selects two different storages, and one place that is
@@ -1193,6 +1238,7 @@ mod tests {
             indices: true,
             ranges: false,
             not_last: false,
+            one_length: true,
         };
         let left = place(0, &[PlaceStep::Index(literal(0, 3))]);
         let right = place(0, &[PlaceStep::Index(literal(1, 4))]);
@@ -1235,6 +1281,7 @@ mod tests {
             indices: false,
             ranges: true,
             not_last: false,
+            one_length: true,
         };
         assert!(!PlaceMap::default().overlaps(&proving, &left, &right));
     }
@@ -1292,6 +1339,7 @@ mod tests {
                 indices: false,
                 ranges: false,
                 not_last: true,
+                one_length: true,
             },
             &index,
             &part(WindowPart::Last),
@@ -1301,6 +1349,48 @@ mod tests {
         assert!(!map.overlaps(&denied, &part(WindowPart::Next), &part(WindowPart::Last)));
         assert!(map.overlaps(&denied, &part(WindowPart::Next), &part(WindowPart::Free)));
         assert!(map.overlaps(&denied, &part(WindowPart::Last), &part(WindowPart::Filled)));
+    }
+
+    /// Every [WIN-2] part is defined against `r.len`, and a live index is live
+    /// below it, so none of the fixed answers separates two places that read
+    /// different lengths [PAR-1]: an index live only after an append is the
+    /// append slot. Two different indices are unaffected.
+    #[test]
+    fn window_parts_do_not_separate_places_of_two_lengths() {
+        let map = PlaceMap::default();
+        let two_lengths = Proves {
+            indices: false,
+            ranges: false,
+            not_last: true,
+            one_length: false,
+        };
+        let index = place(0, &[PlaceStep::Index(opaque(0))]);
+        let part = |part| place(0, &[PlaceStep::Part(part)]);
+
+        for window_part in [
+            WindowPart::Next,
+            WindowPart::Free,
+            WindowPart::Filled,
+            WindowPart::Last,
+        ] {
+            assert!(map.overlaps(&two_lengths, &index, &part(window_part)));
+            assert!(map.overlaps(&two_lengths, &part(window_part), &index));
+        }
+        assert!(map.overlaps(
+            &two_lengths,
+            &part(WindowPart::Filled),
+            &part(WindowPart::Free)
+        ));
+        assert!(map.overlaps(
+            &two_lengths,
+            &part(WindowPart::Next),
+            &part(WindowPart::Last)
+        ));
+        assert!(!map.overlaps(
+            &two_lengths,
+            &place(0, &[PlaceStep::Index(literal(0, 3))]),
+            &place(0, &[PlaceStep::Index(literal(1, 4))]),
+        ));
     }
 
     /// [WIN-2] the measure `r.len` is itself a write target and overlaps no

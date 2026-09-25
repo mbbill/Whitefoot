@@ -219,18 +219,18 @@ fn carry(third_window: Box<Ring<u8>>) -> result: unit pure contract {
   requires third_window.inner.cap == 8_u64;
   requires third_window.inner.head == 3_u64;
 } {
-  let end = End();
+  let end = Chain::End();
   let end_box = box_new::<Chain>(value: move end);
-  let deepest_value = End();
+  let deepest_value = Chain::End();
   let deepest = box_new::<Chain>(value: move deepest_value);
-  set deepest.inner = Next(window: move third_window, tail: move end_box);
+  set deepest.inner = Chain::Next(window: move third_window, tail: move end_box);
   let second_window = box_ring_new::<u8>(capacity: 4_u64);
   place_back(window: &second_window.inner, value: 7_u8);
-  let middle_value = End();
+  let middle_value = Chain::End();
   let middle_box = box_new::<Chain>(value: move middle_value);
-  set middle_box.inner = Next(window: move second_window, tail: move deepest);
+  set middle_box.inner = Chain::Next(window: move second_window, tail: move deepest);
   let first_window = box_ring_new::<u8>(capacity: 4_u64);
-  let root = Next(window: move first_window, tail: move middle_box);
+  let root = Chain::Next(window: move first_window, tail: move middle_box);
   let moved = move root;
   match moved {
     End() => {
@@ -280,9 +280,9 @@ fn recursive_box_placement_does_not_revive_an_overwritten_descendants_measure() 
     let source = RECURSIVE_BOX_MEASURES.replace(
         "  let second_window =",
         r#"  let replacement_window = box_ring_new::<u8>(capacity: 4_u64);
-  let replacement_end = End();
+  let replacement_end = Chain::End();
   let replacement_tail = box_new::<Chain>(value: move replacement_end);
-  set deepest.inner = Next(window: move replacement_window, tail: move replacement_tail);
+  set deepest.inner = Chain::Next(window: move replacement_window, tail: move replacement_tail);
   let second_window ="#,
     );
     assert_rule_kind(source.as_bytes(), SemanticRule::Inv1, |kind| {

@@ -5,7 +5,7 @@ enum Packet {
 
 fn main() -> status: ExitStatus pure {
   doc "Repeated matches through one reference each derive their own arm-scoped payload binder, and the scrutinee stays live between them.";
-  let packet = Data(value: 4_i32);
+  let packet = Packet::Data(value: 4_i32);
   let holder = &packet;
   match deref(holder) {
     Data(value: payload) => {

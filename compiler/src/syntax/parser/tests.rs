@@ -623,13 +623,16 @@ fn sufficient_limits_produce_identical_derivation_metrics() {
 fn complete_fixture_reaches_every_normative_production_kind() {
     let source = br#"
 program no_heap;
-struct Types<T: Bound, const n: u64> {
+alias Imported = pkg::library::Imported;
+alias library = pkg::library;
+public struct Types<T: Bound, const n: u64> {
 doc "types";
 a: i8; b: i16; c: i32; d: i64; e: u8; f: u16; g: u32; h: u64;
 i: f32; j: f64; k: unit; l: Name<T, n>; m: Array<u8, n>;
-o: Box<u8>; p: Slots<u8, 4>; readonly q: Ring<u8, 2 * n>;
+o: Box<u8>; p: Slots<u8, 4>; public readonly q: Ring<u8, 2 * n>;
+r: pkg::library::Imported; s: library::nested::Pair<u8>;
 }
-enum Choice<T: copy> { doc "choice"; None(); Some(value: T); }
+enum Choice<T: copy> { doc "choice"; None(); Some(public value: T); }
 nodrop struct Lease { doc "lease"; slot: u8; }
 nodrop enum Ticket { doc "ticket"; Open(value: u8); }
 interface Behavior<T: drop> {
@@ -637,12 +640,16 @@ doc "interface";
 fn member(x: T, part: &[u8]) -> result: T reads(part), writes(part);
 }
 binding Selected : Behavior<Name<T>> { doc "binding"; member = implementation::<fn other>; }
-fn forwarded<interface Behavior<K>, fn operation(value: K) -> result: K pure>() -> result: unit pure {
+binding Qualified : library::Behavior<u8> { member = library::other; }
+fn declared(value: u8) -> result: u8 pure;
+public fn documented(value: u8) -> result: u8 pure doc "declared";
+fn forwarded<interface Behavior<K>, interface pkg::library::Group<K>, fn operation(value: K) -> result: K pure>() -> result: unit pure {
 Behavior<K>::member(x: unit);
 return unit;
 }
 const zero: i32 = 0_i32;
-const alias: i32 = zero;
+const renamed: i32 = zero;
+const variant: library::Sign = library::Sign::Neg();
 const table: Array<i32, 2> =[0_i32, zero];
 fn stored_entry(arguments: i32, directory: i32)
 -> result: unit pure
@@ -677,6 +684,10 @@ let least = imin(ordinary, moved);
 let chosen = if compared { give ordinary; } else { give moved; }
 set deref(pointer).field = ordinary;
 user::<T, 2>(arg: ordinary);
+library::helper(value: ordinary);
+pkg::library::nested::helper::<T>(value: ordinary);
+let owned = Choice<u8>::Some(value: ordinary);
+let signed = Sign::Neg();
 return unit;
 loop @again { break @again; }
 for @range (
@@ -692,7 +703,9 @@ use 2 times (0_i32 <= 0_i32);
 let named = ordinary;
 let (kept, spare) = split(taken: move run);
 let Name(value: destructured, ..) = move made;
+let library::Pair(first: kept_first, ..) = move pair;
 match ordinary { Some(value: payload) => { give payload; } }
+match ordinary { Some(value: payload, ..) => { give payload; } None(..) => { give zero; } }
 if compared { let then_branch = ordinary; } else if chosen { break @again; } else { return unit; }
 }
 fn main() -> result: unit pure {}
@@ -713,16 +726,40 @@ fn main() -> result: unit pure {}
     let ParseOutcome::Complete(parsed) = outcome else {
         panic!("full fixture must parse: {outcome:?}");
     };
+    let graph = b"pkg::library: [];\npkg: [pkg::library];\n\nentry kernel = pkg::start {\n  no_heap;\n}\n\nentry tool = pkg::library::run;\n";
+    let graph_inputs = [SourceInput::new("modules.wfg", graph)];
+    let Ok(graph_bundle) = SourceBundle::with_limits(&graph_inputs, SOURCE_LIMITS) else {
+        panic!("the graph fixture forms one source record");
+    };
+    let LexOutcome::Complete(graph_lexed) = lex(&graph_bundle, LEX_LIMITS) else {
+        panic!("graph fixture must lex");
+    };
+    let TerminalOutcome::Complete(graph_classified) = classify_terminals(
+        &graph_lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits { max_tokens: 1_024 },
+    ) else {
+        panic!("graph fixture must classify");
+    };
+    let graph_outcome = super::parse_graph(&graph_classified, PARSE_LIMITS);
+    let ParseOutcome::Complete(graph_parsed) = graph_outcome else {
+        panic!("graph fixture must parse: {graph_outcome:?}");
+    };
     for production in productions() {
-        let present = parsed.tree.elements.iter().any(|element| {
-            matches!(
-                element,
-                DerivationElement::Production { production: actual, .. } if actual == production
-            )
-        });
+        let present = parsed
+            .tree
+            .elements
+            .iter()
+            .chain(graph_parsed.tree.elements.iter())
+            .any(|element| {
+                matches!(
+                    element,
+                    DerivationElement::Production { production: actual, .. } if actual == production
+                )
+            });
         assert!(present, "fixture omitted {production:?}");
     }
-    assert_eq!(productions().len(), 85);
+    assert_eq!(productions().len(), 92);
     assert_eq!(
         parsed
             .tree

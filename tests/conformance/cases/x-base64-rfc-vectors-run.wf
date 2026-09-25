@@ -16,7 +16,7 @@ fn require_index(index: u64, limit: u64) -> result: Result<u64, IndexError> pure
       return Ok<u64, IndexError>(value: bounded);
     }
   }
-  let error = OutOfRange();
+  let error = IndexError::OutOfRange();
   return Err<u64, IndexError>(error: error);
 }
 

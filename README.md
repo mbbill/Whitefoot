@@ -1,178 +1,46 @@
 # Whitefoot
 
-Whitefoot is a research systems programming language. A program the compiler
-accepts cannot reach undefined behavior, a panic, or a silent integer overflow
-at run time, provided its [trusted base](#what-an-accepted-program-cannot-do-and-what-it-still-can)
-(the compiler, LLVM, the runtime, linked C code and the operating system) is
-correct.
+Whitefoot is a programming language designed as a harness for AI agents.
+It serves human-directed systems development with implementation delegated to
+agents, using constraints, explicit interfaces, and machine-checked proofs to
+guide authors toward safe, efficient programs.
+The compiler checks required source evidence and erases it before execution;
+writers have no unchecked
+escape hatch. The [specification](spec/kernel-spec.md) defines the exact
+guarantees and trusted boundary.
 
-It gets there without runtime checks; the cost moves to compile time and to
-the writer. Every indexing, arithmetic, conversion, division and
-allocation-size operation needs a proof that it is in range. The compiler
-finds most proofs itself with a fixed procedure and no SMT solver. The
-procedure proves less than a solver would, but it always terminates and gives
-the same answer everywhere. When it cannot connect the facts, you add a branch
-or state one more fact, and the compiler checks that fact too.
+## Purpose
 
-```
-fn drop_spaces(out: &[u8], src: &[u8]) -> count: u64 reads(src), writes(out) contract {
-  requires deref(out).len >= deref(src).len;
-} {
-  let kept = 0_u64;
-  for (
-    i in 0_u64..deref(src).len,
-    invariant behind: kept <= i
-  ) {
-    let byte = deref(src)[i];
-    if byte != 32_u8 {
-      set deref(out)[kept] = byte;
-      set kept = kept + 1_u64;
-    }
-  }
-  return kept;
-}
-```
+The target is a serious research compiler that compiles real programs and
+lets us test language and performance ideas. Whitefoot uses restrictions,
+interfaces, and writer guidance to make ordinary implementations fall into
+efficient, verifiable classes and to expose architectural mistakes early.
+The goal is useful default performance, not a guarantee that every accepted
+program is globally optimal.
 
-Without the `invariant` line, the program is rejected:
+Ease of manual source authorship is not an independent goal. Additional source
+and proof effort can be worthwhile when they improve performance or correctness,
+while usable feedback and enough information to complete the task still matter.
+Changing the intended author opens alternatives; experiments must establish
+which mechanisms work under their stated conditions.
 
-```text
-drop_spaces.wf:8:21: error[OP-4]: UndischargedBoundsObligation
-  source:       set deref(out)[kept] = byte;
-  marker:                     ^^^^^^
-  residual: kept < deref(out).len
-  mechanical_fix: when the relation must hold, establish the residual with a verified requirement, a source invariant, ...
-```
+The [constitution](docs/constitution.md) owns the objectives and
+tradeoffs; [Agent instructions](AGENTS.md) own project priorities and workflow.
 
-With it, the loop has no bounds check. `out.len` arrives in `%rsi` and is
-never compared; the register is reused as `i` (x86-64, clang -O2):
+## Start here
 
-```text
-.LBB0_9:
-	movzbl	(%rdx,%rsi), %r9d       # byte = src[i]
-	cmpb	$32, %r9b
-	je	.LBB0_11
-	movb	%r9b, (%rdi,%rax)       # out[kept] = byte
-	incq	%rax                    # kept + 1, proved not to overflow
-```
-
-A caller that passes a 5-byte `out` for 6 bytes of input is rejected at the
-call, with the callee's requirement it fails:
-
-```text
-drop_spaces.wf:22:14: error[FN-8]: UndischargedCallRequirement
-  ...
-  requires_clause: drop_spaces.wf:2:3 "requires deref(out).len >= deref(src).len;"
-  instantiated_goal: buffer[0..5].len >= text[0..6].len
-  disposition: Refuted
-```
-
-## What an accepted program cannot do, and what it still can
-
-When the trusted base is correct, an accepted program cannot:
-
-- read or write out of bounds, use freed memory, or read uninitialized memory;
-- overflow an integer silently. Each operation states its meaning (`+wrap`,
-  `+checked`, `+sat`), and a bare `+` must be proved not to overflow;
-- lose a value in a narrowing conversion, or divide by zero;
-- panic, abort, throw or unwind. The language has no such construct; expected
-  failures are values (`Result`, `Option`) the caller handles;
-- behave differently between a debug and a release build. There is one build.
-
-It still can:
-
-- run out of stack. It then stops with the fixed record
-  `{"resource":"stack"}`, the same way on every run, and `--stack-ledger`
-  reports each function's frame and how many levels each recursive cycle
-  fits;
-- run out of heap. The allocator stops the program; on Linux with
-  overcommit, the kernel's OOM killer may act first;
-- loop forever, or compute the wrong answer. Contracts describe what was
-  written down, not what was meant;
-- be miscompiled. The trusted base is the Whitefoot compiler, LLVM and clang,
-  the runtime and allocator, C functions linked in as trusted definitions,
-  libc and the operating system ([SCOPE-3](spec/kernel-spec.md)).
-
-## What you write
-
-Contracts on functions (`requires`, `ensures`), `reads`/`writes` effect rows
-on signatures, loop invariants, and occasionally an explicit proof step. The
-test programs and container library (94 files, about 24k lines and 800
-functions: a recursive grep, a DEFLATE decoder, a B-tree, a hash map, a
-priority queue, a TCP echo server, a directory walker and more) contain about
-200 contract blocks, 290 invariants and 41 explicit proof steps. The grep,
-about 1,700 lines, needs 2 invariants and no explicit proof step.
-
-The proof procedure is fixed: difference-bound closure, trying zero, one or
-two premises per goal ([ENT-1](spec/kernel-spec.md)). There is no timeout and
-no work budget, so every machine gives the same verdict. A proof step the
-compiler did not need is itself an error, so proofs do not accumulate as
-noise.
-
-## Status
-
-Whitefoot started in July 2026 and is a research compiler, not a
-product. One person makes the design rulings; most of the code is written by
-AI agents and checked against the specification, the conformance suite and
-review. Do not use it for anything that matters.
-
-You cannot yet write:
-
-- calls to C from source; C enters only as trusted linked definitions;
-- modules or separate compilation (being designed);
-- servers with connection-level concurrency;
-- explicit threads, async or SIMD. Under `--par` the compiler runs statements
-  or loop iterations in parallel when its proofs show them independent, the
-  result equals the sequential one, and `--par-ledger` explains each loop.
-
-## Try it
-
-Requires Rust stable (see [Running the compiler](#running-the-compiler)) and
-clang.
-
-```sh
-git clone https://github.com/mbbill/Whitefoot.git && cd Whitefoot
-cargo build --release --manifest-path compiler/Cargo.toml
-compiler/target/release/whitefootc tests/programs/wfgrep.wf -o wfgrep
-./wfgrep invariant tests/programs
-compiler/target/release/whitefootc tests/conformance/cases/op4-neg-index-undischarged.wf
-```
-
-Building the compiler takes about a minute; compiling the grep takes about
-three seconds. The last command shows a rejection; `--diagnostic-format json`
-prints it as JSON.
-
-## Evidence
-
-- [Specification](spec/kernel-spec.md): 121 numbered rules. Every rejection
-  cites one rule and one location.
-- [Conformance suite](tests/conformance/): about 1,200 cases, more than 560
-  of which must be rejected under a named rule (over 60 distinct rules).
-- [Programs](tests/programs/) built and run by the test gate.
-- [Known defects and follow-up work](docs/todo.md), including compiler bugs.
-- [Experiments](research/experiments/README.md), negative results included.
-
-## Related work
-
-| | Borrowed | Different |
-|---|---|---|
-| Rust | ownership, `Result`, no null | no `unsafe` in source; bounds and overflow are proved, not checked at run time |
-| SPARK | proving the absence of runtime errors | no SMT solver; what the fixed procedure cannot prove is written as explicit steps |
-| Wuffs | a proof checker instead of a solver | a general-purpose language with heap data and effects |
-| Dafny, Verus | contracts and invariants | the goal is runtime safety, not full functional correctness |
-
-## Working on the project
-
-The [constitution](docs/constitution.md) owns the objectives and tradeoffs;
-[AGENTS.md](AGENTS.md) owns priorities and workflow, including how agents work
-under the owner's rulings. Read the material that owns your question:
+Read the material that owns the question you are working on:
 
 | Question | Source |
 |---|---|
 | What does the language admit? | [Active kernel specification](spec/kernel-spec.md) |
 | What does this compiler implement, and how do I run it? | [Running the compiler](#running-the-compiler) below; the conformance report states the implemented surface |
+| What are the project goals and design principles? | [Constitution](docs/constitution.md) |
+| What happens when in development, where, and who decides? | [Workflow map](docs/workflow.md) |
 | How do I work on a branch and prepare a merge? | [AGENTS.md](AGENTS.md) |
+| How do I amend the specification, finish a task, or hand work back? | [Agent skills](docs/skills/) |
 | Which writer forms should I try? | [Patterns](docs/patterns.md) |
-| How should I investigate, verify, and maintain documentation? | [Engineering practice](docs/practice.md) |
+| How should I investigate, verify, and maintain documentation? | [AGENTS.md](AGENTS.md#how-work-proceeds), the [investigation skill](docs/skills/investigation/SKILL.md) and the [document roles](docs/workflow.md#document-roles) |
 | Why was a design chosen? | [Design trees](design/), with reasons and refused alternatives |
 | Which research questions and experiments could be useful? | [Ideas](docs/ideas.md) |
 | What defects and follow-up work remain? | [Todo](docs/todo.md) |
@@ -181,7 +49,7 @@ Research and dated essays provide evidence and ideas; they do not add approval
 requirements. The reading and authority rules are in
 [AGENTS.md](AGENTS.md#authority-and-reading).
 
-Repository layout:
+## Repository
 
 - [compiler/](compiler/): the Rust compiler, LLVM emission, and native
   runtime support.
@@ -190,15 +58,18 @@ Repository layout:
 - [spec/](spec/): the active language and its immutable version archives.
 - [tests/](tests/): normative conformance evidence, executable programs,
   code-generation evidence, and the separate performance regression suite.
-- [docs/](docs/): principles, writer guidance, engineering practice, and
-  reference material.
+- [docs/](docs/): principles, writer guidance, the workflow map, agent
+  skills, and reference material.
 - [research/](research/README.md): investigations and experiments with their
   designs, measurements, and rejected alternatives.
 - [design/](design/): live design decisions with their reasons, and the
   procedure that maintains them.
 - [governance/](governance/): archive-protection hooks and specification-change
-  design evidence.
-- [.github/](.github/): CI and the pull-request template.
+  design evidence. The old approval ledger is retired.
+- [.github/](.github/): CI, repository checks and the pull-request template.
+- [.agents/skills/](.agents/skills/) and [.claude/skills/](.claude/skills/):
+  links through which Codex and Claude Code discover the skills kept in
+  `docs/skills/` and `design/skill/`.
 - [archive/](archive/): frozen historical material. Active source, builds,
   tests, and tools do not depend on it.
 
@@ -208,7 +79,14 @@ Prerequisites: a Rust stable toolchain at least the version in
 [compiler/Cargo.toml](compiler/Cargo.toml)'s `rust-version` (`rustup update
 stable` on an older installed stable — rustup does not update it on its own),
 and clang available at `/usr/bin/clang` on Linux/macOS or as `clang` on PATH
-on Windows.
+on Windows. A cached build that links ThinLTO fragments (`--cache DIR
+--fragments module|function`) also needs LLD on Linux and Windows; the macOS
+toolchain's linker does link-time optimization itself. `--full-lto` is
+research-only: it builds the comparator that the
+[build-cost experiment](research/experiments/modular-build-cost/RESULTS.md)
+measures fragment builds against, the program and its runtime optimized as one
+region, with the same linker requirement, and is not a build mode for
+programs.
 
 From `compiler/`:
 
@@ -252,7 +130,8 @@ describes the record.
 ## Verification
 
 `make check` also needs `python3` (design lint, repository invariants and the
-conformance runner), and the guarded wrapper `.github/run-check.pl`, used
+conformance runner), LLD on Linux (`ld.lld`, Debian/Ubuntu package `lld`) for
+the fragment-build test, and the guarded wrapper `.github/run-check.pl`, used
 below and throughout this section, needs `/usr/bin/time` (Debian/Ubuntu
 package `time`).
 
@@ -303,12 +182,17 @@ subprocess. Nested or parallel rows are not additive suite wall time. See the
 [measured build/test investigation](research/investigations/test-economy/build-and-test.md).
 
 The [gate workflow](.github/workflows/gate.yml) runs those groups on Linux and
-macOS. Additional [I/O host checks](.github/workflows/io-hosts.yml) and
+macOS, and the
+[design-readiness workflow](.github/workflows/design-readiness.yml) rejects
+pending design amendments on a pull request that is ready for review.
+`make review-scope` lists what a completion review covers. Additional
+[I/O host checks](.github/workflows/io-hosts.yml) and
 [benchmarks](.github/workflows/io-bench.yml) own their platform-specific
 evidence. Automatic CI checks correctness and performance regressions under
-the [test boundary](docs/practice.md#test-boundary): useful research cases and
-their dependencies belong in formal tests, while research runs on explicit
-request. Full IO matrices and compute scoreboards are experiments; the separate
+the [test rules](AGENTS.md#specification-and-test-integrity): useful
+research cases and their dependencies belong in formal tests, while research
+runs on explicit request. Full IO matrices and compute scoreboards are
+experiments; the separate
 [compute regression check](.github/workflows/compute-regression.yml) supplies
 a paired performance verdict using the [formal runner](tests/performance/README.md).
 Routine correctness CI and local `make check`

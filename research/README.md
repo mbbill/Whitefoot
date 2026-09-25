@@ -4,11 +4,12 @@ This directory holds investigations and experiments that expose language or
 compiler needs and test possible solutions. Treat agent authorship as a
 changed design condition: identify what a candidate restriction or capability
 should buy, compare plausible alternatives, and retain the observed limits.
-The [evidence method](../docs/practice.md#evidence-guidance) separates design
-objectives, assumptions, mechanism choices, and experimental results. The active
-[specification](../spec/kernel-spec.md) defines the language, the
-[design trees](../design/) record why the language and the compiler are the way
-they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge boundary.
+The [investigation skill](../docs/skills/investigation/SKILL.md) states how a
+performance loss is attributed and which observations an agent writer trial
+keeps apart. The active [specification](../spec/kernel-spec.md)
+defines the language, the [design trees](../design/) record why the language
+and the compiler are the way they are, and [AGENTS.md](../AGENTS.md) defines
+the work-branch and merge boundary.
 
 - `investigations/`: a selected question's design, measurements, and rejected
   alternatives. Keep useful evidence here after implementation; an ended task
@@ -51,6 +52,21 @@ they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge bounda
 - [Incremental L0 closure](investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md):
   keep fact states' closed cores and insert fresh edges instead of recomputing
   the cubic closure, relaxing only which equal-bound L0 derivation is retained.
+- [Modular compilation](investigations/modular-compilation/DESIGN.md):
+  modules for large projects and for an architect agent that owns module
+  interfaces while implementer agents write bodies in parallel. Self-contained
+  `module.wfm` interfaces sit beside their implementation files, with a fixed
+  `pkg::` root qualifier, file-local name aliases, one root file for ordered
+  module dependencies, module verdicts that depend only on interfaces,
+  persistent proof dependencies, and incremental cross-module optimization
+  through object generation, with ordinary final linking. Its
+  [source boundary rules](investigations/modular-compilation/LANGUAGE.md)
+  select one visibility rule for code and annotations, module-relative
+  `readonly`, result-projection contracts and complete formation rules; the
+  active specification v0.70 now carries the module grammar and most of those
+  rules. A [complete source demo](investigations/modular-compilation/demo/README.md)
+  follows a queue through shared libraries, a no-heap entry and a heap-using
+  tool.
 
 Open research questions and evidence links are in [ideas](../docs/ideas.md);
 known compiler defects and implementation costs are in [todo](../docs/todo.md).

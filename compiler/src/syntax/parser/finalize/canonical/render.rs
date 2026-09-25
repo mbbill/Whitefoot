@@ -122,7 +122,10 @@ fn render(
                     .topology
                     .node(owner)
                     .ok_or(CanonicalCompilerFailure::InvalidFinalizedTree)?
-                    .format_depth;
+                    .terminal_depth(
+                        u64::try_from(next)
+                            .map_err(|_| CanonicalCompilerFailure::CounterOverflow)?,
+                    );
                 let style = *gaps
                     .get(next)
                     .ok_or(CanonicalCompilerFailure::InvalidFinalizedTree)?;

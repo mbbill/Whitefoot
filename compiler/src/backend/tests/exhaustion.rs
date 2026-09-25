@@ -64,9 +64,9 @@ fn depth(chain: &Box<Chain>) -> result: u64 reads(chain) {
 }
 
 fn main() -> status: ExitStatus pure {
-  let end = End();
+  let end = Chain::End();
   let bottom = box_new::<Chain>(value: move end);
-  let one = More(tail: move bottom);
+  let one = Chain::More(tail: move bottom);
   let boxed = box_new::<Chain>(value: move one);
   let measured = depth(chain: &boxed);
   if measured == 1_u64 {
@@ -984,12 +984,12 @@ struct Holder {{
 }}
 
 fn boxed_leaf() -> result: Box<Tree> pure {{
-  let leaf = Leaf();
+  let leaf = Tree::Leaf();
   return box_new::<Tree>(value: move leaf);
 }}
 
 fn boxed_branch(left: Box<Tree>, right: Box<Tree>) -> result: Box<Tree> pure {{
-  let branch = Branch(left: move left, right: move right);
+  let branch = Tree::Branch(left: move left, right: move right);
   return box_new::<Tree>(value: move branch);
 }}
 
@@ -1041,12 +1041,12 @@ fn buffer_chain_source(depth: u64) -> Vec<u8> {
 fn nest(inner: Chain) -> result: Chain pure {{
   let held = box_slots_new::<Chain>(capacity: 1_u64);
   place_back(window: &held.inner, value: move inner);
-  return Cons(kids: move held);
+  return Chain::Cons(kids: move held);
 }}
 
 fn main() -> status: ExitStatus pure {{
   let holder = box_slots_new::<Chain>(capacity: 1_u64);
-  let seed = Nil();
+  let seed = Chain::Nil();
   place_back(window: &holder.inner, value: move seed);
   for @build (
     i in 0_u64..{depth}_u64,
@@ -1232,7 +1232,7 @@ const WIDE_BUFFER_CYCLE: &[u8] = br#"enum Chain {
 
 fn leafy() -> result: Chain pure {
   let held = box_slots_new::<Chain>(capacity: 1_u64);
-  return Cons(kids: move held);
+  return Chain::Cons(kids: move held);
 }
 
 fn main() -> status: ExitStatus pure {
@@ -1245,7 +1245,7 @@ fn main() -> status: ExitStatus pure {
   place_back(window: &slots.inner, value: move child2);
   let child3 = leafy();
   place_back(window: &slots.inner, value: move child3);
-  let root = Cons(kids: move slots);
+  let root = Chain::Cons(kids: move slots);
   return exit_status(code: 0_u8);
 }
 "#;
