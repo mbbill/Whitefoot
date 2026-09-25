@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-25 Keep place bases and constant terms unqualified
+
+Nodes: language/name-resolution, compiler/incremental-compilation, language/checks-and-proofs, language, language/effects, language/data-model/readonly-field, compiler
+
+Owner-approved: After the handoff for PR #85 at 6ce90ec5, which showed the unqualified-place-bases amendment and recommended approving it, the owner explicitly agreed to all four recommendations, this approval among them.
+
+Summary: Add the reviewed decision and its rejected alternative unchanged. A qualified path names a type, a group, a callee or a constructor, while a place base, a `const` term and a `cvalue` reference stay single identifiers, so another module's constant is read in a value position through a file-local alias; qualified place bases factored through a shared operand prefix would give `place` a second shape across MSR-1, ENT-2, SET-1 and EFF-1. The specification v0.70 already writes this grammar. Remove the accepted amendment. The other nodes named here are unchanged by this entry and carry the earlier rulings below; they are listed because this PR changes them. The same answer confirmed the qualified-group fix `7043aa3d`, kept the FN-6/FN-9 graph decision as it stands, and directed a staging of the dependency-recording decision whose text is a new amendment awaiting its own ruling. The specification is unchanged; this ruling does not authorize a merge.
+
 ## 2026-09-24 Adopt retained component evidence, the legacy bundle entry and per-module summary publication
 
 Nodes: compiler/incremental-compilation, language/checks-and-proofs, language, language/name-resolution, language/effects, language/data-model/readonly-field, compiler
