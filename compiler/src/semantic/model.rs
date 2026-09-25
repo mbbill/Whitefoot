@@ -2676,6 +2676,12 @@ pub(crate) struct CheckedFunction {
     pub(crate) declared_state_writes: Vec<CheckedStatePath>,
     /// Callable-boundary predicates in `requires_clause` source order.
     pub(crate) requirements: Vec<super::goal::CheckedRequirement>,
+    /// [ENT-2, FN-8] the clause (b) places each requirement forms, index-
+    /// aligned with `requirements`: its own, and those of every definition
+    /// whose expansion it is the first requirement to reach. Each is formed
+    /// at body entry in the state holding the requirements before it, where
+    /// its subscripts owe [OP-4]. A hypothetical premise set forms none.
+    pub(crate) requirement_places: Vec<Vec<CheckedExpression>>,
     /// Verified-relation surfaces in `ensures_clause` source order. H1
     /// constructs this metadata; the shared entailment flow proves every
     /// clause at every selected exit.
@@ -2725,6 +2731,9 @@ pub(crate) struct CheckedCallSeparation {
     /// the invalidating write, and diagnosed at this later use.
     pub(crate) reference_use: Option<CheckedReferencePreservationUse>,
     pub(crate) positions: Vec<CheckedCallSeparationPositions>,
+    /// The window a [`CheckedCallSeparationPositions::Live`] position
+    /// indexes: the place both paths reach above the divergence.
+    pub(crate) window: Option<super::places::ResolvedPlace>,
     /// The two substituted paths as the diagnostic renders them.
     pub(crate) left_spelling: String,
     pub(crate) right_spelling: String,
@@ -2741,6 +2750,10 @@ pub(crate) struct CheckedReferencePreservationUse {
 pub(crate) enum CheckedCallSeparationPositions {
     Indices(super::places::CapturedValue, super::places::CapturedValue),
     Ranges(super::places::CapturedRange, super::places::CapturedRange),
+    /// [WIN-2] an index beside the `next` or `free` part of the window it
+    /// indexes, which the pair's separation needs proved below that window's
+    /// length in the call's entry state.
+    Live(super::places::CapturedValue),
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

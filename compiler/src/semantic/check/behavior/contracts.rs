@@ -283,6 +283,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             result: signature.result,
             declared_state_writes: Vec::new(),
             requirements,
+            requirement_places: Vec::new(),
             postconditions: Vec::new(),
             body: None,
             reference_origins: Vec::new(),

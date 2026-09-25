@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::syntax::NodeId;
 use crate::syntax::terminal::FixedTerminal;
@@ -20,6 +20,55 @@ use super::{CheckStop, Checker, ControlCounters, ControlScope, FunctionSignature
 
 pub(super) struct CheckedRequires {
     pub(super) requirements: Vec<CheckedRequirement>,
+    /// The [ENT-2] clause (b) places each requirement forms, index-aligned
+    /// with `requirements` [`super::super::model::CheckedFunction::requirement_places`].
+    pub(super) places: Vec<Vec<CheckedExpression>>,
+}
+
+/// One checked definition's contribution to the requirements that expand it.
+struct ClauseDefinition {
+    binding: BindingId,
+    /// The clause (b) places its own initializer writes.
+    places: Vec<CheckedExpression>,
+    /// The earlier definitions its initializer reads.
+    uses: Vec<BindingId>,
+}
+
+/// [ENT-2] every clause (b) place one checked clause expression writes, in
+/// source order: a measure of a subscripted place and a subscripted read,
+/// the two forms whose subscripts owe [OP-4] where the place is formed.
+fn collect_clause_places(expression: &CheckedExpression, places: &mut Vec<CheckedExpression>) {
+    let subscripted = |path: &[CheckedPlaceStep]| {
+        path.iter()
+            .any(|step| matches!(step, CheckedPlaceStep::Subscript(_)))
+    };
+    match expression {
+        CheckedExpression::ContainerMeasure { root, .. }
+        | CheckedExpression::ReadStorage { root, .. }
+            if subscripted(&root.path) =>
+        {
+            places.push(expression.clone());
+        }
+        CheckedExpression::RangeElementMeasure { .. } | CheckedExpression::RangeIndex { .. } => {
+            places.push(expression.clone());
+        }
+        _ => {}
+    }
+    for child in expression_children(expression) {
+        collect_clause_places(child, places);
+    }
+}
+
+/// The bindings one checked clause expression reads by name.
+fn collect_clause_reads(expression: &CheckedExpression, reads: &mut Vec<BindingId>) {
+    if let CheckedExpression::Binding { binding, .. } | CheckedExpression::Project { binding, .. } =
+        expression
+    {
+        reads.push(*binding);
+    }
+    for child in expression_children(expression) {
+        collect_clause_reads(child, reads);
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -200,6 +249,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         counters: &mut ControlCounters<'_>,
     ) -> Result<CheckedRequires, CheckStop> {
         let mut expanded_bindings = HashMap::new();
+        let mut definitions: Vec<ClauseDefinition> = Vec::new();
         for (ordinal, parameter) in function.parameters.iter().enumerate() {
             let local = bindings
                 .get(&parameter.declaration)
@@ -251,8 +301,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let expanded =
                 self.build_clause_expression(expression, value, bindings, &expanded_bindings)?;
             expanded_bindings.insert(*binding, expanded);
+            let mut places = Vec::new();
+            collect_clause_places(value, &mut places);
+            let mut uses = Vec::new();
+            collect_clause_reads(value, &mut uses);
+            uses.retain(|read| definitions.iter().any(|earlier| earlier.binding == *read));
+            definitions.push(ClauseDefinition {
+                binding: *binding,
+                places,
+                uses,
+            });
         }
 
+        // [ENT-2, FN-8] a requirement forms its places at body entry, in the
+        // state holding the requirements written before it. A definition is
+        // erased by expansion, so its places are formed in the first
+        // requirement whose expansion reaches it; the state only grows along
+        // the requirements, so a later expansion owes nothing the first did
+        // not.
+        let mut expanded_definitions = HashSet::new();
+        let mut requirement_places = Vec::new();
         let mut requirements = Vec::new();
         for clause in self.tree.children_with(block, Production::RequiresClause)? {
             let expression = self
@@ -289,8 +357,33 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 template: GoalTemplate::new(root),
                 clause: self.tree.path(clause)?.clone(),
             });
+            let mut reached = HashSet::new();
+            let mut pending = Vec::new();
+            collect_clause_reads(&condition.expression, &mut pending);
+            while let Some(read) = pending.pop() {
+                if let Some(definition) = definitions
+                    .iter()
+                    .find(|definition| definition.binding == read)
+                    && reached.insert(read)
+                {
+                    pending.extend(definition.uses.iter().copied());
+                }
+            }
+            let mut places = Vec::new();
+            for definition in &definitions {
+                if reached.contains(&definition.binding)
+                    && expanded_definitions.insert(definition.binding)
+                {
+                    places.extend(definition.places.iter().cloned());
+                }
+            }
+            collect_clause_places(&condition.expression, &mut places);
+            requirement_places.push(places);
         }
-        Ok(CheckedRequires { requirements })
+        Ok(CheckedRequires {
+            requirements,
+            places: requirement_places,
+        })
     }
 
     /// The contract-conditional OWN-1 bare-affine repair [#35]. OWN-1's
