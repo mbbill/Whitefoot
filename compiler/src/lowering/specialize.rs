@@ -353,7 +353,7 @@ impl FunctionDependencies {
         for statement in statements {
             match statement {
                 CheckedStatement::Let { value, .. }
-                | CheckedStatement::Evaluate(value)
+                | CheckedStatement::Evaluate { value, .. }
                 | CheckedStatement::DropExpression { value, .. } => self.expression(value),
                 CheckedStatement::DestructuringLet {
                     bindings,

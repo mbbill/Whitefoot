@@ -1581,6 +1581,32 @@ pub(crate) enum CheckedRangeSource {
     Range(CheckedRangeRoot),
 }
 
+impl CheckedRangeSource {
+    /// The written root and steps of the place this range is formed over
+    /// [REF-1, REF-4], before reference resolution.
+    ///
+    /// A re-slice is formed over the run its holder names, so its steps are
+    /// empty: resolving the holder supplies that run's own range step. The
+    /// formed reference names each resolved place of this source extended by
+    /// the formation's own range step, which is what [OWN-7] compares and
+    /// what [EFF-5] substitutes into a callee's row.
+    pub(crate) fn place(&self) -> (super::places::PlaceRoot, Vec<super::places::PlaceStep>) {
+        match self {
+            Self::Storage(root) => (root.root, root.place_path()),
+            Self::Range(root) => (super::places::PlaceRoot::Binding(root.binding), Vec::new()),
+        }
+    }
+
+    /// The binding the source is written at: the storage root's binding, or
+    /// the holder a re-slice reads through.
+    pub(crate) const fn binding(&self) -> Option<BindingId> {
+        match self {
+            Self::Storage(root) => root.binding(),
+            Self::Range(root) => Some(root.binding),
+        }
+    }
+}
+
 /// One typed element place in the run a range reference names [REF-4, OP-4].
 ///
 /// Reads, borrows, measures and `set` targets share the evaluated outer offset
@@ -2318,10 +2344,19 @@ pub(crate) enum CheckedStatement {
         /// a reference rebinding has no owned value to release either.
         displaces_live_value: bool,
     },
-    Evaluate(CheckedExpression),
+    /// [GRAM-4] an expression statement whose discarded result needs no
+    /// release: a copy value or a borrow-mode reference.
+    Evaluate {
+        /// The complete `expr_stmt`, the statement's own site for the
+        /// [PAR-1, PAR-2] footprint judgments, as a `let`'s is.
+        node_path: NodePath,
+        value: CheckedExpression,
+    },
     /// The discarded result of an expression statement, with the
     /// compiler-derived release it runs [STOR-3].
     DropExpression {
+        /// The complete `expr_stmt`, as for [`Self::Evaluate`].
+        node_path: NodePath,
         value: CheckedExpression,
         drops: Vec<CheckedProjectedDrop>,
     },

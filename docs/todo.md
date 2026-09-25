@@ -152,7 +152,18 @@ rarely insert at the same place.
   repeated visits meet with logical AND. A segment of n members has n(n-1)/2
   pairs, but that logical requirement does not mandate quadratic repeated
   proof work. General index mapping through the first member's `ensures` is
-  still unavailable; missing evidence keeps sequential lowering. Investigate
+  still unavailable; missing evidence keeps sequential lowering. For windows
+  this means every [WIN-2] part-relative separation is refused when a member
+  before the later one writes that window's `len`, which also refuses a read
+  of an old slot after an append; the mapping would recover it. A cheaper
+  recovery needs no mapping: a place reached through a reference live at the
+  first statement's entry is interpreted in that state, and the reference's
+  validity gives `i < len` there, so WIN-2's single-state separation still
+  holds. That recovers the one pair this rule newly denies in the maintained
+  programs, `deque_push_back` against `let first_after_append =
+  deref(original_first)` at `tests/programs/containers/deque-program.wf:113`.
+  The ledger's denial should also name the length change as its cause; it
+  currently reports only the overlapping write and read. Investigate
   indexing and reuse without losing statement identity, captured endpoints,
   flow context or all-pairs composition. Close this item when larger segments
   have measured costs and the intended proof coverage, retaining guarded,
@@ -216,6 +227,43 @@ rarely insert at the same place.
   and added compile time; a corrupted or missing certificate must never
   authorize lowering. Close when a verifier jointly issues the capability, or
   when the packet's stop gates record why the unified engine remains.
+
+- **Write kills do not submit their own OWN-7 separations.** An ENT-5 write
+  kill decides an index or range step against a fact's support only from the
+  separations already retained on the current edge, which are the EFF-5
+  pairwise and REF-2 preservation questions the structural checker submitted,
+  plus literal index inequality. OWN-7 makes two ranges disjoint whenever the
+  current ProofContext proves one of its four orderings, so a length fact over
+  `deref(head)[0_u64]` with `head = &rows[0_u64..1_u64]` should survive a write
+  through `rows[1_u64..3_u64]`, bound or formed at the call; today it dies and
+  the dependent subscript is rejected, and binding offsets proved distinct
+  only by a guard behave the same way. The effect is over-rejection, never an
+  unsound acceptance. Submitting one bounded question per written/support step
+  pair at each kill would admit these programs at a proof cost per fact per
+  write; a literal-endpoint range shortcut beside the literal index one would
+  cover constant ranges cheaply. Validate with the bound and inline spellings,
+  stale-capture and joined-origin negative controls, and a measured
+  checking-cost comparison. Reopen when a real program needs a fact to survive
+  a provably disjoint write; close when kill-time separation is implemented and
+  qualified or declined on measured cost.
+
+- **Consumers rebuild call-argument referents from expression shape.** The
+  structural checker resolves every actual to its REF-1 places (`actual_paths`,
+  including a formation's range step) and uses them for EFF-5, REF-2 and the
+  EFF-2 projection. The entailment flow (`argument_referents`) and the
+  permission judgments (`argument_places`, PAR-2's range recording) instead
+  rebuild those places from the checked argument expression. A missing
+  expression arm there is silent: inline range actuals once produced no ENT-5
+  kill, and so admitted out-of-bounds reads. Retaining the checker's resolved
+  paths per argument on the checked call and reading them in every consumer
+  would remove the duplicate reconstruction and this defect class, at the cost
+  of a checked-model field and its loop-carried and joined-origin handling,
+  which the flow must still read point-currently. Validate that each consumer
+  reaches its current verdicts on the full corpus with identical kill,
+  permission and ledger results, and that a deliberately removed checker arm
+  fails in one place. Reopen when another argument form is added or another
+  referent omission is found; close when the consumers read one inventory or
+  that inventory is shown unsuitable for point-current flow facts.
 
 ## Containers and storage lowering
 
@@ -742,6 +790,19 @@ rarely insert at the same place.
   update them before running those experiments with a compiler that includes
   the split, keeping an older baseline arm on its own adapter.
 
+- **A discarded affine result's call never joins a hand-out group.** Its
+  expression statement runs the result's release immediately after the call,
+  reading the value between a hand-out and its join, so
+  `compiler/src/lowering/builder.rs` leaves that call unrecorded and it ends
+  any overlap group through it, although PAR-1 permits it exactly as the
+  let-bound call. It could instead be a group's last member, as an addressed
+  binding already may. No measured
+  program discards an affine result beside an independent call, so the
+  benefit is unverified. Reopen when such a program appears; validate by
+  emitting the call as the join site with its release after the join and
+  comparing published bytes at several worker counts with the sequential
+  lowering.
+
 ## Platforms and host interfaces
 
 - **Upstream LLVM on Darwin does not yet support the selected stack-probe
@@ -798,6 +859,28 @@ rarely insert at the same place.
   explicit override, for example an environment variable, without changing
   which clang CI uses. Close when the owner decides for or against the
   override and, if accepted, its implementation lands.
+
+- **A directory named through a symbolic link cannot be opened.**
+  `open_directory` opens one component without following a link, which the
+  walk relies on to leave enumerated links alone, and the prelude has no
+  directory open over a `RelativePath`; `open_read` follows links but opens
+  only regular files. So `wfgrep PATTERN ROOT` reports a root that is, or
+  passes through, a link to a directory as `cannot read`, where `grep -r`
+  follows a link named on its command line. Lifting it needs a prelude
+  addition, a directory open over a `RelativePath` resolved as `open_read`
+  resolves it, so it is a specification change deferred from the wfgrep root
+  fix. Validate with a wfgrep case whose root and whose middle root component
+  are links while an enumerated link stays unfollowed. Reopen when a program
+  must walk a user-named linked directory.
+
+- **`tests/programs/dir_walk.wf` truncates silently past its fixture.** It
+  collects into constant-capacity frame storage and stops recording after 64
+  entries in the whole walk, stops descending at depth 8, and clips a path at
+  126 bytes, all while exiting 0, although its doc says it records every
+  entry. Its one corpus case walks a three-level tree, so no check depends on
+  the bounds. Either report each bound or collect through growable storage as
+  `wfgrep.wf` now does; reopen when the program is pointed at a larger tree or
+  its constant-capacity form stops being the point of the case.
 
 ## Open language questions
 

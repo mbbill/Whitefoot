@@ -43,10 +43,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     }
                     self.validate_expression_release_graphs(value)?;
                 }
-                CheckedStatement::Evaluate(value) => {
+                CheckedStatement::Evaluate { value, .. } => {
                     self.validate_expression_release_graphs(value)?;
                 }
-                CheckedStatement::DropExpression { value, drops } => {
+                CheckedStatement::DropExpression { value, drops, .. } => {
                     self.validate_expression_release_graphs(value)?;
                     for drop in drops {
                         self.release_graph_nodes(drop.ty)?;
