@@ -92,9 +92,9 @@
 
 use super::loop_permission::LoopPermission;
 use super::model::{
-    BindingId, CheckedArrayRoot, CheckedEffects, CheckedExpression, CheckedFunction, CheckedMode,
-    CheckedPlaceStep, CheckedSetTarget, CheckedStatePath, CheckedStatement, FunctionId,
-    expression_children,
+    BindingId, CheckedArrayRoot, CheckedEffects, CheckedExpression, CheckedFunction,
+    CheckedMeasure, CheckedMode, CheckedPlaceStep, CheckedSetTarget, CheckedStatePath,
+    CheckedStatement, FunctionId, expression_children,
 };
 use super::places::{
     CapturedRange, CapturedValue, PlaceMap, PlaceRoot, PlaceStep, ResolvedPlace, SeparationOracle,
@@ -604,6 +604,7 @@ impl<'check> Program<'check> {
             first: &first_site.statement,
             second: &second_site.statement,
             proofs,
+            before_second: vec![left],
         };
         match footprint_conflict(&oracle, left, right) {
             Some(denial) => PermissionVerdict::Denied(denial),
@@ -661,10 +662,16 @@ impl<'check> Program<'check> {
                 else {
                     return true;
                 };
+                // A run is contiguous, so the statements between this pair
+                // are the run members between them, each with a footprint.
                 let oracle = PairSeparationOracle {
                     first: &first_site.statement,
                     second: &second_site.statement,
                     proofs,
+                    before_second: classified[*earlier..index]
+                        .iter()
+                        .filter_map(|member| member.footprint.as_ref().ok())
+                        .collect(),
                 };
                 footprint_conflict(&oracle, first_footprint, footprint).is_some()
             });
@@ -826,22 +833,24 @@ impl<'check> Program<'check> {
                     "a statement that binds an ordered result list",
                 )),
             ),
-            // An expression statement's reach is projected by no row, and a
-            // discarded result carries its own [STOR-3] release walk.
-            CheckedStatement::Evaluate(_) => (
-                None,
-                None,
-                None,
-                "an expression statement",
-                Err(Refusal::Form("an expression statement")),
-            ),
-            CheckedStatement::DropExpression { .. } => (
-                None,
-                None,
-                None,
-                "a discarded expression statement",
-                Err(Refusal::Form("a discarded expression statement")),
-            ),
+            // [GRAM-4] an expression statement is one call whose result is
+            // discarded. Its footprint is that call's, formed exactly as a
+            // `let` right-hand side's is: the substituted row [EFF-5], its
+            // operand reads, and its by-value consumptions. It defines no
+            // binding, so it has no binding write path, and the release a
+            // discarded affine result runs contributes no path [STOR-8].
+            CheckedStatement::Evaluate { node_path, value }
+            | CheckedStatement::DropExpression {
+                node_path, value, ..
+            } => {
+                let footprint = self.value_footprint(places, value, node_path);
+                let projection = call_projection(value);
+                let label = projection
+                    .as_ref()
+                    .map_or("an expression statement", |_| "a call statement");
+                let call = projection.map(|projection| projection.call.clone());
+                (Some(node_path), None, call, label, Ok(footprint))
+            }
         };
         let callee_name = statement_value(statement)
             .and_then(call_projection)
@@ -977,7 +986,9 @@ impl<'check> Program<'check> {
 /// read the callee's name back out of it.
 fn statement_value(statement: &CheckedStatement) -> Option<&CheckedExpression> {
     match statement {
-        CheckedStatement::Let { value, .. } => Some(value),
+        CheckedStatement::Let { value, .. }
+        | CheckedStatement::Evaluate { value, .. }
+        | CheckedStatement::DropExpression { value, .. } => Some(value),
         CheckedStatement::Match { scrutinee, .. } => Some(scrutinee),
         _ => None,
     }
@@ -1115,9 +1126,33 @@ struct PairSeparationOracle<'proof> {
     first: &'proof NodePath,
     second: &'proof NodePath,
     proofs: &'proof [PermissionSeparationProof],
+    /// The footprints of the first statement and of every statement between
+    /// the two: what runs from the state both paths are interpreted in up to
+    /// the second statement's own entry [PAR-1].
+    before_second: Vec<&'proof Footprint>,
 }
 
 impl SeparationOracle for PairSeparationOracle<'_> {
+    /// "The paths of both statements are interpreted in the state before the
+    /// first statement; the first statement's `ensures` maps the second's
+    /// indices into that state, so an index that is live only after an append
+    /// is not distinct from the append slot" [PAR-1, WIN-2]. This judgment
+    /// performs no such mapping, so a window whose `r.len` any statement
+    /// before the second writes has no length the two paths share.
+    fn window_length_is_shared(&self, window: &ResolvedPlace) -> bool {
+        let mut path = window.path.clone();
+        path.push(PlaceStep::Measure(CheckedMeasure::Length));
+        let length = ResolvedPlace {
+            root: window.root,
+            path,
+        };
+        !self
+            .before_second
+            .iter()
+            .flat_map(|footprint| &footprint.writes)
+            .any(|write| places_overlap(&UnprovedSeparations, &write.place, &length))
+    }
+
     fn indices_distinct(&self, _left: CapturedValue, _right: CapturedValue) -> bool {
         false
     }
@@ -1291,7 +1326,7 @@ fn push_nested_blocks<'check>(
         | CheckedStatement::Set { .. }
         | CheckedStatement::Proof(_)
         | CheckedStatement::DropExpression { .. }
-        | CheckedStatement::Evaluate(_)
+        | CheckedStatement::Evaluate { .. }
         | CheckedStatement::Return { .. }
         | CheckedStatement::Give { .. }
         | CheckedStatement::Break { .. } => {}

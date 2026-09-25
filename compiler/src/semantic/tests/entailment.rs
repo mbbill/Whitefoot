@@ -141,7 +141,9 @@ fn collect_direct_calls<'checked>(
             | CheckedStatement::Give { value, .. }
             | CheckedStatement::DropExpression { value, .. } => record(value, callee, calls),
             CheckedStatement::PropagateLet { scrutinee, .. } => record(scrutinee, callee, calls),
-            CheckedStatement::Evaluate(expression) => record(expression, callee, calls),
+            CheckedStatement::Evaluate {
+                value: expression, ..
+            } => record(expression, callee, calls),
             CheckedStatement::Match {
                 scrutinee, arms, ..
             }

@@ -1374,7 +1374,7 @@ pub(super) fn collect_statement_calls(
             CheckedStatement::Proof(_) => {}
             CheckedStatement::Let { value, .. }
             | CheckedStatement::DestructuringLet { value, .. }
-            | CheckedStatement::Evaluate(value)
+            | CheckedStatement::Evaluate { value, .. }
             | CheckedStatement::DropExpression { value, .. }
             | CheckedStatement::Return { value, .. }
             | CheckedStatement::Give { value, .. } => {

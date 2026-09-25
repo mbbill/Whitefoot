@@ -1644,29 +1644,218 @@ fn main() -> status: ExitStatus pure {
     ));
 }
 
-/// An expression statement is a call whose reach no row projects onto an
-/// actual, and a discarded one carries its own [STOR-3] release. Neither has a
-/// footprint this judgment computes, so both refuse — and the refusal is
-/// reported ahead of the numbered conditions, because nothing else about the
-/// statement is known.
+/// The two spellings of one call statement: its result bound by `let`, and
+/// the [GRAM-4] expression statement that discards it. `{call}` marks where a
+/// fixture writes the call.
+fn call_statement_forms(template: &str) -> [String; 2] {
+    [
+        template.replace("{call}", "let done = "),
+        template.replace("{call}", ""),
+    ]
+}
+
+/// What a loop verdict says, without the node paths two spellings of one
+/// statement necessarily differ in: the denied condition, the actualization,
+/// the accumulator operations, and the split advice.
+type VerdictShape = (
+    Option<u8>,
+    Option<LoopActualization>,
+    Vec<&'static str>,
+    bool,
+);
+
+fn verdict_shape(judged: &LoopPermission) -> VerdictShape {
+    (
+        judged.verdict.denied_condition(),
+        judged.actualization,
+        judged.combines.clone(),
+        judged.advises_split,
+    )
+}
+
+/// Judges both spellings of one call statement and returns the one shape
+/// they share, failing when the spelling changes the verdict.
+fn same_verdict_for_both_call_forms(template: &str, function: &str) -> VerdictShape {
+    let [bound, discarded] = call_statement_forms(template);
+    let bound_table = permission_of(bound.as_bytes());
+    let discarded_table = permission_of(discarded.as_bytes());
+    let bound_shape = verdict_shape(only_loop(&bound_table, function));
+    let discarded_shape = verdict_shape(only_loop(&discarded_table, function));
+    assert_eq!(
+        bound_shape, discarded_shape,
+        "an expression statement must be judged exactly as the let-bound call:\n{discarded}"
+    );
+    bound_shape
+}
+
+/// [GRAM-4] makes an expression statement one call whose result is discarded.
+/// [PAR-2] forms every statement's footprint exactly as [PAR-1] does, and
+/// neither rule gives this form a footprint of its own: it is the call's
+/// substituted row [EFF-5], its operand reads, and its by-value consumptions,
+/// with no binding write and no path for a discarded result's release
+/// [STOR-8]. Writing the call as an expression statement or binding its result
+/// therefore changes no verdict.
+///
+/// Until this fixture, the judgment refused every expression statement as an
+/// unclassified form ("condition 2: the body contains an expression
+/// statement"), which made permission depend on a spelling with no semantic
+/// difference. That refusal was an implementation limit carried over from
+/// host calls whose reach no row projected; ordinary rows now project every
+/// call, including prelude calls.
 #[test]
-fn an_expression_statement_in_the_body_is_denied_by_condition_two() {
-    let source = b"fn work(x: u64) -> result: u64 pure {
+fn a_pure_expression_statement_call_is_permitted_as_its_let_bound_call() {
+    let template = "fn work(x: u64) -> result: u64 pure {
   return x *wrap 3_u64;
 }
 
 fn main() -> status: ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..4_u64) {
-    work(x: i);
+    {call}work(x: i);
     set total = total +wrap i;
   }
   return exit_status(code: 0_u8);
 }
 ";
+    let (condition, actualization, combines, _) =
+        same_verdict_for_both_call_forms(template, "main");
+    assert_eq!(condition, None, "both spellings must be permitted");
+    assert_eq!(combines, vec!["+wrap"]);
     assert!(matches!(
-        denied(source, "main", 2),
-        LoopDenial::BodyForm { .. }
+        actualization,
+        Some(LoopActualization::Reduction {
+            combine: LoopCombine::AddWrap,
+            ..
+        })
+    ));
+}
+
+/// The unit-result row helper of the reported finding: each iteration fills
+/// one proved-disjoint row through a range reference. The expression
+/// statement is the natural spelling of a call whose result is `unit`.
+#[test]
+fn a_unit_row_helper_written_as_an_expression_statement_is_an_independent_map() {
+    let template = "fn fill_row(output: &[u64], value: u64) -> result: unit writes(output) {
+  let count = deref(output).len;
+  for (i in 0_u64..count) {
+    set deref(output)[i] = value;
+  }
+  return unit;
+}
+
+fn rows(width: u64) -> result: Box<Array<u64>> pure contract {
+  requires width <= 32_u64;
+} {
+  let cells = 3_u64 * width;
+  let values = box_array_filled::<u64>(count: cells, value: 0_u64);
+  for (r in 0_u64..3_u64) {
+    let start = r * width;
+    let end = start + width;
+    invariant bounded: end <= cells {
+      use width times (r + 1_u64 <= 3_u64);
+    }
+    let row = &values.inner[start..end];
+    {call}fill_row(output: row, value: r);
+  }
+  return move values;
+}
+
+fn main() -> status: ExitStatus pure {
+  let values = rows(width: 5_u64);
+  return exit_status(code: 0_u8);
+}
+";
+    let (condition, actualization, _, _) = same_verdict_for_both_call_forms(template, "rows");
+    assert_eq!(condition, None, "both spellings must be permitted");
+    assert_eq!(actualization, Some(LoopActualization::IndependentMap));
+}
+
+/// A discarded affine result runs its compiler-derived release where the
+/// statement ends [STOR-3]; a let-bound one runs it where the iteration ends.
+/// Both release storage the iteration created, and release contributes no
+/// path [STOR-8], so neither spelling gains or loses permission by it.
+#[test]
+fn a_discarded_affine_result_is_permitted_as_its_let_bound_call() {
+    let template = "fn scratch(x: u64) -> result: Box<Array<u64>> pure {
+  let made = box_array_filled::<u64>(count: 4_u64, value: x);
+  return move made;
+}
+
+fn main() -> status: ExitStatus pure {
+  let total = 0_u64;
+  for @sum (i in 0_u64..4_u64) {
+    {call}scratch(x: i);
+    set total = total +wrap i;
+  }
+  return exit_status(code: 0_u8);
+}
+";
+    // The fixture must reach the releasing expression-statement form, or it
+    // would only repeat the copy-result case above.
+    let [_, discarded] = call_statement_forms(template);
+    with_semantics(discarded.as_bytes(), |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("{outcome:?}");
+        };
+        let main = program
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main");
+        let body = main.body.as_deref().expect("main has a body");
+        let Some(super::super::model::CheckedStatement::CountedRange { body, .. }) =
+            body.iter().find(|statement| {
+                matches!(
+                    statement,
+                    super::super::model::CheckedStatement::CountedRange { .. }
+                )
+            })
+        else {
+            panic!("main must hold its counted loop");
+        };
+        assert!(
+            matches!(
+                body.first(),
+                Some(super::super::model::CheckedStatement::DropExpression { .. })
+            ),
+            "the discarded Box must be a releasing expression statement: {body:?}"
+        );
+    });
+    let (condition, _, combines, _) = same_verdict_for_both_call_forms(template, "main");
+    assert_eq!(condition, None, "both spellings must be permitted");
+    assert_eq!(combines, vec!["+wrap"]);
+}
+
+/// The spelling admits nothing the call's row does not: a helper writing
+/// storage that outlives the iteration is the same condition-2 shared write
+/// however its result is treated.
+#[test]
+fn an_expression_statement_writing_enclosing_storage_is_denied_as_its_let_bound_call() {
+    let template = "struct Cell {
+  value: u64;
+}
+
+fn bump(slot: &Cell, x: u64) -> result: u64 writes(slot.value) {
+  set deref(slot).value = deref(slot).value +wrap x;
+  return deref(slot).value;
+}
+
+fn main() -> status: ExitStatus pure {
+  let shared = Cell(value: 0_u64);
+  for @sum (i in 0_u64..4_u64) {
+    {call}bump(slot: &shared, x: i);
+  }
+  return exit_status(code: 0_u8);
+}
+";
+    let (condition, actualization, _, _) = same_verdict_for_both_call_forms(template, "main");
+    assert_eq!(condition, Some(2));
+    assert_eq!(actualization, None);
+    let [_, discarded] = call_statement_forms(template);
+    assert!(matches!(
+        denied(discarded.as_bytes(), "main", 2),
+        LoopDenial::SharedWrite { .. }
     ));
 }
 
