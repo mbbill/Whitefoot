@@ -83,11 +83,10 @@ task size and file count do not decide which a change is.
    and load the `investigation` skill when a choice needs a new measurement,
    benchmark or trial.
 3. **Update:** when a conclusion or its grounds change, update current guidance
-   and material dependents in the same work. Follow references into their
-   consumers and stop at one whose conclusion still holds. A design revision
-   is an owner-ruled tree change or a pending amendment: load the
-   `design-tree` skill whenever a task makes, proposes or applies a design
-   decision or edits `design/`.
+   and material dependents in the same work. A design revision is an
+   owner-ruled tree change or a pending amendment: load the `design-tree`
+   skill whenever a task makes, proposes or applies a design decision or edits
+   `design/`.
 4. **Finish:** load the `completion-review` skill before marking a PR ready or
    reporting completion (checks, one independent review, finding routing,
    publication), and the `owner-handoff` skill whenever you stop for the
@@ -211,12 +210,10 @@ shape, is an approval or merge precondition.
 - Compiler capability, an internal error, a timeout, or an unimplemented
   feature is not a source-language rejection and must not rewrite normative
   expectations.
-- Triage a failure before changing anything. A compiler defect gets the
-  smallest regression case and a fix on the normal path. A language gap is
-  stated as its minimal semantic witness, apart from the compiler that exposed
-  it. A project-local issue is fixed in the project, not by generalizing the
-  language or compiler. A soundness defect is a correctness issue whatever the
-  plan says.
+- A language gap is stated as its minimal semantic witness, apart from the
+  compiler that exposed it. A project-local issue is fixed in the project, not
+  by generalizing the language or compiler. A soundness defect is a
+  correctness issue whatever the plan says.
 - A test case earns its place with an observation no existing case makes and a
   failure that means something. Specification requirements go in
   `tests/conformance/`, whole-program behavior in `tests/programs/`, and other

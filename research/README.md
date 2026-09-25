@@ -4,9 +4,9 @@ This directory holds investigations and experiments that expose language or
 compiler needs and test possible solutions. Treat agent authorship as a
 changed design condition: identify what a candidate restriction or capability
 should buy, compare plausible alternatives, and retain the observed limits.
-The [investigation skill](../docs/skills/investigation/SKILL.md) separates the
-question, its alternatives, the discriminating result and the conditions a
-conclusion holds for. The active [specification](../spec/kernel-spec.md)
+The [investigation skill](../docs/skills/investigation/SKILL.md) states how a
+performance loss is attributed and which observations an agent writer trial
+keeps apart. The active [specification](../spec/kernel-spec.md)
 defines the language, the [design trees](../design/) record why the language
 and the compiler are the way they are, and [AGENTS.md](../AGENTS.md) defines
 the work-branch and merge boundary.

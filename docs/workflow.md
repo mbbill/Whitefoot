@@ -29,7 +29,7 @@ flowchart TD
 | # | Step | When | Do | Where | Owner |
 |---|---|---|---|---|---|
 | 1 | Start or resume | A task arrives or resumes | Read the requested outcome and the affected owners; on resumption, verify the worktree and PR state; open a Draft PR | Draft PR | `AGENTS.md` (How work proceeds) |
-| 2 | Investigate | The task needs evidence or a direction | State the question, the alternatives and the result that would distinguish them before measuring | `research/investigations/<name>/`, `research/experiments/` | `investigation` skill |
+| 2 | Investigate | The task needs evidence or a direction | State the question, the alternatives and the result that would distinguish them before measuring | `research/investigations/<name>/`, `research/experiments/` | `AGENTS.md` (How work proceeds), `investigation` skill |
 | 3 | Decide | A [material choice](../AGENTS.md#how-work-proceeds) | Record its ground; a design-tree change stays an amendment until the owner rules | `design/amendments/`, then `design/language/`, `design/compiler/`, `design/log.md` | `design-tree` skill |
 | 4 | Amend the specification | The task changes language rules | Archive, retitle, bring derived material along, explain the rule changes | `spec/kernel-spec.md`, `tests/conformance/` | `spec-amendment` skill |
 | 5 | Implement | Code, test or library changes | One general path; read the design subtree and its ancestors first; wrap heavy commands | `compiler/`, `lib/`, `tests/` | `AGENTS.md` compiler rules, `design/compiler/` |
@@ -134,10 +134,8 @@ where it has nothing to do.
 
 Revisit the method when a task exposes a missed dependency, an unsupported
 conclusion, repeated owner correction, or upkeep that displaces compiler work.
-Repair the specific trigger, owner or check that failed; adding process
-without a demonstrated use is not the remedy. Measure the signals below
-before and after a change, so that a process change is judged the way a
-compiler change is.
+Measure the signals below before and after a change, so that a process change
+is judged the way a compiler change is.
 
 | Signal | Healthy reading | Source |
 |---|---|---|
