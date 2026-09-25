@@ -37,12 +37,12 @@ use super::super::model::{
     CheckedLoopInvariant, CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominalKind,
     CheckedNumericType, CheckedPlaceStep, CheckedProofMultiplicity, CheckedProofUseSource,
     CheckedRangeSource, CheckedSetTarget, CheckedStatement, CheckedType, CheckedValue, FloatType,
-    IntegerType, MeasureCell, MeasuredKind,
+    IntegerType, MeasureCell, MeasuredKind, SubscriptedTerm,
 };
 use super::super::permission::{PermissionSeparationProof, PermissionSeparationQuery};
 use super::super::places::{
     BindingSummary, CaptureId, CapturedRange, CapturedTerm, CapturedValue, PlaceMap, PlaceStep,
-    ResolvedPlace, SeparationOracle,
+    ResolvedPlace, SeparationOracle, WindowPart,
 };
 use super::super::postcondition::{
     CheckedPostcondition, NormalizedRelation, PostconditionPlaceRoot, PostconditionReturnDatum,
@@ -785,6 +785,24 @@ struct PreparedCall {
     parents: Vec<DerivationId>,
     transfer_events: Vec<FlowEventId>,
     kills: Vec<KillEvent>,
+    /// The indices the call's entry state proves live [WIN-2]: every part a
+    /// row names is interpreted at call entry, so each of `kills` is judged
+    /// against this one set.
+    live: LiveIndices,
+}
+
+impl PreparedCall {
+    /// The separations each of `kills` is judged under: the edge's ledger
+    /// and the liveness the call's entry state proved [WIN-2, ENT-5].
+    fn entry_separations<'call>(
+        &'call self,
+        ledger: &'call SeparationLedger,
+    ) -> EventSeparations<'call> {
+        EventSeparations {
+            ledger,
+            live: &self.live,
+        }
+    }
 }
 
 /// Result of judging one expression in source evaluation order.
@@ -1026,8 +1044,13 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         .scopes
         .push(function.parameters.iter().map(|p| p.binding).collect());
     // [ENT-3] S4: every substituted `requires` goal independently enters the
-    // body state in source order. No clause derives another clause.
+    // body state in source order. No clause derives another clause, but a
+    // clause's places are formed in the state the earlier clauses built
+    // [ENT-2, FN-8], so their subscripts are judged just before it enters.
     for (ordinal, requirement) in function.requirements.iter().enumerate() {
+        if let Some(places) = function.requirement_places.get(ordinal) {
+            analyzer.judge_clause_places(places, &mut state);
+        }
         let event = analyzer.proof_event(FlowEventKind::S4, Some(&requirement.clause));
         analyzer.establish_requires_facts(requirement, &mut state.facts, event);
         analyzer.establish_requirement_affine_images(requirement, ordinal, &mut state);
@@ -1386,15 +1409,64 @@ impl SeparationOracle for SeparationLedger {
         self.disjoint_ranges.contains(&(left, right))
     }
 
+    /// The ledger carries no liveness: `r.len` is mutable, so a proof of
+    /// `i < r.len` holds at the event it was made for and nowhere after it.
+    /// An [ENT-5] event judges its kills under [`EventSeparations`], which
+    /// adds the liveness that event's own entry state proves [WIN-2].
+    fn index_is_live(&self, _window: &ResolvedPlace, _index: CapturedValue) -> bool {
+        false
+    }
+
     fn index_is_not_last(&self, window: &ResolvedPlace, index: CapturedValue) -> bool {
         self.not_last.contains(&(window.clone(), index.capture))
     }
 
-    /// The ledger answers [EFF-5] and [REF-2] at one program point: the
-    /// actuals of one call, or a live reference against a write at that
+    /// The ledger answers at one program point: the actuals of one call
+    /// against its writes, or a fact's place against a write at that
     /// write's entry. Both places read that state's `r.len`.
     fn window_length_is_shared(&self, _window: &ResolvedPlace) -> bool {
         true
+    }
+}
+
+/// The window indices one event's entry state proves live [WIN-2], each
+/// keyed by the resolved window it indexes.
+type LiveIndices = HashSet<(ResolvedPlace, CapturedValue)>;
+
+/// [ENT-5, WIN-2] the separations one kill event is judged under: the edge's
+/// ledger, and the indices the event's entry state proves live.
+///
+/// A fact's place need not have been formed where the event happens: its
+/// index may never have been bounded, as in a place a callee's `ensures`
+/// published, and one that was bounded where it was formed is live at a
+/// later event only while nothing has moved `r.len` below it. A part write
+/// therefore kills every fact below `r[i]` unless the event's entry state
+/// derives `i < r.len` [ENT-6], which is what makes the append slot of a
+/// `place_back` distinct from `r[i]` rather than possibly `r[i]` itself.
+struct EventSeparations<'event> {
+    ledger: &'event SeparationLedger,
+    live: &'event LiveIndices,
+}
+
+impl SeparationOracle for EventSeparations<'_> {
+    fn indices_distinct(&self, left: CapturedValue, right: CapturedValue) -> bool {
+        self.ledger.indices_distinct(left, right)
+    }
+
+    fn ranges_disjoint(&self, left: CapturedRange, right: CapturedRange) -> bool {
+        self.ledger.ranges_disjoint(left, right)
+    }
+
+    fn index_is_live(&self, window: &ResolvedPlace, index: CapturedValue) -> bool {
+        self.live.contains(&(window.clone(), index))
+    }
+
+    fn index_is_not_last(&self, window: &ResolvedPlace, index: CapturedValue) -> bool {
+        self.ledger.index_is_not_last(window, index)
+    }
+
+    fn window_length_is_shared(&self, window: &ResolvedPlace) -> bool {
+        self.ledger.window_length_is_shared(window)
     }
 }
 
@@ -2706,7 +2778,7 @@ impl Analyzer<'_, '_> {
 
     fn s12_transfer_event_kills_substitution(
         &self,
-        separations: &SeparationLedger,
+        separations: &dyn SeparationOracle,
         substitution: &PostconditionCallSubstitution,
         event: &KillEvent,
     ) -> bool {
@@ -2746,7 +2818,7 @@ impl Analyzer<'_, '_> {
 
     fn s12_candidate_term_killed(
         &self,
-        separations: &SeparationLedger,
+        separations: &dyn SeparationOracle,
         term: TermId,
         event: &KillEvent,
     ) -> bool {
@@ -2843,7 +2915,7 @@ impl Analyzer<'_, '_> {
 
     fn s12_substitutions_survive(
         &self,
-        separations: &SeparationLedger,
+        separations: &dyn SeparationOracle,
         substitutions: &[PostconditionCallSubstitution],
         events: &[KillEvent],
         call_transfer: bool,
@@ -2860,7 +2932,7 @@ impl Analyzer<'_, '_> {
 
     fn kill_s12_candidates_for_event(
         &self,
-        separations: &SeparationLedger,
+        separations: &dyn SeparationOracle,
         state: &mut FactState,
         event: &KillEvent,
     ) {
@@ -3425,7 +3497,7 @@ impl Analyzer<'_, '_> {
                 continue;
             };
             if !self.s12_substitutions_survive(
-                &states.separations,
+                &prepared.entry_separations(&states.separations),
                 &instantiated.substitutions,
                 &prepared.kills,
                 true,
@@ -3527,7 +3599,7 @@ impl Analyzer<'_, '_> {
                 continue;
             };
             if !self.s12_substitutions_survive(
-                &states.separations,
+                &prepared.entry_separations(&states.separations),
                 &instantiated.substitutions,
                 &prepared.kills,
                 true,
@@ -3552,7 +3624,7 @@ impl Analyzer<'_, '_> {
 
     fn receiver_argument_overlaps(
         &self,
-        separations: &SeparationLedger,
+        separations: &dyn SeparationOracle,
         expression: &CheckedExpression,
         receiver: &ResolvedPlace,
     ) -> bool {
@@ -3576,7 +3648,7 @@ impl Analyzer<'_, '_> {
 
     fn direct_receiver_route(
         &self,
-        separations: &SeparationLedger,
+        separations: &dyn SeparationOracle,
         target: &CheckedSetTarget,
         value: &CheckedExpression,
         prepared: &PreparedCall,
@@ -3722,7 +3794,7 @@ impl Analyzer<'_, '_> {
                     .iter()
                     .any(|substitution| substitution.formal == route.formal)
                     || !self.s12_substitutions_survive(
-                        separations,
+                        &prepared.entry_separations(separations),
                         &instantiated.substitutions,
                         &prepared.kills,
                         true,
@@ -4116,7 +4188,7 @@ impl Analyzer<'_, '_> {
     /// a control-flow join.
     fn resolved_places_overlap(
         &self,
-        separations: &SeparationLedger,
+        separations: &dyn SeparationOracle,
         left: &ResolvedPlace,
         right: &ResolvedPlace,
     ) -> bool {
@@ -4137,7 +4209,7 @@ impl Analyzer<'_, '_> {
     /// Whether a kill event kills a fact supported by `term` [ENT-5].
     fn event_kills_term(
         &self,
-        separations: &SeparationLedger,
+        separations: &dyn SeparationOracle,
         term: TermId,
         event: &KillEvent,
     ) -> bool {
@@ -4154,14 +4226,21 @@ impl Analyzer<'_, '_> {
             | TermKind::CallDatum { .. }
             | TermKind::EntryDatum { .. }
             | TermKind::MeasureDatum { .. } => false,
-            TermKind::Place(place, _) => match event {
-                KillEvent::Write { place: written, .. }
-                | KillEvent::EntryImageHolderWrite { place: written, .. } => {
-                    self.resolved_places_overlap(separations, place, written)
-                }
-                KillEvent::Consume { binding, .. } => place.root == PlaceRoot::Binding(*binding),
-                KillEvent::EntryImageHolderConsume { .. } => false,
-            },
+            // [ENT-5] a clause (b) place's written offsets are part of its
+            // support, so a write to one kills the term exactly as it kills a
+            // measure over the same place. A clause (a) place has none.
+            TermKind::Place(place, _) => {
+                (match event {
+                    KillEvent::Write { place: written, .. }
+                    | KillEvent::EntryImageHolderWrite { place: written, .. } => {
+                        self.resolved_places_overlap(separations, place, written)
+                    }
+                    KillEvent::Consume { binding, .. } => {
+                        place.root == PlaceRoot::Binding(*binding)
+                    }
+                    KillEvent::EntryImageHolderConsume { .. } => false,
+                }) || self.event_kills_offset_support(separations, place, event)
+            }
             // [MSR-2] a measure term's support is its place's DESCRIPTOR
             // storage, which is the resolved place of P itself and not of
             // P's root: a write to a sibling field of P overlaps neither.
@@ -4194,7 +4273,7 @@ impl Analyzer<'_, '_> {
     /// element of P survive it.
     fn event_kills_measure(
         &self,
-        separations: &SeparationLedger,
+        separations: &dyn SeparationOracle,
         measure: CheckedMeasure,
         support: &ResolvedPlace,
         root: PlaceRoot,
@@ -4223,7 +4302,7 @@ impl Analyzer<'_, '_> {
     /// must never preserve a fact about storage the write may replace.
     fn write_overlaps_measure(
         &self,
-        separations: &SeparationLedger,
+        separations: &dyn SeparationOracle,
         written: &ResolvedPlace,
         support: &ResolvedPlace,
         measure: CheckedMeasure,
@@ -4248,7 +4327,9 @@ impl Analyzer<'_, '_> {
         }
         let mut descriptor = support.clone();
         descriptor.path.push(PlaceStep::Measure(measure));
-        self.resolved_places_overlap(separations, written, &descriptor)
+        // The fact's own place goes first: [WIN-2]'s liveness is a question
+        // about the window above its index [`Self::event_live_indices`].
+        self.resolved_places_overlap(separations, &descriptor, written)
     }
 
     /// Whether `support` is the range value itself, rather than an element
@@ -4284,7 +4365,7 @@ impl Analyzer<'_, '_> {
     /// the measure at every level it occurs in.
     fn event_kills_offset_support(
         &self,
-        separations: &SeparationLedger,
+        separations: &dyn SeparationOracle,
         support: &ResolvedPlace,
         event: &KillEvent,
     ) -> bool {
@@ -4364,7 +4445,7 @@ impl Analyzer<'_, '_> {
 
     fn event_kills_goal(
         &self,
-        separations: &SeparationLedger,
+        separations: &dyn SeparationOracle,
         goal: GoalId,
         event: &KillEvent,
     ) -> bool {
@@ -4430,7 +4511,7 @@ impl Analyzer<'_, '_> {
     /// that an earlier branch already established.
     fn event_kills_goal_origin_binding(
         &self,
-        separations: &SeparationLedger,
+        separations: &dyn SeparationOracle,
         binding: BindingId,
         event: &KillEvent,
     ) -> bool {
@@ -4497,7 +4578,7 @@ impl Analyzer<'_, '_> {
 
     fn apply_kills_one(
         &mut self,
-        separations: &SeparationLedger,
+        separations: &dyn SeparationOracle,
         state: &mut FactState,
         events: &[KillEvent],
     ) {
@@ -4535,16 +4616,140 @@ impl Analyzer<'_, '_> {
             return;
         }
         self.promote_flow_contradiction(states);
-        let separations = states.separations.clone();
+        let ledger = states.separations.clone();
+        let live = self.event_live_indices(states, events);
+        let separations = EventSeparations {
+            ledger: &ledger,
+            live: &live,
+        };
         self.kill_result_evidence(states, events);
         self.apply_kills_one(&separations, &mut states.facts, events);
         self.apply_affine_kills(&separations, &mut states.affine, events);
-        self.invalidate_entry_images(states, events, None);
+        self.invalidate_entry_images(states, &separations, events, None);
+    }
+
+    /// [WIN-2, ENT-5] the indices the entry state of `events` proves live.
+    ///
+    /// Only an index directly below a window whose `next`, `free` or `last`
+    /// one of the events writes is asked about, through the place that holds
+    /// it: a term's, a goal's or an entry image's own path, whose prefix
+    /// above the index is the window. The bound `i < r.len` is the one
+    /// [OP-4] owed where the subscript was formed, judged again here over the
+    /// same terms. A prefix that resolves to more than one place names no one
+    /// window whose length a proof bounds, so its index stays unproved.
+    fn event_live_indices(&mut self, states: &ProofFlowState, events: &[KillEvent]) -> LiveIndices {
+        let mut written_parts = HashSet::new();
+        for event in events {
+            let (KillEvent::Write { place, .. } | KillEvent::EntryImageHolderWrite { place, .. }) =
+                event
+            else {
+                continue;
+            };
+            for written in self.places.resolve(place.root, &place.path) {
+                for (depth, step) in written.path.iter().enumerate() {
+                    if matches!(
+                        step,
+                        PlaceStep::Part(WindowPart::Next | WindowPart::Free | WindowPart::Last)
+                    ) {
+                        written_parts.insert((written.root, depth));
+                    }
+                }
+            }
+        }
+        let mut live = LiveIndices::new();
+        if written_parts.is_empty() {
+            return live;
+        }
+        let mut places = Vec::new();
+        for term in self.terms.ids() {
+            if let TermKind::Place(place, _) | TermKind::Measure(_, place) = self.terms.kind(term) {
+                places.push(place.clone());
+            }
+        }
+        for goal in self.goals.ids() {
+            for support in self.goals.support(goal) {
+                places.push(self.resolve_goal_support(support).0);
+            }
+        }
+        places.extend(self.entry_images.iter().map(|image| image.place.clone()));
+        let mut asked = HashSet::new();
+        for place in places {
+            for (depth, step) in place.path.iter().enumerate() {
+                let PlaceStep::Index(index) = *step else {
+                    continue;
+                };
+                let window = ResolvedPlace {
+                    root: place.root,
+                    path: place.path[..depth].to_vec(),
+                };
+                if !asked.insert((window.clone(), index)) {
+                    continue;
+                }
+                let resolved = self.places.resolve(window.root, &window.path);
+                let [resolved] = resolved.as_slice() else {
+                    continue;
+                };
+                if written_parts.contains(&(resolved.root, resolved.path.len()))
+                    && self.index_live_proof(&window, index, states).is_some()
+                {
+                    live.insert((resolved.clone(), index));
+                }
+            }
+        }
+        live
+    }
+
+    /// [WIN-2] the proof `states` gives of `index < len(window)`: the bound
+    /// a subscript's [OP-4] obligation states where its place is formed, over
+    /// the same length term and the same offset.
+    fn index_live_proof(
+        &mut self,
+        window: &ResolvedPlace,
+        index: CapturedValue,
+        states: &ProofFlowState,
+    ) -> Option<ProofResult> {
+        let length = self
+            .terms
+            .interned(&TermKind::Measure(CheckedMeasure::Length, window.clone()))?;
+        let offset = match (index.capture, index.term) {
+            // A place's term identity reads a binding offset by its spelling,
+            // whose current value is the binding's own term [ENT-2].
+            (CaptureId::SpellingDetermined, CapturedTerm::Binding(binding)) => self.terms.interned(
+                &TermKind::Place(ResolvedPlace::binding(binding), IntegerType::U64),
+            ),
+            _ => self.captured_index_term(index),
+        }?;
+        let affine_offset = match index.capture {
+            CaptureId::Source(_) => states.affine.indices.get(&index.capture).cloned(),
+            _ => None,
+        }
+        .or_else(|| self.affine_term_value(offset, &states.affine));
+        let direct_affine = affine_offset.as_ref().and_then(|offset| {
+            let length = self.measure_atom(length, &states.affine);
+            AffineInequality::from_bounded_forms(offset, &length, -1, &mut AffineCheckState::new())
+                .ok()
+        });
+        let proof = self.prove(
+            ProofContext::new(&states.facts, &states.affine),
+            ProofGoal::BoundedRelation(BoundedRelationGoal {
+                canonical: None,
+                request: Some(BoundsRequest {
+                    left: Some(offset),
+                    right: length,
+                    bound: -1,
+                    distinct: false,
+                }),
+                direct_affine: direct_affine.as_ref(),
+                fixed_affine_bridge: None,
+                affine_left: affine_offset.as_ref(),
+            }),
+        );
+        (proof.disposition == ProofDisposition::Proved).then_some(proof)
     }
 
     fn event_kills_entry_image(
         &self,
-        separations: &SeparationLedger,
+        separations: &dyn SeparationOracle,
         image: &EntryImageRecord,
         event: &KillEvent,
     ) -> bool {
@@ -4568,6 +4773,7 @@ impl Analyzer<'_, '_> {
     fn invalidate_entry_images(
         &mut self,
         states: &mut ProofFlowState,
+        separations: &dyn SeparationOracle,
         events: &[KillEvent],
         shared_event: Option<FlowEventId>,
     ) {
@@ -4585,7 +4791,7 @@ impl Analyzer<'_, '_> {
                     // operand still reads the live place and can lose it.
                     (image.datum.measure.is_none()
                         && states.entry_images[index].is_none()
-                        && self.event_kills_entry_image(&states.separations, image, event))
+                        && self.event_kills_entry_image(separations, image, event))
                     .then_some(index)
                 })
                 .collect::<Vec<_>>();
@@ -4908,6 +5114,26 @@ impl Analyzer<'_, '_> {
                 let mut path = self.read_place_path(value)?;
                 path.path.push(PlaceStep::Field(*field));
                 Some(path)
+            }
+            // [ENT-2] clause (b): a subscripted place is a term exactly when
+            // its final step selects a readonly field of one fragment type.
+            // Its offsets are part of its identity, so only a place whose
+            // every offset was captured is one; the measure former keeps its
+            // own row in `measure_operand`.
+            CheckedExpression::ReadStorage { root, .. }
+                if root.readonly_field_term(self.context.nominals)
+                    == Some(SubscriptedTerm::Represented) =>
+            {
+                Some(self.container_root_path(root))
+            }
+            CheckedExpression::RangeIndex { place, .. }
+                if place.readonly_field_term(self.context.nominals)
+                    == Some(SubscriptedTerm::Represented) =>
+            {
+                Some(ResolvedPlace::from_path(
+                    place.root.binding,
+                    place.place_path(),
+                ))
             }
             _ => None,
         }
@@ -5290,8 +5516,12 @@ impl Analyzer<'_, '_> {
                 )
             }
             // [MSR-1] a measure of a storage shape, read as the same
-            // quantity the reader row loads.
-            CheckedExpression::ContainerMeasure { measure, root } => {
+            // quantity the reader row loads. [ENT-2] a place whose offsets
+            // are not all captured terms or constants names no one element,
+            // so it has no goal identity either.
+            CheckedExpression::ContainerMeasure { measure, root }
+                if root.subscripted_term() == Some(SubscriptedTerm::Represented) =>
+            {
                 let measured = root.measured()?;
                 let argument = self.goal_container_place(root)?;
                 build_operation(
@@ -5345,7 +5575,9 @@ impl Analyzer<'_, '_> {
                     ],
                 )
             }
-            CheckedExpression::BufferMeasure { measure, root } => {
+            CheckedExpression::BufferMeasure { measure, root }
+                if root.subscripted_term() == Some(SubscriptedTerm::Represented) =>
+            {
                 let argument = self.goal_binding_place(
                     root.binding,
                     root.path.iter().map(CheckedPlaceStep::goal_projection),
@@ -5384,7 +5616,9 @@ impl Analyzer<'_, '_> {
                     vec![argument],
                 )
             }
-            CheckedExpression::RangeElementMeasure { measure, place, .. } => {
+            CheckedExpression::RangeElementMeasure { measure, place, .. }
+                if place.subscripted_term() == Some(SubscriptedTerm::Represented) =>
+            {
                 let measured = place.measured()?;
                 let argument = self.goal_binding_place(
                     place.root.binding,
@@ -5456,6 +5690,9 @@ impl Analyzer<'_, '_> {
             | CheckedExpression::BoxTake { .. }
             | CheckedExpression::ProjectValue { .. }
             | CheckedExpression::UserCall { .. }
+            | CheckedExpression::BufferMeasure { .. }
+            | CheckedExpression::RangeElementMeasure { .. }
+            | CheckedExpression::ContainerMeasure { .. }
             | CheckedExpression::ReadStorage { .. }
             | CheckedExpression::ArrayIndex { .. }
             | CheckedExpression::BufferIndex { .. }
@@ -6806,6 +7043,9 @@ impl Analyzer<'_, '_> {
                                 left,
                                 right,
                             ) => [left.start.capture, right.start.capture],
+                            super::super::model::CheckedCallSeparationPositions::Live(index) => {
+                                [index.capture, index.capture]
+                            }
                         })
                         .collect::<HashSet<_>>();
                     for (argument, captured) in arguments.iter().zip(actual_captures) {
@@ -6927,6 +7167,7 @@ impl Analyzer<'_, '_> {
                         parents,
                         transfer_events: Vec::new(),
                         kills: Vec::new(),
+                        live: LiveIndices::new(),
                     })
                 })();
                 // [ENT-3.S13, MSR-3] the call datums are minted here, at the
@@ -8236,6 +8477,27 @@ impl Analyzer<'_, '_> {
         }
     }
 
+    /// [ENT-2, FN-8] the subscripts of the clause (b) places one requirement
+    /// forms, each owing [OP-4] against the base it indexes in the body-entry
+    /// state holding the requirements written before it. A clause evaluates
+    /// nothing, so only the obligations are judged, exactly as the same
+    /// place's read or measure would judge them in the body.
+    fn judge_clause_places(&mut self, places: &[CheckedExpression], states: &mut ProofFlowState) {
+        for place in places {
+            match place {
+                CheckedExpression::ContainerMeasure { root, .. }
+                | CheckedExpression::ReadStorage { root, .. } => {
+                    self.judge_place_subscripts(root, states);
+                }
+                CheckedExpression::RangeElementMeasure { place, .. }
+                | CheckedExpression::RangeIndex { place, .. } => {
+                    self.judge_range_element_place(place, states);
+                }
+                _ => {}
+            }
+        }
+    }
+
     fn judge_affine_expression_subscripts(
         &mut self,
         expression: &CheckedAffineExpression,
@@ -8443,7 +8705,7 @@ impl Analyzer<'_, '_> {
     /// stated [MSR-1]: a plain place, or one element position of a run.
     ///
     /// An element position is a place only where its offset is one a place
-    /// relation can name [MSR-1] — a written literal, a live `own` integer
+    /// relation can name [ENT-2] — a written literal, a live `own` integer
     /// binding, or an in-scope const generic. An offset of any other form is
     /// provably distinct from nothing, itself included, so a measure over it
     /// would relate two elements as one term [OWN-7] and there is no place to
@@ -9408,6 +9670,10 @@ impl Analyzer<'_, '_> {
                 CheckedCallSeparationPositions::Ranges(left, right) => {
                     self.prove_range_separation(left, right, state)
                 }
+                CheckedCallSeparationPositions::Live(index) => separation
+                    .window
+                    .as_ref()
+                    .and_then(|window| self.index_live_proof(window, index, state)),
             };
             proof.map(|proof| (positions, proof))
         });
@@ -9421,6 +9687,9 @@ impl Analyzer<'_, '_> {
                 CheckedCallSeparationPositions::Ranges(left, right) => {
                     state.separations.record_ranges_disjoint(left, right);
                 }
+                // Liveness holds at this call's entry alone and is never
+                // carried along the edge [WIN-2].
+                CheckedCallSeparationPositions::Live(_) => {}
             }
         }
         let derivation = proof.and_then(|proof| proof.derivation);
@@ -9455,6 +9724,10 @@ impl Analyzer<'_, '_> {
                 ),
                 Some(CheckedCallSeparationPositions::Ranges(..)) => format!(
                     "{} and {} select different storage (one ends before the other starts, or one is empty)",
+                    separation.left_spelling, separation.right_spelling
+                ),
+                Some(CheckedCallSeparationPositions::Live(..)) => format!(
+                    "{} and {} select different storage (the index is below the window's length)",
                     separation.left_spelling, separation.right_spelling
                 ),
                 None => unreachable!("checker hands off at least one position candidate"),
@@ -13921,7 +14194,7 @@ impl Analyzer<'_, '_> {
 
     fn affine_event_kills_binding(
         &self,
-        separations: &SeparationLedger,
+        separations: &dyn SeparationOracle,
         binding: BindingId,
         event: &KillEvent,
     ) -> bool {
@@ -13940,7 +14213,7 @@ impl Analyzer<'_, '_> {
 
     fn apply_affine_kills(
         &mut self,
-        separations: &SeparationLedger,
+        separations: &dyn SeparationOracle,
         state: &mut AffineFlowState,
         events: &[KillEvent],
     ) {
@@ -13993,7 +14266,12 @@ impl Analyzer<'_, '_> {
             if !events.is_empty() {
                 self.promote_flow_contradiction(state);
             }
-            let separations = state.separations.clone();
+            let ledger = state.separations.clone();
+            let live = self.event_live_indices(state, &events);
+            let separations = EventSeparations {
+                ledger: &ledger,
+                live: &live,
+            };
             self.kill_result_evidence(state, &events);
             for event in &events {
                 let kind = match event {
@@ -14011,10 +14289,16 @@ impl Analyzer<'_, '_> {
                     &mut state.affine,
                     std::slice::from_ref(event),
                 );
-                self.invalidate_entry_images(state, std::slice::from_ref(event), Some(proof_event));
+                self.invalidate_entry_images(
+                    state,
+                    &separations,
+                    std::slice::from_ref(event),
+                    Some(proof_event),
+                );
                 prepared.transfer_events.push(proof_event);
             }
             prepared.kills = events;
+            prepared.live = live;
         } else {
             self.apply_kills(state, &events);
         }
@@ -14065,7 +14349,7 @@ impl Analyzer<'_, '_> {
                 continue;
             };
             if !self.s12_substitutions_survive(
-                &state.separations,
+                &prepared.entry_separations(&state.separations),
                 &instantiated.substitutions,
                 &prepared.kills,
                 true,
@@ -14228,13 +14512,23 @@ impl Analyzer<'_, '_> {
         let target_event = (!receivers.is_empty())
             .then(|| self.proof_event(FlowEventKind::PostconditionReceiverWrite, Some(node_path)));
         if let Some(result) = &mut result {
-            self.apply_kills_one(&state.separations, &mut result.facts, &target_kills);
+            let live = self.event_live_indices(state, &target_kills);
+            let separations = EventSeparations {
+                ledger: &state.separations,
+                live: &live,
+            };
+            self.apply_kills_one(&separations, &mut result.facts, &target_kills);
         }
         if let Some(target_event) = target_event {
             if !target_kills.is_empty() {
                 self.promote_flow_contradiction(state);
             }
-            let separations = state.separations.clone();
+            let ledger = state.separations.clone();
+            let live = self.event_live_indices(state, &target_kills);
+            let separations = EventSeparations {
+                ledger: &ledger,
+                live: &live,
+            };
             self.kill_result_evidence(state, &target_kills);
             for event in &target_kills {
                 self.apply_kills_one(&separations, &mut state.facts, std::slice::from_ref(event));
@@ -14245,6 +14539,7 @@ impl Analyzer<'_, '_> {
                 );
                 self.invalidate_entry_images(
                     state,
+                    &separations,
                     std::slice::from_ref(event),
                     Some(target_event),
                 );
@@ -15886,7 +16181,7 @@ impl Analyzer<'_, '_> {
 
     fn apply_loop_kills_one(
         &mut self,
-        separations: &SeparationLedger,
+        separations: &dyn SeparationOracle,
         state: &mut FactState,
         kills: &LoopKills,
     ) {
@@ -15933,14 +16228,31 @@ impl Analyzer<'_, '_> {
         event: Option<FlowEventId>,
     ) {
         self.promote_flow_contradiction(states);
-        let separations = states.separations.clone();
+        // The header kills stand for the body's events on every iteration,
+        // and an index this state proves live stays live at each of them
+        // [WIN-2]: `r.len` falls only at an event that writes `r.last`,
+        // `r.filled` or the whole window [OP-10], each of which kills every
+        // fact below `r[i]` here because no ledger records `i != r.len - 1`,
+        // and a write of `i` kills the fact through its offset support
+        // [ENT-5]. A fact these kills leave therefore meets no such event.
+        let ledger = states.separations.clone();
+        let live = self.event_live_indices(states, &kills.events);
+        let separations = EventSeparations {
+            ledger: &ledger,
+            live: &live,
+        };
         self.kill_result_evidence(states, &kills.events);
         self.apply_loop_kills_one(&separations, &mut states.facts, kills);
         self.apply_affine_kills(&separations, &mut states.affine, &kills.events);
         let mut groups = kills.entry_image_groups.iter().collect::<Vec<_>>();
         groups.sort_by(|left, right| left.owner.components().cmp(right.owner.components()));
         for group in groups {
-            self.invalidate_entry_images(states, &kills.events[group.range.clone()], event);
+            self.invalidate_entry_images(
+                states,
+                &separations,
+                &kills.events[group.range.clone()],
+                event,
+            );
         }
     }
 
@@ -16890,6 +17202,7 @@ mod indexed_goal_kill_tests {
             result: CheckedType::Unit,
             declared_state_writes: Vec::new(),
             requirements: Vec::new(),
+            requirement_places: Vec::new(),
             postconditions: Vec::new(),
             body: None,
             reference_origins: Vec::new(),
@@ -17093,6 +17406,7 @@ mod range_argument_kill_tests {
             result: CheckedType::Unit,
             declared_state_writes: Vec::new(),
             requirements: Vec::new(),
+            requirement_places: Vec::new(),
             postconditions: Vec::new(),
             body: None,
             reference_origins,

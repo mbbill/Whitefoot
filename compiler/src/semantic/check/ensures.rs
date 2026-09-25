@@ -733,7 +733,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let CheckedStatement::Let { binding, value, .. } = &checked.statement else {
                     return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
                 };
-                self.validate_clause_conversion_domains(
+                self.validate_clause_checked_forms(
                     ClauseKind::Postcondition(record),
                     definition,
                     value,
@@ -757,7 +757,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             self.validate_clause_condition(ClauseKind::Postcondition(record), clause, expression)?;
             let condition = self.check_expression(function, expression, bindings, 0)?;
-            self.validate_clause_conversion_domains(
+            self.validate_clause_checked_forms(
                 ClauseKind::Postcondition(record),
                 clause,
                 &condition.expression,
@@ -1127,6 +1127,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ordinal: *ordinal,
                 ty: *ty,
             }),
+            // [FN-9] a parameter or named-const datum carries field and
+            // `deref` projections only: a subscripted readonly field is an
+            // [ENT-2] clause (b) term a requirement may name, but no relation
+            // datum in this version, and only a measure member of a formal
+            // place reaches a relation through a subscript (the arm below).
+            ExpandedClauseExpression::Datum(
+                ExpandedClauseDatum::Parameter { projections, .. }
+                | ExpandedClauseDatum::NamedConst { projections, .. },
+            ) if projections.iter().any(|projection| {
+                matches!(
+                    projection,
+                    GoalProjection::Subscript(_) | GoalProjection::FormalSubscript { .. }
+                )
+            }) =>
+            {
+                None
+            }
             ExpandedClauseExpression::Datum(ExpandedClauseDatum::Parameter {
                 ordinal,
                 projections,
