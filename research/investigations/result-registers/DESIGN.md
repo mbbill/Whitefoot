@@ -150,8 +150,8 @@ so every shape that fits x86-64 also fits AArch64.
   the ABI, so their calling convention cannot change alone.
 - **Packed coercion** was not built. It needs per-target coercion rules and
   packing code at each boundary. Criterion 5 prefers the smaller machinery
-  when both reach the same results, and every surviving small result in the
-  maintained programs fits one register per leaf.
+  when both reach the same results, and every surviving result of at most two
+  words in the maintained programs fits one register per leaf.
 
 ## Lowering
 
@@ -355,9 +355,10 @@ Eight of them are four-word results, which AArch64's budget would return in
 registers: four `{ i32, { ptr, i64 }, i1 }` results of `parse_expression` in
 `prefix_expression.wf`, and four results with four words in `option_slots.wf`
 (two), `owned_link_cursors.wf` and `containers/ordered.wf`. `.text` shrank by
-1.0% across the single-file programs and by 1.4% across the bundles. `hashmap.wf` shrank by 336 bytes
-(8.3%). Only `boxed-helper-gap.wf` (+16 bytes), `fixed_run_library.wf`
-(+256 bytes) and `wfgrep.wf` (+48 bytes) grew.
+1.0% across the single-file programs and by 1.4% across the bundles.
+`hashmap.wf` shrank by 336 bytes (8.3%). Only `boxed-helper-gap.wf`
+(+16 bytes), `fixed_run_library.wf` (+256 bytes) and `wfgrep.wf` (+48 bytes)
+grew.
 
 ## Timing
 
@@ -374,9 +375,9 @@ repository's host-wide verification lock held during the runs.
 | hash-map trace | 1.2937 s | 1.2200 s | 0.927 (0.891–0.999) |
 | owning-map exercise | 1.4836 s | 1.4727 s | 0.992 (0.923–1.129) |
 
-Two earlier runs of the hash-map comparison under the same protocol gave
-paired medians of 0.946 for the scratch prototype and 0.962 for the
-implemented compiler.
+Earlier runs of the hash-map comparison under the same protocol gave paired
+medians of 0.956 and 0.946 for the scratch prototype of the lowering and 0.962
+for the implemented compiler.
 
 The same variants were also scaled down to 200,000 repetitions and 20,000
 seeds and run once each under `valgrind --tool=cachegrind`, which counts
@@ -607,8 +608,8 @@ The register bound is selected, with the entry-over-body lowering:
   body in its destination form, but only records and the hash map were
   examined.
 - The merged form's faster hash-map trace came from LLVM inlining `find` and
-  `remove`, which the selected form does not change. That opportunity is
-  recorded in `docs/todo.md`, unmeasured on the selected form.
+  `remove`, which happens neither on main nor with the selected form. That
+  opportunity is recorded in `docs/todo.md`, unmeasured on the selected form.
 - The timing variants are scratch programs derived from maintained sources.
   No paired performance workload was added.
 - Results that exceed the budget still pass through memory: every opaque
