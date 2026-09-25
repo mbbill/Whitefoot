@@ -4,9 +4,12 @@ This investigation decides how the prelude and a standard library become
 ordinary modules, the work the owner selected after the modular compilation
 PR ([todo item](../../../docs/todo.md)). It owns the design, its measurements and
 its rejected alternatives; the decisions that survive go to the design tree,
-and the rules they need go to the specification. Nothing here is implemented
-yet, and nothing here is a design-tree decision until the owner rules on the
-[amendments](../../../design/amendments/).
+and the rules they need go to the specification. The owner approved D1 to D4,
+now [`language/standard-library`](../../../design/language/standard-library.md),
+[`language/name-resolution`](../../../design/language/name-resolution.md) and
+[`language/system-interface/declaration-home`](../../../design/language/system-interface/declaration-home.md);
+D5 and D7 remain an [amendment](../../../design/amendments/standard-library.md).
+Nothing is implemented yet.
 
 ## Question
 
@@ -163,14 +166,15 @@ Initial layout, ordered by dependency:
 | `std::net` | `SocketAddress`, `TcpListener`, `TcpReceive`, `TcpSend`, `TcpConnection`, `AcceptedConnection` and the socket functions |
 | `std::process` | `Inputs`, `ExitStatus`, `exit_status` |
 
-`ExitStatus` and `exit_status` are the one contested placement: 1,159 of the
+`ExitStatus` and `exit_status` were the one contested placement: 1,159 of the
 1,307 conformance sources name `exit_status` and no other host declaration,
 so moving them rewrites those sources (an alias or a qualified path each),
 and the worked example's `main` changes with them. Keeping them in the core would
 spare that rewrite but put a host handle among the language's own
 declarations, with no rule naming it; the runner, which interprets a returned
 value outside the source call (PROG-3), can recognize `std::process::ExitStatus`
-by identity as easily as by spelling. Recommended: move them.
+by identity as easily as by spelling. The owner ruled that they move, and that
+rewriting tests is no cost.
 
 Rejected:
 
@@ -249,6 +253,11 @@ Rejected:
 
 ### D5. The container libraries become the first Whitefoot-bodied `std` modules
 
+Pending: the owner asked whether the containers belong in `std`. The decisive
+ground is reachability: MOD-2 reads no record outside a program's package
+root and binding other packages stays deferred, so without `std` a module
+program can use a container only by copying its source.
+
 `lib/containers/` moves into the standard library as modules
 (`std::collections::vector`, `deque`, `slab`, `hash_map`, `priority_queue`,
 `ordered_map`), each with a `module.wfm` publishing its operations and the
@@ -277,6 +286,27 @@ non-generic standard library function has one name in every program and its
 fragment object is reused wherever its text is equal; a generic instance is
 reused wherever its concrete arguments are equal. A toolchain-supplied warm
 cache is possible later and needs no new key.
+
+### D7. The standard library's source lives in `lib/std/`, embedded in the compiler
+
+Pending, proposed after the owner asked where `std` lives. The source is one
+package in the repository's `lib/std/` directory, with its own `modules.wfg`
+and one directory per module (`lib/std/io/module.wfm`, and so on), the
+containers under `lib/std/collections/`. The compiler carries those records'
+bytes from its own build, as it carries the runtime units today
+(`compiler/src/backend/runtime.rs`), so the library always matches the
+compiler that checks against it, needs no installed location or search
+(PROG-1 refuses source-path search), and enters every cache key through the
+compiler's identity and its records' bytes. The owner already selected root
+`lib/` as the home of reusable Whitefoot source. The cost: editing the library
+means rebuilding the compiler, about 80 seconds on this container.
+
+Rejected:
+
+- Locating the library on disk beside the executable, or through an
+  environment variable or a command-line root: each lets a program be checked
+  against a library other than the one its compiler ships, and no current
+  experiment needs to substitute the library.
 
 ## Specification changes
 

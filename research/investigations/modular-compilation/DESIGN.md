@@ -453,13 +453,17 @@ In the active graph and every selected `.wfm`/`.wf`, `pkg::` denotes that one
 package root. No nearer graph search, external root binding, version selection
 or imported graph is part of the selected grammar or implementation.
 The compiler-owned prelude is not an ordinary source package called `std`.
+The owner has since selected a standard library: the host declarations leave
+the prelude for modules of a toolchain package that the fixed `std` qualifier
+names, beside `pkg` ([library-modules](../library-modules/DESIGN.md)).
 
-External libraries and library-to-library composition remain deferred. A future
-design should give dependencies explicit identities/names and preserve each
-library's internal owning-package qualifier under consumer renaming. That is
-a future compatibility aim, not a selected binding syntax, mandatory current
+Other external libraries and library-to-library composition remain deferred. A
+future design should give dependencies explicit identities/names and preserve
+each library's internal owning-package qualifier under consumer renaming. That
+is a future compatibility aim, not a selected binding syntax, mandatory current
 resolver or permission to add another active dependency authority. Reopen it
-only when external composition is selected by the owner.
+only when external composition beyond the standard library is selected by the
+owner.
 
 The directory of the unique graph already answers where the primary root
 starts. A freely chosen local prefix therefore added a naming decision without

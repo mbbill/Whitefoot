@@ -130,8 +130,10 @@ prefix. The demo root likewise has no `module.wfm` and is not an extra module.
 
 For example, `pkg::runtime::queue` always starts at `demo/` in these sources.
 This single-package specimen does not select an external dependency-binding
-format or demonstrate cross-package reuse; external libraries are deferred
-beyond the next implementation.
+format or demonstrate cross-package reuse; the standard library is the one
+package beyond `pkg` a program will name
+([library-modules](../../library-modules/DESIGN.md)), and other external
+libraries stay deferred.
 
 The tool reaches across directories to `runtime::queue` without moving that
 module to a common ancestor. It lists both `runtime` and `runtime::queue`

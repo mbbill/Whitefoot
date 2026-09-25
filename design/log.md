@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-25 Move the host declarations into a standard library
+
+Nodes: language/standard-library, language/name-resolution, language/system-interface/declaration-home
+
+Owner-approved: After the handoff for PR #129 at 715b05dd, which showed the std-qualifier, host-declarations-in-std and standard-library amendments with a Chinese summary, the owner approved all three, answering that ExitStatus goes into std and that rewriting tests is no cost, and asked where std lives and whether the containers belong in it.
+
+Summary: The prelude keeps only the declarations a language rule names, and every host declaration, ExitStatus and Inputs included, becomes an ordinary public declaration of a standard library module interface whose definition the build supplies, because no rule names them and injecting them into every check costs 36 to 62 percent of a check's instructions ([library-modules E1](../research/investigations/library-modules/DESIGN.md#measurement-e1-what-the-host-rows-cost-every-check)). A fixed std qualifier names the toolchain's standard library beside pkg; a graph row lists the standard library modules its module may name and a source bundle may name any of them; a check or composition reads a standard library module only then; and the specification keeps the exact interface text of the modules whose definitions the build supplies. Binding other external packages stays deferred. The container decision of the standard-library amendment is not applied: the owner asked about it, so it stays an amendment with a proposed home for the library's source.
+
 ## 2026-09-25 Stage the dependency-recording decision
 
 Nodes: compiler/incremental-compilation, language/name-resolution, language/checks-and-proofs, language, language/effects, language/data-model/readonly-field, compiler
