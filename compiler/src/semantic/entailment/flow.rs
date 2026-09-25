@@ -15868,14 +15868,20 @@ impl Analyzer<'_, '_> {
             .unwrap_or_else(|| "?".to_owned())
     }
 
+    /// The source spelling of one declaration, such as a generic parameter.
+    fn declaration_name(&self, declaration: crate::DeclarationId) -> String {
+        self.context
+            .declarations
+            .get(declaration.index())
+            .map_or_else(|| "?".to_owned(), |record| record.spelling().to_owned())
+    }
+
     /// One [OP-4] subscript offset, in the spelling the source wrote it in.
     fn render_offset(&self, offset: CapturedValue) -> String {
         match offset.term {
             CapturedTerm::Literal(value) => value.to_string(),
             CapturedTerm::Binding(binding) => self.binding_name(binding),
-            CapturedTerm::Const(declaration) => {
-                format!("<const-parameter:{}>", declaration.index())
-            }
+            CapturedTerm::Const(declaration) => self.declaration_name(declaration),
             CapturedTerm::Opaque => "?".to_owned(),
         }
     }
@@ -16220,10 +16226,29 @@ impl Analyzer<'_, '_> {
                 };
                 self.render_goal_projections(base, Some(*captured_type), projections)
             }
+            // A literal renders as the source spelling that denotes it
+            // [FORM-5]: `unit`, a `Bool` variant constructor, a suffixed
+            // integer, or a float's canonical literal.
             GoalDatum::Literal(value) => match value {
                 CheckedValue::Integer { ty, bits } => {
                     format!("{}_{}", integer_value(*ty, *bits), integer_type_name(*ty))
                 }
+                CheckedValue::Float { ty, bits } => {
+                    super::super::check::floats::float_value_spelling(*ty, *bits)
+                }
+                CheckedValue::Unit => "unit".to_owned(),
+                CheckedValue::Bool(true) => "True()".to_owned(),
+                CheckedValue::Bool(false) => "False()".to_owned(),
+                // [CONST-1] a const generic is named by its parameter, and a
+                // generic-numeric identity is `0_T` or `1_T` [FORM-5].
+                CheckedValue::ConstGeneric { declaration, .. } => {
+                    self.declaration_name(*declaration)
+                }
+                CheckedValue::NumericIdentity {
+                    ty:
+                        CheckedType::GenericInt(declaration) | CheckedType::GenericFloat(declaration),
+                    one,
+                } => format!("{}_{}", u8::from(*one), self.declaration_name(*declaration)),
                 other => format!("{other:?}"),
             },
         }

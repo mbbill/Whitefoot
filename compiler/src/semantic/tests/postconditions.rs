@@ -3503,7 +3503,9 @@ fn main() -> status: ExitStatus pure {
             detail.disposition,
             crate::PostconditionProofDisposition::Refuted
         );
-        assert!(detail.concrete_function.contains("bad"));
+        // [FN-2] the instance is named as a call writes it, never by the
+        // internal symbol that keys its lowering.
+        assert_eq!(detail.concrete_function, "bad::<u8>");
     });
 }
 
