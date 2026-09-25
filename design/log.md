@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-25 Admit readonly fields below subscripts as fact-language terms
+
+Nodes: language/checks-and-proofs
+
+Owner-approved: The owner approved the readonly-field-terms amendment as shown on PR #118 on 2026-09-25.
+
+Summary: Replace the checks-and-proofs decision that admitted a subscripted place as a term exactly when its last step selects a readonly field, whose ground covered only the storage measures, with the approved decision: such a place is a term exactly when its last step selects a readonly integer field, prelude measure or writer-declared alike, and each offset is itself a tracked place or a constant, because a readonly field changes only through a write to a place containing it and such an offset only through a write to its own support, so the ordinary overlap kill ends every fact about the term. Add its three rejected alternatives: only the prelude's measures, a let-bound copy instead of a term, and any offset with unrepresentable ones reported as a compiler limit. The node keeps the decision and its evidence link; the amendment's sentence naming the replaced decision is recorded here instead. The [readonly-field term investigation](../research/investigations/readonly-field-terms/DESIGN.md) supplies the killing events, the offset rule and the evidence. The settled wording is in kernel-spec v0.70 rules ENT-2, MSR-1, ENT-5 and FN-8. Remove the accepted amendment and its directory. This ruling does not authorize a merge.
+
 ## 2026-09-24 Pass range references as pointer and count with their facts
 
 Nodes: compiler/backend-facts
