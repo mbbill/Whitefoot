@@ -272,6 +272,44 @@ rarely insert at the same place.
   referent omission is found; close when the consumers read one inventory or
   that inventory is shown unsuitable for point-current flow facts.
 
+- **The checker/engine acceptance contract is written nowhere.**
+  `entailment_rejection` (`compiler/src/semantic/check.rs`, 567 lines) decides
+  acceptance by listing the engine's outcome lists by hand, maps obligation
+  families to rules twice and selects OP-14 by the callee spelling
+  `free_empty`. A mandatory outcome list added without a matching arm would be
+  accepted. The [architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#f2-rules-implemented-twice-with-nothing-checking-that-they-agree)
+  proposes explicit obligation records, one disposition each and one
+  acceptance query (its P1.3, a design amendment). Validate with identical
+  verdicts, rules and locations on the conformance corpus and test programs,
+  and a deliberately dropped disposition that rejects. Close when acceptance
+  is one query over the records or the owner declines them.
+
+- **Loop-head kills are formed twice.** The statement walk
+  (`collect_target_kill`) and the loop summary (`push_commit_kill`) in
+  `compiler/src/semantic/entailment/flow.rs` build the same commit kill events
+  separately, and nothing compares them; an event the summary misses leaves a
+  stale fact at the loop head. The path state's transfer is also sequenced by
+  hand in each of `apply_kills`, `kill_scopes_to`, `exit_scopes_to`,
+  `exit_counted_capture_scope` and `exit_counted_loops_from`. Share one event
+  formation, assert under the gate profile's debug assertions that the events
+  a continuing path applies appear in the summary, and give the path state one
+  `apply` and one `join`. Validate with identical ledgers on the corpus and an
+  assertion that fails when either side drops an event. Close when both sides
+  use one formation.
+
+- **Rules recognized by spelling or implemented twice.** OP-14 is selected
+  by the callee spelling `free_empty` (`compiler/src/semantic/check.rs`) and
+  the backend recognizes OP-11's row by symbol spelling
+  (`compiler/src/backend/emitter.rs`); both hold only because TYPE-6 rejects a
+  source declaration that collides with the prelude. CALL-6's consistency
+  check keeps its own closure (`compiler/src/semantic/check/publication.rs`)
+  beside the ENT-4 closure the specification names, and INV-1 affine formation
+  and call-goal images are each formed in both the checker and the flow.
+  Select by PRE-1 operation identity, route CALL-6 through an isolated
+  ordinary query, and form each image once. Validate with identical verdicts
+  and a prelude-spelled source declaration that still reaches neither path.
+  Reopen when a prelude collision rule changes.
+
 ## Containers and storage lowering
 
 - **Validate a shared Ring wrap calculation independent of layout bounds.**
@@ -810,6 +848,23 @@ rarely insert at the same place.
   comparing published bytes at several worker counts with the sequential
   lowering.
 
+- **Parallel actualization is decided during translation.** A counted-loop
+  split is chosen while its body is being lowered
+  (`compiler/src/lowering/builder/split.rs`). The rescue mechanisms follow
+  from that order: an oversized candidate's finished graph is transferred into
+  its parent with every `IrFunction` field remapped by hand, ordinals are
+  reserved late and the ledger rotates. Offer policy is spread over lowering,
+  a scalar-leaf post-pass, the emitter's lane-fit filter and the launcher, and
+  the clone set is computed three times. Lowering the ordinary graph first and
+  actualizing in one IR-to-IR pass whose plan the emitter only renders (the
+  [architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#p4-lowering-and-backend)'s P4.1) removes
+  the transfer and lowering's use of the target layout. It replaces the
+  graph-transfer decisions in
+  `design/compiler/parallel-lowering/two-worlds.md`, so it needs a ruling.
+  Validate with byte-identical LLVM for `tests/programs` and the `--par` test
+  sources. Reopen when the next parallel-lowering experiment has to change the
+  split.
+
 ## Platforms and host interfaces
 
 - **Upstream LLVM on Darwin does not yet support the selected stack-probe
@@ -1030,12 +1085,14 @@ rarely insert at the same place.
   a 1,729-line inline test module) and the tests in
   `compiler/src/semantic/tests/entailment.rs` (10,996 lines, 155 tests) grew
   with it. An agent reads such a file only in slices, and every
-  responsibility's changes land in the same file. The impl already marks eight
-  sections: binding prepass, place resolution and support, terms and relations,
-  kill collection, obligations, statement walk, loop kill summary and canonical
-  rendering. `flow/` already holds `conversions.rs`, `results.rs` and
-  `sources.rs`, split out the same way, so moving each section's methods into
-  its own `flow/` file is a mechanical first step. `state.rs` can move its test
+  responsibility's changes land in the same file. Moving methods into files
+  would not separate its state: child modules take `use super::*` and
+  `pub(super)` methods on the one 37-field `Analyzer`, and the section markers
+  no longer match what they enclose. Split the state first into typed
+  sub-contexts, a vocabulary (terms, goals, ledger, atoms), read-only inputs,
+  outputs and walk frames, then move code along the components the
+  [architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#p2-component-boundaries) lists (its
+  P2.1, a design amendment). `state.rs` can move its test
   module to its own file and its dense-closure algorithms apart from the fact
   state and ledger types; the tests can group by the section they exercise.
   Validate that each move changes no behavior: identical `make check` results
@@ -1056,7 +1113,68 @@ rarely insert at the same place.
   `install_expression_call_requirements`) into `check/goals.rs`. Validate that
   each move changes no behavior: identical `make check` results and a diff of
   moved items and module declarations only. Close when the file is under 4,000
-  lines.
+  lines. The moves keep the one 49-field `Checker`; separating its state into
+  a type context, a declaration inventory and a per-attempt body checker is
+  the [architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#p2-component-boundaries)'s P2.2.
+
+- **LLVM emission writes and then patches text.**
+  `compiler/src/backend/emitter.rs` inserts entry allocas by byte offset and
+  adds the stack-probe attribute by rewriting `define` lines. Which operations
+  open blocks, and so which predecessor a phi names, comes from a hand-kept
+  list (`definition_exit_label`) apart from the code that opens them, and
+  `compiler/src/backend/fragments.rs` re-parses the finished text to split it.
+  A structured function model printed once (the
+  [architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#p4-lowering-and-backend)'s P4.2, a design
+  amendment) records exit labels, places allocas and cuts fragments from the
+  model. Validate with byte-identical output, which keeps the backend tests'
+  substring checks as the net. Reopen when an operation that opens blocks is
+  added.
+
+- **Machinery with no remaining consumer.** Lowering's region
+  specialization runs over an environment its own comment says "starts empty
+  and stays empty" (`compiler/src/lowering/specialize.rs`), with
+  `compiler/src/lowering/physical_types.rs` around it. Five lowering comments
+  cite `[S20, PROV-1]`, which the active specification no longer defines, and
+  `compiler/src/lowering.rs` names a pin test that does not exist (the pin is
+  `ordinary_lane_frame_limits_match_the_runtime_slot`). The flow's `is_holder`
+  returns `false`, so `EntryImageHolderConsume` is unreachable, and
+  `driver::check_module` has no caller. Finalize checks every parsed node
+  against its production again, the re-verification `design/compiler.md`
+  refuses. By reading, generic validation never takes its early return,
+  because the prelude's generic signatures are templates in every bundle, so
+  every nongeneric body is checked structurally twice; the cost is not
+  measured. Remove each with no behavior change (identical verdicts and LLVM),
+  timing the double check before and after. Close when each is removed or kept
+  with a stated consumer.
+
+- **Native construction lives in the CLI and repeats in the harnesses.**
+  The runtime-unit inventory, object caches, LTO flags and linking live in
+  `compiler/src/bin/whitefootc.rs`; `compiler/tests/support/mod.rs` keeps a
+  second unit inventory with different staged names, the program and
+  conformance harnesses link on their own, and `compiler/Makefile` holds a
+  third list. `lib.rs` re-exports modules by glob, so no public item is ever
+  reported unused, and the driver's fifteen entry points come in cached and
+  uncached twins that drop options: `--graph --check` without `--entry`
+  ignores `--cache`. `--no-overlap` now selects the default lowering while its
+  help text says the default actualizes completion I/O. One library module for
+  native construction and one request type (the
+  [architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#p5-driver-and-api)'s P5.1 and P5.2)
+  remove the copies. Validate with identical executables and verdicts from the
+  CLI and every harness. Reopen when a runtime unit or entry point is
+  added.
+
+- **The checker reads raw syntax.** The checker makes 522 `self.tree` calls
+  and 443 `Production::` matches, learning which alternative was written by
+  probing children; the if/else split is decoded from brace offsets in both
+  `compiler/src/resolution/scopes.rs` and `compiler/src/semantic/tree.rs`; and
+  the checker joins resolution records by linear scans comparing
+  `(role, NodePath)` (`compiler/src/semantic/check/support.rs`). Per-node
+  indexes published by resolution (the
+  [architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#p3-identity-and-ownership)'s P3.1) remove
+  the scans without test changes; a typed syntax access layer (P3.4, a design
+  amendment) confines each grammar amendment to one place. Validate with
+  identical verdicts, timing resolution and checking before and after the
+  indexes. Reopen with the next grammar amendment.
 
 ## Open language questions
 
