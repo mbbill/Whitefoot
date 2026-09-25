@@ -1249,10 +1249,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let start = endpoints
             .pop()
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let captured_start =
-            Checker::captured_of(start_node, &start.expression).unwrap_or(CapturedValue::unknown());
-        let captured_end =
-            Checker::captured_of(end_node, &end.expression).unwrap_or(CapturedValue::unknown());
+        // [REF-1, OWN-7] each endpoint keeps the occurrence that evaluated it,
+        // whatever its form, so this formation's endpoint images are its own.
+        let captured_start = Checker::captured_endpoint_of(start_node, &start.expression)?;
+        let captured_end = Checker::captured_endpoint_of(end_node, &end.expression)?;
         // [OWN-7] the formed reference names the base path extended by its
         // own range step; every later separation question reads that step.
         let captured = CapturedRange {
