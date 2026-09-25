@@ -1,8 +1,0 @@
-Node: language/standard-library
-
-Decision: The standard library's source lives in the repository's lib/std directory as one package with its own modules.wfg, and the compiler carries those records' bytes from its own build, because a library that ships with the compiler then always matches it, needs no installed location, search path or version check, and enters every cache key through the compiler's identity and its records' bytes, while the owner already selected root lib/ as the home of reusable Whitefoot source, instead of locating the library on disk beside the executable, through an environment variable or through a command-line root, each of which adds a way for the library and the compiler to disagree.
-
-Decision: The container libraries become the standard library's first Whitefoot modules, under std::collections, with their existing callers and allocation ledgers as the move's regression suite, because a module program can reach no source outside its package root and binding other packages stays deferred, so the standard library is the only way programs can share them without copying, and they are the measured reusable code whose boundaries the owner already adopted, instead of keeping library source as text a caller concatenates before its own or deferring Whitefoot library modules until more helpers exist.
-
-Rejected:
-- A command-line or environment root for the standard library: rejected because it lets a program be checked against a library other than the one its compiler ships, a failure the embedded library cannot have, and no current experiment needs to substitute the library.
