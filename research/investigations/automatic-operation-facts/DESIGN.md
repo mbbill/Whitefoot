@@ -1,11 +1,12 @@
 # Automatic operation facts
 
 Status: implemented. The owner approved the recommendation on 2026-09-25;
-specification v0.71, the compiler and the conformance cases implement it, and
-the [design-tree amendment](../../../design/amendments/operation-fact-table.md)
-awaits the owner's ruling. Sections 1 to 4 are the research round as it was
-ruled on; [section 5](#5-implementation) records what landed and its
-measurements.
+specification v0.72, the compiler and the conformance cases implement it, and
+the owner's approval of the design-tree amendment the same day placed its
+decision in
+[language/checks-and-proofs/automatic-facts](../../../design/language/checks-and-proofs/automatic-facts.md).
+Sections 1 to 4 are the research round as it was ruled on;
+[section 5](#5-implementation) records what landed and its measurements.
 
 ## Question
 
@@ -668,7 +669,7 @@ operation (which would reopen X).
 
 ### 4.3 Proposed specification text
 
-This is the text as proposed; [section 5.1](#51-specification-v071) records
+This is the text as proposed; [section 5.1](#51-specification-v072) records
 how the landed amendment differs.
 
 Replace the complete [ENT-3.S7] item with:
@@ -868,12 +869,15 @@ workarounds of decision 7 are removed in the implementing change.
 
 ## 5. Implementation
 
-### 5.1 Specification v0.71
+### 5.1 Specification v0.72
 
-Main reached v0.70 with modular compilation (#85) before the amendment
-landed, so the amendment archives main's v0.70 bytes as
-`spec/kernel-spec-v0.70.md` and titles the active file v0.71. The ENT-3 edits
-were made against v0.70's text. They follow section 4.3, with these
+Main reached v0.70 with modular compilation (#85) and then v0.71 with the
+readonly-field terms (#118) before the amendment landed, so the amendment
+landed as v0.72 on top of #118's v0.71: it archives main's v0.71 bytes as
+`spec/kernel-spec-v0.71.md` and titles the active file v0.72. The edits were
+made against v0.70's text and apply unchanged to v0.71: the one paragraph both
+amendments edit is [ENT-2]'s term list, where #118 rewrote clause (b) and this
+amendment edits clause (g). The ENT-3 edits follow section 4.3, with these
 differences:
 
 - Relations are established only to an operand that is an admitted term other
@@ -905,7 +909,8 @@ differences:
   quotient's order relation `q <= a`, or the quotient's upper result bound
   when the dividend is a literal or named-const value.
 
-The [design-tree amendment](../../../design/amendments/operation-fact-table.md)
+The design-tree amendment, approved and applied to
+[language/checks-and-proofs/automatic-facts](../../../design/language/checks-and-proofs/automatic-facts.md),
 replaces the product-interval decision as section 4.4 proposes and lists M, K,
 I, the full difference interval and X as rejected. The division-image
 decision keeps its words: the quotient's bound it publishes is now the `/`
