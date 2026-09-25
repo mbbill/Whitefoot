@@ -122,8 +122,8 @@ start from the examples above:
 2. Write sequential code, get parallel results — how the compiler finds
    independence in plain code, recursion included, and hands it to the
    workers.
-3. Proofs without a solver, by hand — difference bounds, closure and loop
-   invariants, worked on paper.
+3. [Proofs without a solver, by hand](docs/articles/proofs-by-hand.md) —
+   difference bounds, closure and loop invariants, worked on paper.
 4. What a rejection tells you — diagnostics written for the agent that fixes
    the code.
 5. Integers — every operation states its meaning.
@@ -135,8 +135,8 @@ start from the examples above:
 10. A layout engine — the first large program.
 11. How this project is built with agents.
 
-The articles are being written; each title becomes a link when its article is
-published.
+The other articles are being written; each title becomes a link when its
+article is published.
 
 ## What an accepted program cannot do, and what it still can
 
