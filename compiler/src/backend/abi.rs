@@ -25,7 +25,8 @@
 //! stores the returned value into the storage its plan selected, and SROA
 //! removes that copy too. A bound in bytes would not give this guarantee.
 //! On x86-64 LLVM silently passes a hidden result pointer for four 32-bit
-//! fields, and it returns three 64-bit words in registers.
+//! fields and returns the third of three 32-bit floats through the x87
+//! stack, while it returns three 64-bit words in registers.
 //!
 //! Representation is not the whole signature. A parameter's *source mode*
 //! does select the aliasing facts its emitted signature carries
@@ -144,7 +145,10 @@ impl FunctionAbi {
 const RETURN_INTEGER_WORDS: u64 = 3;
 
 /// The floating leaves one returned value can occupy on every admitted
-/// target: XMM0 and XMM1 on x86-64, and D0 to D7 on AArch64.
+/// target: XMM0 and XMM1 on x86-64, and D0 to D7 on AArch64. A third
+/// floating leaf on x86-64 returns in the x87 register ST0 through a stack
+/// store and `fld`, which quiets a signaling NaN, so this bound also keeps
+/// returned floats bit-exact.
 const RETURN_FLOATING_LEAVES: u64 = 2;
 
 /// Whether every scalar leaf of `ty`'s LLVM representation gets its own
@@ -152,8 +156,10 @@ const RETURN_FLOATING_LEAVES: u64 = 2;
 ///
 /// LLVM returns a first-class aggregate by giving each scalar leaf its own
 /// return register, without packing small leaves together. A value with more
-/// leaves than the target has registers is silently returned through a
-/// hidden pointer, which is the destination ABI with an extra copy. The count
+/// integer leaves than the target has registers is silently returned through
+/// a hidden pointer, which is the destination ABI with an extra copy. A third
+/// floating leaf on x86-64 goes through the x87 stack instead (see
+/// [`RETURN_FLOATING_LEAVES`]). The count
 /// therefore follows the leaves of [`super::emitter::llvm_type`], not bytes:
 /// `Result<u32, Overflow>`, `{ i32, i32, i1 }`, uses three registers, and
 /// the 32-byte opaque representation `{ i128, i128 }` needs four words and

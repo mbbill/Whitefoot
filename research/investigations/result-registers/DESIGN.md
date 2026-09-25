@@ -78,30 +78,55 @@ This criterion was written before any probe or measurement below:
 
 Criterion 2 was checked with one `llc -O2` module per admitted triple
 (LLVM 18.1.3). Each callee built its result from its arguments with
-`insertvalue` and returned it by value. The table counts the stores in each
-callee. A nonzero count means LLVM demoted the return to a hidden result
-pointer, which is exactly what `define void (ptr %wf.result, ...)` already
-costs.
+`insertvalue` and returned it by value, and its assembly was read. The table
+shows one of three outcomes:
+
+- **registers**: every leaf returns in a general-purpose, SSE or AArch64
+  register.
+- **pointer N**: LLVM demoted the return to a hidden result pointer and made
+  N stores through it, which is exactly the cost `define void
+  (ptr %wf.result, ...)` already has.
+- **x87**: the leaves beyond the second floating one go through the x87
+  register ST0. The callee stores the value to its stack and reloads it with
+  `fld`.
 
 | Shape | LLVM type | x86-64 Linux | x86-64 Windows | x86-64 Darwin | AArch64 Linux | AArch64 Darwin |
-|---|---|---:|---:|---:|---:|---:|
-| `Option<u64>` | `{ i32, i64 }` | 0 | 0 | 0 | 0 | 0 |
-| `Result<u32, Overflow>` | `{ i32, i32, i1 }` | 0 | 0 | 0 | 0 | 0 |
-| three integers | `{ i32, i32, i32 }` | 0 | 0 | 0 | 0 | 0 |
-| four integers, 16 bytes | `{ i32, i32, i32, i32 }` | 4 | 4 | 4 | 0 | 0 |
-| 16 bytes | `[16 x i8]` | 16 | 16 | 16 | 16 | 9 |
-| three words, 24 bytes | `{ i64, i64, i64 }` | 0 | 0 | 0 | 0 | 0 |
-| `Result<u64, Utf8Error>`, 24 bytes | `{ i32, i64, i1 }` | 0 | 0 | 0 | 0 | 0 |
-| `(u64, Option<u64>)`, 24 bytes | `{ i64, { i32, i64 } }` | 0 | 0 | 0 | 0 | 0 |
-| three bits | `{ i1, i1, i1 }` | 0 | 0 | 0 | 0 | 0 |
-| `Slots<u8, 2>` | `{ i64, [2 x i8] }` | 0 | 0 | 0 | 0 | 0 |
-| two doubles | `{ double, double }` | 0 | 0 | 0 | 0 | 0 |
-| three doubles | `{ double, double, double }` | 2 | 2 | 2 | 0 | 0 |
-| three words and two doubles | `{ i64, i64, i64, double, double }` | 0 | 0 | 0 | 0 | 0 |
-| three words and three doubles | `{ i64, i64, i64, double, double, double }` | 2 | 1 | 2 | 0 | 0 |
-| three words, one of them wide | `{ i128, i64 }` | 0 | 0 | 0 | 0 | 0 |
-| opaque | `{ i128, i128 }` | 4 | 4 | 4 | 0 | 0 |
-| empty | `{}`, `[0 x i8]`, `{ i64, [0 x i8] }` | 0 | 0 | 0 | 0 | 0 |
+|---|---|---|---|---|---|---|
+| `Option<u64>` | `{ i32, i64 }` | registers | registers | registers | registers | registers |
+| `Result<u32, Overflow>` | `{ i32, i32, i1 }` | registers | registers | registers | registers | registers |
+| three integers | `{ i32, i32, i32 }` | registers | registers | registers | registers | registers |
+| four integers, 16 bytes | `{ i32, i32, i32, i32 }` | pointer 4 | pointer 4 | pointer 4 | registers | registers |
+| 16 bytes | `[16 x i8]` | pointer 16 | pointer 16 | pointer 16 | pointer 16 | pointer 9 |
+| three words, 24 bytes | `{ i64, i64, i64 }` | registers | registers | registers | registers | registers |
+| `Result<u64, Utf8Error>`, 24 bytes | `{ i32, i64, i1 }` | registers | registers | registers | registers | registers |
+| `(u64, Option<u64>)`, 24 bytes | `{ i64, { i32, i64 } }` | registers | registers | registers | registers | registers |
+| three bits | `{ i1, i1, i1 }` | registers | registers | registers | registers | registers |
+| `Slots<u8, 2>` | `{ i64, [2 x i8] }` | registers | registers | registers | registers | registers |
+| two doubles | `{ double, double }` | registers | registers | registers | registers | registers |
+| three doubles | `{ double, double, double }` | x87 | x87 | x87 | registers | registers |
+| three floats, 12 bytes | `{ float, float, float }` | x87 | x87 | x87 | registers | registers |
+| three words and two doubles | `{ i64, i64, i64, double, double }` | registers | registers | registers | registers | registers |
+| three words and three doubles | `{ i64, i64, i64, double, double, double }` | x87 | x87 | x87 | registers | registers |
+| three words, one of them wide | `{ i128, i64 }` | registers | registers | registers | registers | registers |
+| opaque | `{ i128, i128 }` | pointer 4 | pointer 4 | pointer 4 | registers | registers |
+| empty | `{}`, `[0 x i8]`, `{ i64, [0 x i8] }` | registers | registers | registers | registers | registers |
+
+The x87 route is more than a cost. `fld` from a 32-bit or 64-bit memory
+operand converts a signaling NaN to a quiet one. A caller of
+`{ double, double, double }` received the signaling NaN `7ff0000000000001` in
+all three fields, and the first two came back unchanged in XMM0 and XMM1,
+while the third came back as `7ff8000000000001`. `{ float, float, float }`
+likewise turned `7f800001` into `7fc00001` in its third field. A float value
+returned that way is not bit-exact, so a by-value return of a third floating
+leaf would break correctness, not only performance.
+
+A count of memory operands does not separate these outcomes. The x87 route
+also writes and reads memory, but through the stack and not through a result
+pointer. The table therefore classifies each callee by where its stores go
+and by whether it loads ST0. Criterion 2 names only the hidden pointer. The
+x87 route fails criterion 1, because a returned value must be bit-exact, and
+it keeps the memory round trip that criterion 3 exists to remove, so it
+excludes a candidate just as a hidden pointer does.
 
 The x86-64 return convention gives each scalar leaf its own register,
 without packing small leaves together: three integer-class words (RAX, RDX,
@@ -109,12 +134,13 @@ RCX, with an `i128` taking two) and two floating leaves (XMM0, XMM1). The
 same budget applies on all three x86-64 triples. AArch64 has eight of each,
 so every shape that fits x86-64 also fits AArch64.
 
-- **Every aggregate by value** fails: the four-leaf, sixteen-byte,
-  three-double and opaque shapes are demoted, and larger results would be
-  too.
-- **Byte bound** fails: `{ i32, i32, i32, i32 }` and `[16 x i8]` are 16 bytes
-  and are demoted on x86-64. It also excludes the 24-byte three-word shapes,
-  which return in registers.
+- **Every aggregate by value** fails. The four-leaf, sixteen-byte and opaque
+  shapes are demoted to a hidden pointer, and larger results would be too.
+  The three-double shapes lose bit-exact floats through x87.
+- **Byte bound** fails. `{ i32, i32, i32, i32 }` and `[16 x i8]` are 16 bytes
+  and are demoted on x86-64, and the 12-byte `{ float, float, float }` goes
+  through x87. It also excludes the 24-byte three-word shapes, which return in
+  registers.
 - **Register bound** passes by construction, and every boundary shape
   confirms it.
 - **Both bounds** passes, but it sends every 24-byte three-leaf result

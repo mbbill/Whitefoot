@@ -5,7 +5,8 @@
 //! The classification is checked against the leaves of the LLVM types the
 //! module actually emits, counted here from the module text, so a
 //! representation change that the classifier misses fails these tests
-//! instead of silently demoting a result to a hidden pointer.
+//! instead of silently sending a result through a hidden pointer or, for a
+//! third floating leaf on x86-64, through the x87 stack.
 
 use super::system::with_ir;
 use super::{compile, compile_and_run, emitted_function};

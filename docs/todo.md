@@ -248,17 +248,19 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   destination.** A stored result returns in registers only when its scalar
   leaves fit the x86-64 budget of three integer-class words and two floating
   leaves ([result-register investigation](../research/investigations/result-registers/DESIGN.md#demotion-probe)).
-  A 16-byte result with four 32-bit fields, a small byte array, the 32-byte
-  opaque `ExitStatus`, and every result with four to eight words on AArch64
-  still pass through memory. Packing small leaves into shared integer words,
-  or a per-target budget, could carry some of these. Either one adds
-  per-target lowering to emitted code and to linked definitions, and no
-  maintained program currently shows a surviving call with such a result. The
-  benefit is unmeasured. Reopen when a maintained program keeps such a call
-  on a measured path. Validate with unchanged source and both lowerings
-  compiled, requiring the destination round trip to disappear without a new
-  demotion or a regression in the program's timing, on each target that
-  changes.
+  A 16-byte result with four 32-bit fields, a small byte array and the 32-byte
+  opaque `ExitStatus` still pass through memory. So does every result with
+  four to eight integer words, or three to eight floating leaves, on AArch64.
+  Packing small integer leaves into shared words, or a per-target budget,
+  could carry some of these. Either one adds per-target lowering to emitted
+  code and to linked definitions. A third floating leaf on x86-64 cannot join
+  them: it returns through the x87 stack, which is not bit-exact for signaling
+  NaNs. No maintained program currently shows a surviving call with such a
+  result, and the benefit is unmeasured. Reopen when a maintained program
+  keeps such a call on a measured path. Validate with unchanged source and
+  both lowerings compiled. Require the destination round trip to disappear
+  without a new demotion, a lost float bit pattern, or a regression in the
+  program's timing, on each target that changes.
 
 - **Indexed small-payload costs with retained boundaries need attribution.**
   The [native-cost record](../research/experiments/container-representation/indexed-library/RESULTS.md#remaining-native-costs)
