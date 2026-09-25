@@ -28,9 +28,9 @@ flowchart TD
 
 | # | Step | When | Do | Where | Owner |
 |---|---|---|---|---|---|
-| 1 | Start or resume | A task arrives or resumes | Read the requested outcome and the affected owners; on resumption, verify the worktree and PR state; open a Draft PR | Draft PR | `AGENTS.md`, [decision practice](practice.md#decision-work) |
-| 2 | Investigate | The task needs evidence or a direction | State the question, the alternatives and the result that would distinguish them before measuring | `research/investigations/<name>/`, `research/experiments/` | [Evidence guidance](practice.md#evidence-guidance) |
-| 3 | Decide | A [material choice](practice.md#decision-work) | Record its ground; a design-tree change stays an amendment until the owner rules | `design/amendments/`, then `design/language/`, `design/compiler/`, `design/log.md` | `design-tree` skill |
+| 1 | Start or resume | A task arrives or resumes | Read the requested outcome and the affected owners; on resumption, verify the worktree and PR state; open a Draft PR | Draft PR | `AGENTS.md` (How work proceeds) |
+| 2 | Investigate | The task needs evidence or a direction | State the question, the alternatives and the result that would distinguish them before measuring | `research/investigations/<name>/`, `research/experiments/` | `investigation` skill |
+| 3 | Decide | A [material choice](../AGENTS.md#how-work-proceeds) | Record its ground; a design-tree change stays an amendment until the owner rules | `design/amendments/`, then `design/language/`, `design/compiler/`, `design/log.md` | `design-tree` skill |
 | 4 | Amend the specification | The task changes language rules | Archive, retitle, bring derived material along, explain the rule changes | `spec/kernel-spec.md`, `tests/conformance/` | `spec-amendment` skill |
 | 5 | Implement | Code, test or library changes | One general path; read the design subtree and its ancestors first; wrap heavy commands | `compiler/`, `lib/`, `tests/` | `AGENTS.md` compiler rules, `design/compiler/` |
 | 6 | Fix or record what you notice | Whenever work exposes a defect or opportunity outside the requested change | Fix it in the same change when it is small and in the files being changed; otherwise add a `docs/todo.md` item at the end of its topic section with impact, intended change and reopening condition; list it in the PR's *Found along the way* section | `docs/todo.md`, the PR | `AGENTS.md` (How work proceeds), `make static` for oversized sources, review item V3 |
@@ -82,7 +82,7 @@ or self-description merely to satisfy this table.
 | `docs/skills/`, `design/skill/` (linked from `.agents/skills/` and `.claude/skills/`) | One recurring procedure per skill: its trigger, steps, commands and formats, loaded when the task matches its description | Project rules that `AGENTS.md` owns, language semantics, a copy of the review checklist |
 | `docs/constitution.md` | Complete statements of purpose, chosen objectives, obligations, prohibitions, tradeoffs, and applicable conditions that can guide a choice and test its grounds | Who requested an edit and when, agent conversations, implementation progress, maintenance instructions, abbreviated labels in place of clauses, per-clause usage checklists, a selected mechanism asserted as an inevitable consequence of the purpose |
 | `spec/kernel-spec.md` | Normative syntax, semantics, judgments, boundaries and relevant examples | Compiler convenience presented as law, task status, editing history |
-| `docs/practice.md` / `docs/review-checklist.md` | Engineering methods and decision-update triggers / completion checks | Language semantics, task-specific outcomes, new owner approval requirements |
+| `docs/review-checklist.md` | Completion checks, each item a question a reviewer can answer from the diff | Language semantics, task-specific outcomes, new owner approval requirements, a method stated in full that `AGENTS.md` or a skill owns |
 | `docs/todo.md` | Defects, costs, improvement opportunities and their validation tasks, removed when resolved | Settled decisions, claims of implemented capability, progress logs |
 | `docs/patterns.md` | Writer problems, usable forms, examples, applicability and costs | Additional acceptance rules, unsupported universal performance claims, project administration |
 | `docs/ideas.md`; `docs/why-whitefoot.md` | Candidate mechanisms, open questions and experiment sketches; explanatory essays and dated rationale respectively | A live work queue, invented present-day measurements, contributor process inserted into an essay |
@@ -101,8 +101,8 @@ or self-description merely to satisfy this table.
   Do not link to `design/` from those documents or use it as their
   authority. State the relevant principle or explanation in the document and
   cite direct technical evidence when needed.
-- Maintainer navigation (README, agent instructions, this map, practice,
-  research index) may point to the design trees. Research records, derivation
+- Maintainer navigation (README, agent instructions, this map, research
+  index) may point to the design trees. Research records, derivation
   evidence, and PRs may refer to relevant decisions as historical rationale,
   not as language definitions or proof of an empirical claim. A tree node may
   cite specifications, designs and evidence in its reason. Prefer the
@@ -118,7 +118,8 @@ Change the owner of the part you change, and this map, in the same change:
 | Part | Owner |
 |---|---|
 | Goal, priorities, authority, approval and merge rules | `AGENTS.md` |
-| Engineering and evidence method, test boundary | `docs/practice.md` |
+| Material choices, verification habits, failure triage, test placement | `AGENTS.md` |
+| Investigation method | `investigation` skill |
 | Review items | `docs/review-checklist.md` |
 | Recurring procedures and their triggers | `docs/skills/` and `design/skill/`, linked from `.agents/skills/` and `.claude/skills/` |
 | Checks and CI | `Makefile`, `.github/` |
@@ -132,8 +133,9 @@ check that the skill neither goes unused where its step arrives nor loads
 where it has nothing to do.
 
 Revisit the method when a task exposes a missed dependency, an unsupported
-conclusion, repeated owner correction, or upkeep that displaces compiler work
-([practice](practice.md#checking-the-design-tree)). Measure the signals below
+conclusion, repeated owner correction, or upkeep that displaces compiler work.
+Repair the specific trigger, owner or check that failed; adding process
+without a demonstrated use is not the remedy. Measure the signals below
 before and after a change, so that a process change is judged the way a
 compiler change is.
 

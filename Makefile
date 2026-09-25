@@ -173,7 +173,7 @@ source-size:
 		checked=$$((checked + 1)); \
 		lines="$$(wc -l < "$$file" | tr -d ' ')"; \
 		if test "$$lines" -gt $(SOURCE_LINE_LIMIT) && ! printf '%s\n' "$$recorded" | grep -q -F -e "$$file"; then \
-			echo "source size: $$file has $$lines lines, over $(SOURCE_LINE_LIMIT); split it, or name it in the Code structure section of docs/todo.md with the split you would make" >&2; \
+			echo "source size: $$file has $$lines lines, over $(SOURCE_LINE_LIMIT); split it along its responsibilities, or name it in the Code structure section of docs/todo.md with the split you would make" >&2; \
 			status=1; \
 		fi; \
 	done; \

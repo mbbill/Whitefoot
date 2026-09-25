@@ -40,6 +40,14 @@ seems obvious. An implementation step with only one viable way needs no
 record. Start coarse; the owner tunes the threshold when the tree grows too
 fine or too thin.
 
+A reason states its kind of ground. A deduction names its premises and only
+the conclusion they entail; an empirical reason names what was observed and
+under which conditions; a provisional choice names its reason, uncertainty
+and reopening condition. A constitutional principle or one measurement shows
+that a choice fits, not that it is the only possible one. Keep an open
+question open: name an assumption used to proceed and how it will be checked,
+and never record a proposal or an agent's default as a settled decision.
+
 ## Keeping the tree lean
 
 Apply three filters to every proposed tree revision:

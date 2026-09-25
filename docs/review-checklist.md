@@ -170,8 +170,9 @@ Source: [specification and test integrity](../AGENTS.md#specification-and-test-i
 
 ## R. Decisions — changed choices, premises or relevant evidence
 
-Source: [decision practice](practice.md#decision-work). Applies to changes
-under `design/`, `docs/constitution.md`, `spec/kernel-spec.md` or
+Source: [How work proceeds](../AGENTS.md#how-work-proceeds) and the
+[design-tree skill](../design/skill/SKILL.md#what-is-a-decision). Applies to
+changes under `design/`, `docs/constitution.md`, `spec/kernel-spec.md` or
 `research/investigations/`, and to any task that made a material choice
 elsewhere. These are checks on observable artifacts, not a claim to know an
 agent's internal reasoning or a second design review. A routine fix under
@@ -216,7 +217,8 @@ establish that the group is inapplicable.
 
 ## V. Validation and handoff — every change
 
-Source: [evidence practice](practice.md#evidence-guidance) and
+Source: [How work proceeds](../AGENTS.md#how-work-proceeds), the
+[investigation skill](skills/investigation/SKILL.md) and the
 [merge boundary](../AGENTS.md#branch-and-main-boundary).
 
 - [ ] **V1 — Actual checks.** Applicable checks ran on the delivered content;

@@ -25,11 +25,11 @@ CHECKLIST = "docs/review-checklist.md"
 DESIGN_SKILL = "design/skill/SKILL.md"
 MAP = "docs/workflow.md"
 # Documents that cite review items. Skills are added from the skill directory.
-CITING = ["AGENTS.md", "docs/practice.md", CHECKLIST, MAP, DESIGN_SKILL,
+CITING = ["AGENTS.md", CHECKLIST, MAP, DESIGN_SKILL,
           ".github/pull_request_template.md"]
 # Entry documents whose backticked repository paths must exist. The design-tree
 # skill is excluded: it names its roles generically for reuse in any project.
-PATHS = ["AGENTS.md", "README.md", "docs/practice.md", CHECKLIST, MAP,
+PATHS = ["AGENTS.md", "README.md", CHECKLIST, MAP,
          ".github/pull_request_template.md"]
 # Paths that exist only in some states of the tree.
 TRANSIENT = {"design/amendments/"}
@@ -241,14 +241,14 @@ class GuidanceTests(unittest.TestCase):
 
     def test_undefined_item_and_range(self):
         root = self.fixture()
-        (root / "docs/practice.md").write_text("Checks A1, G1 and DC1.\nSee M1–M3 and A1-A2.\n")
+        (root / "AGENTS.md").write_text("Checks A1, G1 and DC1.\nSee M1–M3 and A1-A2.\n")
         self.assertEqual(item_findings(root), [
-            "docs/practice.md:2: M1–M3 cites undefined review item M2",
-            "docs/practice.md:2: M1–M3 cites undefined review item M3"])
+            "AGENTS.md:2: M1–M3 cites undefined review item M2",
+            "AGENTS.md:2: M1–M3 cites undefined review item M3"])
 
     def test_rule_ids_and_fences_are_not_items(self):
         root = self.fixture()
-        (root / "docs/practice.md").write_text("OWN-7, PAR-2 and L0 are rules.\n```\nV9\n```\n")
+        (root / "AGENTS.md").write_text("OWN-7, PAR-2 and L0 are rules.\n```\nV9\n```\n")
         self.assertEqual(item_findings(root), [])
 
     def test_missing_backticked_path(self):

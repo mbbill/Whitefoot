@@ -69,20 +69,25 @@ evidence, not a workflow step.
 
 ## How work proceeds
 
-Follow the four occasions of
-[decision practice](docs/practice.md#decision-work), which also defines the
-material-choice boundary and the affected-set procedure:
+Follow the four occasions below. A *material choice* changes accepted
+behavior, a safety or trust condition, a shared interface or representation,
+a significant performance commitment or a standing project rule. Restoring
+specified behavior or editing prose without changing its meaning is routine;
+task size and file count do not decide which a change is.
 
 1. **Start or resume:** read the affected current owners; for a material
    choice, also the relevant constitutional aims and existing decision
    grounds. On resumption, verify the actual worktree and PR state.
 2. **Choose:** state why a material choice fits its requirements and evidence;
-   record a discriminating experiment's criterion before using it to choose.
+   record a discriminating experiment's criterion before using it to choose,
+   and load the `investigation` skill when a choice needs a new measurement,
+   benchmark or trial.
 3. **Update:** when a conclusion or its grounds change, update current guidance
-   and material dependents in the same work. A design revision is an
-   owner-ruled tree change or a pending amendment: load the `design-tree`
-   skill whenever a task makes, proposes or applies a design decision or edits
-   `design/`.
+   and material dependents in the same work. Follow references into their
+   consumers and stop at one whose conclusion still holds. A design revision
+   is an owner-ruled tree change or a pending amendment: load the
+   `design-tree` skill whenever a task makes, proposes or applies a design
+   decision or edits `design/`.
 4. **Finish:** load the `completion-review` skill before marking a PR ready or
    reporting completion (checks, one independent review, finding routing,
    publication), and the `owner-handoff` skill whenever you stop for the
@@ -102,6 +107,16 @@ priority defers the work, never the record: a finding kept only in the
 conversation is lost. `make static` requires every compiler source file over
 4,000 lines to be named in the Code structure section of `docs/todo.md`.
 
+**Verify with observations that could have come out otherwise.** A passing
+result is evidence only if a wrong result would have failed it. Prefer an
+observation that separates two hypotheses over one merely consistent with the
+hypothesis you hold; make each new check fail once for each way it can fail;
+never check a transform against its own output. Read an exit code directly,
+not through a pipe. Resolve every commit id, path, count and measurement with
+a tool when you write it, and never copy one forward. Another agent's or a
+reviewer's report is a lead to verify, not evidence. A green result reached by
+weakening a requirement does not answer the original question.
+
 Use a PR as the owner's ongoing review surface from the start, as a Draft
 until the design-tree workflow makes it ready. Push coherent progress to the
 same branch and keep its description and actual validation results current;
@@ -115,11 +130,11 @@ conversation: which rules changed, their before/after behavior, and why those
 changes were selected. A version number or PR link does not replace this.
 
 Recurring procedures are skills: `design-tree`, `spec-amendment`,
-`completion-review` and `owner-handoff`. Their bodies live in the project, in
-`docs/skills/` and `design/skill/`; `.agents/skills/` (Codex) and
-`.claude/skills/` (Claude Code) hold only links to them. Each skill's
-description stays in context and its body loads when its step above
-arrives, never at session start.
+`investigation`, `completion-review` and `owner-handoff`. Their bodies live in
+the project, in `docs/skills/` and `design/skill/`; `.agents/skills/` (Codex)
+and `.claude/skills/` (Claude Code) hold only links to them. Each skill's
+description stays in context and its body loads when its step above arrives,
+never at session start.
 
 ## Branch and main boundary
 
@@ -154,8 +169,8 @@ These are the complete approval and merge rules:
   specification and guidance checks, conformance structure and coverage, and
   the full native conformance adapter. Formatting and Rust API documentation
   are authoring commands, performance comparison has its own workflow, and
-  research is never a gate dependency; the
-  [test boundary](docs/practice.md#test-boundary) owns the details.
+  research is never a gate dependency. `make check-groups` lists the groups
+  and the [workflow map](docs/workflow.md#checks) says where each runs.
 - **Conformance evidence** is `tests/conformance` case source and manifest
   content, its runner and adapter, gate-integrity tests, and any collection or
   invocation wiring that can change which cases run or how their results are
@@ -196,6 +211,17 @@ shape, is an approval or merge precondition.
 - Compiler capability, an internal error, a timeout, or an unimplemented
   feature is not a source-language rejection and must not rewrite normative
   expectations.
+- Triage a failure before changing anything. A compiler defect gets the
+  smallest regression case and a fix on the normal path. A language gap is
+  stated as its minimal semantic witness, apart from the compiler that exposed
+  it. A project-local issue is fixed in the project, not by generalizing the
+  language or compiler. A soundness defect is a correctness issue whatever the
+  plan says.
+- A test case earns its place with an observation no existing case makes and a
+  failure that means something. Specification requirements go in
+  `tests/conformance/`, whole-program behavior in `tests/programs/`, and other
+  implementation obligations in compiler or runtime tests. Formal tests never
+  import `research/`; research may consume formal fixtures.
 
 ## Repository structure and hygiene
 

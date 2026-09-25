@@ -40,7 +40,7 @@ Read the material that owns the question you are working on:
 | How do I work on a branch and prepare a merge? | [AGENTS.md](AGENTS.md) |
 | How do I amend the specification, finish a task, or hand work back? | [Agent skills](docs/skills/) |
 | Which writer forms should I try? | [Patterns](docs/patterns.md) |
-| How should I investigate, verify, and maintain documentation? | [Engineering practice](docs/practice.md) |
+| How should I investigate, verify, and maintain documentation? | [AGENTS.md](AGENTS.md#how-work-proceeds), the [investigation skill](docs/skills/investigation/SKILL.md) and the [document roles](docs/workflow.md#document-roles) |
 | Why was a design chosen? | [Design trees](design/), with reasons and refused alternatives |
 | Which research questions and experiments could be useful? | [Ideas](docs/ideas.md) |
 | What defects and follow-up work remain? | [Todo](docs/todo.md) |
@@ -58,8 +58,8 @@ requirements. The reading and authority rules are in
 - [spec/](spec/): the active language and its immutable version archives.
 - [tests/](tests/): normative conformance evidence, executable programs,
   code-generation evidence, and the separate performance regression suite.
-- [docs/](docs/): principles, writer guidance, engineering practice, the
-  workflow map, agent skills, and reference material.
+- [docs/](docs/): principles, writer guidance, the workflow map, agent
+  skills, and reference material.
 - [research/](research/README.md): investigations and experiments with their
   designs, measurements, and rejected alternatives.
 - [design/](design/): live design decisions with their reasons, and the
@@ -165,9 +165,10 @@ pending design amendments on a pull request that is ready for review.
 [I/O host checks](.github/workflows/io-hosts.yml) and
 [benchmarks](.github/workflows/io-bench.yml) own their platform-specific
 evidence. Automatic CI checks correctness and performance regressions under
-the [test boundary](docs/practice.md#test-boundary): useful research cases and
-their dependencies belong in formal tests, while research runs on explicit
-request. Full IO matrices and compute scoreboards are experiments; the separate
+the [test rules](AGENTS.md#specification-and-test-integrity): useful
+research cases and their dependencies belong in formal tests, while research
+runs on explicit request. Full IO matrices and compute scoreboards are
+experiments; the separate
 [compute regression check](.github/workflows/compute-regression.yml) supplies
 a paired performance verdict using the [formal runner](tests/performance/README.md).
 Routine correctness CI and local `make check`
