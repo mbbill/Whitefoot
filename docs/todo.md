@@ -654,6 +654,41 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   controls and the investigation's checking-cost criterion; do not equate
   targets merely because their covers agree. Close this item when the gain is
   implemented and qualified or the measured tradeoff supports declining it.
+- **Write kills do not submit their own OWN-7 separations.** An ENT-5 write
+  kill decides an index or range step against a fact's support only from the
+  separations already retained on the current edge, which are the EFF-5
+  pairwise and REF-2 preservation questions the structural checker submitted,
+  plus literal index inequality. OWN-7 makes two ranges disjoint whenever the
+  current ProofContext proves one of its four orderings, so a length fact over
+  `deref(head)[0_u64]` with `head = &rows[0_u64..1_u64]` should survive a write
+  through `rows[1_u64..3_u64]`, bound or formed at the call; today it dies and
+  the dependent subscript is rejected, and binding offsets proved distinct
+  only by a guard behave the same way. The effect is over-rejection, never an
+  unsound acceptance. Submitting one bounded question per written/support step
+  pair at each kill would admit these programs at a proof cost per fact per
+  write; a literal-endpoint range shortcut beside the literal index one would
+  cover constant ranges cheaply. Validate with the bound and inline spellings,
+  stale-capture and joined-origin negative controls, and a measured
+  checking-cost comparison. Reopen when a real program needs a fact to survive
+  a provably disjoint write; close when kill-time separation is implemented and
+  qualified or declined on measured cost.
+- **Consumers rebuild call-argument referents from expression shape.** The
+  structural checker resolves every actual to its REF-1 places (`actual_paths`,
+  including a formation's range step) and uses them for EFF-5, REF-2 and the
+  EFF-2 projection. The entailment flow (`argument_referents`) and the
+  permission judgments (`argument_places`, PAR-2's range recording) instead
+  rebuild those places from the checked argument expression. A missing
+  expression arm there is silent: inline range actuals once produced no ENT-5
+  kill, and so admitted out-of-bounds reads. Retaining the checker's resolved
+  paths per argument on the checked call and reading them in every consumer
+  would remove the duplicate reconstruction and this defect class, at the cost
+  of a checked-model field and its loop-carried and joined-origin handling,
+  which the flow must still read point-currently. Validate that each consumer
+  reaches its current verdicts on the full corpus with identical kill,
+  permission and ledger results, and that a deliberately removed checker arm
+  fails in one place. Reopen when another argument form is added or another
+  referent omission is found; close when the consumers read one inventory or
+  that inventory is shown unsuitable for point-current flow facts.
 - **Pair-scoped parallel proofs need scaling and coverage work.** The current
   PAR-1 planner constructs questions for every ordered source pair in a segment
   and retains range separation only for that pair's first-statement state;

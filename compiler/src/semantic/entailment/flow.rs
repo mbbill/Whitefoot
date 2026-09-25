@@ -2609,6 +2609,11 @@ impl Analyzer<'_, '_> {
             | CheckedExpression::BorrowRangeIndex { place, .. } => {
                 self.append_holder_chain(place.root.binding, holders);
             }
+            CheckedExpression::RangeOf { source, .. } => {
+                if let Some(binding) = source.binding() {
+                    self.append_holder_chain(binding, holders);
+                }
+            }
             CheckedExpression::ArrayMeasure {
                 root: CheckedArrayRoot::Binding { binding, .. },
                 ..
@@ -6444,6 +6449,14 @@ impl Analyzer<'_, '_> {
     /// [EFF-5] substitutes the actual's path into the callee's row, so what a
     /// call writes through parameter i is this place extended by that row's
     /// `epsuffix*`. An argument that is not a place names none.
+    ///
+    /// A range formed at the call, `&x[lo..hi]` or `&deref(part)[a..b]`, is a
+    /// `borrow_expr` written here exactly as `&x[i]` is: it names its source's
+    /// resolved places extended by the formation's own range step [REF-4,
+    /// OWN-7], the same path a bound range reference would name. That step
+    /// against an index step of the same base is a pair no admitted family
+    /// separates, so a write through it reaches every element fact of that
+    /// base unless the paths separate earlier.
     fn argument_referents(&self, argument: &CheckedExpression) -> Vec<(ResolvedPlace, bool)> {
         let resolve = |root: PlaceRoot, steps: &[PlaceStep]| {
             let places = self.places.resolve(root, steps);
@@ -6476,6 +6489,21 @@ impl Analyzer<'_, '_> {
                     .collect(),
                 false,
             ),
+            CheckedExpression::RangeOf {
+                source, captured, ..
+            } => {
+                let (root, steps) = source.place();
+                (
+                    resolve(root, &steps)
+                        .into_iter()
+                        .map(|mut resolved| {
+                            resolved.path.push(PlaceStep::Range(*captured));
+                            resolved
+                        })
+                        .collect(),
+                    false,
+                )
+            }
             CheckedExpression::Binding { binding, .. } if self.places.is_reference(*binding) => {
                 (resolve(PlaceRoot::Binding(*binding), &[]), true)
             }
@@ -6491,11 +6519,14 @@ impl Analyzer<'_, '_> {
     /// [CALL-3].
     ///
     /// The write reaches the viewed range's element storage and no measure
-    /// term over the origin place itself, nor over the view: `len_of(origin)`
-    /// and `len_of(view)` both survive it, and a measure of a viewed element
-    /// whose type has descriptor storage of its own dies with that storage.
-    /// Today a view's element domain is flat, so no measured element reaches
-    /// this classification and the surviving half is its whole effect here.
+    /// term over the origin place itself, nor over the view. The event is the
+    /// actual's range place with one element step of unknown offset below it,
+    /// so `len_of(origin)` and `len_of(view)` both survive it [MSR-2], while
+    /// a fact over any element the range may contain dies with that element's
+    /// storage: a field of it, or, for an element type with descriptor
+    /// storage of its own, its measures [CALL-3]. Whether the actual is a
+    /// bound view or a range formed at the call, `argument_referents` names
+    /// the same range place.
     fn collect_view_write_kills(
         &self,
         argument: &CheckedExpression,
@@ -16899,6 +16930,179 @@ mod indexed_goal_kill_tests {
                     "scope exit must remove exactly the goals that read its binding"
                 );
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod range_argument_kill_tests {
+    use super::*;
+    use crate::semantic::model::{CheckedElement, CheckedRangeRoot};
+
+    const ORIGIN: BindingId = BindingId(0);
+    const VIEW: BindingId = BindingId(1);
+
+    fn literal(occurrence: u32, value: u64) -> CapturedValue {
+        CapturedValue::new(CaptureId::source(occurrence), CapturedTerm::Literal(value))
+    }
+
+    fn range(occurrence: u32, start: u64, end: u64) -> CapturedRange {
+        CapturedRange {
+            start: literal(occurrence, start),
+            end: literal(occurrence + 1, end),
+        }
+    }
+
+    fn place(path: Vec<PlaceStep>) -> ResolvedPlace {
+        ResolvedPlace {
+            root: PlaceRoot::Binding(ORIGIN),
+            path,
+        }
+    }
+
+    fn endpoint(value: u64) -> Box<CheckedExpression> {
+        Box::new(CheckedExpression::Constant(CheckedValue::Integer {
+            ty: IntegerType::U64,
+            bits: value,
+        }))
+    }
+
+    /// `&origin[lo..hi]` or `&deref(view)[lo..hi]` formed at a call argument.
+    fn formation(
+        source: CheckedRangeSource,
+        captured: CapturedRange,
+        start: u64,
+        end: u64,
+    ) -> CheckedExpression {
+        CheckedExpression::RangeOf {
+            carrier: crate::NodePath {
+                components: vec![0],
+            },
+            source,
+            element: CheckedElement(0),
+            element_type: CheckedType::Integer(IntegerType::U64),
+            start: endpoint(start),
+            end: endpoint(end),
+            obligation: crate::NodePath {
+                components: vec![1],
+            },
+            captured,
+        }
+    }
+
+    fn storage_source() -> CheckedRangeSource {
+        CheckedRangeSource::Storage(CheckedContainerRoot {
+            root: PlaceRoot::Binding(ORIGIN),
+            path: Vec::new(),
+            ty: CheckedType::Integer(IntegerType::U64),
+        })
+    }
+
+    fn view_source() -> CheckedRangeSource {
+        CheckedRangeSource::Range(CheckedRangeRoot {
+            binding: VIEW,
+            element: CheckedElement(0),
+            element_type: CheckedType::Integer(IntegerType::U64),
+        })
+    }
+
+    /// [EFF-5, REF-4, CALL-3] a range formed at a call names the path a bound
+    /// range reference would name, so its projected write kills a measure of
+    /// an element that range may contain and keeps the origin's own measure
+    /// and the range's own measure. Before this path existed, an inline
+    /// actual named no referent and its write killed nothing.
+    #[test]
+    fn an_inline_range_actual_names_its_formation_path_for_kills() {
+        let constant_ids = HashMap::new();
+        let const_parameter_types = HashMap::new();
+        let context = EntailmentContext {
+            declarations: &[],
+            callees: &[],
+            constants: &[],
+            constant_ids: &constant_ids,
+            const_parameter_types: &const_parameter_types,
+            nominals: &[],
+            elements: &[],
+            contract_queries: &[],
+            verified_postconditions: &[],
+            verified_postcondition_proofs: &[],
+            binding_names: &[],
+        };
+        let outer = range(10, 0, 3);
+        let function = CheckedFunction {
+            formal_hypothesis: false,
+            id: crate::semantic::model::FunctionId(0),
+            declaration: crate::DeclarationId::from_index(0).unwrap(),
+            name: String::new(),
+            symbol: String::new(),
+            region_parameters: Vec::new(),
+            parameters: Vec::new(),
+            result_mode: CheckedMode::Own,
+            result: CheckedType::Unit,
+            declared_state_writes: Vec::new(),
+            requirements: Vec::new(),
+            postconditions: Vec::new(),
+            body: None,
+            // `view` names `origin[0..3]`.
+            reference_origins: vec![Vec::new(), vec![place(vec![PlaceStep::Range(outer)])]],
+            body_disposition: Default::default(),
+            allocates: false,
+            call_separations: Vec::new(),
+            permission_separation_queries: Vec::new(),
+            entailment: FunctionEntailment::default(),
+        };
+        let mut analyzer = Analyzer::new(&context, &function);
+        analyzer.places = PlaceMap::for_function(&function);
+
+        let inner = range(20, 1, 3);
+        let direct = formation(storage_source(), inner, 1, 3);
+        assert_eq!(
+            analyzer.argument_referents(&direct),
+            vec![(place(vec![PlaceStep::Range(inner)]), false)]
+        );
+        let reslice = formation(view_source(), inner, 1, 3);
+        assert_eq!(
+            analyzer.argument_referents(&reslice),
+            vec![(
+                place(vec![PlaceStep::Range(outer), PlaceStep::Range(inner)]),
+                false
+            )]
+        );
+
+        let call = crate::NodePath {
+            components: vec![2],
+        };
+        let separations = SeparationLedger::default();
+        for (argument, prefix) in [
+            (&direct, Vec::new()),
+            (&reslice, vec![PlaceStep::Range(outer)]),
+        ] {
+            let mut events = Vec::new();
+            analyzer.collect_view_write_kills(argument, &call, &mut events);
+            let [event] = events.as_slice() else {
+                panic!("one written range names one event: {events:?}");
+            };
+            let mut selected = prefix.clone();
+            selected.push(PlaceStep::Index(literal(30, 1)));
+            let mut own = prefix;
+            own.push(PlaceStep::Range(inner));
+            let [selected, origin, own] = [selected, Vec::new(), own].map(|path| {
+                analyzer
+                    .terms
+                    .intern(TermKind::Measure(CheckedMeasure::Length, place(path)))
+            });
+            assert!(
+                analyzer.event_kills_term(&separations, selected, event),
+                "the write may replace the selected element, so its measure dies"
+            );
+            assert!(
+                !analyzer.event_kills_term(&separations, origin, event),
+                "an element write reaches no measure of the origin place [CALL-3]"
+            );
+            assert!(
+                !analyzer.event_kills_term(&separations, own, event),
+                "an element write reaches no measure of the range reference [CALL-3]"
+            );
         }
     }
 }

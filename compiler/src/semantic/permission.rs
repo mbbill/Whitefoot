@@ -1494,7 +1494,10 @@ fn collect_operand_reads(
 /// A reference argument names a path, so its actual resolves to the path the
 /// reference names rather than to any storage of its own; at a join a
 /// reference names a set, and every check on it must hold for every member.
-fn argument_places(places: &PlaceMap, argument: &CheckedExpression) -> Option<Vec<ResolvedPlace>> {
+pub(super) fn argument_places(
+    places: &PlaceMap,
+    argument: &CheckedExpression,
+) -> Option<Vec<ResolvedPlace>> {
     let resolved = match argument {
         CheckedExpression::Binding { binding, .. }
         | CheckedExpression::DerefAddressed { binding, .. } => {
@@ -1520,6 +1523,23 @@ fn argument_places(places: &PlaceMap, argument: &CheckedExpression) -> Option<Ve
                 resolved
             })
             .collect(),
+        // [REF-4, EFF-5] a range formed at the call names its source's
+        // places extended by the formation's own range step, the same path a
+        // bound range reference names; [OWN-7] judges that step against the
+        // other statement's paths, including by a retained range proof.
+        CheckedExpression::RangeOf {
+            source, captured, ..
+        } => {
+            let (root, steps) = source.place();
+            places
+                .resolve(root, &steps)
+                .into_iter()
+                .map(|mut resolved| {
+                    resolved.path.push(PlaceStep::Range(*captured));
+                    resolved
+                })
+                .collect()
+        }
         _ => return None,
     };
     (!resolved.is_empty()).then_some(resolved)

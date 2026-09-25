@@ -413,6 +413,129 @@ fn a_constant_nonempty_range_is_not_an_iteration_partition() {
     ));
 }
 
+/// The runtime partition with its range formed at the call argument instead
+/// of bound first.
+fn inline_partition_source() -> String {
+    let source = RUNTIME_PARTITION_SOURCE.replace(
+        "    let row = &values.inner[start..end];\n    let painted = paint(output: row);",
+        "    let painted = paint(output: &values.inner[start..end]);",
+    );
+    assert_ne!(source, RUNTIME_PARTITION_SOURCE);
+    source
+}
+
+/// [PAR-2]: "A proved range reference is a range reference
+/// `&r[s*i+b..s*i+b+s]` [REF-4] passed as an ordinary argument." A range the
+/// argument forms at the call is that reference as much as a bound one is, so
+/// the runtime partition keeps its permission and its independent map.
+#[test]
+fn a_range_formed_at_the_call_argument_is_a_proved_range_reference() {
+    assert_eq!(
+        permitted(inline_partition_source().as_bytes(), "partition").actualization,
+        Some(LoopActualization::IndependentMap)
+    );
+}
+
+/// The control for the inline formation: with a constant offset the formed
+/// range is no iteration partition, so the helper's write through it is an
+/// ordinary shared write exactly as it is for the bound spelling.
+#[test]
+fn a_constant_range_formed_at_the_call_argument_is_not_a_partition() {
+    let source = inline_partition_source()
+        .replace("    let offset = i * stride;", "    let offset = 0_u64 * stride;")
+        .replace(
+            "    invariant bounded: end <= total {\n      use stride times (i + 1_u64 <= 6_u64);\n    }",
+            "    invariant bounded: end <= total;",
+        );
+    assert!(matches!(
+        denied(source.as_bytes(), "partition", 2),
+        LoopDenial::SharedWrite { .. }
+    ));
+}
+
+/// A counted loop whose written range is cut from a range the body itself
+/// forms. `w` starts at `last - i`, so the re-slice `[i..i+1]` of it is the
+/// one element `last` in every iteration, although its endpoints alone are
+/// the partition `[1*i+0, 1*i+0+1)` relative to `w`. `{write}` passes that
+/// re-slice to `bump`, either formed at the call or bound first.
+const SHIFTING_ORIGIN_SOURCE: &str = r#"fn bump(output: &[u64], mark: u64) -> result: u64 writes(output) {
+  let count = deref(output).len;
+  for (x in 0_u64..count) {
+    let old = deref(output)[x];
+    let next = old +wrap mark;
+    set deref(output)[x] = next;
+  }
+  return count;
+}
+
+fn shifted(n: u64) -> result: Box<Array<u64>> pure contract {
+  requires 1_u64 <= n;
+  requires n <= 1000000_u64;
+} {
+  let values = box_array_filled::<u64>(count: n, value: 0_u64);
+  if n <= values.inner.len {
+    let last = n - 1_u64;
+    for (i in 0_u64..n) {
+      let lo = last - i;
+      let w = &values.inner[lo..n];
+      let hi = i + 1_u64;
+{write}    }
+  }
+  return move values;
+}
+
+fn main() -> status: ExitStatus pure {
+  let values = shifted(n: 4_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+
+/// [PAR-2]: "The indexable place or range reference it is formed from is
+/// declared outside B and retains its resolved origin." `w` is formed inside
+/// B with an endpoint that moves with i, so a partition-shaped re-slice of it
+/// is no proved range reference and does not inherit one: [OWN-7] leaves two
+/// iterations' different `w` frames overlapping. Both spellings of the call's
+/// range are the same path and receive the same shared-write denial; granting
+/// either loses updates to `values.inner[last]` under `--par`.
+#[test]
+fn a_partition_of_a_range_formed_inside_the_body_is_not_a_proved_range() {
+    for write in [
+        "      let painted = bump(output: &deref(w)[i..hi], mark: 1_u64);\n",
+        "      let u = &deref(w)[i..hi];\n      let painted = bump(output: u, mark: 1_u64);\n",
+    ] {
+        let source = SHIFTING_ORIGIN_SOURCE.replace("{write}", write);
+        assert!(
+            matches!(
+                denied(source.as_bytes(), "shifted", 2),
+                LoopDenial::SharedWrite { .. }
+            ),
+            "{write}"
+        );
+    }
+}
+
+/// The inheritance half of the same sentence: "a range reference formed
+/// inside B instead inherits an existing proved range reference only when its
+/// complete origin path is a descendant of that range reference." A re-slice
+/// of the proved per-iteration `row`, formed at the call or bound first,
+/// writes inside `row`'s extent and keeps the partition's permission.
+#[test]
+fn a_reslice_of_a_proved_range_inherits_its_partition() {
+    for write in [
+        "    let painted = paint(output: &deref(row)[0_u64..stride]);",
+        "    let part = &deref(row)[0_u64..stride];\n    let painted = paint(output: part);",
+    ] {
+        let source =
+            RUNTIME_PARTITION_SOURCE.replace("    let painted = paint(output: row);", write);
+        assert_ne!(source, RUNTIME_PARTITION_SOURCE);
+        assert_eq!(
+            permitted(source.as_bytes(), "partition").actualization,
+            Some(LoopActualization::IndependentMap),
+            "{write}"
+        );
+    }
+}
+
 /// A stride recomputed from the current index is not fixed throughout L, so
 /// the endpoint images are not affine in the binder and the family refuses
 /// rather than starting a search.
