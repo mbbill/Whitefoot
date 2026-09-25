@@ -278,9 +278,9 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   `select`, so the threaded inner loop over ASCII bytes is not formed. On
   ASCII records that costs 41% more kernel instructions and 0.1--3.4% of
   local W=1 time. Clang shows the same loss for a C transcription returning
-  its two-field struct. The hosted hosts have no placement control, so the
-  failure is not attributed there. A lowering that keeps the threading is
-  unexamined. Reopen with a bounded placement control on a hosted host, or
+  its two-field struct. The hosted runners have no placement control, so the
+  failure is not attributed on them. A lowering that keeps the threading is
+  unexamined. Reopen with a bounded placement control on a hosted runner, or
   with a maintained workload whose time follows the lost threading beyond its
   placement range. Validate against unchanged source with an identical-image
   control. Neither a later passing run nor a changed threshold closes this
