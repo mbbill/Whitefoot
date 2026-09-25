@@ -52,6 +52,21 @@ the work-branch and merge boundary.
 - [Incremental L0 closure](investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md):
   keep fact states' closed cores and insert fresh edges instead of recomputing
   the cubic closure, relaxing only which equal-bound L0 derivation is retained.
+- [Modular compilation](investigations/modular-compilation/DESIGN.md):
+  modules for large projects and for an architect agent that owns module
+  interfaces while implementer agents write bodies in parallel. Self-contained
+  `module.wfm` interfaces sit beside their implementation files, with a fixed
+  `pkg::` root qualifier, file-local name aliases, one root file for ordered
+  module dependencies, module verdicts that depend only on interfaces,
+  persistent proof dependencies, and incremental cross-module optimization
+  through object generation, with ordinary final linking. Its
+  [source boundary rules](investigations/modular-compilation/LANGUAGE.md)
+  select one visibility rule for code and annotations, module-relative
+  `readonly`, result-projection contracts and complete formation rules; the
+  active specification v0.70 now carries the module grammar and most of those
+  rules. A [complete source demo](investigations/modular-compilation/demo/README.md)
+  follows a queue through shared libraries, a no-heap entry and a heap-using
+  tool.
 
 Open research questions and evidence links are in [ideas](../docs/ideas.md);
 known compiler defects and implementation costs are in [todo](../docs/todo.md).

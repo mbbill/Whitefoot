@@ -1,0 +1,3 @@
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

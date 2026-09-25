@@ -1172,7 +1172,8 @@ fn main() -> status: ExitStatus pure {
     // STOR-1 places the descriptor in the one heap object. Capture therefore
     // loads the Box pointer from its field slot, then forms an address into
     // that object; it no longer loads a by-value {pointer, length} descriptor.
-    assert_eq!(update.matches("getelementptr inbounds %wf.t0,").count(), 2);
+    let columns = format!("getelementptr inbounds {},", super::nominal_type("Columns"));
+    assert_eq!(update.matches(&columns).count(), 2);
     let guard = update
         .find("icmp ult i64")
         .expect("the explicit control must test the projected window length");
@@ -1225,7 +1226,7 @@ fn main() -> status: ExitStatus pure {
             .ends_with(&format!("ptr {target}"))
     );
     assert!(!update[rhs..store].contains("load ptr, ptr "));
-    assert!(!update[rhs..store].contains("getelementptr inbounds %wf.t0,"));
+    assert!(!update[rhs..store].contains(&columns));
     assert!(!update.contains("call void @wf_trap"));
 
     let output = compile_and_run(&llvm);
@@ -1342,10 +1343,10 @@ fn main() -> status: ExitStatus pure {
     invariant grown: slots.inner.len >= at,
     invariant spare: slots.inner.cap + at >= slots.inner.len + 4_u64
   ) {
-    let empty = Missing();
+    let empty = Maybe::Missing();
     place_back(window: &slots.inner, value: move empty);
   }
-  let occupied = Present(value: 7_u32);
+  let occupied = Maybe::Present(value: 7_u32);
   set slots.inner[2_u64] = move occupied;
   return exit_status(code: 0_u8);
 }

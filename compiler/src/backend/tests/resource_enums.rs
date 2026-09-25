@@ -13,7 +13,7 @@ enum Owner {
 }
 
 fn make_empty() -> result: Owner pure {
-  return Empty();
+  return Owner::Empty();
 }
 
 fn relay(owner: Owner) -> result: Owner pure {
@@ -53,7 +53,7 @@ fn main() -> status: ExitStatus pure {
   let abandoned_right = box_slots_new::<u8>(capacity: 1_u64);
   place_back(window: &abandoned_right.inner, value: 9_u8);
   let abandoned_pair = PairBuffers(left: move abandoned_left, right: move abandoned_right);
-  let abandoned = Full(value: move abandoned_pair);
+  let abandoned = Owner::Full(value: move abandoned_pair);
   let empty = make_empty();
   swap(first: &abandoned, second: &empty);
   swap(first: &empty, second: &empty);
@@ -64,7 +64,7 @@ fn main() -> status: ExitStatus pure {
   let consumed_right = box_slots_new::<u8>(capacity: 1_u64);
   place_back(window: &consumed_right.inner, value: 13_u8);
   let consumed_pair = PairBuffers(left: move consumed_left, right: move consumed_right);
-  let consumed = Full(value: move consumed_pair);
+  let consumed = Owner::Full(value: move consumed_pair);
   set empty = move consumed;
   let carried = relay(owner: move empty);
   let consumed_byte = consume(owner: move carried);
