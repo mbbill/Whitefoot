@@ -1293,6 +1293,17 @@ impl SeparationOracle for PairSeparationOracle<'_> {
         })
     }
 
+    /// A subscript either statement forms is live in the state before the
+    /// first [WIN-2]: the first's discharged [OP-4] there, and the second's
+    /// discharged it against the same `r.len` wherever the guard above lets
+    /// this question be asked. An index an effect row supplies is substituted
+    /// as an unknown value here [EFF-5], as is an offset no captured value
+    /// names, and no bound is read for either, so an unknown index is not
+    /// live.
+    fn index_is_live(&self, _window: &ResolvedPlace, index: CapturedValue) -> bool {
+        index != CapturedValue::unknown()
+    }
+
     fn index_is_not_last(&self, _window: &ResolvedPlace, _index: CapturedValue) -> bool {
         false
     }
