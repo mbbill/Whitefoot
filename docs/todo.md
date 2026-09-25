@@ -1244,7 +1244,10 @@ condition under which it is taken up.
   the length survives `place_back`, which writes exactly that slot. Every
   body subscript is discharged where its place is formed and every later
   event keeps it live or kills its facts, so only the clause route above
-  reaches the gap. Make the answer conditional on proving `i < r.len` in the
+  reaches the gap. PAR-1 already refuses these answers across a length change
+  through `SeparationOracle::window_length_is_shared`, but the flow's
+  `SeparationLedger`, which the ENT-5 kills consult, answers it `true`
+  unconditionally. Make the answer conditional on proving `i < r.len` in the
   event's context, as `r.last` already is on `i != r.len - 1`; validate that
   p50 is rejected even with clause subscripts still unjudged, and that the
   window programs, containers and conformance corpus keep their verdicts.
