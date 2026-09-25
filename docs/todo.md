@@ -284,19 +284,6 @@ rarely insert at the same place.
   and a deliberately dropped disposition that rejects. Close when acceptance
   is one query over the records or the owner declines them.
 
-- **Loop-head kills are formed twice.** The statement walk
-  (`collect_target_kill`) and the loop summary (`push_commit_kill`) in
-  `compiler/src/semantic/entailment/flow.rs` build the same commit kill events
-  separately, and nothing compares them; an event the summary misses leaves a
-  stale fact at the loop head. The path state's transfer is also sequenced by
-  hand in each of `apply_kills`, `kill_scopes_to`, `exit_scopes_to`,
-  `exit_counted_capture_scope` and `exit_counted_loops_from`. Share one event
-  formation, assert under the gate profile's debug assertions that the events
-  a continuing path applies appear in the summary, and give the path state one
-  `apply` and one `join`. Validate with identical ledgers on the corpus and an
-  assertion that fails when either side drops an event. Close when both sides
-  use one formation.
-
 - **Rules recognized by spelling or implemented twice.** OP-14 is selected
   by the callee spelling `free_empty` (`compiler/src/semantic/check.rs`) and
   the backend recognizes OP-11's row by symbol spelling

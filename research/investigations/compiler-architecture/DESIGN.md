@@ -308,7 +308,18 @@ now in `design/amendments/compiler-composition-staging.md`.
    events applied on a continuing path appear in the summary, and one
    `apply`/`join` for the per-path state. Cost: small to medium. Validation:
    identical ledgers on the corpus; the assertion fails when one side drops
-   an event. No tree change.
+   an event. No tree change. Done on this branch: both sides form a `set`
+   commit kill through `commit_kill`, as they already formed expression
+   kills through `collect_expression_kills`. Where debug assertions are on,
+   each path records the kill events applied since its innermost loop head,
+   and the back edge asserts that the head's summary holds them all; it fired
+   on `wfgrep` when the summary dropped the commit kills and again when it
+   dropped the consume kills. The batched and per-event kill transfers apply
+   their components through `kill_path_components`, the two scope transfers
+   through `exit_scope_components`, and `join_flows` stays the one join. A
+   nested loop's own iterations are checked by that loop's back edge. The
+   corpus emits identical LLVM, diagnostics, exit codes and permission
+   ledgers.
 3. **Explicit obligation records.** The checker forms each mandatory
    obligation as a record; the engine returns one disposition per record;
    acceptance is one query, and the rejection builder becomes a rule-to-kind

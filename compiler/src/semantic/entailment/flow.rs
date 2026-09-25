@@ -80,7 +80,7 @@ use super::{
 };
 
 /// One [ENT-5] kill event gathered from a statement or expression.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum KillEvent {
     /// (a) a `set` commit or (b) a boundary-projected callee write. An
     /// element write targets indexed element storage, which never kills a
@@ -221,6 +221,20 @@ struct ProofFlowState {
     /// Exact integer value images and active source-proved loop invariants.
     /// Executing a statement computes the runtime value represented here.
     affine: AffineFlowState,
+    /// The kill events applied on this path since the innermost enclosing
+    /// loop head, kept only where debug assertions are on: at the loop's back
+    /// edge every one must be an event of the summary its head subtracted
+    /// [ENT-5].
+    continuing: Vec<KillEvent>,
+}
+
+/// Adds `events` to a path's continuing record, each once.
+fn record_continuing(continuing: &mut Vec<KillEvent>, events: &[KillEvent]) {
+    for event in events {
+        if !continuing.contains(event) {
+            continuing.push(event.clone());
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -4530,12 +4544,79 @@ impl Analyzer<'_, '_> {
         if events.is_empty() {
             return;
         }
+        self.record_continuing(states, events);
         self.promote_flow_contradiction(states);
         let separations = states.separations.clone();
         self.kill_result_evidence(states, events);
-        self.apply_kills_one(&separations, &mut states.facts, events);
-        self.apply_affine_kills(&separations, &mut states.affine, events);
-        self.invalidate_entry_images(states, events, None);
+        self.kill_path_components(&separations, states, events, None);
+    }
+
+    /// One batch of kill events on the path components after the Result
+    /// states: the facts, the affine images and the entry images, in that
+    /// order. Every kill transfer applies its events through here, so a new
+    /// path component joins every one of them at once.
+    fn kill_path_components(
+        &mut self,
+        separations: &SeparationLedger,
+        states: &mut ProofFlowState,
+        events: &[KillEvent],
+        shared_event: Option<FlowEventId>,
+    ) {
+        self.apply_kills_one(separations, &mut states.facts, events);
+        self.apply_affine_kills(separations, &mut states.affine, events);
+        self.invalidate_entry_images(states, events, shared_event);
+    }
+
+    /// Applies each event on its own and in order, invalidating entry images
+    /// under the transfer event `transfer_event` mints for it before it
+    /// applies: the form a postcondition-carrying call or receiver write
+    /// needs, where [`Self::apply_kills`] applies one batch.
+    fn apply_kills_each(
+        &mut self,
+        states: &mut ProofFlowState,
+        events: &[KillEvent],
+        mut transfer_event: impl FnMut(&mut Self, &KillEvent) -> FlowEventId,
+    ) {
+        if !events.is_empty() {
+            self.promote_flow_contradiction(states);
+        }
+        self.record_continuing(states, events);
+        let separations = states.separations.clone();
+        self.kill_result_evidence(states, events);
+        for event in events {
+            let proof_event = transfer_event(self, event);
+            self.kill_path_components(
+                &separations,
+                states,
+                std::slice::from_ref(event),
+                Some(proof_event),
+            );
+        }
+    }
+
+    /// Keeps each event applied on a path inside a loop, where debug
+    /// assertions are on, for the back-edge check against that loop's summary.
+    fn record_continuing(&self, states: &mut ProofFlowState, events: &[KillEvent]) {
+        if cfg!(debug_assertions) && !self.loops.is_empty() {
+            record_continuing(&mut states.continuing, events);
+        }
+    }
+
+    /// [ENT-5] a path reaching a loop's back edge applied only events the
+    /// loop's summary subtracted at its head; an event the summary misses
+    /// would leave a stale fact at the head.
+    fn debug_assert_summarized(state: &ProofFlowState, kills: &LoopKills) {
+        debug_assert!(
+            state
+                .continuing
+                .iter()
+                .all(|event| kills.events.contains(event)),
+            "[ENT-5] a continuing kill is missing from its loop summary: {:?}",
+            state
+                .continuing
+                .iter()
+                .find(|event| !kills.events.contains(event))
+        );
     }
 
     fn event_kills_entry_image(
@@ -4628,6 +4709,13 @@ impl Analyzer<'_, '_> {
     /// state and must retain only their explicit PostconditionGive roots.
     fn kill_scopes_to(&mut self, states: &mut ProofFlowState, depth: usize) {
         self.promote_flow_contradiction(states);
+        self.exit_scope_components(states, depth);
+    }
+
+    /// The scope-exit kills for every scope deeper than `depth` on each path
+    /// component: the Result states, the facts and the affine images, in that
+    /// order. Both scope transfers apply them through here.
+    fn exit_scope_components(&mut self, states: &mut ProofFlowState, depth: usize) {
         self.exit_result_scopes(states, depth);
         self.exit_scopes_to_one(&mut states.facts, depth);
         self.exit_affine_scopes_to(&mut states.affine, depth);
@@ -4684,9 +4772,7 @@ impl Analyzer<'_, '_> {
         );
         // Materialization has already promoted any relation or goal
         // contradiction. Apply only the endpoint projection here.
-        self.exit_result_scopes(states, depth);
-        self.exit_scopes_to_one(&mut states.facts, depth);
-        self.exit_affine_scopes_to(&mut states.affine, depth);
+        self.exit_scope_components(states, depth);
     }
 
     /// Applies the private capture-scope kill of one counted construct.
@@ -11488,6 +11574,10 @@ impl Analyzer<'_, '_> {
             })
             .collect();
         let results = self.join_result_evidence(&contributing);
+        let mut continuing = Vec::new();
+        for state in states {
+            record_continuing(&mut continuing, &state.continuing);
+        }
         ProofFlowState {
             results,
             facts: join_at(
@@ -11502,6 +11592,7 @@ impl Analyzer<'_, '_> {
                 contributing.iter().map(|state| &state.separations),
             ),
             affine: self.join_affine_states(&contributing),
+            continuing,
         }
     }
 
@@ -11699,6 +11790,7 @@ impl Analyzer<'_, '_> {
             // conservative; the normal value-initializer join installs the
             // receiver's value separately.
             affine: AffineFlowState::default(),
+            continuing: Vec::new(),
         };
         // The forward substitution happens above before the ordinary edge
         // kills, so the carrier's own branch scope cannot delete the image.
@@ -13965,12 +14057,8 @@ impl Analyzer<'_, '_> {
         let mut events = Vec::new();
         self.collect_expression_kills(expression, &mut events);
         if let Some(prepared) = &mut judgment.prepared_call {
-            if !events.is_empty() {
-                self.promote_flow_contradiction(state);
-            }
-            let separations = state.separations.clone();
-            self.kill_result_evidence(state, &events);
-            for event in &events {
+            let transfer_events = &mut prepared.transfer_events;
+            self.apply_kills_each(state, &events, |analyzer, event| {
                 let kind = match event {
                     KillEvent::Consume { .. } | KillEvent::EntryImageHolderConsume { .. } => {
                         FlowEventKind::PostconditionCallConsume
@@ -13979,16 +14067,10 @@ impl Analyzer<'_, '_> {
                         FlowEventKind::PostconditionCallWrite
                     }
                 };
-                let proof_event = self.proof_event(kind, Some(event.source()));
-                self.apply_kills_one(&separations, &mut state.facts, std::slice::from_ref(event));
-                self.apply_affine_kills(
-                    &separations,
-                    &mut state.affine,
-                    std::slice::from_ref(event),
-                );
-                self.invalidate_entry_images(state, std::slice::from_ref(event), Some(proof_event));
-                prepared.transfer_events.push(proof_event);
-            }
+                let proof_event = analyzer.proof_event(kind, Some(event.source()));
+                transfer_events.push(proof_event);
+                proof_event
+            });
             prepared.kills = events;
         } else {
             self.apply_kills(state, &events);
@@ -14064,16 +14146,10 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    /// The [ENT-5] commit kill of one `set` target, and the goal-origin and
-    /// outcome state a whole-place commit invalidates. One target list's
-    /// commits are exactly this event per target, on the same edge.
-    fn collect_target_kill(
-        &mut self,
-        node_path: &crate::NodePath,
-        target: &CheckedSetTarget,
-        state: &mut ProofFlowState,
-        target_kills: &mut Vec<KillEvent>,
-    ) {
+    /// The [ENT-5] commit kill of one `set` target. The statement walk and
+    /// the loop summary both form it here, so the event a loop body applies
+    /// is the event its head subtracts.
+    fn commit_kill(&self, node_path: &crate::NodePath, target: &CheckedSetTarget) -> KillEvent {
         match target {
             CheckedSetTarget::Place(place) => {
                 let spelled = ResolvedPlace::spelled(
@@ -14081,14 +14157,10 @@ impl Analyzer<'_, '_> {
                     self.is_holder(place.binding),
                     place.fields.clone(),
                 );
-                target_kills.push(KillEvent::Write {
+                KillEvent::Write {
                     place: self.resolve(&spelled),
                     element: false,
                     source: node_path.clone(),
-                });
-                if place.fields.is_empty() {
-                    state.facts.origins.remove(&place.binding);
-                    state.facts.outcomes.remove(&place.binding);
                 }
             }
             CheckedSetTarget::RangeIndex(target) => {
@@ -14098,22 +14170,39 @@ impl Analyzer<'_, '_> {
                     Vec::new(),
                 );
                 spelled.path.extend(target.place_path());
-                target_kills.push(KillEvent::Write {
+                KillEvent::Write {
                     place: self.resolve(&spelled),
                     element: true,
                     source: node_path.clone(),
-                });
+                }
             }
             // [MSR-2] an element store into a run overlaps the descriptor
             // storage of `v[i]` and none of `v`'s own, so it kills the
             // measures of the element and none of the run's.
-            CheckedSetTarget::Storage(target) => {
-                target_kills.push(KillEvent::Write {
-                    place: self.container_root_place(target),
-                    element: true,
-                    source: node_path.clone(),
-                });
-            }
+            CheckedSetTarget::Storage(target) => KillEvent::Write {
+                place: self.container_root_place(target),
+                element: true,
+                source: node_path.clone(),
+            },
+        }
+    }
+
+    /// The commit kill of one `set` target, and the goal-origin and outcome
+    /// state a whole-place commit invalidates. One target list's commits are
+    /// exactly this event per target, on the same edge.
+    fn collect_target_kill(
+        &self,
+        node_path: &crate::NodePath,
+        target: &CheckedSetTarget,
+        state: &mut ProofFlowState,
+        target_kills: &mut Vec<KillEvent>,
+    ) {
+        target_kills.push(self.commit_kill(node_path, target));
+        if let CheckedSetTarget::Place(place) = target
+            && place.fields.is_empty()
+        {
+            state.facts.origins.remove(&place.binding);
+            state.facts.outcomes.remove(&place.binding);
         }
     }
 
@@ -14206,24 +14295,7 @@ impl Analyzer<'_, '_> {
             self.apply_kills_one(&state.separations, &mut result.facts, &target_kills);
         }
         if let Some(target_event) = target_event {
-            if !target_kills.is_empty() {
-                self.promote_flow_contradiction(state);
-            }
-            let separations = state.separations.clone();
-            self.kill_result_evidence(state, &target_kills);
-            for event in &target_kills {
-                self.apply_kills_one(&separations, &mut state.facts, std::slice::from_ref(event));
-                self.apply_affine_kills(
-                    &separations,
-                    &mut state.affine,
-                    std::slice::from_ref(event),
-                );
-                self.invalidate_entry_images(
-                    state,
-                    std::slice::from_ref(event),
-                    Some(target_event),
-                );
-            }
+            self.apply_kills_each(state, &target_kills, |_, _| target_event);
         } else {
             self.apply_kills(state, &target_kills);
         }
@@ -15092,7 +15164,11 @@ impl Analyzer<'_, '_> {
                     breaks: Vec::new(),
                 });
                 let mut body_state = state.clone();
+                let outer_continuing = std::mem::take(&mut body_state.continuing);
                 let body_falls_through = self.walk_block(body, &mut body_state);
+                if body_falls_through {
+                    Self::debug_assert_summarized(&body_state, &kills);
+                }
 
                 let mut step = vec![None; invariants.len()];
                 if body_falls_through {
@@ -15122,6 +15198,7 @@ impl Analyzer<'_, '_> {
                 if !has_breaks {
                     state.entry_images = head_entry_images;
                 }
+                record_continuing(&mut state.continuing, &outer_continuing);
                 true
             }
             CheckedStatement::CountedRange {
@@ -15261,6 +15338,7 @@ impl Analyzer<'_, '_> {
                     breaks: Vec::new(),
                 });
                 let mut body_state = head.clone();
+                let outer_continuing = std::mem::take(&mut body_state.continuing);
                 let body_event = self.proof_event(FlowEventKind::S11, Some(node_path));
                 let counted = self.establish_counted_body_entry(
                     node_path,
@@ -15270,6 +15348,9 @@ impl Analyzer<'_, '_> {
                 );
                 self.retain_counted_derivations(occurrence, counted);
                 let body_falls_through = self.walk_block(body, &mut body_state);
+                if body_falls_through {
+                    Self::debug_assert_summarized(&body_state, &kills);
+                }
 
                 let mut step = vec![None; invariants.len()];
                 let mut hidden_update = !body_falls_through;
@@ -15428,6 +15509,7 @@ impl Analyzer<'_, '_> {
                 exits.extend(breaks);
                 self.scopes.pop();
                 *state = self.join_flows(&exits);
+                record_continuing(&mut state.continuing, &outer_continuing);
                 true
             }
         }
@@ -15822,40 +15904,7 @@ impl Analyzer<'_, '_> {
         kills: &mut LoopKills,
     ) {
         kills.set_bindings.insert(target.binding());
-        match target {
-            CheckedSetTarget::Place(place) => {
-                let spelled = ResolvedPlace::spelled(
-                    PlaceRoot::Binding(place.binding),
-                    self.is_holder(place.binding),
-                    place.fields.clone(),
-                );
-                events.push(KillEvent::Write {
-                    place: self.resolve(&spelled),
-                    element: false,
-                    source: node_path.clone(),
-                });
-            }
-            CheckedSetTarget::RangeIndex(target) => {
-                let mut spelled = ResolvedPlace::spelled(
-                    PlaceRoot::Binding(target.root.binding),
-                    self.is_holder(target.root.binding),
-                    Vec::new(),
-                );
-                spelled.path.extend(target.place_path());
-                events.push(KillEvent::Write {
-                    place: self.resolve(&spelled),
-                    element: true,
-                    source: node_path.clone(),
-                });
-            }
-            CheckedSetTarget::Storage(target) => {
-                events.push(KillEvent::Write {
-                    place: self.container_root_place(target),
-                    element: true,
-                    source: node_path.clone(),
-                });
-            }
-        }
+        events.push(self.commit_kill(node_path, target));
         kills.push_event_group(std::mem::take(events));
     }
 
