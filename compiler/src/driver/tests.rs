@@ -3136,7 +3136,9 @@ fn a_library_module_verdict_key_ignores_the_programs_modules() {
         )
         .expect("the graph forms");
         let inputs = super::with_library_records(&graph, &[]);
-        let io = graph.module_named("std::io").expect("std::io is selectable");
+        let io = graph
+            .module_named("std::io")
+            .expect("std::io is selectable");
         super::ModuleCheck::new(&graph, &inputs, io, false).material
     };
     let alone = material(b"pkg: [std::io];\n");

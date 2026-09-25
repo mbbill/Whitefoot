@@ -1,3 +1,30 @@
+alias HashMap = std::collections::hash_map::HashMap;
+alias HashMapKey = std::collections::hash_map::HashMapKey;
+alias PriorityOrder = std::collections::priority_queue::PriorityOrder;
+alias PriorityQueue = std::collections::priority_queue::PriorityQueue;
+alias Slab = std::collections::slab::Slab;
+alias SlabHandle = std::collections::slab::SlabHandle;
+alias hash_map_free = std::collections::hash_map::hash_map_free;
+alias hash_map_lookup = std::collections::hash_map::hash_map_lookup;
+alias hash_map_new = std::collections::hash_map::hash_map_new;
+alias hash_map_put = std::collections::hash_map::hash_map_put;
+alias hash_map_remove = std::collections::hash_map::hash_map_remove;
+alias priority_queue_free = std::collections::priority_queue::priority_queue_free;
+alias priority_queue_heapify = std::collections::priority_queue::priority_queue_heapify;
+alias priority_queue_len = std::collections::priority_queue::priority_queue_len;
+alias priority_queue_peek = std::collections::priority_queue::priority_queue_peek;
+alias priority_queue_peek_at = std::collections::priority_queue::priority_queue_peek_at;
+alias priority_queue_push_indexed = std::collections::priority_queue::priority_queue_push_indexed;
+alias priority_queue_remove_at_indexed = std::collections::priority_queue::priority_queue_remove_at_indexed;
+alias priority_queue_replace_at_indexed = std::collections::priority_queue::priority_queue_replace_at_indexed;
+alias slab_edit = std::collections::slab::slab_edit;
+alias slab_find_index = std::collections::slab::slab_find_index;
+alias slab_free = std::collections::slab::slab_free;
+alias slab_insert = std::collections::slab::slab_insert;
+alias slab_new = std::collections::slab::slab_new;
+alias slab_remove = std::collections::slab::slab_remove;
+alias slab_visit = std::collections::slab::slab_visit;
+
 struct Record<T> {
   id: u64;
   payload: T;

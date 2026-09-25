@@ -38,6 +38,54 @@ pub(crate) const RECORDS: &[(&str, &str)] = &[
         "std/process/module.wfm",
         include_str!("../../lib/std/process/module.wfm"),
     ),
+    (
+        "std/collections/vector/module.wfm",
+        include_str!("../../lib/std/collections/vector/module.wfm"),
+    ),
+    (
+        "std/collections/vector/grow-vector.wf",
+        include_str!("../../lib/std/collections/vector/grow-vector.wf"),
+    ),
+    (
+        "std/collections/deque/module.wfm",
+        include_str!("../../lib/std/collections/deque/module.wfm"),
+    ),
+    (
+        "std/collections/deque/deque.wf",
+        include_str!("../../lib/std/collections/deque/deque.wf"),
+    ),
+    (
+        "std/collections/slab/module.wfm",
+        include_str!("../../lib/std/collections/slab/module.wfm"),
+    ),
+    (
+        "std/collections/slab/slab.wf",
+        include_str!("../../lib/std/collections/slab/slab.wf"),
+    ),
+    (
+        "std/collections/hash_map/module.wfm",
+        include_str!("../../lib/std/collections/hash_map/module.wfm"),
+    ),
+    (
+        "std/collections/hash_map/hash-map.wf",
+        include_str!("../../lib/std/collections/hash_map/hash-map.wf"),
+    ),
+    (
+        "std/collections/priority_queue/module.wfm",
+        include_str!("../../lib/std/collections/priority_queue/module.wfm"),
+    ),
+    (
+        "std/collections/priority_queue/priority-queue.wf",
+        include_str!("../../lib/std/collections/priority_queue/priority-queue.wf"),
+    ),
+    (
+        "std/collections/ordered_map/module.wfm",
+        include_str!("../../lib/std/collections/ordered_map/module.wfm"),
+    ),
+    (
+        "std/collections/ordered_map/ordered-map.wf",
+        include_str!("../../lib/std/collections/ordered_map/ordered-map.wf"),
+    ),
 ];
 
 /// The standard library's modules in the order its graph registers them,
@@ -50,6 +98,12 @@ pub(crate) const MODULES: &[(&str, &[&str])] = &[
     ("fs", &["io", "text"]),
     ("net", &["io"]),
     ("process", &["io", "text", "fs"]),
+    ("collections::vector", &[]),
+    ("collections::deque", &[]),
+    ("collections::slab", &[]),
+    ("collections::hash_map", &[]),
+    ("collections::priority_queue", &[]),
+    ("collections::ordered_map", &[]),
 ];
 
 /// The standard library's modules as registered modules: its graph's rows
@@ -208,8 +262,10 @@ mod tests {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../lib/std")
     }
 
-    /// Every file of the library's directory is carried, and nothing else,
-    /// so adding a module without listing it here cannot go unnoticed.
+    /// Every record of the library's directory is carried, and nothing else,
+    /// so adding a module without listing it here cannot go unnoticed. A
+    /// record is a `.wf`, `module.wfm` or `modules.wfg` file [MOD-2]; the
+    /// library's documentation beside them is not one.
     #[test]
     fn the_carried_records_are_exactly_the_library_directory() {
         fn walk(root: &std::path::Path, directory: &std::path::Path, found: &mut Vec<String>) {
@@ -217,7 +273,9 @@ mod tests {
                 let path = entry.expect("a directory entry reads").path();
                 if path.is_dir() {
                     walk(root, &path, found);
-                } else {
+                } else if path.extension().is_some_and(|extension| {
+                    ["wf", "wfm", "wfg"].iter().any(|kind| extension == *kind)
+                }) {
                     found.push(
                         path.strip_prefix(root)
                             .expect("below the root")
@@ -253,8 +311,9 @@ mod tests {
         );
     }
 
-    /// [PRE-2] the host modules' graph rows and interface records are the
-    /// specification's text byte for byte.
+    /// [PRE-2] the host modules' graph rows are rows of the library's graph,
+    /// and their interface records are the specification's text byte for
+    /// byte.
     #[test]
     fn the_host_modules_are_the_specification_text() {
         let spec = crate::spec::ACTIVE_KERNEL_SPEC_TEXT;
@@ -264,8 +323,11 @@ mod tests {
             .expect("the specification states PRE-2");
         let fences: Vec<&str> = section.split("```\n").skip(1).step_by(2).collect();
         let rows = fences.first().expect("PRE-2 states the graph rows");
-        for row in GRAPH.lines() {
-            assert!(rows.lines().any(|line| line == row), "{row} is a PRE-2 row");
+        for row in rows.lines() {
+            assert!(
+                GRAPH.lines().any(|line| line == row),
+                "{row} is a graph row"
+            );
         }
         for module in HOST_MODULES {
             let path = format!("{module}/module.wfm");

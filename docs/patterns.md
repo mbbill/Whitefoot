@@ -63,7 +63,7 @@ Use `take_back`, `remove_at`, `insert_at`, `append`, `split_off`, `grow`,
 source subscript always owes `index < run.len` [OP-4].
 
 Growth policy can be ordinary source. The maintained
-[grow-vector library](../lib/containers/grow-vector.wf) wraps
+[grow-vector library](../lib/std/collections/vector/grow-vector.wf) wraps
 `Box<Slots<T>>` in `GrowVector<T, const ceiling: u64>`. The selected ceiling
 supplies each concrete growth call's OP-9 bound; the policy doubles capacity
 while it fits and otherwise saturates at that ceiling. A zero ceiling admits
@@ -95,7 +95,7 @@ equality goal. An ordinary-loop header hypothesis itself expires at loop
 exit. Publish the required outer conclusion as a local `invariant` before
 `break` when the continuation needs it [ENT-5, INV-1].
 
-The [deque library](../lib/containers/deque.wf) uses `Box<Ring<T>>` directly.
+The [deque library](../lib/std/collections/deque/deque.wf) uses `Box<Ring<T>>` directly.
 Endpoint helpers take a reference and require the caller to prove room or
 nonemptiness. `deque_rebase` consumes the old owner and returns a genuinely new
 backing, with the same logical length and head zero; it can grow or shrink to
@@ -107,7 +107,7 @@ non-wrap test. The [caller](../tests/programs/containers/deque-program.wf)
 also shows an existing filled-slot reference surviving a back append whose
 row writes only the next slot and length.
 
-The [slab library](../lib/containers/slab.wf) reserves one bounded backing and
+The [slab library](../lib/std/collections/slab/slab.wf) reserves one bounded backing and
 materializes cells lazily. Each cell has an inline `Slots<T, 1>` for its
 zero-or-one occupant, a generation and a free-list link. An exhausted insert
 returns the offered owner; removal returns its occupant and retires the slot
@@ -119,7 +119,7 @@ distinguishes an index that may expire from a composite protocol that refuses
 deletion while another index retains the object; ordinary public bookkeeping
 does not prove that arbitrary client functions preserve that protocol.
 
-The [owning hash map](../lib/containers/hash-map.wf) stores keys and values
+The [owning hash map](../lib/std/collections/hash_map/hash-map.wf) stores keys and values
 inline in ordinary enum buckets, including `nodrop` values. Supply hashing
 and equality through `HashMapKey`. `hash_map_try_put` uses existing capacity;
 `hash_map_put` may grow up to the written ceiling. Replacement installs the
@@ -327,7 +327,7 @@ The member's parameter kinds, result types, effects, requirements, and postcondi
 the generic caller's boundary. A binding may refine that boundary only as
 [FN-4] permits. Calls retain their ordinary syntax; `interface` and `binding`
 replace the retired group-declaration keywords, not the call form. See
-[grow-vector.wf](../lib/containers/grow-vector.wf) and
+[grow-vector.wf](../lib/std/collections/vector/grow-vector.wf) and
 [grow-vector-program.wf](../tests/programs/containers/grow-vector-program.wf) for a behavior
 that consumes owned elements while updating an environment.
 

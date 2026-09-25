@@ -105,7 +105,7 @@ the objective rather than providing alternative completion levels.
   [LLVM emitter](../../../compiler/src/backend/emitter.rs) currently build one
   checked inventory and one LLVM module. This design changes those boundaries;
   splitting LLVM output alone does not meet the required outcome.
-- [GrowVector](../../../lib/containers/grow-vector.wf) states its contracts and
+- [GrowVector](../../../lib/std/collections/vector/grow-vector.wf) states its contracts and
   effects over its storage field. As a module it publishes that field as
   `public readonly`, so clients can state the same conditions.
 - [TYPE-2](../../../spec/kernel-spec.md#4-types) forbids writing a readonly

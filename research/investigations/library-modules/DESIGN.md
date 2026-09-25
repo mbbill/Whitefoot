@@ -4,14 +4,12 @@ This investigation decides how the prelude and a standard library become
 ordinary modules, the work the owner selected after the modular compilation
 PR ([todo item](../../../docs/todo.md)). It owns the design, its measurements and
 its rejected alternatives; the decisions that survive go to the design tree,
-and the rules they need go to the specification. The owner approved D1 to D4,
-now [`language/standard-library`](../../../design/language/standard-library.md),
+and the rules they need go to the specification. The owner approved D1 to D5
+and D7, now [`language/standard-library`](../../../design/language/standard-library.md),
 [`language/name-resolution`](../../../design/language/name-resolution.md) and
-[`language/system-interface/declaration-home`](../../../design/language/system-interface/declaration-home.md);
-D5 and D7 remain an [amendment](../../../design/amendments/standard-library.md).
-Specification v0.71 states D1 to D4 and the compiler implements them; the
-containers (D5) wait for the owner's ruling on that amendment. Measurements of
-the implemented split follow E1.
+[`language/system-interface/declaration-home`](../../../design/language/system-interface/declaration-home.md).
+Specification v0.71 states D1 to D4 and the compiler implements all six.
+Measurements of the implemented split follow E1.
 
 ## Question
 
@@ -319,7 +317,11 @@ Rejected:
 
 ### D5. The container libraries become the first Whitefoot-bodied `std` modules
 
-Pending: the owner asked whether the containers belong in `std`. The decisive
+The owner approved it after asking whether the containers belong in `std`,
+and it is implemented: each library is a module directory under
+`lib/std/collections/`, its types and API signatures in `module.wfm`, its
+bodies unchanged in an implementation record, and its callers name it through
+alias headers, with every allocation ledger unchanged. The decisive
 ground is reachability: MOD-2 reads no record outside a program's package
 root and binding other packages stays deferred, so without `std` a module
 program can use a container only by copying its source.
@@ -355,7 +357,7 @@ cache is possible later and needs no new key.
 
 ### D7. The standard library's source lives in `lib/std/`, embedded in the compiler
 
-Pending, proposed after the owner asked where `std` lives. The source is one
+The owner approved it after asking where `std` lives. The source is one
 package in the repository's `lib/std/` directory, with its own `modules.wfg`
 and one directory per module (`lib/std/io/module.wfm`, and so on), the
 containers under `lib/std/collections/`. The compiler carries those records'
@@ -414,7 +416,7 @@ program selects:
 3. The corpus: conformance cases and test programs name the host modules
    through aliases or qualified paths, with every verdict and runtime result
    unchanged.
-4. The containers: `lib/containers/` becomes `std::collections`, with its
+4. The containers (done): `lib/containers/` becomes `std::collections`, with its
    callers and allocation ledgers.
 5. Measurements: E1 again with the real split; E2, a second program reusing
    the first one's standard library verdicts through a shared cache; the
@@ -426,8 +428,10 @@ program selects:
   not, for now: its records are inputs to the compiler identity's cache scope
   like any other records, and it ships with the compiler.
 - The standard library module granularity of D1: the owner adopted it with
-  D1, and W5 above shows its cost for the common program shape, since
+  D1. W5 above shows its cost for the common program shape, since
   `ExitStatus` shares `std::process` with `Inputs` and so depends on
-  `std::io`, `std::text` and `std::fs`. D2 to D4 do not depend on it.
+  `std::io`, `std::text` and `std::fs`; shown that cost, the owner kept the
+  layout and chose to fix the checker's nominal passes, which help every
+  check, instead of moving `Inputs` into its own module.
 - The nominal passes' growth with prelude size is recorded separately; this
   design does not wait for it.
