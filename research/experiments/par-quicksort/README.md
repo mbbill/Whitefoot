@@ -48,11 +48,11 @@ so they run on one worker.
 [`measure.sh`](measure.sh) builds the program twice, without and with
 `--par`, and runs each configuration RUNS times (7 here): the sequential
 build, the `--par` build with `WF_WORKERS=1`, and the `--par` build with
-`WF_WORKERS=4`. It prints every whole-process wall time (bash `time`, in
-milliseconds) and the best per configuration, and stops if a run does not exit
-0. Each batch ran entirely under the host verification lock, so no other
-guarded build, test or benchmark ran during it; unguarded processes of other
-sessions were not excluded.
+`WF_WORKERS=4`. It prints every whole-process wall time in seconds (bash
+`time`, to the millisecond) and the best per configuration, and stops if a run
+does not exit 0. Each batch ran entirely under the host verification lock, so
+no other guarded build, test or benchmark ran during it; unguarded processes
+of other sessions were not excluded.
 
 ```sh
 WHITEFOOTC=<repository-root>/compiler/target/gate/whitefootc \
