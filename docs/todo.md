@@ -264,10 +264,10 @@ concludes with a recorded disposition; retain any selected follow-up work here.
 
 - **The records comparison fails at the register-return revision's
   placement.** For the small-result register ABI, the maintained paired
-  comparison reads `records` at 0.78--0.83 at W=2 and 0.70--0.81 at W=4
+  comparison reads `records` at 0.78--0.83 at W=2 and 0.68--0.82 at W=4
   (baseline over candidate) on two hosted AMD runner classes. At W=1 it reads
-  0.93 on one class and 1.15 on the other. Its other four kernels pass, and
-  their emitted code is unchanged
+  0.93 on one class and 1.15--1.16 on the other. Its other four kernels pass,
+  and their emitted code is unchanged
   ([hosted comparison](../research/investigations/result-registers/DESIGN.md#hosted-compute-regression)).
   On a local Intel host, the same images show the same wider-row failure.
   Shifting both loop copies by 16--48 bytes, with no instruction changed,

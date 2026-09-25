@@ -319,26 +319,28 @@ within run-to-run variation in wall time.
 ## Hosted compute regression
 
 The criterion above does not name the maintained paired comparison,
-`.github/workflows/compute-regression.yml`. It ran once for each commit that
-carries the implementation, and every run failed for one kernel, `records`,
-and passed the other four. The three commits emit identical code; the third
-adds only this record. The wall ratio is baseline over candidate, so a value
-below 1 means the candidate is slower. `lower` counts the pairs in which the
-baseline was faster:
+`.github/workflows/compute-regression.yml`. It runs for every pushed commit.
+The table lists its runs for the commits up to `c192ca90e`. All of them emit
+identical code, the later ones adding only this record. Every run failed for
+one kernel, `records`, and passed the other four. The wall ratio is baseline
+over candidate, so a value below 1 means the candidate is slower. `lower`
+counts the pairs in which the baseline was faster:
 
 | Commit, run and host | W=1 | W=2 | W=4 |
 |---|---:|---:|---:|
 | `a15347c25`, [36087145857](https://github.com/mbbill/Whitefoot/actions/runs/36087145857), AMD EPYC 9V74 | 0.932 (4/5) | 0.822 (5/5) | 0.810 (5/5) |
 | `d863e8e51`, [36089782067](https://github.com/mbbill/Whitefoot/actions/runs/36089782067), AMD EPYC 9V74 | 0.931 (5/5) | 0.832 (5/5) | 0.810 (5/5) |
 | `f8d102ee8`, [36092739152](https://github.com/mbbill/Whitefoot/actions/runs/36092739152), AMD EPYC 7763 | 1.153 (0/5) | 0.779 (5/5) | 0.700 (5/5) |
+| `968280509`, [36094040267](https://github.com/mbbill/Whitefoot/actions/runs/36094040267), AMD EPYC 9V74 | 0.928 (4/5) | 0.824 (5/5) | 0.820 (5/5) |
+| `c192ca90e`, [36094502418](https://github.com/mbbill/Whitefoot/actions/runs/36094502418), AMD EPYC 7763 | 1.156 (0/5) | 0.796 (5/5) | 0.677 (5/5) |
 
 Each host had two cores of two threads each, and every run's `records.o`
 objects are byte-identical. The identical-image control passed in every run.
 The only other adverse line was a single-width `fir` W=4 suspect in the
 second run (0.958), and that line passed in the other runs. No run was
 repeated, and no threshold, fixture or instrument was changed. The W=1 row
-changes sign with the host, while W=2 and W=4 are adverse on both host
-classes.
+follows the host class: 0.93 on the EPYC 9V74 and 1.15 to 1.16 on the EPYC
+7763. W=2 and W=4 are adverse on both classes.
 
 **What changed in the measured code.** Of the five kernels, only records'
 emitted module differs, apart from an unused declaration of
