@@ -4281,7 +4281,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     // canonical goal names its data, a bounds relation its
                     // terms. A bounds or allocation residual is written from
                     // the source atoms it relates, so it is itself a condition.
-                    let (terms, referenced) = match &outcome.canonical_goal {
+                    let reads = match &outcome.canonical_goal {
                         Some(goal) => {
                             repairs::GoalTerms::of_goal(goal, function, &outcome.written_before)
                         }
@@ -4301,8 +4301,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     };
                     let case = repairs::GoalCase {
                         disposition: repair,
-                        terms,
-                        referenced,
+                        terms: reads.terms,
+                        referenced: reads.referenced,
+                        called: reads.called,
                         text: &residual,
                         condition,
                         function: &function.name,
@@ -4458,15 +4459,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     // than by a second judgment of the same goal.
                     let (static_disposition, repair) =
                         dispositions(outcome.disposition == CallGoalDisposition::Refuted);
-                    let (terms, referenced) = repairs::GoalTerms::of_goal(
+                    let reads = repairs::GoalTerms::of_goal(
                         &outcome.goal.root,
                         function,
                         &outcome.written_before,
                     );
                     let case = repairs::GoalCase {
                         disposition: repair,
-                        terms,
-                        referenced,
+                        terms: reads.terms,
+                        referenced: reads.referenced,
+                        called: reads.called,
                         text: &outcome.rendered_goal,
                         condition: repairs::is_source_relation(&outcome.goal.root),
                         function: &function.name,
@@ -4582,7 +4584,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         selector: self.node_location(&proof.selector)?,
                         relation: exit.residual.clone(),
                         disposition,
-                        mechanical_fix: repairs::postcondition(repair),
+                        mechanical_fix: repairs::postcondition(
+                            repair,
+                            repairs::returns_call_result(function, &exit.statement),
+                        ),
                     },
                 )),
                 request: None,

@@ -10,23 +10,30 @@
 //! repair changes what reaches the construct, or the operation or clause that
 //! poses the goal. An unproved goal is established by a fact source its terms
 //! admit: a `requires` on the enclosing function when every term is a
-//! parameter no event of the body writes, since that fact then holds wherever
-//! the goal is asked; a proof whose premises the checker cannot guess
-//! otherwise, which is why those routes state the condition they need; or a
-//! guard where skipping the construct is the program's intent. An operand
+//! parameter no event on a path to the goal writes, since that fact then
+//! still holds where the goal is asked; a proof whose premises the checker
+//! cannot guess otherwise, which is why those routes state the condition they
+//! need, the callee's `ensures` among them only when the goal reads a value a
+//! call returned; or a guard where skipping the construct is the program's
+//! intent. An operand
 //! that is no term [ENT-2], such as an element read, admits none of these
 //! until a `let` binds it, so that binding is its repair.
 //!
 //! The sentences live here, in one place, so that wording can follow evidence
 //! from agents without touching the judgments that select them.
 
+use std::collections::BTreeSet;
+
 use super::super::entailment::TermRead;
 use super::super::goal::{
     EvaluatedValueOccurrence, GoalDatum, GoalExpression, GoalOperation, GoalProjection,
 };
 use super::super::model::{
-    BindingId, CheckedConversionMode, CheckedFunction, CheckedIntegerOperation,
+    BindingId, CheckedConversionMode, CheckedExpression, CheckedFunction, CheckedIntegerOperation,
+    CheckedStatement, expression_children,
 };
+use super::super::permission::visit_read_bindings;
+use crate::NodePath;
 
 /// Whether the checker derived a goal false or derived neither sign [ENT-4].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -55,16 +62,26 @@ pub(super) enum GoalTerms {
     Computed,
 }
 
+/// What a goal reads, as its repair needs it.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct GoalReads {
+    pub(super) terms: GoalTerms,
+    /// Some read goes through a reference parameter [EFF-2].
+    pub(super) referenced: bool,
+    /// Some read is of a value a user call returned, which that callee's
+    /// `ensures` can bound [FN-9].
+    pub(super) called: bool,
+}
+
 impl GoalTerms {
     /// Classifies a concrete goal over the enclosing function's bindings,
     /// `written` being every binding some event on a path to the goal writes
-    /// or consumes, sorted. The flag says whether the goal reads through a
-    /// reference parameter.
+    /// or consumes, sorted.
     pub(super) fn of_goal(
         goal: &GoalExpression,
         function: &CheckedFunction,
         written: &[BindingId],
-    ) -> (Self, bool) {
+    ) -> GoalReads {
         let mut reads = Reads::new(function, written);
         reads.goal(goal);
         reads.finish()
@@ -75,7 +92,7 @@ impl GoalTerms {
         terms: &[TermRead],
         function: &CheckedFunction,
         written: &[BindingId],
-    ) -> (Self, bool) {
+    ) -> GoalReads {
         let mut reads = Reads::new(function, written);
         for term in terms {
             match term {
@@ -99,6 +116,8 @@ struct Reads<'a> {
     /// Some read goes through a reference parameter, which executable code
     /// that repeats it must declare in the row [EFF-2].
     referenced: bool,
+    /// Every binding a read is rooted at.
+    bindings: Vec<BindingId>,
 }
 
 impl<'a> Reads<'a> {
@@ -111,10 +130,12 @@ impl<'a> Reads<'a> {
             unnamed: false,
             argument: None,
             referenced: false,
+            bindings: Vec::new(),
         }
     }
 
     fn binding(&mut self, binding: BindingId) {
+        self.bindings.push(binding);
         let parameter = self
             .function
             .parameters
@@ -217,7 +238,7 @@ impl<'a> Reads<'a> {
         }
     }
 
-    fn finish(self) -> (GoalTerms, bool) {
+    fn finish(self) -> GoalReads {
         let terms = match self {
             Self {
                 argument: Some(argument),
@@ -231,8 +252,178 @@ impl<'a> Reads<'a> {
             } => GoalTerms::Parameters,
             _ => GoalTerms::Computed,
         };
-        (terms, self.referenced)
+        let results = call_results(self.function);
+        GoalReads {
+            terms,
+            referenced: self.referenced,
+            called: self
+                .bindings
+                .iter()
+                .any(|binding| results.contains(binding)),
+        }
     }
+}
+
+/// The bindings of `function` whose value a user call returned, directly or
+/// through local computation from such a value: the values a callee's
+/// `ensures` can bound [FN-9]. The closure ignores control flow, which only
+/// widens it.
+fn call_results(function: &CheckedFunction) -> BTreeSet<BindingId> {
+    let mut definitions = Vec::new();
+    if let Some(body) = &function.body {
+        collect_definitions(body, None, &mut definitions);
+    }
+    let mut results: BTreeSet<BindingId> = definitions
+        .iter()
+        .filter(|definition| definition.call)
+        .map(|definition| definition.binding)
+        .collect();
+    loop {
+        let before = results.len();
+        for definition in &definitions {
+            if definition.reads.iter().any(|read| results.contains(read)) {
+                results.insert(definition.binding);
+            }
+        }
+        if results.len() == before {
+            return results;
+        }
+    }
+}
+
+/// One value a statement gives a binding: the bindings it reads, and whether
+/// a user call computes it.
+struct Definition {
+    binding: BindingId,
+    reads: Vec<BindingId>,
+    call: bool,
+}
+
+impl Definition {
+    fn of(binding: BindingId, values: &[&CheckedExpression]) -> Self {
+        let mut reads = Vec::new();
+        for value in values {
+            visit_read_bindings(value, &mut |read| reads.push(read));
+        }
+        Self {
+            binding,
+            reads,
+            call: values.iter().any(|value| calls(value)),
+        }
+    }
+}
+
+/// Whether an expression tree contains a user call.
+fn calls(expression: &CheckedExpression) -> bool {
+    matches!(expression, CheckedExpression::UserCall { .. })
+        || expression_children(expression).into_iter().any(calls)
+}
+
+/// Every value the statements give a binding, `give` naming the binding a
+/// value initializer's `give` delivers to.
+fn collect_definitions(
+    statements: &[CheckedStatement],
+    give: Option<BindingId>,
+    definitions: &mut Vec<Definition>,
+) {
+    for statement in statements {
+        match statement {
+            CheckedStatement::Let { binding, value, .. }
+            | CheckedStatement::PropagateLet {
+                binding,
+                scrutinee: value,
+                ..
+            } => definitions.push(Definition::of(*binding, &[value])),
+            CheckedStatement::DestructuringLet {
+                bindings, value, ..
+            } => {
+                for (binding, _, _) in bindings {
+                    definitions.push(Definition::of(*binding, &[value]));
+                }
+            }
+            CheckedStatement::Set { target, value, .. } => {
+                definitions.push(Definition::of(target.binding(), &[value]));
+            }
+            CheckedStatement::Give { value, .. } => {
+                if let Some(binding) = give {
+                    definitions.push(Definition::of(binding, &[value]));
+                }
+            }
+            CheckedStatement::Match {
+                scrutinee, arms, ..
+            } => {
+                for arm in arms {
+                    for binder in &arm.binders {
+                        definitions.push(Definition::of(binder.binding, &[scrutinee]));
+                    }
+                    collect_definitions(&arm.body, give, definitions);
+                }
+            }
+            CheckedStatement::ValueMatchLet {
+                binding,
+                scrutinee,
+                arms,
+                ..
+            } => {
+                for arm in arms {
+                    for binder in &arm.binders {
+                        definitions.push(Definition::of(binder.binding, &[scrutinee]));
+                    }
+                    collect_definitions(&arm.body, Some(*binding), definitions);
+                }
+            }
+            CheckedStatement::Loop { body, .. } => collect_definitions(body, give, definitions),
+            CheckedStatement::CountedRange {
+                binder,
+                lower,
+                upper,
+                body,
+                ..
+            } => {
+                definitions.push(Definition::of(*binder, &[lower, upper]));
+                collect_definitions(body, give, definitions);
+            }
+            CheckedStatement::Evaluate { .. }
+            | CheckedStatement::DropExpression { .. }
+            | CheckedStatement::Proof(_)
+            | CheckedStatement::Return { .. }
+            | CheckedStatement::Break { .. } => {}
+        }
+    }
+}
+
+/// Whether the value the `return` at `statement` delivers is, or reads, a
+/// value a user call returned, which the callee's `ensures` can bound [FN-9].
+pub(super) fn returns_call_result(function: &CheckedFunction, statement: &NodePath) -> bool {
+    let results = call_results(function);
+    function
+        .body
+        .as_deref()
+        .and_then(|body| returned_value(body, statement))
+        .is_some_and(|value| {
+            let mut read = false;
+            visit_read_bindings(value, &mut |binding| read |= results.contains(&binding));
+            read || calls(value)
+        })
+}
+
+/// The value of the `return` at `path`, wherever it is nested.
+fn returned_value<'a>(
+    statements: &'a [CheckedStatement],
+    path: &NodePath,
+) -> Option<&'a CheckedExpression> {
+    statements.iter().find_map(|statement| match statement {
+        CheckedStatement::Return {
+            node_path, value, ..
+        } => (node_path == path).then_some(value),
+        CheckedStatement::Match { arms, .. } | CheckedStatement::ValueMatchLet { arms, .. } => {
+            arms.iter().find_map(|arm| returned_value(&arm.body, path))
+        }
+        CheckedStatement::Loop { body, .. } | CheckedStatement::CountedRange { body, .. } => {
+            returned_value(body, path)
+        }
+        _ => None,
+    })
 }
 
 /// Field selections and `deref` are the steps a clause spells as written.
@@ -335,6 +526,8 @@ pub(super) struct GoalCase<'a> {
     pub(super) terms: GoalTerms,
     /// The goal reads through a reference parameter [EFF-2].
     pub(super) referenced: bool,
+    /// The goal reads a value a user call returned [FN-9].
+    pub(super) called: bool,
     /// The goal as the payload renders it.
     pub(super) text: &'a str,
     /// Whether `text` is the source of one condition over atoms.
@@ -393,8 +586,14 @@ impl GoalCase<'_> {
     /// written certificate or a callee relation the program does not have yet.
     fn computed_routes(&self, construct: &str, intent: &str) -> String {
         let guard = self.guard(construct, intent);
+        // A callee's `ensures` bounds only a value that callee returned.
+        let callee = if self.called {
+            "; when the callee whose result it reads can prove the bound, state it in that callee's `ensures`"
+        } else {
+            ""
+        };
         format!(
-            "when facts that reach the {construct} imply it, prove it with an `invariant` whose `use` steps name them (a loop's header `invariant` for a value the loop computes); when a callee computed a value it reads, state the bound in that callee's `ensures`; or {guard}"
+            "when facts that reach the {construct} imply it, prove it with an `invariant` whose `use` steps name them (a loop's header `invariant` for a value the loop computes){callee}; or {guard}"
         )
     }
 }
@@ -421,14 +620,18 @@ pub(super) fn call_requirement(case: &GoalCase<'_>) -> String {
     }
 }
 
-/// [FN-9] a normal-result relation at one selected return.
-pub(super) fn postcondition(disposition: Disposition) -> &'static str {
-    match disposition {
-        Disposition::Refuted => {
+/// [FN-9] a normal-result relation at one selected return; `called` says
+/// whether the returned value reads a value a user call returned.
+pub(super) fn postcondition(disposition: Disposition, called: bool) -> &'static str {
+    match (disposition, called) {
+        (Disposition::Refuted, _) => {
             "the value this `return` delivers makes the postcondition false: return a value that satisfies it, state a postcondition this return satisfies, or change the requirements that fix the returned value"
         }
-        Disposition::Unproved => {
-            "the postcondition is not proved where this `return` delivers its value: add a `requires` over the parameters the value is computed from, prove the bound before the return with an `invariant` whose `use` steps name the facts it follows from, state it in the `ensures` of a callee that computed the value, or state a postcondition the body proves"
+        (Disposition::Unproved, true) => {
+            "the postcondition is not proved where this `return` delivers its value: add a `requires` over the parameters the value is computed from, prove the bound before the return with an `invariant` whose `use` steps name the facts it follows from, state it in the `ensures` of the callee whose result the value reads when that callee can prove it, or state a postcondition the body proves"
+        }
+        (Disposition::Unproved, false) => {
+            "the postcondition is not proved where this `return` delivers its value: add a `requires` over the parameters the value is computed from, prove the bound before the return with an `invariant` whose `use` steps name the facts it follows from, or state a postcondition the body proves"
         }
     }
 }

@@ -236,6 +236,32 @@ struct ProofFlowState {
     /// Exact integer value images and active source-proved loop invariants.
     /// Executing a statement computes the runtime value represented here.
     affine: AffineFlowState,
+    /// [DIAG-1] every binding at which a kill event on some path to this edge
+    /// roots its place [ENT-5]. It branches and joins with the rest of the
+    /// state, so a write in one arm of a conditional is no write in a
+    /// sibling arm, and a loop header carries every continuing kill of its
+    /// body before the body is walked. A failed judgment retains it so that
+    /// its repair offers a `requires` only over parameters that still hold
+    /// their entry values where the goal is asked.
+    written: BTreeSet<BindingId>,
+}
+
+impl ProofFlowState {
+    /// Records on this edge the bindings these events root their places at.
+    fn record_writes(&mut self, events: &[KillEvent]) {
+        self.written
+            .extend(events.iter().filter_map(KillEvent::root_binding));
+    }
+
+    /// What a judgment recorded at this edge retains of [`Self::written`]:
+    /// all of it when the judgment failed, and nothing when it succeeded.
+    fn written_before(&self, discharged: bool) -> Vec<BindingId> {
+        if discharged {
+            Vec::new()
+        } else {
+            self.written.iter().copied().collect()
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -1159,7 +1185,6 @@ impl<'check, 'unit> Analyzer<'check, 'unit> {
             scopes: Vec::new(),
             loops: Vec::new(),
             gives: Vec::new(),
-            written_roots: BTreeSet::new(),
         }
     }
 }
@@ -1503,12 +1528,6 @@ struct Analyzer<'check, 'unit> {
     scopes: Vec<Vec<BindingId>>,
     loops: Vec<LoopFrame>,
     gives: Vec<GiveFrame>,
-    /// Every binding at which a kill event applied so far in this walk roots
-    /// its place. The walk applies every event on a path to a node before it
-    /// judges that node, a loop's continuing kills included at its header, so
-    /// a failed judgment's snapshot of this set bounds what a `requires` over
-    /// the parameters would have to survive [DIAG-1].
-    written_roots: BTreeSet<BindingId>,
 }
 
 impl Analyzer<'_, '_> {
@@ -4531,8 +4550,6 @@ impl Analyzer<'_, '_> {
         if events.is_empty() {
             return;
         }
-        self.written_roots
-            .extend(events.iter().filter_map(KillEvent::root_binding));
         self.materialize_before_event_kill(state, events);
         state.kill(|term| {
             events
@@ -4569,6 +4586,7 @@ impl Analyzer<'_, '_> {
         self.apply_kills_one(&separations, &mut states.facts, events);
         self.apply_affine_kills(&separations, &mut states.affine, events);
         self.invalidate_entry_images(states, events, None);
+        states.record_writes(events);
     }
 
     fn event_kills_entry_image(
@@ -6881,7 +6899,7 @@ impl Analyzer<'_, '_> {
                             requirement.requires_clause.clone(),
                             goal,
                             arguments.len(),
-                            ProofContext::new(&states.facts, &states.affine),
+                            (ProofContext::new(&states.facts, &states.affine), &*states),
                         );
                         goals_ok &= disposition == CallGoalDisposition::Discharged;
                         if let Some(derivation) = derivation {
@@ -7191,7 +7209,7 @@ impl Analyzer<'_, '_> {
         requires_clause: crate::NodePath,
         goal: ConcreteGoal,
         argument_count: usize,
-        context: ProofContext<'_>,
+        (context, written): (ProofContext<'_>, &ProofFlowState),
     ) -> (CallGoalDisposition, Option<DerivationId>) {
         let (disposition, evidence, derivation) = self.call_goal_disposition(&goal, context);
         let ordinal = u32::try_from(self.call_goals.len())
@@ -7212,7 +7230,7 @@ impl Analyzer<'_, '_> {
             disposition,
             evidence,
             derivation,
-            written_before: self.written_before(disposition == CallGoalDisposition::Discharged),
+            written_before: written.written_before(disposition == CallGoalDisposition::Discharged),
         });
         (disposition, derivation)
     }
@@ -8810,7 +8828,7 @@ impl Analyzer<'_, '_> {
                 Vec::new()
             },
             range_partitions: Vec::new(),
-            written_before: self.written_before(discharged),
+            written_before: states.written_before(discharged),
         });
     }
 
@@ -9361,7 +9379,7 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound_derivation,
             affine_index_maps: Vec::new(),
             range_partitions: Vec::new(),
-            written_before: self.written_before(discharged),
+            written_before: states.written_before(discharged),
         });
     }
 
@@ -9479,7 +9497,7 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(),
             range_partitions: Vec::new(),
-            written_before: self.written_before(discharged),
+            written_before: state.written_before(discharged),
         });
         discharged
     }
@@ -9871,7 +9889,7 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(),
             range_partitions: Vec::new(),
-            written_before: self.written_before(discharged),
+            written_before: states.written_before(discharged),
         });
     }
 
@@ -10043,7 +10061,7 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(),
             range_partitions: Vec::new(),
-            written_before: self.written_before(discharged),
+            written_before: states.written_before(discharged),
         });
     }
 
@@ -11541,6 +11559,10 @@ impl Analyzer<'_, '_> {
                 contributing.iter().map(|state| &state.separations),
             ),
             affine: self.join_affine_states(&contributing),
+            written: contributing
+                .iter()
+                .flat_map(|state| state.written.iter().copied())
+                .collect(),
         }
     }
 
@@ -11738,6 +11760,7 @@ impl Analyzer<'_, '_> {
             // conservative; the normal value-initializer join installs the
             // receiver's value separately.
             affine: AffineFlowState::default(),
+            written: source.written.clone(),
         };
         // The forward substitution happens above before the ordinary edge
         // kills, so the carrier's own branch scope cannot delete the image.
@@ -12418,17 +12441,6 @@ impl Analyzer<'_, '_> {
         Some(AffineInequality::from_bounded_forms(
             &right, &left, 0, check,
         ))
-    }
-
-    /// [DIAG-1] the bindings some kill event on a path to the judgment being
-    /// recorded roots its place at, which a failed judgment retains so its
-    /// repair can tell which parameters a `requires` would still describe.
-    fn written_before(&self, discharged: bool) -> Vec<BindingId> {
-        if discharged {
-            Vec::new()
-        } else {
-            self.written_roots.iter().copied().collect()
-        }
     }
 
     /// The disposition of one written invariant's batch in this state
@@ -14011,8 +14023,6 @@ impl Analyzer<'_, '_> {
         state: &mut AffineFlowState,
         events: &[KillEvent],
     ) {
-        self.written_roots
-            .extend(events.iter().filter_map(KillEvent::root_binding));
         state.values.retain(|binding, _| {
             !events
                 .iter()
@@ -14083,6 +14093,7 @@ impl Analyzer<'_, '_> {
                 self.invalidate_entry_images(state, std::slice::from_ref(event), Some(proof_event));
                 prepared.transfer_events.push(proof_event);
             }
+            state.record_writes(&events);
             prepared.kills = events;
         } else {
             self.apply_kills(state, &events);
@@ -14318,6 +14329,7 @@ impl Analyzer<'_, '_> {
                     Some(target_event),
                 );
             }
+            state.record_writes(&target_kills);
         } else {
             self.apply_kills(state, &target_kills);
         }
@@ -16023,6 +16035,7 @@ impl Analyzer<'_, '_> {
         self.kill_result_evidence(states, &kills.events);
         self.apply_loop_kills_one(&separations, &mut states.facts, kills);
         self.apply_affine_kills(&separations, &mut states.affine, &kills.events);
+        states.record_writes(&kills.events);
         let mut groups = kills.entry_image_groups.iter().collect::<Vec<_>>();
         groups.sort_by(|left, right| left.owner.components().cmp(right.owner.components()));
         for group in groups {

@@ -1430,7 +1430,7 @@ fn main() -> status: ExitStatus pure {
         rule: "FN-8",
         sentences: &[
             "\n  disposition: Unproved\n",
-            "\n  mechanical_fix: `z < 10_u64` is not proved before this call: when facts that reach the call imply it, prove it with an `invariant` whose `use` steps name them (a loop's header `invariant` for a value the loop computes); when a callee computed a value it reads, state the bound in that callee's `ensures`; or guard the call with `if z < 10_u64` where skipping it is the intended behavior\n",
+            "\n  mechanical_fix: `z < 10_u64` is not proved before this call: when facts that reach the call imply it, prove it with an `invariant` whose `use` steps name them (a loop's header `invariant` for a value the loop computes); when the callee whose result it reads can prove the bound, state it in that callee's `ensures`; or guard the call with `if z < 10_u64` where skipping it is the intended behavior\n",
         ],
         repaired: &[
             br#"fn small(x: u64) -> result: u64 pure contract {
@@ -1658,13 +1658,65 @@ fn main() -> status: ExitStatus pure {
         rule: "FN-9",
         sentences: &[
             "\n  disposition: Unproved\n",
-            "\n  mechanical_fix: the postcondition is not proved where this `return` delivers its value: add a `requires` over the parameters the value is computed from, prove the bound before the return with an `invariant` whose `use` steps name the facts it follows from, state it in the `ensures` of a callee that computed the value, or state a postcondition the body proves\n",
+            // The returned value is a parameter and no call returns anything
+            // here, so no callee's `ensures` is offered.
+            "\n  mechanical_fix: the postcondition is not proved where this `return` delivers its value: add a `requires` over the parameters the value is computed from, prove the bound before the return with an `invariant` whose `use` steps name the facts it follows from, or state a postcondition the body proves\n",
         ],
         repaired: &[br#"fn f(x: u64) -> result: u64 pure contract {
   requires x < 10_u64;
   ensures result < 10_u64;
 } {
   return x;
+}
+
+fn main() -> status: ExitStatus pure {
+  let r = f(x: 3_u64);
+  return exit_status(code: 0_u8);
+}
+"#],
+    },
+    RepairPair {
+        // The returned value is a call's result, so the callee's `ensures`
+        // is the route that bounds it.
+        name: "postcondition-over-a-call-result.wf",
+        rejected: br#"fn clamp(y: u64) -> result: u64 pure {
+  if y < 10_u64 {
+    return y;
+  }
+  return 9_u64;
+}
+
+fn f(x: u64) -> result: u64 pure contract {
+  ensures result < 10_u64;
+} {
+  let z = clamp(y: x);
+  return z;
+}
+
+fn main() -> status: ExitStatus pure {
+  let r = f(x: 3_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "FN-9",
+        sentences: &[
+            "\n  disposition: Unproved\n",
+            "\n  mechanical_fix: the postcondition is not proved where this `return` delivers its value: add a `requires` over the parameters the value is computed from, prove the bound before the return with an `invariant` whose `use` steps name the facts it follows from, state it in the `ensures` of the callee whose result the value reads when that callee can prove it, or state a postcondition the body proves\n",
+        ],
+        repaired: &[br#"fn clamp(y: u64) -> result: u64 pure contract {
+  ensures result < 10_u64;
+} {
+  if y < 10_u64 {
+    return y;
+  }
+  return 9_u64;
+}
+
+fn f(x: u64) -> result: u64 pure contract {
+  ensures result < 10_u64;
+} {
+  let z = clamp(y: x);
+  return z;
 }
 
 fn main() -> status: ExitStatus pure {
@@ -1794,6 +1846,87 @@ fn main() -> status: ExitStatus pure {
         ],
     },
     RepairPair {
+        // [ENT-5] a write kills facts on its own path only: the arm that
+        // writes `deref(p)` comes first, and the goal in its sibling still
+        // reads the entry value, which a requirement describes.
+        name: "integer-domain-in-the-arm-after-a-sibling-write.wf",
+        rejected: br#"fn bump(p: &u64, flag: Bool) -> result: u64 writes(p) {
+  if flag {
+    set deref(p) = 0_u64;
+    return 0_u64;
+  } else {
+    let v = deref(p) + 1_u64;
+    return v;
+  }
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "OP-2",
+        sentences: &[
+            "\n  disposition: Unproved\n",
+            "\n  mechanical_fix: add `requires deref(p) +defined 1_u64;` to the `contract` of `bump`, which each caller then establishes; or guard the operation with `if deref(p) +defined 1_u64` where skipping it is the intended behavior, adding to the effect row any read that condition makes which the row does not yet declare; or write the `+wrap`, `+checked` or `+sat` form\n",
+        ],
+        repaired: &[br#"fn bump(p: &u64, flag: Bool) -> result: u64 writes(p) contract {
+  requires deref(p) +defined 1_u64;
+} {
+  if flag {
+    set deref(p) = 0_u64;
+    return 0_u64;
+  } else {
+    let v = deref(p) + 1_u64;
+    return v;
+  }
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#],
+    },
+    RepairPair {
+        // The same program with its arms in the other order selects the same
+        // repair: which arm the walk visits first changes nothing.
+        name: "integer-domain-in-the-arm-before-a-sibling-write.wf",
+        rejected: br#"fn bump(p: &u64, flag: Bool) -> result: u64 writes(p) {
+  if flag {
+    let v = deref(p) + 1_u64;
+    return v;
+  } else {
+    set deref(p) = 0_u64;
+    return 0_u64;
+  }
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "OP-2",
+        sentences: &[
+            "\n  disposition: Unproved\n",
+            "\n  mechanical_fix: add `requires deref(p) +defined 1_u64;` to the `contract` of `bump`, which each caller then establishes; or guard the operation with `if deref(p) +defined 1_u64` where skipping it is the intended behavior, adding to the effect row any read that condition makes which the row does not yet declare; or write the `+wrap`, `+checked` or `+sat` form\n",
+        ],
+        repaired: &[br#"fn bump(p: &u64, flag: Bool) -> result: u64 writes(p) contract {
+  requires deref(p) +defined 1_u64;
+} {
+  if flag {
+    let v = deref(p) + 1_u64;
+    return v;
+  } else {
+    set deref(p) = 0_u64;
+    return 0_u64;
+  }
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#],
+    },
+    RepairPair {
         name: "integer-domain-over-a-loop-value.wf",
         rejected: br#"fn total() -> result: u64 pure {
   let sum = 0_u64;
@@ -1811,7 +1944,7 @@ fn main() -> status: ExitStatus pure {
         rule: "OP-2",
         sentences: &[
             "\n  disposition: Unproved\n",
-            "\n  mechanical_fix: `sum +defined i` is not proved here: when facts that reach the operation imply it, prove it with an `invariant` whose `use` steps name them (a loop's header `invariant` for a value the loop computes); when a callee computed a value it reads, state the bound in that callee's `ensures`; or guard the operation with `if sum +defined i` where skipping it is the intended behavior; or write the `+wrap`, `+checked` or `+sat` form\n",
+            "\n  mechanical_fix: `sum +defined i` is not proved here: when facts that reach the operation imply it, prove it with an `invariant` whose `use` steps name them (a loop's header `invariant` for a value the loop computes); or guard the operation with `if sum +defined i` where skipping it is the intended behavior; or write the `+wrap`, `+checked` or `+sat` form\n",
         ],
         repaired: &[
             br#"fn total() -> result: u64 pure {
@@ -1877,7 +2010,7 @@ fn main() -> status: ExitStatus pure {
         rule: "OP-2",
         sentences: &[
             "\n  disposition: Unproved\n",
-            "\n  mechanical_fix: `deref(values)[0_u64] +defined 1_u8` is not proved here: when facts that reach the operation imply it, prove it with an `invariant` whose `use` steps name them (a loop's header `invariant` for a value the loop computes); when a callee computed a value it reads, state the bound in that callee's `ensures`; or guard the operation with `if deref(values)[0_u64] +defined 1_u8` where skipping it is the intended behavior, adding to the effect row any read that condition makes which the row does not yet declare; or write the `+wrap`, `+checked` or `+sat` form\n",
+            "\n  mechanical_fix: `deref(values)[0_u64] +defined 1_u8` is not proved here: when facts that reach the operation imply it, prove it with an `invariant` whose `use` steps name them (a loop's header `invariant` for a value the loop computes); or guard the operation with `if deref(values)[0_u64] +defined 1_u8` where skipping it is the intended behavior, adding to the effect row any read that condition makes which the row does not yet declare; or write the `+wrap`, `+checked` or `+sat` form\n",
         ],
         repaired: &[br#"fn bump(values: &Array<u8, 2>) -> result: u8 reads(values) {
   if deref(values)[0_u64] +defined 1_u8 {
@@ -2005,7 +2138,7 @@ fn main() -> status: ExitStatus pure {
         rule: "OP-6",
         sentences: &[
             "\n  disposition: Unproved\n",
-            "\n  mechanical_fix: `cvt.defined::<u32, u8>(v)` is not proved here: when facts that reach the conversion imply it, prove it with an `invariant` whose `use` steps name them (a loop's header `invariant` for a value the loop computes); when a callee computed a value it reads, state the bound in that callee's `ensures`; or guard the conversion with `if cvt.defined::<u32, u8>(v)` where skipping it is the intended behavior; or use `cvt.checked::<u32, u8>` and handle its `Err`\n",
+            "\n  mechanical_fix: `cvt.defined::<u32, u8>(v)` is not proved here: when facts that reach the conversion imply it, prove it with an `invariant` whose `use` steps name them (a loop's header `invariant` for a value the loop computes); when the callee whose result it reads can prove the bound, state it in that callee's `ensures`; or guard the conversion with `if cvt.defined::<u32, u8>(v)` where skipping it is the intended behavior; or use `cvt.checked::<u32, u8>` and handle its `Err`\n",
         ],
         repaired: &[br#"fn widen(x: u32) -> result: u32 pure {
   return x;
@@ -2150,7 +2283,7 @@ fn main() -> status: ExitStatus pure {
         rule: "OP-4",
         sentences: &[
             "\n  disposition: Unproved\n",
-            "\n  mechanical_fix: `k < deref(b).len` is not proved here: when facts that reach the access imply it, prove it with an `invariant` whose `use` steps name them (a loop's header `invariant` for a value the loop computes); when a callee computed a value it reads, state the bound in that callee's `ensures`; or guard the access with `if k < deref(b).len` where skipping it is the intended behavior, adding to the effect row any read that condition makes which the row does not yet declare\n",
+            "\n  mechanical_fix: `k < deref(b).len` is not proved here: when facts that reach the access imply it, prove it with an `invariant` whose `use` steps name them (a loop's header `invariant` for a value the loop computes); when the callee whose result it reads can prove the bound, state it in that callee's `ensures`; or guard the access with `if k < deref(b).len` where skipping it is the intended behavior, adding to the effect row any read that condition makes which the row does not yet declare\n",
         ],
         repaired: &[br#"fn widen(x: u64) -> result: u64 pure {
   return x;
@@ -2289,7 +2422,7 @@ fn main() -> status: ExitStatus pure {
         sentences: &[
             "\n  disposition: Unproved\n",
             "\n  mechanical_fix: `n <= ",
-            "_u64` is not proved here: when facts that reach the allocation imply it, prove it with an `invariant` whose `use` steps name them (a loop's header `invariant` for a value the loop computes); when a callee computed a value it reads, state the bound in that callee's `ensures`; or guard the allocation with `if n <= ",
+            "_u64` is not proved here: when facts that reach the allocation imply it, prove it with an `invariant` whose `use` steps name them (a loop's header `invariant` for a value the loop computes); when the callee whose result it reads can prove the bound, state it in that callee's `ensures`; or guard the allocation with `if n <= ",
             "_u64` where refusing a larger count is the intended behavior\n",
         ],
         repaired: &[br#"fn widen(x: u64) -> result: u64 pure {
@@ -2394,7 +2527,7 @@ fn main() -> status: ExitStatus pure {
         rule: "REF-4",
         sentences: &[
             "\n  disposition: Unproved\n",
-            "\n  mechanical_fix: `h <= deref(values).len` is not proved here: when facts that reach the range imply it, prove it with an `invariant` whose `use` steps name them (a loop's header `invariant` for a value the loop computes); when a callee computed a value it reads, state the bound in that callee's `ensures`; or guard the range with `if h <= deref(values).len` where skipping it is the intended behavior, adding to the effect row any read that condition makes which the row does not yet declare\n",
+            "\n  mechanical_fix: `h <= deref(values).len` is not proved here: when facts that reach the range imply it, prove it with an `invariant` whose `use` steps name them (a loop's header `invariant` for a value the loop computes); when the callee whose result it reads can prove the bound, state it in that callee's `ensures`; or guard the range with `if h <= deref(values).len` where skipping it is the intended behavior, adding to the effect row any read that condition makes which the row does not yet declare\n",
         ],
         repaired: &[br#"fn widen(x: u64) -> result: u64 pure {
   return x;

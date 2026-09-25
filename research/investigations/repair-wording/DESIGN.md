@@ -710,15 +710,22 @@ from section 4 where carrying it out showed a gap:
   integer complement of the bound (`sum <= u` becomes `-sum <= -u - 1`).
 - **What a goal reads**, which selects the unproved routes, is classified in
   four ways rather than section 4's two. A requirement is offered only for
-  parameters that no event on a path to the goal writes or consumes, taken
-  from the kill events the entailment walk applied before the judgment (a
-  function-wide set lost the route for `free_empty(window: move window)`,
-  whose consume follows its requirement). An admitted element read is part
-  of the goal's identity, so a guard naming the same expression establishes
-  it [ENT-3], while a value only its occurrence identifies, or a range formed
-  at the call, is bound with a `let` first; for a subscript, whose bound
-  names terms alone, an offset that is itself an element is bound too, as the
-  retired MSR-4 sentence said.
+  parameters that no event on a path to the goal writes or consumes. The flow
+  state records the bindings each path's kill events write, and a merge takes
+  their union: a function-wide set lost the route for
+  `free_empty(window: move window)`, whose consume follows its requirement,
+  and a set accumulated over the walk lost it for a goal in the arm walked
+  after a sibling arm's write, so swapping two arms changed the repair (found
+  in the completion review). An admitted element read is part of the goal's
+  identity, so a guard naming the same expression establishes it [ENT-3],
+  while a value only its occurrence identifies, or a range formed at the
+  call, is bound with a `let` first; for a subscript, whose bound names terms
+  alone, an offset that is itself an element is bound too, as the retired
+  MSR-4 sentence said.
+- **A callee's `ensures`** is offered only when a term of the goal, or FN-9's
+  returned value, is a value a user call returned, directly or through local
+  computation; with no call result among them the route can never be carried
+  out (also found in the completion review).
 - **Guards through a reference.** A guard is executable code: `if hi <=
   deref(values).len` in a `pure` function is a read EFF-2 rejects. The pinned
   pairs found this; a guard over a goal that reads through a reference

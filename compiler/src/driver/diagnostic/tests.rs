@@ -45,8 +45,9 @@ fn main() -> status: ExitStatus pure {
 "#;
 
 /// `kept` is a local the loop writes, so the repair offers the proof and
-/// guard routes rather than a requirement [DIAG-1].
-const OP4_FIX: &str = "`kept < deref(out).len` is not proved here: when facts that reach the access imply it, prove it with an `invariant` whose `use` steps name them (a loop's header `invariant` for a value the loop computes); when a callee computed a value it reads, state the bound in that callee's `ensures`; or guard the access with `if kept < deref(out).len` where skipping it is the intended behavior, adding to the effect row any read that condition makes which the row does not yet declare";
+/// guard routes rather than a requirement, and no call returns it, so no
+/// callee's `ensures` either [DIAG-1].
+const OP4_FIX: &str = "`kept < deref(out).len` is not proved here: when facts that reach the access imply it, prove it with an `invariant` whose `use` steps name them (a loop's header `invariant` for a value the loop computes); or guard the access with `if kept < deref(out).len` where skipping it is the intended behavior, adding to the effect row any read that condition makes which the row does not yet declare";
 
 #[test]
 fn an_undischarged_subscript_prints_its_residual_under_a_marked_line() {
@@ -189,11 +190,11 @@ fn main() -> status: ExitStatus pure {
   selector: ensures.wf:1:42 "result: i32"
   relation: 0 = value
   disposition: Unproved
-  mechanical_fix: the postcondition is not proved where this `return` delivers its value: add a `requires` over the parameters the value is computed from, prove the bound before the return with an `invariant` whose `use` steps name the facts it follows from, state it in the `ensures` of a callee that computed the value, or state a postcondition the body proves"#
+  mechanical_fix: the postcondition is not proved where this `return` delivers its value: add a `requires` over the parameters the value is computed from, prove the bound before the return with an `invariant` whose `use` steps name the facts it follows from, or state a postcondition the body proves"#
     );
     assert_eq!(
         failure.render(DiagnosticFormat::Json),
-        r#"{"rule":"FN-9","kind":"UndischargedPostcondition","category":"Source","stage":"Semantics","at":{"file":"ensures.wf","line":5,"column":5},"bytes":{"start":118,"end":131},"source":"    return 0_i32;","detail":{"concrete_function":"unproved","postcondition":{"at":{"file":"ensures.wf","line":2,"column":3},"bytes":{"start":71,"end":95},"text":"ensures result == value;"},"conjunct":0,"selector":{"at":{"file":"ensures.wf","line":1,"column":42},"bytes":{"start":41,"end":52},"text":"result: i32"},"relation":"0 = value","disposition":"Unproved","mechanical_fix":"the postcondition is not proved where this `return` delivers its value: add a `requires` over the parameters the value is computed from, prove the bound before the return with an `invariant` whose `use` steps name the facts it follows from, state it in the `ensures` of a callee that computed the value, or state a postcondition the body proves"}}"#
+        r#"{"rule":"FN-9","kind":"UndischargedPostcondition","category":"Source","stage":"Semantics","at":{"file":"ensures.wf","line":5,"column":5},"bytes":{"start":118,"end":131},"source":"    return 0_i32;","detail":{"concrete_function":"unproved","postcondition":{"at":{"file":"ensures.wf","line":2,"column":3},"bytes":{"start":71,"end":95},"text":"ensures result == value;"},"conjunct":0,"selector":{"at":{"file":"ensures.wf","line":1,"column":42},"bytes":{"start":41,"end":52},"text":"result: i32"},"relation":"0 = value","disposition":"Unproved","mechanical_fix":"the postcondition is not proved where this `return` delivers its value: add a `requires` over the parameters the value is computed from, prove the bound before the return with an `invariant` whose `use` steps name the facts it follows from, or state a postcondition the body proves"}}"#
     );
 }
 
