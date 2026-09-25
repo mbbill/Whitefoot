@@ -51,6 +51,9 @@ they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge bounda
 - [Incremental L0 closure](investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md):
   keep fact states' closed cores and insert fresh edges instead of recomputing
   the cubic closure, relaxing only which equal-bound L0 derivation is retained.
+- [Automatic operation facts](investigations/automatic-operation-facts/DESIGN.md):
+  the inventory of operation-derived facts, corpus and idiom-sweep evidence,
+  and the proposed table that replaces the idiom menu of [ENT-3].
 
 Open research questions and evidence links are in [ideas](../docs/ideas.md);
 known compiler defects and implementation costs are in [todo](../docs/todo.md).

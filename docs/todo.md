@@ -986,8 +986,13 @@ each is resolved by a discussion and a tree change.
 - **The automatic-fact menu is a leftover.** [ENT-3] admits a narrow and
   asymmetric set of arithmetic idioms as automatic facts, each added for one
   proof pattern, with no general criterion and no counterpart for rows it
-  omits, such as a lower bound from `ior`. The owner wants it made principled;
-  nobody has had the time.
+  omits, such as a lower bound from `ior`. The
+  [investigation](../research/investigations/automatic-operation-facts/DESIGN.md)
+  recommends one S7 table of result intervals with order and offset
+  relations, computed from the operands' closed intervals, and awaits the
+  owner's ruling. Its corpus census also found 18 proof workarounds (checked
+  conversions with unreachable errors and redundant guards) that the current
+  checker already discharges; removing them does not depend on the ruling.
 - **The two-premise cutoff of automatic affine derivation.** [ENT-6] tries
   zero, one, and two premises and no more without a written certificate. Why
   the line sits at two, against one or three, is not remembered and needs a

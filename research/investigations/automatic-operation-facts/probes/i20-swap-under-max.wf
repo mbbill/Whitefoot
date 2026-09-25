@@ -2,7 +2,10 @@ fn swap_pair(values: &[u64], left: u64, right: u64) -> result: unit writes(value
   let room = deref(values).len;
   let top = imax(left, right);
   if top < room {
-    swap(first: &deref(values)[left], second: &deref(values)[right]);
+    let first = deref(values)[left];
+    let second = deref(values)[right];
+    set deref(values)[left] = second;
+    set deref(values)[right] = first;
   }
   return unit;
 }
