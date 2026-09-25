@@ -72,6 +72,28 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   for a concrete privacy consumer that cannot use one module's private
   implementation files.
 
+- **Rebuild the prelude and a standard library on modules.** The owner
+  selected this as the work after the modular compilation PR: library code
+  becomes registered modules with `module.wfm` interfaces, checked and cached
+  like program modules, and programs reach it through the ordinary qualified
+  path, alias and access rules instead of declarations the compiler injects
+  into every source bundle. Its investigation must settle which prelude parts
+  stay compiler-owned (the PRE-1 operation identities, opaque storage and the
+  runtime units) and which become source modules; how a program names library
+  modules, given that the name-resolution decision defers external
+  dependency-name binding and the modular design keeps the prelude out of an
+  ordinary source package called `std`; whether library modules join every
+  closure or only the entries that name them; and how their verdicts, proof
+  receipts and objects are reused across programs. The measured container
+  libraries under `research/experiments/container-representation/` are the
+  first standard-library candidates. Benefit: one naming and visibility rule
+  for library and program code, library checks reused instead of repeated in
+  every composition, and fewer compiler-owned declaration paths; the cost, the
+  specification changes (PRE-1, PROG-2) and the reuse gain are unverified.
+  Validate with the whole conformance corpus and test programs unchanged in
+  meaning, and a composition's front-end time before and after. Start after
+  the modular compilation PR merges, as its own investigation.
+
 - **Select the modular conversion companion.** The
   [conversion comparison](../research/investigations/numeric-conversions/DESIGN.md#companion-operations-and-explicit-deferrals)
   recommends integer-only `cvt.wrap` for direct low-bit extraction and modular
