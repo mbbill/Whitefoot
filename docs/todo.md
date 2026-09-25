@@ -23,8 +23,8 @@ rarely insert at the same place.
   [composition staging](../research/investigations/modular-compilation/DESIGN.md#composition-staging),
   persistent formation, lookup, instance, summary and lowering queries inside
   a composition through module build units, instance units and fact-based
-  entry checks, selected when a one-body edit build of a program a current
-  experiment builds exceeds one second (a build of an edited entry now forms,
+  entry checks, selected when edit-build measurements show the composition's
+  rerun to limit a current experiment (a build of an edited entry now forms,
   resolves and type-checks the whole closure and reuses only its proof
   analyses and unchanged objects: about 350 ms of a 590 to 620 ms body-edit
   build of a 32-module chain, growing with the program); a cold build without
@@ -1022,7 +1022,7 @@ rarely insert at the same place.
 ## Code structure
 
 - **The entailment flow module has outgrown one reader.**
-  `compiler/src/semantic/entailment/flow.rs` has 17,271 lines, 15,040 of them
+  `compiler/src/semantic/entailment/flow.rs` has 17,275 lines, 15,040 of them
   in one `impl Analyzer` block; it grew from 8,670 lines on 2026-09-01 over 154
   commits. `compiler/src/semantic/entailment/state.rs` (7,755 lines, including
   a 1,729-line inline test module) and the tests in

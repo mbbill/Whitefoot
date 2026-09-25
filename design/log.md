@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-25 Stage the dependency-recording decision
+
+Nodes: compiler/incremental-compilation, language/name-resolution, language/checks-and-proofs, language, language/effects, language/data-model/readonly-field, compiler
+
+Owner-approved: After the handoff for PR #85 at 39e5ce12, which showed the compiler-composition-staging amendment with a Chinese translation, and an explanation that offered to state its reopening condition without a time figure, the owner chose that wording and approved the amendment.
+
+Summary: Replace the first compiler/incremental-compilation decision with the reviewed staged decision, its reopening condition worded as the owner chose. Module verdicts, which record the graph facts and the declarations of other interfaces their checks read, and function proof analyses, which record their canonical inputs as receipts, are the dependency-recording queries now; an entry's composition reruns its whole closure whenever that closure's records change, a check reading interface records by their declarations and a build every record by its bytes, and gains persistent formation, lookup, instance, summary and lowering queries of its own when edit-build measurements show that rerun to limit a current experiment. No time figure decides anything in the compiler: the condition reopens engineering work, as the node's ThinLTO planning decision does. The whole-closure keys decide only whether a composition reruns, never whether a module verdict, a proof analysis or an object is reused, which answers the design review's finding about them. The replaced decision becomes a rejected entry. The [composition staging](../research/investigations/modular-compilation/DESIGN.md#composition-staging) records the stages and their measurements. Remove the accepted amendment and the amendments directory. The other nodes named here are unchanged by this entry and carry the earlier rulings below; they are listed because this PR changes them. The specification is unchanged; this ruling does not authorize a merge.
+
 ## 2026-09-25 Keep place bases and constant terms unqualified
 
 Nodes: language/name-resolution, compiler/incremental-compilation, language/checks-and-proofs, language, language/effects, language/data-model/readonly-field, compiler

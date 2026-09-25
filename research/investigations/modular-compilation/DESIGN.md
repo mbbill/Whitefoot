@@ -1308,18 +1308,19 @@ persistent and reruns each changed composition whole:
 on a 32-module chain of 16-function modules, a one-body edit build takes 590
 to 620 ms. The composition's formation, resolution and type checking take
 about 350 ms of it (54, 99 and 198 ms) and lowering about 3 ms, and that part
-grows with the closure, about 11 ms per such module, so an edit build reaches
-one second near twice that chain. No program a current experiment builds is
-that large: the largest test program, the 1363-line wfgrep source bundle,
+grows with the closure, about 11 ms per such module. No current experiment's
+edit builds are limited by it: the largest test program, the 1363-line wfgrep source bundle,
 rebuilt in 0.37 to 0.42 s after each of three one-body edits (gate-profile
 `whitefootc` at `6ce90ec5` building `tests/programs/wfgrep.wf` with `--cache`
 and `--fragments function` after a warm build, each edit changing one
 `return` literal in `io_class`; one analysis recorded and 52 reused, one
 object compiled each time).
 
-The later stage splits the composition into persistent queries when a one-body
-edit build of a program a current experiment builds exceeds one second,
-measured as the build-cost experiment measures it:
+The later stage splits the composition into persistent queries when edit-build
+measurements, taken as the build-cost experiment takes them, show the
+composition's rerun to limit a current experiment. The condition reopens this
+engineering work; no time figure decides anything in the compiler, whose
+verdicts and reuse depend on content keys alone:
 
 1. Module build units: a module check also retains the module's checked
    bodies, layouts, heap and call facts and lowered fragments under the module
