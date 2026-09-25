@@ -263,28 +263,28 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   program's timing, on each target that changes.
 
 - **The records comparison fails at the register-return revision's
-  placement.** For the small-result register ABI, the maintained paired
-  comparison reads `records` at 0.78--0.83 at W=2 and 0.68--0.82 at W=4
-  (baseline over candidate) on two hosted AMD runner classes. At W=1 it reads
-  0.93 on one class and 1.15--1.16 on the other. Its other four kernels pass,
-  and their emitted code is unchanged
-  ([hosted comparison](../research/investigations/result-registers/DESIGN.md#hosted-compute-regression)).
-  On a local Intel host, the same images show the same wider-row failure.
-  Shifting both loop copies by 16--48 bytes, with no instruction changed,
-  reverses the arms' order at W=2 and W=4. Moving only the runtime has no
-  effect. On the hosted fixture the candidate's kernel executes 1.2% fewer
-  instructions. The register return still loses one structure: its single
-  return block lets SimplifyCFG turn `validate_record`'s exit test into a
-  `select`, so the threaded inner loop over ASCII bytes is not formed. On
-  ASCII records that costs 41% more kernel instructions and 0.1--3.4% of
-  local W=1 time. Clang shows the same loss for a C transcription returning
-  its two-field struct. The hosted runners have no placement control, so the
-  failure is not attributed on them. A lowering that keeps the threading is
-  unexamined. Reopen with a bounded placement control on a hosted runner, or
-  with a maintained workload whose time follows the lost threading beyond its
-  placement range. Validate against unchanged source with an identical-image
-  control. Neither a later passing run nor a changed threshold closes this
-  entry.
+  placement.** For the small-result register ABI, the five maintained paired
+  comparisons the
+  [hosted comparison](../research/investigations/result-registers/DESIGN.md#hosted-compute-regression)
+  lists read `records` at 0.78--0.83 at W=2 and 0.68--0.82 at W=4 (baseline
+  over candidate) on two hosted AMD runner classes. At W=1 they read 0.93 on
+  one class and 1.15--1.16 on the other. The other four kernels pass, and
+  their emitted code is unchanged. On a local Intel host, the same images
+  show the same wider-row failure. Shifting both loop copies by 16--48 bytes,
+  with no instruction changed, reverses the arms' order at W=2 and W=4.
+  Moving only the runtime has no effect. On the hosted fixture the
+  candidate's kernel executes 1.2% fewer instructions. The register return
+  still loses one structure: its single return block lets SimplifyCFG turn
+  `validate_record`'s exit test into a `select`, so the threaded inner loop
+  over ASCII bytes is not formed. On ASCII records that costs 41% more kernel
+  instructions and 0.1--3.4% of local W=1 time. Clang shows the same loss for
+  a C transcription returning its two-field struct. The hosted runners have
+  no placement control, so the failure is not attributed on them. A lowering
+  that keeps the threading is unexamined. Reopen with a bounded placement
+  control on a hosted runner, or with a maintained workload whose time
+  follows the lost threading beyond its placement range. Validate against
+  unchanged source with an identical-image control. Neither a later passing
+  run nor a changed threshold closes this entry.
 
 - **Indexed small-payload costs with retained boundaries need attribution.**
   The [native-cost record](../research/experiments/container-representation/indexed-library/RESULTS.md#remaining-native-costs)
