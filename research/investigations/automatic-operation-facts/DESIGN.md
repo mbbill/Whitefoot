@@ -920,7 +920,11 @@ row's order relation.
   retention records.
 - Modular compilation (#85) needs nothing further here. S7 reads and
   establishes facts inside one body, and a callee in another module reaches
-  its caller only through its contract, as before.
+  its caller only through its contract, as before. The module-form case
+  `ent3-pos-s7-callee-in-another-module` checks both sides: the callee
+  proves its published bound with its own `ishr` row, and the caller's rows
+  read that bound at the call. `ent3-neg-s7-no-callee-contract-across-modules`
+  shows that without the contract nothing about the result crosses.
 
 ### 5.3 Predictions and outcomes
 
@@ -943,8 +947,9 @@ row's order relation.
   cases (`ent3-pos-s7-measure-operand`,
   `ent3-pos-s7-interval-survives-operand-write`,
   `ent3-neg-s7-relation-dies-with-operand`), the checked payloads
-  (`ent5-pos-checked-payload-facts`, `ent5-neg-checked-product-one-past`), and
-  rejected cases one past an endpoint or outside a condition
+  (`ent5-pos-checked-payload-facts`, `ent5-neg-checked-product-one-past`), the
+  two module-form cases above, and rejected cases one past an endpoint or
+  outside a condition
   (`ent3-neg-s7-shift-right-one-past`, `-wrap-may-wrap`,
   `-signed-and-without-mask`, `-shift-into-sign-bit`,
   `-wrap-amount-past-width`, `-signed-remainder-one-past`,
