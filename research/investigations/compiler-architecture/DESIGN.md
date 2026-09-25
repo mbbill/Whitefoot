@@ -339,7 +339,7 @@ now in `design/amendments/compiler-composition-staging.md`.
    table. Cost: medium; many semantic tests read the engine's outcome lists,
    which can stay alongside the dispositions to spare them. Validation:
    identical verdicts, rules and locations on the corpus. Tree: a new
-   decision (amendment).
+   decision, `design/amendments/compiler-acceptance-records.md`.
 
 ### P2. Component boundaries
 
@@ -352,7 +352,7 @@ now in `design/amendments/compiler-composition-staging.md`.
    mechanical after the sub-contexts. Validation: identical ledgers and
    verdicts; the 155 entailment tests read only `FunctionEntailment`.
    Supersedes the current `docs/todo.md` plan for `flow.rs`. Tree: a new
-   decision (amendment).
+   decision, `design/amendments/compiler-engine-components.md`.
 2. **Checker components.** A `TypeContext` that can intern during body checks
    (removing `DeferredNominal`'s restarts of whole function walks), a
    read-only `DeclarationInventory` and a per-attempt `BodyChecker` owning its
