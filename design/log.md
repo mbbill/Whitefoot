@@ -20,6 +20,14 @@ Nodes: language/checks-and-proofs
 Owner-approved: The owner approved the readonly-field-terms amendment as shown on PR #118 on 2026-09-25.
 
 Summary: Replace the checks-and-proofs decision that admitted a subscripted place as a term exactly when its last step selects a readonly field, whose ground covered only the storage measures, with the approved decision: such a place is a term exactly when its last step selects a readonly integer field, prelude measure or writer-declared alike, and each offset is itself a tracked place or a constant, because a readonly field changes only through a write to a place containing it and such an offset only through a write to its own support, so the ordinary overlap kill ends every fact about the term. Add its three rejected alternatives: only the prelude's measures, a let-bound copy instead of a term, and any offset with unrepresentable ones reported as a compiler limit. The node keeps the decision and its evidence link; the amendment's sentence naming the replaced decision is recorded here instead. The [readonly-field term investigation](../research/investigations/readonly-field-terms/DESIGN.md) supplies the killing events, the offset rule and the evidence. The settled wording is in kernel-spec v0.71 rules ENT-2, MSR-1, ENT-5 and FN-8. Remove the accepted amendment and its directory. This ruling does not authorize a merge.
+
+## 2026-09-25 Name source constructs in rejection payloads as written
+
+Nodes: compiler/rejection-payloads
+
+Owner-approved: The owner approved PR #123's rejection-payloads amendment as shown on 2026-09-25, having set the criterion that a diagnostic is chosen by how fast an agent understands and locates the problem.
+
+Summary: Add the node with its two decisions and three rejected alternatives unchanged: every payload string that names a place, function or type instance, or literal prints it in canonical source spelling through one checker renderer per kind, and EFF-2's suggested row is one EFF-1, EFF-2 and EFF-5 admit wherever it is applied, because an agent repairs the source it wrote and applies a suggestion literally. The review's remaining items O1 and O2 (where EFF-1 places the subsumed-read rejection, and a merged suggestion wider than the body's writes) belong to the EFF-5 one-argument amendment the owner selected the same day, which will present any change to this node's second decision for its own ruling. Remove the accepted amendment and its directory. No specification rule changes; this ruling does not authorize a merge.
 ## 2026-09-25 Stage the dependency-recording decision
 
 Nodes: compiler/incremental-compilation, language/name-resolution, language/checks-and-proofs, language, language/effects, language/data-model/readonly-field, compiler

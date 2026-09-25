@@ -660,7 +660,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 )
             );
         let oracle = UnprovedSeparations;
-        for local in bindings.values_mut() {
+        // A preserved bystander records its separation query once the walk
+        // is over: the query carries both places in their source spelling,
+        // and naming them reads the same bindings this walk updates.
+        let mut preserved = Vec::new();
+        for (declaration, local) in bindings.iter_mut() {
             // A write to the enum itself ends every refinement occurrence for
             // that enum even when an equal-path reference remains valid under
             // the proper-prefix write rule. A payload-field write is below
@@ -684,22 +688,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if let Some((site, (positions, window))) =
                     site.zip(Self::separable_by_position(written, path))
                 {
-                    let query = CheckedCallSeparation {
-                        site: site.clone(),
-                        exchange: false,
-                        reference_use: Some(super::super::model::CheckedReferencePreservationUse {
-                            site: site.clone(),
-                            binder: String::new(),
-                            event: event.phrase(),
-                        }),
-                        positions,
-                        window,
-                        left_spelling: self.render_resolved_place(written)?,
-                        right_spelling: self.render_resolved_place(path)?,
-                    };
-                    if !reference.preservations.contains(&query) {
-                        reference.preservations.push(query);
-                    }
+                    preserved.push((*declaration, site, positions, window, path.clone()));
                 } else {
                     invalidated = true;
                     break;
@@ -707,6 +696,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             if invalidated {
                 reference.invalidate(event.clone());
+            }
+        }
+        for (declaration, site, positions, window, path) in preserved {
+            let query = CheckedCallSeparation {
+                site: site.clone(),
+                exchange: false,
+                reference_use: Some(super::super::model::CheckedReferencePreservationUse {
+                    site: site.clone(),
+                    binder: String::new(),
+                    event: event.phrase(),
+                }),
+                positions,
+                window,
+                left_spelling: self.render_resolved_place(written, bindings)?,
+                right_spelling: self.render_resolved_place(&path, bindings)?,
+            };
+            let Some(reference) = bindings
+                .get_mut(&declaration)
+                .and_then(|local| local.reference.as_mut())
+            else {
+                continue;
+            };
+            if !reference.preservations.contains(&query) {
+                reference.preservations.push(query);
             }
         }
         Ok(())

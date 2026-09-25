@@ -696,6 +696,49 @@ fn main() -> status: ExitStatus pure {
             "\n  expected_row: reads(data.len)\n  found_row: pure\n  missing: [reads(data.len)]\n  extra: []\n  mechanical_fix: declare exactly the row the body exhibits: add every missing category and path and remove every extra one; EFF-2 admits no wider and no narrower declaration than the union of the body-syntactic and release contributions\n",
         ],
     },
+    Probe {
+        // The body reads and writes `stats.count` and never touches
+        // `stats.total`: the suggestion drops the read the write subsumes
+        // [EFF-1], nothing is missing, and the untouched write is extra.
+        name: "declared-row-writes-an-unexhibited-field.wf",
+        source: br#"struct Stats {
+  count: u64;
+  total: u64;
+}
+
+fn record(stats: &Stats) -> result: unit writes(stats.count), writes(stats.total) {
+  let old = deref(stats).count;
+  set deref(stats).count = old +wrap 1_u64;
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "EFF-2",
+        sentences: &[
+            "\n  expected_row: writes(stats.count)\n  found_row: writes(stats.count), writes(stats.total)\n  missing: []\n  extra: [writes(stats.total)]\n",
+        ],
+    },
+    Probe {
+        name: "read-subsumed-by-a-write-of-the-same-path.wf",
+        source: br#"fn bump(value: &u64) -> out: u64 reads(value), writes(value) {
+  let old = deref(value);
+  set deref(value) = old +wrap 1_u64;
+  return old;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "EFF-1",
+        sentences: &[
+            "]: SubsumedEffectRead\n",
+            "\n  entry: reads(value)\n",
+        ],
+    },
     // -------------------------------------------------------------------
     // [TYPE-5] places, subscripts, and flat storage.
     // -------------------------------------------------------------------
@@ -963,7 +1006,7 @@ fn main() -> status: ExitStatus pure {
 }
 "#,
         rule: "FN-8",
-        sentences: &["\n  instantiated_goal: flt(v, Float { ty: F64, bits: 4607182418800017408 })\n"],
+        sentences: &["\n  instantiated_goal: flt(v, 1.0_f64)\n"],
     },
     Probe {
         name: "goal-over-an-admitted-index-actual.wf",
@@ -1005,6 +1048,80 @@ fn main() -> status: ExitStatus pure {
         // the renderer currently drops the `deref`. The pinned sentence is the
         // specification spelling and stays failing until the renderer is fixed.
         sentences: &["\n  instantiated_goal: 9_u64 <= deref(names).len\n"],
+    },
+    Probe {
+        // A generic callee is named as a call writes it [FN-2], never by the
+        // symbol that keys its lowering.
+        name: "goal-of-a-generic-instance.wf",
+        source: br#"fn need<const n: u64>(x: u64) -> out: u64 pure contract {
+  requires x < n;
+} {
+  return x;
+}
+
+fn main() -> status: ExitStatus pure {
+  let r = need::<4>(x: 9_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "FN-8",
+        sentences: &["\n  concrete_callee: need::<4>\n"],
+    },
+    // -------------------------------------------------------------------
+    // [FN-9]: the selected return, named by its instance.
+    // -------------------------------------------------------------------
+    Probe {
+        name: "postcondition-of-a-generic-instance.wf",
+        source: br#"fn bad<T: Int>(value: T) -> result: T pure contract {
+  ensures result < value;
+} {
+  return value;
+}
+
+fn main() -> status: ExitStatus pure {
+  let ignored = bad::<u8>(value: 0_u8);
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "FN-9",
+        sentences: &["\n  concrete_function: bad::<u8>\n"],
+    },
+    // -------------------------------------------------------------------
+    // [PROV-6] and [GRAM-8]: a generic nominal instance is named as its
+    // type is written [GRAM-3], never by the key the checker interned it
+    // under.
+    // -------------------------------------------------------------------
+    Probe {
+        name: "unconsumed-instance-of-a-generic-nodrop-struct.wf",
+        source: br#"nodrop struct Token<T> {
+  value: T;
+}
+
+fn main() -> status: ExitStatus pure {
+  let token = Token<u64>(value: 1_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "PROV-6",
+        sentences: &["\n  binding: token\n  obligation: Token<u64>\n"],
+    },
+    Probe {
+        name: "const-of-a-generic-struct-with-a-wrong-field.wf",
+        source: br#"struct Wrap<T> {
+  value: T;
+}
+
+const w: Wrap<u64> = Wrap<u64>(other: 1_u64);
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "GRAM-8",
+        sentences: &[
+            "]: InvalidConstructionFields\n",
+            "\n  constructor: Wrap<u64>\n  declared_fields: [value]\n",
+        ],
     },
     // [FORM-8] one canonical region spelling: each position a region can
     // occupy, written exactly where the surrounding text does not fix it.

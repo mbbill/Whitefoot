@@ -894,6 +894,7 @@ impl Report for SemanticIssueKind {
             InvalidPropagation;
             InvalidGive;
             InvalidEffectRow { reason, mechanical_fix };
+            SubsumedEffectRead { entry };
             EffectMismatch { expected_row, found_row, missing, extra, mechanical_fix };
             SourceContractGenericBound;
         )
