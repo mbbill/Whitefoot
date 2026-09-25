@@ -530,6 +530,13 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     reject_entailment: bool,
     tree: TreeView<'unit, 'classified, 'lexed, 'source>,
     nominals: Vec<CheckedNominal>,
+    /// Counts the changes to `nominals`: an instance appended or completed,
+    /// or a checkpoint restored. The table's layout recursion is judged again
+    /// only after it changed [`Checker::reject_recursive_nominal_layouts`].
+    nominal_generation: u64,
+    /// The generation at which the table was last judged to hold no
+    /// recursive layout.
+    nominal_layouts_acyclic_at: std::cell::Cell<Option<u64>>,
     elements: RefCell<Vec<CheckedType>>,
     element_ids: RefCell<HashMap<CheckedType, CheckedElement>>,
     nominal_nodes: Vec<Option<NodeId>>,
@@ -1614,6 +1621,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             no_heap,
             tree,
             nominals: Vec::new(),
+            nominal_generation: 0,
+            nominal_layouts_acyclic_at: std::cell::Cell::new(None),
             elements: RefCell::new(Vec::new()),
             element_ids: RefCell::new(HashMap::new()),
             nominal_nodes: Vec::new(),

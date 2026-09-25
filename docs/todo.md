@@ -78,18 +78,6 @@ rarely insert at the same place.
   for a concrete privacy consumer that cannot use one module's private
   implementation files.
 
-- **Rebuild the prelude and a standard library on modules.** The owner
-  selected this as the work after the modular compilation PR, and the
-  [library-modules investigation](../research/investigations/library-modules/DESIGN.md)
-  holds its design. Specification v0.71 and the compiler implement the host
-  modules (`std::io`, `std::text`, `std::fs`, `std::net`, `std::process`) and
-  the containers as `std::collections`, with the corpus migrated and verdicts
-  and allocation ledgers unchanged. Remaining: the cost a program pays for
-  naming `ExitStatus` (the investigation's W5: 13.5 percent of a check's
-  instructions saved where a program that names nothing saves 61), which the
-  owner chose to reduce through the nominal passes' fix below rather than a
-  module layout change. Close with that fix.
-
 - **Select the modular conversion companion.** The
   [conversion comparison](../research/investigations/numeric-conversions/DESIGN.md#companion-operations-and-explicit-deferrals)
   recommends integer-only `cvt.wrap` for direct low-bit extraction and modular
@@ -151,29 +139,26 @@ rarely insert at the same place.
 
 ## Checker precision and proof cost
 
-- **Nominal passes grow with the prelude's nominals times a module's functions.**
-  Removing the 45 host records from the prelude saves 106 million
-  instructions when checking a one-function module and 215 million when
-  checking a 16-function chain module
-  ([library-modules E1](../research/investigations/library-modules/DESIGN.md#measurement-e1-what-the-host-rows-cost-every-check));
-  callgrind attributes the difference mostly to `reject_recursive_nominal_layouts`,
-  `nominal_dependencies`, `ensure_nominals_in_node`,
-  `instantiate_function_signature`, `validate_generic_templates` and
-  `CheckedType` hash-set insertion in `compiler/src/semantic/check.rs` and its
-  submodules. Impact: every check does work that grows with the product of the
-  declared nominals and the checked functions; moving the host declarations
-  into standard library modules removes it only from checks that name none of
-  them. Change: find the pass that revisits every nominal instance for each
-  function signature and keep its per-nominal results, since layout recursion
-  and dependency sets belong to a nominal instance, not to the function that
-  reaches it. Validate with the same callgrind comparison: the host rows' cost
-  on the 16-function module should fall to at most their cost on the
-  one-function module. The library-modules implementation removed the cost
-  from checks that name no library module, but a check that names
-  `std::process`, as every program returning `ExitStatus` does, still pays
-  37 million instructions in these passes for the host interfaces that
-  module selects (the investigation's W5). Reopen when that cost limits an
-  experiment, or with a change to the standard library's module layout.
+- **A module check's cost for a library interface still grows with the
+  module's functions.** Reading `std::process`'s closure (the `std::io`,
+  `std::text`, `std::fs` and `std::process` interfaces) costs a one-function
+  module 71.5 million instructions and a 16-function module 121.5 million
+  ([library-modules checker costs](../research/investigations/library-modules/DESIGN.md#the-checkers-per-function-costs-after-the-split)).
+  The nominal passes no longer contribute: the layout recursion judgment now
+  walks the nominal table only after it changed, and postcondition selector
+  admission indexes signatures by path. The remaining 50 million
+  instructions are resolution's table building and public-closure check
+  (`build_tables`, `check_public_closure` in `compiler/src/resolution/engine/`,
+  about 25 million), the entailment schedule of the function inventory
+  (`analyze_function_inventory` in `compiler/src/semantic/check.rs`, about 11
+  million), instantiation-cycle rejection (7 million) and concrete signature
+  collection (6 million). Impact: every check of a module that names a
+  library module, and every program returning `ExitStatus`, pays per
+  function for declarations it does not use. Change: find in each the work
+  repeated per function over every declaration or signature of the closure
+  and key it by declaration instead. Validate with the same comparison: H16
+  at most 1.1 times H1, verdicts unchanged. Reopen when check time limits an
+  experiment.
 
 - **A small module check is mostly parsing the prelude again.** Checking a
   one-function module that names no library module executes 66.9 million

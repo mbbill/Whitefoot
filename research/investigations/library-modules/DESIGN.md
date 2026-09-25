@@ -196,6 +196,51 @@ and 15,243,647,766 under B (this branch's source, the same program with
 A program that names almost every host module keeps the host cost, as D3
 predicts. The chain's times are W3 and W4 above.
 
+## The checker's per-function costs after the split
+
+The owner kept `std::process`'s layout and chose to fix the checker's nominal
+passes instead (the second W5 ruling). **Criterion, recorded before any
+checker change** (2026-09-25T21:51Z): with H1 the instructions a
+one-function module's check spends when its row lists `std::process`
+(the same records with and without that row entry) and H16 the same for the
+16-function chain module `pkg::m16`, the fix must bring H16 to at most 1.1
+times H1, so the host interfaces cost a larger module no more than a small
+one, with every test unchanged and no more than 2 percent added to the checks
+that read no host interface. Falsifier: H16 above 1.5 times H1 after the
+nominal passes keep their results means the growth lies elsewhere.
+
+| | Before | Layout memo | And signature index |
+|---|---|---|---|
+| H1 | 81,471,646 | 71,759,983 | 71,455,609 |
+| H16 | 179,497,960 | 136,483,999 | 121,475,951 |
+| H16 / H1 | 2.20 | 1.90 | 1.70 |
+| One-function module, no row entry | 66,972,653 | 66,740,416 | 66,767,209 |
+| Chain module, no row entry | 304,588,417 | 302,558,318 | 277,305,330 |
+
+**The layout memo.** Every pre-scan of a function, signature or template
+ended by walking every nominal of the table for a layout that contains itself
+(`reject_recursive_nominal_layouts`), host enums included, so the walk ran
+once per function over a table the host interfaces make large. The judgment
+reads only the table, so the checker now counts the table's changes (an
+instance appended or completed, a checkpoint restored) and walks it again only
+after one. **The signature index.** Postcondition selector admission compared
+every postcondition record with every signature, recomputing the signature's
+path each time; it now indexes the eligible signatures by path once per pass,
+which admits the same signatures in the same order.
+
+**Result.** The criterion is not met: H16 is 1.70 times H1, above the
+falsifier's 1.5, so the rest of the growth lies outside the nominal passes.
+Callgrind puts the remaining 50 million instructions of H16 over H1 in
+resolution's table building and public-closure check (about 25 million),
+the entailment schedule of the function inventory (about 11 million),
+instantiation-cycle rejection (7 million) and concrete signature collection
+(6 million); [`docs/todo.md`](../../../docs/todo.md) records them. Against
+main, the common program shape now saves 19.4 percent of its check (W5:
+138,856,704 instructions against A's 172,352,056), a module that names no
+library module 61.2 percent (W1: 66,763,119), the 16-function module 46.4
+percent (W2: 277,310,479) and the uncached chain entry 41.5 percent (W3:
+12,611,569,297), all from the same sources as E1.
+
 ## Design
 
 ### D1. The core stays compiler-owned; host declarations become `std` modules
