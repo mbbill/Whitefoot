@@ -161,7 +161,9 @@ guidance:
 # docs/todo.md, so its split is recorded work instead of unnoticed growth
 # (AGENTS.md, "Fix or record what you notice"). The item may defer the split;
 # it may not be missing. A mention in another section, about something else,
-# does not count.
+# does not count. The limit sits above every source except the entailment
+# module's three, each thousands of lines past it, so it asks for no items the
+# evidence does not already call for; lower it once those are split.
 SOURCE_LINE_LIMIT ?= 4000
 source-size:
 	@status=0; checked=0; \
