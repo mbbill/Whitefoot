@@ -1147,6 +1147,23 @@ rarely insert at the same place.
   first three and drop the ledger's clause; reopen with the next edit of any
   of these files.
 
+- **The callee-`ensures` route can name a call whose result no longer
+  reaches the goal.** `call_results` in `compiler/src/semantic/check/repairs.rs`
+  traces the values a goal reads back to call results through a closure that
+  ignores control flow and intervening writes. In
+  `ent5-neg-readonly-field-callee-writes-base`, the loop bound
+  `entries[1_u64].width` traces to the `make_entry` call that filled
+  `entries`, although the element that reaches the goal was replaced through
+  `widen`'s separate `make_entry` call, whose result a statement writes into
+  storage without binding it. No `ensures` on `make_entry` relates that width
+  to `cells.len`, so the route cannot be carried out there, while the guard
+  printed beside it works. The route states the condition it needs, so
+  [DIAG-1] holds; the repair is only less direct than it could be. Stop the
+  trace at a write that replaces the traced storage before the goal, or offer
+  the route only for a value bound from a call and not written since; validate
+  with that case and the existing callee-route pins, and reopen when a writer
+  report shows the route costing a round.
+
 ## Code structure
 
 - **The entailment flow module has outgrown one reader.**
