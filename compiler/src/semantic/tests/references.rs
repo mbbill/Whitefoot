@@ -647,6 +647,49 @@ fn main() -> status: ExitStatus pure {
     });
 }
 
+/// [EFF-5, REF-4] a range formed at the call is the actual's path extended
+/// by its own range step, and that step spells the endpoints it captured:
+/// over a local array and, re-sliced, through a range parameter's `deref`.
+#[test]
+fn an_undischarged_call_separation_names_ranges_formed_at_the_call() {
+    let callee = r#"fn fill_two(first: &[u8], second: &[u8]) -> result: unit writes(first), writes(second) {
+  if 0_u64 < deref(first).len {
+    set deref(first)[0_u64] = 1_u8;
+  }
+  if 0_u64 < deref(second).len {
+    set deref(second)[0_u64] = 2_u8;
+  }
+  return unit;
+}
+
+"#;
+    for (caller, residual) in [
+        (
+            "fn main() -> status: ExitStatus pure {\n  let values = array_filled::<u8, 4>(value: 0_u8);\n  let lo = 1_u64;\n  let hi = 3_u64;\n  fill_two(first: &values[0_u64..2_u64], second: &values[lo..hi]);\n  return exit_status(code: 0_u8);\n}\n",
+            "values[0_u64..2_u64] and values[lo..hi] select different storage (one ends before the other starts, or one is empty)",
+        ),
+        (
+            "fn relay(part: &[u8]) -> result: unit writes(part) {\n  if 2_u64 <= deref(part).len {\n    fill_two(first: &deref(part)[0_u64..2_u64], second: &deref(part)[1_u64..2_u64]);\n  }\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+            "deref(part)[0_u64..2_u64] and deref(part)[1_u64..2_u64] select different storage (one ends before the other starts, or one is empty)",
+        ),
+    ] {
+        let source = format!("{callee}{caller}");
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("expected an EFF-5 rejection, got {outcome:?}");
+            };
+            assert_eq!(issue.rule(), SemanticRule::Eff5);
+            let SemanticIssueKind::UndischargedCallSeparation {
+                residual: rendered, ..
+            } = issue.kind()
+            else {
+                panic!("unexpected kind {:?}", issue.kind());
+            };
+            assert_eq!(rendered, residual);
+        });
+    }
+}
+
 /// [EFF-5] substitutes the scalar values of index actuals, not the storage
 /// paths from which those values were read. Distinct array elements can both
 /// contain zero and therefore select the same written window element.
