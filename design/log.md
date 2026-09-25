@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-25 Form requirement places at body entry and separate window parts only from live indices
+
+Nodes: language/checks-and-proofs/requires-entry-contract, language/ownership, language/checks-and-proofs
+
+Owner-approved: The owner approved PR #118's clause-place-formation and window-part-liveness amendments as recommended, 2026-09-25.
+
+Summary: Add the requires-entry-contract decision that a requirement's places are formed at the callee's body entry in the state holding the requirements written before its clause, and a definition's places in the first requirement whose expansion reaches them, so every subscript in such a place owes its bounds obligation there, with its two rejected alternatives: forming the place in each caller's instantiated goal, and leaving clause subscripts unjudged. Add the ownership decision that an indexed position of a window is separated from its append slot, free slots or last filled slot only where the compared state proves the index below the window's length, with its three rejected alternatives: assuming every indexed position live, never separating an indexed position from the append slot, and treating an effect row's index as never live. Both close the gap review probe p50 exposed, a requirement over an element not yet appended whose fact survived the append; the [readonly-field term investigation](../research/investigations/readonly-field-terms/DESIGN.md#soundness-every-change-is-an-overlapping-write) records the probe and the cases. The node language/checks-and-proofs is named because this PR's earlier ruling, the entry below, changed it; this ruling leaves it as that ruling set it. The settled wording is in kernel-spec v0.71 rules ENT-2 and WIN-2. Where an `ensures` place is formed stays open, recorded in the maintained TODO for later. Remove both amendments and the amendment directory. This ruling does not authorize a merge.
+
 ## 2026-09-25 Admit readonly fields below subscripts as fact-language terms
 
 Nodes: language/checks-and-proofs
