@@ -377,8 +377,8 @@ pub(crate) trait SeparationOracle {
     /// state discharged its [OP-4] obligation there, and a reference into a
     /// window stays valid only while that bound holds [OP-10], so both are
     /// live; a fact's place is live where the event's entry state derives the
-    /// bound [ENT-5]; an index an effect row supplies is bounded by nothing
-    /// at the call [EFF-5] and is live nowhere.
+    /// bound [ENT-5], and an index an effect row takes from another argument
+    /// where the call's entry state derives it [EFF-5].
     fn index_is_live(&self, window: &ResolvedPlace, index: CapturedValue) -> bool;
 
     /// [WIN-2]'s other conditional row: a live `r[i]` overlaps `r.last`

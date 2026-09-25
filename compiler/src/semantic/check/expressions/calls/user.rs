@@ -65,10 +65,12 @@ struct SubstitutedEntry {
 /// discharged [OP-4] there, or is named by a reference that stays valid only
 /// while that bound holds [OP-10], so it is live in the call's entry state.
 /// An index a row supplies is the value of another argument, which no
-/// obligation bounds by the window's length, so it is not live and overlaps
-/// every part of its window. Every other question is answered as
-/// [`UnprovedSeparations`] answers it; the pairs its families discharge are
-/// handed to the entailment fragment by position.
+/// obligation at the call bounds by the window's length, so this oracle holds
+/// it not live and the pair overlaps; the pairwise comparison then hands the
+/// pair to the entailment fragment, which separates it where the call's entry
+/// state proves the bound (`CheckedCallSeparationPositions::Live`). Every
+/// other question is answered as [`UnprovedSeparations`] answers it, and the
+/// index and range pairs its families discharge are handed over the same way.
 struct EntryPairSeparations<'entry> {
     entries: [&'entry SubstitutedEntry; 2],
 }
