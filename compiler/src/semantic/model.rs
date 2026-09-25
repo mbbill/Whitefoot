@@ -1674,6 +1674,27 @@ impl CheckedRangeElementPlace {
         self.ty.measured()
     }
 
+    /// [ENT-2] how this element place's offsets stand: the range's own
+    /// subscript first, then every nested one.
+    pub(crate) fn subscripted_term(&self) -> Option<SubscriptedTerm> {
+        SubscriptedTerm::of_offsets(
+            std::iter::once((&self.offset, self.captured)).chain(subscript_offsets(&self.path)),
+        )
+    }
+
+    /// [ENT-2] clause (b): whether this element place is a term because its
+    /// final step selects a readonly field of one fragment type. The range's
+    /// own subscript selects the element every later step starts from.
+    pub(crate) fn readonly_field_term(
+        &self,
+        nominals: &[CheckedNominal],
+    ) -> Option<SubscriptedTerm> {
+        if !selects_readonly_fragment_field(nominals, self.root.element_type, &self.path) {
+            return None;
+        }
+        self.subscripted_term()
+    }
+
     pub(crate) const fn element(&self) -> Option<CheckedElement> {
         match self.ty {
             CheckedType::Array { element, .. }
@@ -1809,6 +1830,149 @@ impl CheckedContainerRoot {
             CheckedType::Window { capacity, .. } => capacity,
             _ => None,
         }
+    }
+
+    /// [ENT-2] how this place's subscript offsets stand; a place with no
+    /// subscript has none to judge.
+    pub(crate) fn subscripted_term(&self) -> Option<SubscriptedTerm> {
+        SubscriptedTerm::of_offsets(subscript_offsets(&self.path))
+    }
+
+    /// [ENT-2] clause (b): whether this subscripted place is a term because
+    /// its final step selects a readonly field of one fragment type.
+    ///
+    /// Only the steps after the last subscript decide the final field; the
+    /// offsets of every subscript decide whether its identity is represented.
+    pub(crate) fn readonly_field_term(
+        &self,
+        nominals: &[CheckedNominal],
+    ) -> Option<SubscriptedTerm> {
+        let last = self
+            .path
+            .iter()
+            .rposition(|step| matches!(step, CheckedPlaceStep::Subscript(_)))?;
+        let CheckedPlaceStep::Subscript(index) = &self.path[last] else {
+            return None;
+        };
+        if !selects_readonly_fragment_field(nominals, index.element_type, &self.path[last + 1..]) {
+            return None;
+        }
+        self.subscripted_term()
+    }
+}
+
+impl CheckedBufferRoot {
+    /// [ENT-2] how this run's subscript offsets stand.
+    pub(crate) fn subscripted_term(&self) -> Option<SubscriptedTerm> {
+        SubscriptedTerm::of_offsets(subscript_offsets(&self.path))
+    }
+}
+
+/// Every subscript offset of a checked storage path with its captured value,
+/// in written order.
+fn subscript_offsets(
+    path: &[CheckedPlaceStep],
+) -> impl Iterator<Item = (&CheckedExpression, super::places::CapturedValue)> {
+    path.iter().filter_map(|step| match step {
+        CheckedPlaceStep::Subscript(index) => Some((&index.offset, index.captured)),
+        CheckedPlaceStep::Field(_) | CheckedPlaceStep::BoxReferent(_) => None,
+    })
+}
+
+/// How one place's subscript offsets stand under [ENT-2]: every offset of a
+/// term is itself a clause (a) or clause (c) term.
+///
+/// A place with an offset of any other form is no term at all and has no
+/// value here.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SubscriptedTerm {
+    /// Every offset is a captured literal, const or binding [REF-1], so the
+    /// place has the term identity the entailment fragment interns.
+    Represented,
+    /// An offset is a tracked place with projections, which ENT-2 admits but
+    /// no captured value names. This is a compiler capability limit, reported
+    /// as unsupported, not a language rejection [DIAG-1].
+    Unrepresented,
+}
+
+impl SubscriptedTerm {
+    /// Classifies the offsets of one place in written order.
+    fn of_offsets<'offset>(
+        offsets: impl IntoIterator<Item = (&'offset CheckedExpression, super::places::CapturedValue)>,
+    ) -> Option<Self> {
+        let mut term = Self::Represented;
+        for (offset, captured) in offsets {
+            if captured != super::places::CapturedValue::unknown() {
+                continue;
+            }
+            if !is_tracked_place_read(offset) {
+                return None;
+            }
+            term = Self::Unrepresented;
+        }
+        Some(term)
+    }
+}
+
+/// Whether `steps`, read from a value of type `start`, end by selecting a
+/// readonly field [TYPE-2] whose type is one fragment integer [ENT-2].
+fn selects_readonly_fragment_field(
+    nominals: &[CheckedNominal],
+    start: CheckedType,
+    steps: &[CheckedPlaceStep],
+) -> bool {
+    let struct_field = |ty: CheckedType, field: u32| {
+        let CheckedType::Nominal(nominal) = ty else {
+            return None;
+        };
+        let CheckedNominalKind::Struct { fields } = &nominals.get(nominal.0 as usize)?.kind else {
+            return None;
+        };
+        fields.get(field as usize)
+    };
+    let Some((CheckedPlaceStep::Field(last), prefix)) = steps.split_last() else {
+        return false;
+    };
+    let mut ty = start;
+    for step in prefix {
+        ty = match step {
+            CheckedPlaceStep::Subscript(index) => index.element_type,
+            CheckedPlaceStep::Field(field) => match struct_field(ty, *field) {
+                Some(field) => field.ty,
+                None => return false,
+            },
+            CheckedPlaceStep::BoxReferent(nominal) => {
+                match nominals
+                    .get(nominal.0 as usize)
+                    .map(|nominal| &nominal.kind)
+                {
+                    Some(CheckedNominalKind::Box { referent, .. }) => *referent,
+                    _ => return false,
+                }
+            }
+        };
+    }
+    struct_field(ty, *last)
+        .is_some_and(|field| field.readonly && matches!(field.ty, CheckedType::Integer(_)))
+}
+
+/// Whether one checked offset reads an [ENT-2] clause (a) tracked place:
+/// a binding, possibly below field selections, `deref` wrappings and `Box`
+/// content, with no subscript.
+fn is_tracked_place_read(offset: &CheckedExpression) -> bool {
+    match offset {
+        CheckedExpression::Binding {
+            consume_root: false,
+            ..
+        }
+        | CheckedExpression::Project {
+            consume_root: false,
+            ..
+        }
+        | CheckedExpression::DerefAddressed { .. } => true,
+        CheckedExpression::BoxDeref { value, .. }
+        | CheckedExpression::ProjectValue { value, .. } => is_tracked_place_read(value),
+        _ => false,
     }
 }
 
@@ -2535,6 +2699,12 @@ pub(crate) struct CheckedFunction {
     pub(crate) declared_state_writes: Vec<CheckedStatePath>,
     /// Callable-boundary predicates in `requires_clause` source order.
     pub(crate) requirements: Vec<super::goal::CheckedRequirement>,
+    /// [ENT-2, FN-8] the clause (b) places each requirement forms, index-
+    /// aligned with `requirements`: its own, and those of every definition
+    /// whose expansion it is the first requirement to reach. Each is formed
+    /// at body entry in the state holding the requirements before it, where
+    /// its subscripts owe [OP-4]. A hypothetical premise set forms none.
+    pub(crate) requirement_places: Vec<Vec<CheckedExpression>>,
     /// Verified-relation surfaces in `ensures_clause` source order. H1
     /// constructs this metadata; the shared entailment flow proves every
     /// clause at every selected exit.
@@ -2584,6 +2754,9 @@ pub(crate) struct CheckedCallSeparation {
     /// the invalidating write, and diagnosed at this later use.
     pub(crate) reference_use: Option<CheckedReferencePreservationUse>,
     pub(crate) positions: Vec<CheckedCallSeparationPositions>,
+    /// The window a [`CheckedCallSeparationPositions::Live`] position
+    /// indexes: the place both paths reach above the divergence.
+    pub(crate) window: Option<super::places::ResolvedPlace>,
     /// The two substituted paths as the diagnostic renders them.
     pub(crate) left_spelling: String,
     pub(crate) right_spelling: String,
@@ -2600,6 +2773,10 @@ pub(crate) struct CheckedReferencePreservationUse {
 pub(crate) enum CheckedCallSeparationPositions {
     Indices(super::places::CapturedValue, super::places::CapturedValue),
     Ranges(super::places::CapturedRange, super::places::CapturedRange),
+    /// [WIN-2] an index beside the `next` or `free` part of the window it
+    /// indexes, which the pair's separation needs proved below that window's
+    /// length in the call's entry state.
+    Live(super::places::CapturedValue),
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

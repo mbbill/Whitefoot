@@ -217,6 +217,143 @@ fn main() -> status: ExitStatus pure {
     );
 }
 
+/// A client module of `pkg::records`, whose interface declares the readonly
+/// fields these offset tests read: a source readonly field is written only on
+/// a public field of an interface record, and it withholds writes only from
+/// the modules that do not declare it [TYPE-2, MOD-6].
+fn check_records_client(main: &[u8]) -> Result<(), crate::CompilationFailure> {
+    super::check_module_sources(
+        b"pkg::records: [];\npkg: [pkg::records];\n",
+        &[
+            (
+                "records/module.wfm",
+                b"public struct Entry {\n  public readonly width: u64;\n}\n\npublic struct Node {\n  public readonly count: u64;\n}\n"
+                    .as_slice(),
+            ),
+            ("module.wfm", b"\n".as_slice()),
+            ("main.wf", main),
+        ],
+    )
+}
+
+fn assert_unsupported_composite(result: Result<(), crate::CompilationFailure>) {
+    let failure = result.expect_err("an unrepresented offset stops the check");
+    assert_eq!(
+        failure.kind(),
+        crate::CompilationFailureKind::Unsupported,
+        "{failure}"
+    );
+    assert!(failure.to_string().contains("CompositeValues"), "{failure}");
+}
+
+/// [ENT-2] clause (b): a readonly field below a subscript is an endpoint term
+/// exactly when every offset in its place is itself a clause (a) or clause
+/// (c) term.
+///
+/// A bare binding offset is represented and admitted. An array-element offset
+/// is no term, so the place is no term and the endpoint is ENT-2's rejection.
+/// A tracked field place is an admitted offset that this compiler captures no
+/// value for, so the place is the compiler capability it is and never a
+/// source verdict [DIAG-1]; the conformance corpus cannot pin that, because a
+/// case declares the specification's verdict, which is acceptance.
+#[test]
+fn a_readonly_field_endpoint_follows_its_offset_forms() {
+    let program = |offset: &str| {
+        format!(
+            r#"alias Entry = pkg::records::Entry;
+
+struct Cursor {{
+  at: u64;
+}}
+
+fn probe(entries: Array<Entry, 4>, slots: Array<u64, 2>, i: u64) -> result: u64 pure contract {{
+  requires i < 4_u64;
+}} {{
+  let cursor = Cursor(at: 0_u64);
+  let seen = 0_u64;
+  for @items (c in 0_u64..entries[{offset}].width) {{
+    set seen = seen +wrap 1_u64;
+  }}
+  return seen;
+}}
+
+fn main() -> status: ExitStatus pure {{
+  return exit_status(code: 0_u8);
+}}
+"#
+        )
+    };
+    check_records_client(program("i").as_bytes()).expect("a bare binding offset is admitted");
+    let failure = check_records_client(program("slots[0_u64]").as_bytes())
+        .expect_err("an element offset is no term");
+    assert_eq!(failure.rule_id(), Some("ENT-2"), "{failure}");
+    assert!(
+        failure.to_string().contains("InvalidCountedEndpoint"),
+        "{failure}"
+    );
+    assert_unsupported_composite(check_records_client(program("cursor.at").as_bytes()));
+}
+
+/// [ENT-2, DIAG-1] an admitted offset the compiler cannot capture stops the
+/// read itself, in a body and in a contract clause alike, so no missing fact
+/// can later surface as a source rejection. A measure over such a place is
+/// the same capability.
+#[test]
+fn an_unrepresented_offset_is_unsupported_wherever_the_place_is_read() {
+    let body = br#"alias Entry = pkg::records::Entry;
+
+struct Cursor {
+  at: u64;
+}
+
+fn probe(entries: Array<Entry, 4>, cursor: Cursor) -> result: u64 pure contract {
+  requires cursor.at < 4_u64;
+} {
+  let width = entries[cursor.at].width;
+  return width;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_unsupported_composite(check_records_client(body));
+    let clause = br#"alias Node = pkg::records::Node;
+
+struct Cursor {
+  at: u64;
+}
+
+fn probe(nodes: &[Node], cursor: Cursor) -> result: u64 reads(nodes) contract {
+  requires cursor.at < deref(nodes).len;
+  requires deref(nodes)[cursor.at].count <= 8_u64;
+} {
+  return 0_u64;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_unsupported_composite(check_records_client(clause));
+    let measure = br#"struct Cursor {
+  at: u64;
+}
+
+fn probe(grid: Array<Slots<u8, 4>, 4>, cursor: Cursor) -> result: u64 pure contract {
+  requires cursor.at < 4_u64;
+} {
+  let width = grid[cursor.at].len;
+  return width;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    super::assert_unsupported(measure, crate::UnsupportedSemanticFeature::CompositeValues);
+}
+
 /// [OWN-11] a counted binder may be copied and may have a reference formed to
 /// it, but it is compiler-updated state: source may not write it [SET-1] and
 /// may not pass it to a callee whose row declares a write of it [EFF-1].

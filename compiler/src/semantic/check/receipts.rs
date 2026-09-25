@@ -451,6 +451,7 @@ fn analyzed_rendering(function: &CheckedFunction) -> String {
         result,
         declared_state_writes,
         requirements,
+        requirement_places,
         postconditions,
         body,
         reference_origins,
@@ -463,9 +464,9 @@ fn analyzed_rendering(function: &CheckedFunction) -> String {
     format!(
         "{formal_hypothesis:?}\n{id:?}\n{declaration:?}\n{module:?}\n{name:?}\n{symbol:?}\n\
          {function_actuals:?}\n{region_parameters:?}\n{parameters:?}\n{result_mode:?}\n\
-         {result:?}\n{declared_state_writes:?}\n{requirements:?}\n{postconditions:?}\n{body:?}\n\
-         {reference_origins:?}\n{body_disposition:?}\n{call_separations:?}\n\
-         {permission_separation_queries:?}"
+         {result:?}\n{declared_state_writes:?}\n{requirements:?}\n{requirement_places:?}\n\
+         {postconditions:?}\n{body:?}\n{reference_origins:?}\n{body_disposition:?}\n\
+         {call_separations:?}\n{permission_separation_queries:?}"
     )
 }
 
