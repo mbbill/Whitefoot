@@ -1081,14 +1081,24 @@ pub enum SemanticIssueKind {
         /// Exact repair required by EFF-1 for that condition.
         mechanical_fix: &'static str,
     },
+    /// A row carries `reads(p)` beside `writes(p)` for one path, which
+    /// EFF-1 never writes because `writes(p)` subsumes `reads(p)`. EFF-1
+    /// names no restructuring for it, so the rejection carries none.
+    SubsumedEffectRead {
+        /// The redundant `reads` entry as the row writes it.
+        entry: String,
+    },
     /// The written effect row differs from syntactically exhibited effects.
     EffectMismatch {
-        /// The row the body exhibits, in EFF-1 canonical spelling. This is
-        /// exactly what the declaration must say.
+        /// A row EFF-2 admits for the body, in EFF-1 canonical spelling, that
+        /// no call refuses against itself [EFF-5]: the exhibited row with
+        /// every subsumed entry dropped and every pair of entries on one
+        /// parameter that a call always refuses merged into one write.
         expected_row: String,
         /// The row the declaration writes, in the same spelling.
         found_row: String,
-        /// Exhibited categories and paths the declaration does not carry.
+        /// The entries of `expected_row` that cover an exhibited access the
+        /// declaration does not cover.
         missing: Vec<String>,
         /// Declared categories and paths the body does not exhibit.
         extra: Vec<String>,

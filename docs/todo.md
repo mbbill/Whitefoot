@@ -969,12 +969,6 @@ rarely insert at the same place.
   functions reports only the first non-exhaustive `match` per run. Either
   every ERR-2 site of one enum is listed in a run, or ERR-2's sentence, which
   no other rule defines, is amended to what the toolchain provides.
-- **A float constant in a rendered goal prints its internal form.** An FN-8
-  `instantiated_goal` over a float constant renders it as
-  `Float { ty: F64, bits: 4607182418800017408 }` instead of its source
-  spelling `1.0_f64` (pinned in `driver::pinned_sentences` beside the integer
-  goals). The goal renderer should print the constant's canonical FORM-5
-  spelling, as it does for integers; update that pin with the fix.
 - **Validate the default diagnostic rendering.** Text by default is
   provisional. The [readable-diagnostics investigation](../research/investigations/readable-diagnostics/DESIGN.md#default-format-text-with-json-on-request)
   selected it on reading cost for an agent (the lean OP-4 and FN-8 records
@@ -996,6 +990,111 @@ rarely insert at the same place.
   cannot be split exactly from text. The JSON form carries each item as its
   own string and covers exact parsing; reopen only if an agent misreads such a
   list in practice.
+- **The entailment fragment keeps a second resolved-place renderer.** Checker
+  payloads (EFF-5, OP-12, REF-2) spell resolved places through
+  `render_resolved_place` in `compiler/src/semantic/check/expressions/places.rs`,
+  while ENT-6 residuals and goals use `render_place` in
+  `compiler/src/semantic/entailment/flow.rs`, which still renders a payload
+  step by its variant and field ordinals and a literal subscript offset
+  without its `_u64` suffix. One renderer shared through a small naming seam
+  would remove the drift that produced the `<binding:N>` leak; the cost is
+  touching every pinned residual that spells a subscript or payload. Validate
+  by rendering both families from one function with the pinned-sentence
+  corpus unchanged except for the corrected spellings. Deferred from the
+  source-spelling fix because no current residual reaches either form in the
+  pinned corpus; reopen when one does or when either renderer next changes.
+- **A computed call argument has no source spelling in an EFF-5 path.** An
+  index position substituted from an argument that is neither a literal, a
+  const nor a binding, such as `first: indices[0_u64]`, renders as `?`,
+  because the checker captures only the value's identity and not the
+  argument's text. Rendering the argument's source extent would name it
+  exactly; validate that the extent is available at every capture site and
+  that capture identity stays unchanged. Deferred because the separation
+  proof already needs a binding there and the rejection names the call;
+  reopen when a writer report shows the `?` blocking a repair.
+- **Proposal: disposition-specific restructurings for proof rejections.** A
+  `refuted` goal is false in the facts where it stands [ENT-4], so no added
+  requirement, invariant or proof step can establish it, yet the FN-8, OP-2
+  and OP-6 texts ask for exactly that for both dispositions, and an FN-9
+  rejection carries no restructuring at all. For an agent that applies
+  the repair literally, a refuted goal should name a change to what reaches
+  the site — the call's arguments, the operands, the returned value or the
+  state that reaches it — or a deliberate guard where rejection is intended
+  behavior, while an unproved goal keeps "establish the fact". This needs a
+  specification amendment of DIAG-1's FN-8 sentence and the FN-8, FN-9, OP-2
+  and OP-6 rejection text (with any FN-9 payload field it adds), followed by
+  the compiler texts, the pinned sentences and the unit tests that assert a
+  disposition's fix; a compiler-only change would diverge from the texts the
+  specification prescribes. Validate on one refuted and one unproved probe per
+  rule, such as `255_u8 + 1_u8`, `cvt::<u32, u8>(256_u32)`, a literal actual
+  outside a callee requirement, and an ensures relation false at its return.
+  Close when the amendment and its derived updates land, or the owner keeps
+  one restructuring per rule.
+- **Printed restructurings have drifted from the specification's texts.**
+  DIAG-1 includes a mechanical fix "exactly where the owning rule requires
+  one", and several rules prescribe its words, but the checker's strings on
+  main differ: FN-8 prescribes `establish the complete callee requirement
+  with one dominating branch or one preceding proved invariant before the
+  call` and prints "when the call is required to succeed, establish the entire
+  instantiated callee requirement with a verified requirement, ..."; OP-6's
+  printed repair likewise elaborates its prescribed one; and rules that
+  prescribe none print one anyway: EFF-1's row conditions carry a
+  `mechanical_fix` on main, and EFF-2's `EffectMismatch` prints "declare
+  exactly the row the body exhibits: ..." though EFF-2 requires no
+  restructuring. (EFF-1's subsumed-read rejection, which requires no
+  restructuring, carries none.) Two of these printed fixes, applied
+  literally, lead to a further rejection:
+  (a) EFF-2's "add every missing category and path and remove every extra
+  one" no longer describes `expected_row`, which merges entries a call
+  would refuse. A body that reads `stats` and writes `stats.count`,
+  declared `writes(stats.count)`, gets `expected_row: "writes(stats)"`,
+  `missing: ["writes(stats)"]` and `extra: []`; adding the missing entry
+  and removing nothing gives `writes(stats), writes(stats.count)`, which
+  EFF-1 and EFF-2 admit and EFF-5 refuses at every call. Declaring
+  `expected_row` itself is callable.
+  (b) EFF-1's category-order fix turns `writes(v), reads(v)` into
+  `reads(v), writes(v)`, which then meets the subsumed-read rejection, one
+  more compile round for a repair that should have deleted the read.
+  Audit every rejection in one pass, rule by rule, and either update the
+  specification's text or the compiler's; the criterion is that every
+  restructuring the specification prescribes equals the printed one, and a
+  printed fix exists only where a rule requires one or the specification is
+  amended to allow it, and never leads to a further rejection of the same
+  construct. Pinned sentences and unit tests that assert the texts change
+  with it.
+- **Question for the owner, raised during the source-spelling fix: should a
+  row whose entries on one parameter overlap be admitted?** [EFF-5] compares
+  every pair of a call's substituted entries, including two that one
+  argument supplies, so `reads(p), writes(p.x)`, `reads(p.x), writes(p)` and
+  `writes(p), writes(p.x)` are refused at every call, while [EFF-2]'s
+  covering relation admits each at the declaration and [EFF-1] forbids only
+  the same-path pair `reads(p), writes(p)`. The checker refuses that pair at
+  the declaration (EFF-1's "the pair is never written for one path"), and
+  EFF-2's suggested row merges every such pair into one write of their
+  common path, so a suggestion is always callable. The remaining
+  declarations still fail only at their first call, as the uncalled rows in
+  `ref2-pos-bystander-preservation.wf` show. Two specification directions
+  remove the dead end: EFF-1 or EFF-2 refusing any row with two overlapping
+  entries on one parameter where one writes, or EFF-5 exempting a pair that
+  one argument supplies unless the two entries differ only in index or range
+  positions. The first keeps EFF-5's per-call guarantee and makes those
+  conformance rows rejections; the second changes what a single-parameter
+  row promises about aliasing inside the callee. Close with the owner's
+  choice; validate it against the bystander cases and the container library
+  rows.
+- **A few payload strings still carry non-source forms.** The source-spelling
+  fix left three: the FN-9 `relation` field prints the normalized relation
+  with unsuffixed literals, such as `"w.value - 0 <= -1"` for
+  `ensures result < 0_T`; the goal-literal renderer in
+  `compiler/src/semantic/entailment/flow.rs` falls back to
+  `format!("{other:?}")` for a value it has no source form for, such as an
+  array or struct constant; and the SET-1 `InvalidSetTarget` payload prints
+  `root_class: format!("{class:?}")`, a resolver class name. Render each in
+  its source form, the relation through the same normalized-relation
+  renderer with suffixed literals; validate by the pinned-sentence corpus,
+  whose only change is the corrected spellings. Deferred because each needs
+  its own rendering decision and none blocked the reported repairs; close
+  when all three print source forms.
 
 - **A directory named through a symbolic link cannot be opened.**
   `open_directory` opens one component without following a link, which the

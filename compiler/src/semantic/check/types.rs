@@ -618,6 +618,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut previous = None;
         let mut declared = EffectSet::NONE;
         let mut written = [Vec::new(), Vec::new()];
+        // The `effect` node of each `reads` entry, so a later `writes` of the
+        // same path is refused where the redundant read is written.
+        let mut read_nodes = Vec::new();
         for effect in effects {
             let ordinal = if self.has_fixed(effect, FixedTerminal::Reads)? {
                 0_usize
@@ -654,8 +657,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                     );
                 }
+                // [EFF-1] "`writes(p)` subsumes `reads(p)`, so the pair is
+                // never written for one path"; the redundant `reads` entry is
+                // a second spelling of the read [FORM-1]. Canonical order puts
+                // the read first, so the pair is complete when its write
+                // arrives. EFF-1 names no restructuring, so none is carried.
+                if ordinal == 1
+                    && let Some((_, read)) =
+                        read_nodes.iter().find(|(read_path, _)| *read_path == path)
+                {
+                    return self.issue_node(
+                        SemanticRule::Eff1,
+                        *read,
+                        SemanticIssueKind::SubsumedEffectRead {
+                            entry: self.tree.source_spelling(*read)?,
+                        },
+                    );
+                }
                 written[ordinal].push(path.clone());
                 if ordinal == 0 {
+                    read_nodes.push((path.clone(), effect));
                     declared.add_read(path);
                 } else {
                     declared.add_write(path);
@@ -1299,7 +1320,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticIssueKind::InvalidConstValue,
             );
         };
-        let (constructor_name, declared_fields) = {
+        let declared_fields = {
             let nominal = self.nominal(id)?;
             let super::super::model::CheckedNominalKind::Struct { fields } = &nominal.kind else {
                 return self.issue_node(
@@ -1308,7 +1329,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     SemanticIssueKind::InvalidConstValue,
                 );
             };
-            (nominal.name.clone(), fields.clone())
+            fields.clone()
         };
         // [MOD-5, TYPE-2] a const construction names every field, so outside
         // the struct's declaring module each must be published and none may
@@ -1326,6 +1347,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 );
             }
         }
+        // The constructor is named as the source writes its type, with an
+        // instance's type and const arguments [GRAM-3].
+        let constructor_name = self.checked_type_name(expected)?;
         let (expected_template, expected_arguments) = self
             .source_nominal_instances
             .get(id.0 as usize)

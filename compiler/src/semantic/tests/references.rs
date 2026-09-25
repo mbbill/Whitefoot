@@ -556,6 +556,140 @@ fn main() -> status: ExitStatus pure {
     }
 }
 
+/// [EFF-5, FORM-2] the two substituted paths an EFF-5 rejection carries are
+/// spelled as the caller writes the places: a local by its name, the storage
+/// a reference parameter names under `deref`, and fields by their names —
+/// never a checker binding number or field ordinal.
+#[test]
+fn overlapping_call_effects_carry_source_spelled_paths() {
+    let callee = r#"struct Pair {
+  first: u8;
+  second: u8;
+}
+
+fn act(pair: &Pair) -> result: unit reads(pair.first), writes(pair) {
+  let old = deref(pair).first;
+  set deref(pair).second = old;
+  return unit;
+}
+
+"#;
+    for (caller, first, second) in [
+        (
+            "fn main() -> status: ExitStatus pure {\n  let pair = Pair(first: 1_u8, second: 2_u8);\n  act(pair: &pair);\n  return exit_status(code: 0_u8);\n}\n",
+            "pair.first",
+            "pair",
+        ),
+        (
+            "fn relay(holder: &Pair) -> result: unit writes(holder) {\n  act(pair: holder);\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+            "deref(holder).first",
+            "deref(holder)",
+        ),
+    ] {
+        let source = format!("{callee}{caller}");
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("expected an EFF-5 rejection, got {outcome:?}");
+            };
+            assert_eq!(issue.rule(), SemanticRule::Eff5);
+            let SemanticIssueKind::OverlappingCallEffects {
+                first: rendered_first,
+                second: rendered_second,
+                ..
+            } = issue.kind()
+            else {
+                panic!("unexpected kind {:?}", issue.kind());
+            };
+            assert_eq!(
+                (rendered_first.as_str(), rendered_second.as_str()),
+                (first, second)
+            );
+        });
+    }
+}
+
+/// [EFF-5, REF-1] an index position in a substituted path spells the value
+/// its argument captured: here the two bindings the call passed.
+#[test]
+fn an_undischarged_call_separation_names_the_captured_indices() {
+    let source = br#"fn write_two(window: &Slots<u8, 2>, first: u64, second: u64) -> result: unit reads(window.len), writes(window[first]), writes(window[second]) {
+  let length = deref(window).len;
+  if first < length {
+    if second < length {
+      set deref(window)[first] = 1_u8;
+      set deref(window)[second] = 2_u8;
+    }
+  }
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  let window = slots_new::<u8, 2>();
+  place_back(window: &window, value: 7_u8);
+  let i = 0_u64;
+  let j = 0_u64;
+  write_two(window: &window, first: i, second: j);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("expected an EFF-5 rejection, got {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Eff5);
+        let SemanticIssueKind::UndischargedCallSeparation { residual, .. } = issue.kind() else {
+            panic!("unexpected kind {:?}", issue.kind());
+        };
+        assert_eq!(
+            residual,
+            "window[i] and window[j] require their captured indices to be distinct"
+        );
+    });
+}
+
+/// [EFF-5, REF-4] a range formed at the call is the actual's path extended
+/// by its own range step, and that step spells the endpoints it captured:
+/// over a local array and, re-sliced, through a range parameter's `deref`.
+#[test]
+fn an_undischarged_call_separation_names_ranges_formed_at_the_call() {
+    let callee = r#"fn fill_two(first: &[u8], second: &[u8]) -> result: unit writes(first), writes(second) {
+  if 0_u64 < deref(first).len {
+    set deref(first)[0_u64] = 1_u8;
+  }
+  if 0_u64 < deref(second).len {
+    set deref(second)[0_u64] = 2_u8;
+  }
+  return unit;
+}
+
+"#;
+    for (caller, residual) in [
+        (
+            "fn main() -> status: ExitStatus pure {\n  let values = array_filled::<u8, 4>(value: 0_u8);\n  let lo = 1_u64;\n  let hi = 3_u64;\n  fill_two(first: &values[0_u64..2_u64], second: &values[lo..hi]);\n  return exit_status(code: 0_u8);\n}\n",
+            "values[0_u64..2_u64] and values[lo..hi] select different storage (one ends before the other starts, or one is empty)",
+        ),
+        (
+            "fn relay(part: &[u8]) -> result: unit writes(part) {\n  if 2_u64 <= deref(part).len {\n    fill_two(first: &deref(part)[0_u64..2_u64], second: &deref(part)[1_u64..2_u64]);\n  }\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+            "deref(part)[0_u64..2_u64] and deref(part)[1_u64..2_u64] select different storage (one ends before the other starts, or one is empty)",
+        ),
+    ] {
+        let source = format!("{callee}{caller}");
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("expected an EFF-5 rejection, got {outcome:?}");
+            };
+            assert_eq!(issue.rule(), SemanticRule::Eff5);
+            let SemanticIssueKind::UndischargedCallSeparation {
+                residual: rendered, ..
+            } = issue.kind()
+            else {
+                panic!("unexpected kind {:?}", issue.kind());
+            };
+            assert_eq!(rendered, residual);
+        });
+    }
+}
+
 /// [EFF-5] substitutes the scalar values of index actuals, not the storage
 /// paths from which those values were read. Distinct array elements can both
 /// contain zero and therefore select the same written window element.
