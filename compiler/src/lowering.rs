@@ -9,7 +9,7 @@
 use crate::semantic::{
     CheckedBooleanOperation, CheckedConversionMode, CheckedElement, CheckedEnumType,
     CheckedFloatOperation, CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude,
-    CheckedNumericType, CheckedProgram, CheckedTargetDomainObligation, CheckedType,
+    CheckedNumericType, CheckedTargetDomainObligation, CheckedType,
 };
 
 mod operands;
@@ -1827,8 +1827,7 @@ impl IrFunction {
 }
 
 #[derive(Debug)]
-pub struct IrProgram<'classified, 'lexed, 'source> {
-    _checked: CheckedProgram<'classified, 'lexed, 'source>,
+pub struct IrProgram {
     nominals: Vec<IrNominal>,
     elements: Vec<IrType>,
     constants: Vec<IrGlobalConstant>,
@@ -1841,7 +1840,7 @@ pub struct IrProgram<'classified, 'lexed, 'source> {
     loop_candidate_constructions: usize,
 }
 
-impl IrProgram<'_, '_, '_> {
+impl IrProgram {
     /// How a compute-actualizing lowering fixes the recursion budget, or
     /// `None` where this lowering actualizes no compute at all. Selects
     /// emitted machine code; never an acceptance bound.

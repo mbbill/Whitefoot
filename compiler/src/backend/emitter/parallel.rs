@@ -237,7 +237,7 @@ pub(crate) fn sequential_clone_symbol(name: &str) -> String {
 /// Empty when no hand-out is reachable from any definition, including every
 /// default compilation: the default build carries no overlap group at all, so
 /// there is one world and this changes nothing about it.
-pub(crate) fn sequential_clone_set(program: &IrProgram<'_, '_, '_>) -> HashSet<u32> {
+pub(crate) fn sequential_clone_set(program: &IrProgram) -> HashSet<u32> {
     let functions = program.functions();
     let mut callees: Vec<Vec<u32>> = vec![Vec::new(); functions.len()];
     let mut hands_out = Vec::with_capacity(functions.len());

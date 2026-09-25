@@ -330,7 +330,7 @@ impl TargetFramePlan {
 /// field list is the sole input from which the emitter may form that frame.
 pub(super) fn plan_target_frame(
     target: TargetLayout,
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     slots: &[TargetFrameSlot],
 ) -> Result<TargetFramePlan, TargetLayoutFailure> {
     let mut layouts = LayoutComputer::new(target, program.nominals(), program.elements());
@@ -392,7 +392,7 @@ pub(super) fn plan_target_frame(
 /// not a source-type or optional optimizer-fact approximation.
 pub(super) fn element_has_zero_stride(
     target: TargetLayout,
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     element: IrType,
 ) -> Result<bool, TargetLayoutFailure> {
     let mut layouts = LayoutComputer::new(target, program.nominals(), program.elements());
@@ -401,7 +401,7 @@ pub(super) fn element_has_zero_stride(
 
 pub(super) fn validate_static_storage(
     target: TargetLayout,
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     ty: &TargetStorageType,
 ) -> Result<TargetAggregateLayout, TargetLayoutFailure> {
     let mut layouts = LayoutComputer::new(target, program.nominals(), program.elements());
@@ -503,7 +503,7 @@ pub(crate) fn parallel_lane_frame_layout(
 
 pub(super) fn validate_program(
     target: TargetLayout,
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
 ) -> Result<(), TargetLayoutFailure> {
     let mut layouts = LayoutComputer::new(target, program.nominals(), program.elements());
 
@@ -534,7 +534,7 @@ pub(super) fn validate_program(
 
 fn validate_function(
     layouts: &mut LayoutComputer<'_>,
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     function: &IrFunction,
 ) -> Result<(), TargetLayoutFailure> {
     layouts
@@ -580,7 +580,7 @@ fn validate_function(
 /// the accepted OP-9 upper bound stays on the call whose proof established it.
 fn validate_source_call_allocations(
     layouts: &mut LayoutComputer<'_>,
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     function: &IrFunction,
     integer_upper_bounds: &HashMap<IrValueId, u64>,
 ) -> Result<(), TargetLayoutFailure> {
@@ -871,7 +871,7 @@ const fn element_count_max(byte_maximum: u64, stride: u64) -> u64 {
 
 fn validate_target_obligation(
     layouts: &mut LayoutComputer<'_>,
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     function: &IrFunction,
     integer_upper_bounds: &HashMap<IrValueId, u64>,
     result_type: IrType,

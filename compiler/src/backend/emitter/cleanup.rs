@@ -20,7 +20,7 @@ use super::{
 /// `wf_resource_abort` — the worklist allocated, and an allocation on the
 /// release path is a runtime trap the writer never wrote.
 pub(super) fn emit_resource_drop_helpers(
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     target: TargetLayout,
 ) -> Result<String, BackendFailure> {
     let mut output = String::new();
@@ -63,7 +63,7 @@ pub(super) fn emit_resource_drop_helpers(
 /// This helper visits elements only. A Box owner releases its allocation after
 /// the walk; an inline array or window has no separate backing action.
 fn emit_run_drop_helper(
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     target: TargetLayout,
     output: &mut String,
     ty: IrType,
@@ -184,7 +184,7 @@ fn emit_run_drop_helper(
 /// Every full array or run whose live elements derive release work.
 /// The complete type graph includes arbitrary nested arrays, runs, and cycles;
 /// its deterministic inventory fixes helper identities without a depth cap.
-fn cleanup_run_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, BackendFailure> {
+fn cleanup_run_types(program: &IrProgram) -> Result<Vec<IrType>, BackendFailure> {
     let mut needed = Vec::new();
     for ty in program_types(program)? {
         let (IrType::Array { element, .. }
@@ -204,10 +204,7 @@ fn cleanup_run_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, Bac
 /// One run type's release helper, named by the digest of the type's stable
 /// spelling, so the helper and every call of it keep their text when other
 /// types come and go [MOD-8].
-fn run_drop_helper_symbol(
-    program: &IrProgram<'_, '_, '_>,
-    ty: IrType,
-) -> Result<String, BackendFailure> {
+fn run_drop_helper_symbol(program: &IrProgram, ty: IrType) -> Result<String, BackendFailure> {
     use core::fmt::Write as _;
     let digest = crate::spec::sha256::digest(stable_type_spelling(program, ty)?.as_bytes());
     let mut symbol = "wf.drop.run.".to_owned();
@@ -219,10 +216,7 @@ fn run_drop_helper_symbol(
 
 /// One type's spelling by its structure and the stable link names of the
 /// nominals it holds.
-fn stable_type_spelling(
-    program: &IrProgram<'_, '_, '_>,
-    ty: IrType,
-) -> Result<String, BackendFailure> {
+fn stable_type_spelling(program: &IrProgram, ty: IrType) -> Result<String, BackendFailure> {
     let element = |element| {
         program
             .element(element)
@@ -267,10 +261,7 @@ fn stable_type_spelling(
 
 /// The helper one run type's release walk is emitted as, when its window holds
 /// values that derive a release action.
-fn run_drop_helper(
-    program: &IrProgram<'_, '_, '_>,
-    ty: IrType,
-) -> Result<Option<String>, BackendFailure> {
+fn run_drop_helper(program: &IrProgram, ty: IrType) -> Result<Option<String>, BackendFailure> {
     if cleanup_run_types(program)?.contains(&ty) {
         run_drop_helper_symbol(program, ty).map(Some)
     } else {
@@ -284,9 +275,7 @@ fn run_drop_helper(
 /// descriptors or nominal references visit each exact type once. A nominal no
 /// emitted function or constant reaches gets no helper, so a module program
 /// entry's build names nothing its execution closure does not use [MOD-9].
-pub(super) fn program_types(
-    program: &IrProgram<'_, '_, '_>,
-) -> Result<Vec<IrType>, BackendFailure> {
+pub(super) fn program_types(program: &IrProgram) -> Result<Vec<IrType>, BackendFailure> {
     let reached = reachable_types(program, Vec::new())?
         .into_iter()
         .collect::<HashSet<_>>();
@@ -301,10 +290,7 @@ pub(super) fn program_types(
 
 /// The types reachable from `seeds` and then from the program's constants
 /// and functions, in discovery order.
-fn reachable_types(
-    program: &IrProgram<'_, '_, '_>,
-    seeds: Vec<IrType>,
-) -> Result<Vec<IrType>, BackendFailure> {
+fn reachable_types(program: &IrProgram, seeds: Vec<IrType>) -> Result<Vec<IrType>, BackendFailure> {
     let mut pending = seeds;
     for constant in program.constants() {
         pending.push(constant.ty());
@@ -362,9 +348,7 @@ fn reachable_types(
 /// Whether any type of this program is a run taken from a general store
 /// [PROV-1]. Such a run's backing release is a free, so the module declares
 /// the two allocator symbols even where nothing else allocates.
-pub(super) fn program_has_general_run(
-    program: &IrProgram<'_, '_, '_>,
-) -> Result<bool, BackendFailure> {
+pub(super) fn program_has_general_run(program: &IrProgram) -> Result<bool, BackendFailure> {
     Ok(program_types(program)?.into_iter().any(|ty| {
         matches!(
             ty,
@@ -374,7 +358,7 @@ pub(super) fn program_has_general_run(
 }
 
 pub(super) fn type_requires_cleanup(
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     ty: IrType,
 ) -> Result<bool, BackendFailure> {
     // Whether a value of this type derives release work [STOR-3, PROV-6].
@@ -402,7 +386,7 @@ enum CleanupJob {
 }
 
 pub(super) fn emit_value_cleanup(
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     output: &mut String,
     temporary: &mut u32,
     ty: IrType,
@@ -417,7 +401,7 @@ pub(super) fn emit_value_cleanup(
 }
 
 fn emit_cleanup_jobs(
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     output: &mut String,
     temporary: &mut u32,
     mut jobs: Vec<CleanupJob>,
@@ -586,7 +570,7 @@ fn next_temporary(counter: &mut u32) -> Result<String, BackendFailure> {
 /// The body of one enum's drop: the tag switch and each variant's field
 /// cleanup, from the entry label through the closing `ret`.
 fn emit_enum_cleanup_body(
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     output: &mut String,
     variants: &[IrVariant],
     ty: IrType,

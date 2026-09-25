@@ -214,12 +214,7 @@ fn main() -> status: ExitStatus pure {
     });
 }
 
-fn with_ir<ResultValue>(
-    source: &[u8],
-    run: impl for<'classified, 'lexed, 'source> FnOnce(
-        &IrProgram<'classified, 'lexed, 'source>,
-    ) -> ResultValue,
-) -> ResultValue {
+fn with_ir<ResultValue>(source: &[u8], run: impl FnOnce(&IrProgram) -> ResultValue) -> ResultValue {
     with_ir_mode(source, OverlapLowering::Off, run)
 }
 
@@ -597,9 +592,7 @@ fn aggregate_loop_frames_fit_the_selected_target_before_outlining() {
 fn with_ir_mode<ResultValue>(
     source: &[u8],
     overlap: OverlapLowering,
-    run: impl for<'classified, 'lexed, 'source> FnOnce(
-        &IrProgram<'classified, 'lexed, 'source>,
-    ) -> ResultValue,
+    run: impl FnOnce(&IrProgram) -> ResultValue,
 ) -> ResultValue {
     with_checked(source, |checked| {
         let ir = lower_checked(checked, overlap).expect("checked system program must lower");
@@ -811,7 +804,7 @@ fn main() -> status: ExitStatus pure {
 }
 
 fn source_call<'program>(
-    program: &'program IrProgram<'_, '_, '_>,
+    program: &'program IrProgram,
     caller: &str,
     callee: &str,
 ) -> (&'program IrSourceCall, &'program [IrValueId]) {
@@ -826,10 +819,7 @@ fn source_call<'program>(
         .expect("the source call must have retained use metadata")
 }
 
-fn function<'program>(
-    program: &'program IrProgram<'_, '_, '_>,
-    name: &str,
-) -> &'program IrFunction {
+fn function<'program>(program: &'program IrProgram, name: &str) -> &'program IrFunction {
     program
         .functions()
         .iter()
@@ -1740,7 +1730,7 @@ fn byte_walk_source(middle: &str, step: &str) -> Vec<u8> {
 
 const NEUTRAL_MIDDLE: &str = "    let newline = byte == 10_u8;\n    if newline {\n      set seen = seen +wrap 1_u64;\n    }\n    let lead = byte == mark;\n    if lead {\n      set seen = seen +wrap 2_u64;\n    }\n";
 
-fn probe_needle_counts(program: &IrProgram<'_, '_, '_>) -> Vec<usize> {
+fn probe_needle_counts(program: &IrProgram) -> Vec<usize> {
     program
         .functions()
         .iter()

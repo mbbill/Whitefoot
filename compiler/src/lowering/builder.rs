@@ -33,7 +33,7 @@ use storage::collect_addressed_bindings;
 pub fn lower_checked<'classified, 'lexed, 'source>(
     checked: CheckedProgram<'classified, 'lexed, 'source>,
     overlap: OverlapLowering,
-) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
+) -> Result<IrProgram, LoweringFailure> {
     lower_checked_with_layout(checked, overlap, TargetLayout::host()?)
 }
 
@@ -44,7 +44,7 @@ pub(crate) fn lower_checked_with_layout<'classified, 'lexed, 'source>(
     checked: CheckedProgram<'classified, 'lexed, 'source>,
     overlap: OverlapLowering,
     target: TargetLayout,
-) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
+) -> Result<IrProgram, LoweringFailure> {
     lower_checked_from(checked, overlap, target, None)
 }
 
@@ -57,7 +57,7 @@ pub(crate) fn lower_checked_from<'classified, 'lexed, 'source>(
     overlap: OverlapLowering,
     target: TargetLayout,
     roots: Option<&[crate::semantic::FunctionId]>,
-) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
+) -> Result<IrProgram, LoweringFailure> {
     let sequential_compute_refusal = matches!(
         overlap,
         OverlapLowering::OnWithSequentialRefusal { .. }
@@ -201,7 +201,6 @@ pub(crate) fn lower_checked_from<'classified, 'lexed, 'source>(
         scalar_grain::prune(&mut functions, limit, &mut actualization);
     }
     Ok(IrProgram {
-        _checked: checked,
         nominals,
         elements,
         constants,

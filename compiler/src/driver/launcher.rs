@@ -10,10 +10,7 @@ use crate::backend::abi::{FunctionAbi, ParameterAbi, ResultAbi};
 use crate::backend::emitter::{llvm_type, source_symbol};
 use crate::{BackendFailure, IrNominalKind, IrProgram, IrSourceMode, IrType};
 
-pub(crate) fn render(
-    program: &IrProgram<'_, '_, '_>,
-    selected: &str,
-) -> Result<String, BackendFailure> {
+pub(crate) fn render(program: &IrProgram, selected: &str) -> Result<String, BackendFailure> {
     let Some(main) = program
         .functions()
         .iter()
