@@ -159,7 +159,7 @@ fn main() -> status: ExitStatus pure {
             detail.disposition,
             crate::CallRequirementDisposition::Refuted
         );
-        assert!(!detail.requires_clause.components().is_empty());
+        assert!(!detail.requires_clause.path().components().is_empty());
     });
 }
 
