@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-25 Compare one argument's row entries only where positions decide their overlap
+
+Nodes: language/effects/call-site-check, language/effects, compiler/rejection-payloads
+
+Owner-approved: The owner approved PR #126's three amendments as recommended on 2026-09-25.
+
+Summary: Replace the call-site-check decision that a call rejects any pair with a write, whose comparison of every pair admitted a row reading a whole parameter and writing part of it at its declaration and refused it at every call, with the approved decision: a call compares every two entries that different arguments supply and every two entries one argument supplies whose overlap depends on position values, so `reads(p), writes(p.x)` is callable and kills only what its narrower write reaches; add its three rejected alternatives. Add the language/effects decision that a row lists no entry at or below another `writes` entry, refused at that entry and carrying the covering write, with its two rejected alternatives. Replace compiler/rejection-payloads' suggestion decision, whose merge could suggest a write wider than the body's (review item O2), with the exact suggestion, and replace its first two rejected alternatives. The amendments' sentences naming the replaced decisions are recorded here instead, and the call-site-check evidence link is corrected for its node location. The [one-argument rows investigation](../research/investigations/one-argument-rows/DESIGN.md) supplies the soundness argument and the probes; the settled wording is in kernel-spec v0.70 rules EFF-1, EFF-5, OWN-7 and OWN-9. The owner also ruled that a read at or below another read is refused; that revision of the language/effects decision is a new pending amendment. Remove the three accepted amendments. This ruling does not authorize a merge.
+
 ## 2026-09-25 Name source constructs in rejection payloads as written
 
 Nodes: compiler/rejection-payloads
