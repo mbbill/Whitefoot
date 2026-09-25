@@ -288,6 +288,43 @@ fn an_interface_redeclaration_is_rejected_with_the_cache_as_without_it() {
     }
 }
 
+/// [MOD-8] an interface record that declares nothing still enters a
+/// composition's acceptance by what it writes: an alias edit that breaks the
+/// record is rejected with the cache as without it.
+#[test]
+fn an_alias_edit_in_a_declaration_free_interface_is_rejected_with_the_cache_as_without_it() {
+    let directory = CacheDirectory::new("alias-only");
+    let cache = directory.open();
+    let graph: &[u8] = b"pkg::base: [];\npkg::user: [pkg::base];\npkg::names: [pkg::base];\npkg: [pkg::base, pkg::user, pkg::names];\n\nentry app = pkg::main;\n";
+    let records = |names: &'static [u8]| -> Vec<(&'static str, &'static [u8])> {
+        vec![
+            ("base/module.wfm", BASE_INTERFACE),
+            ("base/half.wf", BASE_BODY),
+            ("user/module.wfm", USER_INTERFACE),
+            ("user/use.wf", USER_BODY),
+            ("names/module.wfm", names),
+            ("module.wfm", ROOT_INTERFACE),
+            ("main.wf", ROOT_BODY),
+        ]
+    };
+    let app = |records: &[(&str, &[u8])]| {
+        verdicts(graph, records, None)
+            .into_iter()
+            .find(|(subject, _, _)| subject == "app")
+            .map(|(_, outcome, _)| outcome)
+            .expect("the entry's verdict")
+    };
+    let original = records(b"alias half = pkg::base::half;\n");
+    assert!(matches!(
+        app(&original),
+        super::CheckOutcome::Accepted { .. }
+    ));
+    recomputed(graph, &original, &cache);
+    let edited = records(b"alias half = pkg::base::missing;\n");
+    assert!(matches!(app(&edited), super::CheckOutcome::Rejected { .. }));
+    recomputed(graph, &edited, &cache);
+}
+
 /// [MOD-8] a verdict reads of another module's interface that it holds
 /// its judgments and the declarations its check reached, nothing more:
 /// a reworded `doc` string or a declaration no importer reaches recomputes
