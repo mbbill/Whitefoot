@@ -66,6 +66,17 @@ Read measures as readonly fields: `fixed.len`, `fixed.cap`, and, for a ring,
 `ring.head` [MSR-1, OP-15]. There is no `room` measure; write the needed
 relation over `len` and `cap`. `Array` has only `len`.
 
+A readonly integer field reached through subscripts is a term just as a
+measure is [ENT-2]. In an index-based tree, declare per-node structure such as
+`readonly count: u64;` and use `deref(nodes)[i].count` directly as a counted
+endpoint, in a `requires`, or as a `let` source equal to its copy. Mark a
+field readonly when only whole-element replacement should change it; an
+ordinary field below a subscript is no term, so copy it with `let` before
+relying on it. Replacing or exchanging the element, a window operation that
+moves elements, a call whose row writes the storage, and a write to the index
+binding each end the facts about it; bind a computed or field-valued index
+with `let` so the place's offset is a plain binding.
+
 Use `take_back`, `remove_at`, `insert_at`, `append`, `split_off`, `grow`,
 `place_front`, and `take_front` for their declared transformations [OP-10]. A
 source subscript always owes `index < run.len` [OP-4].

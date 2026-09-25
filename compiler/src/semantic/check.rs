@@ -2361,16 +2361,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // judgment below reaches once an operand fixes W. Every other generic
         // row, prelude or source, keeps its symbolic judgment.
         let unsupplied_window_row = self.has_unsupplied_window_type_parameter(signature)?;
-        let requirements = if let Some(node) = self
+        let (requirements, requirement_places) = if let Some(node) = self
             .tree
             .first_child_with(signature.node, Production::ContractBlock)?
             .filter(|_| !unsupplied_window_row)
         {
             let mut requires_bindings = parameter_bindings.clone();
-            self.check_requires(signature, node, &mut requires_bindings, &mut counters)?
-                .requirements
+            let checked =
+                self.check_requires(signature, node, &mut requires_bindings, &mut counters)?;
+            (checked.requirements, checked.places)
         } else {
-            Vec::new()
+            (Vec::new(), Vec::new())
         };
 
         let postcondition_selectors = if unsupplied_window_row {
@@ -2515,6 +2516,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // its own allocation here.
             allocates: exhibited.allocates,
             requirements,
+            requirement_places,
             postconditions,
             body: (!declaration_only).then_some(checked.statements),
             reference_origins: std::mem::take(&mut *self.reference_origins.borrow_mut()),

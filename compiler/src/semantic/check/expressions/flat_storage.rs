@@ -12,7 +12,7 @@ use super::super::super::model::{
     CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedMeasure, CheckedMode, CheckedNominalKind,
     CheckedPlaceStep, CheckedPlaceSubscript, CheckedRangeElementPlace, CheckedRangeRoot,
     CheckedSetTarget, CheckedTargetDomainObligation, CheckedType, IntegerType, MeasureCell,
-    MeasuredKind, NominalId,
+    MeasuredKind, NominalId, SubscriptedTerm,
 };
 use super::super::super::places::{
     CaptureId, CapturedTerm, CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace,
@@ -394,7 +394,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// [OP-15, MSR-1] one measure member read over a written place whose path
     /// carries a subscript, such as `rows[0_u64].len`.
     ///
-    /// [ENT-2] clause (b) admits a place formed with subscripts as well as
+    /// [MSR-1] admits a measure place formed with subscripts as well as
     /// field selections, so the measure is a term over the element the
     /// subscript selects rather than a field of it. The subscript inside the
     /// place is an ordinary [OP-4] occurrence and is discharged where the
@@ -612,11 +612,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     selected: true,
                 }),
         );
+        let expression = CheckedExpression::ContainerMeasure {
+            measure,
+            root: container.root,
+        };
+        self.refuse_unrepresented_term_place(&expression, use_node)?;
         Ok(TypedExpression {
-            expression: CheckedExpression::ContainerMeasure {
-                measure,
-                root: container.root,
-            },
+            expression,
             mode: CheckedMode::Own,
             reference: None,
             reference_value: false,
@@ -993,17 +995,45 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             place,
             selected: true,
         }));
+        let expression = CheckedExpression::ReadStorage {
+            carrier: self.tree.path(node)?.clone(),
+            root: place.root,
+        };
+        self.refuse_unrepresented_term_place(&expression, node)?;
         Ok(TypedExpression {
-            expression: CheckedExpression::ReadStorage {
-                carrier: self.tree.path(node)?.clone(),
-                root: place.root,
-            },
+            expression,
             mode: CheckedMode::Own,
             reference: None,
             reference_value: false,
             effects,
             accesses,
         })
+    }
+
+    /// [ENT-2, DIAG-1] a measure read or a read whose final step selects a
+    /// readonly field below a subscript is a clause (b) term when every
+    /// offset is a tracked place or a constant. This compiler captures only
+    /// literals, consts and bare bindings, so a tracked-place offset with
+    /// projections is a term it cannot represent. Reading the place anyway as
+    /// no term could turn the missing fact into a source rejection later, so
+    /// the read is reported as the compiler capability it is.
+    fn refuse_unrepresented_term_place(
+        &self,
+        expression: &CheckedExpression,
+        node: NodeId,
+    ) -> Result<(), CheckStop> {
+        let term = match expression {
+            CheckedExpression::ContainerMeasure { root, .. } => root.subscripted_term(),
+            CheckedExpression::ReadStorage { root, .. } => root.readonly_field_term(&self.nominals),
+            CheckedExpression::RangeIndex { place, .. } => {
+                place.readonly_field_term(&self.nominals)
+            }
+            _ => None,
+        };
+        if term == Some(SubscriptedTerm::Unrepresented) {
+            return self.unsupported(UnsupportedSemanticFeature::CompositeValues, node);
+        }
+        Ok(())
     }
 
     /// [SET-1] whether this subscript read is the read-out of an element
@@ -1270,6 +1300,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
         };
+        self.refuse_unrepresented_term_place(&expression, use_node)?;
         Ok(TypedExpression {
             expression,
             mode: CheckedMode::Own,
