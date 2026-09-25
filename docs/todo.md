@@ -933,16 +933,42 @@ rarely insert at the same place.
   trusted linked definition of an ordinary declaration [PRE-1, SCOPE-3], which
   the checker cannot inspect, and a C program cannot call Whitefoot code
   through a stated ABI. A real systems program needs both directions: calling
-  an existing C library and exporting a Whitefoot component. The
-  [C ABI capsule idea](ideas.md#safe-c-abi-capsules) sketches export through
-  opaque validated handles; import needs an explicit contract for ownership,
-  layout, callbacks, foreign threads and failure, and a statement of what the
-  compiler trusts. Validate on one real dependency in each direction, starting
-  with the capsule experiment's misuse tests (stale handles, double drop,
-  overlapping buffers, short outputs, allocation failure). This interacts with
-  the module design for separate compilation. Close when a specified boundary
-  and its conformance cases land, or the owner records why a narrower
-  boundary suffices.
+  an existing C library, and exporting a Whitefoot component, which the next
+  entry covers. Import needs an explicit contract for ownership, layout,
+  callbacks, foreign threads and failure, and a statement of what the
+  compiler trusts; a checked wrapper and a source-level replacement are the
+  alternatives to compare on one real dependency. This interacts with the
+  module design for separate compilation. Close when a specified import
+  boundary and its conformance cases land, or the owner records why a
+  narrower boundary suffices.
+- **Deliver a Whitefoot component as a safe C library.** The owner wants both
+  delivery forms studied (2026-09-25): a C, C++ or Rust program should use a
+  Whitefoot component the way programs use Wuffs's decoders, without taking
+  on Whitefoot's lifetime and alias rules.
+  (a) Emit C source for the component, as Wuffs does: portable to any C
+  toolchain and reviewable, but the emitted C must never reach C's undefined
+  behavior where Whitefoot's meaning is defined (signed overflow, strict
+  aliasing, oversized shifts, uninitialized reads), may carry a proved fact
+  only through a C construct with the same meaning (`restrict`, an assumption),
+  and puts the C compiler in the trusted base in place of LLVM.
+  (b) Emit an object or static library and a generated header through the
+  existing LLVM backend, with a C-ABI export shim kept apart from the
+  compiler's internal function ABI, which can change without notice.
+  Either way the exported surface is where Whitefoot's guarantees meet an
+  unchecked caller, so, as the
+  [C ABI capsule idea](ideas.md#safe-c-abi-capsules) sketches, boundary code
+  validates every argument before Whitefoot code receives it (requirements,
+  lengths, overlapping buffers, handle generations, ownership transitions,
+  the calling thread), and a violation returns an error value with no partial
+  mutation; nothing a C caller passes is trusted. Validate one component, such
+  as raw DEFLATE decoding or UTF-8 validation, through each route: the capsule
+  misuse tests (stale handles, double drop, overlapping buffers, short
+  outputs, allocation failure), a C test harness, a fuzzing run through the C
+  API, and throughput against the Whitefoot-native build, recording what each
+  boundary check costs. The exported interface builds on the module design.
+  Take it up after the current correctness fixes land; close when one route
+  ships with its boundary specified and tested, or the owner records why one
+  route suffices.
 - **The driver's clang lookup is a fixed path.** `clang_executable()` in
   `compiler/src/bin/whitefootc.rs` hard-codes `/usr/bin/clang` on Linux/macOS
   (`clang` on PATH on Windows), so a host whose clang lives only elsewhere — a versioned-only `clang-18`, a
