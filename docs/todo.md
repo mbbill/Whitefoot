@@ -70,6 +70,22 @@ rarely insert at the same place.
   Results or wider storage support makes this cost material. The language
   extensions below remain a separate question.
 
+- **Remove proof workarounds the checker already discharges.** The
+  [operation-fact corpus census](../research/investigations/automatic-operation-facts/DESIGN.md#22-corpus-census)
+  found 14 checked conversions with unreachable `Err` arms and 4 redundant
+  guards that the checker at `efe40194a` accepts without them: the four
+  `low_byte` helpers in `tests/programs/parallel/`, `io_complete_first_slice`,
+  `io_open_and_read`, `tcp_client`, three in `telemetry_packet`, four in the
+  deflate decoders, deflate's `code_count <= 19`, `distance_count <= 32` and
+  `bounded < 19` guards, and wfgrep's `digit < glyphs` guard;
+  `io_propagate_open`, `io_vacant_read` and `io_write_prefix` have the same
+  shape. Most conversions are the mechanical translation of the former
+  Result-returning `cvt`. They keep error arms that can never run and leave
+  the proved conversion unused in those programs. Replace each with the bare
+  form or drop the guard, and rerun the affected program tests. Independent of the ruling on the automatic-fact
+  menu; do it with that implementation or separately, and remove this item
+  when done.
+
 ## Checker precision and proof cost
 
 - **Some ENT-3 sources read no measure operand.** S7's constant-offset,
@@ -1058,13 +1074,14 @@ each is resolved by a discussion and a tree change.
 - **The automatic-fact menu is a leftover.** [ENT-3] admits a narrow and
   asymmetric set of arithmetic idioms as automatic facts, each added for one
   proof pattern, with no general criterion and no counterpart for rows it
-  omits, such as a lower bound from `ior`. The
+  omits, such as a lower bound from `ior`. Even the division row cannot bound
+  `cell / 8` below 8 from `cell < 64`, because `AUTO` never adds its listed
+  image `8*row <= cell` to an L0 bound. The
   [investigation](../research/investigations/automatic-operation-facts/DESIGN.md)
   recommends one S7 table of result intervals with order and offset
   relations, computed from the operands' closed intervals, and awaits the
-  owner's ruling. Its corpus census also found 18 proof workarounds (checked
-  conversions with unreachable errors and redundant guards) that the current
-  checker already discharges; removing them does not depend on the ruling.
+  owner's ruling. Reopen with that ruling; remove when the selected rule
+  lands or the owner declines a change.
 - **The two-premise cutoff of automatic affine derivation.** [ENT-6] tries
   zero, one, and two premises and no more without a written certificate. Why
   the line sits at two, against one or three, is not remembered and needs a

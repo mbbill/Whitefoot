@@ -533,6 +533,13 @@ contract clauses keep their goal trees; writers bind first, as they already
 must. An operand that is not a term (a subscripted read, for instance)
 contributes its type range, and S9 remains the source for const-array reads.
 
+An admitted term includes a measure term. The current S7 rows read their
+operands through a reader that omits measure terms, so
+`let r = x % deref(src).len;` establishes nothing although the specification
+admits the measure (the todo item "Some ENT-3 sources read no measure
+operand"). The implementation must read every S7 operand with one complete
+ENT-2 term reader, which repairs that item for the replaced rows.
+
 ### 3.5 Interaction with the fact system
 
 - **[ENT-4].** Results are ordinary difference bounds; no closure rule is
@@ -761,6 +768,9 @@ not). Additional cases:
   uses `[0, K - 1]`;
 - support: a result interval survives an operand write; an order relation dies
   with its operand; a commit publishes through its commit value;
+- measure operands: each relation row with a direct `deref(p).len` operand and
+  with the same length bound first, accepted alike, and a write that kills the
+  measure;
 - checked rows: the `Ok` payload of `start +checked count` carries the offset
   relation, the `Err` arm nothing;
 - the single-value case (`irotl(1_u32, 3_u32)` indexing a nine-slot table),
@@ -793,10 +803,15 @@ the summed median over the program bundles rises by at most 10%; no bundle
 rises by both more than 25% and more than 50 ms; the checking-cost fixtures
 rise by at most 10%; every unchanged source emits byte-identical LLVM; and
 every `--par-ledger` difference is explained. Temporary counters report the
-S7 facts established, closure reads at bindings and middle terms per closure.
-On failure, attribute the cost, apply the section 3.6 mitigations and
-remeasure; if it still fails, return the measured tradeoff between D and the
-static-interval fallback K to the owner.
+S7 facts established, closure reads at bindings and middle terms per closure,
+and the checking time is split into formation, automatic derivation,
+certificate checking and fact propagation before any cost is attributed.
+The predicted cause of a regression is fact propagation at operation
+bindings; its falsifier is a same-source variant of the candidate that reads
+only static operand intervals, which must remove most of the regression if
+the prediction holds. On failure, attribute the cost, apply the section 3.6
+mitigations and remeasure; if it still fails, return the measured tradeoff
+between D and the static-interval fallback K to the owner.
 
 **Gate.** `make check` on the exact revision, including the full conformance
 adapter and every program test.
@@ -818,7 +833,7 @@ adapter and every program test.
 7. Decide whether the 18 already-unnecessary workarounds are removed with the
    implementation or separately.
 
-## Design suitability
+## Concerns and opportunities
 
 Within the assessed scope (ENT-3's operation-derived sources, their ENT-4,
 ENT-5, ENT-6, PRF-1 and DIAG-2 consumers, and the corpus and probes above),
@@ -829,10 +844,9 @@ remain and are addressed by the plan rather than assumed away: the checking
 cost of about 2.4 times more binding-time closure reads is unmeasured; a
 stronger automatic set can make an existing certificate redundant under
 PRF-1, which only a mechanical recheck settles; and the table itself joins
-the trusted base, so its arithmetic needs the enumerative soundness tests. An
-opportunity outside this change: S9 could read the index interval and bound
-an element read by the entries the index can reach; no program needs it, so
-it is not proposed.
+the trusted base, so its arithmetic needs the enumerative soundness tests.
+One opportunity is declined: S9 could read the index interval and bound an
+element read by the entries the index can reach, but no program needs it.
 
 ## Reproduction
 
