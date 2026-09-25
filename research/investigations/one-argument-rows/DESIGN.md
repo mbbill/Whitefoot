@@ -114,6 +114,11 @@ state one access twice, keeping one spelling per row [FORM-1].
 - compiler/backend-facts relies on "ordinary EFF-5 call-site disjointness
   where the target contract needs it"; per-parameter `noalias` needs only the
   cross-argument pairs, which EFF-5 still compares, so the decision holds.
+- design/language/surface-form/borrow-lexicon and
+  design/language/system-interface/handle-factory derive exclusivity between
+  a call's arguments, and between a factory and competing access, from the
+  pairwise call check; both concern pairs from different arguments, which
+  are still compared, so both stand.
 - The [range-reference facts investigation](../range-reference-facts/DESIGN.md#the-proved-fact)
   summarizes EFF-5 as rejecting any overlapping pair; it is dated evidence,
   and its `noalias` conclusion depends only on cross-argument disjointness.

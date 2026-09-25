@@ -969,18 +969,6 @@ rarely insert at the same place.
   amended to allow it, and never leads to a further rejection of the same
   construct. Pinned sentences and unit tests that assert the texts change
   with it.
-- **Question for the owner: should a row refuse a read below another
-  read?** [EFF-1] refuses an entry at or below another `writes` entry of its
-  row, but not a `reads` entry at or below another `reads` entry, so a body
-  that reads all of `stats` and its `count` admits both `reads(stats)` and
-  `reads(stats), reads(stats.count)`: two rows for one body, where [FORM-1]
-  asks for one spelling. Read pairs are never compared at a call and kill
-  nothing [EFF-5, CALL-1], so the redundancy costs callers nothing, and
-  EFF-2's suggested row already omits the covered read. Extending the EFF-1
-  subsumption to reads makes every row canonical; validate it by the rows it
-  would newly refuse in the conformance corpus and maintained programs.
-  Deferred because the owner's ruling on one-argument rows covered only
-  entries below a written path; close when the owner rules on reads.
 - **A few payload strings still carry non-source forms.** The source-spelling
   fix left three: the FN-9 `relation` field prints the normalized relation
   with unsuffixed literals, such as `"w.value - 0 <= -1"` for
@@ -1016,6 +1004,19 @@ rarely insert at the same place.
   the bounds. Either report each bound or collect through growable storage as
   `wfgrep.wf` now does; reopen when the program is pointed at a larger tree or
   its constant-capacity form stops being the point of the case.
+
+- **Question for the owner: should a row refuse a read below another
+  read?** [EFF-1] refuses an entry at or below another `writes` entry of its
+  row, but not a `reads` entry at or below another `reads` entry, so a body
+  that reads all of `stats` and its `count` admits both `reads(stats)` and
+  `reads(stats), reads(stats.count)`: two rows for one body, where [FORM-1]
+  asks for one spelling. Read pairs are never compared at a call and kill
+  nothing [EFF-5, CALL-1], so the redundancy costs callers nothing, and
+  EFF-2's suggested row already omits the covered read. Extending the EFF-1
+  subsumption to reads makes every row canonical; validate it by the rows it
+  would newly refuse in the conformance corpus and maintained programs.
+  Deferred because the owner's ruling on one-argument rows covered only
+  entries below a written path; close when the owner rules on reads.
 
 ## Code structure
 
