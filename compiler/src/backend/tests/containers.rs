@@ -230,7 +230,7 @@ fn transfer(values: &Slots<Row, 4>, index: u64, seen: &u64) -> result: unit writ
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = slots_new::<Row, 4>();
   for @fill (
     index in 0_u64..4_u64,
@@ -246,26 +246,26 @@ fn main() -> status: ExitStatus pure {
   let seen = 0_u64;
   transfer(values: &values, index: 0_u64, seen: &seen);
   if seen != 320_u64 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
   transfer(values: &values, index: 1_u64, seen: &seen);
   if seen != 960_u64 {
-    return exit_status(code: 2_u8);
+    return std::process::exit_status(code: 2_u8);
   }
   if values[0_u64].words[0_u64] != 40_u64 {
-    return exit_status(code: 3_u8);
+    return std::process::exit_status(code: 3_u8);
   }
   if values[1_u64].words[31_u64] != 30_u64 {
-    return exit_status(code: 4_u8);
+    return std::process::exit_status(code: 4_u8);
   }
   let next = take_back(window: &values);
   accept(seen: &seen, value: move next);
   let last = take_back(window: &values);
   accept(seen: &seen, value: move last);
   if seen != 3200_u64 {
-    return exit_status(code: 5_u8);
+    return std::process::exit_status(code: 5_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let module = emit(source);

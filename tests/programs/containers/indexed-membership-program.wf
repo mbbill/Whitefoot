@@ -1,3 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 interface IndexedPayload<T> {
   fn make(serial: u64) -> value: T pure;
   fn read(value: &T) -> serial: u64 reads(value);

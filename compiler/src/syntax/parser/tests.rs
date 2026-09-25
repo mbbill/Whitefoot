@@ -726,7 +726,7 @@ fn main() -> result: unit pure {}
     let ParseOutcome::Complete(parsed) = outcome else {
         panic!("full fixture must parse: {outcome:?}");
     };
-    let graph = b"pkg::library: [];\npkg: [pkg::library];\n\nentry kernel = pkg::start {\n  no_heap;\n}\n\nentry tool = pkg::library::run;\n";
+    let graph = b"pkg::library: [];\npkg: [pkg::library, std::process, std::text];\n\nentry kernel = pkg::start {\n  no_heap;\n}\n\nentry tool = pkg::library::run;\n";
     let graph_inputs = [SourceInput::new("modules.wfg", graph)];
     let Ok(graph_bundle) = SourceBundle::with_limits(&graph_inputs, SOURCE_LIMITS) else {
         panic!("the graph fixture forms one source record");
@@ -789,7 +789,7 @@ fn main() -> result: unit pure {}
 }
 
 const ORDINARY_INPUTS_ENTRY: &[u8] =
-    b"fn main(inputs: Inputs) -> status: ExitStatus pure {\n  return unit;\n}\n";
+    b"fn main(inputs: std::process::Inputs) -> status: std::process::ExitStatus pure {\n  return unit;\n}\n";
 
 const EXTERNAL_EFFECT_ROW: &[u8] = b"fn probe() -> result: unit external {\n  return unit;\n}\n";
 
@@ -1219,8 +1219,8 @@ fn issue_bytes(source: &'static [u8], issue: super::SyntaxIssue) -> &'static [u8
 #[test]
 fn retired_entry_kind_and_input_labels_are_not_grammar() {
     for source in [
-        b"command fn main() -> status: ExitStatus pure {\n  return unit;\n}\n".as_slice(),
-        b"fn main(command.args as args: Args) -> status: ExitStatus pure {\n  return unit;\n}\n",
+        b"command fn main() -> status: std::process::ExitStatus pure {\n  return unit;\n}\n".as_slice(),
+        b"fn main(command.args as args: std::text::Args) -> status: std::process::ExitStatus pure {\n  return unit;\n}\n",
     ] {
         let outcome = parse_active("retired-entry.wf", source);
         assert!(
@@ -1234,7 +1234,7 @@ fn retired_entry_kind_and_input_labels_are_not_grammar() {
 fn declaration_and_parameter_optionals_report_their_complete_expected_sets() {
     // An ordinary parameter name must be followed by its colon.
     let unresolved_param =
-        b"fn main(args own Args) -> status: ExitStatus pure {\n  return unit;\n}\n".as_slice();
+        b"fn main(args own std::text::Args) -> status: std::process::ExitStatus pure {\n  return unit;\n}\n".as_slice();
     let outcome = parse_active("param.wf", unresolved_param);
     let ParseOutcome::SourceIssue(issue) = outcome else {
         panic!("an IDENT continuing neither param arm must reject: {outcome:?}");

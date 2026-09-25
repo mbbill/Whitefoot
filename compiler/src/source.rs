@@ -687,7 +687,30 @@ impl SourceBundle {
     /// At least one caller-provided source record is required by PROG-2;
     /// compiler-owned prelude records do not supply that source identity.
     /// Source-only transport tooling can continue to use `with_limits`.
+    ///
+    /// A bundle whose records name standard library modules also carries
+    /// those modules' records and forms the root module followed by the
+    /// library's modules, the root module naming every one of them [PROG-2,
+    /// MOD-10].
     pub fn with_prelude(
+        inputs: &[SourceInput<'_>],
+        limits: SourceLimits,
+    ) -> Result<Self, SourceBundleError> {
+        if inputs.is_empty() {
+            return Err(SourceBundleError::EmptySourceSequence);
+        }
+        match crate::library::bundle_part(inputs) {
+            Some((records, modules)) => {
+                let mut bundle = Self::with_prelude_records(&records, limits)?;
+                bundle.modules = modules;
+                Ok(bundle)
+            }
+            None => Self::with_prelude_records(inputs, limits),
+        }
+    }
+
+    /// `inputs` followed by the PRE-1 records, without a library part.
+    fn with_prelude_records(
         inputs: &[SourceInput<'_>],
         limits: SourceLimits,
     ) -> Result<Self, SourceBundleError> {
@@ -879,30 +902,9 @@ impl SourceBundle {
         {
             return Err(SourceBundleError::UnknownModule);
         }
-        let mut bundle = Self::with_prelude(inputs, limits)?;
+        let mut bundle = Self::with_prelude_records(inputs, limits)?;
         bundle.modules = modules;
         bundle.module_program = true;
-        Ok(bundle)
-    }
-
-    /// Builds a source bundle whose records name standard library modules:
-    /// `inputs` are the bundle's records, placed in the root module, and the
-    /// selected standard library modules' interface records, and `modules`
-    /// the root module followed by the standard library's modules [PROG-2,
-    /// MOD-10]. The bundle stays a source bundle, not a module program.
-    pub fn with_prelude_and_library(
-        inputs: &[SourceInput<'_>],
-        modules: Vec<ModuleRecord>,
-        limits: SourceLimits,
-    ) -> Result<Self, SourceBundleError> {
-        if inputs
-            .iter()
-            .any(|input| input.module.index() >= modules.len())
-        {
-            return Err(SourceBundleError::UnknownModule);
-        }
-        let mut bundle = Self::with_prelude(inputs, limits)?;
-        bundle.modules = modules;
         Ok(bundle)
     }
 

@@ -1,3 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 fn clear() -> result: u8 pure {
   doc "No allocation happens here, but the binding's type holds a Box, and releasing such a value frees heap storage, so this function needs the heap.";
   let empty = None<Box<u8>>();

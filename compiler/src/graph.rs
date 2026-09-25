@@ -83,6 +83,16 @@ pub struct ModuleGraph {
 }
 
 impl ModuleGraph {
+    /// The standard library's graph, whose modules the compiler carries
+    /// [MOD-10].
+    #[must_use]
+    pub(crate) fn library() -> Self {
+        Self {
+            modules: crate::library::modules(0),
+            entries: Vec::new(),
+        }
+    }
+
     /// Returns every registered module in row order.
     #[must_use]
     pub fn modules(&self) -> &[ModuleRecord] {

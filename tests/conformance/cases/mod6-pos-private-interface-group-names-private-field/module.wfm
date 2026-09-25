@@ -1,3 +1,5 @@
+alias ExitStatus = std::process::ExitStatus;
+
 public struct Pair {
   public left: u64;
   right: u64;

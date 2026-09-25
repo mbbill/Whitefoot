@@ -429,9 +429,14 @@ A `nodrop` owner must be consumed on every exit [PROV-6]. Destructure a
 non-opaque aggregate whole when its parts need different consumers:
 
 ```whitefoot
-let Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: factory, stdin: input) = move inputs;
-close_directory(factory: &factory, directory: move cwd);
+let std::process::Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: factory, stdin: input) = move inputs;
+std::fs::close_directory(factory: &factory, directory: move cwd);
 ```
+
+The host declarations belong to the standard library modules `std::io`,
+`std::text`, `std::fs`, `std::net` and `std::process` [PRE-2]. Write their
+`std` paths, or give a record an alias header for the names it uses often
+[MOD-4, MOD-10].
 
 Host failures are ordinary `Result` values. Match them or use `propagate` in a
 function returning the same error type [ERR-1, ERR-3]. A helper that acquires a

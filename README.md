@@ -53,6 +53,9 @@ requirements. The reading and authority rules are in
 
 - [compiler/](compiler/): the Rust compiler, LLVM emission, and native
   runtime support.
+- [lib/std/](lib/std/modules.wfg): the standard library package the compiler
+  carries from its own build; programs name its modules `std::io`,
+  `std::text`, `std::fs`, `std::net` and `std::process`.
 - [lib/containers/](lib/containers/README.md): reusable Whitefoot container
   source, exercised by callers in the ordinary program corpus.
 - [spec/](spec/): the active language and its immutable version archives.

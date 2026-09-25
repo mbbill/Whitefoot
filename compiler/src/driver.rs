@@ -563,18 +563,11 @@ pub fn form_module_graph(
     graph: SourceInput<'_>,
     limits: CompilerLimits,
 ) -> Result<crate::ModuleGraph, CompilationFailure> {
-    let library = library_graph(limits)?;
-    form_graph_record(graph, limits, crate::Package::Program, Some(&library))
-}
-
-/// The standard library's graph, formed from the record the compiler
-/// carries through the same stages as every graph record [MOD-10].
-fn library_graph(limits: CompilerLimits) -> Result<crate::ModuleGraph, CompilationFailure> {
     form_graph_record(
-        SourceInput::new(crate::library::GRAPH_PATH, crate::library::GRAPH.as_bytes()),
+        graph,
         limits,
-        crate::Package::Standard,
-        None,
+        crate::Package::Program,
+        Some(&crate::ModuleGraph::library()),
     )
 }
 
@@ -623,122 +616,12 @@ fn with_library_records<'input>(
     inputs: &[SourceInput<'input>],
 ) -> Vec<SourceInput<'input>> {
     let mut all = inputs.to_vec();
-    all.extend(library_records(graph.modules(), |_| true).into_iter().filter(|record| {
+    all.extend(crate::library::records(graph.modules(), |_| true).into_iter().filter(|record| {
         !inputs
             .iter()
             .any(|input| input.logical_path() == record.logical_path())
     }));
     all
-}
-
-/// The records the compiler carries for the standard library modules of
-/// `modules` that `selected` admits, placed in their modules [MOD-10].
-fn library_records(
-    modules: &[crate::ModuleRecord],
-    selected: impl Fn(crate::ModuleId) -> bool,
-) -> Vec<SourceInput<'static>> {
-    crate::library::RECORDS
-        .iter()
-        .filter_map(|(logical, text)| {
-            let (path, role) = crate::library::record_module(logical)?;
-            let module = modules
-                .iter()
-                .position(|module| module.is_at(crate::Package::Standard, &path))
-                .and_then(crate::ModuleId::from_index)?;
-            selected(module).then(|| SourceInput::new(logical, text.as_bytes()).in_module(module, role))
-        })
-        .collect()
-}
-
-/// The standard library paths a source bundle's records write, each as the
-/// components after `std`: every `std` word that starts a `::` path, read
-/// from the bytes before any stage runs. A `std` inside a string or a
-/// longer word also counts, which can only select a module the bundle does
-/// not use [PROG-2, MOD-10].
-fn written_library_paths(inputs: &[SourceInput<'_>]) -> Vec<Vec<String>> {
-    let word = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_';
-    let mut paths = Vec::new();
-    for input in inputs {
-        let bytes = input.bytes();
-        let mut at = 0;
-        while let Some(found) = bytes[at..].windows(5).position(|window| window == b"std::") {
-            let start = at + found;
-            at = start + 3;
-            if start > 0 && word(bytes[start - 1]) {
-                continue;
-            }
-            let mut components = Vec::new();
-            let mut cursor = start + 3;
-            while bytes[cursor..].starts_with(b"::") {
-                let begin = cursor + 2;
-                let end = bytes[begin..]
-                    .iter()
-                    .position(|byte| !word(*byte))
-                    .map_or(bytes.len(), |length| begin + length);
-                if end == begin {
-                    break;
-                }
-                components.push(String::from_utf8_lossy(&bytes[begin..end]).into_owned());
-                cursor = end;
-            }
-            if !components.is_empty() {
-                paths.push(components);
-            }
-        }
-    }
-    paths
-}
-
-/// A source bundle whose records name standard library modules: the root
-/// module, which may name every library module [PROG-2], followed by the
-/// library's modules, and the bundle's records followed by those of the
-/// library modules it names and their dependencies [MOD-10]. A bundle that
-/// names none keeps its one root module.
-fn bundle_with_library<'input>(
-    inputs: &[SourceInput<'input>],
-    limits: CompilerLimits,
-) -> Result<Option<(Vec<SourceInput<'input>>, Vec<crate::ModuleRecord>)>, CompilationFailure> {
-    let written = written_library_paths(inputs);
-    if written.is_empty() {
-        return Ok(None);
-    }
-    let library = library_graph(limits)?;
-    let offset = |module: crate::ModuleId| crate::ModuleId::from_index(module.index() + 1);
-    let mut modules = vec![crate::ModuleRecord::new(
-        Vec::new(),
-        (0..library.modules().len())
-            .filter_map(|index| crate::ModuleId::from_index(index + 1))
-            .collect(),
-    )];
-    for module in library.modules() {
-        modules.push(crate::ModuleRecord::in_package(
-            crate::Package::Standard,
-            module.path().to_vec(),
-            module.dependencies().iter().copied().filter_map(offset).collect(),
-        ));
-    }
-    let mut selected = Vec::new();
-    for path in &written {
-        let longest = (1..=path.len()).rev().find_map(|length| {
-            library
-                .modules()
-                .iter()
-                .position(|module| module.path() == &path[..length])
-                .and_then(crate::ModuleId::from_index)
-        });
-        if let Some(module) = longest {
-            for reached in std::iter::once(module).chain(library.dependency_closure(module)) {
-                if let Some(reached) = offset(reached)
-                    && !selected.contains(&reached)
-                {
-                    selected.push(reached);
-                }
-            }
-        }
-    }
-    let mut all = inputs.to_vec();
-    all.extend(library_records(&modules, |module| selected.contains(&module)));
-    Ok(Some((all, modules)))
 }
 
 /// Checks every registered module of a module program against its
@@ -2757,12 +2640,7 @@ where
         Some(modules) => {
             SourceBundle::with_prelude_and_modules(inputs, modules.to_vec(), limits.source)
         }
-        None => match bundle_with_library(inputs, limits)? {
-            Some((records, modules)) => {
-                SourceBundle::with_prelude_and_library(&records, modules, limits.source)
-            }
-            None => SourceBundle::with_prelude(inputs, limits.source),
-        },
+        None => SourceBundle::with_prelude(inputs, limits.source),
     }
     .map_err(CompilationFailure::source_envelope)?;
     with_canonical_syntax(&bundle, limits, false, |canonical| {

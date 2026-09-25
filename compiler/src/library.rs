@@ -4,9 +4,13 @@
 //! host modules whose definitions the build supplies [PRE-2].
 
 /// The logical path of the standard library's graph record.
+#[cfg(test)]
 pub(crate) const GRAPH_PATH: &str = "std/modules.wfg";
 
-/// The standard library's graph record, `modules.wfg` below its root.
+/// The standard library's graph record, `modules.wfg` below its root: the
+/// library's own statement of its modules, which [`MODULES`] carries and a
+/// test holds equal to it.
+#[cfg(test)]
 pub(crate) const GRAPH: &str = include_str!("../../lib/std/modules.wfg");
 
 /// Every record of the standard library's modules, each with its logical
@@ -20,6 +24,139 @@ pub(crate) const RECORDS: &[(&str, &str)] = &[
     ("std/net/module.wfm", include_str!("../../lib/std/net/module.wfm")),
     ("std/process/module.wfm", include_str!("../../lib/std/process/module.wfm")),
 ];
+
+/// The standard library's modules in the order its graph registers them,
+/// each with its path and its dependencies' paths [MOD-1]. The graph record
+/// is the library's own statement of them, and a test holds this table to
+/// what forming that record gives.
+pub(crate) const MODULES: &[(&str, &[&str])] = &[
+    ("io", &[]),
+    ("text", &[]),
+    ("fs", &["io", "text"]),
+    ("net", &["io"]),
+    ("process", &["io", "text", "fs"]),
+];
+
+/// The standard library's modules as registered modules: its graph's rows
+/// in order, `offset` places after the modules that precede them [MOD-10].
+pub(crate) fn modules(offset: usize) -> Vec<crate::ModuleRecord> {
+    let path = |text: &str| -> Vec<String> { text.split("::").map(str::to_owned).collect() };
+    MODULES
+        .iter()
+        .map(|(module, dependencies)| {
+            crate::ModuleRecord::in_package(
+                crate::Package::Standard,
+                path(module),
+                dependencies
+                    .iter()
+                    .filter_map(|dependency| MODULES.iter().position(|(other, _)| other == dependency))
+                    .filter_map(|index| crate::ModuleId::from_index(offset + index))
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
+/// The standard library paths a source bundle's records write, each as the
+/// components after `std`: every `std` word that starts a `::` path, read
+/// from the bytes before any stage runs. A `std` inside a string or a
+/// longer word also counts, which can only select a module the bundle does
+/// not use [PROG-2, MOD-10].
+fn written_paths(inputs: &[crate::SourceInput<'_>]) -> Vec<Vec<String>> {
+    let word = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_';
+    let mut paths = Vec::new();
+    for input in inputs {
+        let bytes = input.bytes();
+        let mut at = 0;
+        while let Some(found) = bytes[at..].windows(5).position(|window| window == b"std::") {
+            let start = at + found;
+            at = start + 3;
+            if start > 0 && word(bytes[start - 1]) {
+                continue;
+            }
+            let mut components = Vec::new();
+            let mut cursor = start + 3;
+            while bytes[cursor..].starts_with(b"::") {
+                let begin = cursor + 2;
+                let end = bytes[begin..]
+                    .iter()
+                    .position(|byte| !word(*byte))
+                    .map_or(bytes.len(), |length| begin + length);
+                if end == begin {
+                    break;
+                }
+                components.push(String::from_utf8_lossy(&bytes[begin..end]).into_owned());
+                cursor = end;
+            }
+            if !components.is_empty() {
+                paths.push(components);
+            }
+        }
+    }
+    paths
+}
+
+/// A source bundle whose records name standard library modules: the root
+/// module, which may name every library module [PROG-2], followed by the
+/// library's modules, and the bundle's records followed by those of the
+/// library modules it names and their dependencies [MOD-10]. A bundle that
+/// names none has no library part.
+pub(crate) fn bundle_part<'input>(
+    inputs: &[crate::SourceInput<'input>],
+) -> Option<(Vec<crate::SourceInput<'input>>, Vec<crate::ModuleRecord>)> {
+    let written = written_paths(inputs);
+    if written.is_empty() {
+        return None;
+    }
+    let library = modules(1);
+    let mut modules = vec![crate::ModuleRecord::new(
+        Vec::new(),
+        (1..=library.len()).filter_map(crate::ModuleId::from_index).collect(),
+    )];
+    modules.extend(library);
+    let mut selected: Vec<crate::ModuleId> = Vec::new();
+    for path in &written {
+        let longest = (1..=path.len()).rev().find_map(|length| {
+            modules
+                .iter()
+                .position(|module| module.is_at(crate::Package::Standard, &path[..length]))
+                .and_then(crate::ModuleId::from_index)
+        });
+        let mut pending: Vec<crate::ModuleId> = longest.into_iter().collect();
+        while let Some(module) = pending.pop() {
+            if selected.contains(&module) {
+                continue;
+            }
+            selected.push(module);
+            if let Some(record) = modules.get(module.index()) {
+                pending.extend(record.dependencies().iter().copied());
+            }
+        }
+    }
+    let mut all = inputs.to_vec();
+    all.extend(records(&modules, |module| selected.contains(&module)));
+    Some((all, modules))
+}
+
+/// The records the compiler carries for the standard library modules of
+/// `modules` that `selected` admits, placed in their modules [MOD-10].
+pub(crate) fn records(
+    modules: &[crate::ModuleRecord],
+    selected: impl Fn(crate::ModuleId) -> bool,
+) -> Vec<crate::SourceInput<'static>> {
+    RECORDS
+        .iter()
+        .filter_map(|(logical, text)| {
+            let (path, role) = record_module(logical)?;
+            let module = modules
+                .iter()
+                .position(|module| module.is_at(crate::Package::Standard, &path))
+                .and_then(crate::ModuleId::from_index)?;
+            selected(module)
+                .then(|| crate::SourceInput::new(logical, text.as_bytes()).in_module(module, role))
+        })
+        .collect()
+}
 
 /// The host modules [PRE-2], by their paths below the standard library: the
 /// modules whose functions have no Whitefoot definition, the build supplying
@@ -99,7 +236,7 @@ mod tests {
     fn the_host_modules_are_the_specification_text() {
         let spec = crate::spec::ACTIVE_KERNEL_SPEC_TEXT;
         let section = spec
-            .split("[PRE-2]")
+            .split("\n[PRE-2] ")
             .nth(1)
             .expect("the specification states PRE-2");
         let fences: Vec<&str> = section

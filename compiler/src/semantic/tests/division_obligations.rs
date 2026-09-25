@@ -61,8 +61,8 @@ fn a_positive_requirement_discharges_an_unsigned_site() {
   return q;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -93,8 +93,8 @@ fn a_canonical_branch_discharges_the_site() {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -122,8 +122,8 @@ fn an_unconstrained_divisor_rejects_citing_op2_with_the_exact_residual() {
   return q;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -160,8 +160,8 @@ fn the_remainder_row_carries_the_same_obligation() {
   return r;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -190,8 +190,8 @@ fn a_nonzero_constant_divisor_discharges_with_no_fact_source() {
   return q;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -211,10 +211,10 @@ fn main() -> status: ExitStatus pure {
 /// conjunct and is therefore rejected at every non-contradictory point.
 #[test]
 fn a_constant_zero_divisor_is_rejected_everywhere() {
-    let source = br#"fn main() -> status: ExitStatus pure {
+    let source = br#"fn main() -> status: std::process::ExitStatus pure {
   let x = 10_i32;
   let q = x / 0_i32;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -244,8 +244,8 @@ fn a_minus_one_divisor_demands_the_dividend_disequality() {
   return q;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -275,8 +275,8 @@ fn a_bounded_dividend_over_minus_one_discharges() {
   return q;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -297,15 +297,15 @@ fn main() -> status: ExitStatus pure {
 /// value rather than a source rejection.
 #[test]
 fn a_checked_division_attaches_no_obligation() {
-    let source = br#"fn main() -> status: ExitStatus pure {
+    let source = br#"fn main() -> status: std::process::ExitStatus pure {
   let n = 10_i64;
   let d = 0_i64;
   match n /checked d {
     Ok(value: v) => {
-      return exit_status(code: 0_u8);
+      return std::process::exit_status(code: 0_u8);
     }
     Err(error: e) => {
-      return exit_status(code: 0_u8);
+      return std::process::exit_status(code: 0_u8);
     }
   }
 }
@@ -334,8 +334,8 @@ fn effect_mismatch_precedes_static_division_rejection() {
   return q;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -350,10 +350,10 @@ fn main() -> status: ExitStatus pure {
 /// the obligation-focused test entry.
 #[test]
 fn the_default_checker_rejects_a_constant_zero_divisor() {
-    let source = br#"fn main() -> status: ExitStatus pure {
+    let source = br#"fn main() -> status: std::process::ExitStatus pure {
   let x = 10_i32;
   let q = x / 0_i32;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -381,8 +381,8 @@ fn unsigned_literal_division_publishes_the_quotient_bound() {
   return quotient;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -425,8 +425,8 @@ fn runtime_division_publishes_its_quotient_bound_without_a_later_product() {
   return quotient;
 }}
 
-fn main() -> status: ExitStatus pure {{
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {{
+  return std::process::exit_status(code: 0_u8);
 }}
 "
         );
@@ -455,8 +455,8 @@ fn unsigned_literal_division_publishes_the_scaled_quotient_image() {
   return doubled;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -500,8 +500,8 @@ fn the_scaled_quotient_image_halves_into_an_automatic_midpoint_bound() {
   return byte;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -539,8 +539,8 @@ fn signed_literal_division_does_not_publish_unsigned_ordering_images() {
   return quotient;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -562,8 +562,8 @@ fn unsigned_zero_literal_still_fails_the_division_domain() {
   return quotient;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -591,8 +591,8 @@ fn replacing_the_dividend_does_not_retarget_the_old_division_image() {
   return difference;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -619,8 +619,8 @@ fn the_signed_zero_divisor_conjunct_is_discharged_by_its_own_mechanical_fix() {
   return q;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(required, |outcome| {
@@ -643,8 +643,8 @@ fn main() -> status: ExitStatus pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(branched, |outcome| {
@@ -663,8 +663,8 @@ fn main() -> status: ExitStatus pure {
   return q;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(unproved, |outcome| {
@@ -711,8 +711,8 @@ fn active_invariants_prove_signed_division_and_remainder_domains() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -799,11 +799,11 @@ fn a_fixed_run_indexed_defined_guard_discharges_the_same_structural_exact_operat
   }
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let filled = array_filled::<u8, 1>(value: 0_u8);
   let values = slots_from_array::<u8, 1>(values: filled);
   let result = increment(values: move values);
-  return exit_status(code: result);
+  return std::process::exit_status(code: result);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -848,11 +848,11 @@ fn writing_the_indexed_collection_invalidates_its_old_defined_fact() {
   }
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let filled = array_filled::<u8, 1>(value: 0_u8);
   let values = slots_from_array::<u8, 1>(values: filled);
   let result = increment_after_write(values: move values);
-  return exit_status(code: result);
+  return std::process::exit_status(code: result);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -890,8 +890,8 @@ fn a_referenced_run_indexed_defined_guard_discharges_the_same_structural_exact_o
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -945,8 +945,8 @@ fn a_range_reference_indexed_defined_guard_discharges_the_same_structural_exact_
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -995,8 +995,8 @@ fn increment_other() -> result: u8 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -1030,8 +1030,8 @@ fn increment_after_index_write() -> result: u8 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -1065,8 +1065,8 @@ fn runtime_unsigned_division_retains_the_checked_product_bound_in_either_order()
   return product;
 }}
 
-fn main() -> status: ExitStatus pure {{
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {{
+  return std::process::exit_status(code: 0_u8);
 }}
 "#
         );
@@ -1108,8 +1108,8 @@ fn captured_runtime_division_values_survive_only_in_their_unchanged_aliases() {
   return product;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {

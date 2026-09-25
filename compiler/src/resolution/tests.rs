@@ -1996,7 +1996,9 @@ fn existing_positive_conformance_programs_resolve_without_fixture_rewrites() {
 fn existing_requires_scope_conformance_case_reaches_type5_resolution() {
     let source =
         include_bytes!("../../../tests/conformance/cases/fn8-neg-requires-local-in-body.wf");
-    with_one_resolution(source, |outcome| {
+    // The case names the standard library's exit status, which a unit with
+    // the prelude carries [MOD-10].
+    with_resolution_sources(&[SourceInput::new("test.wf", source)], true, |outcome| {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("requires-scope conformance case must reject: {outcome:?}");
         };
@@ -2032,7 +2034,7 @@ fn prelude_collision_payload_keeps_both_ordered_struct_domains() {
 #[test]
 fn duplicate_main_conformance_case_is_type6() {
     let source = include_bytes!("../../../tests/conformance/cases/fn7-neg-two-mains.wf");
-    with_one_resolution(source, |outcome| {
+    with_resolution_sources(&[SourceInput::new("test.wf", source)], true, |outcome| {
         let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("the later main declaration must be rejected: {outcome:?}");
         };
@@ -2472,7 +2474,7 @@ fn every_distinct_op1_family_resolves_through_the_normal_callee_path() {
 // visibility, collision and callable-binding coverage without an external domain.
 #[test]
 fn parsed_prelude_declarations_are_ordinary_visible_targets() {
-    let source = b"fn inspect(args: &Args) -> result: u64 reads(args) {\n  return args_count(args: args);\n}\n";
+    let source = b"fn inspect(args: &std::text::Args) -> result: u64 reads(args) {\n  return std::text::args_count(args: args);\n}\n";
     with_resolution_sources(
         &[SourceInput::new("ordinary.wf", source)],
         true,
@@ -2502,9 +2504,9 @@ fn parsed_prelude_declarations_are_ordinary_visible_targets() {
 #[test]
 fn ordinary_prelude_names_cannot_be_shadowed_and_an_opaque_constructor_entry_resolves() {
     for source in [
-        "struct HostString {\n}\n",
-        "struct NotFound {\n}\n",
-        "fn helper() -> result: unit pure {\n  let args_count = 0_u64;\n  return unit;\n}\n",
+        "struct Slots {\n}\n",
+        "struct DivideByZero {\n}\n",
+        "fn helper() -> result: unit pure {\n  let box_new = 0_u64;\n  return unit;\n}\n",
     ] {
         with_resolution_sources(
             &[SourceInput::new("collision.wf", source.as_bytes())],
@@ -2543,7 +2545,7 @@ fn ordinary_prelude_names_cannot_be_shadowed_and_an_opaque_constructor_entry_res
     // the rejection that used to happen at this stage, as an unresolved name,
     // would have made [TYPE-2]'s judgment over a resolved declaration
     // unreachable.
-    let source = b"fn fabricate() -> result: HostString pure {\n  return HostString();\n}\n";
+    let source = b"fn fabricate() -> result: std::text::HostString pure {\n  return std::text::HostString();\n}\n";
     with_resolution_sources(&[SourceInput::new("opaque.wf", source)], true, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("an opaque nominal's constructor entry resolves: {outcome:?}");
@@ -2577,7 +2579,7 @@ fn ordinary_prelude_names_cannot_be_shadowed_and_an_opaque_constructor_entry_res
 
 #[test]
 fn an_ordinary_prelude_signature_is_eligible_for_an_actual_member() {
-    let source = b"interface Counter {\n  fn count(args: &Args) -> result: u64 reads(args);\n}\n\nbinding Selected : Counter {\n  count = args_count;\n}\n";
+    let source = b"interface Counter {\n  fn count(args: &std::text::Args) -> result: u64 reads(args);\n}\n\nbinding Selected : Counter {\n  count = std::text::args_count;\n}\n";
     with_resolution_sources(&[SourceInput::new("actual.wf", source)], true, |outcome| {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("FN-4 admits ordinary declarations: {outcome:?}");
@@ -2617,19 +2619,17 @@ fn supplied_signature_locals_do_not_capture_writer_global_names() {
 fn ordinary_prelude_diagnostic_origins_follow_the_complete_record_preorder() {
     // The opaque structs first, each with the nominal and the refused
     // constructor [TYPE-2] its collision names in both domains; `Bool` and
-    // its variants follow; the ordinary struct contributes distinct nominal
-    // and constructor records before its fields. `Bool` collides on its
-    // nominal alone, because an enum contributes its variants' spellings to
-    // the constructor domain and not its own.
+    // its variants follow. `Bool` collides on its nominal alone, because an
+    // enum contributes its variants' spellings to the constructor domain and
+    // not its own.
     for (name, origins) in [
-        ("HostString", vec![24, 25]),
-        ("Bool", vec![50]),
-        ("Overflow", vec![65, 66]),
-        ("TcpConnection", vec![72, 73]),
+        ("Slots", vec![5, 6]),
+        ("Bool", vec![22]),
+        ("Overflow", vec![37, 38]),
     ] {
         let source = format!("struct {name} {{\n}}\n");
         with_resolution_sources(
-            &[SourceInput::new("prelude/HostString.wf", source.as_bytes())],
+            &[SourceInput::new("prelude/Array.wf", source.as_bytes())],
             true,
             |outcome| {
                 let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
@@ -2659,7 +2659,7 @@ fn ordinary_prelude_diagnostic_origins_follow_the_complete_record_preorder() {
 fn ordinary_prelude_inventory_is_independent_of_writer_names_and_declaration_count() {
     let read_inventory = |source: &[u8]| {
         with_resolution_sources(
-            &[SourceInput::new("prelude/HostString.wf", source)],
+            &[SourceInput::new("prelude/Array.wf", source)],
             true,
             |outcome| {
                 let ResolutionOutcome::Complete(resolved) = outcome else {
@@ -2687,9 +2687,8 @@ fn ordinary_prelude_inventory_is_independent_of_writer_names_and_declaration_cou
     // refused constructor and its fields in declaration order". x1 puts the
     // three storage shapes first, each with its nominal, the constructor
     // [TYPE-2] exists to refuse, its element and capacity parameters and its
-    // readonly measure fields; the cell follows with four records of its own,
-    // and each of the fourteen host handles then contributes a nominal and a
-    // refused constructor and no field at all.
+    // readonly measure fields; the cell follows with four records of its own.
+    // The host handles are the standard library's [PRE-2], not PRE-1's.
     assert_eq!(first[0].1, "Array");
     assert_eq!(first[0].2, Some(DeclarationClass::NominalType));
     assert_eq!(first[1].1, "Array");
@@ -2710,38 +2709,24 @@ fn ordinary_prelude_inventory_is_independent_of_writer_names_and_declaration_cou
     assert_eq!(first[19].2, Some(DeclarationClass::StructConstructor));
     assert_eq!(first[20].1, "T");
     assert_eq!(first[21].1, "inner");
-    assert_eq!(first[22].1, "Args");
-    assert_eq!(first[23].2, Some(DeclarationClass::StructConstructor));
-    assert_eq!(first[48].1, "TcpSend");
-    // Then each ordinary struct or enum with its constructor or variants and
-    // their fields, then `Int` and `Float`, then the host functions, then the
-    // construction functions [OP-13], then the window operations [OP-10],
-    // then `swap` [OP-11] and `free_empty` [OP-14], each with its type, const
-    // and value parameters in declared order.
-    assert_eq!(first[50].1, "Bool");
-    assert_eq!(first[72].1, "TcpConnection");
-    assert_eq!(first[76].1, "AcceptedConnection");
-    assert_eq!(first[194].1, "Int");
-    assert_eq!(first[195].1, "Float");
-    assert_eq!(first[196].1, "args_count");
-    assert_eq!(first[312].1, "close_send");
-    assert_eq!(first[315].1, "box_new");
-    assert_eq!(first[346].1, "place_back");
-    assert_eq!(first[390].1, "swap");
-    assert_eq!(first[394].1, "free_empty");
-    // x1 adds the three storage shapes to the opaque phase, which grows from
-    // 32 records to 50: `Array` contributes five, `Slots` six and `Ring`
-    // seven — a nominal, a refused constructor, two generic parameters and
-    // one readonly field per measure — so the whole inventory grew by 18
-    // again and every ordinal from `Box` on moved by that much.
-    assert_eq!(first.len(), 397);
+    // Then each enum with its variants and their fields, then `Int` and
+    // `Float`, then the construction functions [OP-13], then the window
+    // operations [OP-10], then `swap` [OP-11] and `free_empty` [OP-14], each
+    // with its type, const and value parameters in declared order.
+    assert_eq!(first[22].1, "Bool");
+    assert_eq!(first[44].1, "Int");
+    assert_eq!(first[45].1, "Float");
+    assert_eq!(first[46].1, "box_new");
+    assert_eq!(first[77].1, "place_back");
+    assert_eq!(first[121].1, "swap");
+    assert_eq!(first[125].1, "free_empty");
+    // The opaque phase holds the three storage shapes and the cell, 22
+    // records: `Array` contributes five, `Slots` six, `Ring` seven and `Box`
+    // four. The host declarations left PRE-1 for the standard library
+    // [PRE-2], so the inventory holds 128 records where it held 397.
+    assert_eq!(first.len(), 128);
     // `free_empty`'s own value parameter is the last record of the preorder.
     assert_eq!(first.last().map(|record| record.1.as_str()), Some("window"));
-    assert!(
-        first.len() > 256,
-        "the full ordinary inventory must not truncate at u8: {}",
-        first.len()
-    );
     assert!(
         first
             .iter()
@@ -2750,9 +2735,14 @@ fn ordinary_prelude_inventory_is_independent_of_writer_names_and_declaration_cou
     );
 }
 
+/// While the host declarations were PRE-1's the inventory held 397 records,
+/// and this test showed that a late collision kept an ordinal above `u8`. The
+/// host declarations are the standard library's now [PRE-2] and the
+/// inventory holds 128, so no prelude ordinal exceeds `u8`; what remains to
+/// show is that the last function's collision names its own preorder ordinal.
 #[test]
-fn a_late_prelude_function_collision_preserves_an_ordinal_above_u8() {
-    let source = b"fn close_send() -> result: unit pure {\n  return unit;\n}\n";
+fn a_late_prelude_function_collision_names_its_preorder_ordinal() {
+    let source = b"fn free_empty() -> result: unit pure {\n  return unit;\n}\n";
     with_resolution_sources(
         &[SourceInput::new("collision.wf", source)],
         true,
@@ -2765,7 +2755,7 @@ fn a_late_prelude_function_collision_preserves_an_ordinal_above_u8() {
             };
             assert_eq!(conflicts.len(), 1);
             assert!(
-                matches!(conflicts[0].origin(), DeclarationOrigin::Prelude(id) if id.ordinal() == 312)
+                matches!(conflicts[0].origin(), DeclarationOrigin::Prelude(id) if id.ordinal() == 125)
             );
         },
     );

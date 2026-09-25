@@ -103,15 +103,15 @@ pub(super) fn corpus_source(name: &str) -> Vec<u8> {
 #[test]
 fn ordinary_declarations_have_no_frame_and_share_the_call_abi() {
     with_ir(
-        br#"fn relay(code: u8) -> result: ExitStatus pure {
-  return exit_status(code: code);
+        br#"fn relay(code: u8) -> result: std::process::ExitStatus pure {
+  return std::process::exit_status(code: code);
 }
 "#,
         |program| {
             let declared = program
                 .functions()
                 .iter()
-                .find(|function| function.name() == "exit_status")
+                .find(|function| function.name() == "std.process.exit_status")
                 .expect("ordinary prelude signature");
             assert!(declared.blocks().is_empty());
             let plan = crate::backend::storage::FunctionStoragePlan::build(program, declared)
@@ -120,8 +120,8 @@ fn ordinary_declarations_have_no_frame_and_share_the_call_abi() {
             let llvm = crate::emit_llvm(program)
                 .expect("ordinary signature and body emit")
                 .into_string();
-            assert!(llvm.contains("declare void @wf_exit_status(ptr %wf.result, i8 %v0)"));
-            assert!(llvm.contains("call void @wf_exit_status(ptr"));
+            assert!(llvm.contains("declare void @wf_std.process.exit_status(ptr %wf.result, i8 %v0)"));
+            assert!(llvm.contains("call void @wf_std.process.exit_status(ptr"));
             assert!(
                 !llvm.contains("@main("),
                 "a callable unit needs no selected entry"
@@ -136,18 +136,18 @@ fn ordinary_declarations_have_no_frame_and_share_the_call_abi() {
 /// The writer-side clauses use the local binder `copied` where the prelude
 /// record uses `next`. Both spellings are ordinary identifiers; renaming the
 /// binder changes neither the declared relation nor the ABI being compared.
-const COPY_BYTES_WRAPPER: &str = r#"fn copy_bytes(value: &HostString, destination: &[u8], start: u64, end: u64) -> result: Result<u64, CopyError> reads(value), writes(destination) contract {
+const COPY_BYTES_WRAPPER: &str = r#"fn copy_bytes(value: &std::text::HostString, destination: &[u8], start: u64, end: u64) -> result: Result<u64, std::text::CopyError> reads(value), writes(destination) contract {
   requires start <= end;
   requires end <= deref(destination).len;
   ensures when Ok(value: copied): start <= copied;
   ensures when Ok(value: copied): copied <= end;
 } {
-  match host_copy_bytes(value: value, destination: destination, start: start, end: end) {
+  match std::text::host_copy_bytes(value: value, destination: destination, start: start, end: end) {
     Ok(value: copied) => {
-      return Ok<u64, CopyError>(value: copied);
+      return Ok<u64, std::text::CopyError>(value: copied);
     }
     Err(error: problem) => {
-      return Err<u64, CopyError>(error: problem);
+      return Err<u64, std::text::CopyError>(error: problem);
     }
   }
 }
@@ -158,9 +158,12 @@ const COPY_BYTES_WRAPPER: &str = r#"fn copy_bytes(value: &HostString, destinatio
 fn a_range_reference_signature_is_identical_for_a_wf_body_and_a_linked_body() {
     let original = String::from_utf8(corpus_source("run-syshost-nontext-argv-bytes-roundtrip"))
         .expect("source is UTF-8");
+    // The wrapper follows the corpus source, whose alias header leads its
+    // record [MOD-4].
     let source = format!(
-        "{COPY_BYTES_WRAPPER}{}",
-        original.replace("host_copy_bytes(", "copy_bytes(")
+        "{}\n\n{}\n",
+        original.replace("host_copy_bytes(", "copy_bytes(").trim_end(),
+        COPY_BYTES_WRAPPER.trim_end()
     );
     with_ir(source.as_bytes(), |program| {
         let signature = |name| {
@@ -171,7 +174,7 @@ fn a_range_reference_signature_is_identical_for_a_wf_body_and_a_linked_body() {
                 .expect("ordinary function exists");
             crate::backend::abi::FunctionAbi::build(program, function).expect("one callable ABI")
         };
-        assert_eq!(signature("copy_bytes"), signature("host_copy_bytes"));
+        assert_eq!(signature("copy_bytes"), signature("std.text.host_copy_bytes"));
     });
     // Exercise each supported command-line configuration through its real
     // driver API: default, explicit --no-overlap, and --par. The first two
@@ -200,7 +203,7 @@ fn behavior_actuals_preserve_ordinary_range_reference_calls_rows_and_contracts()
     // The interface uses the same locally renamed clause binder as the
     // ordinary wrapper; the relation and callable boundary stay identical.
     let formal = r#"interface Copier {
-  fn transfer(value: &HostString, destination: &[u8], start: u64, end: u64) -> result: Result<u64, CopyError> reads(value), writes(destination) contract {
+  fn transfer(value: &std::text::HostString, destination: &[u8], start: u64, end: u64) -> result: Result<u64, std::text::CopyError> reads(value), writes(destination) contract {
     requires start <= end;
     requires end <= deref(destination).len;
     ensures when Ok(value: copied): start <= copied;
@@ -211,14 +214,19 @@ fn behavior_actuals_preserve_ordinary_range_reference_calls_rows_and_contracts()
 "#;
     let forwarding = COPY_BYTES_WRAPPER
         .replacen("fn copy_bytes(", "fn copy_through<interface Copier>(", 1)
-        .replace("host_copy_bytes(", "Copier::transfer(");
+        .replace("std::text::host_copy_bytes(", "Copier::transfer(");
     let original = String::from_utf8(corpus_source("run-syshost-nontext-argv-bytes-roundtrip"))
         .expect("source is UTF-8");
     let caller = original.replace("host_copy_bytes(", "copy_through::<Selected>(");
-    for member in ["host_copy_bytes", "copy_bytes"] {
+    // Each member names its linked symbol; the declarations follow the
+    // caller, whose alias header leads its record [MOD-4].
+    for (member, symbol) in [
+        ("std::text::host_copy_bytes", "wf_std.text.host_copy_bytes"),
+        ("copy_bytes", "wf_copy_bytes"),
+    ] {
         let actual = format!("binding Selected : Copier {{\n  transfer = {member};\n}}\n\n");
-        let prefix = format!("{formal}{actual}{COPY_BYTES_WRAPPER}{forwarding}");
-        let source = format!("{prefix}{caller}");
+        let suffix = format!("{formal}{actual}{COPY_BYTES_WRAPPER}{forwarding}");
+        let source = format!("{}\n\n{}\n", caller.trim_end(), suffix.trim_end());
         let forwarding_name = with_ir(source.as_bytes(), |program| {
             let names = program
                 .functions()
@@ -239,14 +247,18 @@ fn behavior_actuals_preserve_ordinary_range_reference_calls_rows_and_contracts()
             }
             .expect("WF and linked actuals compile through the ordinary call path");
             let body = emitted_function(&llvm, &forwarding_name);
-            assert!(body.contains(&format!("call void @wf_{member}(")), "{body}");
+            assert!(body.contains(&format!("call void @{symbol}(")), "{body}");
             let output = compile_and_run_with(&llvm, &[b"a\xffb"]);
             assert!(output.status.success(), "{member}: {output:?}");
             assert!(output.stdout.is_empty());
             assert!(output.stderr.is_empty());
         }
 
-        let out_of_range = format!("{prefix}{}", caller.replace("end: 4_u64", "end: 5_u64"));
+        let out_of_range = format!(
+            "{}\n\n{}\n",
+            caller.replace("end: 4_u64", "end: 5_u64").trim_end(),
+            suffix.trim_end()
+        );
         assert_eq!(
             compile_rejection(out_of_range.as_bytes()).rule_id(),
             Some("FN-8")
@@ -277,8 +289,8 @@ fn behavior_actuals_preserve_ordinary_range_reference_calls_rows_and_contracts()
 #[test]
 fn an_entry_selecting_no_input_starts_and_returns_its_status() {
     let llvm = compile(
-        br#"fn main() -> status: ExitStatus pure {
-  return exit_status(code: 37_u8);
+        br#"fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 37_u8);
 }
 "#,
     );
@@ -291,12 +303,12 @@ fn an_entry_selecting_no_input_starts_and_returns_its_status() {
 #[test]
 fn opaque_drop_has_no_implicit_native_close() {
     let llvm = compile(
-        br#"fn main() -> status: ExitStatus pure {
-  let unused = exit_status(code: 9_u8);
-  return exit_status(code: 0_u8);
+        br#"fn main() -> status: std::process::ExitStatus pure {
+  let unused = std::process::exit_status(code: 9_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
     );
-    assert!(!llvm.contains("call void @wf_close_"));
+    assert!(!llvm.contains("call void @wf_std.fs.close_"));
     assert!(compile_and_run(&llvm).status.success());
 }

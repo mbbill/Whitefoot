@@ -337,8 +337,10 @@ D1 to D4:
    consumer-independent cache keys.
 2. The host modules: the host records leave `compiler/src/prelude.rs` for
    `std` interface files; supplied-definition metadata replaces the prelude
-   origin test; runtime symbols stay as they are through that metadata; the
-   runner recognizes `Inputs` and `ExitStatus` by identity.
+   origin test; the runtime units define the module-qualified link names
+   every module function has (`wf_std.io.write_once`, D6), through one C
+   macro that applies the target's label prefix; the runner recognizes
+   `Inputs` and `ExitStatus` by identity.
 3. The corpus: conformance cases and test programs name the host modules
    through aliases or qualified paths, with every verdict and runtime result
    unchanged.

@@ -1,3 +1,28 @@
+alias Args = std::text::Args;
+alias DirectoryRead = std::fs::DirectoryRead;
+alias DirectorySource = std::fs::DirectorySource;
+alias ExitStatus = std::process::ExitStatus;
+alias HandleFactory = std::io::HandleFactory;
+alias Inputs = std::process::Inputs;
+alias IoError = std::io::IoError;
+alias OutputStream = std::io::OutputStream;
+alias ReadFile = std::fs::ReadFile;
+alias arg_get = std::text::arg_get;
+alias args_count = std::text::args_count;
+alias close_directory = std::fs::close_directory;
+alias close_directory_source = std::fs::close_directory_source;
+alias close_read = std::fs::close_read;
+alias directory_next = std::fs::directory_next;
+alias exit_status = std::process::exit_status;
+alias host_copy_bytes = std::text::host_copy_bytes;
+alias open_directory = std::fs::open_directory;
+alias open_directory_source = std::fs::open_directory_source;
+alias open_file = std::fs::open_file;
+alias open_read = std::fs::open_read;
+alias read_at = std::fs::read_at;
+alias relative_path = std::fs::relative_path;
+alias write_once = std::io::write_once;
+
 const digit_glyphs: Array<u8, 10> =[48_u8, 49_u8, 50_u8, 51_u8, 52_u8, 53_u8, 54_u8, 55_u8, 56_u8, 57_u8];
 
 const usage_text: Array<u8, 27> =[117_u8, 115_u8, 97_u8, 103_u8, 101_u8, 58_u8, 32_u8, 119_u8, 102_u8, 103_u8, 114_u8, 101_u8, 112_u8, 32_u8, 80_u8, 65_u8, 84_u8, 84_u8, 69_u8, 82_u8, 78_u8, 32_u8, 82_u8, 79_u8, 79_u8, 84_u8, 10_u8];

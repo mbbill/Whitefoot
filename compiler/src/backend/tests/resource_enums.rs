@@ -47,7 +47,7 @@ fn consume(owner: Owner) -> result: u8 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let abandoned_left = box_slots_new::<u8>(capacity: 1_u64);
   place_back(window: &abandoned_left.inner, value: 7_u8);
   let abandoned_right = box_slots_new::<u8>(capacity: 1_u64);
@@ -69,9 +69,9 @@ fn main() -> status: ExitStatus pure {
   let carried = relay(owner: move empty);
   let consumed_byte = consume(owner: move carried);
   if consumed_byte != 11_u8 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     // After the ordinary owned match, payload bindings are local; reading them
@@ -242,7 +242,7 @@ fn consume(value: Option<Box<Slots<u8>>>) -> result: u8 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let abandoned_bytes = box_slots_new::<u8>(capacity: 1_u64);
   place_back(window: &abandoned_bytes.inner, value: 5_u8);
   let abandoned_some = Some<Box<Slots<u8>>>(value: move abandoned_bytes);
@@ -254,9 +254,9 @@ fn main() -> status: ExitStatus pure {
   let consumed_some = Some<Box<Slots<u8>>>(value: move consumed_bytes);
   let consumed_byte = consume(value: move consumed_some);
   if consumed_byte != 17_u8 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
