@@ -28,8 +28,14 @@ fn store(counter: &Counter, next: u64) -> result: unit writes(counter.value) {
 ```
 
 An effect path is rooted at the bare parameter: write `writes(counter.value)`,
-never `writes(deref(counter).value)`. Use the narrowest truthful path. Two
-reads may overlap; a read/write or write/write pair must be proved disjoint.
+never `writes(deref(counter).value)`. Use the narrowest truthful path. A body
+that reads a whole parameter and writes one field of it declares both,
+`reads(stats), writes(stats.count)`, so a call kills only the caller facts
+whose support overlaps that field; an entry at or below a written path is
+never listed, because the write already states it [EFF-1]. Two reads may overlap; a read/write or
+write/write pair must be proved disjoint when two arguments supply it, or when
+one argument supplies it at positions such as `values[i]` and `values[j]`
+[EFF-5].
 For long call chains, compute owned commands in `pure` or read-only helpers and
 apply them in one shallow writer. This keeps the mutation boundary visible in
 signatures without an interior-mutability mechanism.

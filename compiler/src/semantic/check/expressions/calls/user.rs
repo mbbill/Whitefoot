@@ -10,11 +10,12 @@ use super::super::super::super::goal::{
     EvaluatedValueOccurrence, GoalDatum, GoalExpression, GoalOperation, GoalProjection,
 };
 use super::super::super::super::model::{
-    CheckedCallContract, CheckedCallSeparation, CheckedEffectStep, CheckedEffects,
+    BindingId, CheckedCallContract, CheckedCallSeparation, CheckedEffectStep, CheckedEffects,
     CheckedExpression, CheckedMode, CheckedNominalKind, CheckedStatePath, CheckedType,
 };
 use super::super::super::super::places::{
-    CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace, UnprovedSeparations, places_overlap,
+    CaptureId, CapturedTerm, CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace,
+    UnprovedSeparations, overlaps_at_every_position, places_overlap,
 };
 use super::super::super::generics::HEAP_ALLOCATING_PRELUDE_FUNCTIONS;
 use super::super::super::references::InvalidationEvent;
@@ -549,9 +550,50 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(entries)
     }
 
+    /// [EFF-5] the declared row's entries in the callee's own frame, in the
+    /// order [`Self::substitute_call_row`] numbers their origins: every
+    /// `reads` entry, then every `writes` entry.
+    ///
+    /// Each reference parameter is its own root and each index or range
+    /// position holds the value parameter it names, so two positions are one
+    /// value exactly when they name one parameter [EFF-1]. No actual enters:
+    /// whether two entries overlap at every position is a property of the
+    /// row, the same at every call.
+    fn formal_row_places(
+        &self,
+        signature: &FunctionSignature,
+    ) -> Result<Vec<ResolvedPlace>, CheckStop> {
+        let captures = (0..signature.parameters.len())
+            .map(|ordinal| {
+                let ordinal = u32::try_from(ordinal)
+                    .map_err(|_| CheckStop::from(SemanticCompilerFailure::CounterOverflow))?;
+                Ok(CapturedValue::new(
+                    CaptureId::source(ordinal),
+                    CapturedTerm::Binding(BindingId(ordinal)),
+                ))
+            })
+            .collect::<Result<Vec<_>, CheckStop>>()?;
+        let declared = &signature.declared_effects;
+        let mut places = Vec::with_capacity(declared.reads.len() + declared.writes.len());
+        for formal in declared.reads.iter().chain(&declared.writes) {
+            let ordinal = signature
+                .parameters
+                .iter()
+                .position(|parameter| parameter.declaration == formal.root)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let ordinal =
+                u32::try_from(ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+            places.push(ResolvedPlace {
+                root: PlaceRoot::Binding(BindingId(ordinal)),
+                path: self.substitute_effect_steps(signature, formal, &captures)?,
+            });
+        }
+        Ok(places)
+    }
+
     /// One declared `epsuffix*`, with its index and range positions replaced
     /// by the values their own arguments supply [EFF-5].
-    pub(in crate::semantic::check) fn substitute_effect_steps(
+    fn substitute_effect_steps(
         &self,
         signature: &FunctionSignature,
         formal: &CheckedStatePath,
@@ -655,8 +697,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(Some(target))
     }
 
-    /// [EFF-5] clause 1: two effects on overlapping paths where at least one
-    /// is a write must be proved disjoint.
+    /// [EFF-5] clause 1: two compared effects on overlapping paths where at
+    /// least one is a write must be proved disjoint.
     ///
     /// The checker holds the actual spellings and the live reference state,
     /// so it owns this comparison; what it cannot do is discharge the index
@@ -664,6 +706,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// leaves open is recorded for the entailment fragment and refused there
     /// if it stays undischarged. `swap` is the one operation whose two
     /// arguments may name the same place [OP-11].
+    ///
+    /// Two effects one argument supplies are compared only when their
+    /// declared paths may be separated by the values of their positions: a
+    /// pair that overlaps at every position is reached through that one
+    /// parameter, which the callee's own body is checked against, so the
+    /// call has nothing to prove about it. The caller's kills and reference
+    /// invalidations still take every substituted write [REF-2, ENT-5].
     fn check_call_pairwise_disjointness(
         &self,
         node: NodeId,
@@ -673,9 +722,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<(), CheckStop> {
         let exchange = self.is_swap_row(signature);
         let oracle = UnprovedSeparations;
+        let formal = self.formal_row_places(signature)?;
         for (index, left) in entries.iter().enumerate() {
             for right in entries.iter().skip(index + 1) {
                 if left.origin == right.origin || !(left.write || right.write) {
+                    continue;
+                }
+                if left.argument == right.argument
+                    && let (Some(left_formal), Some(right_formal)) =
+                        (formal.get(left.origin), formal.get(right.origin))
+                    && overlaps_at_every_position(left_formal, right_formal)
+                {
                     continue;
                 }
                 if !places_overlap(&oracle, &left.place, &right.place) {

@@ -714,8 +714,27 @@ fn main() -> status: ExitStatus pure {
 }
 "#,
         rule: "EFF-1",
+        sentences: &[r#"SubsumedEffectEntry { entry: "reads(value)", covering: "writes(value)" }"#],
+    },
+    Probe {
+        name: "write-below-a-written-path.wf",
+        source: br#"struct Pair {
+  first: u8;
+  second: u8;
+}
+
+fn reset(pair: &Pair) -> result: unit writes(pair), writes(pair.first) {
+  set deref(pair) = Pair(first: 0_u8, second: 0_u8);
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "EFF-1",
         sentences: &[
-            r#"SubsumedEffectRead { entry: "reads(value)" }"#,
+            r#"SubsumedEffectEntry { entry: "writes(pair.first)", covering: "writes(pair)" }"#,
         ],
     },
     // -------------------------------------------------------------------

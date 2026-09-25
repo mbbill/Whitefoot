@@ -509,51 +509,187 @@ fn two_overlapping_substituted_writes_are_refused() {
     });
 }
 
-/// [EFF-5] compares every pair of declared effects after substitution, even
-/// when one reference parameter supplies all of them.
+/// A pair-writing helper whose row is `ROW`, called once on a local pair.
+const PAIR_ACT: &str = r#"struct Pair {
+  first: u8;
+  second: u8;
+}
+
+fn act(pair: &Pair) -> result: unit ROW {
+  BODY
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  let pair = Pair(first: 1_u8, second: 2_u8);
+  act(pair: &pair);
+  return exit_status(code: 0_u8);
+}
+"#;
+
+/// [EFF-1] a `writes` entry states every access at or below its path, so a
+/// row that also lists an entry at or below it states that access twice.
+/// The entry is refused where it is written, naming the entry that covers
+/// it, and no call is left to meet the pair [EFF-5].
 #[test]
-fn one_actual_cannot_supply_overlapping_declared_effects() {
-    for source in [
-        br#"struct Pair {
-  first: u8;
-  second: u8;
-}
-
-fn act(pair: &Pair) -> result: unit reads(pair.first), writes(pair) {
-  let old = deref(pair).first;
-  set deref(pair).second = old;
-  return unit;
-}
-
-fn main() -> status: ExitStatus pure {
-  let pair = Pair(first: 1_u8, second: 2_u8);
-  act(pair: &pair);
-  return exit_status(code: 0_u8);
-}
-"#
-        .as_slice(),
-        br#"struct Pair {
-  first: u8;
-  second: u8;
-}
-
-fn act(pair: &Pair) -> result: unit writes(pair), writes(pair.first) {
-  set deref(pair).first = 7_u8;
-  return unit;
-}
-
-fn main() -> status: ExitStatus pure {
-  let pair = Pair(first: 1_u8, second: 2_u8);
-  act(pair: &pair);
-  return exit_status(code: 0_u8);
-}
-"#
-        .as_slice(),
+fn an_entry_at_or_below_a_written_path_is_refused_at_the_row() {
+    let body = "let old = deref(pair).first;\n  set deref(pair).second = old;";
+    for (row, entry, covering) in [
+        (
+            "reads(pair.first), writes(pair)",
+            "reads(pair.first)",
+            "writes(pair)",
+        ),
+        (
+            "writes(pair), writes(pair.first)",
+            "writes(pair.first)",
+            "writes(pair)",
+        ),
+        (
+            "writes(pair.first), writes(pair)",
+            "writes(pair.first)",
+            "writes(pair)",
+        ),
     ] {
-        assert_rule_kind(source, SemanticRule::Eff5, |kind| {
-            matches!(kind, SemanticIssueKind::OverlappingCallEffects { .. })
+        let source = PAIR_ACT.replace("ROW", row).replace("BODY", body);
+        with_semantics(source.as_bytes(), |outcome| {
+            let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("expected an EFF-1 rejection, got {outcome:?}");
+            };
+            assert_eq!(issue.rule(), SemanticRule::Eff1);
+            assert_eq!(
+                issue.kind(),
+                &SemanticIssueKind::SubsumedEffectEntry {
+                    entry: entry.to_owned(),
+                    covering: covering.to_owned(),
+                }
+            );
         });
+        super::assert_rule_at(source.as_bytes(), SemanticRule::Eff1, entry);
     }
+}
+
+/// [EFF-5] two effects one argument supplies are compared only when the
+/// values of their positions could separate them. A whole read beside a
+/// write below it overlaps at every position: the callee reaches both
+/// through its one parameter, so the call proves nothing about the pair and
+/// is admitted, where every call used to refuse it.
+#[test]
+fn one_argument_entries_that_overlap_at_every_position_are_not_compared() {
+    let body = "let whole = deref(pair);\n  set deref(pair).first = whole.second;";
+    assert_accepts(
+        PAIR_ACT
+            .replace("ROW", "reads(pair), writes(pair.first)")
+            .replace("BODY", body)
+            .as_bytes(),
+    );
+    // One argument that is a joined reference supplies both entries for each
+    // place it may name; the cross pairs need no `i != j` either, because the
+    // parameter names one of those places on any one call.
+    assert_accepts(
+        br#"struct Cell {
+  count: u64;
+  total: u64;
+}
+
+fn record(cell: &Cell) -> result: unit reads(cell), writes(cell.count) {
+  let whole = deref(cell);
+  set deref(cell).count = whole.total;
+  return unit;
+}
+
+fn pick(values: &Array<Cell, 4>, i: u64, j: u64, choose: Bool) -> result: unit reads(values[i]), reads(values[j]), writes(values[i].count), writes(values[j].count) contract {
+  requires i < 4_u64;
+  requires j < 4_u64;
+} {
+  let selected = &deref(values)[i];
+  if choose {
+    set selected = &deref(values)[j];
+  }
+  record(cell: selected);
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+    );
+}
+
+/// [EFF-5] one argument's two effects whose overlap depends on position
+/// values are still compared at the call, and so are two arguments' effects
+/// however each argument's own entries relate.
+#[test]
+fn position_dependent_and_cross_argument_pairs_are_still_compared() {
+    assert_rule_kind(
+        br#"fn copy_within(values: &Array<u8, 4>, i: u64, j: u64) -> result: unit reads(values[i]), writes(values[j]) contract {
+  requires i < 4_u64;
+  requires j < 4_u64;
+} {
+  let observed = deref(values)[i];
+  set deref(values)[j] = observed;
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  let values = array_filled::<u8, 4>(value: 1_u8);
+  copy_within(values: &values, i: 1_u64, j: 1_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Eff5,
+        |kind| matches!(kind, SemanticIssueKind::OverlappingCallEffects { .. }),
+    );
+    // [WIN-2] a slot overlaps `r.last` unless the call proves it is not the
+    // last one, so that pair depends on the slot's value.
+    assert_rule_kind(
+        br#"fn take_after_read(window: &Slots<u64, 4>, i: u64) -> result: u64 reads(window[i]), writes(window.last), writes(window.len) contract {
+  requires i < deref(window).len;
+} {
+  let observed = deref(window)[i];
+  let taken = take_back(window: window);
+  return observed +wrap taken;
+}
+
+fn main() -> status: ExitStatus pure {
+  let window = slots_new::<u64, 4>();
+  place_back(window: &window, value: 5_u64);
+  place_back(window: &window, value: 6_u64);
+  let sum = take_after_read(window: &window, i: 0_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Eff5,
+        |kind| matches!(kind, SemanticIssueKind::OverlappingCallEffects { .. }),
+    );
+    // The written field passed again through a second parameter is a pair of
+    // two arguments.
+    assert_rule_kind(
+        br#"struct Stats {
+  count: u64;
+  total: u64;
+}
+
+fn record(stats: &Stats, extra: &u64) -> result: unit reads(stats), reads(extra), writes(stats.count) {
+  let whole = deref(stats);
+  let added = deref(extra);
+  set deref(stats).count = whole.total +wrap added;
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  let stats = Stats(count: 1_u64, total: 7_u64);
+  record(stats: &stats, extra: &stats.count);
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Eff5,
+        |kind| {
+            matches!(kind, SemanticIssueKind::OverlappingCallEffects { first, second, .. }
+                if first == "stats.count" && second == "stats.count")
+        },
+    );
 }
 
 /// [EFF-5, FORM-2] the two substituted paths an EFF-5 rejection carries are
@@ -567,8 +703,8 @@ fn overlapping_call_effects_carry_source_spelled_paths() {
   second: u8;
 }
 
-fn act(pair: &Pair) -> result: unit reads(pair.first), writes(pair) {
-  let old = deref(pair).first;
+fn act(pair: &Pair, seen: &u8) -> result: unit reads(seen), writes(pair) {
+  let old = deref(seen);
   set deref(pair).second = old;
   return unit;
 }
@@ -576,12 +712,12 @@ fn act(pair: &Pair) -> result: unit reads(pair.first), writes(pair) {
 "#;
     for (caller, first, second) in [
         (
-            "fn main() -> status: ExitStatus pure {\n  let pair = Pair(first: 1_u8, second: 2_u8);\n  act(pair: &pair);\n  return exit_status(code: 0_u8);\n}\n",
+            "fn main() -> status: ExitStatus pure {\n  let pair = Pair(first: 1_u8, second: 2_u8);\n  act(pair: &pair, seen: &pair.first);\n  return exit_status(code: 0_u8);\n}\n",
             "pair.first",
             "pair",
         ),
         (
-            "fn relay(holder: &Pair) -> result: unit writes(holder) {\n  act(pair: holder);\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+            "fn relay(holder: &Pair) -> result: unit writes(holder) {\n  act(pair: holder, seen: &deref(holder).first);\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
             "deref(holder).first",
             "deref(holder)",
         ),

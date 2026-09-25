@@ -1,4 +1,4 @@
-# Kernel Specification v0.70
+# Kernel Specification v0.69
 
 Rule IDs are stable; diagnostics cite rule IDs.
 
@@ -654,13 +654,13 @@ Every subsequent step is relative to its containing range, so unequal subscripts
 The captured endpoints are immutable mathematical values, and assigning to a binding that supplied an endpoint cannot change an existing range or retarget a proof about it.
 The relation is therefore over the complete path and not over one offset: `grid[k]` and `grid[i][j]` are decided at `k` against `i`, and two places that agree there overlap however their later steps read.
 A window part is judged by [WIN-2]'s fixed answers, and a pair whose separation no admitted family discharges is overlapping.
-A call's substituted effect paths are compared with one another in the pairs [EFF-5] selects, and against every live reference's path, by this relation.
+A call's substituted effect paths are compared against each other and against every live reference's path by this relation [EFF-5].
 For [REF-1]'s unknown-depth descriptions, a cover `R.**` overlaps R, every ancestor and every descendant. Two covers or a cover and an ordinary path are disjoint only when their known prefixes prove separation before the unknown tail. When both accesses share a captured current-target identity, compare their finite relative suffixes by the ordinary rules above. Different suffix fields below unrelated targets in one cover establish no separation. Equal-place, possible overlap and possible proper ancestry remain distinct judgments; an unknown tail cannot prove absence of a destructive prefix.
 
 [OWN-8] Reject-when-unsure: the checker rejects any program it cannot prove conformant.
 Rejection of a sound-but-unprovable program is not a defect; the diagnostic names the rule and a restructuring.
 
-[OWN-9] Non-normative consequence for the optimizer: for the duration of a live call, a place its substituted row declares `writes` of is reached only through the reference parameter whose entry names it, because [EFF-5] has proved it disjoint from every substituted effect another argument supplies, the effects one argument supplies are reached through that one parameter, and a statement that overlaps the call touches only storage [PAR-1] proved disjoint from the call's writes; a place that call only reads is read-only for that duration; an owned value is unaliased except by the references formed from it [REF-1].
+[OWN-9] Non-normative consequence for the optimizer: a place a live call's substituted row declares `writes` of, and that [EFF-5] has proved disjoint from every other substituted effect of that call and from every live reference's path [OWN-7], is unaliased by any other access path for the duration of that call; a place that call only reads is read-only for that duration; an owned value is unaliased except by the references formed from it [REF-1].
 
 [OWN-11] Loops: the body of an ordinary `loop_stmt` or a counted `for_stmt` is an ordinary block whose own bindings begin and end with one iteration.
 A binding declared outside that body may be moved inside it, and the per-iteration judgment is [LIV-1]'s liveness agreement read at this loop's head: a binding declared outside the body whose live-or-dead status on the backedge differs from its status on the entering edge is a hard error citing OWN-11 at the loop, naming that binding, because one iteration would then start in a state the previous one did not leave.
@@ -1451,7 +1451,7 @@ The spellings `external`, `blocks`, `memory`, `world`, and `capability` are not 
 Every `effect_path` is rooted at one reference parameter of the same callable and continues through field selections, enum payload steps, measure and window-part names [TYPE-10, WIN-2], and whole-index or range positions supplied as arguments. A by-value parameter has no effect entry at all: the call site records the consumption of a `move` argument or the read of a copy argument [EFF-5]. A signature never contains an index expression; an index enters an effect only through an IDENT that resolves to a value parameter of the same callable, evaluated once at the call. A root resolving to a local, a result binder, a by-value parameter, or a non-parameter declaration is an EFF-1 rejection. A bare parameter names the complete state that parameter supplies; a field path names only that structural substate.
 
 The row describes observations and changes of ordinary Whitefoot state. It does not distinguish memory from outside state and does not describe a host scheduling mechanism. Opaque nominals and aggregates all use the same path, exactness, call-substitution, and ownership rules. No type or path carries a writer-visible capability category.
-`reads(path)` means the operation observes that state. `writes(path)` means the operation writes, replaces, moves out of, or frees the storage at that path and everything below it, so it states every access at that path and below it, and one row states such an access once: an entry whose `effect_path` is another `writes` entry's `effect_path` followed by zero or more `epsuffix` — `reads(p)`, `reads(p.x)`, or `writes(p.x)` beside `writes(p)` — is an EFF-1 rejection at that entry's `effect`, carrying the `writes` entry that covers it.
+`reads(path)` means the operation observes that state. `writes(path)` means the operation writes, replaces, moves out of, or frees the storage at that path and everything below it, and `writes(p)` subsumes `reads(p)`, so the pair is never written for one path.
 
 [EFF-2] A concrete function declaration exhibits the union of its resolved body accesses and calls.
 The body contribution is syntactic over the complete function body. Erased definitions and contracts [FN-8, FN-9], proofs, and the compiler-owned captures, comparison and update of a counted loop contribute nothing.
@@ -1485,11 +1485,9 @@ Every proof failure rejects the source before lowering.
 Unavailable resources and a trusted-computing-base failure remain outside the source effect system under [SCOPE-3]; none creates a writer-visible effect spelling or an alternate successful source judgment.
 
 [EFF-5] At a call, the actual argument paths are substituted into the callee's row: each `effect_path` rooted at reference parameter i takes actual argument i's path, and each IDENT index or range endpoint takes the value its own argument supplies, evaluated once at the call.
-The substituted effects are then compared in pairs: every two effects that different arguments supply, and every two effects that one reference argument supplies whose declared paths do not overlap at every position.
-Two declared paths rooted at one parameter overlap at every position when one is the other followed by zero or more `epsuffix`, or when the first pair of steps at which they differ is one that [OWN-7] and [WIN-2] fix as overlapping whatever values the positions take: two payload steps naming different variants, an index position and `.filled`, `.next` and `.free`, or `.last` and `.filled`. Steps compare as written, so two index or range positions are the same step exactly when they name the same value parameters. `reads(v[i]), writes(v[j])` is therefore compared, while `reads(v), writes(v[j])` and `reads(p.A.x), writes(p.B.y)` are not.
-Two effects one argument supplies whose declared paths overlap at every position reach that storage through that one parameter, and the callee's body is checked against both [EFF-2]; their writes still kill every caller fact whose support they overlap [CALL-5] and invalidate references under clause 3.
+The substituted effects are then compared pairwise:
 
-1. Two compared effects on overlapping paths [OWN-7] where at least one is a write must be proved disjoint, by different roots or by indices or ranges proved distinct, and are otherwise a hard error citing EFF-5 at the complete `call`, carrying both substituted paths and the restructuring `prove the two positions distinct, or pass one of them`. Read/read overlap is admitted. The built-in `swap` [OP-11] is the one operation whose two arguments may name the same place.
+1. Two effects on overlapping paths [OWN-7] where at least one is a write must be proved disjoint, by different roots or by indices or ranges proved distinct, and are otherwise a hard error citing EFF-5 at the complete `call`, carrying both substituted paths and the restructuring `prove the two positions distinct, or pass one of them`. Read/read overlap is admitted. The built-in `swap` [OP-11] is the one operation whose two arguments may name the same place.
 2. A by-value argument contributes a consumption (`move`) or a read (copy) of its place to this same comparison.
 3. Every live reference, including an actual argument, receives the invalidations of every substituted write under [REF-2]. A content write at or below its captured target preserves it; argument membership does not protect it from another actual's destructive ancestor write.
 

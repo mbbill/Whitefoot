@@ -804,6 +804,72 @@ pub(crate) fn places_overlap(
     left.root == right.root && paths_overlap(oracle, left, &left.path, &right.path)
 }
 
+/// [EFF-5] whether two places overlap whatever values their index and range
+/// positions take.
+///
+/// This is the ordinary [OWN-7] walk asked with every position question
+/// answered by the values alone: two positions that are not provably the
+/// same value may be distinct, a slot may lie outside `r.len - 1` [WIN-2], and
+/// a range step against any step other than the identical range may be
+/// empty or lie elsewhere, which no admitted family answers but some values
+/// do. The places overlap at every position exactly when the walk still
+/// finds them overlapping: one is a prefix of the other, or they first differ
+/// at a pair OWN-7 and WIN-2 fix as overlapping, such as two payload steps
+/// naming different variants or a slot against `r.filled`.
+pub(crate) fn overlaps_at_every_position(left: &ResolvedPlace, right: &ResolvedPlace) -> bool {
+    if left.root != right.root {
+        return false;
+    }
+    for (depth, (left_step, right_step)) in left.path.iter().zip(&right.path).enumerate() {
+        let ranged =
+            matches!(left_step, PlaceStep::Range(_)) || matches!(right_step, PlaceStep::Range(_));
+        if ranged {
+            if steps_provably_same(*left_step, *right_step) {
+                continue;
+            }
+            return false;
+        }
+        let window = ResolvedPlace {
+            root: left.root,
+            path: left.path[..depth].to_vec(),
+        };
+        match separation(&EveryPositionSeparable, &window, *left_step, *right_step) {
+            StepSeparation::Separate => return false,
+            StepSeparation::Overlapping => return true,
+            StepSeparation::Same => {}
+        }
+    }
+    true
+}
+
+/// The oracle of [`overlaps_at_every_position`]: every question a position's
+/// value could answer is answered by some values as separating.
+///
+/// It is not a proof oracle and grants no separation to any consumer that
+/// judges one program state; it asks only whether an overlap depends on
+/// position values at all.
+struct EveryPositionSeparable;
+
+impl SeparationOracle for EveryPositionSeparable {
+    fn indices_distinct(&self, left: CapturedValue, right: CapturedValue) -> bool {
+        !left.provably_same(right)
+    }
+
+    fn ranges_disjoint(&self, _left: CapturedRange, _right: CapturedRange) -> bool {
+        true
+    }
+
+    fn index_is_not_last(&self, _window: &ResolvedPlace, _index: CapturedValue) -> bool {
+        true
+    }
+
+    /// The two places are one call's declared paths, both read at its entry
+    /// [WIN-2].
+    fn window_length_is_shared(&self, _window: &ResolvedPlace) -> bool {
+        true
+    }
+}
+
 /// The exact range pair that could separate two otherwise-overlapping paths.
 ///
 /// This follows the ordinary [OWN-7] walk with no proof oracle. A candidate

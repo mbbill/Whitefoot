@@ -882,20 +882,21 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   prescribe none print one anyway: EFF-1's row conditions carry a
   `mechanical_fix` on main, and EFF-2's `EffectMismatch` prints "declare
   exactly the row the body exhibits: ..." though EFF-2 requires no
-  restructuring. (EFF-1's subsumed-read rejection, which requires no
+  restructuring. (EFF-1's subsumed-entry rejection, which requires no
   restructuring, carries none.) Two of these printed fixes, applied
   literally, lead to a further rejection:
   (a) EFF-2's "add every missing category and path and remove every extra
-  one" no longer describes `expected_row`, which merges entries a call
-  would refuse. A body that reads `stats` and writes `stats.count`,
-  declared `writes(stats.count)`, gets `expected_row: "writes(stats)"`,
-  `missing: ["writes(stats)"]` and `extra: []`; adding the missing entry
-  and removing nothing gives `writes(stats), writes(stats.count)`, which
-  EFF-1 and EFF-2 admit and EFF-5 refuses at every call. Declaring
-  `expected_row` itself is callable.
-  (b) EFF-1's category-order fix turns `writes(v), reads(v)` into
-  `reads(v), writes(v)`, which then meets the subsumed-read rejection, one
-  more compile round for a repair that should have deleted the read.
+  one" never removes a declared entry that a missing write covers. A body
+  that reads `stats.count` and then calls a helper declared `writes(stats)`,
+  declared `reads(stats.count)`, gets `expected_row: "writes(stats)"`,
+  `missing: ["writes(stats)"]` and `extra: []`, because the body does read
+  `stats.count`; adding the missing entry and removing nothing gives
+  `reads(stats.count), writes(stats)`, which EFF-1 refuses at
+  `reads(stats.count)`. Declaring `expected_row` itself is admitted.
+  (b) EFF-1's category-order fix turns `writes(v), reads(v)` or
+  `writes(v), reads(v.x)` into `reads(v), writes(v)` or
+  `reads(v.x), writes(v)`, which then meets the subsumed-entry rejection,
+  one more compile round for a repair that should have deleted the read.
   Audit every rejection in one pass, rule by rule, and either update the
   specification's text or the compiler's; the criterion is that every
   restructuring the specification prescribes equals the printed one, and a
@@ -903,26 +904,18 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   amended to allow it, and never leads to a further rejection of the same
   construct. Pinned sentences and unit tests that assert the texts change
   with it.
-- **Question for the owner, raised during the source-spelling fix: should a
-  row whose entries on one parameter overlap be admitted?** [EFF-5] compares
-  every pair of a call's substituted entries, including two that one
-  argument supplies, so `reads(p), writes(p.x)`, `reads(p.x), writes(p)` and
-  `writes(p), writes(p.x)` are refused at every call, while [EFF-2]'s
-  covering relation admits each at the declaration and [EFF-1] forbids only
-  the same-path pair `reads(p), writes(p)`. The checker refuses that pair at
-  the declaration (EFF-1's "the pair is never written for one path"), and
-  EFF-2's suggested row merges every such pair into one write of their
-  common path, so a suggestion is always callable. The remaining
-  declarations still fail only at their first call, as the uncalled rows in
-  `ref2-pos-bystander-preservation.wf` show. Two specification directions
-  remove the dead end: EFF-1 or EFF-2 refusing any row with two overlapping
-  entries on one parameter where one writes, or EFF-5 exempting a pair that
-  one argument supplies unless the two entries differ only in index or range
-  positions. The first keeps EFF-5's per-call guarantee and makes those
-  conformance rows rejections; the second changes what a single-parameter
-  row promises about aliasing inside the callee. Close with the owner's
-  choice; validate it against the bystander cases and the container library
-  rows.
+- **Question for the owner: should a row refuse a read below another
+  read?** [EFF-1] refuses an entry at or below another `writes` entry of its
+  row, but not a `reads` entry at or below another `reads` entry, so a body
+  that reads all of `stats` and its `count` admits both `reads(stats)` and
+  `reads(stats), reads(stats.count)`: two rows for one body, where [FORM-1]
+  asks for one spelling. Read pairs are never compared at a call and kill
+  nothing [EFF-5, CALL-1], so the redundancy costs callers nothing, and
+  EFF-2's suggested row already omits the covered read. Extending the EFF-1
+  subsumption to reads makes every row canonical; validate it by the rows it
+  would newly refuse in the conformance corpus and maintained programs.
+  Deferred because the owner's ruling on one-argument rows covered only
+  entries below a written path; close when the owner rules on reads.
 - **A few payload strings still carry non-source forms.** The source-spelling
   fix left three: the FN-9 `relation` field prints the normalized relation
   with unsuffixed literals, such as `"w.value - 0 <= -1"` for

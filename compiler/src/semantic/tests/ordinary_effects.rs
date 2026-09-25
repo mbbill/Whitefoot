@@ -804,9 +804,9 @@ fn record_counter(row: &str, body: &str) -> String {
     RECORD_COUNTER.replace("ROW", row).replace("BODY", body)
 }
 
-/// [EFF-1] "`writes(p)` subsumes `reads(p)`, so the pair is never written
-/// for one path": a row carrying both is refused at the redundant `reads`
-/// entry, so no call is left to meet the pair as an [EFF-5] self-overlap.
+/// [EFF-1] `writes(p)` states every access at or below `p`, so a row that
+/// also carries `reads(p)` states the read twice and is refused at the
+/// redundant entry, naming the entry that covers it.
 #[test]
 fn a_read_the_same_rows_write_subsumes_is_an_eff1_rejection() {
     let source = record_counter(
@@ -814,8 +814,8 @@ fn a_read_the_same_rows_write_subsumes_is_an_eff1_rejection() {
         "let old = deref(stats).count;\n  set deref(stats).count = old +wrap 1_u64;",
     );
     assert_rule_kind(source.as_bytes(), SemanticRule::Eff1, |kind| {
-        matches!(kind, SemanticIssueKind::SubsumedEffectRead { entry }
-            if entry == "reads(stats.count)")
+        matches!(kind, SemanticIssueKind::SubsumedEffectEntry { entry, covering }
+            if entry == "reads(stats.count)" && covering == "writes(stats.count)")
     });
     super::assert_rule_at(source.as_bytes(), SemanticRule::Eff1, "reads(stats.count)");
     // A read and a write of different paths remain one row.
@@ -846,8 +846,8 @@ fn the_suggested_row_for_a_read_modify_write_is_the_write_alone() {
 }
 
 /// [EFF-2] `missing` names the entry of the suggested row that covers each
-/// uncovered access, so a read the suggestion merges into a write is named
-/// by that write rather than as a read the write would subsume [EFF-1].
+/// uncovered access: an exhibited path the row lacks, or the write that
+/// states an uncovered read below it [EFF-1].
 #[test]
 fn a_missing_entry_is_named_by_the_suggested_entry_covering_it() {
     let (expected, missing, extra) = effect_mismatch(&record_counter(
@@ -861,23 +861,49 @@ fn a_missing_entry_is_named_by_the_suggested_entry_covering_it() {
         "writes(stats.count)",
         "let whole = deref(stats);\n  set deref(stats).count = whole.total;",
     ));
+    assert_eq!(expected, "reads(stats), writes(stats.count)");
+    assert_eq!(missing, ["reads(stats)"]);
+    assert!(extra.is_empty(), "{extra:?}");
+    // A callee's projected write reaches the whole parameter [EFF-2]; the
+    // read below it is covered, so `missing` names that write.
+    let (expected, missing, extra) = effect_mismatch(
+        r#"struct Stats {
+  count: u64;
+  total: u64;
+}
+
+fn reset(stats: &Stats) -> result: unit writes(stats) {
+  set deref(stats) = Stats(count: 0_u64, total: 0_u64);
+  return unit;
+}
+
+fn record(stats: &Stats) -> result: u64 reads(stats.count) {
+  let seen = deref(stats).count;
+  reset(stats: stats);
+  return seen;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+    );
     assert_eq!(expected, "writes(stats)");
     assert_eq!(missing, ["writes(stats)"]);
     assert!(extra.is_empty(), "{extra:?}");
 }
 
-/// [EFF-5] compares every pair of one call's substituted entries, even two
-/// that one argument supplies, so a row reading a whole parameter while
-/// writing below it is refused at every call although [EFF-2] admits it.
-/// The suggestion merges such a pair into one write of their common path,
-/// keeps disjoint entries apart, and spells one path per entry [EFF-1];
-/// each suggestion is accepted with the call in place.
+/// [EFF-2] the suggested row is the exhibited row without the entries another
+/// of its entries covers, one path per entry [EFF-1]. A whole read beside a
+/// write below it stays exact: one argument supplies both, and [EFF-5] does
+/// not compare a pair that overlaps at every position. Each suggestion is
+/// accepted with the call in place.
 #[test]
-fn the_suggested_row_merges_entries_every_call_would_refuse() {
+fn the_suggested_row_is_the_exhibited_row_without_covered_entries() {
     for (body, suggested) in [
         (
             "let whole = deref(stats);\n  set deref(stats).count = whole.total;",
-            "writes(stats)",
+            "reads(stats), writes(stats.count)",
         ),
         (
             "let seen = deref(stats).count;\n  set deref(stats) = Stats(count: seen, total: 0_u64);",
@@ -901,15 +927,6 @@ fn the_suggested_row_merges_entries_every_call_would_refuse() {
         );
         assert_complete(record_counter(&expected, body).as_bytes());
     }
-    // Before the merge, EFF-2 admits the uncallable row and every call
-    // refuses it; the suggestion is what removes that dead end.
-    let whole_read = record_counter(
-        "reads(stats), writes(stats.count)",
-        "let whole = deref(stats);\n  set deref(stats).count = whole.total;",
-    );
-    assert_rule_kind(whole_read.as_bytes(), SemanticRule::Eff5, |kind| {
-        matches!(kind, SemanticIssueKind::OverlappingCallEffects { .. })
-    });
 }
 
 /// Two indexed positions stay apart in the suggestion: whether they select
