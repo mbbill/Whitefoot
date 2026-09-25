@@ -70,8 +70,10 @@ rarely insert at the same place.
   it if it withholds postconditions that ordinary programs need. A persistent
   LLVM planning adapter waits for warm-build measurements that show stock
   ThinLTO planning to be a material share of edit latency. External-package
-  resolution and library composition remain deferred by scope; reopen only
-  when selected by the owner, with package identity/version/renaming cases.
+  resolution and composition of libraries other than the standard library
+  remain deferred by scope; reopen only when selected by the owner, with
+  package identity/version/renaming cases. The standard library's fixed `std`
+  qualifier is proposed separately, in the item below.
   Subtree-private independently compiled modules remain unselected; reconsider
   for a concrete privacy consumer that cannot use one module's private
   implementation files.
@@ -88,15 +90,22 @@ rarely insert at the same place.
   dependency-name binding and the modular design keeps the prelude out of an
   ordinary source package called `std`; whether library modules join every
   closure or only the entries that name them; and how their verdicts, proof
-  receipts and objects are reused across programs. The measured container
-  libraries under `research/experiments/container-representation/` are the
-  first standard-library candidates. Benefit: one naming and visibility rule
-  for library and program code, library checks reused instead of repeated in
-  every composition, and fewer compiler-owned declaration paths; the cost, the
-  specification changes (PRE-1, PROG-2) and the reuse gain are unverified.
-  Validate with the whole conformance corpus and test programs unchanged in
-  meaning, and a composition's front-end time before and after. Start after
-  the modular compilation PR merges, as its own investigation.
+  receipts and objects are reused across programs. The container libraries in
+  `lib/containers/`, measured by `research/experiments/container-representation/`,
+  are the first standard-library candidates. Benefit: one naming and
+  visibility rule for library and program code, library checks reused instead
+  of repeated in every composition, and fewer compiler-owned declaration
+  paths. In progress: the
+  [library-modules investigation](../research/investigations/library-modules/DESIGN.md)
+  proposes the answers as amendments awaiting the owner's ruling, and its E1
+  measured the host rows' per-check cost (36 to 62 percent of a check's
+  instructions); the specification changes and the cross-program reuse gain
+  are unverified. Until the host records leave it, `compiler/src/prelude.rs`
+  copies specification section 14 by hand, and no test holds the two together
+  (only the built-in catalog is compared); the records that remain gain that
+  test with the move. Validate with the whole conformance corpus and test
+  programs unchanged in meaning, and a composition's front-end time before and
+  after.
 
 - **Select the modular conversion companion.** The
   [conversion comparison](../research/investigations/numeric-conversions/DESIGN.md#companion-operations-and-explicit-deferrals)
@@ -158,6 +167,26 @@ rarely insert at the same place.
   extensions below remain a separate question.
 
 ## Checker precision and proof cost
+
+- **Nominal passes grow with the prelude's nominals times a module's functions.**
+  Removing the 45 host records from the prelude saves 106 million
+  instructions when checking a one-function module and 215 million when
+  checking a 16-function chain module
+  ([library-modules E1](../research/investigations/library-modules/DESIGN.md#measurement-e1-what-the-host-rows-cost-every-check));
+  callgrind attributes the difference mostly to `reject_recursive_nominal_layouts`,
+  `nominal_dependencies`, `ensure_nominals_in_node`,
+  `instantiate_function_signature`, `validate_generic_templates` and
+  `CheckedType` hash-set insertion in `compiler/src/semantic/check.rs` and its
+  submodules. Impact: every check does work that grows with the product of the
+  declared nominals and the checked functions; moving the host declarations
+  into standard library modules removes it only from checks that name none of
+  them. Change: find the pass that revisits every nominal instance for each
+  function signature and keep its per-nominal results, since layout recursion
+  and dependency sets belong to a nominal instance, not to the function that
+  reaches it. Validate with the same callgrind comparison: the host rows' cost
+  on the 16-function module should fall to at most their cost on the
+  one-function module. Reopen with the library-modules implementation, or when
+  a module check's time limits an experiment.
 
 - **Some ENT-3 sources read no measure operand.** S7's constant-offset,
   checked-offset, exact-division, remainder and unsigned `iand` rows read an
