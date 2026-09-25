@@ -314,8 +314,8 @@ fn hull2(a: Interval, b: Interval, f: impl Fn(i128, i128) -> Option<i128>) -> Op
 /// nonnegative part starting at `start` (one for a divisor, zero otherwise).
 fn split(interval: Interval, start: i128) -> impl Iterator<Item = Interval> {
     let negative = (interval.low <= -1).then(|| Interval::new(interval.low, interval.high.min(-1)));
-    let nonnegative = (interval.high >= start)
-        .then(|| Interval::new(interval.low.max(start), interval.high));
+    let nonnegative =
+        (interval.high >= start).then(|| Interval::new(interval.low.max(start), interval.high));
     negative.into_iter().chain(nonnegative)
 }
 
@@ -367,7 +367,10 @@ fn table(
             if wrap && !t.holds(hull) {
                 return None;
             }
-            (hull, vec![offset(0, b.low, b.high), offset(1, a.low, a.high)])
+            (
+                hull,
+                vec![offset(0, b.low, b.high), offset(1, a.low, a.high)],
+            )
         }
         Row::Subtract { wrap } => {
             let b = second?;
@@ -479,7 +482,10 @@ fn table(
                 .enumerate()
                 .filter(|(_, interval)| interval.low >= 0)
                 .collect::<Vec<_>>();
-            let high = nonnegative.iter().map(|(_, interval)| interval.high).min()?;
+            let high = nonnegative
+                .iter()
+                .map(|(_, interval)| interval.high)
+                .min()?;
             let relations = nonnegative
                 .iter()
                 .map(|(operand, _)| at_most(*operand, 0))
@@ -546,7 +552,9 @@ fn table(
         }
         Row::MultiplyHigh => {
             let b = second?;
-            let hull = hull2(a, b, |left, right| Some(left.checked_mul(right)? >> t.width))?;
+            let hull = hull2(a, b, |left, right| {
+                Some(left.checked_mul(right)? >> t.width)
+            })?;
             let relations = if a.low >= 0 && b.low >= 0 {
                 vec![at_most(0, 0), at_most(1, 0)]
             } else {
@@ -584,15 +592,9 @@ fn table(
             if result.holds(a) {
                 (a, vec![offset(0, 0, 0)])
             } else if a.high < 0 && !result.signed {
-                (
-                    Interval::new(a.low + modulus, a.high + modulus),
-                    Vec::new(),
-                )
+                (Interval::new(a.low + modulus, a.high + modulus), Vec::new())
             } else if result.signed && a.low > result.maximum {
-                (
-                    Interval::new(a.low - modulus, a.high - modulus),
-                    Vec::new(),
-                )
+                (Interval::new(a.low - modulus, a.high - modulus), Vec::new())
             } else {
                 return None;
             }
@@ -684,8 +686,10 @@ fn exact(row: Row, t: Span, result: Span, values: &[i128]) -> Option<i128> {
             if t.signed {
                 a.checked_mul(b)? >> t.width
             } else {
-                let product =
-                    u128::try_from(a).ok()?.checked_mul(u128::try_from(b).ok()?)? >> t.width;
+                let product = u128::try_from(a)
+                    .ok()?
+                    .checked_mul(u128::try_from(b).ok()?)?
+                    >> t.width;
                 i128::try_from(product).ok()?
             }
         }
@@ -766,7 +770,11 @@ mod tests {
                     return None;
                 }
                 let quotient = a.abs() / b.abs();
-                in_t(if (a < 0) == (b < 0) { quotient } else { -quotient })?
+                in_t(if (a < 0) == (b < 0) {
+                    quotient
+                } else {
+                    -quotient
+                })?
             }
             Row::Remainder => {
                 if b == 0 || in_t(a / b).is_none() {
@@ -980,8 +988,16 @@ mod tests {
     /// power of two, checked at every operand value inside them.
     #[test]
     fn eight_bit_endpoint_boxes_satisfy_the_table() {
-        check_type(Span::new(8, false), &[0, 1, 7, 128, 200, 255], &[0, 1, 7, 8, 40]);
-        check_type(Span::new(8, true), &[-128, -65, -1, 0, 1, 127], &[0, 1, 7, 8, 40]);
+        check_type(
+            Span::new(8, false),
+            &[0, 1, 7, 128, 200, 255],
+            &[0, 1, 7, 8, 40],
+        );
+        check_type(
+            Span::new(8, true),
+            &[-128, -65, -1, 0, 1, 127],
+            &[0, 1, 7, 8, 40],
+        );
     }
 
     /// Single values take the exact row value whether or not the row's
@@ -993,18 +1009,66 @@ mod tests {
         let u32_span = Span::new(32, false);
         let one = |value: i128| Interval::value(value);
         let cases: [(Row, Span, Span, &[Interval], i128); 12] = [
-            (Row::Add { wrap: true }, u8_span, u8_span, &[one(250), one(10)], 4),
-            (Row::ShiftLeft { wrap: true }, u32_span, u32_span, &[one(1), one(40)], 256),
-            (Row::ShiftRight { wrap: false }, i8_span, i8_span, &[one(-7), one(1)], -4),
-            (Row::RotateLeft, u8_span, u8_span, &[one(0x81), one(1)], 0x03),
-            (Row::RotateRight, u8_span, u8_span, &[one(0x81), one(1)], 0xc0),
-            (Row::ByteSwap, Span::new(16, false), Span::new(16, false), &[one(0x1234)], 0x3412),
+            (
+                Row::Add { wrap: true },
+                u8_span,
+                u8_span,
+                &[one(250), one(10)],
+                4,
+            ),
+            (
+                Row::ShiftLeft { wrap: true },
+                u32_span,
+                u32_span,
+                &[one(1), one(40)],
+                256,
+            ),
+            (
+                Row::ShiftRight { wrap: false },
+                i8_span,
+                i8_span,
+                &[one(-7), one(1)],
+                -4,
+            ),
+            (
+                Row::RotateLeft,
+                u8_span,
+                u8_span,
+                &[one(0x81), one(1)],
+                0x03,
+            ),
+            (
+                Row::RotateRight,
+                u8_span,
+                u8_span,
+                &[one(0x81), one(1)],
+                0xc0,
+            ),
+            (
+                Row::ByteSwap,
+                Span::new(16, false),
+                Span::new(16, false),
+                &[one(0x1234)],
+                0x3412,
+            ),
             (Row::PopulationCount, i8_span, u32_span, &[one(-1)], 8),
             (Row::LeadingZeros, u8_span, u32_span, &[one(0)], 8),
             (Row::TrailingZeros, u8_span, u32_span, &[one(8)], 3),
-            (Row::MultiplyHigh, Span::new(64, false), Span::new(64, false), &[one(u64::MAX.into()), one(u64::MAX.into())], i128::from(u64::MAX) - 1),
+            (
+                Row::MultiplyHigh,
+                Span::new(64, false),
+                Span::new(64, false),
+                &[one(u64::MAX.into()), one(u64::MAX.into())],
+                i128::from(u64::MAX) - 1,
+            ),
             (Row::Reinterpret, i8_span, u8_span, &[one(-1)], 255),
-            (Row::Absolute { wrap: true }, i8_span, i8_span, &[one(-128)], -128),
+            (
+                Row::Absolute { wrap: true },
+                i8_span,
+                i8_span,
+                &[one(-128)],
+                -128,
+            ),
         ];
         for (row, t, result, operands, expected) in cases {
             assert_eq!(

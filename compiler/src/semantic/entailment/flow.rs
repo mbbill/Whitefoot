@@ -60,10 +60,10 @@ use super::state::{
     AffinePremiseUse, ClosedState, CountedRootAtom, DerivationId, DerivationInventory,
     DerivationLedger, DerivationNode, DerivationRootKind, FactState, FlowEventId, FlowEventKind,
     GoalId, GoalNormalization, GoalSign, GoalSupport, GoalTable, IndexCaptureSubstitution,
-    IndexSeparationDetail, JoinParent, PostconditionCallSubstitution,
-    RangeSeparationDetail, RangeSeparationOrdering, Relation, SourceAffineFactRef,
-    SourceLoopInvariantRef, WordHashMap, close, close_excluding_term, closure_is_seeded,
-    contradiction_without_proofs, join_at, materialize_closure_at, materialize_closure_before_kill,
+    IndexSeparationDetail, JoinParent, PostconditionCallSubstitution, RangeSeparationDetail,
+    RangeSeparationOrdering, Relation, SourceAffineFactRef, SourceLoopInvariantRef, WordHashMap,
+    close, close_excluding_term, closure_is_seeded, contradiction_without_proofs, join_at,
+    materialize_closure_at, materialize_closure_before_kill,
 };
 use super::term::{
     CountedCaptureSide, MeasureBound, MeasurePlacement, PlaceRoot, TermId, TermKind, TermTable,
@@ -75,9 +75,8 @@ use super::{
     FunctionPostconditionProof, JoinedSourceProofProvenance, LoopInvariantOutcome,
     LoopInvariantProof, ObligationFamily, ObligationOutcome, PostconditionAggregate,
     PostconditionDisposition, PostconditionEntryImage, PostconditionEntryImageOutcome,
-    PostconditionExit, SourceProofCertificateFailure, SourceProofCheck,
-    SourceProofOutcome, VerifiedPostconditionSummaryRef, fragment_type,
-    overflow_conjuncts_for_values,
+    PostconditionExit, SourceProofCertificateFailure, SourceProofCheck, SourceProofOutcome,
+    VerifiedPostconditionSummaryRef, fragment_type, overflow_conjuncts_for_values,
 };
 
 /// One [ENT-5] kill event gathered from a statement or expression.

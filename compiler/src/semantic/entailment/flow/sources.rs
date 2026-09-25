@@ -18,7 +18,6 @@ use super::super::super::model::{
     CheckedNumericType, CheckedPlaceStep, CheckedSetTarget, CheckedType, CheckedValue, IntegerType,
     MeasuredKind, NominalId,
 };
-use std::rc::Rc;
 use super::super::super::places::CapturedTerm;
 use super::super::fragment_type;
 use super::super::state::{
@@ -34,6 +33,7 @@ use super::super::{
 };
 use super::operation_facts::{self, Interval, Row, Span};
 use super::{Analyzer, ArmFacts, ProofFlowState};
+use std::rc::Rc;
 /// Which term one evaluated value's [ENT-3] image is established on: the
 /// place a `let` binder introduces, the compiler-owned commit value of one
 /// `set` occurrence, or a checked integer conversion's private success
@@ -1089,7 +1089,9 @@ impl Analyzer<'_, '_> {
             intervals.push(Interval::new(low, high));
             related.push(Some(term));
         }
-        let single = intervals.iter().all(|interval| interval.low == interval.high);
+        let single = intervals
+            .iter()
+            .all(|interval| interval.low == interval.high);
         let product = matches!(shape.row, Row::Multiply { wrap: false })
             .then(|| self.product_intervals.get(shape.carrier).cloned())
             .flatten();
@@ -1131,7 +1133,8 @@ impl Analyzer<'_, '_> {
                 continue;
             };
             if let Some(high) = relation.high {
-                let proof = self.establish_operation_fact(state, result, term, high, event, &parents);
+                let proof =
+                    self.establish_operation_fact(state, result, term, high, event, &parents);
                 if relation.operand == 0 && high == 0 {
                     dividend_order = Some(proof);
                 }
@@ -1150,7 +1153,9 @@ impl Analyzer<'_, '_> {
             return None;
         }
         let literal_divisor = match &shape.operands[1] {
-            CheckedExpression::Constant(CheckedValue::Integer { ty, bits }) if *ty == shape.operand => {
+            CheckedExpression::Constant(CheckedValue::Integer { ty, bits })
+                if *ty == shape.operand =>
+            {
                 let value = integer_value(*ty, *bits);
                 (value > 0).then_some(value)
             }

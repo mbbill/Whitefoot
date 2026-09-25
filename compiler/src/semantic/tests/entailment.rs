@@ -18,8 +18,7 @@ use super::super::entailment::{
     GoalId, GoalSign, ImplicitBoundKind, JoinParent, MeasureBound, ObligationFamily,
     ObligationOutcome, PlaceRoot, PostconditionCallDetail, PostconditionDeliveryJoinDetail,
     PostconditionDisposition, RangeSeparationOrdering, Relation, SourceAffineFactRef, TermId,
-    TermKind, ZERO,
-    type_range,
+    TermKind, ZERO, type_range,
 };
 use super::super::goal::{GoalExpression, GoalOperation};
 use super::super::model::{
