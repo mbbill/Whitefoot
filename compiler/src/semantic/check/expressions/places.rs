@@ -23,7 +23,9 @@ use super::super::super::model::{
     CheckedContainerRoot, CheckedExpression, CheckedMeasure, CheckedMode, CheckedNominalKind,
     CheckedOwnedTakeCleanup, CheckedPlaceStep, CheckedType, IntegerType,
 };
-use super::super::super::places::{PlaceRoot, PlaceStep, ResolvedPlace};
+use super::super::super::places::{
+    CapturedTerm, CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace,
+};
 use super::super::references::{OWN1_ROOTED_CONSUME, WIN3_NO_TAKE};
 
 /// [TYPE-9] the restructuring a `move` of a runtime-capacity content names.
@@ -996,6 +998,187 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
         Ok(None)
+    }
+
+    /// One resolved place in its source spelling [FORM-2, REF-1]: the place
+    /// expression that names the same storage at this point of the body.
+    ///
+    /// A reference parameter roots every path that goes through it, and the
+    /// storage it names is written under `deref` [REF-1, TYPE-7]; a local
+    /// reference never roots a resolved place, because resolution replaced it
+    /// by the path it names. A `Box` content step is the field `inner`
+    /// [TYPE-9] and a payload step names its variant and field [FORM-2]. An
+    /// index or range position spells the value it captured when the place
+    /// was formed [REF-1]: a literal, a const, or the binding it read. A
+    /// computed offset has no source name and renders as `?`, and a loop
+    /// summary's unknown descendant cover keeps [REF-1]'s `.**` notation.
+    ///
+    /// This is the one renderer every checker payload naming a resolved place
+    /// uses — the [EFF-5] substituted paths, the [OP-12] target and the
+    /// [REF-2] preservation pairs — so none of them shows a checker-internal
+    /// binding number or field ordinal.
+    pub(in crate::semantic::check) fn render_resolved_place(
+        &self,
+        place: &ResolvedPlace,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<String, CheckStop> {
+        let mut range = false;
+        let (mut rendered, mut ty) = match place.root {
+            PlaceRoot::Binding(binding) => {
+                match bindings.values().find(|local| local.binding == binding) {
+                    Some(local) => {
+                        let name = self.declaration_spelling(local.declaration)?;
+                        range = local.mode == CheckedMode::Range;
+                        if local.mode.is_reference() {
+                            (format!("deref({name})"), Some(local.ty))
+                        } else {
+                            (name, Some(local.ty))
+                        }
+                    }
+                    None => ("?".to_owned(), None),
+                }
+            }
+            PlaceRoot::Constant(constant) => {
+                let constant = self.constant(constant)?;
+                (constant.name.clone(), Some(constant.declared_type))
+            }
+        };
+        for step in &place.path {
+            match *step {
+                PlaceStep::Descendant(target) => {
+                    rendered.push_str(".**");
+                    ty = Some(target.ty);
+                    range = target.range;
+                }
+                PlaceStep::Field(field) => {
+                    let selected = match ty {
+                        Some(CheckedType::Nominal(nominal)) => match &self.nominal(nominal)?.kind {
+                            CheckedNominalKind::Struct { fields } => fields
+                                .get(field as usize)
+                                .map(|declared| (declared.name.clone(), declared.ty)),
+                            _ => None,
+                        },
+                        _ => None,
+                    };
+                    match selected {
+                        Some((name, field_type)) => {
+                            rendered.push('.');
+                            rendered.push_str(&name);
+                            ty = Some(field_type);
+                        }
+                        None => {
+                            rendered.push_str(&format!(".{field}"));
+                            ty = None;
+                        }
+                    }
+                }
+                PlaceStep::Deref => match ty.map(|ty| self.box_content(ty)).transpose()? {
+                    Some(Some(referent)) => {
+                        rendered.push_str(".inner");
+                        ty = Some(referent);
+                    }
+                    _ => {
+                        rendered = format!("deref({rendered})");
+                        ty = None;
+                    }
+                },
+                PlaceStep::Payload { variant, field } => {
+                    let selected = match ty {
+                        Some(CheckedType::Nominal(nominal)) => match &self.nominal(nominal)?.kind {
+                            CheckedNominalKind::Enum { variants } => {
+                                variants.get(variant as usize).and_then(|declared| {
+                                    declared.fields.get(field as usize).map(|payload| {
+                                        (declared.name.clone(), payload.name.clone(), payload.ty)
+                                    })
+                                })
+                            }
+                            _ => None,
+                        },
+                        _ => None,
+                    };
+                    match selected {
+                        Some((variant_name, field_name, payload_type)) => {
+                            rendered.push_str(&format!(".{variant_name}.{field_name}"));
+                            ty = Some(payload_type);
+                        }
+                        None => {
+                            rendered.push_str(&format!(".{variant}.{field}"));
+                            ty = None;
+                        }
+                    }
+                }
+                PlaceStep::Index(offset) => {
+                    rendered.push_str(&format!(
+                        "[{}]",
+                        self.render_captured_offset(offset, bindings)?
+                    ));
+                    ty = self.selected_element(ty, range)?;
+                    range = false;
+                }
+                PlaceStep::Range(span) => {
+                    rendered.push_str(&format!(
+                        "[{}..{}]",
+                        self.render_captured_offset(span.start, bindings)?,
+                        self.render_captured_offset(span.end, bindings)?
+                    ));
+                    ty = self.selected_element(ty, range)?;
+                    range = true;
+                }
+                PlaceStep::Part(part) => {
+                    rendered.push('.');
+                    rendered.push_str(part.spelling());
+                    ty = None;
+                }
+                PlaceStep::Measure(measure) => {
+                    rendered.push('.');
+                    rendered.push_str(measure.spelling());
+                    ty = Some(CheckedType::Integer(IntegerType::U64));
+                }
+            }
+        }
+        Ok(rendered)
+    }
+
+    /// The element type one index or range step selects below `ty`: a range
+    /// reference already carries its element type [REF-4], and every other
+    /// indexable base names it in its shape [OP-4].
+    fn selected_element(
+        &self,
+        ty: Option<CheckedType>,
+        range: bool,
+    ) -> Result<Option<CheckedType>, CheckStop> {
+        if range {
+            return Ok(ty);
+        }
+        Ok(match ty {
+            Some(
+                CheckedType::Array { element, .. }
+                | CheckedType::Window { element, .. }
+                | CheckedType::Buffer { element },
+            ) => Some(self.element_type(element)?),
+            _ => None,
+        })
+    }
+
+    /// The value one index step or range endpoint captured, as the source
+    /// names it [REF-1]: an [OP-4] offset is a `u64`, so a literal carries
+    /// that suffix [FORM-5].
+    fn render_captured_offset(
+        &self,
+        offset: CapturedValue,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<String, CheckStop> {
+        Ok(match offset.term {
+            CapturedTerm::Literal(value) => format!("{value}_u64"),
+            CapturedTerm::Const(declaration) => self.declaration_spelling(declaration)?,
+            CapturedTerm::Binding(binding) => {
+                match bindings.values().find(|local| local.binding == binding) {
+                    Some(local) => self.declaration_spelling(local.declaration)?,
+                    None => "?".to_owned(),
+                }
+            }
+            CapturedTerm::Opaque => "?".to_owned(),
+        })
     }
 
     /// The selected type of a resolved target. A descendant summary keeps

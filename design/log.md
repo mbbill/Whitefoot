@@ -13,6 +13,13 @@ Owner-approved: After the handoff for PR #129 at 715b05dd, which showed the std-
 
 Summary: The prelude keeps only the declarations a language rule names, and every host declaration, ExitStatus and Inputs included, becomes an ordinary public declaration of a standard library module interface whose definition the build supplies, because no rule names them and injecting them into every check costs 36 to 62 percent of a check's instructions ([library-modules E1](../research/investigations/library-modules/DESIGN.md#measurement-e1-what-the-host-rows-cost-every-check)). A fixed std qualifier names the toolchain's standard library beside pkg; a graph row lists the standard library modules its module may name and a source bundle may name any of them; a check or composition reads a standard library module only then; and the specification keeps the exact interface text of the modules whose definitions the build supplies. Binding other external packages stays deferred. The container decision of the standard-library amendment is not applied: the owner asked about it, so it stays an amendment with a proposed home for the library's source.
 
+## 2026-09-25 Name source constructs in rejection payloads as written
+
+Nodes: compiler/rejection-payloads
+
+Owner-approved: The owner approved PR #123's rejection-payloads amendment as shown on 2026-09-25, having set the criterion that a diagnostic is chosen by how fast an agent understands and locates the problem.
+
+Summary: Add the node with its two decisions and three rejected alternatives unchanged: every payload string that names a place, function or type instance, or literal prints it in canonical source spelling through one checker renderer per kind, and EFF-2's suggested row is one EFF-1, EFF-2 and EFF-5 admit wherever it is applied, because an agent repairs the source it wrote and applies a suggestion literally. The review's remaining items O1 and O2 (where EFF-1 places the subsumed-read rejection, and a merged suggestion wider than the body's writes) belong to the EFF-5 one-argument amendment the owner selected the same day, which will present any change to this node's second decision for its own ruling. Remove the accepted amendment and its directory. No specification rule changes; this ruling does not authorize a merge.
 ## 2026-09-25 Stage the dependency-recording decision
 
 Nodes: compiler/incremental-compilation, language/name-resolution, language/checks-and-proofs, language, language/effects, language/data-model/readonly-field, compiler

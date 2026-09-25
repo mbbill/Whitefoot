@@ -10500,6 +10500,26 @@ fn main() -> status: ExitStatus pure {
     });
 }
 
+/// [FN-8, FN-2] the payload names the callee instance as a call writes it,
+/// with its type and const arguments, never by the internal symbol that
+/// keys its lowering.
+#[test]
+fn a_call_requirement_names_the_generic_instance_as_written() {
+    let source = include_bytes!(
+        "../../../../tests/conformance/cases/blk0-neg-full-array-freeze-requires-fullness.wf"
+    );
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the partial freeze must reject at FN-8: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Fn8);
+        let SemanticIssueKind::UndischargedCallRequirement(detail) = issue.kind() else {
+            panic!("expected FN-8 payload, got {:?}", issue.kind());
+        };
+        assert_eq!(detail.concrete_callee, "slots_into_array::<u64, 2>");
+    });
+}
+
 #[test]
 fn actual_obligations_precede_fn8_and_admitted_index_goals_use_the_source_fix() {
     let admitted_actual = br#"const values: Array<u8, 2> =[3_u8, 3_u8];
