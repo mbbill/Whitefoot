@@ -217,6 +217,35 @@ fn main() -> status: ExitStatus pure {
     );
 }
 
+/// A client module of `pkg::records`, whose interface declares the readonly
+/// fields these offset tests read: a source readonly field is written only on
+/// a public field of an interface record, and it withholds writes only from
+/// the modules that do not declare it [TYPE-2, MOD-6].
+fn check_records_client(main: &[u8]) -> Result<(), crate::CompilationFailure> {
+    super::check_module_sources(
+        b"pkg::records: [];\npkg: [pkg::records];\n",
+        &[
+            (
+                "records/module.wfm",
+                b"public struct Entry {\n  public readonly width: u64;\n}\n\npublic struct Node {\n  public readonly count: u64;\n}\n"
+                    .as_slice(),
+            ),
+            ("module.wfm", b"\n".as_slice()),
+            ("main.wf", main),
+        ],
+    )
+}
+
+fn assert_unsupported_composite(result: Result<(), crate::CompilationFailure>) {
+    let failure = result.expect_err("an unrepresented offset stops the check");
+    assert_eq!(
+        failure.kind(),
+        crate::CompilationFailureKind::Unsupported,
+        "{failure}"
+    );
+    assert!(failure.to_string().contains("CompositeValues"), "{failure}");
+}
+
 /// [ENT-2] clause (b): a readonly field below a subscript is an endpoint term
 /// exactly when every offset in its place is itself a clause (a) or clause
 /// (c) term.
@@ -231,9 +260,7 @@ fn main() -> status: ExitStatus pure {
 fn a_readonly_field_endpoint_follows_its_offset_forms() {
     let program = |offset: &str| {
         format!(
-            r#"struct Entry {{
-  readonly width: u64;
-}}
+            r#"alias Entry = pkg::records::Entry;
 
 struct Cursor {{
   at: u64;
@@ -256,18 +283,15 @@ fn main() -> status: ExitStatus pure {{
 "#
         )
     };
-    assert_checks(program("i").as_bytes());
-    assert_rule(
-        program("slots[0_u64]").as_bytes(),
-        SemanticRule::Ent2,
-        SemanticIssueKind::InvalidCountedEndpoint {
-            mechanical_fix: ENDPOINT_TERM_FIX,
-        },
+    check_records_client(program("i").as_bytes()).expect("a bare binding offset is admitted");
+    let failure = check_records_client(program("slots[0_u64]").as_bytes())
+        .expect_err("an element offset is no term");
+    assert_eq!(failure.rule_id(), Some("ENT-2"), "{failure}");
+    assert!(
+        failure.to_string().contains("InvalidCountedEndpoint"),
+        "{failure}"
     );
-    super::assert_unsupported(
-        program("cursor.at").as_bytes(),
-        crate::UnsupportedSemanticFeature::CompositeValues,
-    );
+    assert_unsupported_composite(check_records_client(program("cursor.at").as_bytes()));
 }
 
 /// [ENT-2, DIAG-1] an admitted offset the compiler cannot capture stops the
@@ -276,9 +300,7 @@ fn main() -> status: ExitStatus pure {{
 /// the same capability.
 #[test]
 fn an_unrepresented_offset_is_unsupported_wherever_the_place_is_read() {
-    let body = br#"struct Entry {
-  readonly width: u64;
-}
+    let body = br#"alias Entry = pkg::records::Entry;
 
 struct Cursor {
   at: u64;
@@ -295,10 +317,8 @@ fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    super::assert_unsupported(body, crate::UnsupportedSemanticFeature::CompositeValues);
-    let clause = br#"struct Node {
-  readonly count: u64;
-}
+    assert_unsupported_composite(check_records_client(body));
+    let clause = br#"alias Node = pkg::records::Node;
 
 struct Cursor {
   at: u64;
@@ -315,7 +335,7 @@ fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    super::assert_unsupported(clause, crate::UnsupportedSemanticFeature::CompositeValues);
+    assert_unsupported_composite(check_records_client(clause));
     let measure = br#"struct Cursor {
   at: u64;
 }
