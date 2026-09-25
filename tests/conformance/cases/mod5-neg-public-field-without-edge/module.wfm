@@ -1,0 +1,1 @@
+public fn main() -> status: ExitStatus pure doc "Reads a field of a module its row does not list.";

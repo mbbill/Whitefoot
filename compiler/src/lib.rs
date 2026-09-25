@@ -12,6 +12,7 @@
 
 mod backend;
 mod driver;
+mod graph;
 mod lexer;
 mod lowering;
 mod prelude;
@@ -48,7 +49,9 @@ pub use backend::{
     SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_PRIM_WINDOWS_SOURCE,
     WINDOWS_RUNTIME_HEADER, WINDOWS_RUNTIME_SOURCE, module_requires_parallel_runtime, stack_ledger,
 };
+pub use backend::{FragmentGranularity, SplitFailure, split_module};
 pub use driver::*;
+pub use graph::*;
 pub use lexer::*;
 /// The compile-time choice of whether the backend actualizes the permission
 /// judgment's overlap groups.

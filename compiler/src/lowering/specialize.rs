@@ -45,7 +45,20 @@ struct FunctionDependencies {
 }
 
 impl PhysicalFunctions {
+    /// Every checked definition, each closing over its calls.
+    #[cfg(test)]
     pub(super) fn build(program: &CheckedProgramData) -> Result<Self, LoweringFailure> {
+        Self::build_from(program, None)
+    }
+
+    /// With `roots`, only what those functions reach through their calls:
+    /// a module program entry's build [MOD-9] emits the code its run can
+    /// execute and no definition outside it. Without, every checked
+    /// definition.
+    pub(super) fn build_from(
+        program: &CheckedProgramData,
+        roots: Option<&[FunctionId]>,
+    ) -> Result<Self, LoweringFailure> {
         let dependencies = program
             .functions
             .iter()
@@ -104,6 +117,17 @@ impl PhysicalFunctions {
         };
         let mut interned = HashMap::new();
         let mut represented = vec![false; program.functions.len()];
+        for root in roots.unwrap_or_default() {
+            let root_regions = regions
+                .get(root.0 as usize)
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            plan.intern(
+                *root,
+                default_environment(root_regions, &defaults),
+                &mut interned,
+                &mut represented,
+            )?;
+        }
         let mut next = 0;
         loop {
             while next < plan.variants.len() {
@@ -125,6 +149,9 @@ impl PhysicalFunctions {
                 }
                 plan.variants[next].calls = calls;
                 next += 1;
+            }
+            if roots.is_some() {
+                return plan.order_by_source();
             }
             // Retain emission of otherwise unreferenced canonical definitions,
             // closing each default's calls before selecting the next definition.
@@ -319,6 +346,69 @@ fn collect_regions(
     Ok(())
 }
 
+/// [STOR-8] whether a function's own concrete layout holds heap storage: the
+/// type of one of its parameters, its result, or a value its body evaluates,
+/// binds or releases holds a `Box` or a runtime-capacity shape [TYPE-9], as
+/// itself or as a field, a payload field or an element. Such a value's
+/// release frees heap storage, so its function needs the heap whether or not
+/// it allocates.
+pub(crate) fn holds_heap_storage(program: &CheckedProgramData, function: &CheckedFunction) -> bool {
+    let dependencies = FunctionDependencies::collect(function);
+    let mut visited = HashSet::new();
+    dependencies
+        .types
+        .iter()
+        .copied()
+        .chain(
+            dependencies
+                .elements
+                .iter()
+                .filter_map(|element| program.elements.get(element.index()).copied()),
+        )
+        .any(|ty| type_holds_heap(program, ty, &mut visited))
+}
+
+fn type_holds_heap(
+    program: &CheckedProgramData,
+    ty: CheckedType,
+    visited: &mut HashSet<NominalId>,
+) -> bool {
+    match ty {
+        CheckedType::Buffer { .. } | CheckedType::Window { capacity: None, .. } => true,
+        CheckedType::Array { element, .. } | CheckedType::Window { element, .. } => program
+            .elements
+            .get(element.index())
+            .is_some_and(|element| type_holds_heap(program, *element, visited)),
+        CheckedType::Nominal(id) => {
+            if !visited.insert(id) {
+                return false;
+            }
+            match program
+                .nominals
+                .get(id.0 as usize)
+                .map(|nominal| &nominal.kind)
+            {
+                Some(CheckedNominalKind::Box { .. }) => true,
+                Some(CheckedNominalKind::Struct { fields }) => fields
+                    .iter()
+                    .any(|field| type_holds_heap(program, field.ty, visited)),
+                Some(CheckedNominalKind::Enum { variants }) => variants
+                    .iter()
+                    .flat_map(|variant| &variant.fields)
+                    .any(|field| type_holds_heap(program, field.ty, visited)),
+                Some(CheckedNominalKind::Opaque) | None => false,
+            }
+        }
+        CheckedType::Unit
+        | CheckedType::Bool
+        | CheckedType::Integer(_)
+        | CheckedType::Float(_)
+        | CheckedType::Generic(_)
+        | CheckedType::GenericInt(_)
+        | CheckedType::GenericFloat(_) => false,
+    }
+}
+
 pub(super) fn executable_storage(
     function: &CheckedFunction,
 ) -> (Vec<CheckedType>, Vec<CheckedElement>) {
@@ -421,6 +511,7 @@ impl FunctionDependencies {
                     for arm in arms {
                         self.types
                             .extend(arm.binders.iter().map(|binder| binder.ty));
+                        self.types.extend(arm.covered.iter().map(|drop| drop.ty));
                         self.types
                             .extend(arm.fallthrough_drops.iter().map(|drop| drop.ty));
                         self.statements(&arm.body);

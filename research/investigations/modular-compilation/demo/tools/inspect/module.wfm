@@ -1,0 +1,1 @@
+public fn run() -> status: ExitStatus pure doc "Runs the same batch as the kernel entry, keeps its report in one heap cell and returns 0 when the report matches.";

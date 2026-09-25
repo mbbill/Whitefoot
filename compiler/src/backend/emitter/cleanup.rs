@@ -5,8 +5,7 @@ use crate::{IrReleaseClass, IrVariant, IrWindowShape};
 
 use super::super::target::TargetLayout;
 use super::{
-    BackendFailure, IrNominalId, IrNominalKind, IrProgram, IrType, llvm_type, nominal_symbol,
-    variant_field_base,
+    BackendFailure, IrNominalKind, IrProgram, IrType, llvm_type, nominal_symbol, variant_field_base,
 };
 
 /// One release action per node type of the release graph [PROV-6].
@@ -25,17 +24,20 @@ pub(super) fn emit_resource_drop_helpers(
     target: TargetLayout,
 ) -> Result<String, BackendFailure> {
     let mut output = String::new();
-    for nominal in program.nominals() {
+    for ty in program_types(program)? {
+        let IrType::Nominal(id) = ty else {
+            continue;
+        };
+        let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
         let IrNominalKind::Enum { variants } = nominal.kind() else {
             continue;
         };
-        let ty = IrType::Nominal(nominal.id());
         if !type_requires_cleanup(program, ty)? {
             continue;
         }
 
         let aggregate_ty = llvm_type(program, ty)?;
-        let symbol = drop_helper_symbol(nominal.id());
+        let symbol = drop_helper_symbol(nominal);
         writeln!(
             output,
             "define private void @{symbol}({aggregate_ty} %value) {{"
@@ -44,8 +46,8 @@ pub(super) fn emit_resource_drop_helpers(
         emit_enum_cleanup_body(program, &mut output, variants, ty, &aggregate_ty)?;
         output.push_str("}\n\n");
     }
-    for (index, ty) in cleanup_run_types(program)?.into_iter().enumerate() {
-        emit_run_drop_helper(program, target, &mut output, index, ty)?;
+    for ty in cleanup_run_types(program)? {
+        emit_run_drop_helper(program, target, &mut output, ty)?;
     }
     Ok(output)
 }
@@ -64,11 +66,10 @@ fn emit_run_drop_helper(
     program: &IrProgram<'_, '_, '_>,
     target: TargetLayout,
     output: &mut String,
-    index: usize,
     ty: IrType,
 ) -> Result<(), BackendFailure> {
     let run_llvm = llvm_type(program, ty)?;
-    let symbol = run_drop_helper_symbol(index);
+    let symbol = run_drop_helper_symbol(program, ty)?;
     // A runtime-capacity block is reached only through the `Box` that owns
     // it [TYPE-9], so its helper takes the block pointer; every other run is
     // a value and its helper takes that value.
@@ -200,8 +201,68 @@ fn cleanup_run_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, Bac
     Ok(needed)
 }
 
-fn run_drop_helper_symbol(index: usize) -> String {
-    format!("wf.drop.run.{index}")
+/// One run type's release helper, named by the digest of the type's stable
+/// spelling, so the helper and every call of it keep their text when other
+/// types come and go [MOD-8].
+fn run_drop_helper_symbol(
+    program: &IrProgram<'_, '_, '_>,
+    ty: IrType,
+) -> Result<String, BackendFailure> {
+    use core::fmt::Write as _;
+    let digest = crate::spec::sha256::digest(stable_type_spelling(program, ty)?.as_bytes());
+    let mut symbol = "wf.drop.run.".to_owned();
+    for byte in &digest[..8] {
+        let _ = write!(symbol, "{byte:02x}");
+    }
+    Ok(symbol)
+}
+
+/// One type's spelling by its structure and the stable link names of the
+/// nominals it holds.
+fn stable_type_spelling(
+    program: &IrProgram<'_, '_, '_>,
+    ty: IrType,
+) -> Result<String, BackendFailure> {
+    let element = |element| {
+        program
+            .element(element)
+            .ok_or(BackendFailure::InvalidIr)
+            .and_then(|ty| stable_type_spelling(program, ty))
+    };
+    Ok(match ty {
+        IrType::Unit => "unit".to_owned(),
+        IrType::Bool => "bool".to_owned(),
+        IrType::Integer { width, signed } => {
+            format!("{}{width}", if signed { "i" } else { "u" })
+        }
+        IrType::Float { width } => format!("f{width}"),
+        IrType::Nominal(id) => program
+            .nominal(id)
+            .ok_or(BackendFailure::InvalidIr)?
+            .link_name()
+            .to_owned(),
+        IrType::Address(referent) => {
+            format!("address<{}>", stable_type_spelling(program, referent.ty())?)
+        }
+        IrType::Array {
+            element: held,
+            length,
+        } => format!("array<{};{length}>", element(held)?),
+        IrType::Buffer { element: held } => format!("buffer<{}>", element(held)?),
+        IrType::Range { element: held } => format!("range<{}>", element(held)?),
+        IrType::RuntimeBoxPayload { nominal } => format!(
+            "payload<{}>",
+            program
+                .nominal(nominal)
+                .ok_or(BackendFailure::InvalidIr)?
+                .link_name()
+        ),
+        IrType::Window {
+            shape,
+            element: held,
+            capacity,
+        } => format!("{shape:?}<{};{capacity:?}>", element(held)?),
+    })
 }
 
 /// The helper one run type's release walk is emitted as, when its window holds
@@ -210,20 +271,41 @@ fn run_drop_helper(
     program: &IrProgram<'_, '_, '_>,
     ty: IrType,
 ) -> Result<Option<String>, BackendFailure> {
-    Ok(cleanup_run_types(program)?
-        .into_iter()
-        .position(|candidate| candidate == ty)
-        .map(run_drop_helper_symbol))
+    if cleanup_run_types(program)?.contains(&ty) {
+        run_drop_helper_symbol(program, ty).map(Some)
+    } else {
+        Ok(None)
+    }
 }
 
-/// Every type reachable from the program's declarations and values, including
-/// arbitrary run nesting, in deterministic discovery order. Ownership cycles
-/// through descriptors or nominal references visit each exact type once.
-fn program_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, BackendFailure> {
-    let mut pending = Vec::new();
-    for nominal in program.nominals() {
-        pending.push(IrType::Nominal(nominal.id()));
-    }
+/// Every type reachable from the program's functions and constants,
+/// including arbitrary run nesting, in deterministic discovery order: nominal
+/// types first in declaration order, then the rest. Ownership cycles through
+/// descriptors or nominal references visit each exact type once. A nominal no
+/// emitted function or constant reaches gets no helper, so a module program
+/// entry's build names nothing its execution closure does not use [MOD-9].
+pub(super) fn program_types(
+    program: &IrProgram<'_, '_, '_>,
+) -> Result<Vec<IrType>, BackendFailure> {
+    let reached = reachable_types(program, Vec::new())?
+        .into_iter()
+        .collect::<HashSet<_>>();
+    let seeds = program
+        .nominals()
+        .iter()
+        .map(|nominal| IrType::Nominal(nominal.id()))
+        .filter(|ty| reached.contains(ty))
+        .collect();
+    reachable_types(program, seeds)
+}
+
+/// The types reachable from `seeds` and then from the program's constants
+/// and functions, in discovery order.
+fn reachable_types(
+    program: &IrProgram<'_, '_, '_>,
+    seeds: Vec<IrType>,
+) -> Result<Vec<IrType>, BackendFailure> {
+    let mut pending = seeds;
     for constant in program.constants() {
         pending.push(constant.ty());
     }
@@ -300,8 +382,9 @@ pub(super) fn type_requires_cleanup(
         .ok_or(BackendFailure::InvalidIr)
 }
 
-pub(super) fn drop_helper_symbol(nominal: IrNominalId) -> String {
-    format!("wf.drop.t{}", nominal.ordinal())
+/// One enum's release helper, named by the enum's stable link name [MOD-8].
+pub(super) fn drop_helper_symbol(nominal: &crate::IrNominal) -> String {
+    format!("wf.drop.t.{}", nominal.link_name())
 }
 
 enum CleanupJob {
@@ -396,8 +479,8 @@ fn emit_cleanup_jobs(
                                 writeln!(
                                     output,
                                     "  call void @{}({} {operand})",
-                                    drop_helper_symbol(id),
-                                    nominal_symbol(id)
+                                    drop_helper_symbol(nominal),
+                                    nominal_symbol(nominal)
                                 )
                                 .map_err(|_| BackendFailure::TextEmission)?;
                             }

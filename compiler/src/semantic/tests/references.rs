@@ -852,8 +852,8 @@ fn retain(old: Token) -> result: Token pure {
 fn main() -> status: ExitStatus pure {
   let token = Token(value: 7_u64);
   let target = &token;
-  let alias = &token;
-  set deref(target) = retain(old: move deref(alias));
+  let aliased = &token;
+  set deref(target) = retain(old: move deref(aliased));
   if deref(target).value == 7_u64 {
     return exit_status(code: 0_u8);
   }
@@ -884,8 +884,8 @@ fn examine(flag: Bool) -> result: unit pure {
   } else {
     give &second;
   }
-  let alias = &first;
-  set deref(target) = retain(old: move deref(alias));
+  let aliased = &first;
+  set deref(target) = retain(old: move deref(aliased));
   return unit;
 }
 
@@ -1043,11 +1043,11 @@ fn overwrite(target: &u64) -> result: unit writes(target) {
 fn examine(flag: Bool) -> result: unit pure {
   let spare = 0_u64;
   let original = &permanent;
-  let alias = original;
+  let aliased = original;
   let selected = if flag {
     give &spare;
   } else {
-    give alias;
+    give aliased;
   }
   overwrite(target: selected);
   return unit;
@@ -1427,7 +1427,7 @@ fn examine(packet: &Packet) -> result: u64 writes(packet) {
   match deref(packet) {
     Data(value: outer_payload) => {
       let selected = &deref(outer_payload);
-      set deref(packet) = Data(value: 2_u64);
+      set deref(packet) = Packet::Data(value: 2_u64);
       loop @done {
         match deref(packet) {
           Data(value: inner_payload) => {
@@ -1468,8 +1468,8 @@ fn a_joined_match_scrutinee_keeps_every_payload_origin() {
 }
 
 fn examine(choose: Bool) -> result: u64 pure {
-  let first = Data(value: 1_u64);
-  let second = Data(value: 2_u64);
+  let first = Packet::Data(value: 1_u64);
+  let second = Packet::Data(value: 2_u64);
   let selected = if choose {
     give &first;
   } else {
@@ -1477,7 +1477,7 @@ fn examine(choose: Bool) -> result: u64 pure {
   }
   match deref(selected) {
     Data(value: payload) => {
-      set second = Idle();
+      set second = Packet::Idle();
       return deref(payload);
     }
     Idle() => {
@@ -1506,9 +1506,9 @@ fn an_indexed_match_does_not_treat_index_storage_as_an_enum_origin() {
 }
 
 fn examine() -> result: u64 pure {
-  let seed = Data(value: 7_u64);
+  let seed = Packet::Data(value: 7_u64);
   let packets = array_filled::<Packet, 2>(value: seed);
-  set packets[1_u64] = Data(value: 9_u64);
+  set packets[1_u64] = Packet::Data(value: 9_u64);
   let index = 1_u64;
   let part = &packets[0_u64..2_u64];
   if index < deref(part).len {
@@ -1543,15 +1543,15 @@ fn an_indexed_match_keeps_the_selected_element_as_its_enum_origin() {
 }
 
 fn examine() -> result: u64 pure {
-  let seed = Data(value: 7_u64);
+  let seed = Packet::Data(value: 7_u64);
   let packets = array_filled::<Packet, 2>(value: seed);
-  set packets[1_u64] = Data(value: 9_u64);
+  set packets[1_u64] = Packet::Data(value: 9_u64);
   let index = 1_u64;
   let part = &packets[0_u64..2_u64];
   if index < deref(part).len {
     match deref(part)[index] {
       Data(value: payload) => {
-        set packets[1_u64] = Idle();
+        set packets[1_u64] = Packet::Idle();
         return deref(payload);
       }
       Idle() => {
@@ -1620,7 +1620,7 @@ fn examine(packet: &Packet) -> result: u64 writes(packet) {
   match deref(packet) {
     Data(value: outer_payload) => {
       let selected = &deref(outer_payload);
-      set deref(packet) = Data(value: 2_u64);
+      set deref(packet) = Packet::Data(value: 2_u64);
       match deref(packet) {
         Data(value: inner_payload) => {
           set selected = &deref(inner_payload);

@@ -810,7 +810,7 @@ fn main() -> status: ExitStatus pure {
   let incoming = box_new::<u64>(value: incoming_value);
   let sibling_value = incoming.inner +wrap 11_u64;
   let sibling = box_new::<u64>(value: sibling_value);
-  let node = HasChildren(left: move sibling, right: move first);
+  let node = Node::HasChildren(left: move sibling, right: move first);
   let tree = box_new::<Node>(value: move node);
   let kept = exchange_child(tree: &tree, incoming: move incoming);
   if kept != 33_u64 {
@@ -1330,7 +1330,7 @@ fn hold_packet() -> result: unit pure {
   let second = box_new::<u64>(value: 22_u64);
   let pair = Pair(first: move first, second: move second);
   let extra = box_new::<u64>(value: 33_u64);
-  let packet = Held(pair: move pair, extra: move extra);
+  let packet = Packet::Held(pair: move pair, extra: move extra);
   return unit;
 }
 
@@ -1990,9 +1990,9 @@ struct Holder {
 fn main() -> status: ExitStatus pure {
   let selected = box_new::<u64>(value: 17_u64);
   let other = box_new::<u64>(value: 29_u64);
-  let residual_tag = Present();
+  let residual_tag = Tag::Present();
   let residual = Residual(tag: move residual_tag, cell: move other);
-  let tag = Present();
+  let tag = Tag::Present();
   let holder = Holder(stamp: 43_u64, selected: move selected, tag: move tag, residual: move residual);
   let owner = box_new::<Holder>(value: move holder);
   let taken = move owner.inner.selected;

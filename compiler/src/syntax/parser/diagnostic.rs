@@ -246,15 +246,19 @@ fn forbidden_atom_override(
     let first = tokens.get(cursor)?;
     let second = tokens.get(cursor.checked_add(1)?)?;
     // [DIAG-1] row 2: a `call` start is a name followed by `(` or by the
-    // `::` type-application delimiter; a `construct` start is a TYPEID
-    // followed by `(` or `<`. `IDENT <` is a comparison, never a call.
+    // `::` type-application or qualified-path delimiter, or `pkg ::`; a
+    // `construct` start is a TYPEID followed by `(`, `<` or the `::` of a
+    // type-owned variant [TYPE-6]. `IDENT <` is a comparison, never a call.
     let named_head =
         has(first, TerminalPredicate::Identifier) || has(first, TerminalPredicate::OperationName);
     let construct_head = has(first, TerminalPredicate::TypeIdentifier);
-    let call_start = named_head
-        && (fixed(second, FixedTerminal::LeftParen) || fixed(second, FixedTerminal::ColonColon));
+    let call_start = (named_head
+        && (fixed(second, FixedTerminal::LeftParen) || fixed(second, FixedTerminal::ColonColon)))
+        || (fixed(first, FixedTerminal::Pkg) && fixed(second, FixedTerminal::ColonColon));
     let construct_start = construct_head
-        && (fixed(second, FixedTerminal::LeftParen) || fixed(second, FixedTerminal::LeftAngle));
+        && (fixed(second, FixedTerminal::LeftParen)
+            || fixed(second, FixedTerminal::LeftAngle)
+            || fixed(second, FixedTerminal::ColonColon));
     if call_start || construct_start {
         return Some(SyntaxIssue {
             rule: SyntaxRule::Gram9,

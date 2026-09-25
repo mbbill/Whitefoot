@@ -2,6 +2,7 @@
 
 pub(crate) mod abi;
 pub(crate) mod emitter;
+mod fragments;
 mod graph;
 mod runtime;
 mod stack_ledger;
@@ -25,4 +26,5 @@ pub use emitter::{
     SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_PRIM_WINDOWS_SOURCE,
     WINDOWS_RUNTIME_HEADER, WINDOWS_RUNTIME_SOURCE, module_requires_parallel_runtime,
 };
+pub use fragments::{FragmentGranularity, SplitFailure, split_module};
 pub use stack_ledger::{Architecture, stack_ledger};
