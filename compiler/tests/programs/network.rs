@@ -1,4 +1,4 @@
-//! Ordinary prelude TCP functions over loopback peers.
+//! Ordinary std::net TCP functions over loopback peers.
 //!
 //! The same linked implementation may use the native engine or file adapter.
 //! These private choices preserve bytes and outcomes. C2 removed PAR-3, so
@@ -167,11 +167,11 @@ fn tcp_calls_use_ordinary_linked_declarations() {
         "close_send",
     ] {
         assert!(
-            llvm.contains(&format!("call void @wf_{name}(")),
+            llvm.contains(&format!("call void @wf_std.net.{name}(")),
             "missing ordinary call {name}"
         );
         assert!(
-            llvm.contains(&format!("declare void @wf_{name}(")),
+            llvm.contains(&format!("declare void @wf_std.net.{name}(")),
             "missing ordinary declaration {name}"
         );
     }

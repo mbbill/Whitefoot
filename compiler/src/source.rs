@@ -421,7 +421,11 @@ impl ModuleRecord {
 
     /// Creates one module record of the given package.
     #[must_use]
-    pub const fn in_package(package: Package, path: Vec<String>, dependencies: Vec<ModuleId>) -> Self {
+    pub const fn in_package(
+        package: Package,
+        path: Vec<String>,
+        dependencies: Vec<ModuleId>,
+    ) -> Self {
         Self {
             package,
             path,

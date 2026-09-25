@@ -20,7 +20,7 @@
 //! - `buffer_new(n, v)` and `slice_of(&b)` retire with [VIEW-1] and the
 //!   v0.59 storage classes. The successors are [OP-13] `array_filled` and
 //!   `box_array_filled` and [REF-4]'s range reference `&x[lo..hi]`, which the
-//!   PRE-1 host rows now take directly as the parameter kind `&[u8]`.
+//!   PRE-2 host functions now take directly as the parameter kind `&[u8]`.
 //! - `let previous = replace outcome = e;` retires with [SET-2]. The
 //!   successor is [SET-1] `set outcome = e;`, whose [WIN-3] disposition
 //!   releases the old affine value.
@@ -813,7 +813,7 @@ const WRITES_THEN_RELEASES_BOTH: &[u8] =
 }
 
 fn main(inputs: std::process::Inputs) -> status: std::process::ExitStatus pure {
-  doc "PRE-1 ordinary std::process::Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
+  doc "PRE-2 ordinary std::process::Inputs are destructured once; the borrowed operation chain returns before the initial directory is explicitly closed on every exit.";
   let std::process::Inputs(args: unused_args, cwd: cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
   let outcome = exercise(cwd: &cwd, out: &out, entry_factory: &entry_factory);
   std::fs::close_directory(factory: &entry_factory, directory: move cwd);
@@ -1244,7 +1244,7 @@ fn a_forced_short_write_reports_the_absolute_endpoint_after_the_host_prefix() {
 
 #[test]
 fn an_affine_output_drop_does_not_call_a_close() {
-    // PRE-1 opaque drop is empty. OutputStream is affine, so dropping it
+    // A host handle's drop is empty [PRE-2]. OutputStream is affine, so dropping it
     // performs no native close or flush. DirectoryRead is explicitly closed.
     let run = run_on_deterministic_host(
         WRITES_THEN_RELEASES_BOTH,

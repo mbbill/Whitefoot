@@ -22,7 +22,7 @@ fn exercise() -> status: ExitStatus pure {
 }
 
 fn main(inputs: Inputs) -> status: ExitStatus pure {
-  doc "PRE-1 ordinary Inputs are destructured once; the operation chain returns before the initial directory is explicitly closed on every exit.";
+  doc "PRE-2 ordinary Inputs are destructured once; the operation chain returns before the initial directory is explicitly closed on every exit.";
   let Inputs(args: unused_args, cwd: cwd, stdout: unused_stdout, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
   let outcome = exercise();
   close_directory(factory: &entry_factory, directory: move cwd);

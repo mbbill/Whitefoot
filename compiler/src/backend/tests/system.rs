@@ -1,4 +1,4 @@
-//! Ordinary callable ABI and prelude library behavior. C2 retires semantic-ID,
+//! Ordinary callable ABI and standard library behavior. C2 retires semantic-ID,
 //! target-qualification, input-label and implicit-release assertions; the
 //! preserved observable cases execute the same ordinary source as the corpus.
 
@@ -112,7 +112,7 @@ fn ordinary_declarations_have_no_frame_and_share_the_call_abi() {
                 .functions()
                 .iter()
                 .find(|function| function.name() == "std.process.exit_status")
-                .expect("ordinary prelude signature");
+                .expect("the standard library signature");
             assert!(declared.blocks().is_empty());
             let plan = crate::backend::storage::FunctionStoragePlan::build(program, declared)
                 .expect("a declaration has no activation to allocate");
@@ -120,7 +120,9 @@ fn ordinary_declarations_have_no_frame_and_share_the_call_abi() {
             let llvm = crate::emit_llvm(program)
                 .expect("ordinary signature and body emit")
                 .into_string();
-            assert!(llvm.contains("declare void @wf_std.process.exit_status(ptr %wf.result, i8 %v0)"));
+            assert!(
+                llvm.contains("declare void @wf_std.process.exit_status(ptr %wf.result, i8 %v0)")
+            );
             assert!(llvm.contains("call void @wf_std.process.exit_status(ptr"));
             assert!(
                 !llvm.contains("@main("),
@@ -130,10 +132,10 @@ fn ordinary_declarations_have_no_frame_and_share_the_call_abi() {
     );
 }
 
-/// The same declared boundary `host_copy_bytes` carries [PRE-1], written as
+/// The same declared boundary `host_copy_bytes` carries [PRE-2], written as
 /// an ordinary Whitefoot definition.
 ///
-/// The writer-side clauses use the local binder `copied` where the prelude
+/// The writer-side clauses use the local binder `copied` where the library
 /// record uses `next`. Both spellings are ordinary identifiers; renaming the
 /// binder changes neither the declared relation nor the ABI being compared.
 const COPY_BYTES_WRAPPER: &str = r#"fn copy_bytes(value: &std::text::HostString, destination: &[u8], start: u64, end: u64) -> result: Result<u64, std::text::CopyError> reads(value), writes(destination) contract {
@@ -162,7 +164,9 @@ fn a_range_reference_signature_is_identical_for_a_wf_body_and_a_linked_body() {
     // record [MOD-4].
     let source = format!(
         "{}\n\n{}\n",
-        original.replace("host_copy_bytes(", "copy_bytes(").trim_end(),
+        original
+            .replace("host_copy_bytes(", "copy_bytes(")
+            .trim_end(),
         COPY_BYTES_WRAPPER.trim_end()
     );
     with_ir(source.as_bytes(), |program| {
@@ -174,7 +178,10 @@ fn a_range_reference_signature_is_identical_for_a_wf_body_and_a_linked_body() {
                 .expect("ordinary function exists");
             crate::backend::abi::FunctionAbi::build(program, function).expect("one callable ABI")
         };
-        assert_eq!(signature("copy_bytes"), signature("std.text.host_copy_bytes"));
+        assert_eq!(
+            signature("copy_bytes"),
+            signature("std.text.host_copy_bytes")
+        );
     });
     // Exercise each supported command-line configuration through its real
     // driver API: default, explicit --no-overlap, and --par. The first two

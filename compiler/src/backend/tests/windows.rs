@@ -834,7 +834,11 @@ fn range_references_cross_helpers_without_transferring_ownership() {
     // The case has six status exits: the four length checks before the two
     // calls, the checksum branch and the success exit.
     assert!(!main.contains("call void @wf_trap"));
-    assert_eq!(main.matches("call void @wf_std.process.exit_status").count(), 6);
+    assert_eq!(
+        main.matches("call void @wf_std.process.exit_status")
+            .count(),
+        6
+    );
     // Every exit leaves the scope that owns exactly the two `Box` fields.
     // Check each return edge independently so one edge cannot leak while
     // another happens to contribute the missing releases [STOR-3, PROV-6].
@@ -980,7 +984,11 @@ fn a_referenced_pool_tree_preserves_range_reference_and_result_abi() {
     assert!(!build.contains("call void @wf_trap"));
     assert!(!checksum.contains("call void @wf_trap"));
     assert!(!main.contains("call void @wf_trap"));
-    assert_eq!(main.matches("call void @wf_std.process.exit_status").count(), 5);
+    assert_eq!(
+        main.matches("call void @wf_std.process.exit_status")
+            .count(),
+        5
+    );
     let exits = main
         .split("ret void")
         .filter(|block| block.contains("call void @wf_std.process.exit_status"))

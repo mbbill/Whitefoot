@@ -1,4 +1,4 @@
-//! Ordinary directory values and prelude functions, end to end.
+//! Ordinary directory values and std::fs functions, end to end.
 //!
 //! Every case here compiles a real corpus program against the declared
 //! inventory, links it, and runs it against a real directory tree the harness

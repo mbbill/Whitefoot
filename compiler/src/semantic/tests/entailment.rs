@@ -9096,7 +9096,7 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
         }));
     }
 
-    // PRE-1 supplies ordinary signatures: write_once and read_at each publish
+    // PRE-2 supplies ordinary signatures: write_once and read_at each publish
     // their two endpoint clauses through the same conditional call route.
     // The fourteen read_bits calls retain their original clause inventory.
     for (caller_name, callee_name) in [("publish_all", "write_once"), ("exercise", "read_at")] {

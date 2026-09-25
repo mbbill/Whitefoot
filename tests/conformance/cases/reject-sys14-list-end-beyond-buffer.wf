@@ -136,7 +136,7 @@ fn exercise(cwd: &DirectoryRead, files: &HandleFactory) -> status: ExitStatus re
 }
 
 fn main(inputs: Inputs) -> status: ExitStatus pure {
-  doc "PRE-1 ordinary Inputs are destructured once, with the rest marker covering the fields this program does not name; the referenced operation chain returns before the initial directory is explicitly closed.";
+  doc "PRE-2 ordinary Inputs are destructured once, with the rest marker covering the fields this program does not name; the referenced operation chain returns before the initial directory is explicitly closed.";
   let Inputs(cwd: root, handles: files, ..) = move inputs;
   let outcome = exercise(cwd: &root, files: &files);
   close_directory(factory: &files, directory: move root);

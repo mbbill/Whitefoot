@@ -581,8 +581,11 @@ fn form_graph_record(
 ) -> Result<crate::ModuleGraph, CompilationFailure> {
     let bundle = SourceBundle::with_limits(&[graph], limits.source)
         .map_err(CompilationFailure::source_envelope)?;
-    with_canonical_syntax(&bundle, limits, true, |canonical| {
-        match crate::graph::form_graph(&canonical, package, library) {
+    with_canonical_syntax(
+        &bundle,
+        limits,
+        true,
+        |canonical| match crate::graph::form_graph(&canonical, package, library) {
             Ok(Ok(mut graph)) => {
                 graph.locate_entries(|coordinate| {
                     Place::resolve(&bundle, coordinate, Anchor::Start)
@@ -602,8 +605,8 @@ fn form_graph_record(
                 CompilationFailureKind::Compiler,
                 failure,
             )),
-        }
-    })
+        },
+    )
 }
 
 /// `inputs` followed by the records of `graph`'s standard library modules,
@@ -616,11 +619,15 @@ fn with_library_records<'input>(
     inputs: &[SourceInput<'input>],
 ) -> Vec<SourceInput<'input>> {
     let mut all = inputs.to_vec();
-    all.extend(crate::library::records(graph.modules(), |_| true).into_iter().filter(|record| {
-        !inputs
-            .iter()
-            .any(|input| input.logical_path() == record.logical_path())
-    }));
+    all.extend(
+        crate::library::records(graph.modules(), |_| true)
+            .into_iter()
+            .filter(|record| {
+                !inputs
+                    .iter()
+                    .any(|input| input.logical_path() == record.logical_path())
+            }),
+    );
     all
 }
 
@@ -1922,6 +1929,9 @@ fn push_graph_facts(
         }
         material.push(b'\n');
     }
+    // A child is registered in its parent's package: a program module never
+    // sits below a standard library module, nor one below a program module
+    // [MOD-10].
     let mut children = records
         .iter()
         .filter(|record| {
@@ -1929,7 +1939,7 @@ fn push_graph_facts(
                 modules.iter().any(|module| {
                     records
                         .get(module.index())
-                        .is_some_and(|record| record.path() == parent)
+                        .is_some_and(|candidate| candidate.is_at(record.package(), parent))
                 })
             })
         })

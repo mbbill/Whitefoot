@@ -13,8 +13,7 @@ use std::path::{Path, PathBuf};
 use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
 use crate::syntax::{FinalizedExtent, NodeId};
 use crate::{
-    CanonicalSyntaxUnit, ModuleId, ModuleRecord, Package, Production, SourceRole,
-    SyntaxCoordinate,
+    CanonicalSyntaxUnit, ModuleId, ModuleRecord, Package, Production, SourceRole, SyntaxCoordinate,
 };
 
 /// The logical path of a module program's graph record.
@@ -416,7 +415,10 @@ pub(crate) fn form_graph(
                 },
             }));
         }
-        if rows.iter().any(|(registered, _)| *registered == module.components) {
+        if rows
+            .iter()
+            .any(|(registered, _)| *registered == module.components)
+        {
             return Ok(Err(GraphIssue {
                 coordinate: module.coordinate,
                 kind: GraphIssueKind::DuplicateModule {
@@ -435,10 +437,9 @@ pub(crate) fn form_graph(
             };
             let edge = if dependency.standard {
                 let found = library.and_then(|library| {
-                    library
-                        .modules()
-                        .iter()
-                        .position(|registered| registered.path() == dependency.components.as_slice())
+                    library.modules().iter().position(|registered| {
+                        registered.path() == dependency.components.as_slice()
+                    })
                 });
                 match (package, found) {
                     (Package::Program, Some(index)) => Dependency::Library(index),
@@ -509,7 +510,11 @@ pub(crate) fn form_graph(
             })
             .collect::<Option<Vec<_>>>()
             .ok_or(GraphCompilerFailure::InvalidGraphTree)?;
-        modules.push(ModuleRecord::in_package(package, path.clone(), dependencies));
+        modules.push(ModuleRecord::in_package(
+            package,
+            path.clone(),
+            dependencies,
+        ));
     }
     for module in library_modules {
         let dependencies = module

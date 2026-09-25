@@ -59,8 +59,7 @@ const CANONICAL_LIMITS: CanonicalLimits = CanonicalLimits {
 };
 
 /// An ordinary function selected by executable fixtures.
-const PLAIN_ENTRY: &str =
-    "fn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n";
+const PLAIN_ENTRY: &str = "fn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n";
 
 #[test]
 fn a_split_captures_an_array_payload_but_keeps_owner_and_inline_storage_addressed() {
@@ -394,7 +393,8 @@ fn nested_wide_frame_source(depth: usize) -> String {
         .expect("write fixture");
         writeln!(source, "{indent}}}").expect("write fixture");
     }
-    source.push_str("  return total0;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n");
+    source
+        .push_str("  return total0;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n");
     source.push_str("  let input = box_array_filled::<u64>(count: 1_u64, value: 0_u64);\n");
     let arguments = (0..32)
         .map(|index| format!("a{index}: {index}_u64"))

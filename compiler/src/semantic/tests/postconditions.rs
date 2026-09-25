@@ -354,8 +354,7 @@ fn dispositions(proof: &FunctionPostconditionProof) -> Vec<PostconditionDisposit
     proof.exits.iter().map(|exit| exit.disposition).collect()
 }
 
-const ORDINARY_MAIN: &str =
-    "fn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n";
+const ORDINARY_MAIN: &str = "fn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n";
 
 #[test]
 fn ordinary_main_smoke() {

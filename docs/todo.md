@@ -97,15 +97,16 @@ rarely insert at the same place.
   of repeated in every composition, and fewer compiler-owned declaration
   paths. In progress: the
   [library-modules investigation](../research/investigations/library-modules/DESIGN.md)
-  proposes the answers as amendments awaiting the owner's ruling, and its E1
-  measured the host rows' per-check cost (36 to 62 percent of a check's
-  instructions); the specification changes and the cross-program reuse gain
-  are unverified. Until the host records leave it, `compiler/src/prelude.rs`
-  copies specification section 14 by hand, and no test holds the two together
-  (only the built-in catalog is compared); the records that remain gain that
-  test with the move. Validate with the whole conformance corpus and test
-  programs unchanged in meaning, and a composition's front-end time before and
-  after.
+  holds the design. Specification v0.71 and the compiler implement the host
+  modules (`std::io`, `std::text`, `std::fs`, `std::net`, `std::process`),
+  with the corpus migrated and verdicts unchanged; a check that names no
+  library module saves 36 to 61 percent of its instructions, and a second
+  program reuses the first one's library verdicts through a shared cache.
+  Remaining: the containers as `std::collections`, which await the owner's
+  ruling on the `standard-library` amendment, and the cost a program pays for
+  naming `ExitStatus` (the investigation's W5: 13.5 percent saved where a
+  program that names nothing saves 61), which a module layout or the nominal
+  passes' fix below would reduce.
 
 - **Select the modular conversion companion.** The
   [conversion comparison](../research/investigations/numeric-conversions/DESIGN.md#companion-operations-and-explicit-deferrals)
@@ -185,8 +186,12 @@ rarely insert at the same place.
   and dependency sets belong to a nominal instance, not to the function that
   reaches it. Validate with the same callgrind comparison: the host rows' cost
   on the 16-function module should fall to at most their cost on the
-  one-function module. Reopen with the library-modules implementation, or when
-  a module check's time limits an experiment.
+  one-function module. The library-modules implementation removed the cost
+  from checks that name no library module, but a check that names
+  `std::process`, as every program returning `ExitStatus` does, still pays
+  37 million instructions in these passes for the host interfaces that
+  module selects (the investigation's W5). Reopen when that cost limits an
+  experiment, or with a change to the standard library's module layout.
 
 - **Some ENT-3 sources read no measure operand.** S7's constant-offset,
   checked-offset, exact-division, remainder and unsigned `iand` rows read an
@@ -961,7 +966,7 @@ rarely insert at the same place.
   from inside the park, was never built.
 
 - **There is no source-level foreign-function boundary.** C enters only as a
-  trusted linked definition of an ordinary declaration [PRE-1, SCOPE-3], which
+  trusted linked definition of an ordinary declaration [PRE-2, SCOPE-3], which
   the checker cannot inspect, and a C program cannot call Whitefoot code
   through a stated ABI. A real systems program needs both directions: calling
   an existing C library, and exporting a Whitefoot component, which the next

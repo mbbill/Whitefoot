@@ -441,10 +441,10 @@ fn lower_function<'program>(
     overlap: OverlapLowering,
 ) -> Result<IrFunction, LoweringFailure> {
     // One of the compiler-owned [PRE-1] records: declared body-less exactly
-    // like a host row, but with no trusted-base object behind it, so the
+    // like a host function, but with no trusted-base object behind it, so the
     // compiler emits the body here. Only a program that called the row
     // reaches this instance, because a generic row has no instance until a
-    // call selects one, and the host rows are not compiler-owned at all.
+    // call selects one, and the host functions are not compiler-owned at all.
     let compiler_owned = function.body.is_none() && prelude::compiler_owned_row(&function.name);
     let uninhabited = matches!(
         function.body_disposition,

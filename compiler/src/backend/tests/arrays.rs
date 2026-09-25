@@ -954,7 +954,11 @@ fn const_runs_are_immutable_globals_and_execute_through_index_and_len() {
     // claims, so all three outcomes return an ExitStatus without a trap edge.
     assert!(!main.contains("icmp ult i64"));
     assert_eq!(main.matches("icmp eq").count(), 2);
-    assert_eq!(main.matches("call void @wf_std.process.exit_status").count(), 3);
+    assert_eq!(
+        main.matches("call void @wf_std.process.exit_status")
+            .count(),
+        3
+    );
     assert!(!main.contains("call void @wf_trap"));
     let output = compile_and_run(&llvm);
     assert!(output.status.success());

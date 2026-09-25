@@ -488,12 +488,12 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                         module: bundle
                             .file(role.origin.coordinate.source())
                             .map_or(crate::ModuleId::BUNDLE_ROOT, crate::SourceFile::module),
-                        interface: bundle
-                            .file(role.origin.coordinate.source())
-                            .is_some_and(|file| {
+                        interface: bundle.file(role.origin.coordinate.source()).is_some_and(
+                            |file| {
                                 file.prelude().is_none()
                                     && file.role() == crate::SourceRole::Interface
-                            }),
+                            },
+                        ),
                         owner: role.owner,
                         origin: role.origin.clone(),
                         scope: role.scope,

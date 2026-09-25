@@ -267,9 +267,13 @@ mod tests {
     fn declarations_are_parsed_resolved_and_checked_as_ordinary_signatures() {
         let limits = CompilerLimits::default();
         let bundle = SourceBundle::with_prelude(
-            &[SourceInput::new("ordinary.wf", b"fn transfer(value: Bool) -> result: Bool pure {\n  return value;\n}\n")],
+            &[SourceInput::new(
+                "ordinary.wf",
+                b"fn transfer(value: Bool) -> result: Bool pure {\n  return value;\n}\n",
+            )],
             limits.source,
-        ).expect("ordinary prelude source bundle");
+        )
+        .expect("ordinary prelude source bundle");
         let LexOutcome::Complete(lexed) = lex(&bundle, limits.lexer) else {
             panic!("ordinary prelude lexing");
         };
@@ -335,5 +339,40 @@ mod tests {
             .find(|function| function.name == "transfer")
             .expect("ordinary source function");
         assert!(transferred.body.is_some());
+    }
+
+    /// [PRE-1] the records are the specification's text: the opaque struct
+    /// fence and the function fence, record for record and in order. The
+    /// fences write the capacity parameter as `const n: u64`, the spelling a
+    /// record parses with.
+    #[test]
+    fn the_records_are_the_specification_text() {
+        let section = crate::spec::ACTIVE_KERNEL_SPEC_TEXT
+            .split("\n[PRE-1] ")
+            .nth(1)
+            .and_then(|rest| rest.split("\n[PRE-2] ").next())
+            .expect("the specification states PRE-1");
+        let fences: Vec<&str> = section.split("```\n").skip(1).step_by(2).collect();
+        let [structs, _enums, functions] = fences.as_slice() else {
+            panic!("PRE-1 states its structs, enums and functions in three fences");
+        };
+        let mut stated: Vec<String> = structs
+            .split("\n\n")
+            .map(|record| format!("{}\n", record.trim_end()))
+            .collect();
+        let mut function = String::new();
+        for line in functions.lines() {
+            if line.starts_with("fn ") && !function.is_empty() {
+                stated.push(std::mem::take(&mut function));
+            }
+            function.push_str(line);
+            function.push('\n');
+        }
+        stated.push(function);
+        let carried: Vec<&str> = super::DECLARATIONS
+            .iter()
+            .map(|(_, _, source)| *source)
+            .collect();
+        assert_eq!(carried, stated);
     }
 }

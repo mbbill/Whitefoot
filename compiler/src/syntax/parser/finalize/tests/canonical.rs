@@ -132,39 +132,48 @@ fn selected(value: i32) -> result: Result<i32, i32> pure contract {
 
 #[test]
 fn first_gap_mismatch_uses_exact_source_or_deepest_node_location() {
-    audit_source(b"fn main() -> status: std::process::ExitStatus pure {}", |outcome| {
-        let CanonicalOutcome::SourceIssue(issue) = outcome else {
-            panic!("one-line block must reject: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), crate::syntax::parser::SyntaxRule::Form2);
-        let CanonicalLocation::SourceNode(path, coordinate) = issue.location() else {
-            panic!("inside-item gap must use SourceNode");
-        };
-        assert_eq!(path.components(), &[0, 0]);
-        assert_eq!(coordinate.source(), SourceId::from_ordinal(0));
-        assert_eq!(coordinate.start(), coordinate.end());
-    });
+    audit_source(
+        b"fn main() -> status: std::process::ExitStatus pure {}",
+        |outcome| {
+            let CanonicalOutcome::SourceIssue(issue) = outcome else {
+                panic!("one-line block must reject: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), crate::syntax::parser::SyntaxRule::Form2);
+            let CanonicalLocation::SourceNode(path, coordinate) = issue.location() else {
+                panic!("inside-item gap must use SourceNode");
+            };
+            assert_eq!(path.components(), &[0, 0]);
+            assert_eq!(coordinate.source(), SourceId::from_ordinal(0));
+            assert_eq!(coordinate.start(), coordinate.end());
+        },
+    );
 
-    audit_source(b" fn main() -> status: std::process::ExitStatus pure {\n}\n", |outcome| {
-        let CanonicalOutcome::SourceIssue(issue) = outcome else {
-            panic!("leading trivia must reject: {outcome:?}");
-        };
-        let CanonicalLocation::SourceBytes(coordinate) = issue.location() else {
-            panic!("source-leading gap must use SourceBytes");
-        };
-        assert_eq!(coordinate.start().value(), 0);
-        assert_eq!(coordinate.end().value(), 1);
-    });
+    audit_source(
+        b" fn main() -> status: std::process::ExitStatus pure {\n}\n",
+        |outcome| {
+            let CanonicalOutcome::SourceIssue(issue) = outcome else {
+                panic!("leading trivia must reject: {outcome:?}");
+            };
+            let CanonicalLocation::SourceBytes(coordinate) = issue.location() else {
+                panic!("source-leading gap must use SourceBytes");
+            };
+            assert_eq!(coordinate.start().value(), 0);
+            assert_eq!(coordinate.end().value(), 1);
+        },
+    );
 
-    audit_source(b"fn main() -> status: std::process::ExitStatus pure {\n}", |outcome| {
-        let CanonicalOutcome::SourceIssue(issue) = outcome else {
-            panic!("missing final LF must reject: {outcome:?}");
-        };
-        let CanonicalLocation::SourceBytes(coordinate) = issue.location() else {
-            panic!("source-final gap must use SourceBytes");
-        };
-        assert_eq!(coordinate.start(), coordinate.end());
-    });
+    audit_source(
+        b"fn main() -> status: std::process::ExitStatus pure {\n}",
+        |outcome| {
+            let CanonicalOutcome::SourceIssue(issue) = outcome else {
+                panic!("missing final LF must reject: {outcome:?}");
+            };
+            let CanonicalLocation::SourceBytes(coordinate) = issue.location() else {
+                panic!("source-final gap must use SourceBytes");
+            };
+            assert_eq!(coordinate.start(), coordinate.end());
+        },
+    );
 
     audit_source(
         b"const first: i32 = 1_i32;\nconst second: i32 = 2_i32;\n",

@@ -1,7 +1,11 @@
 ; Ordinary linked definitions with the exact Whitefoot FunctionAbi.
-; A range reference crosses the call as its element pointer and count, as
-; every WF call passes it. Their private C bodies take a pointer to one view,
-; since C aggregate parameter coercions differ between target ABIs.
+; Every host function's link name is its standard library identity,
+; wf_std.<module>.<name> [MOD-10], which no C identifier can spell, so each
+; is defined here over its C body wf__body_<name>. A range reference crosses
+; the call as its element pointer and count, as every WF call passes it; the
+; C bodies of those functions take a pointer to one view, since C aggregate
+; parameter coercions differ between target ABIs. A narrow integer is passed
+; zero-extended, as a C callee may assume on every supported target.
 ; This file is library implementation, with no compiler operation dispatch.
 
 declare void @wf__body_host_copy_bytes(ptr, ptr, ptr, i64, i64)
@@ -121,5 +125,157 @@ entry:
   %view.len = getelementptr inbounds { ptr, i64 }, ptr %view, i32 0, i32 1
   store i64 %source.len, ptr %view.len, align 8
   call void @wf__body_send_once(ptr %result, ptr %send, ptr %view, i64 %start, i64 %end)
+  ret void
+}
+
+declare i64 @wf__body_args_count(ptr)
+
+define i64 @wf_std.text.args_count(ptr %args) {
+entry:
+  %count = tail call i64 @wf__body_args_count(ptr %args)
+  ret i64 %count
+}
+
+declare void @wf__body_arg_get(ptr, ptr, i64)
+
+define void @wf_std.text.arg_get(ptr %result, ptr %args, i64 %position) {
+entry:
+  tail call void @wf__body_arg_get(ptr %result, ptr %args, i64 %position)
+  ret void
+}
+
+declare i64 @wf__body_host_bytes_len(ptr)
+
+define i64 @wf_std.text.host_bytes_len(ptr %value) {
+entry:
+  %length = tail call i64 @wf__body_host_bytes_len(ptr %value)
+  ret i64 %length
+}
+
+declare void @wf__body_host_utf8_len(ptr, ptr)
+
+define void @wf_std.text.host_utf8_len(ptr %result, ptr %value) {
+entry:
+  tail call void @wf__body_host_utf8_len(ptr %result, ptr %value)
+  ret void
+}
+
+declare void @wf__body_relative_path(ptr, ptr)
+
+define void @wf_std.fs.relative_path(ptr %result, ptr %value) {
+entry:
+  tail call void @wf__body_relative_path(ptr %result, ptr %value)
+  ret void
+}
+
+declare void @wf__body_open_read(ptr, ptr, ptr, ptr)
+
+define void @wf_std.fs.open_read(ptr %result, ptr %factory, ptr %root, ptr %path) {
+entry:
+  tail call void @wf__body_open_read(ptr %result, ptr %factory, ptr %root, ptr %path)
+  ret void
+}
+
+declare void @wf__body_open_directory_source(ptr, ptr, ptr)
+
+define void @wf_std.fs.open_directory_source(ptr %result, ptr %factory, ptr %directory) {
+entry:
+  tail call void @wf__body_open_directory_source(ptr %result, ptr %factory, ptr %directory)
+  ret void
+}
+
+declare void @wf__body_close_read(ptr, ptr, ptr)
+
+define void @wf_std.fs.close_read(ptr %result, ptr %factory, ptr %file) {
+entry:
+  tail call void @wf__body_close_read(ptr %result, ptr %factory, ptr %file)
+  ret void
+}
+
+declare void @wf__body_close_directory(ptr, ptr, ptr)
+
+define void @wf_std.fs.close_directory(ptr %result, ptr %factory, ptr %directory) {
+entry:
+  tail call void @wf__body_close_directory(ptr %result, ptr %factory, ptr %directory)
+  ret void
+}
+
+declare void @wf__body_close_directory_source(ptr, ptr, ptr)
+
+define void @wf_std.fs.close_directory_source(ptr %result, ptr %factory, ptr %source) {
+entry:
+  tail call void @wf__body_close_directory_source(ptr %result, ptr %factory, ptr %source)
+  ret void
+}
+
+declare void @wf__body_socket_address_v4(ptr, i8 zeroext, i8 zeroext, i8 zeroext, i8 zeroext, i16 zeroext)
+
+define void @wf_std.net.socket_address_v4(ptr %result, i8 %a, i8 %b, i8 %c, i8 %d, i16 %port) {
+entry:
+  tail call void @wf__body_socket_address_v4(ptr %result, i8 zeroext %a, i8 zeroext %b, i8 zeroext %c, i8 zeroext %d, i16 zeroext %port)
+  ret void
+}
+
+declare void @wf__body_socket_address_v6(ptr, i16 zeroext, i16 zeroext, i16 zeroext, i16 zeroext, i16 zeroext, i16 zeroext, i16 zeroext, i16 zeroext, i16 zeroext)
+
+define void @wf_std.net.socket_address_v6(ptr %result, i16 %a, i16 %b, i16 %c, i16 %d, i16 %e, i16 %f, i16 %g, i16 %h, i16 %port) {
+entry:
+  tail call void @wf__body_socket_address_v6(ptr %result, i16 zeroext %a, i16 zeroext %b, i16 zeroext %c, i16 zeroext %d, i16 zeroext %e, i16 zeroext %f, i16 zeroext %g, i16 zeroext %h, i16 zeroext %port)
+  ret void
+}
+
+declare void @wf__body_tcp_listen(ptr, ptr, ptr)
+
+define void @wf_std.net.tcp_listen(ptr %result, ptr %factory, ptr %address) {
+entry:
+  tail call void @wf__body_tcp_listen(ptr %result, ptr %factory, ptr %address)
+  ret void
+}
+
+declare void @wf__body_tcp_accept(ptr, ptr, ptr)
+
+define void @wf_std.net.tcp_accept(ptr %result, ptr %factory, ptr %listener) {
+entry:
+  tail call void @wf__body_tcp_accept(ptr %result, ptr %factory, ptr %listener)
+  ret void
+}
+
+declare void @wf__body_tcp_connect(ptr, ptr, ptr)
+
+define void @wf_std.net.tcp_connect(ptr %result, ptr %factory, ptr %address) {
+entry:
+  tail call void @wf__body_tcp_connect(ptr %result, ptr %factory, ptr %address)
+  ret void
+}
+
+declare void @wf__body_close_listener(ptr, ptr, ptr)
+
+define void @wf_std.net.close_listener(ptr %result, ptr %factory, ptr %listener) {
+entry:
+  tail call void @wf__body_close_listener(ptr %result, ptr %factory, ptr %listener)
+  ret void
+}
+
+declare void @wf__body_close_receive(ptr, ptr, ptr)
+
+define void @wf_std.net.close_receive(ptr %result, ptr %factory, ptr %receive) {
+entry:
+  tail call void @wf__body_close_receive(ptr %result, ptr %factory, ptr %receive)
+  ret void
+}
+
+declare void @wf__body_close_send(ptr, ptr, ptr)
+
+define void @wf_std.net.close_send(ptr %result, ptr %factory, ptr %send) {
+entry:
+  tail call void @wf__body_close_send(ptr %result, ptr %factory, ptr %send)
+  ret void
+}
+
+declare void @wf__body_exit_status(ptr, i8 zeroext)
+
+define void @wf_std.process.exit_status(ptr %result, i8 %code) {
+entry:
+  tail call void @wf__body_exit_status(ptr %result, i8 zeroext %code)
   ret void
 }

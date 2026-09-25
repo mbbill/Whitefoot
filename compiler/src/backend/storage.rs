@@ -1713,7 +1713,7 @@ fn main() -> status: std::process::ExitStatus pure {
                     .filter_map(|(index, _)| plan.values.get(index).copied().flatten())
                     .collect();
                 assert_eq!(slots.len(), 1, "construction and append use one backing");
-                // PRE-1's ExitStatus is an ordinary opaque nominal, so its
+                // PRE-2's ExitStatus is an ordinary opaque nominal, so its
                 // direct-call result owns backing independently of the run.
                 let IrType::Nominal(result) = function.result() else {
                     panic!("the source entry returns an ordinary nominal");

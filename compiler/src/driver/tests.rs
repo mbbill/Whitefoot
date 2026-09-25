@@ -1629,7 +1629,8 @@ fn main() -> status: std::process::ExitStatus pure {
     );
 
     // Affine opaque values have empty release under PRE-1 and STOR-3.
-    let capability_releases = b"fn release_read_file(file: std::io::OutputStream) -> result: unit pure {
+    let capability_releases =
+        b"fn release_read_file(file: std::io::OutputStream) -> result: unit pure {
   return unit;
 }
 
@@ -3115,7 +3116,33 @@ fn the_library_graph_writes_pkg_and_a_program_names_only_library_modules() {
     )
     .expect("a row may list a library module");
     let a = graph.module_named("pkg::a").expect("pkg::a is registered");
-    let io = graph.module_named("std::io").expect("the library's modules follow");
+    let io = graph
+        .module_named("std::io")
+        .expect("the library's modules follow");
     assert!(graph.modules()[a.index()].depends_on(io));
     assert_eq!(graph.program_modules().count(), 2);
+}
+
+/// [MOD-8, MOD-10] a standard library module's verdict key is the same in
+/// every program that selects it: a program module registered below a path
+/// the library also uses is no child of the library module, so it enters
+/// neither the library module's graph facts nor its key.
+#[test]
+fn a_library_module_verdict_key_ignores_the_programs_modules() {
+    let material = |graph_text: &[u8]| {
+        let graph = crate::form_module_graph(
+            SourceInput::new("modules.wfg", graph_text),
+            crate::CompilerLimits::default(),
+        )
+        .expect("the graph forms");
+        let inputs = super::with_library_records(&graph, &[]);
+        let io = graph.module_named("std::io").expect("std::io is selectable");
+        super::ModuleCheck::new(&graph, &inputs, io, false).material
+    };
+    let alone = material(b"pkg: [std::io];\n");
+    let beside = material(b"pkg::io: [];\npkg::io::x: [];\npkg: [pkg::io, pkg::io::x, std::io];\n");
+    assert_eq!(
+        String::from_utf8_lossy(&alone),
+        String::from_utf8_lossy(&beside)
+    );
 }

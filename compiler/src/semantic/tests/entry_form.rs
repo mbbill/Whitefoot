@@ -131,7 +131,7 @@ fn unexhibited_main_effects_are_still_rejected_by_eff2() {
 }
 
 #[test]
-fn prelude_inputs_are_a_normal_linear_struct() {
+fn library_inputs_are_a_normal_linear_struct() {
     assert_complete(
         b"fn relay(inputs: std::process::Inputs) -> result: std::process::Inputs pure {\n  return move inputs;\n}\n",
     );

@@ -9,7 +9,9 @@ now [`language/standard-library`](../../../design/language/standard-library.md),
 [`language/name-resolution`](../../../design/language/name-resolution.md) and
 [`language/system-interface/declaration-home`](../../../design/language/system-interface/declaration-home.md);
 D5 and D7 remain an [amendment](../../../design/amendments/standard-library.md).
-Nothing is implemented yet.
+Specification v0.71 states D1 to D4 and the compiler implements them; the
+containers (D5) wait for the owner's ruling on that amendment. Measurements of
+the implemented split follow E1.
 
 ## Question
 
@@ -131,6 +133,70 @@ does both.
 library module will process that module's interface, as it processes any
 dependency's. The numbers bound what a check that names no host declaration
 saves; they do not measure a check that names some.
+
+## Measurements of the implemented split
+
+**E1 again.** The criterion was recorded at 2026-09-25T09:13Z, before either
+compiler was built. Compilers: (A) the gate build at `6b66e523`, main before
+this branch, with the host rows in the prelude; (B) the gate build of this
+branch. W1 to W4 are E1's workloads, byte for byte. W5 is W1 with the
+function returning `ExitStatus`, the common program shape: A names the
+prelude's `ExitStatus`, B lists `std::process` in the row and names
+`std::process::ExitStatus`. W6 is W1 returning `Result<u64, IoError>`,
+through `std::io` in B. Predictions: P1, B saves within 5 points of the
+probe's 61.8, 41.6 and 36.1 percent on W1 to W3; P2, B executes fewer
+instructions than A on W5, and a saving under 10 percent would mean naming
+`ExitStatus` brings back most of the host rows, because `std::process`
+depends on `std::io`, `std::text` and `std::fs` through `Inputs`' fields;
+P3, B executes fewer instructions than A on W6.
+
+| Check | A instructions | B instructions | Fewer | A median | B median |
+|---|---|---|---|---|---|
+| W1 one-function module | 171,966,487 | 66,939,445 | 61.1% | 19.4 ms | 8.0 ms |
+| W2 chain module `pkg::m16` | 517,717,399 | 304,402,511 | 41.2% | 52.4 ms | 33.1 ms |
+| W3 chain entry, `--check`, no cache | 21,568,717,726 | 13,863,693,093 | 35.7% | 1776.9 ms | 1226.2 ms |
+| W4 chain, `--check-modules` | | | | 1832.9 ms | 1208.9 ms |
+| W5 W1 returning `ExitStatus` | 172,352,056 | 149,015,795 | 13.5% | 19.3 ms | 17.7 ms |
+| W6 W1 returning `Result<u64, IoError>` | 173,853,395 | 91,058,464 | 47.6% | 19.2 ms | 11.6 ms |
+
+P1 holds: each saving is within 0.7 points of the probe's, and B executes
+1.3 million instructions more than the probe on W1, so the standard library
+machinery costs a check that names no library module almost nothing. P3
+holds. P2 holds by its criterion, 13.5 percent being above 10, but the
+common program shape keeps most of the host cost: W5 executes 82 million
+instructions more than W1, 78 percent of the 105 million the split saves.
+Callgrind puts 37 million of them in the semantic check, mostly the nominal
+passes of the [todo item](../../../docs/todo.md) (`ensure_nominals_in_node`,
+`reject_recursive_nominal_layouts`, `nominal_dependencies` about 12, 12 and
+10 million), 25 million in parsing and finalizing the four interface records
+`std::process` selects, and 15 million in resolution tables. Two changes
+would each reduce it: a module layout in which `ExitStatus` and
+`exit_status` depend on no other module, which is a PRE-2 change for the
+owner, and the nominal passes' fix, which helps every check.
+
+**E2: a second program reuses the first one's standard library verdicts.**
+The criterion was recorded before the first run: after a first program's
+entry check fills an empty cache, a second, different program's entry check
+reports every standard library verdict of its closure as reused and executes
+fewer instructions than against an empty cache. P1 names `std::process`; P2
+has a module `pkg::a` naming `std::io` and a root naming `pkg::a` and
+`std::process`, so both closures hold `std::process`, `std::io`, `std::text`
+and `std::fs`. Against an empty cache P2 writes verdict and acceptance
+records for all six of its modules; after P1, it writes records only for
+`pkg` and `pkg::a`, its own modules. Its check executes 1,191,455,739
+instructions instead of 1,740,012,428 (31.5 percent fewer), in 106.3 instead
+of 155.5 ms (median of 11). The criterion is met. Making it hold took one
+fix: a module's graph facts listed a program module registered below a path
+a library module also has (`pkg::io::x` below `std::io`) as the library
+module's child, so the library module's key depended on the program; a
+driver test now holds the key equal across two such programs.
+
+**Front-end times.** wfgrep, a source bundle that names every host module but
+`std::net`, checks in 15,220,474,215 instructions under A (main's source)
+and 15,243,647,766 under B (this branch's source, the same program with
+`std` paths): 0.15 percent more, and 2082.7 against 1954.3 ms (median of 7).
+A program that names almost every host module keeps the host cost, as D3
+predicts. The chain's times are W3 and W4 above.
 
 ## Design
 
@@ -310,8 +376,9 @@ Rejected:
 
 ## Specification changes
 
-One amendment, following the `spec-amendment` skill, after the owner rules on
-D1 to D4:
+Specification v0.71 made them as one amendment, with MOD-10 stating the
+standard library package, its `std` qualifier and which of its modules a
+program selects:
 
 - PRE-1: the core list of D1; the host records leave it, and its diagnostic
   preorder shrinks.
@@ -321,13 +388,14 @@ D1 to D4:
 - PROG-2: a source bundle may name every standard library module.
 - MOD-1, MOD-5: a row may list standard library modules; `std` is a module
   prefix beside `pkg` and aliases.
-- MOD-4: an alias may target a standard library path.
+- MOD-4: an alias may target a standard library path, and a record's alias
+  header follows its heap declaration.
 - MOD-8: a definition the build supplies meets composition's definition
   requirement.
 - TYPE-2: a value of an opaque struct is formed only by a definition the build
   supplies, the construction rows or a host function.
 - PROG-3 and the worked example (section 16): `std::process::ExitStatus` and
-  `Inputs` if D1's recommendation holds.
+  `std::process::Inputs`.
 
 ## Implementation plan
 
@@ -337,10 +405,12 @@ D1 to D4:
    consumer-independent cache keys.
 2. The host modules: the host records leave `compiler/src/prelude.rs` for
    `std` interface files; supplied-definition metadata replaces the prelude
-   origin test; the runtime units define the module-qualified link names
-   every module function has (`wf_std.io.write_once`, D6), through one C
-   macro that applies the target's label prefix; the runner recognizes
-   `Inputs` and `ExitStatus` by identity.
+   origin test; the runtime's LLVM unit defines the module-qualified link
+   name every module function has (`wf_std.io.write_once`, D6) as a
+   forwarding function over the C body `wf__body_write_once`, since no C
+   identifier can spell it (a C assembler label spelling it broke Apple's
+   linker under full LTO); the runner recognizes `Inputs` and `ExitStatus`
+   by identity.
 3. The corpus: conformance cases and test programs name the host modules
    through aliases or qualified paths, with every verdict and runtime result
    unchanged.
@@ -355,7 +425,9 @@ D1 to D4:
 - Whether the standard library is versioned apart from the compiler. It is
   not, for now: its records are inputs to the compiler identity's cache scope
   like any other records, and it ships with the compiler.
-- The standard library module granularity of D1 is a proposal; D2 to D4 do
-  not depend on it.
+- The standard library module granularity of D1: the owner adopted it with
+  D1, and W5 above shows its cost for the common program shape, since
+  `ExitStatus` shares `std::process` with `Inputs` and so depends on
+  `std::io`, `std::text` and `std::fs`. D2 to D4 do not depend on it.
 - The nominal passes' growth with prelude size is recorded separately; this
   design does not wait for it.

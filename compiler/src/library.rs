@@ -18,11 +18,26 @@ pub(crate) const GRAPH: &str = include_str!("../../lib/std/modules.wfg");
 /// [MOD-10], in the order the library's graph registers their modules and
 /// each module's interface record first [MOD-2].
 pub(crate) const RECORDS: &[(&str, &str)] = &[
-    ("std/io/module.wfm", include_str!("../../lib/std/io/module.wfm")),
-    ("std/text/module.wfm", include_str!("../../lib/std/text/module.wfm")),
-    ("std/fs/module.wfm", include_str!("../../lib/std/fs/module.wfm")),
-    ("std/net/module.wfm", include_str!("../../lib/std/net/module.wfm")),
-    ("std/process/module.wfm", include_str!("../../lib/std/process/module.wfm")),
+    (
+        "std/io/module.wfm",
+        include_str!("../../lib/std/io/module.wfm"),
+    ),
+    (
+        "std/text/module.wfm",
+        include_str!("../../lib/std/text/module.wfm"),
+    ),
+    (
+        "std/fs/module.wfm",
+        include_str!("../../lib/std/fs/module.wfm"),
+    ),
+    (
+        "std/net/module.wfm",
+        include_str!("../../lib/std/net/module.wfm"),
+    ),
+    (
+        "std/process/module.wfm",
+        include_str!("../../lib/std/process/module.wfm"),
+    ),
 ];
 
 /// The standard library's modules in the order its graph registers them,
@@ -49,7 +64,9 @@ pub(crate) fn modules(offset: usize) -> Vec<crate::ModuleRecord> {
                 path(module),
                 dependencies
                     .iter()
-                    .filter_map(|dependency| MODULES.iter().position(|(other, _)| other == dependency))
+                    .filter_map(|dependency| {
+                        MODULES.iter().position(|(other, _)| other == dependency)
+                    })
                     .filter_map(|index| crate::ModuleId::from_index(offset + index))
                     .collect(),
             )
@@ -111,7 +128,9 @@ pub(crate) fn bundle_part<'input>(
     let library = modules(1);
     let mut modules = vec![crate::ModuleRecord::new(
         Vec::new(),
-        (1..=library.len()).filter_map(crate::ModuleId::from_index).collect(),
+        (1..=library.len())
+            .filter_map(crate::ModuleId::from_index)
+            .collect(),
     )];
     modules.extend(library);
     let mut selected: Vec<crate::ModuleId> = Vec::new();
@@ -214,7 +233,11 @@ mod tests {
         found.sort();
         let mut carried: Vec<String> = RECORDS
             .iter()
-            .map(|(path, _)| path.strip_prefix("std/").expect("a library path").to_owned())
+            .map(|(path, _)| {
+                path.strip_prefix("std/")
+                    .expect("a library path")
+                    .to_owned()
+            })
             .chain(std::iter::once("modules.wfg".to_owned()))
             .collect();
         carried.sort();
@@ -239,11 +262,7 @@ mod tests {
             .split("\n[PRE-2] ")
             .nth(1)
             .expect("the specification states PRE-2");
-        let fences: Vec<&str> = section
-            .split("```\n")
-            .skip(1)
-            .step_by(2)
-            .collect();
+        let fences: Vec<&str> = section.split("```\n").skip(1).step_by(2).collect();
         let rows = fences.first().expect("PRE-2 states the graph rows");
         for row in GRAPH.lines() {
             assert!(rows.lines().any(|line| line == row), "{row} is a PRE-2 row");
