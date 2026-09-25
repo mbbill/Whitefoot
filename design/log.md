@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-25 Build the owned representation before composition queries
+
+Nodes: compiler/incremental-compilation
+
+Owner-approved: After the handoff for PR #128 at cb418781, which summarized the compiler-composition-staging amendment in a decision card, linked its file and recommended approving it, the owner agreed to all of that handoff's recommendations, this approval among them.
+
+Summary: Replace the first compiler/incremental-compilation decision so that the representation finer composition queries need, owned syntax, declaration keys minted by resolution and an owned checked program that holds no borrow of the resolved unit, is built now, module build units follow it, and instance units and fact-based entry checks wait for an edit-build measurement or a consumer. The owner said the earlier deferral weighed build cost only; the [compiler-architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#f3-identity-is-positional-and-borrowed) records the structural grounds, and the standard library on modules needs a library module checked once and reused by every program that names it. The replaced decision joins the node's rejected list; its query families, identity rules, whole-closure rerun and refusal of hash-selected reuse remain in force. Remove the resolved amendment and its directory.
+
 ## 2026-09-25 Stage the dependency-recording decision
 
 Nodes: compiler/incremental-compilation, language/name-resolution, language/checks-and-proofs, language, language/effects, language/data-model/readonly-field, compiler
