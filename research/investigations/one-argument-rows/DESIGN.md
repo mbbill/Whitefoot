@@ -22,16 +22,16 @@ probes against the implementation. The baseline is PR #123 at `90259428`.
    supply, and every two entries one reference argument supplies whose
    declared paths do not overlap at every position. Two declared paths of one
    parameter overlap at every position when one is the other followed by
-   further steps, or when the first pair of steps at which they differ is one
-   that [OWN-7] and [WIN-2] fix as overlapping whatever values the positions
-   take: two payload steps naming different variants, an index position and
-   `.filled`, `.next` and `.free`, or `.last` and `.filled`. Steps compare as
-   written, so two index or range positions are the same step exactly when
-   they name the same value parameters. Such a pair is not compared. Every
-   other pair of one argument's entries (`reads(v[i]), writes(v[j])`, an index
-   position against `.last`, a range position against any other step) is
-   compared at the call exactly as before, and so is every pair from
-   different arguments.
+   zero or more steps, or when the first pair of steps at which they differ
+   is one that [OWN-7] and [WIN-2] fix as overlapping whatever values the
+   positions take: two payload steps naming different variants, an index
+   position and `.filled`, `.next` and `.free`, or `.last` and `.filled`.
+   Steps compare as written, so two index or range positions are the same
+   step exactly when they name the same value parameters. Such a pair is not
+   compared. Every other pair of one argument's entries
+   (`reads(v[i]), writes(v[j])`, an index position against `.last`, a range
+   position against any other step) is compared at the call exactly as
+   before, and so is every pair from different arguments.
 2. [EFF-1] extends its subsumption: `writes(p)` states every access at or
    below `p`, so an entry at or below the path of another `writes` entry of
    the same row (`reads(p.x)` or `writes(p.x)` beside `writes(p)`, and
