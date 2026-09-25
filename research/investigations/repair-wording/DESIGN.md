@@ -26,9 +26,9 @@ and repair it fastest.
   disposition-specific and align the compiler.
 - **(b)** The specification states only which rejections carry a repair and a
   requirement every repair meets; the words become a compiler decision beside
-  `compiler/diagnostic-rendering` (PR #117), tested by the pinned-sentence
-  corpus, so wording can improve from agent evidence without a specification
-  version.
+  `compiler/diagnostic-rendering`, the node PR #117 added, tested by the
+  pinned-sentence corpus, so wording can improve from agent evidence without a
+  specification version.
 
 This round is research only: it changes neither the specification nor the
 compiler. It proposes the two design-tree amendments filed as
@@ -37,13 +37,21 @@ and [`design/amendments/diagnostic-repairs.md`](../../../design/amendments/diagn
 
 Revisions examined: `main` at `efe40194a`, PR #117 (`feat/readable-diagnostics`)
 at `145f368f7`, and PR #123 (`fix/diagnostic-source-spelling`) at `902594280`.
-Each compiler was built with the gate profile under the host lock, `main` from
-this worktree and the two PRs from `git archive` exports of their heads:
+PR #117 and the workflow change of PR #116 merged into main while this ran;
+main at `6facd86b8` has the specification of `efe40194a` and the `compiler/`
+tree of `145f368f7`, byte for byte (`git diff --stat 145f368f7 6facd86b8 --
+compiler/ spec/kernel-spec.md` is empty), so the #117 compiler below is
+today's main compiler and every line number below is main's at `6facd86b8`.
+Each compiler was built with the gate profile under the host lock, `efe40194a`
+from this worktree and the two PRs from `git archive` exports of their heads:
 
 ```sh
 perl .github/run-check.pl repair-wording-build cargo build --manifest-path compiler/Cargo.toml --profile gate --bin whitefootc --locked --offline
-# main 69.7 s; #123 69.7 s and #117 70.6 s, the same command against each export's manifest
+# efe40194a 69.7 s; #123 69.7 s and #117 70.6 s, the same command against each export's manifest
 ```
+
+Where the text below says "main" without a revision, the statement holds for
+both `efe40194a` and `6facd86b8`.
 
 ## Criterion
 
@@ -139,8 +147,8 @@ the rejection. Compiler paths are under `compiler/src/`.
 | 36 | FN-6, 1269 | polymorphic recursion (PolymorphicRecursion) | `forward the complete generic argument vector unchanged on the cycle, or move the changing instantiation off the cycle` | "forward the complete type, const and function argument vector unchanged on the cycle, or move the changing instantiation off the cycle" (`generics/finiteness.rs:255`) | words |
 | 37 | CALL-4, 1411 | ambiguous result route (AmbiguousResultRoute) | ``name the result ordinal the route applies to: write `when b is V(f: r):` `` | none; unit variant (`check/ensures.rs:2220`) | missing |
 | 38 | EFF-5, 1490 | overlapping call effects (OverlappingCallEffects, UndischargedCallSeparation) | `prove the two positions distinct, or pass one of them` | same on OverlappingCallEffects; "prove the two positions distinct before this call, or pass one of them" on UndischargedCallSeparation | words on one path |
-| 39 | FN-8 in DIAG-1, 1841 | undischarged call requirement (UndischargedCallRequirement) | `establish the complete callee requirement with one dominating branch or one preceding proved invariant before the call` | "when the call is required to succeed, establish the entire instantiated callee requirement with a verified requirement, a source invariant, or explicit finite proof steps before the call; use a dominating branch only when rejection is intended program behavior; otherwise restructure the call" (`check.rs:3664`) | content |
-| 40 | FN-8 in DIAG-1, 1842 | the same, with an occurrence-local argument datum | `bind that argument or referent value with one preceding ordinary let, establish the complete requirement over that binding, and pass the binding, borrowing it when the parameter mode requires a borrow` | the same with "establish the entire instantiated requirement" (`check.rs:3662`); no test pins it, and two probes did not reach it | words |
+| 39 | FN-8 in DIAG-1, 1841 | undischarged call requirement (UndischargedCallRequirement) | `establish the complete callee requirement with one dominating branch or one preceding proved invariant before the call` | "when the call is required to succeed, establish the entire instantiated callee requirement with a verified requirement, a source invariant, or explicit finite proof steps before the call; use a dominating branch only when rejection is intended program behavior; otherwise restructure the call" (`check.rs:3665`) | content |
+| 40 | FN-8 in DIAG-1, 1842 | the same, with an occurrence-local argument datum | `bind that argument or referent value with one preceding ordinary let, establish the complete requirement over that binding, and pass the binding, borrowing it when the parameter mode requires a borrow` | the same with "establish the entire instantiated requirement" (`check.rs:3663`); no test pins it, and two probes did not reach it | words |
 | 41 | ENT-2, 2421 | counted endpoint that is not a term (InvalidCountedEndpoint) | `bind the computed u64 value with one preceding ordinary let and use that term as the endpoint` | same (`control/loops.rs:881`) | same |
 | 42 | MSR-3, 2545 | misplaced `entry` former (InvalidEntryFormer) | `use entry only on a reference parameter the row writes, in ensures` | "use entry only on an exclusive parameter in ensures" (`ensures.rs:834`) | content |
 | 43 | CALL-6, 2789 | contradictory contract (ContradictoryPublishedRelations) | `state one consistent relation set: a contract whose clauses cannot hold together publishes every fact at every caller` | same (`ensures.rs:891`) | same |
@@ -206,13 +214,13 @@ still lead with the branch.
 
 ### Differences on PR #117 and PR #123
 
-No repair text differs: the literal sets extracted from both exports equal
-main's outside test modules.
+No repair text differs: the literal sets extracted from both exports, and from
+main at `6facd86b8`, equal `efe40194a`'s outside test modules.
 
-- **#117** prints the same text as a `mechanical_fix: <text>` line of the lean
-  record and as `detail.mechanical_fix` in JSON, in place of the `Debug`
-  field. Its investigation found the repair sentence the largest part of both
-  records it measured, an OP-4 and an FN-8 rejection.
+- **#117**, now on main, prints the same text as a `mechanical_fix: <text>`
+  line of the lean record and as `detail.mechanical_fix` in JSON, in place of
+  the `Debug` field. Its investigation found the repair sentence the largest
+  part of both records it measured, an OP-4 and an FN-8 rejection.
 - **#123** adds EFF-1's `SubsumedEffectRead` rejection with no repair, because
   EFF-1 prescribes none, and turns EFF-2's `expected_row` into the merged row
   every call accepts. The EFF-2 repair text is unchanged, so it now describes a
@@ -252,8 +260,9 @@ for f in probes/*.wf; do whitefootc --emit-llvm -o /dev/null "$f"; echo "exit=$?
 ```
 
 Exit 1 prints one rejection; exit 0 is acceptance. All 51 probes give the
-same exit and rule on main, #117 and #123, except `eff1-order-reordered` on
-#123. The records of four of them on main, abridged:
+same exit and rule on `efe40194a`, #117 and #123, except
+`eff1-order-reordered` on #123. The records of four of them on `efe40194a`,
+in its `Debug` rendering, abridged:
 
 ```text
 op2-refuted:  [OP-2] UndischargedIntegerDomainObligation { residual: "255_u8 +defined 1_u8", disposition: Refuted, mechanical_fix: "when the relation must hold, establish the fixed `.defined` normalization with ..." }
@@ -262,8 +271,8 @@ fn9-refuted:  [FN-9] UndischargedPostcondition { concrete_function: "f", relatio
 op4-refuted:  [OP-4] UndischargedBoundsObligation { residual: "5_u64 < values.len", mechanical_fix: "when the relation must hold, establish the residual with ..." }
 ```
 
-The same FN-8 rejection as PR #117 prints it, which is what an agent will
-read once #117 lands:
+The same FN-8 rejection as main prints it since #117 merged, which is what an
+agent reads today:
 
 ```text
 probes/fn8-refuted.wf:8:11: error[FN-8]: UndischargedCallRequirement
@@ -567,10 +576,14 @@ Filed for the owner's ruling:
   DIAG-1 change is a choice about what the specification states, which the
   language root owns.
 - [`design/amendments/diagnostic-repairs.md`](../../../design/amendments/diagnostic-repairs.md)
-  adds `compiler/diagnostic-repairs` beside PR #117's
-  `compiler/diagnostic-rendering`: repair words selected by construct,
-  position, disposition and the goal's terms and naming the instance; refuted
-  and unproved repair content; repairs pinned with repaired sources.
+  adds `compiler/diagnostic-repairs` beside the live
+  `compiler/diagnostic-rendering`, which PR #117 added: repair words selected
+  by construct, position, disposition and the goal's terms and naming the
+  instance; refuted and unproved repair content; repairs pinned with repaired
+  sources. Each decision states the kind of its ground, as the design-tree
+  skill asks: the refuted/unproved split is a deduction from [ENT-4] with the
+  probes as observation, and the instance-naming wording is provisional until
+  the writer trial.
 
 PR #123's `compiler/rejection-payloads` amendment already decides, for EFF-2
 alone, that "A suggested repair is one the language admits wherever it is
@@ -602,7 +615,7 @@ entry value of the enclosing function, which a `requires` clause can name.
 | EFF-2 | "declare exactly `{expected_row}`", the row #123 makes callable | |
 | Missing today | GIVE-1: "drop `let {binding} =` and write the `{match or if}` statement"; SET-1: "declare `{name}` with `let` before this `set`"; OP-10 and OP-14 shape: "pass one of {admitted shapes}"; FN-4: "supply a function whose {differing part} matches the formal, or weaken the formal"; CALL-4: "name the result ordinal: write `when {binder} is {Variant}(...)`" | |
 
-The two FN-8 probes would then read, in #117's record:
+The two FN-8 probes would then read, in main's record:
 
 ```text
   instantiated_goal: 20_u64 < 10_u64
@@ -624,7 +637,7 @@ and INV-1 rejections, which the checker already computes for all but INV-1
 records; and the FN-8 caller's name. The FN-8 datum is rendered today as
 `<argument #N pre-transfer value>` with angle brackets, a small drift from the
 DIAG-1 spelling to correct in the same round. Renaming the payload field
-`mechanical_fix` to `repair` would align the label #117 prints with the
+`mechanical_fix` to `repair` would align the label main prints with the
 specification's word; it is optional.
 
 ## 5. Validation plan
@@ -650,7 +663,7 @@ specification's word; it is optional.
    programs, each seeded with one defect whose intended behavior an output
    oracle fixes: one refuted and one unproved defect for each of FN-8, FN-9,
    OP-2, OP-6 and OP-4, plus the EFF-2 read-and-write row and the EFF-1 order.
-   Condition A prints the texts of main with #117 and #123; condition B prints
+   Condition A prints main's texts with #123 merged; condition B prints
    the section 4 wordings. The same model, prompt and tools are used in both;
    the writer sees only the compiler record, one compilation is one round, and
    a run ends at eight rounds. Each defect runs three times per condition.
@@ -661,8 +674,13 @@ specification's word; it is optional.
    defects, the median rounds fall by at least one and no refuted defect that
    finishes under A fails to finish under B, and over the unproved defects the
    median does not rise. Otherwise the wording is revisited; the (a) or (b)
-   choice does not depend on this trial. The result describes that model and
-   harness only. It belongs in a new `research/experiments/` record when run.
+   choice does not depend on this trial. Of the investigation skill's four
+   observations, the trial makes only the second, whether the tested agent
+   writes the program with the supplied repair help; expressibility,
+   composition and runtime cost are held fixed by the seeded programs. The
+   model and the harness are its conditions, so the result describes them
+   only, not a ceiling on the language. It belongs in a new
+   `research/experiments/` record when run.
 
 ## Owner decisions
 
@@ -682,22 +700,29 @@ specification's word; it is optional.
    the repair for a row whose two entries one argument supplies, which waits on
    PR #123's open question about such rows.
 
-## Related observations
+## Found along the way
 
-These are outside the proposal and recorded for the todo when PR #123's two
-entries land and this branch resumes.
+Outside the requested change, each with its disposition:
 
 - DIAG-1 fixes FN-9's payload as the instantiated normalized relation, so a
   writer reads `20 - 10 <= -1` for `ensures result < 10_u64`
-  (`fn9-refuted`). The clause substituted in source spelling,
-  `20_u64 < 10_u64`, would serve understanding; it is a payload question.
+  (`fn9-refuted`); the clause in source spelling, `20_u64 < 10_u64`, would
+  read as written. Recorded in `docs/todo.md` ("FN-9 prints its relation in
+  normalized form").
+- Four compiler comments cite DIAG-3, the v0.39 runtime claim-trap record
+  that v0.40 retired with claims. Recorded in `docs/todo.md` ("Compiler
+  comments cite the retired DIAG-3"); this round changes no compiler file.
 - An FN-8 goal over an element renders `values[0] < 10_u64` without the
-  literal's suffix, on main and on #123: the second resolved-place renderer
-  #123's todo already records.
+  literal's suffix, on main and on #123 (`fn8-unproved-element`). Declined
+  here: PR #123's todo item on the second resolved-place renderer records it.
 - EFF-5's "prove the two positions distinct, or pass one of them" is printed
   for a pair one argument supplies (`eff2-merge-add-missing-main`), where
-  neither alternative applies.
-- No test pins the EFF-1 order repair or the FN-8 argument-datum repair.
+  neither alternative applies; no test pins the EFF-1 order repair or the
+  FN-8 argument-datum repair; and the compiler's MSR-3 repair keeps the
+  retired "exclusive parameter". All three are inside the proposal (the
+  wording table, validation step 2, and row 42).
+- PR #123's two todo entries that started this work are not on main yet;
+  when #123 merges, this branch points them at this investigation.
 
 ## Limitations
 

@@ -925,6 +925,30 @@ rarely insert at the same place.
   `wfgrep.wf` now does; reopen when the program is pointed at a larger tree or
   its constant-capacity form stops being the point of the case.
 
+- **FN-9 prints its relation in normalized form.** [DIAG-1] fixes the FN-9
+  payload as the instantiated normalized relation, so `ensures result <
+  10_u64` failing at `return 20_u64;` prints `relation: 20 - 10 <= -1`,
+  without type suffixes and with the comparison rewritten as an L0 bound; an
+  agent has to translate it back to the clause it wrote. Printing the clause
+  with the returned value substituted, `20_u64 < 10_u64`, beside or in place
+  of the normalized form would read as written, and needs a DIAG-1 payload
+  amendment plus the tests that pin the relation. Validate on the FN-9 probes
+  of the [repair-wording investigation](../research/investigations/repair-wording/DESIGN.md#probes)
+  and its writer trial; reopen when that work changes the FN-9 payload or a
+  writer report shows the normalized form costing a round.
+
+- **Compiler comments cite the retired DIAG-3.** DIAG-3 was the v0.39 runtime
+  claim-trap record, retired with claims in v0.40, yet four comments still
+  cite it: three for words that are now [DIAG-1]'s (byte identity only where
+  selection and encoding are fixed, and the `unproved` or `refuted`
+  disposition) in `compiler/src/driver/pinned_sentences.rs`,
+  `compiler/src/semantic/tests/postconditions.rs` and
+  `compiler/src/semantic/tests/requires.rs`, and one, the module doc of
+  `compiler/src/semantic/permission_ledger.rs`, for the retired record
+  itself. A reader following the reference finds no rule. Cite DIAG-1 in the
+  first three and drop the ledger's clause; reopen with the next edit of any
+  of these files.
+
 ## Code structure
 
 - **The entailment flow module has outgrown one reader.**
