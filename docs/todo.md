@@ -558,6 +558,35 @@ rarely insert at the same place.
   Keep the deferred general representation study separate, and close this item
   only when the relevant costs and chosen tradeoffs have discriminating evidence.
 
+- **A target-layout failure names no allocation site or admitted bound.** A
+  program whose OP-9 proof retains a count bound the selected target cannot
+  hold, such as the language's own ceiling `u64::MAX / stride_ceiling(T)`,
+  passes checking and stops at [STOR-6] target qualification with
+  `target layout failure in TargetLayout: TargetLayout(Unrepresentable(RuntimeSizedAllocation))`,
+  which names no source site, no proved bound and no bound the target
+  admits. The numbers exist where the check fails, in the runtime-sized
+  allocation branch of the source-call validation in
+  `compiler/src/backend/target.rs`: the retained bound, the element's target
+  stride, the descriptor header and `runtime_allocation_max()`, which give the
+  largest admitted count `(max - header) / stride`. Design: `IrSourceCall`
+  carries the call's node path, copied from the checked call during lowering;
+  a `TargetLayoutFailure` variant carries the site, the proved bound and the
+  admitted bound (the enum is `Copy` and crosses many `?` returns, so an index
+  into a side table keeps it `Copy`); the driver renders the site as a source
+  location beside the two numbers, still as a target-layout stop and never as
+  a source rejection [STOR-6]; and
+  `u16_buffer_whose_proved_count_exceeds_the_target_byte_domain_is_a_target_failure`
+  in `compiler/src/driver/tests.rs`, which pins today's stop by
+  `RuntimeSizedAllocation` in its detail, changes with it. No specification
+  change. Validate with a program that proves the OP-9 ceiling and calls the
+  allocating function from its entry: the failure names the allocation's call
+  site, the proved bound and the selected target's largest admitted count,
+  while the same program bounded below that count builds. Deferred because the
+  OP-9 repair no longer offers the ceiling as the bound to write, which closes
+  the route the [repair-wording work](../research/investigations/repair-wording/DESIGN.md#implementation)
+  found into this stop; reopen when a writer report or a program meets the
+  unlocated failure.
+
 ## Parallel lowering and runtime
 
 - **Validate reuse of selected-target element layouts during emission.**

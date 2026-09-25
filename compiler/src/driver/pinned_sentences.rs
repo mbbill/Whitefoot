@@ -2430,6 +2430,10 @@ fn main() -> status: ExitStatus pure {
     // -------------------------------------------------------------------
     // [OP-9] an allocation's size.
     // -------------------------------------------------------------------
+    // Each OP-9 repair names the ceiling as the language's limit for the
+    // element type and asks for the count the program needs, because the
+    // selected target admits less [STOR-6]; every repaired program here
+    // states such a count and builds [`every_allocation_repair_builds`].
     RepairPair {
         name: "allocation-fit-refuted.wf",
         rejected: br#"fn main() -> status: ExitStatus pure {
@@ -2440,7 +2444,7 @@ fn main() -> status: ExitStatus pure {
         rule: "OP-9",
         sentences: &[
             "\n  disposition: Refuted\n",
-            "` is false, so this allocation cannot be formed: request a count within that bound\n",
+            "\n  mechanical_fix: `18446744073709551615_u64 <= 2305843009213693951_u64` is false, so this allocation cannot be formed: request the count the program needs. `2305843009213693951_u64` is the language's limit for this element type, not a bound to write: the selected target admits a smaller count, so a bound at or near that limit stops at target layout [STOR-6]\n",
         ],
         repaired: &[br#"fn main() -> status: ExitStatus pure {
   let block = box_slots_new::<i64>(capacity: 4_u64);
@@ -2456,15 +2460,14 @@ fn main() -> status: ExitStatus pure {
 }
 
 fn main() -> status: ExitStatus pure {
+  let values = make(length: 4_u64);
   return exit_status(code: 0_u8);
 }
 "#,
         rule: "OP-9",
         sentences: &[
             "\n  disposition: Unproved\n",
-            "\n  mechanical_fix: add `requires length <= ",
-            "_u64;` to the `contract` of `make`, which each caller then establishes; or guard the allocation with `if length <= ",
-            "_u64` where refusing a larger count is the intended behavior\n",
+            "\n  mechanical_fix: with N the largest count the program needs, add `requires length <= N;` to the `contract` of `make`, which each caller then establishes; or guard the allocation with `if length <= N` where refusing a larger count is the intended behavior. `2305843009213693951_u64` is the language's limit for this element type, not a bound to write: the selected target admits a smaller count, so a bound at or near that limit stops at target layout [STOR-6]\n",
         ],
         repaired: &[
             br#"fn make(length: u64) -> values: Box<Slots<i64>> pure contract {
@@ -2475,6 +2478,7 @@ fn main() -> status: ExitStatus pure {
 }
 
 fn main() -> status: ExitStatus pure {
+  let values = make(length: 4_u64);
   return exit_status(code: 0_u8);
 }
 "#,
@@ -2488,6 +2492,7 @@ fn main() -> status: ExitStatus pure {
 }
 
 fn main() -> status: ExitStatus pure {
+  let values = make(length: 4_u64);
   return exit_status(code: 0_u8);
 }
 "#,
@@ -2506,17 +2511,37 @@ fn make(length: u64) -> values: Box<Slots<i64>> pure {
 }
 
 fn main() -> status: ExitStatus pure {
+  let values = make(length: 4_u64);
   return exit_status(code: 0_u8);
 }
 "#,
         rule: "OP-9",
         sentences: &[
             "\n  disposition: Unproved\n",
-            "\n  mechanical_fix: `n <= ",
-            "_u64` is not proved here: when facts that reach the allocation imply it, prove it with an `invariant` whose `use` steps name them (a loop's header `invariant` for a value the loop computes); when the callee whose result it reads can prove the bound, state it in that callee's `ensures`; or guard the allocation with `if n <= ",
-            "_u64` where refusing a larger count is the intended behavior\n",
+            "\n  mechanical_fix: `n` is not bounded here: with N the largest count the program needs, when facts that reach the allocation imply `n <= N`, prove it with an `invariant` whose `use` steps name them (a loop's header `invariant` for a value the loop computes); when the callee whose result it reads can prove that bound, state it in the callee's `ensures`; or guard the allocation with `if n <= N` where refusing a larger count is the intended behavior. `2305843009213693951_u64` is the language's limit for this element type, not a bound to write: the selected target admits a smaller count, so a bound at or near that limit stops at target layout [STOR-6]\n",
         ],
-        repaired: &[br#"fn widen(x: u64) -> result: u64 pure {
+        repaired: &[
+            br#"fn widen(x: u64) -> result: u64 pure contract {
+  ensures result <= 1000_u64;
+} {
+  if x <= 1000_u64 {
+    return x;
+  }
+  return 1000_u64;
+}
+
+fn make(length: u64) -> values: Box<Slots<i64>> pure {
+  let n = widen(x: length);
+  let block = box_slots_new::<i64>(capacity: n);
+  return move block;
+}
+
+fn main() -> status: ExitStatus pure {
+  let values = make(length: 4_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+            br#"fn widen(x: u64) -> result: u64 pure {
   return x;
 }
 
@@ -2531,9 +2556,11 @@ fn make(length: u64) -> values: Box<Slots<i64>> pure {
 }
 
 fn main() -> status: ExitStatus pure {
+  let values = make(length: 4_u64);
   return exit_status(code: 0_u8);
 }
-"#],
+"#,
+        ],
     },
     // -------------------------------------------------------------------
     // [REF-4] one range-formation conjunct.
@@ -3350,6 +3377,60 @@ fn every_repair_is_pinned_with_a_repaired_program() {
             }
         }
     }
+}
+
+/// [OP-9, STOR-6] an allocation's repair is carried out only when the
+/// repaired program also builds: after checking, the selected target
+/// qualifies the retained bound of every allocation the entry runs, which
+/// [`every_repair_is_pinned_with_a_repaired_program`] does not reach.
+#[test]
+fn every_allocation_repair_builds() {
+    for pair in REPAIRS.iter().filter(|pair| pair.rule == "OP-9") {
+        for (alternative, source) in pair.repaired.iter().enumerate() {
+            if let Err(failure) = compile(
+                &[SourceInput::new(pair.name, source)],
+                CompilerLimits::default(),
+            ) {
+                panic!(
+                    "{}: alternative {alternative} does not build:\n{failure}",
+                    pair.name
+                );
+            }
+        }
+    }
+}
+
+/// Why no OP-9 repair offers its ceiling as the bound to write: a program
+/// that states it passes OP-9 and stops at target layout [STOR-6].
+#[test]
+fn an_allocation_bound_at_the_language_ceiling_stops_at_target_layout() {
+    let source = br#"fn make(length: u64) -> values: Box<Slots<i64>> pure contract {
+  requires length <= 2305843009213693951_u64;
+} {
+  let block = box_slots_new::<i64>(capacity: length);
+  return move block;
+}
+
+fn main() -> status: ExitStatus pure {
+  let values = make(length: 4_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+    super::check(
+        &[SourceInput::new("ceiling.wf", source)],
+        CompilerLimits::default(),
+    )
+    .expect("the language's ceiling passes OP-9");
+    let failure = compile(
+        &[SourceInput::new("ceiling.wf", source)],
+        CompilerLimits::default(),
+    )
+    .expect_err("the ceiling exceeds the selected target's allocation domain");
+    assert_eq!(
+        failure.kind(),
+        CompilationFailureKind::TargetLayout,
+        "{failure}"
+    );
 }
 
 /// The pair test's second condition is live: a guard around a refuted goal

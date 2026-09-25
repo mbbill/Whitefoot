@@ -587,6 +587,11 @@ impl GoalCase<'_> {
         } else {
             String::from("an `if` whose condition establishes it")
         };
+        self.guard_with(construct, &condition, intent)
+    }
+
+    /// The guard alternative with its condition spelled by the caller.
+    fn guard_with(&self, construct: &str, condition: &str, intent: &str) -> String {
         let row = if self.referenced {
             ", adding to the effect row any read that condition makes which the row does not yet declare"
         } else {
@@ -780,25 +785,45 @@ fn refuted_index(constant_offset: bool, clause: bool) -> &'static str {
     }
 }
 
-/// [OP-9] an allocation's size.
+/// [OP-9] an allocation's size. The residual's bound is the language's
+/// ceiling for the element type, which the selected target's layout then
+/// qualifies again with the retained proved bound [STOR-6]: every supported
+/// target admits a smaller count, so a program that states the ceiling passes
+/// OP-9 and stops at target layout. No route offers it as the bound to write;
+/// each asks for the largest count the program needs.
 pub(super) fn allocation_fit(case: &GoalCase<'_>) -> String {
     const REFUSE: &str = "where refusing a larger count is the intended behavior";
+    // The residual is `count <= ceiling`, the count as its source spells it.
+    let (count, ceiling) = case
+        .text
+        .rsplit_once(" <= ")
+        .unwrap_or((case.text, case.text));
+    let limit = format!(
+        "`{ceiling}` is the language's limit for this element type, not a bound to write: the selected target admits a smaller count, so a bound at or near that limit stops at target layout [STOR-6]"
+    );
+    let guard = case.guard_with("allocation", &format!("`if {count} <= N`"), REFUSE);
     match (case.disposition, case.terms) {
         (Disposition::Refuted, _) => format!(
-            "`{}` is false, so this allocation cannot be formed: request a count within that bound",
+            "`{}` is false, so this allocation cannot be formed: request the count the program needs. {limit}",
             case.text
         ),
-        (Disposition::Unproved, GoalTerms::Parameters) => {
-            case.parameter_routes("allocation", REFUSE)
-        }
-        (Disposition::Unproved, GoalTerms::Unnamed | GoalTerms::CallArgument(_)) => {
-            case.unnamed_route("allocation")
-        }
-        (Disposition::Unproved, GoalTerms::Computed) => format!(
-            "`{}` is not proved here: {}",
-            case.text,
-            case.computed_routes("allocation", REFUSE)
+        (Disposition::Unproved, GoalTerms::Parameters) => format!(
+            "with N the largest count the program needs, add `requires {count} <= N;` to the `contract` of `{}`, which each caller then establishes; or {guard}. {limit}",
+            case.function
         ),
+        (Disposition::Unproved, GoalTerms::Unnamed | GoalTerms::CallArgument(_)) => format!(
+            "`{count}` reads a value no fact can name until a `let` binds it: bind that value with one preceding `let`, use the binding in the allocation, and bound the binding by the largest count the program needs. {limit}"
+        ),
+        (Disposition::Unproved, GoalTerms::Computed) => {
+            let callee = if case.called {
+                "; when the callee whose result it reads can prove that bound, state it in the callee's `ensures`"
+            } else {
+                ""
+            };
+            format!(
+                "`{count}` is not bounded here: with N the largest count the program needs, when facts that reach the allocation imply `{count} <= N`, prove it with an `invariant` whose `use` steps name them (a loop's header `invariant` for a value the loop computes){callee}; or {guard}. {limit}"
+            )
+        }
     }
 }
 

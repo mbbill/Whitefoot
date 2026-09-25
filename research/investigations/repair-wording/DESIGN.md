@@ -735,6 +735,20 @@ from section 4 where carrying it out showed a gap:
 - **A refuted subscript** offers a longer storage only for a constant offset:
   an offset such as `r.len` is out of range at every length, as main's
   `ent2-neg-requirement-names-append-slot-element` shows.
+- **OP-9's ceiling is no bound to write.** OP-9's residual bound is the
+  language's target-independent ceiling, `u64::MAX / stride_ceiling(T)`
+  (`2305843009213693951` for 8-byte elements), and every supported target's
+  allocation domain is smaller: `requires n <= 2305843009213693951_u64;`
+  passes OP-9, and the program then stops at [STOR-6] target qualification
+  with a failure that names no site or bound (completion review, finding B).
+  Every OP-9 route now names the ceiling as the language's limit for the
+  element type, says the selected target admits less, and asks for the
+  largest count the program needs, the guard's condition included. The
+  OP-9 pairs' repaired programs call the allocating function from `main` and
+  must build as well as check, and a separate test shows the ceiling itself
+  stopping at target layout. Naming the site and the admitted bound in that
+  target failure is recorded in `docs/todo.md` ("A target-layout failure
+  names no allocation site or admitted bound").
 - **Guards through a reference.** A guard is executable code: `if hi <=
   deref(values).len` in a `pure` function is a read EFF-2 rejects. The pinned
   pairs found this; a guard over a goal that reads through a reference
