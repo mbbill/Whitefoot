@@ -2051,8 +2051,12 @@ fn checked_integer_results_reuse_admitted_computed_value_images() {
 
 #[test]
 fn checked_integer_results_do_not_add_conditional_affine_transport() {
+    // Each operand's own bound leaves the sum's [ENT-3.S7] interval at
+    // `index <= 6`; only the affine requirement bounds it below the four
+    // slots, so the direct read needs the affine image the checked payload
+    // does not carry.
     let parameters = "first: u64, second: u64";
-    let requirements = "  requires first <= 1_u64;\n  requires second <= 1_u64;";
+    let requirements = "  requires first <= 3_u64;\n  requires second <= 3_u64;\n  requires first + second <= 3_u64;";
     let direct = checked_conversion_read_source(
         parameters,
         requirements,

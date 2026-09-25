@@ -1,6 +1,8 @@
 //! Acceptance canaries for the originating source-proof boundary. Every protected
 //! operation below lacks an ordinary fact or a source proof for its domain,
-//! so the checker must reject at the live rule that owns the operation.
+//! so the checker must reject at the live rule that owns the operation. The
+//! clamps sit one past the bound each operation needs, so the [ENT-3.S7]
+//! interval they publish is exactly one too wide.
 
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule};
 
@@ -24,7 +26,7 @@ fn an_unproved_array_bound_rejects_under_op4() {
     let source = br#"const values: Array<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(input: u64) -> result: i32 pure {
-  let bounded = imin(input, 3_u64);
+  let bounded = imin(input, 4_u64);
   return values[bounded];
 }
 
@@ -40,7 +42,7 @@ fn main() -> status: ExitStatus pure {
 #[test]
 fn an_unproved_exact_addition_domain_rejects_under_op2() {
     let source = br#"fn bump(input: u64) -> result: u64 pure {
-  let bounded = imin(input, 100_u64);
+  let bounded = imax(input, 100_u64);
   return bounded + 1_u64;
 }
 
@@ -65,7 +67,7 @@ fn an_unproved_call_requirement_rejects_under_fn8() {
 }
 
 fn caller(input: u64) -> result: unit pure {
-  let bounded = imin(input, 3_u64);
+  let bounded = imin(input, 4_u64);
   need(index: bounded);
   return unit;
 }
@@ -111,7 +113,7 @@ fn an_unproved_loop_header_fact_rejects_under_inv1() {
     let source = br#"const values: Array<i32, 4> =[0_i32, 0_i32, 0_i32, 0_i32];
 
 fn read(input: u64) -> result: unit pure {
-  let bounded = imin(input, 3_u64);
+  let bounded = imin(input, 4_u64);
   for (
     i in 0_u64..1_u64,
     invariant limit: bounded <= 3_u64
