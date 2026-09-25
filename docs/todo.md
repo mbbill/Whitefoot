@@ -954,8 +954,8 @@ rarely insert at the same place.
   only through a C construct with the same meaning (`restrict`, an assumption),
   and puts the C compiler in the trusted base in place of LLVM.
   (b) Emit an object or static library and a generated header through the
-  existing LLVM backend, with a C-ABI export shim kept apart from the internal
-  function ABI (compiler/result-registers).
+  existing LLVM backend, with a C-ABI export shim kept apart from the
+  compiler's internal function ABI, which can change without notice.
   Either way the exported surface is where Whitefoot's guarantees meet an
   unchecked caller, so, as the
   [C ABI capsule idea](ideas.md#safe-c-abi-capsules) sketches, boundary code
