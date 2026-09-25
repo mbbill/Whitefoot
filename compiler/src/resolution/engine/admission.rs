@@ -121,6 +121,7 @@ fn node_origin(
     Ok(SourceOrigin {
         node: scopes.path(node)?.clone(),
         coordinate: SyntaxCoordinate::new(source, start, end),
+        extent: SyntaxCoordinate::new(source, start, end),
         role_ordinal: 0,
         subtoken_ordinal: 0,
     })

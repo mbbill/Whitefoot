@@ -13,6 +13,14 @@ Owner-approved: The owner approved PR #123's rejection-payloads amendment as sho
 
 Summary: Add the node with its two decisions and three rejected alternatives unchanged: every payload string that names a place, function or type instance, or literal prints it in canonical source spelling through one checker renderer per kind, and EFF-2's suggested row is one EFF-1, EFF-2 and EFF-5 admit wherever it is applied, because an agent repairs the source it wrote and applies a suggestion literally. The review's remaining items O1 and O2 (where EFF-1 places the subsumed-read rejection, and a merged suggestion wider than the body's writes) belong to the EFF-5 one-argument amendment the owner selected the same day, which will present any change to this node's second decision for its own ruling. Remove the accepted amendment and its directory. No specification rule changes; this ruling does not authorize a merge.
 
+## 2026-09-25 Render compiler stops as labeled records
+
+Nodes: compiler/diagnostic-rendering
+
+Owner-approved: The owner approved the diagnostic-rendering amendment on PR #117, 2026-09-25.
+
+Summary: Add the node as shown, with both decisions and six rejected alternatives unchanged: every compiler stop is one labeled record rendered without `Debug` text for source rejections and capability stops, as lean text by default (a `file:line:column: error[RULE]: Kind` summary line, the marked source line, then one `label: value` line per payload field) and as one complete JSON object per line on `--diagnostic-format json`; payload fields and the classifications they name are listed by exhaustive destructuring, and a node a payload names carries its coordinate from the checker that holds the tree. The text default stays provisional until the writer trial in the maintained TODO compares compile rounds to a fix. The [readable-diagnostics investigation](../research/investigations/readable-diagnostics/DESIGN.md) holds the field inventory, measurements and rejected rendering paths. Remove the accepted amendment and the now-empty amendment directory. No specification rule or conformance evidence changes; this ruling does not authorize a merge.
+
 ## 2026-09-24 Pass range references as pointer and count with their facts
 
 Nodes: compiler/backend-facts
