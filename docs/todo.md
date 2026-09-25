@@ -1104,6 +1104,22 @@ rarely insert at the same place.
   `wfgrep.wf` now does; reopen when the program is pointed at a larger tree or
   its constant-capacity form stops being the point of the case.
 
+- **A callee in another module is named without the path the call wrote.**
+  FN-8's `concrete_callee` renders a callee as its declaration name with its
+  instance arguments (`render_function_instance` in
+  `compiler/src/semantic/check/expressions.rs`), so a refuted call written
+  `stats::take(counter: &counter, amount: 12_u64)` through a module alias
+  prints `concrete_callee: take`. Two modules may each declare `take`
+  [MOD-5], so the name alone is ambiguous; the `requires_clause` location
+  points at the declaring record, but the payload does not give the spelling
+  the call wrote. Render the callee from the call's written callee path,
+  alias or `pkg::` prefix included, wherever a payload names a called
+  function; validate with a two-module probe in which both modules declare
+  the callee's name. Deferred because the location already locates the
+  declaration and the change reaches every payload that names a callee;
+  reopen when diagnostics for modules are next revised or an agent report
+  shows the ambiguity.
+
 ## Code structure
 
 - **The entailment flow module has outgrown one reader.**

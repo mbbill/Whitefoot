@@ -18,7 +18,7 @@ fn drain(slot: &Slot) -> result: u64 reads(slot), writes(slot.Full.value), write
 }
 
 fn main() -> status: ExitStatus pure {
-  let slot = Full(value: 3_u64);
+  let slot = Slot::Full(value: 3_u64);
   let seen = drain(slot: &slot);
   if seen == 3_u64 {
   } else {
