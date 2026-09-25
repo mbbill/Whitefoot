@@ -866,7 +866,7 @@ fn main() -> status: ExitStatus pure {
             .iter()
             .find_map(|statement| {
                 let call = match statement {
-                    CheckedStatement::Evaluate(call)
+                    CheckedStatement::Evaluate { value: call, .. }
                     | CheckedStatement::DropExpression { value: call, .. } => call,
                     _ => return None,
                 };

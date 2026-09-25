@@ -2104,7 +2104,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedStatement::DestructuringLet { .. }
             | CheckedStatement::PropagateLet { .. }
             | CheckedStatement::Set { .. }
-            | CheckedStatement::Evaluate(_)
+            | CheckedStatement::Evaluate { .. }
             | CheckedStatement::DropExpression { .. }
             | CheckedStatement::Proof(_)
             | CheckedStatement::Return { .. }
@@ -2515,7 +2515,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             match statement {
                 CheckedStatement::Let { value, .. }
                 | CheckedStatement::DestructuringLet { value, .. }
-                | CheckedStatement::Evaluate(value)
+                | CheckedStatement::Evaluate { value, .. }
                 | CheckedStatement::DropExpression { value, .. }
                 | CheckedStatement::Return { value, .. }
                 | CheckedStatement::Give { value, .. } => {
@@ -2714,7 +2714,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             match statement {
                 CheckedStatement::Let { value, .. }
                 | CheckedStatement::DestructuringLet { value, .. }
-                | CheckedStatement::Evaluate(value)
+                | CheckedStatement::Evaluate { value, .. }
                 | CheckedStatement::DropExpression { value, .. }
                 | CheckedStatement::Return { value, .. }
                 | CheckedStatement::Give { value, .. } => {

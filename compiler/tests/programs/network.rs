@@ -298,12 +298,25 @@ fn four_connections_reach_one_listener_on_both_routes() {
 #[test]
 fn the_fanout_loop_has_only_ordinary_counted_permission() {
     // PAR-2 checks the explicit ordinary close/serve statements under its
-    // normal body-shape rule. Deleted PAR-3 supplies no second judgment.
+    // normal conditions. Deleted PAR-3 supplies no second judgment.
+    //
+    // The serve loop's `close_listener` expression statement is judged by its
+    // call's row, exactly as a let-bound call is, so the loop is no longer
+    // refused for that spelling. It is refused for what it does: the first
+    // condition it fails is the reported one, the `outcome` it carries between
+    // iterations, and `serve_one` also writes the shared listener and factory.
     let ledger = program_permission_ledger("tcp_fanout.wf");
     assert!(
         ledger.iter().any(|line| line.starts_with("PAR loop")
             && line.contains("denied")
-            && line.contains("condition 2: the body contains an expression statement")),
+            && line.contains("condition 1:")
+            && line.contains("set outcome = reported;")),
+        "{ledger:?}"
+    );
+    assert!(
+        !ledger
+            .iter()
+            .any(|line| line.contains("the body contains an expression statement")),
         "{ledger:?}"
     );
     assert!(
