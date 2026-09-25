@@ -5,7 +5,7 @@ revised after the 2026-09-08 owner interview. The question is how Whitefoot's ow
 can make grounded choices, revise them when conditions change, and keep the
 compiler moving without accumulating an unused process. This study does
 not define standing workflow rules or language semantics. The selected trial
-method lives in [decision practice](../../../docs/practice.md#decision-work);
+method lives in [decision practice](https://github.com/mbbill/Whitefoot/blob/efe40194a05b339c46b931e87bd05a40036f23cf/docs/practice.md#decision-work);
 [agent instructions](../../../AGENTS.md) own branch work and merging. The
 constitutional reassessment and initial index migration below implement the
 first application. They do not establish the method's long-term efficacy.
