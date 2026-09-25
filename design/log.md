@@ -13,6 +13,14 @@ Owner-approved: The owner approved the readonly-field-terms amendment as shown o
 
 Summary: Replace the checks-and-proofs decision that admitted a subscripted place as a term exactly when its last step selects a readonly field, whose ground covered only the storage measures, with the approved decision: such a place is a term exactly when its last step selects a readonly integer field, prelude measure or writer-declared alike, and each offset is itself a tracked place or a constant, because a readonly field changes only through a write to a place containing it and such an offset only through a write to its own support, so the ordinary overlap kill ends every fact about the term. Add its three rejected alternatives: only the prelude's measures, a let-bound copy instead of a term, and any offset with unrepresentable ones reported as a compiler limit. The node keeps the decision and its evidence link; the amendment's sentence naming the replaced decision is recorded here instead. The [readonly-field term investigation](../research/investigations/readonly-field-terms/DESIGN.md) supplies the killing events, the offset rule and the evidence. The settled wording is in kernel-spec v0.70 rules ENT-2, MSR-1, ENT-5 and FN-8. Remove the accepted amendment and its directory. This ruling does not authorize a merge.
 
+## 2026-09-25 Render compiler stops as labeled records
+
+Nodes: compiler/diagnostic-rendering
+
+Owner-approved: The owner approved the diagnostic-rendering amendment on PR #117, 2026-09-25.
+
+Summary: Add the node as shown, with both decisions and six rejected alternatives unchanged: every compiler stop is one labeled record rendered without `Debug` text for source rejections and capability stops, as lean text by default (a `file:line:column: error[RULE]: Kind` summary line, the marked source line, then one `label: value` line per payload field) and as one complete JSON object per line on `--diagnostic-format json`; payload fields and the classifications they name are listed by exhaustive destructuring, and a node a payload names carries its coordinate from the checker that holds the tree. The text default stays provisional until the writer trial in the maintained TODO compares compile rounds to a fix. The [readable-diagnostics investigation](../research/investigations/readable-diagnostics/DESIGN.md) holds the field inventory, measurements and rejected rendering paths. Remove the accepted amendment and the now-empty amendment directory. No specification rule or conformance evidence changes; this ruling does not authorize a merge.
+
 ## 2026-09-24 Pass range references as pointer and count with their facts
 
 Nodes: compiler/backend-facts
