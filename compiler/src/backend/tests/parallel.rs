@@ -722,6 +722,87 @@ fn a_group_joins_its_compute_members_newest_first_and_continues_at_the_oldest() 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
+/// Two unit helpers called as [GRAM-4] expression statements over disjoint
+/// fields. A discarded result has no use, so the first call is handed out
+/// exactly as a let-bound one is, and the fields both calls wrote are read only
+/// after the join.
+const EXPRESSION_STATEMENT_PAIR: &[u8] = br#"struct Pair {
+  left: u64;
+  right: u64;
+}
+
+fn fill_left(pair: &Pair, seed: u64) -> result: unit writes(pair.left) {
+  let value = seed *wrap 3_u64;
+  set deref(pair).left = value;
+  return unit;
+}
+
+fn fill_right(pair: &Pair, seed: u64) -> result: unit writes(pair.right) {
+  let value = seed *wrap 5_u64;
+  set deref(pair).right = value;
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  let pair = Pair(left: 0_u64, right: 0_u64);
+  fill_left(pair: &pair, seed: 2_u64);
+  fill_right(pair: &pair, seed: 4_u64);
+  let total = pair.left +wrap pair.right;
+  match cvt.checked::<u64, u8>(total) {
+    Ok(value: code) => {
+      return exit_status(code: code);
+    }
+    Err(error: problem) => {
+      return exit_status(code: 255_u8);
+    }
+  }
+}
+"#;
+
+#[test]
+fn an_expression_statement_pair_is_handed_out_and_joined() {
+    let handed_out = with_parallel_ir(EXPRESSION_STATEMENT_PAIR, |program| {
+        program
+            .functions()
+            .iter()
+            .flat_map(crate::IrFunction::overlaps)
+            .map(|overlap| overlap.handed_out().len())
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(
+        handed_out,
+        vec![1],
+        "the two expression statements must lower to one group handing out the first"
+    );
+
+    let module = emit_with_overlap(EXPRESSION_STATEMENT_PAIR);
+    let body = emitted_function(&module, "main");
+    let at = |needle: &str| {
+        body.find(needle)
+            .unwrap_or_else(|| panic!("missing `{needle}`:\n{body}"))
+    };
+    assert!(
+        at("call void @wf__par_publish(ptr") < at("call void @wf__par_join(ptr"),
+        "the first call must be published before it is joined:\n{body}"
+    );
+
+    // 2*3 + 4*5 = 26 in every execution: the schedule is not an observation.
+    let directory = test_directory();
+    let executable = build_executable(&module, &directory);
+    for workers in ["0", "1", "4"] {
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run the expression-statement pair");
+        assert_eq!(
+            output.status.code(),
+            Some(26),
+            "WF_WORKERS={workers}: the pair must report the source-order result"
+        );
+    }
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
 /// Runs one linked mixed fixture at three worker counts and demands the
 /// source-order exit status from each.
 ///

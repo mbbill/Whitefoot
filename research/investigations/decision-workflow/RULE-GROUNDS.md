@@ -38,7 +38,7 @@ cannot establish that the rule is the best design.
 unresolved objection identified here. `revisit` means the argument has been
 assessed but a concrete question remains open; it does not mean the row was
 skipped. The reopening triggers below belong to that historical assessment;
-current work follows [decision practice](../../../docs/practice.md#decision-work).
+current work follows [decision practice](https://github.com/mbbill/Whitefoot/blob/efe40194a05b339c46b931e87bd05a40036f23cf/docs/practice.md#decision-work).
 
 ## Scope and surface
 

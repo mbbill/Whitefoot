@@ -904,9 +904,10 @@ impl<'program> IrBuilder<'program> {
     /// shape can carry, and every narrowing drops members rather than adding
     /// any. A group is a contiguous part of a permitted chain, kept only while
     ///
-    /// - each site's `let` lowered to exactly one call definition, so a chain
-    ///   member whose statement lowered to something else (a `propagate`, for
-    ///   instance) ends the group;
+    /// - each site's `let` or expression statement lowered to exactly one
+    ///   recorded call definition, so a chain member whose statement lowered
+    ///   to something else (a `propagate`, or a discarded result's release,
+    ///   for instance) ends the group;
     /// - every member's definition is in one block, so the handed-out call
     ///   and its join sit on one straight-line edge; and
     /// - no member but the last is an addressed binding, because promoting one
@@ -989,12 +990,13 @@ impl<'program> IrBuilder<'program> {
     /// Records where a named-function call in call position landed, whatever
     /// written position it was in.
     ///
-    /// The permission judgment reaches a call as a `let` right-hand side and as
-    /// a `match` scrutinee alike, and both are named by their call occurrence,
-    /// so one recording serves both. Which of them a group can actually keep is
-    /// decided later and by the IR alone: every member of a group must be
-    /// defined in one block, and a scrutinee's own dispatch terminates its
-    /// block, so a scrutinee call is only ever a group's last member.
+    /// The permission judgment reaches a call as a `let` right-hand side, as an
+    /// expression statement, and as a `match` scrutinee alike, and all are
+    /// named by their call occurrence, so one recording serves them all. Which
+    /// of them a group can actually keep is decided later and by the IR alone:
+    /// every member of a group must be defined in one block, and a scrutinee's
+    /// own dispatch terminates its block, so a scrutinee call is only ever a
+    /// group's last member.
     fn note_call_result(
         &mut self,
         expression: &CheckedExpression,
@@ -1120,12 +1122,23 @@ impl<'program> IrBuilder<'program> {
                 } => {
                     self.set(target, value, *displaces_live_value)?;
                 }
-                CheckedStatement::Evaluate(expression) => {
-                    self.expression(expression)?;
+                // A discarded result has no use, so the call may be handed out
+                // exactly as a `let` binding it may.
+                CheckedStatement::Evaluate {
+                    value: expression, ..
+                } => {
+                    let value = self.expression(expression)?;
+                    self.note_call_result(expression, value)?;
                 }
+                // The release reads the call's value at its definition, which
+                // would lie between a hand-out and its join, so this call is
+                // not recorded: its unavailable result ends any group through
+                // it. Admitting it as a group's last member, as an addressed
+                // binding is, remains a deferred opportunity (docs/todo.md).
                 CheckedStatement::DropExpression {
                     value: expression,
                     drops,
+                    ..
                 } => {
                     let value = self.expression(expression)?;
                     let mut lowered = Vec::with_capacity(drops.len());

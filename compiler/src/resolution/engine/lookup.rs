@@ -48,6 +48,7 @@ fn segment_origin(use_origin: &SourceOrigin, segment: &PathSegment) -> SourceOri
     SourceOrigin {
         node: use_origin.node.clone(),
         coordinate: segment.coordinate,
+        extent: use_origin.extent,
         role_ordinal: use_origin.role_ordinal,
         subtoken_ordinal: 0,
     }

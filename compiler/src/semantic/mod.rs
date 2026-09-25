@@ -419,11 +419,35 @@ impl SemanticRule {
     }
 }
 
-/// Exact checked location selected for a semantic rejection.
+/// Exact checked location selected for a semantic rejection, or of a node its
+/// payload names.
+///
+/// A payload that names another node, such as the callee requirement an
+/// [FN-8] rejection failed, carries it in this form rather than as a bare
+/// path, so the node reaches a reader as a source position: the checker holds
+/// the tree that resolves the path, and the driver that renders the rejection
+/// does not.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SemanticLocation {
     /// One source-backed production node and its rule-selected coordinate.
     SourceNode(NodePath, SyntaxCoordinate),
+}
+
+impl SemanticLocation {
+    /// Returns the production node's path from the compilation-unit root.
+    #[must_use]
+    #[cfg(test)]
+    pub const fn path(&self) -> &NodePath {
+        let Self::SourceNode(path, _) = self;
+        path
+    }
+
+    /// Returns the rule-selected source coordinate within that node.
+    #[must_use]
+    pub const fn coordinate(&self) -> SyntaxCoordinate {
+        let Self::SourceNode(_, coordinate) = self;
+        *coordinate
+    }
 }
 
 /// One non-discharged static source obligation disposition [ENT-6].
@@ -491,8 +515,9 @@ pub enum CallRequirementDisposition {
 pub struct UndischargedCallRequirementDetail {
     /// The resolved concrete, possibly generic, callee instance.
     pub concrete_callee: String,
-    /// The callee requirement occurrence's `requires_clause` path.
-    pub requires_clause: NodePath,
+    /// The callee requirement occurrence's `requires_clause` node and its
+    /// complete source extent.
+    pub requires_clause: SemanticLocation,
     /// Stable structural rendering of the complete instantiated typed goal.
     pub instantiated_goal: String,
     /// The exact non-discharged disposition.
@@ -513,12 +538,13 @@ pub enum PostconditionProofDisposition {
 pub struct UndischargedPostconditionDetail {
     /// The concrete, possibly generic, function instance.
     pub concrete_function: String,
-    /// The unique postcondition occurrence's block path.
-    pub postcondition: NodePath,
+    /// The unique postcondition occurrence's block node and its complete
+    /// source extent.
+    pub postcondition: SemanticLocation,
     /// The fixed relation occurrence ordinal (zero in this version).
     pub conjunct: u32,
-    /// Exact admitted selector identity.
-    pub selector: NodePath,
+    /// Exact admitted selector identity and its complete source extent.
+    pub selector: SemanticLocation,
     /// The instantiated normalized relation at the selected exit.
     pub relation: String,
     /// The exact non-discharged disposition.
@@ -1107,14 +1133,14 @@ impl SemanticIssueKind {
 /// One deterministic post-resolution source-language rejection.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SemanticIssue {
-    rule: SemanticRule,
-    location: SemanticLocation,
-    kind: SemanticIssueKind,
+    pub(crate) rule: SemanticRule,
+    pub(crate) location: SemanticLocation,
+    pub(crate) kind: SemanticIssueKind,
     /// The call that requested the concrete generic instance whose check
     /// produced this rejection, when one did. The location stays at the
     /// template's source, which owns the failure, and this names the
     /// requester [FN-2, MOD-8].
-    request: Option<crate::SyntaxCoordinate>,
+    pub(crate) request: Option<crate::SyntaxCoordinate>,
 }
 
 impl SemanticIssue {
@@ -1146,13 +1172,6 @@ impl SemanticIssue {
     pub const fn kind(&self) -> &SemanticIssueKind {
         &self.kind
     }
-
-    /// Returns the call that requested the concrete generic instance whose
-    /// check produced this rejection, when one did [FN-2, MOD-8].
-    #[must_use]
-    pub const fn request(&self) -> Option<crate::SyntaxCoordinate> {
-        self.request
-    }
 }
 
 /// A language family that the current compiler has not implemented yet.
@@ -1182,8 +1201,8 @@ pub enum UnsupportedSemanticFeature {
 /// Exact source node at which an unimplemented compiler family was required.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SemanticUnsupported {
-    feature: UnsupportedSemanticFeature,
-    node: NodePath,
+    pub(crate) feature: UnsupportedSemanticFeature,
+    pub(crate) node: SemanticLocation,
 }
 
 impl SemanticUnsupported {

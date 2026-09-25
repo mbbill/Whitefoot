@@ -159,7 +159,7 @@ fn main() -> status: ExitStatus pure {
             detail.disposition,
             crate::CallRequirementDisposition::Refuted
         );
-        assert!(!detail.requires_clause.components().is_empty());
+        assert!(!detail.requires_clause.path().components().is_empty());
     });
 }
 
@@ -1484,8 +1484,10 @@ fn main() -> status: ExitStatus pure {
             .iter()
             .find(|function| function.name == "main")
             .expect("main function");
-        let CheckedStatement::Evaluate(call @ CheckedExpression::UserCall { .. }) =
-            &main.body.as_deref().expect("WF body")[0]
+        let CheckedStatement::Evaluate {
+            value: call @ CheckedExpression::UserCall { .. },
+            ..
+        } = &main.body.as_deref().expect("WF body")[0]
         else {
             panic!("main must retain the call expression");
         };
@@ -1629,8 +1631,10 @@ fn main() -> status: ExitStatus pure {
             .iter()
             .find(|function| function.name == "proxy")
             .expect("proxy function");
-        let CheckedStatement::Evaluate(CheckedExpression::UserCall { requirements, .. }) =
-            &proxy.body.as_deref().expect("WF body")[0]
+        let CheckedStatement::Evaluate {
+            value: CheckedExpression::UserCall { requirements, .. },
+            ..
+        } = &proxy.body.as_deref().expect("WF body")[0]
         else {
             panic!("proxy must retain its call requirement");
         };
@@ -1663,8 +1667,10 @@ fn main() -> status: ExitStatus pure {
         else {
             panic!("main local binding");
         };
-        let CheckedStatement::Evaluate(CheckedExpression::UserCall { requirements, .. }) =
-            &main.body.as_deref().expect("WF body")[1]
+        let CheckedStatement::Evaluate {
+            value: CheckedExpression::UserCall { requirements, .. },
+            ..
+        } = &main.body.as_deref().expect("WF body")[1]
         else {
             panic!("main direct call requirement");
         };

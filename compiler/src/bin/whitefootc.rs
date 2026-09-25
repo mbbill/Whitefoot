@@ -9,14 +9,15 @@ use whitefoot::{
     COMPLETION_CONTRACT_HEADER, COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
     COMPLETION_FILE_POSIX_HEADER, COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_RUNTIME_SOURCE,
     COMPLETION_SOCKET_ADDRESS_HEADER, COMPLETION_WINDOWS_IOCP_HEADER, CheckOutcome, CheckVerdict,
-    CompilerLimits, FLOOR_STACK_BYTES, FragmentGranularity, GRAPH_FILE_NAME,
-    HOST_OPTIMIZATION_ARGUMENTS, ModuleEntry, ORDINARY_VALUES_HEADER, ORDINARY_VALUES_LLVM,
-    ORDINARY_VALUES_SOURCE, OverlapLowering, RecursionBudget, SCHED_CORE_HEADER, SCHED_CORE_SOURCE,
-    SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER,
-    build_module_entry, check, check_module_program, check_with_cache, compile_with_cache,
-    compile_with_overlap, compile_with_permission_ledger, content_digest, discover_module_sources,
-    entry_verdict, form_module_graph, module_verdict, read_graph_record, render_module_interface,
-    running_compiler_identity, split_module, stack_ledger,
+    CompilationFailure, CompilerLimits, DiagnosticFormat, FLOOR_STACK_BYTES, FragmentGranularity,
+    GRAPH_FILE_NAME, HOST_OPTIMIZATION_ARGUMENTS, ModuleEntry, ORDINARY_VALUES_HEADER,
+    ORDINARY_VALUES_LLVM, ORDINARY_VALUES_SOURCE, OverlapLowering, RecursionBudget,
+    SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
+    SCHED_PRIM_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER, build_module_entry, check,
+    check_module_program, check_with_cache, compile_with_cache, compile_with_overlap,
+    compile_with_permission_ledger, content_digest, discover_module_sources, entry_verdict,
+    form_module_graph, module_verdict, read_graph_record, render_driver_failure,
+    render_module_interface, running_compiler_identity, split_module, stack_ledger,
 };
 
 // `HOST_LINK_LIBRARIES` is here rather than above because its one reader is
@@ -36,7 +37,7 @@ use whitefoot::{
 };
 
 const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--par-scalar-leaf-limit N|off] [--par-sequential-refusal] [--par-recursive-frontier auto|N|off] [--no-overlap] [--par-ledger] \
-[--stack-ledger] [--check] [--cache DIR [--fragments module|function] | --full-lto] [--report] [-o OUTPUT] (SOURCE... | --graph modules.wfg [--entry NAME | --function pkg::module::name | --check-module pkg::module | --check-interface pkg::module | --check-modules | --render-interface pkg::module | --compare-interface pkg::module --against OTHER/modules.wfg])";
+[--stack-ledger] [--diagnostic-format text|json] [--check] [--cache DIR [--fragments module|function] | --full-lto] [--report] [-o OUTPUT] (SOURCE... | --graph modules.wfg [--entry NAME | --function pkg::module::name | --check-module pkg::module | --check-interface pkg::module | --check-modules | --render-interface pkg::module | --compare-interface pkg::module --against OTHER/modules.wfg])";
 
 // The compiler walks typed source and lowering trees recursively. Windows
 // gives the process's primary thread a 1 MiB stack by default, which is small
@@ -218,21 +219,24 @@ const TARGET_LINK_LIBRARIES: &[&str] = HOST_LINK_LIBRARIES;
 const TARGET_LINK_LIBRARIES: &[&str] = &["-lws2_32", "-lshell32"];
 
 fn main() {
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    let format = requested_format(&arguments);
     let driver = match std::thread::Builder::new()
         .name("whitefootc-driver".to_owned())
         .stack_size(COMPILER_DRIVER_STACK_BYTES)
-        .spawn(run)
+        .spawn(move || run(&arguments))
     {
         Ok(driver) => driver,
         Err(error) => {
-            eprintln!("whitefootc: cannot start the compiler driver: {error}");
+            let message = format!("cannot start the compiler driver: {error}");
+            eprintln!("{}", render_driver_failure("Resource", &message, format));
             std::process::exit(1);
         }
     };
     match driver.join() {
         Ok(Ok(())) => {}
-        Ok(Err(message)) => {
-            eprintln!("whitefootc: {message}");
+        Ok(Err(stop)) => {
+            eprintln!("{}", stop.render(format));
             std::process::exit(1);
         }
         // The panic hook on the driver thread has already printed the panic.
@@ -242,9 +246,68 @@ fn main() {
     }
 }
 
-fn run() -> Result<(), String> {
-    let arguments: Vec<_> = std::env::args().skip(1).collect();
-    let options = Options::parse(&arguments)?;
+/// The rendering this invocation asks for.
+///
+/// It is read before the other options so that an invalid option is reported
+/// in the requested form too. A missing or invalid value selects text, and
+/// [`Options::parse`] then reports that value as the invalid option it is.
+fn requested_format(arguments: &[String]) -> DiagnosticFormat {
+    let value = arguments
+        .iter()
+        .position(|argument| argument == "--diagnostic-format")
+        .and_then(|index| arguments.get(index.saturating_add(1)));
+    match value.map(String::as_str) {
+        Some("json") => DiagnosticFormat::Json,
+        _ => DiagnosticFormat::Text,
+    }
+}
+
+/// Why one invocation stopped.
+#[derive(Debug)]
+enum Stop {
+    /// The compilation pipeline stopped; its record carries the rule, the
+    /// location and the payload.
+    Compilation(CompilationFailure),
+    /// The driver stopped outside the pipeline, on one sentence: an invalid
+    /// invocation, an unwritable output, or a host toolchain step.
+    Driver {
+        category: &'static str,
+        message: String,
+    },
+}
+
+impl Stop {
+    fn invocation(message: String) -> Self {
+        Self::Driver {
+            category: "Invocation",
+            message,
+        }
+    }
+
+    fn output(message: String) -> Self {
+        Self::Driver {
+            category: "Output",
+            message,
+        }
+    }
+
+    fn toolchain(message: String) -> Self {
+        Self::Driver {
+            category: "Toolchain",
+            message,
+        }
+    }
+
+    fn render(&self, format: DiagnosticFormat) -> String {
+        match self {
+            Self::Compilation(failure) => failure.render(format),
+            Self::Driver { category, message } => render_driver_failure(category, message, format),
+        }
+    }
+}
+
+fn run(arguments: &[String]) -> Result<(), Stop> {
+    let options = Options::parse(arguments).map_err(Stop::invocation)?;
     let cache = options.cache.as_deref().map(open_cache).transpose()?;
     let mut report = BuildReport::default();
     if let Some(graph) = &options.graph {
@@ -256,10 +319,9 @@ fn run() -> Result<(), String> {
     let mut paths = Vec::with_capacity(options.sources.len());
     let mut bytes = Vec::with_capacity(options.sources.len());
     for (index, source) in options.sources.iter().enumerate() {
-        bytes.push(
-            std::fs::read(source)
-                .map_err(|error| format!("cannot read {}: {error}", source.display()))?,
-        );
+        bytes.push(std::fs::read(source).map_err(|error| {
+            Stop::invocation(format!("cannot read {}: {error}", source.display()))
+        })?);
         paths.push(source_names(source, index));
     }
     let inputs: Vec<_> = paths
@@ -278,7 +340,7 @@ fn run() -> Result<(), String> {
         // adds lines to this ledger rather than changing any of them.
         let (module, ledger) =
             compile_with_permission_ledger(&inputs, CompilerLimits::default(), overlap)
-                .map_err(|failure| failure.to_string())?;
+                .map_err(Stop::Compilation)?;
         for line in &ledger {
             println!("{line}");
         }
@@ -290,14 +352,14 @@ fn run() -> Result<(), String> {
                 Some(cache) => check_with_cache(&inputs, CompilerLimits::default(), cache),
                 None => check(&inputs, CompilerLimits::default()),
             }
-            .map_err(|failure| failure.to_string())?;
+            .map_err(Stop::Compilation)?;
             return Ok(());
         }
         let module = match &cache {
             Some(cache) => compile_with_cache(&inputs, CompilerLimits::default(), overlap, cache),
             None => compile_with_overlap(&inputs, CompilerLimits::default(), overlap),
         }
-        .map_err(|failure| failure.to_string())?;
+        .map_err(Stop::Compilation)?;
         report.front_end = front_end.elapsed();
         module
     };
@@ -312,13 +374,13 @@ fn run_module_program(
     graph_path: &Path,
     cache: Option<&BuildCache>,
     report: &mut BuildReport,
-) -> Result<Option<String>, String> {
+) -> Result<Option<String>, Stop> {
     let (graph, sources) = read_module_program(graph_path)?;
     let inputs = module_inputs(&sources);
     let limits = CompilerLimits::default();
     if let Some(module) = &options.render_interface {
-        let rendered = render_module_interface(&graph, &inputs, module, limits)
-            .map_err(|failure| failure.to_string())?;
+        let rendered =
+            render_module_interface(&graph, &inputs, module, limits).map_err(Stop::Compilation)?;
         let Some(against) = &options.against else {
             print!("{rendered}");
             return Ok(None);
@@ -328,7 +390,7 @@ fn run_module_program(
         let (other_graph, other_sources) = read_module_program(against)?;
         let other_inputs = module_inputs(&other_sources);
         let before = render_module_interface(&other_graph, &other_inputs, module, limits)
-            .map_err(|failure| failure.to_string())?;
+            .map_err(Stop::Compilation)?;
         if before == rendered {
             println!("{module}: interface unchanged");
             return Ok(None);
@@ -345,7 +407,10 @@ fn run_module_program(
                 println!("+ {line}");
             }
         }
-        return Err(format!("{module}: interface changed"));
+        return Err(Stop::Driver {
+            category: "Interface",
+            message: format!("{module}: interface changed"),
+        });
     }
     if options.check_modules {
         let mut verdicts = Vec::new();
@@ -354,11 +419,7 @@ fn run_module_program(
             let (verdict, analyses) = counting_analyses(cache, || {
                 module_verdict(&graph, &inputs, &module, false, limits, cache)
             });
-            verdicts.push((
-                "module",
-                verdict.map_err(|failure| failure.to_string())?,
-                analyses,
-            ));
+            verdicts.push(("module", verdict.map_err(Stop::Compilation)?, analyses));
         }
         let modules = verdicts
             .iter()
@@ -375,11 +436,7 @@ fn run_module_program(
                     &modules,
                 )
             });
-            verdicts.push((
-                "entry",
-                verdict.map_err(|failure| failure.to_string())?,
-                analyses,
-            ));
+            verdicts.push(("entry", verdict.map_err(Stop::Compilation)?, analyses));
         }
         publish_verdicts(options, &verdicts)?;
         return Ok(None);
@@ -397,20 +454,16 @@ fn run_module_program(
         });
         publish_verdicts(
             options,
-            &[(
-                "module",
-                verdict.map_err(|failure| failure.to_string())?,
-                analyses,
-            )],
+            &[("module", verdict.map_err(Stop::Compilation)?, analyses)],
         )?;
         return Ok(None);
     }
     let entry = if let Some(name) = &options.entry {
         Some(ModuleEntry::Named(name))
     } else if let Some(written) = options.function.as_deref() {
-        let (module, function) = written
-            .rsplit_once("::")
-            .ok_or_else(|| format!("--function names pkg::module::name, not {written}"))?;
+        let (module, function) = written.rsplit_once("::").ok_or_else(|| {
+            Stop::invocation(format!("--function names pkg::module::name, not {written}"))
+        })?;
         Some(ModuleEntry::Function { module, function })
     } else {
         None
@@ -425,25 +478,22 @@ fn run_module_program(
                 });
                 publish_verdicts(
                     options,
-                    &[(
-                        "entry",
-                        verdict.map_err(|failure| failure.to_string())?,
-                        analyses,
-                    )],
+                    &[("entry", verdict.map_err(Stop::Compilation)?, analyses)],
                 )?;
             }
-            None => check_module_program(&graph, &inputs, limits)
-                .map_err(|failure| failure.to_string())?,
+            None => check_module_program(&graph, &inputs, limits).map_err(Stop::Compilation)?,
         }
         return Ok(None);
     }
     let entry = entry.ok_or_else(|| {
-        "a --graph build selects --entry NAME or --function pkg::module::name".to_owned()
+        Stop::invocation(
+            "a --graph build selects --entry NAME or --function pkg::module::name".to_owned(),
+        )
     })?;
     let front_end = std::time::Instant::now();
     let (module, reused) =
         build_module_entry(&graph, &inputs, entry, limits, options.overlap(), cache)
-            .map_err(|failure| failure.to_string())?;
+            .map_err(Stop::Compilation)?;
     report.front_end = front_end.elapsed();
     report.module_reused = Some(reused);
     Ok(Some(module))
@@ -453,19 +503,21 @@ fn run_module_program(
 /// from the graph's directory [MOD-1, MOD-2].
 fn read_module_program(
     graph_path: &Path,
-) -> Result<(whitefoot::ModuleGraph, Vec<whitefoot::ModuleSourceFile>), String> {
-    let graph_bytes = read_graph_record(graph_path).map_err(|failure| failure.to_string())?;
+) -> Result<(whitefoot::ModuleGraph, Vec<whitefoot::ModuleSourceFile>), Stop> {
+    let graph_bytes =
+        read_graph_record(graph_path).map_err(|failure| Stop::invocation(failure.to_string()))?;
     let display = graph_path.display().to_string();
     let graph = form_module_graph(
         SourceInput::from_host_path(GRAPH_FILE_NAME, &display, &graph_bytes),
         CompilerLimits::default(),
     )
-    .map_err(|failure| failure.to_string())?;
+    .map_err(Stop::Compilation)?;
     let root = graph_path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
-    let sources = discover_module_sources(root, &graph).map_err(|failure| failure.to_string())?;
+    let sources = discover_module_sources(root, &graph)
+        .map_err(|failure| Stop::invocation(failure.to_string()))?;
     Ok((graph, sources))
 }
 
@@ -481,11 +533,16 @@ fn module_inputs(sources: &[whitefoot::ModuleSourceFile]) -> Vec<SourceInput<'_>
 }
 
 /// Opens the build cache directory for this exact compiler.
-fn open_cache(directory: &Path) -> Result<BuildCache, String> {
-    let identity = running_compiler_identity()
-        .map_err(|error| format!("cannot read this compiler's executable: {error}"))?;
-    BuildCache::open(directory, identity)
-        .map_err(|error| format!("cannot open the cache {}: {error}", directory.display()))
+fn open_cache(directory: &Path) -> Result<BuildCache, Stop> {
+    let identity = running_compiler_identity().map_err(|error| {
+        Stop::invocation(format!("cannot read this compiler's executable: {error}"))
+    })?;
+    BuildCache::open(directory, identity).map_err(|error| {
+        Stop::output(format!(
+            "cannot open the cache {}: {error}",
+            directory.display()
+        ))
+    })
 }
 
 /// How many function analyses one check took from proof receipts and how
@@ -514,7 +571,7 @@ fn counting_analyses<T>(cache: Option<&BuildCache>, check: impl FnOnce() -> T) -
 fn publish_verdicts(
     options: &Options,
     verdicts: &[(&str, CheckVerdict, Analyses)],
-) -> Result<(), String> {
+) -> Result<(), Stop> {
     let mut rejected = Vec::new();
     for (kind, verdict, analyses) in verdicts {
         if options.report {
@@ -572,7 +629,10 @@ fn publish_verdicts(
     if rejected.is_empty() {
         Ok(())
     } else {
-        Err(format!("rejected: {}", rejected.join(", ")))
+        Err(Stop::Driver {
+            category: "Verdict",
+            message: format!("rejected: {}", rejected.join(", ")),
+        })
     }
 }
 
@@ -662,16 +722,17 @@ fn finish(
     module: &str,
     cache: Option<&BuildCache>,
     report: &mut BuildReport,
-) -> Result<(), String> {
+) -> Result<(), Stop> {
     if options.stack_ledger {
-        for line in print_stack_ledger(module)? {
+        for line in print_stack_ledger(module).map_err(Stop::toolchain)? {
             println!("{line}");
         }
     }
     if options.emit_llvm {
         if let Some(output) = &options.output {
-            std::fs::write(output, module)
-                .map_err(|error| format!("cannot write {}: {error}", output.display()))?;
+            std::fs::write(output, module).map_err(|error| {
+                Stop::output(format!("cannot write {}: {error}", output.display()))
+            })?;
         } else {
             print!("{module}");
         }
@@ -685,7 +746,8 @@ fn finish(
         options.fragments,
         options.full_lto,
         report,
-    )?;
+    )
+    .map_err(Stop::toolchain)?;
     if options.report {
         report.analyses = cache.map(BuildCache::receipt_counts);
         println!("{}", report.json());
@@ -696,7 +758,7 @@ fn finish(
 /// [PROG-3] the executable runs the selected function through the runner the
 /// build generates for it; a checked module without one is a library, which
 /// this compiler links into no executable.
-fn require_runner(module: &str) -> Result<(), String> {
+fn require_runner(module: &str) -> Result<(), Stop> {
     if module.contains("\ndefine i32 @wf__main_body(") {
         return Ok(());
     }
@@ -706,9 +768,9 @@ fn require_runner(module: &str) -> Result<(), String> {
         .map_or_else(String::new, |reason| {
             format!(": its generated caller was not admitted: {reason}")
         });
-    Err(format!(
+    Err(Stop::invocation(format!(
         "the selected function has no executable runner{refused}; this build runs a function that takes no parameter or one Inputs and returns ExitStatus or unit, and --emit-llvm writes any checked program as a library"
-    ))
+    )))
 }
 
 /// Compiles the module once more, to assembly, purely to read the two things
@@ -1342,12 +1404,28 @@ impl Options {
         let mut full_lto = false;
         let mut render_interface = None;
         let mut against = None;
+        let mut diagnostic_format = false;
         let mut output = None;
         let mut sources = Vec::new();
         let mut cursor = 0;
         while cursor < arguments.len() {
             match arguments[cursor].as_str() {
                 "--emit-llvm" => emit_llvm = true,
+                // Read by `requested_format` before parsing; validated here
+                // like every other option.
+                "--diagnostic-format" => {
+                    cursor += 1;
+                    if !matches!(
+                        arguments.get(cursor).map(String::as_str),
+                        Some("text" | "json")
+                    ) {
+                        return Err("--diagnostic-format requires text or json".to_owned());
+                    }
+                    if diagnostic_format {
+                        return Err("--diagnostic-format may be written only once".to_owned());
+                    }
+                    diagnostic_format = true;
+                }
                 "--par" => par = true,
                 "--par-scalar-leaf-limit" => {
                     cursor += 1;
@@ -1659,7 +1737,8 @@ mod tests {
     use std::path::{Component, Path, PathBuf};
 
     use super::{
-        Options, OverlapLowering, RecursionBudget, require_runner, runtime_units, source_names,
+        DiagnosticFormat, Options, OverlapLowering, RecursionBudget, Stop, requested_format,
+        require_runner, runtime_units, source_names,
     };
 
     /// [PROG-3] a build refuses a checked module that has no runner, naming
@@ -1681,12 +1760,14 @@ mod tests {
         let integer = require_runner(&checked(
             "fn main() -> result: u64 pure {\n  return 7_u64;\n}\n",
         ))
-        .expect_err("a u64 result has no runner");
+        .expect_err("a u64 result has no runner")
+        .render(DiagnosticFormat::Text);
         assert!(integer.contains("no executable runner;"), "{integer}");
         let unproved = require_runner(&checked(
             "fn main() -> result: unit pure contract {\n  requires 1_u64 <= 0_u64;\n} {\n  return unit;\n}\n",
         ))
-        .expect_err("an unprovable requirement leaves no runner");
+        .expect_err("an unprovable requirement leaves no runner")
+        .render(DiagnosticFormat::Text);
         assert!(
             unproved.contains("its generated caller was not admitted"),
             "{unproved}"
@@ -2151,6 +2232,70 @@ mod tests {
             .expect("opposite lowerings may not be written together");
         assert!(message.contains("--no-overlap"), "{message}");
         assert!(message.contains("--par"), "{message}");
+    }
+
+    /// The diagnostic format is one option with two values, read before the
+    /// other options so an invalid option is reported in the requested form,
+    /// and validated with them so a misspelled value is refused rather than
+    /// silently selecting text.
+    #[test]
+    fn the_diagnostic_format_is_one_option_with_two_values() {
+        let owned = |arguments: &[&str]| -> Vec<String> {
+            arguments.iter().map(|value| (*value).to_owned()).collect()
+        };
+        assert_eq!(
+            requested_format(&owned(&["value.wf"])),
+            DiagnosticFormat::Text
+        );
+        assert_eq!(
+            requested_format(&owned(&["--diagnostic-format", "json", "value.wf"])),
+            DiagnosticFormat::Json
+        );
+        assert_eq!(
+            requested_format(&owned(&["--diagnostic-format", "text", "value.wf"])),
+            DiagnosticFormat::Text
+        );
+        // An unknown option is still reported in the requested format.
+        assert_eq!(
+            requested_format(&owned(&["--diagnostic-format", "json", "--bogus"])),
+            DiagnosticFormat::Json
+        );
+        assert!(parse(&["--bogus", "value.wf"]).is_err());
+
+        for value in ["text", "json"] {
+            parse(&["--diagnostic-format", value, "value.wf"]).expect("both formats are accepted");
+        }
+        assert!(super::USAGE.contains("--diagnostic-format text|json"));
+        for arguments in [
+            vec!["--diagnostic-format", "xml", "value.wf"],
+            vec!["--diagnostic-format", "JSON", "value.wf"],
+            vec!["value.wf", "--diagnostic-format"],
+            vec![
+                "--diagnostic-format",
+                "json",
+                "--diagnostic-format",
+                "text",
+                "value.wf",
+            ],
+        ] {
+            let message = parse(&arguments).err().expect("an invalid format");
+            assert!(message.contains("--diagnostic-format"), "{message}");
+        }
+    }
+
+    /// A stop outside the pipeline keeps its one-sentence text form and gains
+    /// the common envelope in JSON.
+    #[test]
+    fn a_driver_stop_renders_in_either_format() {
+        let stop = Stop::invocation("cannot read missing.wf: not found".to_owned());
+        assert_eq!(
+            stop.render(DiagnosticFormat::Text),
+            "whitefootc: cannot read missing.wf: not found"
+        );
+        assert_eq!(
+            stop.render(DiagnosticFormat::Json),
+            r#"{"category":"Invocation","stage":"Driver","detail":{"message":"cannot read missing.wf: not found"}}"#
+        );
     }
 
     /// The usage text is one definition, so the option list a reader is shown

@@ -891,6 +891,7 @@ fn set_target_attribution(
         origin: SourceOrigin {
             node: scopes.path(place)?.clone(),
             coordinate: crate::SyntaxCoordinate::new(source, start, end),
+            extent: crate::SyntaxCoordinate::new(source, start, end),
             role_ordinal: 0,
             subtoken_ordinal: 0,
         },

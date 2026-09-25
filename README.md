@@ -36,9 +36,11 @@ Read the material that owns the question you are working on:
 | What does the language admit? | [Active kernel specification](spec/kernel-spec.md) |
 | What does this compiler implement, and how do I run it? | [Running the compiler](#running-the-compiler) below; the conformance report states the implemented surface |
 | What are the project goals and design principles? | [Constitution](docs/constitution.md) |
+| What happens when in development, where, and who decides? | [Workflow map](docs/workflow.md) |
 | How do I work on a branch and prepare a merge? | [AGENTS.md](AGENTS.md) |
+| How do I amend the specification, finish a task, or hand work back? | [Agent skills](docs/skills/) |
 | Which writer forms should I try? | [Patterns](docs/patterns.md) |
-| How should I investigate, verify, and maintain documentation? | [Engineering practice](docs/practice.md) |
+| How should I investigate, verify, and maintain documentation? | [AGENTS.md](AGENTS.md#how-work-proceeds), the [investigation skill](docs/skills/investigation/SKILL.md) and the [document roles](docs/workflow.md#document-roles) |
 | Why was a design chosen? | [Design trees](design/), with reasons and refused alternatives |
 | Which research questions and experiments could be useful? | [Ideas](docs/ideas.md) |
 | What defects and follow-up work remain? | [Todo](docs/todo.md) |
@@ -56,15 +58,18 @@ requirements. The reading and authority rules are in
 - [spec/](spec/): the active language and its immutable version archives.
 - [tests/](tests/): normative conformance evidence, executable programs,
   code-generation evidence, and the separate performance regression suite.
-- [docs/](docs/): principles, writer guidance, engineering practice, and
-  reference material.
+- [docs/](docs/): principles, writer guidance, the workflow map, agent
+  skills, and reference material.
 - [research/](research/README.md): investigations and experiments with their
   designs, measurements, and rejected alternatives.
 - [design/](design/): live design decisions with their reasons, and the
   procedure that maintains them.
 - [governance/](governance/): archive-protection hooks and specification-change
   design evidence. The old approval ledger is retired.
-- [.github/](.github/): CI and the pull-request template.
+- [.github/](.github/): CI, repository checks and the pull-request template.
+- [.agents/skills/](.agents/skills/) and [.claude/skills/](.claude/skills/):
+  links through which Codex and Claude Code discover the skills kept in
+  `docs/skills/` and `design/skill/`.
 - [archive/](archive/): frozen historical material. Active source, builds,
   tests, and tools do not depend on it.
 
@@ -105,6 +110,22 @@ where `auto`, the default, asks the runtime, `N` from 1 to 32 pins it at
 compile time, and `off` emits no family so every node offers. `whitefootc
 --help` prints the full usage. At run time `WF_WORKERS` selects compute
 participation; `WF_STACKS` is inert.
+
+A rejection prints the location, the cited rule and the kind, the marked
+source line, and every payload field under a stable label:
+
+```text
+bounds.wf:11:21: error[OP-4]: UndischargedBoundsObligation
+  source:       set deref(out)[kept] = byte;
+  marker:                     ^^^^^^
+  residual: kept < deref(out).len
+  mechanical_fix: when the relation must hold, establish the residual with ...
+```
+
+`--diagnostic-format json` prints the complete record, category, stage and
+byte interval included, as one JSON object per line.
+The [readable-diagnostics investigation](research/investigations/readable-diagnostics/DESIGN.md)
+describes the record.
 
 ## Verification
 
@@ -161,12 +182,17 @@ subprocess. Nested or parallel rows are not additive suite wall time. See the
 [measured build/test investigation](research/investigations/test-economy/build-and-test.md).
 
 The [gate workflow](.github/workflows/gate.yml) runs those groups on Linux and
-macOS. Additional [I/O host checks](.github/workflows/io-hosts.yml) and
+macOS, and the
+[design-readiness workflow](.github/workflows/design-readiness.yml) rejects
+pending design amendments on a pull request that is ready for review.
+`make review-scope` lists what a completion review covers. Additional
+[I/O host checks](.github/workflows/io-hosts.yml) and
 [benchmarks](.github/workflows/io-bench.yml) own their platform-specific
 evidence. Automatic CI checks correctness and performance regressions under
-the [test boundary](docs/practice.md#test-boundary): useful research cases and
-their dependencies belong in formal tests, while research runs on explicit
-request. Full IO matrices and compute scoreboards are experiments; the separate
+the [test rules](AGENTS.md#specification-and-test-integrity): useful
+research cases and their dependencies belong in formal tests, while research
+runs on explicit request. Full IO matrices and compute scoreboards are
+experiments; the separate
 [compute regression check](.github/workflows/compute-regression.yml) supplies
 a paired performance verdict using the [formal runner](tests/performance/README.md).
 Routine correctness CI and local `make check`

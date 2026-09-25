@@ -373,6 +373,88 @@ fn a_write_through_a_range_reference_keeps_both_lengths() {
     ));
 }
 
+/// Asserts the [OP-4] rejection of the `cells[c]` read whose bound a killed
+/// element-measure fact would otherwise have supplied.
+///
+/// The conformance verdict names only the rule. These fixtures also subscript
+/// the origin in their guard and loop endpoint, so an [OP-4] rejection there,
+/// from a write that wrongly killed the origin's own length, would satisfy
+/// the rule alone; the residual pins the rejection to the stale element fact.
+fn assert_cells_read_unproved(source: &[u8]) {
+    assert_rule_kind(source, SemanticRule::Op4, |kind| {
+        matches!(
+            kind,
+            SemanticIssueKind::UndischargedBoundsObligation { residual, .. }
+                if residual == "c < cells.len"
+        )
+    });
+}
+
+/// [CALL-3, EFF-5] a range formed at the call, `&rows[1..3]` or the re-slice
+/// `&deref(view)[1..3]`, names its source's path extended by the formation's
+/// own range step, the path a bound range reference names. Its projected write
+/// therefore kills the guarded measure of an element the range may contain,
+/// and the rejection lands on the read that measure bounded.
+#[test]
+fn a_write_through_an_inline_range_kills_the_element_measure_it_may_reach() {
+    assert_cells_read_unproved(include_bytes!(
+        "../../../../tests/conformance/cases/call3-neg-inline-range-write-kills-element-measure.wf"
+    ));
+    assert_cells_read_unproved(include_bytes!(
+        "../../../../tests/conformance/cases/call3-neg-inline-reslice-write-kills-element-measure.wf"
+    ));
+}
+
+/// [OWN-7] separates two index steps and two range steps and names no family
+/// for an index step against a range step. A written range that does not in
+/// fact contain the guarded element is therefore still overlapping, and the
+/// bound and inline spellings of that range reach the same verdict.
+#[test]
+fn an_index_outside_a_written_range_is_not_separated_from_it() {
+    let body = |call: &str| {
+        format!(
+            "fn refill(part: &[Slots<u64, 8>], at: u64) -> result: unit writes(part) contract {{
+  requires at < deref(part).len;
+}} {{
+  let fresh = slots_new::<u64, 8>();
+  set deref(part)[at] = move fresh;
+  return unit;
+}}
+
+fn main() -> status: ExitStatus pure {{
+  let rows = slots_new::<Slots<u64, 8>, 4>();
+  let first = slots_new::<u64, 8>();
+  let second = slots_new::<u64, 8>();
+  let third = slots_new::<u64, 8>();
+  place_back(window: &rows, value: move first);
+  place_back(window: &rows, value: move second);
+  place_back(window: &rows, value: move third);
+  let cells = array_filled::<u64, 3>(value: 7_u64);
+  let total = 0_u64;
+  if rows.len == 3_u64 {{
+    if rows[1_u64].len <= cells.len {{
+{call}      for (c in 0_u64..rows[1_u64].len) {{
+        let cell = cells[c];
+        set total = total +wrap cell;
+      }}
+    }}
+  }}
+  return exit_status(code: 0_u8);
+}}
+"
+        )
+    };
+    assert_cells_read_unproved(
+        body("      refill(part: &rows[2_u64..3_u64], at: 0_u64);\n").as_bytes(),
+    );
+    assert_cells_read_unproved(
+        body("      let tail = &rows[2_u64..3_u64];\n      refill(part: tail, at: 0_u64);\n")
+            .as_bytes(),
+    );
+    // Control: with no write the guard discharges the read.
+    assert_accepts(body("").as_bytes());
+}
+
 /// [REF-4, MSR-2] overlapping views still carry distinct immutable range
 /// descriptors. A direct element commit and a projected callee element write
 /// through the wider view therefore preserve the narrower view's formed

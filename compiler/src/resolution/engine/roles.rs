@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
-use crate::syntax::{FinalizedTopology, NodeId};
+use crate::syntax::{FinalizedExtent, FinalizedTopology, NodeId};
 use crate::{ByteOffset, CanonicalSyntaxUnit, Production, SyntaxCoordinate};
 
 use super::super::scopes::ScopeBuild;
@@ -104,6 +104,14 @@ pub(super) fn classify_roles(
             .get(&index)
             .ok_or(ResolutionCompilerFailure::CounterOverflow)?;
         let scope = scopes.node_scope(role.owner)?;
+        let coordinate = SyntaxCoordinate::new(role.source, role.role_start, role.role_end);
+        // Presentation only: an owner without a source extent quotes the role.
+        let extent = match topology.node(role.owner).map(|record| record.extent) {
+            Some(FinalizedExtent::Source { source, start, end }) => {
+                SyntaxCoordinate::new(source, start, end)
+            }
+            _ => coordinate,
+        };
         roles.push(ClassifiedRole {
             kind: role.kind,
             spelling: role.spelling,
@@ -112,7 +120,8 @@ pub(super) fn classify_roles(
             owner: role.owner,
             origin: SourceOrigin {
                 node: scopes.path(role.owner)?.clone(),
-                coordinate: SyntaxCoordinate::new(role.source, role.role_start, role.role_end),
+                coordinate,
+                extent,
                 role_ordinal,
                 subtoken_ordinal: role.subtoken_ordinal,
             },

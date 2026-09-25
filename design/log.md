@@ -13,6 +13,14 @@ Owner-approved: After the handoff for PR #85 at 6ce90ec5, which showed the unqua
 
 Summary: Add the reviewed decision and its rejected alternative unchanged. A qualified path names a type, a group, a callee or a constructor, while a place base, a `const` term and a `cvalue` reference stay single identifiers, so another module's constant is read in a value position through a file-local alias; qualified place bases factored through a shared operand prefix would give `place` a second shape across MSR-1, ENT-2, SET-1 and EFF-1. The specification v0.70 already writes this grammar. Remove the accepted amendment. The other nodes named here are unchanged by this entry and carry the earlier rulings below; they are listed because this PR changes them. The same answer confirmed the qualified-group fix `7043aa3d`, kept the FN-6/FN-9 graph decision as it stands, and directed a staging of the dependency-recording decision whose text is a new amendment awaiting its own ruling. The specification is unchanged; this ruling does not authorize a merge.
 
+## 2026-09-25 Render compiler stops as labeled records
+
+Nodes: compiler/diagnostic-rendering
+
+Owner-approved: The owner approved the diagnostic-rendering amendment on PR #117, 2026-09-25.
+
+Summary: Add the node as shown, with both decisions and six rejected alternatives unchanged: every compiler stop is one labeled record rendered without `Debug` text for source rejections and capability stops, as lean text by default (a `file:line:column: error[RULE]: Kind` summary line, the marked source line, then one `label: value` line per payload field) and as one complete JSON object per line on `--diagnostic-format json`; payload fields and the classifications they name are listed by exhaustive destructuring, and a node a payload names carries its coordinate from the checker that holds the tree. The text default stays provisional until the writer trial in the maintained TODO compares compile rounds to a fix. The [readable-diagnostics investigation](../research/investigations/readable-diagnostics/DESIGN.md) holds the field inventory, measurements and rejected rendering paths. Remove the accepted amendment and the now-empty amendment directory. No specification rule or conformance evidence changes; this ruling does not authorize a merge.
+
 ## 2026-09-24 Adopt retained component evidence, the legacy bundle entry and per-module summary publication
 
 Nodes: compiler/incremental-compilation, language/checks-and-proofs, language, language/name-resolution, language/effects, language/data-model/readonly-field, compiler

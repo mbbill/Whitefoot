@@ -4,11 +4,12 @@ This directory holds investigations and experiments that expose language or
 compiler needs and test possible solutions. Treat agent authorship as a
 changed design condition: identify what a candidate restriction or capability
 should buy, compare plausible alternatives, and retain the observed limits.
-The [evidence method](../docs/practice.md#evidence-guidance) separates design
-objectives, assumptions, mechanism choices, and experimental results. The active
-[specification](../spec/kernel-spec.md) defines the language, the
-[design trees](../design/) record why the language and the compiler are the way
-they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge boundary.
+The [investigation skill](../docs/skills/investigation/SKILL.md) states how a
+performance loss is attributed and which observations an agent writer trial
+keeps apart. The active [specification](../spec/kernel-spec.md)
+defines the language, the [design trees](../design/) record why the language
+and the compiler are the way they are, and [AGENTS.md](../AGENTS.md) defines
+the work-branch and merge boundary.
 
 - `investigations/`: a selected question's design, measurements, and rejected
   alternatives. Keep useful evidence here after implementation; an ended task
@@ -45,6 +46,9 @@ they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge bounda
 - [Result proof transport](investigations/result-proof-transport/DESIGN.md):
   compare verified result facts across direct matches, named outcomes and
   propagation, including capture, invalidation and composition boundaries.
+- [Readable diagnostics](investigations/readable-diagnostics/DESIGN.md): the
+  labeled record every compiler stop prints, its text and JSON renderings,
+  and the rejected rendering paths.
 - [Incremental L0 closure](investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md):
   keep fact states' closed cores and insert fresh edges instead of recomputing
   the cubic closure, relaxing only which equal-bound L0 derivation is retained.

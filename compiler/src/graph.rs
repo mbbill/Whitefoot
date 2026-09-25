@@ -30,9 +30,9 @@ pub struct GraphEntry {
     function: String,
     no_heap: bool,
     coordinate: SyntaxCoordinate,
-    /// The entry's location in the graph record and that line, for a
-    /// rejection that cites the entry [MOD-9].
-    written: Option<(crate::SourceLocation, String)>,
+    /// The entry's place in the graph record, for a rejection that cites the
+    /// entry [MOD-9].
+    written: Option<crate::Place>,
 }
 
 impl GraphEntry {
@@ -66,11 +66,10 @@ impl GraphEntry {
         self.coordinate
     }
 
-    /// Returns the entry's location in the graph record and the line
-    /// holding it.
+    /// Returns the entry's place in the graph record.
     #[must_use]
-    pub fn written(&self) -> Option<(&crate::SourceLocation, &str)> {
-        self.written.as_ref().map(|(at, line)| (at, line.as_str()))
+    pub(crate) const fn written(&self) -> Option<&crate::Place> {
+        self.written.as_ref()
     }
 }
 
@@ -124,11 +123,11 @@ impl ModuleGraph {
         closure
     }
 
-    /// Records where each entry is written, rendered by `locate` from its
+    /// Records where each entry is written, resolved by `locate` from its
     /// coordinate in the graph record.
     pub(crate) fn locate_entries(
         &mut self,
-        locate: impl Fn(SyntaxCoordinate) -> Option<(crate::SourceLocation, String)>,
+        locate: impl Fn(SyntaxCoordinate) -> Option<crate::Place>,
     ) {
         for entry in &mut self.entries {
             entry.written = locate(entry.coordinate);
@@ -200,8 +199,8 @@ pub enum GraphIssueKind {
 /// One refused graph row or entry, at its written path [MOD-1].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GraphIssue {
-    coordinate: SyntaxCoordinate,
-    kind: GraphIssueKind,
+    pub(crate) coordinate: SyntaxCoordinate,
+    pub(crate) kind: GraphIssueKind,
 }
 
 impl GraphIssue {

@@ -520,6 +520,149 @@ fn main() -> status: ExitStatus pure {
     );
 }
 
+/// [GRAM-4] makes an expression statement one call whose result is discarded,
+/// and [PAR-1] gives it no footprint of its own: it is the call's substituted
+/// row [EFF-5], its operand reads, and its by-value consumptions, with no
+/// binding write and no path for a discarded result's release [STOR-8]. Every
+/// adjacency therefore receives the verdict the let-bound spelling receives,
+/// whichever member is written which way: disjoint rows are permitted, one
+/// shared row is the ordinary write/write conflict, and a releasing
+/// expression statement (the discarded `Box`) is judged by its row alone.
+///
+/// Until this fixture, both expression-statement forms were refused as
+/// unclassified, ending every run through them by their spelling.
+#[test]
+fn an_expression_statement_call_is_judged_as_its_let_bound_call() {
+    const PREFIX: &str = r#"struct Pair {
+  left: u64;
+  right: u64;
+}
+
+fn set_left(pair: &Pair) -> result: unit writes(pair.left) {
+  set deref(pair).left = 1_u64;
+  return unit;
+}
+
+fn set_right(pair: &Pair) -> result: unit writes(pair.right) {
+  set deref(pair).right = 2_u64;
+  return unit;
+}
+
+fn fresh_left(pair: &Pair) -> result: Box<Array<u64>> writes(pair.left) {
+  set deref(pair).left = 3_u64;
+  let made = box_array_filled::<u64>(count: 2_u64, value: 0_u64);
+  return move made;
+}
+
+"#;
+    for (first_callee, second_callee, expected) in [
+        ("set_left", "set_right", None),
+        ("set_left", "set_left", Some(1)),
+        ("fresh_left", "set_right", None),
+        ("fresh_left", "set_left", Some(1)),
+    ] {
+        for (first_form, second_form) in [
+            ("let first = ", "let second = "),
+            ("", ""),
+            ("let first = ", ""),
+            ("", "let second = "),
+        ] {
+            let source = format!(
+                "{PREFIX}fn main() -> status: ExitStatus pure {{
+  let pair = Pair(left: 0_u64, right: 0_u64);
+  {first_form}{first_callee}(pair: &pair);
+  {second_form}{second_callee}(pair: &pair);
+  return exit_status(code: 0_u8);
+}}
+"
+            );
+            let table = permission_of(source.as_bytes());
+            let pair = pair_of(&table, "main", first_callee, second_callee);
+            match expected {
+                None => assert_eq!(
+                    pair.verdict,
+                    PermissionVerdict::PermittedEligible,
+                    "the two rows name two fields:\n{source}"
+                ),
+                Some(condition) => {
+                    let Denial::Footprint { kind, .. } = denial(pair, condition) else {
+                        panic!("expected a footprint conflict:\n{source}");
+                    };
+                    assert_eq!(kind.halves(), ("write", "write"), "{source}");
+                }
+            }
+            if expected.is_none() {
+                run_of(&table, "main", &[first_callee, second_callee]);
+            }
+        }
+    }
+}
+
+/// "The paths of both statements are interpreted in the state before the
+/// first statement; the first statement's `ensures` maps the second's indices
+/// into that state, so an index that is live only after an append is not
+/// distinct from the append slot" [PAR-1, WIN-2].
+///
+/// `place_back` writes `r.next` and `r.len`, and the `r[n]` the next statement
+/// reads is live only after it: `n` is the append slot. [WIN-2]'s fixed row
+/// separating a live index from `r.next` holds within one state only, and this
+/// judgment performs no `ensures` mapping, so a window whose length an earlier
+/// statement writes has no part-relative separation. A read before the append
+/// is live in the first statement's own state and stays independent of it.
+///
+/// Before expression statements were judged, every window operation (written
+/// as one) ended its run, which hid this for them; the let-bound spelling was
+/// permitted and a hand-out published the wrong value.
+#[test]
+fn an_index_live_only_after_an_append_is_not_distinct_from_the_append_slot() {
+    for bind in ["", "let appended = "] {
+        let source = format!(
+            "fn peek(v: &u64) -> result: u64 reads(v) {{
+  return deref(v);
+}}
+
+fn after_append() -> result: u64 pure {{
+  let r = slots_new::<u64, 4>();
+  let n = r.len;
+  {bind}place_back(window: &r, value: 7_u64);
+  let seen = peek(v: &r[n]);
+  return seen;
+}}
+
+fn before_append() -> result: u64 pure {{
+  let r = slots_new::<u64, 4>();
+  place_back(window: &r, value: 5_u64);
+  let seen = peek(v: &r[0_u64]);
+  {bind}place_back(window: &r, value: 6_u64);
+  return seen;
+}}
+
+fn main() -> status: ExitStatus pure {{
+  let appended = after_append();
+  let kept = before_append();
+  return exit_status(code: 0_u8);
+}}
+"
+        );
+        let table = permission_of(source.as_bytes());
+        for (function, first, second) in [
+            ("after_append", "place_back", "peek"),
+            ("before_append", "place_back", "peek"),
+        ] {
+            let pair = pair_of(&table, function, first, second);
+            let Denial::Footprint { kind, .. } = denial(pair, 1) else {
+                panic!("the appended slot is the one read:\n{source}");
+            };
+            assert_eq!(kind.halves(), ("write", "read"), "{source}");
+        }
+        assert_eq!(
+            pair_of(&table, "before_append", "peek", "place_back").verdict,
+            PermissionVerdict::PermittedEligible,
+            "a slot live before the append is not the append slot:\n{source}"
+        );
+    }
+}
+
 /// Read-only sibling recursion. Nothing is written at all, so the
 /// disjointness clause is satisfied by an empty write footprint rather than
 /// by separation.
@@ -1866,6 +2009,43 @@ fn later(values: &Array<u8, 4>) -> result: u64 writes(values) {{
         ])
     });
     assert!(!has_wider_run);
+}
+
+/// [PAR-1, EFF-5] a range formed at the call resolves to its source's path
+/// extended by the formation's own range step, as a bound range reference
+/// does. Two inline ranges over different roots are therefore disjoint, and
+/// two over one root meet on their range steps as an ordinary footprint
+/// conflict; neither is the fail-closed unresolved footprint.
+#[test]
+fn inline_range_actuals_resolve_to_their_formation_paths() {
+    let source = format!(
+        "{RANGE_PERMISSION_HELPERS}
+fn independent(values: &Array<u8, 4>, others: &Array<u8, 4>) -> result: u64 writes(values), writes(others) {{
+  let a = stamp_range(part: &deref(values)[0_u64..2_u64]);
+  let b = stamp_range(part: &deref(others)[0_u64..2_u64]);
+  return a +wrap b;
+}}
+
+fn shared(values: &Array<u8, 4>) -> result: u64 writes(values) {{
+  let a = stamp_range(part: &deref(values)[0_u64..3_u64]);
+  let b = stamp_range(part: &deref(values)[2_u64..4_u64]);
+  return a +wrap b;
+}}
+"
+    );
+    let table = permission_of(source.as_bytes());
+    assert_eq!(
+        pair_of(&table, "independent", "stamp_range", "stamp_range").verdict,
+        PermissionVerdict::PermittedEligible
+    );
+    let pair = pair_of(&table, "shared", "stamp_range", "stamp_range");
+    let Denial::Footprint { kind, .. } = denial(pair, 1) else {
+        panic!(
+            "overlapping inline ranges must meet on their resolved paths: {:?}",
+            pair.verdict
+        );
+    };
+    assert_eq!(kind.halves(), ("write", "write"));
 }
 
 /// Prelude calls use the ordinary call permission judgment. This pure call

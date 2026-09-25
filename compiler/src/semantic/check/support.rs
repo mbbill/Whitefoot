@@ -241,12 +241,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }))
     }
 
+    /// One node a rejection payload names, with its complete source extent,
+    /// so the driver can print it as a position rather than as a path.
+    pub(super) fn node_location(
+        &self,
+        path: &crate::NodePath,
+    ) -> Result<SemanticLocation, CheckStop> {
+        let node = self
+            .tree
+            .node_with_path(path)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        Ok(SemanticLocation::SourceNode(
+            path.clone(),
+            self.tree.coordinate(node)?,
+        ))
+    }
+
     pub(super) fn unsupported<ResultValue>(
         &self,
         feature: UnsupportedSemanticFeature,
         node: NodeId,
     ) -> Result<ResultValue, CheckStop> {
-        let node = self.tree.path(node)?.clone();
+        let node = SemanticLocation::SourceNode(
+            self.tree.path(node)?.clone(),
+            self.tree.coordinate(node)?,
+        );
         Err(CheckStop::Unsupported(SemanticUnsupported {
             feature,
             node,
