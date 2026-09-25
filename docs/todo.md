@@ -767,6 +767,26 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   concurrent one has no helper and queues with no timeout. The readiness-
   driven adapter that would lift this, one poll over every queued descriptor
   from inside the park, was never built.
+- **A directory named through a symbolic link cannot be opened.**
+  `open_directory` opens one component without following a link, which the
+  walk relies on to leave enumerated links alone, and the prelude has no
+  directory open over a `RelativePath`; `open_read` follows links but opens
+  only regular files. So `wfgrep PATTERN ROOT` reports a root that is, or
+  passes through, a link to a directory as `cannot read`, where `grep -r`
+  follows a link named on its command line. Lifting it needs a prelude
+  addition, a directory open over a `RelativePath` resolved as `open_read`
+  resolves it, so it is a specification change deferred from the wfgrep root
+  fix. Validate with a wfgrep case whose root and whose middle root component
+  are links while an enumerated link stays unfollowed. Reopen when a program
+  must walk a user-named linked directory.
+- **`tests/programs/dir_walk.wf` truncates silently past its fixture.** It
+  collects into constant-capacity frame storage and stops recording after 64
+  entries in the whole walk, stops descending at depth 8, and clips a path at
+  126 bytes, all while exiting 0, although its doc says it records every
+  entry. Its one corpus case walks a three-level tree, so no check depends on
+  the bounds. Either report each bound or collect through growable storage as
+  `wfgrep.wf` now does; reopen when the program is pointed at a larger tree or
+  its constant-capacity form stops being the point of the case.
 - **A `propagate` statement cannot be a [PAR-1] window member.** The rule
   admits only `let`-bound and scrutinee calls, so `let a = f(); let b =
   propagate g();` never overlaps. Allowing a `propagate` second member would
