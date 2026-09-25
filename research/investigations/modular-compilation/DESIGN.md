@@ -1287,14 +1287,22 @@ persistent and reruns each changed composition whole:
   published to it, and the definitions of the types, constants and contract
   queries it names, all spelled by stable identities. An unchanged key takes
   the recorded conclusions.
-- An entry's composition is accepted under its closure's implementation
-  records exactly and its interface records by their declaration digests.
-  When either changes, the build forms, resolves, type-checks, instantiates,
-  summarizes and lowers the whole closure again, takes each unchanged analysis
-  from its receipt and compiles only the link fragments whose text changed.
-  That key decides whether the composition reruns as a whole, never whether a
-  body is reused, which receipts and fragment text decide; it is not the
-  refused whole-hash key that selects every body's reuse.
+- An entry's composition check is accepted under its closure's
+  implementation records exactly and its interface records by their
+  declaration digests, and a build keeps the entry's emitted module under the
+  exact bytes of every record of the closure. When the key it reads changes,
+  a check forms, resolves, type-checks, instantiates and summarizes the whole
+  closure again, and a build also lowers it; each unchanged analysis comes
+  from its receipt, and only the link fragments whose text changed are
+  compiled. These whole-closure keys decide whether a composition reruns as a
+  whole, never whether a module verdict, a proof analysis or an object is
+  reused, which read sets, receipts and fragment text decide. A build
+  therefore reruns the composition after an interface `doc` edit that a check
+  skips. Keying the emitted module as the check keys its acceptance needs the
+  key to cover everything lowering reads of an interface record; in a probe on
+  the specimen, reordering the queue interface's declarations and rewording a
+  `doc` entry left the emitted module byte-identical, but no rule establishes
+  that yet.
 
 [Measured](../../experiments/modular-build-cost/RESULTS.md#building-one-entry)
 on a 32-module chain of 16-function modules, a one-body edit build takes 590
@@ -1304,8 +1312,10 @@ grows with the closure, about 11 ms per such module, so an edit build reaches
 one second near twice that chain. No program a current experiment builds is
 that large: the largest test program, the 1363-line wfgrep source bundle,
 rebuilt in 0.37 to 0.42 s after each of three one-body edits (gate-profile
-`whitefootc` at `6ce90ec5`, `--cache` with function fragments, one analysis
-recorded and 52 reused, one object compiled each time).
+`whitefootc` at `6ce90ec5` building `tests/programs/wfgrep.wf` with `--cache`
+and `--fragments function` after a warm build, each edit changing one
+`return` literal in `io_class`; one analysis recorded and 52 reused, one
+object compiled each time).
 
 The later stage splits the composition into persistent queries when a one-body
 edit build of a program a current experiment builds exceeds one second,
