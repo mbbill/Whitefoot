@@ -382,8 +382,11 @@ now in `design/amendments/compiler-composition-staging.md`.
    substring checks (`.contains(`) as the regression net. Tree: a new
    decision (amendment).
 3. **Remove region specialization** down to the call table, reachability and
-   interning, and give release symbols stable spellings (MOD-8). Cost: small.
-   No tree change.
+   interning. Cost: small. No tree change. Done on this branch: the
+   `$release$` symbols proved unreachable, since every function has one
+   variant, so no spelling had to change, and the corpus emits identical LLVM
+   before and after. The checker's own region machinery remains
+   (`docs/todo.md`, "Machinery with no remaining consumer").
 4. **One target module** for lowering and backend, holding the layout, the
    lane-frame bound and the runtime ABI spellings. Cost: small. No tree
    change.

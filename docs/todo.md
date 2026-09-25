@@ -1229,14 +1229,14 @@ rarely insert at the same place.
   substring checks as the net. Reopen when an operation that opens blocks is
   added.
 
-- **Machinery with no remaining consumer.** Lowering's region
-  specialization runs over an environment its own comment says "starts empty
-  and stays empty" (`compiler/src/lowering/specialize.rs`), with
-  `compiler/src/lowering/physical_types.rs` around it. Five lowering comments
-  cite `[S20, PROV-1]`, which the active specification no longer defines, and
-  `compiler/src/lowering.rs` names a pin test that does not exist (the pin is
-  `ordinary_lane_frame_limits_match_the_runtime_slot`). The flow's `is_holder`
-  returns `false`, so `EntryImageHolderConsume` is unreachable, and
+- **Machinery with no remaining consumer.** The checker keeps the region
+  machinery STOR-8 retired, though every value it produces is empty:
+  `compiler/src/semantic/check/type_regions.rs`, the `region_parameters` of
+  function and nominal templates (always created empty), the
+  `elided_store_brand` cell, `CheckedNominalKind::Box`'s `region` field, a
+  call's `goal_regions` and a `CheckedReleaseClass` with one variant; lowering
+  now asserts that the first two are empty and ignores the rest. The flow's
+  `is_holder` returns `false`, so `EntryImageHolderConsume` is unreachable, and
   `driver::check_module` has no caller. Finalize checks every parsed node
   against its production again, the re-verification `design/compiler.md`
   refuses. By reading, generic validation never takes its early return,
