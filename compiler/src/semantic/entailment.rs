@@ -1177,8 +1177,34 @@ pub(crate) fn postcondition_schedule<'function>(
         {
             return None;
         }
-        graph[index].sort_unstable_by_key(|function| function.0);
-        graph[index].dedup();
+    }
+    // [FN-9] a caller's component treats an instance of another module's
+    // generic callable as calling every function-kind actual supplied to it,
+    // whether or not the instance's body calls them. Components only grow,
+    // so no circular proof is admitted, and an edit to that body cannot
+    // change which summaries the calling module's proofs may use. Within one
+    // module the rule adds nothing.
+    let mut conservative = Vec::new();
+    for (caller, callees) in graph.iter().enumerate() {
+        for callee in callees {
+            let callee_function = functions.get(callee.0 as usize)?;
+            if callee_function.module != functions.get(caller)?.module {
+                conservative.push((callee.0 as usize, callee_function.function_actuals.clone()));
+            }
+        }
+    }
+    for (instance, actuals) in conservative {
+        if actuals
+            .iter()
+            .any(|actual| actual.0 as usize >= functions.len())
+        {
+            return None;
+        }
+        graph[instance].extend(actuals);
+    }
+    for callees in &mut graph {
+        callees.sort_unstable_by_key(|function| function.0);
+        callees.dedup();
     }
 
     let graph = graph
@@ -1380,7 +1406,7 @@ fn collect_expression_calls(
     }
 }
 
-fn strongly_connected_components(graph: &[Vec<usize>]) -> Vec<Vec<usize>> {
+pub(super) fn strongly_connected_components(graph: &[Vec<usize>]) -> Vec<Vec<usize>> {
     struct Tarjan<'graph> {
         graph: &'graph [Vec<usize>],
         next_index: usize,

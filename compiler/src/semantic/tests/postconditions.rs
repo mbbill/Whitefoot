@@ -2490,8 +2490,8 @@ fn a_holder_alias_does_not_change_the_selected_return_term_identity() {
 fn from_shared_alias(owner: &Pair) -> result: i32 reads(owner.value) contract {
   ensures result == deref(owner).value;
 } {
-  let alias = owner;
-  return deref(alias).value;
+  let aliased = owner;
+  return deref(aliased).value;
 }
 
 fn main() -> status: ExitStatus pure {
@@ -2503,7 +2503,7 @@ fn main() -> status: ExitStatus pure {
         dispositions(&proof),
         vec![PostconditionDisposition::Unproved]
     );
-    assert_rule_at(source, SemanticRule::Fn9, "return deref(alias).value;");
+    assert_rule_at(source, SemanticRule::Fn9, "return deref(aliased).value;");
 }
 
 #[test]
@@ -2735,14 +2735,17 @@ fn main() -> status: ExitStatus pure {
 
 #[test]
 fn a_successfully_resolved_foreign_variant_is_an_fn9_source_issue() {
+    // [TYPE-6] a route label resolves against its result ordinal's enum, so
+    // the resolved variant here belongs to the result's own source enum;
+    // FN-9 then admits only the prelude `Ok` route.
     let source = br#"enum Foreign {
   ForeignCase(value: i32);
 }
 
-fn selected(value: i32) -> result: Result<i32, Overflow> pure contract {
+fn selected(value: i32) -> result: Foreign pure contract {
   ensures when ForeignCase(value: payload): payload == value;
 } {
-  return Ok<i32, Overflow>(value: value);
+  return Foreign::ForeignCase(value: value);
 }
 
 fn main() -> status: ExitStatus pure {
@@ -2922,7 +2925,7 @@ fn main() -> status: ExitStatus pure {
 fn transitive_invalid_constant_does_not_become_a_compiler_failure() {
     let source = br#"const bad: u8 = 1_u16;
 
-const alias: u8 = bad;
+const aliased: u8 = bad;
 
 fn invalid() -> result: unit pure contract {
   ensures result == result;

@@ -240,7 +240,7 @@ fn the_detector_sees_both_forbidden_forms_and_neither_legal_neighbour() {
     );
     assert_eq!(
         forbidden_forms(
-            b"enum Colour {\n  Red();\n  Blue();\n}\n\nfn main() -> status: ExitStatus pure {\n  let c = Red();\n  match c {\n    Red() => {\n    }\n    Blue() => {\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n"
+            b"enum Colour {\n  Red();\n  Blue();\n}\n\nfn main() -> status: ExitStatus pure {\n  let c = Colour::Red();\n  match c {\n    Red() => {\n    }\n    Blue() => {\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n"
         ),
         Some(Forbidden::default())
     );

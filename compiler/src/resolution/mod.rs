@@ -46,8 +46,13 @@ impl ScopeId {
 /// One scope kind from the active specification's scope-construction matrix.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ScopeKind {
-    /// The complete closed compilation unit.
+    /// The complete closed compilation unit: the PRE-1 environment every
+    /// module extends.
     CompilationUnit,
+    /// One module's shared declaration inventory [MOD-3].
+    Module,
+    /// One source's file-local alias header over its module [MOD-4].
+    File,
     /// Type and const generics owned by one declaration.
     DeclarationGenerics,
     /// Parameters, signature suffix, clauses, and body.
@@ -220,6 +225,8 @@ pub enum DeclarationClass {
     Invariant,
     /// One distinct OP-1 spelling.
     OperationFamily,
+    /// A file-local alias naming a registered module [MOD-4].
+    Module,
 }
 
 /// Closed resolver collision-domain order.
@@ -289,6 +296,9 @@ pub enum DeclarationRole {
     CountedBinder,
     /// A named invariant fact visible after its checked declaration point.
     Invariant,
+    /// A file-local alias from one source's alias header [MOD-4]. Every use
+    /// of it resolves to its target's own identity.
+    Alias,
 }
 
 /// Dependent declaration roles resolved by the semantic owner type.
@@ -315,8 +325,9 @@ pub enum LexicalUseRole {
     TypeArgument,
     /// U04: struct or enum construction.
     Construct,
-    /// U05: enum-variant match arm.
-    ArmVariant,
+    /// The owner enum of a type-owned variant construction, `Sign::Neg()`
+    /// [TYPE-6].
+    VariantOwner,
     /// The leading enum variant of an FN-9 selector.
     EnsuresVariant,
     /// U09: reference parameter at the root of a state-effect path [EFF-1].
@@ -356,6 +367,9 @@ pub enum DeferredUseRole {
     FieldInitializer,
     /// X05: match field label.
     MatchField,
+    /// The variant label of a match arm, resolved against the scrutinee's
+    /// already known enum type [TYPE-6].
+    ArmVariant,
     /// X06: projected field.
     ProjectedField,
     /// The variant TYPEID of a payload `psuffix` or `epsuffix`, `p.Some.value`
@@ -438,6 +452,11 @@ pub struct DeclarationRecord {
     scope: ScopeId,
     classes: Vec<DeclarationClass>,
     diagnostic_origins: Vec<(DeclarationClass, PreludeDeclarationId)>,
+    /// The module whose inventory holds this declaration, or `None` for a
+    /// PRE-1 record [MOD-3].
+    module: Option<crate::ModuleId>,
+    /// Whether an interface marks it `public` [MOD-6].
+    public: bool,
 }
 
 impl DeclarationRecord {
@@ -485,6 +504,19 @@ impl DeclarationRecord {
     #[must_use]
     pub fn classes(&self) -> &[DeclarationClass] {
         &self.classes
+    }
+
+    /// Returns the module whose inventory holds it; `None` for a PRE-1
+    /// record [MOD-3].
+    #[must_use]
+    pub const fn module(&self) -> Option<crate::ModuleId> {
+        self.module
+    }
+
+    /// Reports whether an interface publishes it [MOD-6].
+    #[must_use]
+    pub const fn is_public(&self) -> bool {
+        self.public
     }
 }
 
@@ -730,6 +762,18 @@ pub enum ResolutionRule {
     Inv1,
     /// Finite source-certificate relation-value lookup.
     Prf1,
+    /// A module's shared declaration inventory.
+    Mod3,
+    /// A file-local alias header.
+    Mod4,
+    /// A qualified reference: module path, dependency edge and access.
+    Mod5,
+    /// Publication: where `public` and `readonly` may be written.
+    Mod6,
+    /// Interface and implementation correspondence.
+    Mod7,
+    /// A module program's heap declaration spelling.
+    Mod9,
 }
 
 impl ResolutionRule {
@@ -754,6 +798,12 @@ impl ResolutionRule {
             Self::Fn9 => "FN-9",
             Self::Inv1 => "INV-1",
             Self::Prf1 => "PRF-1",
+            Self::Mod3 => "MOD-3",
+            Self::Mod4 => "MOD-4",
+            Self::Mod5 => "MOD-5",
+            Self::Mod6 => "MOD-6",
+            Self::Mod7 => "MOD-7",
+            Self::Mod9 => "MOD-9",
         }
     }
 }
@@ -896,6 +946,77 @@ pub enum ResolutionIssueKind {
         /// Ordered current-function label origins.
         origins: Vec<DeclarationOrigin>,
     },
+    /// A module program writes `program no_heap`, which only a source
+    /// bundle admits; an entry states its heap requirement instead [MOD-9].
+    ModuleProgramHeapDeclaration,
+    /// An alias item follows a non-alias item of its source [MOD-4].
+    MisplacedAlias,
+    /// An alias target names nothing it may bind [MOD-4].
+    InvalidAliasTarget {
+        /// The alias spelling.
+        spelling: String,
+        /// The complete written target path.
+        target: String,
+        /// Why the target is refused.
+        reason: &'static str,
+    },
+    /// A qualified path's module prefix names no registered module [MOD-5].
+    UnknownModule {
+        /// The written module path, `pkg::a::b`.
+        path: String,
+    },
+    /// A reference names another module that its source module's graph row
+    /// does not list as a direct dependency [MOD-5].
+    MissingModuleEdge {
+        /// The referring module.
+        from: String,
+        /// The referenced module.
+        to: String,
+    },
+    /// A qualified name names nothing in its module's inventory [MOD-5].
+    QualifiedNameNotFound {
+        /// The final spelling.
+        spelling: String,
+        /// The module searched.
+        module: String,
+        /// Use role.
+        role: LexicalUseRole,
+    },
+    /// A reference from another module names a private declaration [MOD-5].
+    PrivateDeclaration {
+        /// The referenced spelling.
+        spelling: String,
+        /// Its declaring module.
+        module: String,
+    },
+    /// A type-owned variant construction names an owner that is not a source
+    /// enum, or a variant the owner does not declare [TYPE-6].
+    UnknownOwnedVariant {
+        /// The variant spelling.
+        spelling: String,
+        /// Why the owner selects no variant.
+        reason: &'static str,
+    },
+    /// `public` or `readonly` where it creates no access route [MOD-6].
+    MisplacedPublication {
+        /// Why the marker is refused.
+        reason: &'static str,
+    },
+    /// A public declaration's signature, type, contract or formal names a
+    /// private declaration of its own module, which clients cannot access
+    /// [MOD-6].
+    PrivateInPublicSignature {
+        /// The private declaration's spelling.
+        spelling: String,
+    },
+    /// An interface function item with a body, an implementation function
+    /// without one, or a declaration without its one definition [MOD-7].
+    Correspondence {
+        /// The function spelling.
+        spelling: String,
+        /// What the pairing requires.
+        reason: &'static str,
+    },
     /// No visible declaration in the admissible classes exists.
     UnresolvedUse {
         /// Use spelling.
@@ -967,9 +1088,62 @@ pub struct ResolvedSyntaxUnit<'classified, 'lexed, 'source> {
     lexical_uses: Vec<LexicalUseRecord>,
     deferred_uses: Vec<DeferredUseRecord>,
     postconditions: Vec<PostconditionResolutionRecord>,
+    interface_functions: Vec<InterfaceFunction>,
+}
+
+/// One interface function declaration and the definition that implements
+/// it, if its module has one yet [MOD-7].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InterfaceFunction {
+    declaration: DeclarationId,
+    definition: Option<DeclarationId>,
+}
+
+impl InterfaceFunction {
+    /// Returns the body-less interface declaration.
+    #[must_use]
+    pub const fn declaration(&self) -> DeclarationId {
+        self.declaration
+    }
+
+    /// Returns the definition, or `None` while the declaration is pending.
+    #[must_use]
+    pub const fn definition(&self) -> Option<DeclarationId> {
+        self.definition
+    }
 }
 
 impl<'classified, 'lexed, 'source> ResolvedSyntaxUnit<'classified, 'lexed, 'source> {
+    /// [MOD-6, MOD-8] the read-only rendering of one module's resolved public
+    /// interface: its public declarations and the complete definitions they
+    /// reach, every name printed as its qualified identity and no `doc`
+    /// entry, so that comparing two revisions' renderings conservatively
+    /// detects every semantic and representation change.
+    ///
+    /// # Errors
+    ///
+    /// Returns a compiler invariant failure when the canonical tree or the
+    /// resolution records are inconsistent.
+    pub fn render_interface(
+        &self,
+        module: crate::ModuleId,
+    ) -> Result<String, ResolutionCompilerFailure> {
+        engine::render_interface(
+            &self.syntax.finalized.topology,
+            self.syntax.classified_bundle(),
+            &self.declarations,
+            &self.lexical_uses,
+            module,
+        )
+    }
+
+    /// Returns every interface function declaration with its definition
+    /// [MOD-7].
+    #[must_use]
+    pub fn interface_functions(&self) -> &[InterfaceFunction] {
+        &self.interface_functions
+    }
+
     /// Returns the source-bound canonical syntax consumed by this stage.
     #[must_use]
     pub const fn syntax(&self) -> &CanonicalSyntaxUnit<'classified, 'lexed, 'source> {

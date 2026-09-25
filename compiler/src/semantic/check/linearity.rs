@@ -414,12 +414,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .node_with_path(record.origin().node())
             .ok_or(crate::SemanticCompilerFailure::InvalidResolution)?;
         if self.tree.production(node)? == Production::Type {
+            // A group binder's application is the `pack_use` holding its
+            // `targs`, or the `type_path` of a qualified group written
+            // beside them.
             let mut application = node;
-            while self.tree.production(application)? != Production::PackUse {
-                application = self
-                    .tree
-                    .parent(application)?
-                    .ok_or(crate::SemanticCompilerFailure::InvalidResolution)?;
+            loop {
+                match self.tree.production(application)? {
+                    Production::PackUse => break,
+                    Production::Gparam | Production::BindingDecl => {
+                        application = self
+                            .tree
+                            .group_application(application)?
+                            .ok_or(crate::SemanticCompilerFailure::InvalidResolution)?;
+                        break;
+                    }
+                    _ => {
+                        application = self
+                            .tree
+                            .parent(application)?
+                            .ok_or(crate::SemanticCompilerFailure::InvalidResolution)?;
+                    }
+                }
             }
             for parameter in self.expand_formal_parameters(application)? {
                 if let super::generics::GenericParameter::Type {

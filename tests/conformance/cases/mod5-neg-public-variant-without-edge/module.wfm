@@ -1,0 +1,1 @@
+public fn main() -> status: ExitStatus pure doc "Matches an enum of a module its row does not list.";

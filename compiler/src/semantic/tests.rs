@@ -299,6 +299,65 @@ fn assert_rule(source: &[u8], rule: SemanticRule, kind: SemanticIssueKind) {
     });
 }
 
+/// Checks a module program from its graph and its records, each placed in
+/// the module its logical path's directory names and in the interface role
+/// when it is that directory's `module.wfm` [MOD-1, MOD-2].
+fn check_module_sources(
+    graph: &[u8],
+    records: &[(&str, &[u8])],
+) -> Result<(), crate::CompilationFailure> {
+    let graph = crate::form_module_graph(
+        SourceInput::new("modules.wfg", graph),
+        crate::CompilerLimits::default(),
+    )?;
+    let inputs = records
+        .iter()
+        .map(|(path, bytes)| {
+            let (directory, file) = path.rsplit_once('/').unwrap_or(("", path));
+            let components: Vec<String> = if directory.is_empty() {
+                Vec::new()
+            } else {
+                directory.split('/').map(str::to_owned).collect()
+            };
+            let module = graph
+                .modules()
+                .iter()
+                .position(|module| module.path() == components.as_slice())
+                .and_then(crate::ModuleId::from_index)
+                .expect("every record lies in a registered module");
+            let role = if file == "module.wfm" {
+                crate::SourceRole::Interface
+            } else {
+                crate::SourceRole::Implementation
+            };
+            SourceInput::new(path, bytes).in_module(module, role)
+        })
+        .collect::<Vec<_>>();
+    crate::check_module_program(&graph, &inputs, crate::CompilerLimits::default())
+}
+
+/// Checks one module-form conformance case directory through the ordinary
+/// graph formation and record discovery [MOD-1, MOD-2].
+fn check_case_directory(case: &str) -> Result<(), crate::CompilationFailure> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../tests/conformance/cases")
+        .join(case);
+    let graph_bytes = std::fs::read(root.join("modules.wfg")).expect("read the case's graph");
+    let graph = crate::form_module_graph(
+        SourceInput::new("modules.wfg", &graph_bytes),
+        crate::CompilerLimits::default(),
+    )?;
+    let sources = crate::discover_module_sources(&root, &graph).expect("read the case's records");
+    let inputs = sources
+        .iter()
+        .map(|source| {
+            SourceInput::new(&source.logical_path, &source.bytes)
+                .in_module(source.module, source.role)
+        })
+        .collect::<Vec<_>>();
+    crate::check_module_program(&graph, &inputs, crate::CompilerLimits::default())
+}
+
 /// Asserts a rejection's rule and which issue kind it cited, without pinning a
 /// payload the call site does not state.
 ///
@@ -781,7 +840,7 @@ fn nominal_diagnostics_retain_required_lists_and_repairs() {
         },
     );
     assert_rule(
-        b"enum Pairing {\n  Both(a: i32, b: i32);\n}\n\nfn main() -> status: ExitStatus pure {\n  let pair = Both(a: 1_i32, b: 2_i32);\n  match pair {\n    Both(a: first) => {\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum Pairing {\n  Both(a: i32, b: i32);\n}\n\nfn main() -> status: ExitStatus pure {\n  let pair = Pairing::Both(a: 1_i32, b: 2_i32);\n  match pair {\n    Both(a: first) => {\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Gram10,
         SemanticIssueKind::InvalidMatchFields {
             variant: "Both".to_owned(),
@@ -807,12 +866,12 @@ fn give_completeness_rejects_each_structural_failure() {
 #[test]
 fn enum_equality_exclusions_reach_the_intended_rule() {
     assert_rule(
-        b"enum PayloadEq {\n  PayloadEmpty();\n  PayloadValue(value: u32);\n}\n\nfn main() -> status: ExitStatus pure {\n  let left = PayloadEmpty();\n  let right = PayloadEmpty();\n  let equal = eeq(left, right);\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum PayloadEq {\n  PayloadEmpty();\n  PayloadValue(value: u32);\n}\n\nfn main() -> status: ExitStatus pure {\n  let left = PayloadEq::PayloadEmpty();\n  let right = PayloadEq::PayloadEmpty();\n  let equal = eeq(left, right);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
     assert_rule_kind(
-        b"enum LeftEq {\n  LeftFirst();\n}\n\nenum RightEq {\n  RightFirst();\n}\n\nfn main() -> status: ExitStatus pure {\n  let left = LeftFirst();\n  let right = RightFirst();\n  let equal = eeq(left, right);\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum LeftEq {\n  LeftFirst();\n}\n\nenum RightEq {\n  RightFirst();\n}\n\nfn main() -> status: ExitStatus pure {\n  let left = LeftEq::LeftFirst();\n  let right = RightEq::RightFirst();\n  let equal = eeq(left, right);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -838,7 +897,7 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
     // borrow-matched through `&'r` whose scrutinee stays live for a second
     // read, with each derived binder explicitly dereferenced.
     with_semantics(
-        b"enum Cell {\n  Full(v: i32);\n  Void();\n}\n\nfn main() -> status: ExitStatus pure {\n  let c = Full(v: 20_i32);\n  let p = &c;\n  let a = match deref(p) {\n    Full(v: x) => {\n      give deref(x);\n    }\n    Void() => {\n      give 0_i32;\n    }\n  }\n  let q = &c;\n  let b = match deref(q) {\n    Full(v: y) => {\n      give deref(y);\n    }\n    Void() => {\n      give 0_i32;\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum Cell {\n  Full(v: i32);\n  Void();\n}\n\nfn main() -> status: ExitStatus pure {\n  let c = Cell::Full(v: 20_i32);\n  let p = &c;\n  let a = match deref(p) {\n    Full(v: x) => {\n      give deref(x);\n    }\n    Void() => {\n      give 0_i32;\n    }\n  }\n  let q = &c;\n  let b = match deref(q) {\n    Full(v: y) => {\n      give deref(y);\n    }\n    Void() => {\n      give 0_i32;\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     assert_unsupported(
@@ -846,7 +905,7 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
         UnsupportedSemanticFeature::RecursiveNominalLayout,
     );
     assert_unsupported(
-        b"enum Flag {\n  A();\n  B();\n}\n\nfn main() -> status: ExitStatus pure {\n  let flag = A();\n  match flag {\n    A() => {\n    }\n    A() => {\n    }\n    B() => {\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum Flag {\n  A();\n  B();\n}\n\nfn main() -> status: ExitStatus pure {\n  let flag = Flag::A();\n  match flag {\n    A() => {\n    }\n    A() => {\n    }\n    B() => {\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
         UnsupportedSemanticFeature::DuplicateMatchArm,
     );
     // Each iteration consumes the local run and installs the returned run in
@@ -1043,7 +1102,7 @@ fn main() -> status: ExitStatus pure {
 }
 
 fn main() -> status: ExitStatus pure {
-  let flag = First();
+  let flag = Flag::First();
   match Err(error: flag) {
     Ok(value: ok_value) => {
     }
