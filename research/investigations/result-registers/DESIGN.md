@@ -316,6 +316,105 @@ The owning-map difference is the boundary alone: 14 calls per seed, each
 saving a store and reload of its result. It shows in the counts and stays
 within run-to-run variation in wall time.
 
+## Hosted compute regression
+
+The criterion above does not name the maintained paired comparison,
+`.github/workflows/compute-regression.yml`. That comparison failed on both
+implementation commits for one kernel, `records`, and passed the other four.
+Its wall ratio is baseline over candidate, so a value below 1 means the
+candidate is slower. `lower` counts the pairs in which the baseline was
+faster:
+
+| Commit and run | W=1 | W=2 | W=4 |
+|---|---:|---:|---:|
+| `a15347c25`, [36087145857](https://github.com/mbbill/Whitefoot/actions/runs/36087145857) | 0.932 (4/5) | 0.822 (5/5) | 0.810 (5/5) |
+| `d863e8e51`, [36089782067](https://github.com/mbbill/Whitefoot/actions/runs/36089782067) | 0.931 (5/5) | 0.832 (5/5) | 0.810 (5/5) |
+
+The identical-image control passed in both runs. The only other adverse line
+was a single-width `fir` W=4 suspect in the second run (0.958), and that line
+passed in the first run on identical code. The second run's host CPU was an
+AMD EPYC 9V74 with two cores of two threads each. The job was not rerun, and
+no threshold, fixture or instrument was changed.
+
+**What changed in the measured code.** Of the five kernels, only records'
+emitted module differs, apart from an unused declaration of
+`wf_host_utf8_len`. `validate_record` returns its two-leaf
+`RecordCheck { valid: Bool, scalars: u64 }` in registers, and
+`record_summary` stores the returned value into its slot. In the second
+run's artifact, `records.ll` and `records.o` of both arms are byte-identical
+to local builds with clang 18.1.3. The linked images disassemble identically
+to the local ones, with every symbol at the same address. On a 4-vCPU Intel
+Xeon (2.80 GHz) Linux host, the unchanged `tests/performance/compare.sh` also
+failed on records alone: 1.145 (0/5) at W=1, 0.860 (5/5) at W=2 and 0.816
+(5/5) at W=4.
+
+**Two copies of the loop.** The bound host adapter calls the sequential clone
+`wf__par_seq_summarize_records` when no worker pool is active, which is W=1.
+Otherwise it calls `wf_summarize_records`, whose leaf loop is inlined into
+`wf__par_split_37`. Each function holds its own inlined copy of
+`validate_record`'s loop at its own address, so W=1 and the wider rows time
+different code placements.
+
+**The loop's structure.** In the destination form, `validate_record` keeps
+two exit blocks after its loop, one storing the invalid result and one the
+valid result. The late JumpThreading pass threads the ASCII path's latch
+through the exit test, `remaining == 0`, which is known on that path. The
+duplicated latch then becomes an inner loop over consecutive ASCII bytes. In
+the register form, every return joins `wf.return`, and SimplifyCFG turns that
+exit test into a `select`. Nothing is left to thread, and the loop keeps one
+level. Clang does the same for C. The same validator returning a two-field
+struct by value compiles at `-O2` to one loop, and a version that writes
+through a result pointer gets the inner ASCII loop. Cachegrind counted the
+W=1 kernel function over six calls:
+
+| Input | Instructions | Conditional branches |
+|---|---|---|
+| hosted fixture (`shape=unicode`) | 1,883.9M → 1,861.5M (−1.2%) | 401.3M → 401.9M (+0.15%) |
+| ASCII records, 131,072 of up to 255 bytes (scratch driver) | 722.3M → 1,020.8M (+41%) | 203.7M → 303.2M (+49%) |
+
+In the hosted fixture almost every byte belongs to a four-byte sequence. On
+that input the candidate executes fewer instructions and about as many
+conditional branches. On ASCII records it executes about three more
+instructions and one more conditional branch per byte.
+
+**Placement.** Each scratch timing below ran five rounds of interleaved
+processes, seven for the first item. Each process reports the median of five
+calls after a warmup, and each figure is the median over rounds.
+
+- Moving only the candidate's runtime objects to the baseline's addresses
+  leaves records where it was. The tool was a 592-byte never-called function
+  appended to the module. The candidate measured 11.54 ms at W=2 and 6.13 ms
+  at W=4, against the baseline's 10.08 ms and 5.31 ms.
+- A never-called function placed before `wf__par_split_37` shifts both loop
+  copies, and everything after them, by 0, 16, 32 or 48 bytes. No executed
+  instruction changes:
+
+  | Width | Baseline at +0 / +16 / +32 / +48 | Candidate at +0 / +16 / +32 / +48 |
+  |---|---|---|
+  | W=1 | 22.85 / 20.24 / 20.47 / 20.20 ms | 20.21 / 21.26 / 23.21 / 21.63 ms |
+  | W=2 | 10.35 / 10.68 / 10.27 / 11.65 ms | 11.66 / 10.98 / 10.49 / 10.54 ms |
+  | W=4 | 5.17 / 5.48 / 5.50 / 6.08 ms | 6.21 / 5.88 / 5.30 / 5.50 ms |
+
+- With both arms compiled with `-falign-loops=64`, the baseline and candidate
+  measured 21.16 and 21.84 ms at W=1, 11.14 and 10.58 ms at W=2, and 5.36 and
+  5.33 ms at W=4.
+- ASCII records at the same four placements, W=1: baseline 11.69 / 9.46 /
+  9.39 / 9.65 ms, candidate 11.98 / 9.57 / 9.71 / 9.66 ms.
+
+**Reading.** On the Intel host, a shift of at most 48 bytes that changes no
+instruction moves either arm by up to 15% at W=1 and up to 18% at W=2 and
+W=4. It reverses the arms' order at W=2 and W=4. The failing widths follow
+the kernel's placement and not the runtime's, and on the hosted fixture the
+candidate's kernel does less work. On this evidence the hosted verdict is a
+reading of the linked placement, not of added work. The structural change is
+still real. The lost ASCII loop costs about 41% more kernel instructions on
+ASCII records, and between 0.1% and 3.4% of W=1 time at the four placements.
+The AMD host had no placement control, so the verdict is not attributed on
+the machine that produced it. Records' placement sensitivity was already
+recorded in the
+[compute-runtime alignment comparison](../compute-runtime/RESULTS.md#alignment-comparison)
+and in `docs/todo.md`'s formal compute comparison entry.
+
 ## Selection
 
 The register bound is selected:
@@ -326,7 +425,10 @@ The register bound is selected:
   returns in registers.
 - It meets criterion 4. No destination call was added, the find-heavy loop is
   faster, and the out-of-line `find` loop is unchanged within its
-  variation.
+  variation. The maintained paired comparison, which the criterion does not
+  name, fails on `records` at this revision's linked placement
+  ([Hosted compute regression](#hosted-compute-regression)). The selection
+  does not decide whether that verdict blocks the change.
 - Under criterion 5 it is preferred over both bounds, because the 24-byte
   three-leaf results return in registers and the corpus has them. The cost is
   one linked LLVM definition inside the one callable ABI.
@@ -335,6 +437,11 @@ The register bound is selected:
 
 - Only x86-64 Linux was timed. The AArch64 and Windows effects are inferred
   from the probe's register assignment, not measured.
+- The records placement controls ran on the local Intel host only. The hosted
+  AMD verdict has no placement control of its own.
+- A register-returned result can lose a loop-exit threading that the
+  destination form allowed, as in records' ASCII loop. Only records was
+  examined for it.
 - The `hashmap.wf` speedup comes mainly from LLVM choosing to inline `find`
   and `remove`. That is the host optimizer's cost model responding to a
   cheaper callee, and other programs may see different inlining.

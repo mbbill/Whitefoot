@@ -262,6 +262,29 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   without a new demotion, a lost float bit pattern, or a regression in the
   program's timing, on each target that changes.
 
+- **The records comparison fails at the register-return revision's
+  placement.** The maintained paired comparison reads `records` at 0.93,
+  0.82--0.83 and 0.81 (W=1, W=2, W=4, baseline over candidate) on the
+  hosted AMD runner for the small-result register ABI. Its other four kernels
+  pass, and their emitted code is unchanged
+  ([hosted comparison](../research/investigations/result-registers/DESIGN.md#hosted-compute-regression)).
+  On a local Intel host, the same images show the same wider-row failure.
+  Shifting both loop copies by 16--48 bytes, with no instruction changed,
+  reverses the arms' order at W=2 and W=4. Moving only the runtime has no
+  effect. On the hosted fixture the candidate's kernel executes 1.2% fewer
+  instructions. The register return still loses one structure: its single
+  return block lets SimplifyCFG turn `validate_record`'s exit test into a
+  `select`, so the threaded inner loop over ASCII bytes is not formed. On
+  ASCII records that costs 41% more kernel instructions and 0.1--3.4% of
+  local W=1 time. Clang shows the same loss for C returning a two-field
+  struct. The hosted host has no placement control, so the failure is not
+  attributed there. A lowering that keeps the threading is unexamined.
+  Reopen with a bounded placement control on the hosted host, or with a
+  maintained workload whose time follows the lost threading beyond its
+  placement range. Validate against unchanged source with an identical-image
+  control. Neither a later passing run nor a changed threshold closes this
+  entry.
+
 - **Indexed small-payload costs with retained boundaries need attribution.**
   The [native-cost record](../research/experiments/container-representation/indexed-library/RESULTS.md#remaining-native-costs)
   puts 4096-record growth/cleanup at 1.354--1.368 times swap C and
