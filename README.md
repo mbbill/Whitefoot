@@ -59,9 +59,10 @@ left:
 | Rust, `get_unchecked_mut` or `assert_unchecked` | no | yes; the reason is a comment |
 | Whitefoot, as above | no | no; the reason is checked |
 
-(rustc 1.98.1, x86-64, `-C opt-level=2` and `3`. For an owned `Vec`, Rust's
-`retain` also leaves no check; a slice borrowed from a caller has no
-`retain`.)
+(rustc 1.98.1, x86-64, `-C opt-level=2` and `3`. Two safe rewrites also leave
+no check by changing the algorithm: `retain` on an owned `Vec`, which a slice
+borrowed from a caller does not have, and collecting the kept bytes into a new
+vector and copying them back, which allocates and reads them twice.)
 
 Drop the invariant, leaving the header `for (i in 0_u64..deref(buf).len) {`,
 and the program is rejected, with the fact that is missing:
@@ -160,9 +161,9 @@ It still can:
   the kernel's OOM killer may act first;
 - loop forever, or compute the wrong answer. Contracts describe what was
   written down, not what was meant;
-- be miscompiled. The trusted base is the Whitefoot compiler, LLVM and clang,
-  the runtime and allocator, C functions linked in as trusted definitions,
-  libc and the operating system ([SCOPE-3](spec/kernel-spec.md)).
+- be miscompiled. The trusted base is the Whitefoot compiler and its checker,
+  LLVM and clang, the runtime and allocator, C functions linked in as trusted
+  definitions, libc and the operating system ([SCOPE-3](spec/kernel-spec.md)).
 
 ## What you write
 

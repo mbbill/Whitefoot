@@ -1,4 +1,6 @@
-// Spellings of in-place space removal. Each is compiled with -C opt-level=2 and 3.
+// Spellings of space removal from a buffer. s1 to s10 work in place; s11
+// filters into a new vector and copies it back. Each is compiled with
+// -C opt-level=2 and 3.
 
 #[no_mangle]
 pub fn s1_index(buf: &mut [u8]) -> usize {
@@ -128,4 +130,13 @@ pub fn s9_unsafe_assume(buf: &mut [u8]) -> usize {
 pub fn s10_vec_retain(v: &mut Vec<u8>) -> usize {
     v.retain(|&b| b != b' ');
     v.len()
+}
+
+#[no_mangle]
+pub fn s11_filter_copy_back(buf: &mut [u8]) -> usize {
+    let kept: Vec<u8> = buf.iter().copied().filter(|&b| b != b' ').collect();
+    for (slot, &b) in buf.iter_mut().zip(kept.iter()) {
+        *slot = b;
+    }
+    kept.len()
 }
