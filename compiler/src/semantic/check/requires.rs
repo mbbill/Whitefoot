@@ -15,6 +15,7 @@ use super::super::model::{
     CheckedIntegerOperation, CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedPlaceStep,
     CheckedStatement, CheckedType, CheckedValue, expression_children,
 };
+use super::super::places::{CapturedTerm, CapturedValue};
 use super::super::postcondition::PostconditionConstantOrigin;
 use super::{CheckStop, Checker, ControlCounters, ControlScope, FunctionSignature, LocalBinding};
 
@@ -56,6 +57,88 @@ fn collect_clause_places(expression: &CheckedExpression, places: &mut Vec<Checke
     }
     for child in expression_children(expression) {
         collect_clause_places(child, places);
+    }
+}
+
+/// Each definition whose value can stand as an offset of a clause (b) place,
+/// with that value and the captured term it reads: a binding read, an integer
+/// literal or named const, or a const generic, followed through earlier
+/// definitions [ENT-2].
+type DefinitionOffsets = HashMap<BindingId, (CheckedExpression, CapturedTerm)>;
+
+/// The offset a definition's value supplies after expansion, when it is one.
+fn definition_offset(
+    value: &CheckedExpression,
+    definitions: &[ClauseDefinition],
+    offsets: &DefinitionOffsets,
+) -> Option<(CheckedExpression, CapturedTerm)> {
+    match value {
+        CheckedExpression::Binding {
+            binding,
+            consume_root: false,
+            ..
+        } => match offsets.get(binding) {
+            Some(expanded) => Some(expanded.clone()),
+            None if definitions
+                .iter()
+                .any(|definition| definition.binding == *binding) =>
+            {
+                None
+            }
+            None => Some((value.clone(), CapturedTerm::Binding(*binding))),
+        },
+        CheckedExpression::Constant(CheckedValue::Integer { bits, .. })
+        | CheckedExpression::NamedConstant {
+            value: CheckedValue::Integer { bits, .. },
+            ..
+        } => Some((value.clone(), CapturedTerm::Literal(*bits))),
+        CheckedExpression::Constant(CheckedValue::ConstGeneric { declaration, .. }) => {
+            Some((value.clone(), CapturedTerm::Const(*declaration)))
+        }
+        _ => None,
+    }
+}
+
+/// One subscript offset of a clause place, read through a definition, is the
+/// definition's own offset after expansion [FN-8].
+fn expand_definition_offset(
+    offset: &mut CheckedExpression,
+    captured: &mut CapturedValue,
+    offsets: &DefinitionOffsets,
+) {
+    if let CheckedExpression::Binding { binding, .. } = offset
+        && let Some((value, term)) = offsets.get(binding)
+    {
+        *offset = value.clone();
+        captured.term = *term;
+    }
+}
+
+fn expand_definition_path_offsets(path: &mut [CheckedPlaceStep], offsets: &DefinitionOffsets) {
+    for step in path {
+        if let CheckedPlaceStep::Subscript(subscript) = step {
+            let subscript = subscript.as_mut();
+            expand_definition_offset(&mut subscript.offset, &mut subscript.captured, offsets);
+        }
+    }
+}
+
+/// [FN-8] a definition is erased by expansion, so a clause (b) place is formed
+/// with every offset it reads through a definition replaced by the offset
+/// that definition expands to; its subscripts then owe [OP-4] over the same
+/// terms the expanded requirement establishes.
+fn expand_definition_offsets(place: &mut CheckedExpression, offsets: &DefinitionOffsets) {
+    match place {
+        CheckedExpression::ContainerMeasure { root, .. }
+        | CheckedExpression::ReadStorage { root, .. } => {
+            expand_definition_path_offsets(&mut root.path, offsets);
+        }
+        CheckedExpression::RangeElementMeasure { place, .. }
+        | CheckedExpression::RangeIndex { place, .. } => {
+            expand_definition_offset(&mut place.offset, &mut place.captured, offsets);
+            expand_definition_path_offsets(&mut place.path, offsets);
+        }
+        _ => {}
     }
 }
 
@@ -250,6 +333,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<CheckedRequires, CheckStop> {
         let mut expanded_bindings = HashMap::new();
         let mut definitions: Vec<ClauseDefinition> = Vec::new();
+        let mut definition_offsets = DefinitionOffsets::new();
         for (ordinal, parameter) in function.parameters.iter().enumerate() {
             let local = bindings
                 .get(&parameter.declaration)
@@ -303,6 +387,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             expanded_bindings.insert(*binding, expanded);
             let mut places = Vec::new();
             collect_clause_places(value, &mut places);
+            for place in &mut places {
+                expand_definition_offsets(place, &definition_offsets);
+            }
+            if let Some(offset) = definition_offset(value, &definitions, &definition_offsets) {
+                definition_offsets.insert(*binding, offset);
+            }
             let mut uses = Vec::new();
             collect_clause_reads(value, &mut uses);
             uses.retain(|read| definitions.iter().any(|earlier| earlier.binding == *read));
@@ -377,7 +467,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     places.extend(definition.places.iter().cloned());
                 }
             }
+            let own = places.len();
             collect_clause_places(&condition.expression, &mut places);
+            for place in &mut places[own..] {
+                expand_definition_offsets(place, &definition_offsets);
+            }
             requirement_places.push(places);
         }
         Ok(CheckedRequires {

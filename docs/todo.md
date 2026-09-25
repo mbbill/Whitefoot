@@ -1421,7 +1421,8 @@ condition under which it is taken up.
   its relation is judged, each selected return, with its subscripts owing
   OP-4 there, and state that point in ENT-2. Substitute the formal on both
   sides, judge the subscripts, then add a case whose caller publishes over
-  two different offsets and must not equate them.
+  two different offsets and must not equate them. Owner (PR #118 ruling,
+  2026-09-25): later, by the same principle at each selected return.
 - **Tracked-place offsets with projections are not captured.** ENT-2 admits
   any clause (a) term as an offset, but the compiler captures only literals,
   consts and bare bindings. A measure read such as `table[s.k].len` and a

@@ -10,7 +10,9 @@ measure places. A writer's own readonly field reached through a subscript,
 such as `deref(nodes)[i].count` in an index-based tree, was therefore no term:
 it could not bound a counted loop, appear in a `requires`, or be copied with a
 `let` equal to its source. Specification v0.70, which added modules, left these
-rules unchanged, and this change lands as v0.71.
+rules unchanged but confined `readonly` to public fields and made such a field
+ordinary inside its declaring module [TYPE-2, MOD-6]; this change lands as
+v0.71.
 
 This investigation decides, from the kill semantics and the index-based tree
 and layout use cases, whether that field should be a term, and bounds what the
@@ -25,7 +27,8 @@ term denotes kills every fact supported by it. [ENT-5] kills a fact when a
 write overlaps its support under [OWN-7], or when a support binding is
 consumed or leaves scope. For a place `P[i].f` whose last step selects a
 readonly field `f`, [TYPE-2] makes `f` never a `set` target and never an
-argument at a written parameter. The complete set of events that change it:
+argument at a written parameter outside its declaring module; inside that
+module it is an ordinary field. The complete set of events that change it:
 
 | event | written place | why it overlaps `P[i].f` |
 | --- | --- | --- |
@@ -37,6 +40,8 @@ argument at a written parameter. The complete set of events that change it:
 | `place_front`, `take_front` | `P` | prefix |
 | `take_back` | `P.last` | overlaps `P[i]` unless `i != P.len - 1` is proved |
 | call whose row writes `P` or a prefix | projected actual | prefix; a range actual reaches its element storage [CALL-3] |
+| call whose row writes `P[i].f` itself, such as the declaring module's `writes(rows[i].count)` | projected actual | the term's own place [EFF-2] |
+| `set P[i].f = v` inside the declaring module | `P[i].f` | the term's own place |
 | write to the offset binding `i` | `i` | the offset's support is part of the term's support |
 | rebinding a reference the place reads through | the holder | the holder is a support member |
 | consume or scope exit of the root or offset | — | kills (c) and (d) |
@@ -111,6 +116,22 @@ and `eff5-pos-row-index-live-beside-append` admits a row position the call
 proves live. An `ensures` place's formation point is still unstated and
 unjudged; `docs/todo.md` records it with the FN-9 extension.
 
+Two paths the judgment first missed were closed after the completion review.
+An [FN-4] query runs over a body-less function whose premises are a formal's
+requirements, and nothing had formed their places; a formal's block has the
+same formation rules [FN-8], so each formal requirement now forms its places
+once, when the formal is formed, in the state holding the formal's earlier
+requirements, and every query premise is a formed place.
+`fn8-neg-formal-requirement-place-unbounded-subscript` rejects at the formal's
+clause and `fn8-pos-formal-requirement-place-bounded-by-earlier-requirement`
+runs. The judgment also read an offset spelled through a definition, as in
+`deref(rows)[row]` after `define row = i;`, as the definition's own binding,
+which no fact names, and refused a place main accepted; the place now takes
+the offset the definition expands to [FN-8], so
+`ent2-pos-requirement-place-offset-through-definition` and
+`ent2-pos-definition-place-offset-through-definition-chain` run and
+`ent2-neg-requirement-place-offset-through-definition-unbounded` rejects.
+
 Evidence: the conformance cases
 `ent5-neg-readonly-field-offset-reassigned-in-loop`,
 `ent5-neg-readonly-field-element-replaced`,
@@ -120,7 +141,10 @@ Evidence: the conformance cases
 runtime would read out of bounds; `ent5-pos-readonly-field-sibling-and-distinct-writes`
 keeps the fact across non-overlapping writes. Reference-holder rebinding and
 unproved-distinct element writes were checked with the same shape during the
-change.
+change. Under [MOD-6] every readonly case is a module-form directory that
+declares the struct in a module of its own; `ent5-neg-readonly-field-assigned-in-declaring-module`
+and `ent5-neg-readonly-field-row-writes-field` reject the two rows the
+declaring module adds.
 
 ## Alternatives
 
