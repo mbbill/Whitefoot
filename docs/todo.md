@@ -6,6 +6,10 @@ opportunity is a validation task: state its expected benefit, uncertainty, and
 criterion for deciding whether to pursue it. Entries do not select a design.
 Remove an item when its implementation and checks land, or its validation
 concludes with a recorded disposition; retain any selected follow-up work here.
+Add an item at the end of the section that owns its topic, so parallel branches
+rarely insert at the same place.
+
+## Numeric conversions and value evidence
 
 - **Select the modular conversion companion.** The
   [conversion comparison](../research/investigations/numeric-conversions/DESIGN.md#companion-operations-and-explicit-deferrals)
@@ -66,6 +70,8 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   Results or wider storage support makes this cost material. The language
   extensions below remain a separate question.
 
+## Checker precision and proof cost
+
 - **Some ENT-3 sources read no measure operand.** S7's constant-offset,
   checked-offset, exact-division, remainder and unsigned `iand` rows read an
   operand the specification calls an admitted term or constant through the
@@ -111,16 +117,6 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   this consumer change to the joined-reference work above; reopen when that
   work establishes point-current target authority or a real proof needs it.
 
-- **Validate reuse of selected-target element layouts during emission.**
-  [Zero-stride addressing](../compiler/src/backend/target.rs) currently queries
-  the ordinary layout calculator afresh for each element-address step. Repeated
-  accesses to a deeply nested nominal element may recompute the same layout.
-  Compare checking/emission cost on repeated nested-element accesses before
-  introducing shared layout storage; require identical qualification and emitted
-  addresses. The benefit and material cost are unmeasured, so keep the simple
-  query for now and reopen when measuring target-emission cost or extending its
-  layout consumers.
-
 - **Expose a failed callee proof behind an unavailable summary.** The
   [partially concrete reserve probe](../research/investigations/containers-and-resources/X1-LIBRARY.md#partially-concrete-reserve-diagnostic)
   reports INV-1 at `room` after `priority_queue_make_room<ProbeDue, ceiling>`.
@@ -133,6 +129,143 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   without changing acceptance. Its benefit and exact attribution remain
   unverified; defer this diagnostic work while the admitted generic standalone
   control serves the experiment, and reopen when improving call-proof reports.
+
+- **Descendant references retain precision opportunities.** A write through a
+  widened range can discard its previously established length facts, and
+  independent cursors within one descendant cover cannot use suffix spelling
+  alone to establish separation. The
+  [cursor investigation](../research/investigations/wildcard-path/DESIGN.md)
+  records these limits and the current checking-cost qualification. Preserving
+  unaffected extent facts or proving a relation between independently selected
+  targets could reduce repeated bound proofs and admit more range-edit programs;
+  the benefit and a sound representation remain unverified. Defer this work
+  because the maintained list/tree/cursor program needs neither extension.
+  Reopen when a concrete program needs that precision. Validate the proposed
+  gain with positive editing cases, ancestor/window/stale-capture negative
+  controls and the investigation's checking-cost criterion; do not equate
+  targets merely because their covers agree. Close this item when the gain is
+  implemented and qualified or the measured tradeoff supports declining it.
+
+- **Pair-scoped parallel proofs need scaling and coverage work.** The current
+  PAR-1 planner constructs questions for every ordered source pair in a segment
+  and retains range separation only for that pair's first-statement state;
+  repeated visits meet with logical AND. A segment of n members has n(n-1)/2
+  pairs, but that logical requirement does not mandate quadratic repeated
+  proof work. General index mapping through the first member's `ensures` is
+  still unavailable; missing evidence keeps sequential lowering. For windows
+  this means every [WIN-2] part-relative separation is refused when a member
+  before the later one writes that window's `len`, which also refuses a read
+  of an old slot after an append; the mapping would recover it. A cheaper
+  recovery needs no mapping: a place reached through a reference live at the
+  first statement's entry is interpreted in that state, and the reference's
+  validity gives `i < len` there, so WIN-2's single-state separation still
+  holds. That recovers the one pair this rule newly denies in the maintained
+  programs, `deque_push_back` against `let first_after_append =
+  deref(original_first)` at `tests/programs/containers/deque-program.wf:113`.
+  The ledger's denial should also name the length change as its cause; it
+  currently reports only the overlapping write and read. Investigate
+  indexing and reuse without losing statement identity, captured endpoints,
+  flow context or all-pairs composition. Close this item when larger segments
+  have measured costs and the intended proof coverage, retaining guarded,
+  nonadjacent and stale-capture negative controls.
+
+- **Large entering proof contexts still have substantial checking cost.**
+  In the [post-x1 comparison](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#post-x1-selection),
+  256 independent inequality pairs with 256 uses still take a median 2.337 s;
+  the same context with only three uses takes 0.264 s. Reusing the ordered
+  affine index within a certificate removes repeated premise preparation,
+  but complete matrix/index construction and long-target AUTO traversal
+  remain. This is not certificate-length cost alone: a fixed three-pair
+  context admits all 4096 uses in 377 ms. The 512-pair context was accepted
+  in exploratory runs; these results establish neither linear total cost
+  nor a universal cost for the full use ceiling.
+  Preserve the complete [ENT-6]/[PRF-1] rules when investigating that cost.
+
+- **Ordinary-fallback views still copy a fact state per materialization.**
+  The [current comparison](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#post-x1-selection)
+  checks `tests/programs/fixed_run_library.wf` in 134 ms and
+  `tests/programs/wfgrep.wf` in 834 ms. In `materialize_closure_at` in
+  [`semantic/entailment/state.rs`](../compiler/src/semantic/entailment/state.rs):
+  whenever a selected proof depends on a postcondition call, it clones the
+  state, removes the call-dependent candidates and closes that view again.
+  A [query-only ordinary projection](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#ordinary-fallback-attribution-and-candidate)
+  passed the transition checks but improved fixed-run only 1.03x and left
+  wfgrep unchanged, so it was not retained. Revisit the representation when
+  a current workload attributes a substantial share to this path. Kill-time
+  edge insertion and derivation interning for recreated cells also remain.
+
+- **Acyclic generic instantiation has no established practical bound.**
+  D7's unchanged-argument cycle rule establishes termination while acyclic
+  fan-out may still require exponentially many instances relative to written
+  source. The owner deferred this question in D7, whereas the current language
+  design rules out exponential checking work. The
+  [behavior investigation](../research/investigations/containers-and-resources/BEHAVIOR.md#shared-semantic-boundary-and-exact-deltas)
+  records the accepted 1343-byte / 2047-instance witness, same-instance controls,
+  stage measurements and unresolved correspondence finding. No budget, timeout, new
+  source refusal, or measured asymptotic guarantee has been selected.
+  Reopen when generic container/behavior composition makes instance count or
+  checking cost material. Recheck the distinct-instance and repeated-instance
+  controls on that composition, separating semantic checking, lowering and
+  emitted-code size; faster duplicate lookup alone cannot close the bound.
+  The broader admission or sharing question remains deferred to an explicit
+  choice supported by those controls and a complexity argument.
+
+- **Acceptance and check removal are trusted to the whole checker.** Every
+  lowering authorization (a subscript without a check, an exact operation, a
+  discharged call goal) is issued by the same entailment engine that decides
+  acceptance, so the trusted base for "no unproved partial operation" is the
+  full front end plus entailment. The
+  [certificate packet](../research/investigations/proof-certificate-architecture/PACKET.md)
+  (v0.26, before the x1 ownership redesign) selects a staged route: the engine
+  records a positive derivation for every discharged obligation, and a small
+  verifier over a trusted proof-flow extraction checks them and jointly issues
+  the lowering capability, while rejections stay with the engine because a
+  missing certificate does not prove non-derivability. The compiler keeps a
+  derivation ledger; no verifier, extraction boundary or joint issuer exists.
+  Re-derive the packet's Envelope B against the current specification, then
+  prototype the verifier on `tests/programs/` and measure its size, proof size
+  and added compile time; a corrupted or missing certificate must never
+  authorize lowering. Close when a verifier jointly issues the capability, or
+  when the packet's stop gates record why the unified engine remains.
+
+- **Write kills do not submit their own OWN-7 separations.** An ENT-5 write
+  kill decides an index or range step against a fact's support only from the
+  separations already retained on the current edge, which are the EFF-5
+  pairwise and REF-2 preservation questions the structural checker submitted,
+  plus literal index inequality. OWN-7 makes two ranges disjoint whenever the
+  current ProofContext proves one of its four orderings, so a length fact over
+  `deref(head)[0_u64]` with `head = &rows[0_u64..1_u64]` should survive a write
+  through `rows[1_u64..3_u64]`, bound or formed at the call; today it dies and
+  the dependent subscript is rejected, and binding offsets proved distinct
+  only by a guard behave the same way. The effect is over-rejection, never an
+  unsound acceptance. Submitting one bounded question per written/support step
+  pair at each kill would admit these programs at a proof cost per fact per
+  write; a literal-endpoint range shortcut beside the literal index one would
+  cover constant ranges cheaply. Validate with the bound and inline spellings,
+  stale-capture and joined-origin negative controls, and a measured
+  checking-cost comparison. Reopen when a real program needs a fact to survive
+  a provably disjoint write; close when kill-time separation is implemented and
+  qualified or declined on measured cost.
+
+- **Consumers rebuild call-argument referents from expression shape.** The
+  structural checker resolves every actual to its REF-1 places (`actual_paths`,
+  including a formation's range step) and uses them for EFF-5, REF-2 and the
+  EFF-2 projection. The entailment flow (`argument_referents`) and the
+  permission judgments (`argument_places`, PAR-2's range recording) instead
+  rebuild those places from the checked argument expression. A missing
+  expression arm there is silent: inline range actuals once produced no ENT-5
+  kill, and so admitted out-of-bounds reads. Retaining the checker's resolved
+  paths per argument on the checked call and reading them in every consumer
+  would remove the duplicate reconstruction and this defect class, at the cost
+  of a checked-model field and its loop-carried and joined-origin handling,
+  which the flow must still read point-currently. Validate that each consumer
+  reaches its current verdicts on the full corpus with identical kill,
+  permission and ledger results, and that a deliberately removed checker arm
+  fails in one place. Reopen when another argument form is added or another
+  referent omission is found; close when the consumers read one inventory or
+  that inventory is shown unsuitable for point-current flow facts.
+
+## Containers and storage lowering
 
 - **Validate a shared Ring wrap calculation independent of layout bounds.**
   The corrected front predecessor handles every admitted capacity. Remaining
@@ -184,19 +317,6 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   tuning while this causal question is open; reopen for a workload dominated
   by retained reverse calls, a native-toolchain change or another material
   regression under the matched comparison.
-
-- **Upstream LLVM on Darwin does not yet support the selected stack-probe
-  spelling.** The [Deque comparison](../research/experiments/container-representation/deque-library/RESULTS.md)
-  records LLVM 22.1.8 rejecting native construction of the unchanged baseline
-  with `Unsupported stack probing method`; the emitted
-  `"probe-stack"="__chkstk_darwin"` remains present. Parsing and optimization
-  succeed, and the native builder's Apple Clang path works, so this does not
-  establish a failure of the new address fact. Before offering upstream LLVM
-  as a native Darwin consumer, determine the supported probe form and link
-  requirements and validate large-frame and recursive exhaustion through the
-  existing floor tests. Disabling probes is not an acceptable workaround.
-  Defer this separate toolchain extension while the current native path is
-  supported; reopen when another native Darwin consumer is required.
 
 - **Slab aggregate results retain extra transfers and layout overhead.**
   The [Slab comparison](../research/experiments/container-representation/slab-library/RESULTS.md)
@@ -330,6 +450,32 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   construction/consumption paths isolate its benefit; reopen when the transfers
   materially affect a measured consumer or lowering work reaches those paths.
 
+- **Box/window representation costs remain unqualified.** The current runtime-
+  capacity Box is one pointer to one header-first allocation; `grow` uses
+  allocation, memmove and free. A one-word owner, one allocation and header
+  placement are distinct choices: a fat descriptor can also own one element
+  allocation and make measure reads direct, while widening transport and
+  capture storage. Neither alternative is established as generally faster.
+  Keep the current implementation while separating owner width, measure loads,
+  allocation count, copying and linked layout in representative single-thread
+  and parallel comparisons. The successful bounded capture repair above is
+  evidence about the synthesized task ABI; it neither attributes the earlier
+  `records` failure nor proves that any one general layout choice caused it.
+  Keep the deferred general representation study separate, and close this item
+  only when the relevant costs and chosen tradeoffs have discriminating evidence.
+
+## Parallel lowering and runtime
+
+- **Validate reuse of selected-target element layouts during emission.**
+  [Zero-stride addressing](../compiler/src/backend/target.rs) currently queries
+  the ordinary layout calculator afresh for each element-address step. Repeated
+  accesses to a deeply nested nominal element may recompute the same layout.
+  Compare checking/emission cost on repeated nested-element accesses before
+  introducing shared layout storage; require identical qualification and emitted
+  addresses. The benefit and material cost are unmeasured, so keep the simple
+  query for now and reopen when measuring target-emission cost or extending its
+  layout consumers.
+
 - **Parallel footprints omit ordinary result-list bindings.** The
   [sparse-routing trial](../research/investigations/compute-model/DESIGN.md#sparse-destination-routing-trial-2026-09-21)
   exposes a receiver map denied solely because one statement binds two local
@@ -341,19 +487,6 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   workaround materially complicates a real consumer. Validate complete effects,
   consumption, exits and lowering for all result ordinals rather than granting
   a tuple-specific exception.
-
-- **A discarded affine result's call never joins a hand-out group.** Its
-  expression statement runs the result's release immediately after the call,
-  reading the value between a hand-out and its join, so
-  `compiler/src/lowering/builder.rs` leaves that call unrecorded and it ends
-  any overlap group through it, although PAR-1 permits it exactly as the
-  let-bound call. It could instead be a group's last member, as an addressed
-  binding already may. No measured
-  program discards an affine result beside an independent call, so the
-  benefit is unverified. Reopen when such a program appears; validate by
-  emitting the call as the join site with its release after the join and
-  comparing published bytes at several worker counts with the sequential
-  lowering.
 
 - **Initialized allocation can impose serial span on parallel work.** The
   [private-outbox representation](../research/investigations/compute-model/DESIGN.md#private-outboxes-without-frontier-compaction)
@@ -626,115 +759,65 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   until the observations and measurement/detection tradeoff are explained by
   discriminating evidence, rather than a later pass or changed threshold.
 
-- **Box/window representation costs remain unqualified.** The current runtime-
-  capacity Box is one pointer to one header-first allocation; `grow` uses
-  allocation, memmove and free. A one-word owner, one allocation and header
-  placement are distinct choices: a fat descriptor can also own one element
-  allocation and make measure reads direct, while widening transport and
-  capture storage. Neither alternative is established as generally faster.
-  Keep the current implementation while separating owner width, measure loads,
-  allocation count, copying and linked layout in representative single-thread
-  and parallel comparisons. The successful bounded capture repair above is
-  evidence about the synthesized task ABI; it neither attributes the earlier
-  `records` failure nor proves that any one general layout choice caused it.
-  Keep the deferred general representation study separate, and close this item
-  only when the relevant costs and chosen tradeoffs have discriminating evidence.
-- **Descendant references retain precision opportunities.** A write through a
-  widened range can discard its previously established length facts, and
-  independent cursors within one descendant cover cannot use suffix spelling
-  alone to establish separation. The
-  [cursor investigation](../research/investigations/wildcard-path/DESIGN.md)
-  records these limits and the current checking-cost qualification. Preserving
-  unaffected extent facts or proving a relation between independently selected
-  targets could reduce repeated bound proofs and admit more range-edit programs;
-  the benefit and a sound representation remain unverified. Defer this work
-  because the maintained list/tree/cursor program needs neither extension.
-  Reopen when a concrete program needs that precision. Validate the proposed
-  gain with positive editing cases, ancestor/window/stale-capture negative
-  controls and the investigation's checking-cost criterion; do not equate
-  targets merely because their covers agree. Close this item when the gain is
-  implemented and qualified or the measured tradeoff supports declining it.
-- **Write kills do not submit their own OWN-7 separations.** An ENT-5 write
-  kill decides an index or range step against a fact's support only from the
-  separations already retained on the current edge, which are the EFF-5
-  pairwise and REF-2 preservation questions the structural checker submitted,
-  plus literal index inequality. OWN-7 makes two ranges disjoint whenever the
-  current ProofContext proves one of its four orderings, so a length fact over
-  `deref(head)[0_u64]` with `head = &rows[0_u64..1_u64]` should survive a write
-  through `rows[1_u64..3_u64]`, bound or formed at the call; today it dies and
-  the dependent subscript is rejected, and binding offsets proved distinct
-  only by a guard behave the same way. The effect is over-rejection, never an
-  unsound acceptance. Submitting one bounded question per written/support step
-  pair at each kill would admit these programs at a proof cost per fact per
-  write; a literal-endpoint range shortcut beside the literal index one would
-  cover constant ranges cheaply. Validate with the bound and inline spellings,
-  stale-capture and joined-origin negative controls, and a measured
-  checking-cost comparison. Reopen when a real program needs a fact to survive
-  a provably disjoint write; close when kill-time separation is implemented and
-  qualified or declined on measured cost.
-- **Consumers rebuild call-argument referents from expression shape.** The
-  structural checker resolves every actual to its REF-1 places (`actual_paths`,
-  including a formation's range step) and uses them for EFF-5, REF-2 and the
-  EFF-2 projection. The entailment flow (`argument_referents`) and the
-  permission judgments (`argument_places`, PAR-2's range recording) instead
-  rebuild those places from the checked argument expression. A missing
-  expression arm there is silent: inline range actuals once produced no ENT-5
-  kill, and so admitted out-of-bounds reads. Retaining the checker's resolved
-  paths per argument on the checked call and reading them in every consumer
-  would remove the duplicate reconstruction and this defect class, at the cost
-  of a checked-model field and its loop-carried and joined-origin handling,
-  which the flow must still read point-currently. Validate that each consumer
-  reaches its current verdicts on the full corpus with identical kill,
-  permission and ledger results, and that a deliberately removed checker arm
-  fails in one place. Reopen when another argument form is added or another
-  referent omission is found; close when the consumers read one inventory or
-  that inventory is shown unsuitable for point-current flow facts.
-- **Pair-scoped parallel proofs need scaling and coverage work.** The current
-  PAR-1 planner constructs questions for every ordered source pair in a segment
-  and retains range separation only for that pair's first-statement state;
-  repeated visits meet with logical AND. A segment of n members has n(n-1)/2
-  pairs, but that logical requirement does not mandate quadratic repeated
-  proof work. General index mapping through the first member's `ensures` is
-  still unavailable; missing evidence keeps sequential lowering. For windows
-  this means every [WIN-2] part-relative separation is refused when a member
-  before the later one writes that window's `len`, which also refuses a read
-  of an old slot after an append; the mapping would recover it. A cheaper
-  recovery needs no mapping: a place reached through a reference live at the
-  first statement's entry is interpreted in that state, and the reference's
-  validity gives `i < len` there, so WIN-2's single-state separation still
-  holds. That recovers the one pair this rule newly denies in the maintained
-  programs, `deque_push_back` against `let first_after_append =
-  deref(original_first)` at `tests/programs/containers/deque-program.wf:113`.
-  The ledger's denial should also name the length change as its cause; it
-  currently reports only the overlapping write and read. Investigate
-  indexing and reuse without losing statement identity, captured endpoints,
-  flow context or all-pairs composition. Close this item when larger segments
-  have measured costs and the intended proof coverage, retaining guarded,
-  nonadjacent and stale-capture negative controls.
+- **A `propagate` statement cannot be a [PAR-1] window member.** The rule
+  admits only `let`-bound and scrutinee calls, so `let a = f(); let b =
+  propagate g();` never overlaps. Allowing a `propagate` second member would
+  need the lowering to join the hand-out before the `Err` return; a future
+  investigation, taken up when a real program shows the gap.
 
-- **Large entering proof contexts still have substantial checking cost.**
-  In the [post-x1 comparison](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#post-x1-selection),
-  256 independent inequality pairs with 256 uses still take a median 2.337 s;
-  the same context with only three uses takes 0.264 s. Reusing the ordered
-  affine index within a certificate removes repeated premise preparation,
-  but complete matrix/index construction and long-target AUTO traversal
-  remain. This is not certificate-length cost alone: a fixed three-pair
-  context admits all 4096 uses in 377 ms. The 512-pair context was accepted
-  in exploratory runs; these results establish neither linear total cost
-  nor a universal cost for the full use ceiling.
-  Preserve the complete [ENT-6]/[PRF-1] rules when investigating that cost.
-- **Ordinary-fallback views still copy a fact state per materialization.**
-  The [current comparison](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#post-x1-selection)
-  checks `tests/programs/fixed_run_library.wf` in 134 ms and
-  `tests/programs/wfgrep.wf` in 834 ms. In `materialize_closure_at` in
-  [`semantic/entailment/state.rs`](../compiler/src/semantic/entailment/state.rs):
-  whenever a selected proof depends on a postcondition call, it clones the
-  state, removes the call-dependent candidates and closes that view again.
-  A [query-only ordinary projection](../research/investigations/proof-certificate-architecture/CHECKING-COST.md#ordinary-fallback-attribution-and-candidate)
-  passed the transition checks but improved fixed-run only 1.03x and left
-  wfgrep unchanged, so it was not retained. Revisit the representation when
-  a current workload attributes a substantial share to this path. Kill-time
-  edge insertion and derivation interning for recreated cells also remain.
+- **Alias facts for worker-run loop chunks.** A synthesized loop-split chunk
+  or splitter has no source signature, so its range and reference captures
+  carry no `noalias`. The sequential world inlines the chunk into its source
+  function, which has the facts; a chunk run as a worker lane does not, so a
+  vectorizable chunk loop may keep a runtime overlap check. The facts would
+  need their own derivation from PAR-2 independence and the enclosing call's
+  EFF-5 result, since sibling chunks write other parts of the same captured
+  range concurrently. Impact and whether any current kernel pays such a check
+  are unmeasured. Validate by inspecting the optimized worker chunks of the
+  formal compute kernels for `vector.memcheck` and, where one appears,
+  comparing chunk time with and without a hand-added fact. Deferred because
+  the range-reference change covers source signatures only; reopen when a
+  measured parallel kernel shows the check.
+
+- **Compute-bench private adapters still pass aggregate ranges.**
+  `research/experiments/compute-bench/array_reference_host.ll`,
+  `first_index_host.ll`, `dag_fanin_host.ll` and the first-index observation
+  rewrite in that Makefile spell a range argument as one `{ ptr, i64 }`
+  aggregate. The compiler now passes it as pointer and count; the machine code
+  is identical on the admitted targets, but LLVM text bound into a WF module
+  must use the split form, and the first-index rewrite no longer matches the
+  emitted head and refuses. These dated research inputs were left unchanged;
+  update them before running those experiments with a compiler that includes
+  the split, keeping an older baseline arm on its own adapter.
+
+- **A discarded affine result's call never joins a hand-out group.** Its
+  expression statement runs the result's release immediately after the call,
+  reading the value between a hand-out and its join, so
+  `compiler/src/lowering/builder.rs` leaves that call unrecorded and it ends
+  any overlap group through it, although PAR-1 permits it exactly as the
+  let-bound call. It could instead be a group's last member, as an addressed
+  binding already may. No measured
+  program discards an affine result beside an independent call, so the
+  benefit is unverified. Reopen when such a program appears; validate by
+  emitting the call as the join site with its release after the join and
+  comparing published bytes at several worker counts with the sequential
+  lowering.
+
+## Platforms and host interfaces
+
+- **Upstream LLVM on Darwin does not yet support the selected stack-probe
+  spelling.** The [Deque comparison](../research/experiments/container-representation/deque-library/RESULTS.md)
+  records LLVM 22.1.8 rejecting native construction of the unchanged baseline
+  with `Unsupported stack probing method`; the emitted
+  `"probe-stack"="__chkstk_darwin"` remains present. Parsing and optimization
+  succeed, and the native builder's Apple Clang path works, so this does not
+  establish a failure of the new address fact. Before offering upstream LLVM
+  as a native Darwin consumer, determine the supported probe form and link
+  requirements and validate large-frame and recursive exhaustion through the
+  existing floor tests. Disabling probes is not an acceptable workaround.
+  Defer this separate toolchain extension while the current native path is
+  supported; reopen when another native Darwin consumer is required.
+
 - **Connection-level concurrency is not supplied by ordinary source order.**
   A loop that accepts and serves connections in source order
   completes the current handler before entering the next, so a handler waiting
@@ -747,68 +830,13 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   record that noncompletion without a throughput result. No replacement
   interface has been chosen. `WF_STACKS` is inert: the runtime has no
   switchable-stack pool for it to size, so it is neither read nor validated.
-- **Acyclic generic instantiation has no established practical bound.**
-  D7's unchanged-argument cycle rule establishes termination while acyclic
-  fan-out may still require exponentially many instances relative to written
-  source. The owner deferred this question in D7, whereas the current language
-  design rules out exponential checking work. The
-  [behavior investigation](../research/investigations/containers-and-resources/BEHAVIOR.md#shared-semantic-boundary-and-exact-deltas)
-  records the accepted 1343-byte / 2047-instance witness, same-instance controls,
-  stage measurements and unresolved correspondence finding. No budget, timeout, new
-  source refusal, or measured asymptotic guarantee has been selected.
-  Reopen when generic container/behavior composition makes instance count or
-  checking cost material. Recheck the distinct-instance and repeated-instance
-  controls on that composition, separating semantic checking, lowering and
-  emitted-code size; faster duplicate lookup alone cannot close the bound.
-  The broader admission or sharing question remains deferred to an explicit
-  choice supported by those controls and a complexity argument.
+
 - **At most eight peers may wait at once on a host without a native ring.**
   On Darwin, and under `WF_IO_NO_NATIVE_RING`, a peer wait beyond the eighth
   concurrent one has no helper and queues with no timeout. The readiness-
   driven adapter that would lift this, one poll over every queued descriptor
   from inside the park, was never built.
-- **A directory named through a symbolic link cannot be opened.**
-  `open_directory` opens one component without following a link, which the
-  walk relies on to leave enumerated links alone, and the prelude has no
-  directory open over a `RelativePath`; `open_read` follows links but opens
-  only regular files. So `wfgrep PATTERN ROOT` reports a root that is, or
-  passes through, a link to a directory as `cannot read`, where `grep -r`
-  follows a link named on its command line. Lifting it needs a prelude
-  addition, a directory open over a `RelativePath` resolved as `open_read`
-  resolves it, so it is a specification change deferred from the wfgrep root
-  fix. Validate with a wfgrep case whose root and whose middle root component
-  are links while an enumerated link stays unfollowed. Reopen when a program
-  must walk a user-named linked directory.
-- **`tests/programs/dir_walk.wf` truncates silently past its fixture.** It
-  collects into constant-capacity frame storage and stops recording after 64
-  entries in the whole walk, stops descending at depth 8, and clips a path at
-  126 bytes, all while exiting 0, although its doc says it records every
-  entry. Its one corpus case walks a three-level tree, so no check depends on
-  the bounds. Either report each bound or collect through growable storage as
-  `wfgrep.wf` now does; reopen when the program is pointed at a larger tree or
-  its constant-capacity form stops being the point of the case.
-- **A `propagate` statement cannot be a [PAR-1] window member.** The rule
-  admits only `let`-bound and scrutinee calls, so `let a = f(); let b =
-  propagate g();` never overlaps. Allowing a `propagate` second member would
-  need the lowering to join the hand-out before the `Err` return; a future
-  investigation, taken up when a real program shows the gap.
-- **Acceptance and check removal are trusted to the whole checker.** Every
-  lowering authorization (a subscript without a check, an exact operation, a
-  discharged call goal) is issued by the same entailment engine that decides
-  acceptance, so the trusted base for "no unproved partial operation" is the
-  full front end plus entailment. The
-  [certificate packet](../research/investigations/proof-certificate-architecture/PACKET.md)
-  (v0.26, before the x1 ownership redesign) selects a staged route: the engine
-  records a positive derivation for every discharged obligation, and a small
-  verifier over a trusted proof-flow extraction checks them and jointly issues
-  the lowering capability, while rejections stay with the engine because a
-  missing certificate does not prove non-derivability. The compiler keeps a
-  derivation ledger; no verifier, extraction boundary or joint issuer exists.
-  Re-derive the packet's Envelope B against the current specification, then
-  prototype the verifier on `tests/programs/` and measure its size, proof size
-  and added compile time; a corrupted or missing certificate must never
-  authorize lowering. Close when a verifier jointly issues the capability, or
-  when the packet's stop gates record why the unified engine remains.
+
 - **There is no source-level foreign-function boundary.** C enters only as a
   trusted linked definition of an ordinary declaration [PRE-1, SCOPE-3], which
   the checker cannot inspect, and a C program cannot call Whitefoot code
@@ -831,6 +859,93 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   explicit override, for example an environment variable, without changing
   which clang CI uses. Close when the owner decides for or against the
   override and, if accepted, its implementation lands.
+- **One rejection per compilation.** The pipeline stops at its first
+  violation, so an agent with several independent defects — two unproved
+  subscripts in different functions, say — meets them one compile at a time.
+  [DIAG-1] already leaves the order of violations at distinct nodes open, and
+  the [diagnostic record](../research/investigations/readable-diagnostics/DESIGN.md#the-record)
+  and its one-object-per-line JSON form can carry several. Reporting more than
+  one needs the semantic checker to continue past a `CheckStop` without
+  letting a later judgment consume an earlier failed premise, and stays
+  deterministic. Unverified benefit: validate with a writer trial counting
+  repair rounds on programs with two or more independent defects; reopen when
+  such a trial or an agent harness shows the extra rounds dominate.
+  One consumer is already promised: [ERR-2] says variant addition "surfaces
+  site-enumerated edit lists", yet adding a variant to an enum matched in two
+  functions reports only the first non-exhaustive `match` per run. Either
+  every ERR-2 site of one enum is listed in a run, or ERR-2's sentence, which
+  no other rule defines, is amended to what the toolchain provides.
+- **A float constant in a rendered goal prints its internal form.** An FN-8
+  `instantiated_goal` over a float constant renders it as
+  `Float { ty: F64, bits: 4607182418800017408 }` instead of its source
+  spelling `1.0_f64` (pinned in `driver::pinned_sentences` beside the integer
+  goals). The goal renderer should print the constant's canonical FORM-5
+  spelling, as it does for integers; update that pin with the fix.
+- **Validate the default diagnostic rendering.** Text by default is
+  provisional. The [readable-diagnostics investigation](../research/investigations/readable-diagnostics/DESIGN.md#default-format-text-with-json-on-request)
+  selected it on reading cost for an agent (the lean OP-4 and FN-8 records
+  measured there are 13-17% smaller than their JSON objects) and on the
+  familiar summary-line shape, not on a measured repair loop. Run a writer
+  trial over a fixed set of rejections covering lexical, grammar,
+  canonical-form and proof families, comparing text and JSON defaults and a
+  caret marker against a quoted span, with compile rounds to a fix as the
+  criterion. Reopen the default, and the marker form, when that trial or an
+  agent harness shows a difference.
+- **Structured fields for stops that are not source rejections: declined.**
+  Resource, invocation, internal-invariant, target-layout and backend stops
+  print their stage value's `Debug` text as one `payload` field. They have no
+  writer repair, and no consumer reads their fields separately. Reopen when a
+  harness or experiment acts on one of them, for example a resource ceiling a
+  writer can raise.
+- **Text lists are ambiguous when an item contains `, `.** A diagnostic list
+  such as `relations: [a, b]` prints items unquoted, so an item holding `, `
+  cannot be split exactly from text. The JSON form carries each item as its
+  own string and covers exact parsing; reopen only if an agent misreads such a
+  list in practice.
+
+- **A directory named through a symbolic link cannot be opened.**
+  `open_directory` opens one component without following a link, which the
+  walk relies on to leave enumerated links alone, and the prelude has no
+  directory open over a `RelativePath`; `open_read` follows links but opens
+  only regular files. So `wfgrep PATTERN ROOT` reports a root that is, or
+  passes through, a link to a directory as `cannot read`, where `grep -r`
+  follows a link named on its command line. Lifting it needs a prelude
+  addition, a directory open over a `RelativePath` resolved as `open_read`
+  resolves it, so it is a specification change deferred from the wfgrep root
+  fix. Validate with a wfgrep case whose root and whose middle root component
+  are links while an enumerated link stays unfollowed. Reopen when a program
+  must walk a user-named linked directory.
+
+- **`tests/programs/dir_walk.wf` truncates silently past its fixture.** It
+  collects into constant-capacity frame storage and stops recording after 64
+  entries in the whole walk, stops descending at depth 8, and clips a path at
+  126 bytes, all while exiting 0, although its doc says it records every
+  entry. Its one corpus case walks a three-level tree, so no check depends on
+  the bounds. Either report each bound or collect through growable storage as
+  `wfgrep.wf` now does; reopen when the program is pointed at a larger tree or
+  its constant-capacity form stops being the point of the case.
+
+## Code structure
+
+- **The entailment flow module has outgrown one reader.**
+  `compiler/src/semantic/entailment/flow.rs` has 17,271 lines, 15,040 of them
+  in one `impl Analyzer` block; it grew from 8,670 lines on 2026-09-01 over 154
+  commits. `compiler/src/semantic/entailment/state.rs` (7,755 lines, including
+  a 1,729-line inline test module) and the tests in
+  `compiler/src/semantic/tests/entailment.rs` (10,996 lines, 155 tests) grew
+  with it. An agent reads such a file only in slices, and every
+  responsibility's changes land in the same file. The impl already marks eight
+  sections: binding prepass, place resolution and support, terms and relations,
+  kill collection, obligations, statement walk, loop kill summary and canonical
+  rendering. `flow/` already holds `conversions.rs`, `results.rs` and
+  `sources.rs`, split out the same way, so moving each section's methods into
+  its own `flow/` file is a mechanical first step. `state.rs` can move its test
+  module to its own file and its dense-closure algorithms apart from the fact
+  state and ledger types; the tests can group by the section they exercise.
+  Validate that each move changes no behavior: identical `make check` results
+  and a diff of moved items and module declarations only. Split when no open
+  branch has large edits in these files, or one section at a time; close when
+  every file named here is under 4,000 lines.
 
 ## Open language questions
 
@@ -1161,29 +1276,6 @@ condition under which it is taken up.
   alias metadata and `llvm.loop.parallel_accesses` (the emitter has no
   metadata table). Build the metadata subsystem as its own step with a
   before/after benchmark.
-- **Alias facts for worker-run loop chunks.** A synthesized loop-split chunk
-  or splitter has no source signature, so its range and reference captures
-  carry no `noalias`. The sequential world inlines the chunk into its source
-  function, which has the facts; a chunk run as a worker lane does not, so a
-  vectorizable chunk loop may keep a runtime overlap check. The facts would
-  need their own derivation from PAR-2 independence and the enclosing call's
-  EFF-5 result, since sibling chunks write other parts of the same captured
-  range concurrently. Impact and whether any current kernel pays such a check
-  are unmeasured. Validate by inspecting the optimized worker chunks of the
-  formal compute kernels for `vector.memcheck` and, where one appears,
-  comparing chunk time with and without a hand-added fact. Deferred because
-  the range-reference change covers source signatures only; reopen when a
-  measured parallel kernel shows the check.
-- **Compute-bench private adapters still pass aggregate ranges.**
-  `research/experiments/compute-bench/array_reference_host.ll`,
-  `first_index_host.ll`, `dag_fanin_host.ll` and the first-index observation
-  rewrite in that Makefile spell a range argument as one `{ ptr, i64 }`
-  aggregate. The compiler now passes it as pointer and count; the machine code
-  is identical on the admitted targets, but LLVM text bound into a WF module
-  must use the split form, and the first-index rewrite no longer matches the
-  emitted head and refuses. These dated research inputs were left unchanged;
-  update them before running those experiments with a compiler that includes
-  the split, keeping an older baseline arm on its own adapter.
 - **Subscripted integer places as terms.** Today a place with subscripts is
   a term only when its last step is a readonly field. The kill machinery
   (offset support, overlapping element writes) already serves measure terms
