@@ -375,12 +375,16 @@ rarely insert at the same place.
   could carry some of these. Either one adds per-target lowering to emitted
   code and to linked definitions. A third floating leaf on x86-64 cannot join
   them: it returns through the x87 stack, which is not bit-exact for signaling
-  NaNs. No maintained program currently shows a surviving call with such a
-  result, and the benefit is unmeasured. Reopen when a maintained program
-  keeps such a call on a measured path. Validate with unchanged source and
-  both lowerings compiled. Require the destination round trip to disappear
-  without a new demotion, a lost float bit pattern, or a regression in the
-  program's timing, on each target that changes.
+  NaNs. Besides the launcher's `ExitStatus`, the maintained programs keep
+  eight surviving calls with four-word results, in `prefix_expression.wf`,
+  `owned_link_cursors.wf`, `option_slots.wf` and `containers/ordered.wf`,
+  which an AArch64 budget would return in registers
+  ([corpus](../research/investigations/result-registers/DESIGN.md#corpus)).
+  None is on a measured path, and the benefit is unmeasured. Reopen when a
+  maintained program keeps such a call on a measured path. Validate with
+  unchanged source and both lowerings compiled. Require the destination
+  round trip to disappear without a new demotion, a lost float bit pattern,
+  or a regression in the program's timing, on each target that changes.
 
 - **The hash-map `find` stays out of line because its probe loop is
   unrolled first.** In `tests/programs/containers/hashmap.wf`, LLVM fully

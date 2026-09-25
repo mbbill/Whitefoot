@@ -350,9 +350,12 @@ local slots; the other destinations are not local slots:
 No destination call of at most 16 bytes survives. Of the sized destinations
 that remain, 47 are the launcher's 32-byte `ExitStatus` calls, 37 to `wf_main`
 (three of them in the bundles) and 10 to `wf_exercise` where LLVM inlined
-`main` into the launcher. The other 29 carry
-results of 32 to 2,392 bytes. `.text` shrank by 1.0% across the single-file
-programs and by 1.4% across the bundles. `hashmap.wf` shrank by 336 bytes
+`main` into the launcher. The other 29 carry results of 32 to 2,392 bytes.
+Eight of them are four-word results, which AArch64's budget would return in
+registers: four `{ i32, { ptr, i64 }, i1 }` results of `parse_expression` in
+`prefix_expression.wf`, and four results with four words in `option_slots.wf`
+(two), `owned_link_cursors.wf` and `containers/ordered.wf`. `.text` shrank by
+1.0% across the single-file programs and by 1.4% across the bundles. `hashmap.wf` shrank by 336 bytes
 (8.3%). Only `boxed-helper-gap.wf` (+16 bytes), `fixed_run_library.wf`
 (+256 bytes) and `wfgrep.wf` (+48 bytes) grew.
 
@@ -610,5 +613,6 @@ The register bound is selected, with the entry-over-body lowering:
   No paired performance workload was added.
 - Results that exceed the budget still pass through memory: every opaque
   value, including `ExitStatus`, and every result with four or more integer
-  words. Packing small leaves into shared registers would carry more of them,
-  but no maintained program showed a surviving call that needs it.
+  words. Packing small leaves into shared registers, or AArch64's larger
+  budget, would carry some of them. The corpus keeps eight such calls with
+  four-word results besides the launcher's, none on a measured path.
