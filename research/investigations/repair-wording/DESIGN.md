@@ -689,7 +689,7 @@ specification's word; it is optional.
 
 ## Implementation
 
-Option (b) landed as specification v0.71 with the minimum repair set, the
+Option (b) landed as specification v0.72 with the minimum repair set, the
 MSR-4 goal rules (FN-9 gains a repair) and OWN-8's rejections. It departs
 from section 4 where carrying it out showed a gap:
 
@@ -698,7 +698,7 @@ from section 4 where carrying it out showed a gap:
   routes of a goal over computed values: an invariant's `use` steps or a
   callee's `ensures` succeed only when facts exist that the checker cannot
   guess, so an unconditional requirement would forbid the routes a writer
-  needs most. v0.71 reads "Carried out as it directs, each alternative lets
+  needs most. v0.72 reads "Carried out as it directs, each alternative lets
   the rejected judgment succeed at that construct in a state that is not
   contradictory; an alternative that does so only when the program meets a
   condition the checker has neither established nor refuted states that
@@ -723,9 +723,18 @@ from section 4 where carrying it out showed a gap:
   alone, an offset that is itself an element is bound too, as the retired
   MSR-4 sentence said.
 - **A callee's `ensures`** is offered only when a term of the goal, or FN-9's
-  returned value, is a value a user call returned, directly or through local
-  computation; with no call result among them the route can never be carried
-  out (also found in the completion review).
+  returned value, is a value a call to a function outside the prelude
+  returned, directly or through local computation; with no such result among
+  them the route can never be carried out (also found in the completion
+  review), and a prelude function's contract is not the writer's to change.
+- **Subscripts a requirement forms.** Main's v0.71 (#118) makes a subscript
+  below a readonly field or a measure a term in a clause, owing OP-4 at body
+  entry in the state the requirements written before its clause build. Such
+  a rejection's repair adds a requirement ahead of the one that forms the
+  place and offers no guard, since a clause evaluates nothing.
+- **A refuted subscript** offers a longer storage only for a constant offset:
+  an offset such as `r.len` is out of range at every length, as main's
+  `ent2-neg-requirement-names-append-slot-element` shows.
 - **Guards through a reference.** A guard is executable code: `if hi <=
   deref(values).len` in a `pure` function is a read EFF-2 rejects. The pinned
   pairs found this; a guard over a goal that reads through a reference

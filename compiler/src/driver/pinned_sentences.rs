@@ -1283,7 +1283,7 @@ fn every_diagnostic_sentence_is_pinned_by_a_probe() {
 /// repair directs, the rejected judgment succeeds where its construct runs,
 /// in a state that is not contradictory; and nothing it writes is text a rule
 /// rejects. A sentence alone can drift from both, as the printed repairs did
-/// before v0.71. A pair makes the repair checkable: each repaired source must
+/// before v0.72. A pair makes the repair checkable: each repaired source must
 /// be accepted, and no judgment in a function it declares may succeed only
 /// because the state it is asked in is contradictory. A guard around a
 /// refuted goal, for one, compiles and is caught by the second condition.
@@ -2227,6 +2227,31 @@ fn main() -> status: ExitStatus pure {
         ],
     },
     RepairPair {
+        // An offset that grows with the storage, such as its own length, is
+        // out of range at every length, so no longer storage is offered: the
+        // statements that fix the offset are what the repair changes.
+        name: "bounds-refuted-at-an-offset-that-is-no-constant.wf",
+        rejected: br#"fn main() -> status: ExitStatus pure {
+  let values = array_filled::<u8, 4>(value: 0_u8);
+  let k = values.len;
+  let v = values[k];
+  return exit_status(code: v);
+}
+"#,
+        rule: "OP-4",
+        sentences: &[
+            "\n  disposition: Refuted\n",
+            "\n  mechanical_fix: `k < values.len` is false where this access executes: index within the storage, or change the statements or requirements that fix the index\n",
+        ],
+        repaired: &[br#"fn main() -> status: ExitStatus pure {
+  let values = array_filled::<u8, 4>(value: 0_u8);
+  let k = values.len - 1_u64;
+  let v = values[k];
+  return exit_status(code: v);
+}
+"#],
+    },
+    RepairPair {
         name: "bounds-over-parameters.wf",
         rejected: br#"fn get(b: &[u8], i: u64) -> result: u8 reads(b) {
   return deref(b)[i];
@@ -2329,6 +2354,72 @@ fn main() -> status: ExitStatus pure {
     return deref(lens)[k];
   }
   return 0_u8;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#],
+    },
+    RepairPair {
+        // [ENT-2, FN-8] a requirement forms its places at body entry, in the
+        // state the requirements written before it build, and evaluates
+        // nothing: the bound comes from an earlier requirement, and no guard
+        // can skip a clause.
+        name: "bounds-of-a-place-a-requirement-forms.wf",
+        rejected: br#"fn pick(rows: &Slots<Slots<u8, 8>, 4>, i: u64, k: u64) -> value: u8 reads(rows) contract {
+  requires k < deref(rows)[i].len;
+} {
+  return deref(rows)[i][k];
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "OP-4",
+        sentences: &[
+            "\n  residual: i < deref(rows).len\n  disposition: Unproved\n",
+            "\n  mechanical_fix: add `requires i < deref(rows).len;` to the `contract` of `pick` ahead of the requirement that forms this place, which each caller then establishes\n",
+        ],
+        repaired: &[br#"fn pick(rows: &Slots<Slots<u8, 8>, 4>, i: u64, k: u64) -> value: u8 reads(rows) contract {
+  requires i < deref(rows).len;
+  requires k < deref(rows)[i].len;
+} {
+  return deref(rows)[i][k];
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#],
+    },
+    RepairPair {
+        // The earlier requirement makes `i` the length, so the place the
+        // second requirement forms is refuted there: the requirements before
+        // it are what fix the index.
+        name: "bounds-refuted-in-a-place-a-requirement-forms.wf",
+        rejected: br#"fn pick(rows: &Slots<Slots<u8, 8>, 4>, i: u64, k: u64) -> value: u8 reads(rows) contract {
+  requires i == deref(rows).len;
+  requires k < deref(rows)[i].len;
+} {
+  return deref(rows)[i][k];
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "OP-4",
+        sentences: &[
+            "\n  residual: i < deref(rows).len\n  disposition: Refuted\n",
+            "\n  mechanical_fix: `i < deref(rows).len` is false where this place is formed: index within the storage, or change the requirements before this one that fix the index\n",
+        ],
+        repaired: &[br#"fn pick(rows: &Slots<Slots<u8, 8>, 4>, i: u64, k: u64) -> value: u8 reads(rows) contract {
+  requires i < deref(rows).len;
+  requires k < deref(rows)[i].len;
+} {
+  return deref(rows)[i][k];
 }
 
 fn main() -> status: ExitStatus pure {

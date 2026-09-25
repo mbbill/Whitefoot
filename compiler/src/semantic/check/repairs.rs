@@ -22,7 +22,7 @@
 //! The sentences live here, in one place, so that wording can follow evidence
 //! from agents without touching the judgments that select them.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 use super::super::entailment::TermRead;
 use super::super::goal::{
@@ -30,7 +30,7 @@ use super::super::goal::{
 };
 use super::super::model::{
     BindingId, CheckedConversionMode, CheckedExpression, CheckedFunction, CheckedIntegerOperation,
-    CheckedStatement, expression_children,
+    CheckedStatement, FunctionId, expression_children,
 };
 use super::super::permission::visit_read_bindings;
 use crate::NodePath;
@@ -81,8 +81,9 @@ impl GoalTerms {
         goal: &GoalExpression,
         function: &CheckedFunction,
         written: &[BindingId],
+        editable: &HashSet<FunctionId>,
     ) -> GoalReads {
-        let mut reads = Reads::new(function, written);
+        let mut reads = Reads::new(function, written, editable);
         reads.goal(goal);
         reads.finish()
     }
@@ -92,8 +93,9 @@ impl GoalTerms {
         terms: &[TermRead],
         function: &CheckedFunction,
         written: &[BindingId],
+        editable: &HashSet<FunctionId>,
     ) -> GoalReads {
-        let mut reads = Reads::new(function, written);
+        let mut reads = Reads::new(function, written, editable);
         for term in terms {
             match term {
                 TermRead::Constant => {}
@@ -109,6 +111,7 @@ impl GoalTerms {
 struct Reads<'a> {
     function: &'a CheckedFunction,
     written: &'a [BindingId],
+    editable: &'a HashSet<FunctionId>,
     parameter: bool,
     computed: bool,
     unnamed: bool,
@@ -121,10 +124,15 @@ struct Reads<'a> {
 }
 
 impl<'a> Reads<'a> {
-    const fn new(function: &'a CheckedFunction, written: &'a [BindingId]) -> Self {
+    const fn new(
+        function: &'a CheckedFunction,
+        written: &'a [BindingId],
+        editable: &'a HashSet<FunctionId>,
+    ) -> Self {
         Self {
             function,
             written,
+            editable,
             parameter: false,
             computed: false,
             unnamed: false,
@@ -252,7 +260,7 @@ impl<'a> Reads<'a> {
             } => GoalTerms::Parameters,
             _ => GoalTerms::Computed,
         };
-        let results = call_results(self.function);
+        let results = call_results(self.function, self.editable);
         GoalReads {
             terms,
             referenced: self.referenced,
@@ -264,14 +272,15 @@ impl<'a> Reads<'a> {
     }
 }
 
-/// The bindings of `function` whose value a user call returned, directly or
-/// through local computation from such a value: the values a callee's
-/// `ensures` can bound [FN-9]. The closure ignores control flow, which only
-/// widens it.
-fn call_results(function: &CheckedFunction) -> BTreeSet<BindingId> {
+/// The bindings of `function` whose value a call to one of the `editable`
+/// functions returned, directly or through local computation from such a
+/// value: the values a callee's `ensures` the writer can add can bound
+/// [FN-9]. A prelude function's contract is not the writer's to change. The
+/// closure ignores control flow, which only widens it.
+fn call_results(function: &CheckedFunction, editable: &HashSet<FunctionId>) -> BTreeSet<BindingId> {
     let mut definitions = Vec::new();
     if let Some(body) = &function.body {
-        collect_definitions(body, None, &mut definitions);
+        collect_definitions(body, None, editable, &mut definitions);
     }
     let mut results: BTreeSet<BindingId> = definitions
         .iter()
@@ -300,7 +309,11 @@ struct Definition {
 }
 
 impl Definition {
-    fn of(binding: BindingId, values: &[&CheckedExpression]) -> Self {
+    fn of(
+        binding: BindingId,
+        values: &[&CheckedExpression],
+        editable: &HashSet<FunctionId>,
+    ) -> Self {
         let mut reads = Vec::new();
         for value in values {
             visit_read_bindings(value, &mut |read| reads.push(read));
@@ -308,15 +321,18 @@ impl Definition {
         Self {
             binding,
             reads,
-            call: values.iter().any(|value| calls(value)),
+            call: values.iter().any(|value| calls(value, editable)),
         }
     }
 }
 
-/// Whether an expression tree contains a user call.
-fn calls(expression: &CheckedExpression) -> bool {
-    matches!(expression, CheckedExpression::UserCall { .. })
-        || expression_children(expression).into_iter().any(calls)
+/// Whether an expression tree contains a call to one of the `editable`
+/// functions.
+fn calls(expression: &CheckedExpression, editable: &HashSet<FunctionId>) -> bool {
+    matches!(expression, CheckedExpression::UserCall { function, .. } if editable.contains(function))
+        || expression_children(expression)
+            .into_iter()
+            .any(|child| calls(child, editable))
 }
 
 /// Every value the statements give a binding, `give` naming the binding a
@@ -324,6 +340,7 @@ fn calls(expression: &CheckedExpression) -> bool {
 fn collect_definitions(
     statements: &[CheckedStatement],
     give: Option<BindingId>,
+    editable: &HashSet<FunctionId>,
     definitions: &mut Vec<Definition>,
 ) {
     for statement in statements {
@@ -333,20 +350,20 @@ fn collect_definitions(
                 binding,
                 scrutinee: value,
                 ..
-            } => definitions.push(Definition::of(*binding, &[value])),
+            } => definitions.push(Definition::of(*binding, &[value], editable)),
             CheckedStatement::DestructuringLet {
                 bindings, value, ..
             } => {
                 for (binding, _, _) in bindings {
-                    definitions.push(Definition::of(*binding, &[value]));
+                    definitions.push(Definition::of(*binding, &[value], editable));
                 }
             }
             CheckedStatement::Set { target, value, .. } => {
-                definitions.push(Definition::of(target.binding(), &[value]));
+                definitions.push(Definition::of(target.binding(), &[value], editable));
             }
             CheckedStatement::Give { value, .. } => {
                 if let Some(binding) = give {
-                    definitions.push(Definition::of(binding, &[value]));
+                    definitions.push(Definition::of(binding, &[value], editable));
                 }
             }
             CheckedStatement::Match {
@@ -354,9 +371,9 @@ fn collect_definitions(
             } => {
                 for arm in arms {
                     for binder in &arm.binders {
-                        definitions.push(Definition::of(binder.binding, &[scrutinee]));
+                        definitions.push(Definition::of(binder.binding, &[scrutinee], editable));
                     }
-                    collect_definitions(&arm.body, give, definitions);
+                    collect_definitions(&arm.body, give, editable, definitions);
                 }
             }
             CheckedStatement::ValueMatchLet {
@@ -367,12 +384,14 @@ fn collect_definitions(
             } => {
                 for arm in arms {
                     for binder in &arm.binders {
-                        definitions.push(Definition::of(binder.binding, &[scrutinee]));
+                        definitions.push(Definition::of(binder.binding, &[scrutinee], editable));
                     }
-                    collect_definitions(&arm.body, Some(*binding), definitions);
+                    collect_definitions(&arm.body, Some(*binding), editable, definitions);
                 }
             }
-            CheckedStatement::Loop { body, .. } => collect_definitions(body, give, definitions),
+            CheckedStatement::Loop { body, .. } => {
+                collect_definitions(body, give, editable, definitions);
+            }
             CheckedStatement::CountedRange {
                 binder,
                 lower,
@@ -380,8 +399,8 @@ fn collect_definitions(
                 body,
                 ..
             } => {
-                definitions.push(Definition::of(*binder, &[lower, upper]));
-                collect_definitions(body, give, definitions);
+                definitions.push(Definition::of(*binder, &[lower, upper], editable));
+                collect_definitions(body, give, editable, definitions);
             }
             CheckedStatement::Evaluate { .. }
             | CheckedStatement::DropExpression { .. }
@@ -393,9 +412,14 @@ fn collect_definitions(
 }
 
 /// Whether the value the `return` at `statement` delivers is, or reads, a
-/// value a user call returned, which the callee's `ensures` can bound [FN-9].
-pub(super) fn returns_call_result(function: &CheckedFunction, statement: &NodePath) -> bool {
-    let results = call_results(function);
+/// value a call to one of the `editable` functions returned, which the
+/// callee's `ensures` can bound [FN-9].
+pub(super) fn returns_call_result(
+    function: &CheckedFunction,
+    statement: &NodePath,
+    editable: &HashSet<FunctionId>,
+) -> bool {
+    let results = call_results(function, editable);
     function
         .body
         .as_deref()
@@ -403,7 +427,7 @@ pub(super) fn returns_call_result(function: &CheckedFunction, statement: &NodePa
         .is_some_and(|value| {
             let mut read = false;
             visit_read_bindings(value, &mut |binding| read |= results.contains(&binding));
-            read || calls(value)
+            read || calls(value, editable)
         })
 }
 
@@ -702,11 +726,12 @@ pub(super) fn conversion_domain(
 }
 
 /// [OP-4] a subscript's bound.
-pub(super) fn bounds(case: &GoalCase<'_>) -> String {
+pub(super) fn bounds(case: &GoalCase<'_>, constant_offset: bool) -> String {
     match (case.disposition, case.terms) {
         (Disposition::Refuted, _) => format!(
-            "`{}` is false where this access executes: index within the storage, or give the storage a length that holds this index",
-            case.text
+            "`{}` is false where this access executes: {}",
+            case.text,
+            refuted_index(constant_offset, false)
         ),
         (Disposition::Unproved, GoalTerms::Parameters) => case.parameter_routes("access", SKIP),
         (Disposition::Unproved, GoalTerms::Unnamed | GoalTerms::CallArgument(_)) => {
@@ -717,6 +742,41 @@ pub(super) fn bounds(case: &GoalCase<'_>) -> String {
             case.text,
             case.computed_routes("access", SKIP)
         ),
+    }
+}
+
+/// [OP-4] a subscript of a place a contract clause forms [ENT-2, FN-8]. The
+/// place is formed at body entry in the state the requirements written before
+/// it build, so an earlier requirement establishes the bound; a clause
+/// evaluates nothing, so no guard can skip it.
+pub(super) fn clause_bounds(case: &GoalCase<'_>, constant_offset: bool) -> String {
+    match case.disposition {
+        Disposition::Refuted => format!(
+            "`{}` is false where this place is formed: {}",
+            case.text,
+            refuted_index(constant_offset, true)
+        ),
+        Disposition::Unproved => format!(
+            "add `requires {};` to the `contract` of `{}` ahead of the requirement that forms this place, which each caller then establishes",
+            case.text, case.function
+        ),
+    }
+}
+
+/// The alternatives of a refuted subscript. A longer storage holds only an
+/// index that does not grow with it: an offset such as `r.len` stays out of
+/// range at every length, so a constant offset is given that route and any
+/// other offset the facts that fix it, which in a clause are the requirements
+/// written before it [FN-8].
+fn refuted_index(constant_offset: bool, clause: bool) -> &'static str {
+    match (constant_offset, clause) {
+        (true, _) => "index within the storage, or give the storage a length that holds this index",
+        (false, false) => {
+            "index within the storage, or change the statements or requirements that fix the index"
+        }
+        (false, true) => {
+            "index within the storage, or change the requirements before this one that fix the index"
+        }
     }
 }
 

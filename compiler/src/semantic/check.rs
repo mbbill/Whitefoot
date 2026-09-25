@@ -4283,14 +4283,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     // canonical goal names its data, a bounds relation its
                     // terms. A bounds or allocation residual is written from
                     // the source atoms it relates, so it is itself a condition.
+                    let editable = self.editable_functions()?;
                     let reads = match &outcome.canonical_goal {
-                        Some(goal) => {
-                            repairs::GoalTerms::of_goal(goal, function, &outcome.written_before)
-                        }
+                        Some(goal) => repairs::GoalTerms::of_goal(
+                            goal,
+                            function,
+                            &outcome.written_before,
+                            &editable,
+                        ),
                         None => repairs::GoalTerms::of_terms(
                             &function.entailment.obligation_term_reads(outcome),
                             function,
                             &outcome.written_before,
+                            &editable,
                         ),
                     };
                     let condition = match outcome.family {
@@ -4315,7 +4320,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             rule: SemanticRule::Op4,
                             location,
                             kind: SemanticIssueKind::UndischargedBoundsObligation {
-                                mechanical_fix: repairs::bounds(&case),
+                                // A subscript a contract clause forms is
+                                // established by an earlier requirement and
+                                // skipped by no guard [FN-8].
+                                mechanical_fix: {
+                                    let constant_offset = matches!(
+                                        function.entailment.obligation_term_reads(outcome).first(),
+                                        Some(super::entailment::TermRead::Constant)
+                                    );
+                                    if self.in_requirement(&outcome.node_path)? {
+                                        repairs::clause_bounds(&case, constant_offset)
+                                    } else {
+                                        repairs::bounds(&case, constant_offset)
+                                    }
+                                },
                                 residual,
                                 disposition,
                             },
@@ -4465,6 +4483,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         &outcome.goal.root,
                         function,
                         &outcome.written_before,
+                        &self.editable_functions()?,
                     );
                     let case = repairs::GoalCase {
                         disposition: repair,
@@ -4588,7 +4607,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         disposition,
                         mechanical_fix: repairs::postcondition(
                             repair,
-                            repairs::returns_call_result(function, &exit.statement),
+                            repairs::returns_call_result(
+                                function,
+                                &exit.statement,
+                                &self.editable_functions()?,
+                            ),
                         ),
                     },
                 )),
@@ -4596,6 +4619,37 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }));
         }
         Ok(())
+    }
+}
+
+impl Checker<'_, '_, '_, '_> {
+    /// [FN-9] the functions whose `ensures` a writer can add to: every one
+    /// but the prelude's.
+    fn editable_functions(&self) -> Result<std::collections::HashSet<FunctionId>, CheckStop> {
+        let mut editable = std::collections::HashSet::new();
+        for signature in &self.signatures {
+            if !self.tree.is_prelude_node(signature.node)? {
+                editable.insert(signature.id);
+            }
+        }
+        Ok(editable)
+    }
+
+    /// Whether a node lies in a `requires_clause` or a `contract_define`,
+    /// whose places a requirement forms at body entry and which evaluate
+    /// nothing [FN-8].
+    fn in_requirement(&self, path: &NodePath) -> Result<bool, CheckStop> {
+        let mut node = self.tree.node_with_path(path);
+        while let Some(current) = node {
+            if matches!(
+                self.tree.production(current)?,
+                Production::RequiresClause | Production::ContractDefine
+            ) {
+                return Ok(true);
+            }
+            node = self.tree.parent(current)?;
+        }
+        Ok(false)
     }
 }
 
