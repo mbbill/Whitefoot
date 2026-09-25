@@ -22,17 +22,19 @@ while masking `hi` with `iand` first is accepted.
   images for exact `+`, `-` and constant-scaled `*`. Of the 34 [OP-1]
   spellings that produce an integer, 24 establish no fact at all, among them
   `ishr`, `ior`, `ixor`, `imin`, `imax`, `iabs`, `ineg`, `ipopcount`, `iclz`
-  and the saturating rows. Each existing row was added for one program:
-  sha256's schedule offsets, deflate's code-length table and bit mask, the
-  compute kernels' block division, and the binary-arithmetic grid product.
+  and the saturating rows. Each existing row was added for one proof
+  pattern, most for one program: sha256's schedule offsets, deflate's
+  code-length table and bit mask, the compute kernels' block division, the
+  binary-arithmetic grid product, and halving and remainder bounds with the
+  source-carried proof work.
 - **Evidence.** The corpus under `tests/programs` and `lib/` needs a new
   operation fact at 3 sites (telemetry's shifted byte, dir_walk's byte-length
   clamp and its wrap-order guard); 18 further workarounds are already
   unnecessary today. A constructed sweep of 22 natural integer idioms is
   rejected at every one of them today; 21 of those were predicted rejected
-  before the run and one was uncertain. The optimizer deletes the
-  proof-only mask and checked conversion, so the cost is source and
-  impossible error arms, not runtime.
+  before the run and one was uncertain. In the shift case the optimizer
+  deletes the proof-only mask and the checked conversion, so the cost there
+  is source text and an impossible error arm, not runtime.
 - **Recommendation.** Replace the S7 menu and S14 with one table: every
   integer-valued operation row publishes the interval its operands' closed
   intervals give its result, rows bounded by an operand (`iand`, `ior`,
@@ -429,7 +431,8 @@ what the offset relation requires, is still accepted, so the condition is
 derivable at that call.
 
 This establishes that the stated facts suffice where they are established. It
-does not establish the table's arithmetic or an implementation's cost.
+does not establish the table's arithmetic (section 3.2 reports an exploratory
+check of it) or an implementation's cost.
 
 ## 3. Candidate criteria
 
@@ -499,6 +502,19 @@ succeeds, so their operands lie in the admitted domain.
 Generic bodies: a type-parameter-typed value is not an L0 fragment type in
 the schema judgment ([ENT-1]), so no fact arises there; a const-generic
 operand contributes its type's range. Concrete instances compute numerically.
+
+An exploratory enumeration, run once from a scratch script that was not
+retained, compared the section 4.3 table with the [OP-2] and [OP-8]
+semantics for every row except `irotl`, `irotr` and `ibswap`, which establish
+only single values. For 4-bit signed and unsigned types it covered every
+operand interval and every shift-amount interval within `[0, 9]`; for 8-bit
+types, intervals over a fixed endpoint set, sampling at most 250 operand
+boxes per row; and the three `reinterpret` rows at both widths. Negation and
+absolute value ran for signed types only, as [OP-1] admits. No result bound
+or relation failed in 76,027,581 evaluations. Three seeded errors were each
+reported: a remainder upper bound one too small, `-sat`'s order relation made
+strict, and `+wrap` published without its no-wrap condition. The enumerative
+tests of section 4.5 are the retained form of this check.
 
 ### 3.3 Relational facts: order and offset
 
@@ -655,7 +671,7 @@ Replace the complete [ENT-3.S7] item with:
 > Every value is computed over mathematical integers with checked i128 arithmetic.
 > When every operand interval is one value, the result bounds are the row's exact value whether or not its condition holds.
 > Otherwise a row establishes nothing when its condition does not hold or a computation is unrepresentable.
-> Result bounds are established as `lo <= r` and `r <= hi` through Z, each limited to T's interval; an order relation is the stated difference bound; an offset relation is the pair of difference bounds placing `r - x` in the stated interval.
+> Result bounds are established as `lo <= r` and `r <= hi` through Z, each limited to the interval of the row's result type; an order relation is the stated difference bound; an offset relation is the pair of difference bounds placing `r - x` in the stated interval.
 > These facts have the ordinary [ENT-5] support of their terms.
 >
 > | Row | Condition | Result bounds | Relations |
@@ -664,7 +680,7 @@ Replace the complete [ENT-3.S7] item with:
 > | `+wrap` | the corner hull of a + b lies in [m, M] | that hull | as `+` |
 > | `-` | none | corner hull of a - b | offset: r - a in [-b1, -b0] |
 > | `-wrap` | the corner hull of a - b lies in [m, M] | that hull | as `-` |
-> | `*` | none | corner hull of a * b, over the operand intervals [ENT-6]'s interval-product rule selected when that rule discharged the domain | none |
+> | `*` | none | corner hull of a * b; when [ENT-6]'s interval-product rule discharged the domain, over the operand intervals that rule selected | none |
 > | `*wrap` | the corner hull of a * b lies in [m, M] | that hull | none |
 > | `+sat`, `-sat`, `*sat` | none | the corner hull of the unsaturated result, each end clamped to [m, M] | when a0 >= 0 and b0 >= 0: `+sat` a <= r and b <= r; `-sat` r <= a |
 > | `/` | none | corner hull of the truncating quotient, b split | when a0 >= 0 and b0 >= 0: r <= a |
