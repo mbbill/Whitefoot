@@ -16,7 +16,7 @@ use super::super::super::model::{
     BindingId, CheckedArrayRoot, CheckedConst, CheckedConversionMode, CheckedEnumType,
     CheckedExpression, CheckedIntegerOperation, CheckedMeasure, CheckedNominalKind,
     CheckedNumericType, CheckedPlaceStep, CheckedSetTarget, CheckedType, CheckedValue, IntegerType,
-    MeasuredKind, NominalId,
+    MeasuredKind, NominalId, SubscriptedTerm,
 };
 use super::super::super::places::CapturedTerm;
 use super::super::fragment_type;
@@ -873,8 +873,11 @@ impl Analyzer<'_, '_> {
 
     /// The measure term one [MSR-1] measure former reads, over the same
     /// place the obligation judgment forms for P, so both name one term
-    /// [ENT-2].
+    /// [ENT-2]. A place whose subscript offsets are not all captured terms
+    /// or constants is no term: its identity could not tell two elements
+    /// apart.
     pub(super) fn measure_operand(&mut self, value: &CheckedExpression) -> Option<TermId> {
+        let represented = |term| term == Some(SubscriptedTerm::Represented);
         let (measure, place, measured, array_length) = match value {
             CheckedExpression::ArrayMeasure {
                 measure,
@@ -886,12 +889,16 @@ impl Analyzer<'_, '_> {
                 MeasuredKind::ConstantArray,
                 Some(*length),
             ),
-            CheckedExpression::BufferMeasure { measure, root } => (
-                *measure,
-                ResolvedPlace::from_path(root.binding, root.place_path()),
-                MeasuredKind::RuntimeArray,
-                None,
-            ),
+            CheckedExpression::BufferMeasure { measure, root }
+                if represented(root.subscripted_term()) =>
+            {
+                (
+                    *measure,
+                    ResolvedPlace::from_path(root.binding, root.place_path()),
+                    MeasuredKind::RuntimeArray,
+                    None,
+                )
+            }
             // [MSR-1, REF-4] a range reference's one measure, over the place
             // the reference names [REF-1].
             CheckedExpression::RangeMeasure { measure, root } => (
@@ -907,7 +914,9 @@ impl Analyzer<'_, '_> {
             // [MSR-1] a storage shape's measure reader names the
             // same [ENT-2] term the clause and the invariant name, so a `let`
             // over one is the ordinary [ENT-3.S6] equality a buffer's is.
-            CheckedExpression::ContainerMeasure { measure, root } => {
+            CheckedExpression::ContainerMeasure { measure, root }
+                if represented(root.subscripted_term()) =>
+            {
                 return Some(self.place_measure_term(
                     *measure,
                     self.container_root_path(root),
@@ -915,7 +924,9 @@ impl Analyzer<'_, '_> {
                     root.type_constant(),
                 ));
             }
-            CheckedExpression::RangeElementMeasure { measure, place, .. } => {
+            CheckedExpression::RangeElementMeasure { measure, place, .. }
+                if represented(place.subscripted_term()) =>
+            {
                 return Some(self.place_measure_term(
                     *measure,
                     ResolvedPlace::from_path(place.root.binding, place.place_path()),

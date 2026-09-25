@@ -685,10 +685,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if !written.may_be_prefix_of(&oracle, path, include_equal) {
                     continue;
                 }
-                if let Some((site, positions)) =
+                if let Some((site, (positions, window))) =
                     site.zip(Self::separable_by_position(written, path))
                 {
-                    preserved.push((*declaration, site, positions, path.clone()));
+                    preserved.push((*declaration, site, positions, window, path.clone()));
                 } else {
                     invalidated = true;
                     break;
@@ -698,7 +698,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 reference.invalidate(event.clone());
             }
         }
-        for (declaration, site, positions, path) in preserved {
+        for (declaration, site, positions, window, path) in preserved {
             let query = CheckedCallSeparation {
                 site: site.clone(),
                 exchange: false,
@@ -708,6 +708,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     event: event.phrase(),
                 }),
                 positions,
+                window,
                 left_spelling: self.render_resolved_place(written, bindings)?,
                 right_spelling: self.render_resolved_place(&path, bindings)?,
             };

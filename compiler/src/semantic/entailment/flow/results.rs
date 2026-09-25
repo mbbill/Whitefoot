@@ -514,6 +514,7 @@ mod tests {
             result: CheckedType::Unit,
             declared_state_writes: Vec::new(),
             requirements: Vec::new(),
+            requirement_places: Vec::new(),
             postconditions: Vec::new(),
             body: None,
             reference_origins: Vec::new(),
