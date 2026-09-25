@@ -375,6 +375,9 @@ pub enum DeferredUseRole {
 pub struct SourceOrigin {
     node: NodePath,
     coordinate: SyntaxCoordinate,
+    /// The owning production's complete extent, so a diagnostic naming this
+    /// origin can quote the declaration or use it belongs to.
+    extent: SyntaxCoordinate,
     role_ordinal: u32,
     subtoken_ordinal: u32,
 }
@@ -390,6 +393,12 @@ impl SourceOrigin {
     #[must_use]
     pub const fn coordinate(&self) -> SyntaxCoordinate {
         self.coordinate
+    }
+
+    /// Returns the complete source extent of the production owning this role.
+    #[must_use]
+    pub const fn extent(&self) -> SyntaxCoordinate {
+        self.extent
     }
 
     /// Returns the direct-carrier ordinal within the owner production.
@@ -796,9 +805,9 @@ pub enum ContractShapeIssue {
 /// One declaration conflict carried by a TYPE-6 issue.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeclarationConflict {
-    domain: DeclarationDomain,
-    class: DeclarationClass,
-    origin: DeclarationOrigin,
+    pub(crate) domain: DeclarationDomain,
+    pub(crate) class: DeclarationClass,
+    pub(crate) origin: DeclarationOrigin,
 }
 
 impl DeclarationConflict {
@@ -903,9 +912,9 @@ pub enum ResolutionIssueKind {
 /// The first active-specification resolver rejection in specified stage and event order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolutionIssue {
-    rule: ResolutionRule,
-    origin: SourceOrigin,
-    kind: ResolutionIssueKind,
+    pub(crate) rule: ResolutionRule,
+    pub(crate) origin: SourceOrigin,
+    pub(crate) kind: ResolutionIssueKind,
 }
 
 impl ResolutionIssue {

@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-25 Render compiler stops as labeled records
+
+Nodes: compiler/diagnostic-rendering
+
+Owner-approved: The owner approved the diagnostic-rendering amendment on PR #117, 2026-09-25.
+
+Summary: Add the node as shown, with both decisions and six rejected alternatives unchanged: every compiler stop is one labeled record rendered without `Debug` text for source rejections and capability stops, as lean text by default (a `file:line:column: error[RULE]: Kind` summary line, the marked source line, then one `label: value` line per payload field) and as one complete JSON object per line on `--diagnostic-format json`; payload fields and the classifications they name are listed by exhaustive destructuring, and a node a payload names carries its coordinate from the checker that holds the tree. The text default stays provisional until the writer trial in the maintained TODO compares compile rounds to a fix. The [readable-diagnostics investigation](../research/investigations/readable-diagnostics/DESIGN.md) holds the field inventory, measurements and rejected rendering paths. Remove the accepted amendment and the now-empty amendment directory. No specification rule or conformance evidence changes; this ruling does not authorize a merge.
+
 ## 2026-09-24 Pass range references as pointer and count with their facts
 
 Nodes: compiler/backend-facts

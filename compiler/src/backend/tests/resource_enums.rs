@@ -87,7 +87,8 @@ fn main() -> status: ExitStatus pure {
     );
     let failure = compile_rejection(excessive.as_bytes());
     assert_eq!(failure.rule_id(), Some("EFF-1"));
-    assert!(failure.detail().contains("reads(owner)"));
+    // The rejected row is on the quoted source line.
+    assert!(failure.to_string().contains("reads(owner)"));
     let llvm = compile(source);
     let abandon = emitted_function(&llvm, "abandon");
     let cleanup_calls: Vec<_> = abandon
