@@ -291,8 +291,8 @@ corpus.
 Each proposal lists what it removes, its cost and risk, how it is validated,
 and whether it changes a recorded decision. A proposal that needs a
 design-tree change gets its amendment once the owner selects its direction;
-the composition-staging amendment, which the owner asked for, is proposed
-now in `design/amendments/compiler-composition-staging.md`.
+the composition-staging revision, which the owner asked for, has been ruled
+and applied (`design/log.md`, 2026-09-25).
 
 ### P1. Contracts with a correctness edge
 
@@ -459,7 +459,10 @@ checkout, where incremental compilation only adds that cost. Splitting the
 crate stays unselected: `design/compiler.md` keeps one crate with private
 interfaces, and incremental compilation recovers most of the latency without
 new boundaries. Tree: the verification decision on the `gate` profile gains
-one sentence (amendment).
+one sentence, `design/amendments/compiler-incremental-gate.md`. Done on this
+branch while that amendment awaits its ruling: `compiler/Cargo.toml` makes
+the `gate` profile incremental, the five workflows that build it set
+`CARGO_INCREMENTAL=0`, and `README.md` says so.
 
 ## Order
 
@@ -481,16 +484,16 @@ test programs, and, for lowering and the backend, byte-identical LLVM.
 ## Relation to recorded decisions
 
 - **Composition staging.** `design/compiler/incremental-compilation.md`
-  defers persistent composition queries until edit-build measurements show
-  that rerunning the composition limits an experiment. The owner has since
-  said that the deferral weighed build cost only, not code structure. On
-  structural grounds alone (F1, F3), the representation prerequisites should
-  not wait: owned syntax, stable declaration keys and an owned checked
-  program. Module build units follow them, because the owner-selected
+  deferred persistent composition queries until edit-build measurements
+  showed that rerunning the composition limits an experiment. The owner said
+  that the deferral weighed build cost only, not code structure, and ruled on
+  structural grounds alone (F1, F3) that the representation prerequisites do
+  not wait: owned syntax, stable declaration keys and an owned checked program
+  are built now. Module build units follow them, because the owner-selected
   standard library needs a library module checked once and reused by every
-  program; instance units and fact-based entry checks can still wait for a
-  measurement or a consumer. The proposed revision is
-  `design/amendments/compiler-composition-staging.md`.
+  program; instance units and fact-based entry checks still wait for a
+  measurement or a consumer. The ruling replaced that node's first decision
+  (`design/log.md`, 2026-09-25); P3.2 and P3.3 are its steps.
 - **Generic validation scope.** P2.3 removes the premise of one refusal.
 - **Two worlds.** P4.1 replaces the graph-transfer mechanism.
 - **Kept:** one crate; one semantic path; a pure engine; textual LLVM output;
