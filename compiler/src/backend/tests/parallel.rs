@@ -1528,8 +1528,6 @@ fn without_clones(module: &str) -> String {
     kept
 }
 
-/// The text of one emitted function definition, from its `define` line to its
-/// closing brace.
 /// The definition that carries `symbol`'s emitted body: its own definition,
 /// or, for a result returned in registers, the internal destination-form
 /// body its public entry calls (compiler/src/backend/abi.rs).
@@ -1542,6 +1540,8 @@ fn emitted_body_definition<'module>(module: &'module str, symbol: &str) -> &'mod
     }
 }
 
+/// The text of one emitted function definition, from its `define` line to its
+/// closing brace.
 pub(super) fn function_body<'module>(module: &'module str, symbol: &str) -> &'module str {
     let opening = format!("{symbol}(");
     let start = module

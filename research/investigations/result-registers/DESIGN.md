@@ -155,21 +155,84 @@ so every shape that fits x86-64 also fits AArch64.
 
 ## Lowering
 
-A register-returned result is constructed where a destination result is
-constructed: in `%wf.result`, which is now a slot of the callee's own frame
-rather than a parameter. The storage plan, the frame's target qualification
-and every construction path are therefore unchanged. The caller stores the
-returned value into the storage its plan selected. Parameters, their facts
-and the storage plans do not change.
+The body of a definition whose result returns in registers is its unchanged
+destination-form body, emitted under an internal symbol:
+`define internal void @<symbol>.body(ptr %wf.result, ...)`. The public symbol
+names a small entry with the source signature. The entry allocates one
+target-qualified frame slot, calls the body with that slot as `%wf.result`,
+loads the slot and returns the value. The storage plan, the frame's target
+qualification, construction and every return of the body are therefore those
+of the destination form. The caller stores the returned value into the storage
+its plan selected. Parameters, their facts and the storage plans do not
+change. [FORM-3] keeps `.` out of source identifiers, so no source function
+can name a body.
 
-The first prototype loaded the returned value at each `ret`. LLVM merged
-those returns into one block with a phi of aggregate values, and after
-inlining it did not scalarize that phi. `wf_find` grew from 144 to 250
-instructions. Its inlined `view_entry` result tag was materialized and then
-tested again. The selected lowering sends every return to one block that
-loads `%wf.result` and returns it. SROA then forms one scalar phi per field
-at that block, and `wf_find` drops to 142 instructions. This is the form
-clang gives a C function with several returns, through its `%retval` slot.
+The body is internal, its entry is its only caller, and it is never marked
+always-inline. LLVM's inliner visits a callee before its callers, so the host
+optimizes each body alone, as it optimizes the destination-form definition on
+main. Only then does it inline the body into its entry, as the last call to a
+local function. After `clang -O2`, no body survives as a separate definition in
+any of the 80 modules of the [corpus](#corpus). The form depends on that pass
+order. The always-inliner runs before the per-function optimization, so an
+always-inline body would be merged into its entry unoptimized, like the merged
+returns below. A host whose inliner visited the entry first would do the same.
+`compiler/src/backend/tests/result_abi.rs` checks that no emitted definition is
+always-inline. Only the structural results below observe the host's order.
+
+Four value forms were compared on the same emitted modules. Each form was
+produced by a scratch rewrite of the returns and compiled with `clang -O2`
+18.1.3 on x86-64 Linux:
+
+- **Merged returns**, this change's first revision: the callee constructs the
+  result in its own frame slot, and every return branches to one block that
+  loads the slot and returns the value.
+- **Per-exit load**, the first prototype: each return loads the slot and
+  returns it.
+- **Per-exit leaves**: each return loads the slot's leaves and rebuilds the
+  value.
+- **Entry over body**, the selected form.
+
+| Lowering | `find` instructions | `map_trace` instructions | `find` inline cost at `map_trace` | Inner ASCII loop in `records` | `records` W=1 / W=2 / W=4 | Hash-map trace |
+|---|---:|---:|---|---|---|---:|
+| main, destination | 144 | 285 | 595, not inlined | yes | 23.25 / 10.52 / 5.35 ms | 1.000 |
+| merged returns | 142 | 1,593 | 105, inlined | no | 20.49 / 11.56 / 6.42 ms | 0.601 |
+| per-exit load | 250 | 275 | 1,020, not inlined | no | 21.38 / 10.68 / 6.04 ms | 1.066 |
+| per-exit leaves | 250 | 275 | 1,020, not inlined | no | 21.03 / 10.46 / 5.86 ms | 1.077 |
+| entry over body | 139 | 275 | 580, not inlined | yes | 20.37 / 10.18 / 5.28 ms | 0.956 |
+
+Instruction counts include the return, and the inline threshold is 225.
+`add_checked` has eight instructions in every value form and nine on main. The
+`records` times are medians of five interleaved rounds on the local Intel host,
+each form at its own linked placement. On that host the [placement controls](#hosted-compute-regression)
+move either arm by up to 18%, so these times do not rank the forms. The
+structural columns do. The hash-map trace column is the paired median ratio to
+main over 11 rounds, measured as in [Timing](#timing).
+
+**Why the value forms lose the loop.** LLVM's SimplifyCFG gathers the returns
+of a function into one block. The merged form emits that block itself, and
+SimplifyCFG builds it for the per-exit forms (its `common.ret` block). The exit
+values meet in a phi there, and SimplifyCFG folds `validate_record`'s final exit
+test, `remaining == 0`, into a `select` between them. In the destination form,
+each exit stores its own fields instead. The late JumpThreading pass then
+threads the ASCII path's latch through that test, which the path already
+decides. The duplicated latch becomes an inner loop over consecutive ASCII
+bytes ([Hosted compute regression](#hosted-compute-regression)). In the
+per-exit forms, the phi also joins whole aggregates, which SROA does not split
+after inlining. There `find` grows to 250 instructions, and its inlined
+`view_entry` tag is materialized and then tested again.
+
+**Why the merged form's trace was faster.** On main and in the entry-over-body
+form, LLVM fully unrolls `find`'s eight-slot probe loop while it optimizes
+`find` alone, before it considers `find` at `map_trace`. The unrolled `find`
+then costs 580 there (595 on main) against the threshold of 225, and all seven
+calls stay out of line. In the merged form, that loop was not unrolled at this
+point. `find` cost 105, `remove` 140, and LLVM inlined all seven `find` calls
+and three `remove` calls into `map_trace`, then peeled each inlined loop by
+seven iterations. Both forms return in registers. What separates their traces,
+0.601 and 0.956 of main's time, is that inlining. The boundary alone gives the
+entry-over-body form's gain of 4% to 7% ([Timing](#timing)).
+[`docs/todo.md`](../../../docs/todo.md) records the inlining as a separate
+opportunity.
 
 Every call route uses the value form it already had for scalar results:
 
@@ -180,10 +243,12 @@ Every call route uses the value form it already had for scalar results:
   caller stores;
 - a loop split's chunk or splitter call is saved by the value-definition
   bridge;
-- a recursion-budget entry and an exhausted variant forward the returned
-  value;
+- a recursion-budget entry, its variant and a sequential clone each have their
+  own entry and body. An exhausted variant's body stores the value its
+  fallback returns into its own destination;
 - a self-tail transfer is a jump inside one activation
-  (compiler/self-tail-lowering), so it keeps the one result slot;
+  (compiler/self-tail-lowering), so it stays inside the body and keeps the
+  body's one destination;
 - the build launcher's `ExitStatus` is opaque, four words, and keeps its
   destination.
 
@@ -215,9 +280,9 @@ movb   $0, 8(%rdi)                retq
 retq
 ```
 
-That is eight instructions with three stores before the change, and seven
-with none after. Rust 1.98.1 compiles `a.checked_add(b)` returning
-`Option<u32>` to four instructions. The remaining difference is the
+Counting the return, that is nine instructions with three stores before the
+change, and eight with none after. Rust 1.98.1 compiles `a.checked_add(b)`
+returning `Option<u32>` to four instructions. The remaining difference is the
 representation, not the boundary. The enum carries a separate one-bit
 `Overflow` payload, and it zeroes the inactive `Ok` value.
 
@@ -244,63 +309,69 @@ Per function:
 
 | Function | Instructions before → after | Stores before → after |
 |---|---|---|
-| `hashmap.wf` `find` | 144 → 142 | 4 → 0 |
-| `hashmap.wf` `insert` | 193 → 191 | 20 → 12 |
-| `hashmap.wf` `remove` | 156 → 154 | 12 → 6 |
+| `hashmap.wf` `find` | 144 → 139 | 4 → 0 |
+| `hashmap.wf` `insert` | 193 → 190 | 20 → 12 |
+| `hashmap.wf` `remove` | 156 → 151 | 12 → 6 |
 | `hashmap.wf` `view_entry` | 20 → 18 | 6 → 0 |
-| `owning-map.wf` `find` | 109 → 105 | 4 → 0 |
+| `hashmap.wf` `map_trace` | 285 → 275 | 50 → 54, loads 56 → 21 |
+| `owning-map.wf` `find` | 109 → 106 | 4 → 0 |
 | `owning-map.wf` `exercise` | 1709 → 1681 | 416 → 416, loads 725 → 700 |
 
 The count script counts surviving calls that pass a `%wf.result` destination,
-bucketed by the size of the destination alloca after optimization:
+bucketed by the size of the destination's whole alloca type after
+optimization:
 
 | Program | `<=16` bytes | `>16` bytes |
 |---|---|---|
 | `hashmap.wf` | 12 → 0 | 3 → 0 |
-| `owning-map.wf` | 15 → 1 | 18 → 18 |
+| `owning-map.wf` | 14 → 0 | 19 → 19 |
 
-In `hashmap.wf` the 7 `find` calls and 3 `remove` calls were no longer
-separate calls after the change: LLVM's inliner now inlines them into
-`map_trace`. The 5 `insert` calls survive and return in registers. The
-24-byte `remove` result `(u64, Option<u64>)` and `view_entry` result
+In `hashmap.wf`, `map_trace` keeps its 7 `find`, 5 `insert` and 3 `remove`
+calls in both builds, and after the change each call returns in registers.
+The 24-byte `remove` result `(u64, Option<u64>)` and `view_entry` result
 `SlotView` are the corpus results that separate the register bound from the
-both-bounds candidate. The one small destination left in `owning-map.wf` is
-the launcher's `ExitStatus`, whose alloca SROA narrows to its exit-code
-byte.
+both-bounds candidate. The 19 destinations left in `owning-map.wf` carry
+208- and 216-byte results and the launcher's 32-byte `ExitStatus`.
 
 ## Corpus
 
 Every single-file program under `tests/programs` (73 that compile alone) and
 the seven library container bundles of `compiler/tests/programs/containers.rs`
-were compiled with both compilers:
+were compiled with both compilers. The size buckets count destinations in
+local slots; the other destinations are not local slots:
 
-| Set | Destination calls `<=16` | Destination calls `>16` | `.text` bytes |
-|---|---:|---:|---:|
-| 73 single-file programs | 77 → 44 | 59 → 42 | 190,589 → 193,661 |
-| 7 container bundles | 3 → 3 | 0 → 0 | 225,475 → 223,699 |
+| Set | Destination calls `<=16` | Destination calls `>16` | Other destinations | `.text` bytes |
+|---|---:|---:|---:|---:|
+| 73 single-file programs | 33 → 0 | 86 → 73 | 17 → 13 | 190,589 → 188,621 |
+| 7 container bundles | 0 → 0 | 3 → 3 | 0 → 0 | 225,475 → 222,259 |
 
-Every remaining small-bucket destination belongs to a result the register
-bound excludes. The 44 are the launcher's `ExitStatus` calls, 34 to `wf_main`
-and 10 to `wf_exercise`, whose opaque results need four words. `.text` grew
-by 5,040 bytes in `hashmap.wf` alone, because of the inlining above. Across
-the other 79 programs it shrank by 3,744 bytes (0.9%). Only
-`boxed-helper-gap.wf` (+16 bytes), `fixed_run_library.wf` (+256 bytes) and
-`wfgrep.wf` (+80 bytes) grew.
+No destination call of at most 16 bytes survives. Of the sized destinations
+that remain, 47 are the launcher's 32-byte `ExitStatus` calls, 37 to `wf_main`
+(three of them in the bundles) and 10 to `wf_exercise` where LLVM inlined
+`main` into the launcher. The other 29 carry
+results of 32 to 2,392 bytes. `.text` shrank by 1.0% across the single-file
+programs and by 1.4% across the bundles. `hashmap.wf` shrank by 336 bytes
+(8.3%). Only `boxed-helper-gap.wf` (+16 bytes), `fixed_run_library.wf`
+(+256 bytes) and `wfgrep.wf` (+48 bytes) grew.
 
 ## Timing
 
 Criterion 4 used two scratch variants of maintained programs. The first is
 `hashmap.wf` with `main` calling `map_trace(seed: 5, repetitions: 20000000)`.
-The second is `owning-map.wf` with `main` looping over 2,000,000 seeds, where
-`find` stays out of line in both builds. Each image was built by its own
-compiler and run 11 times, alternating the order and pinned with
+The second is `owning-map.wf` with `main` looping over 2,000,000 seeds. In both,
+the timed calls stay out of line in both builds. Each image was built by its
+own compiler and run 11 times, alternating the order and pinned with
 `taskset -c 3`. The host was a 4-vCPU x86-64 Linux container, with the
 repository's host-wide verification lock held during the runs.
 
 | Program | Baseline median | Candidate median | Paired ratio median (range) |
 |---|---:|---:|---:|
-| hash-map trace | 1.2716 s | 0.7668 s | 0.603 (0.595–0.632) |
-| owning-map exercise | 1.4625 s | 1.4843 s | 1.004 (0.942–1.051) |
+| hash-map trace | 1.2937 s | 1.2200 s | 0.927 (0.891–0.999) |
+| owning-map exercise | 1.4836 s | 1.4727 s | 0.992 (0.923–1.129) |
+
+Two earlier runs of the hash-map comparison under the same protocol gave
+paired medians of 0.946 for the scratch prototype and 0.962 for the
+implemented compiler.
 
 The same variants were also scaled down to 200,000 repetitions and 20,000
 seeds and run once each under `valgrind --tool=cachegrind`, which counts
@@ -308,23 +379,25 @@ executed instructions deterministically:
 
 | Program | Instructions | Data references (reads + writes) |
 |---|---|---|
-| hash-map trace | 163,981,673 → 125,586,216 (−23.4%) | 59,117,685 → 36,119,218 (−38.9%) |
-| owning-map exercise | 149,623,833 → 148,363,833 (−0.84%) | 67,658,795 → 66,438,795 (−1.8%) |
+| hash-map trace | 163,982,550 → 158,382,550 (−3.4%) | 59,117,850 → 43,917,850 (−25.7%) |
+| owning-map exercise | 149,624,696 → 148,324,696 (−0.87%) | 67,658,952 → 66,438,952 (−1.8%) |
 
-The hash-map gain is mostly the inlining that the cheaper callee now admits.
-The owning-map difference is the boundary alone: 14 calls per seed, each
-saving a store and reload of its result. It shows in the counts and stays
-within run-to-run variation in wall time.
+Both differences come from the boundary alone. `map_trace` keeps its 15 calls
+and `exercise` its 14 `find` calls, and each call saves the store and reload
+of its result. The hash-map trace gains 4% to 7% in wall time. The owning-map
+gain shows in the counts and stays within run-to-run variation in wall time.
 
 ## Hosted compute regression
 
 The criterion above does not name the maintained paired comparison,
 `.github/workflows/compute-regression.yml`. It runs for every pushed commit.
-The table lists its runs for the commits up to `c192ca90e`. All of them emit
-identical code, the later ones adding only this record. Every run failed for
-one kernel, `records`, and passed the other four. The wall ratio is baseline
-over candidate, so a value below 1 means the candidate is slower. `lower`
-counts the pairs in which the baseline was faster:
+The wall ratio is baseline over candidate, so a value below 1 means the
+candidate is slower. `lower` counts the pairs in which the baseline was
+faster.
+
+**Merged returns.** The first revision's runs, for the commits up to
+`0074c34a8`, all emit identical code, the later ones adding only this record.
+Every run failed for one kernel, `records`, and passed the other four:
 
 | Commit, run and host | W=1 | W=2 | W=4 |
 |---|---:|---:|---:|
@@ -333,6 +406,8 @@ counts the pairs in which the baseline was faster:
 | `f8d102ee8`, [36092739152](https://github.com/mbbill/Whitefoot/actions/runs/36092739152), AMD EPYC 7763 | 1.153 (0/5) | 0.779 (5/5) | 0.700 (5/5) |
 | `968280509`, [36094040267](https://github.com/mbbill/Whitefoot/actions/runs/36094040267), AMD EPYC 9V74 | 0.928 (4/5) | 0.824 (5/5) | 0.820 (5/5) |
 | `c192ca90e`, [36094502418](https://github.com/mbbill/Whitefoot/actions/runs/36094502418), AMD EPYC 7763 | 1.156 (0/5) | 0.796 (5/5) | 0.677 (5/5) |
+| `080187c6f`, [36095043192](https://github.com/mbbill/Whitefoot/actions/runs/36095043192), AMD EPYC 7763 | 1.164 (0/5) | 0.781 (5/5) | 0.670 (5/5) |
+| `0074c34a8`, [36095752626](https://github.com/mbbill/Whitefoot/actions/runs/36095752626), AMD EPYC 7763 | 1.163 (0/5) | 0.785 (5/5) | 0.683 (5/5) |
 
 Each host had two cores of two threads each, and every run's `records.o`
 objects are byte-identical. The identical-image control passed in every run.
@@ -369,7 +444,7 @@ two exit blocks after its loop, one storing the invalid result and one the
 valid result. The late JumpThreading pass threads the ASCII path's latch
 through the exit test, `remaining == 0`, which is known on that path. The
 duplicated latch then becomes an inner loop over consecutive ASCII bytes. In
-the register form, every return joins `wf.return`, and SimplifyCFG turns that
+the merged form, every return joins one block, and SimplifyCFG turns that
 exit test into a `select`. Nothing is left to thread, and the loop keeps one
 level.
 
@@ -426,7 +501,7 @@ Cachegrind counted the W=1 kernel function over six calls:
 | ASCII records, 131,072 of up to 255 bytes (scratch driver) | 722.3M → 1,020.8M (+41%) | 203.7M → 303.2M (+49%) |
 
 In the hosted fixture almost every byte belongs to a four-byte sequence. On
-that input the candidate executes fewer instructions and about as many
+that input the merged form executes fewer instructions and about as many
 conditional branches. On ASCII records it executes about three more
 instructions and one more conditional branch per byte.
 
@@ -434,31 +509,31 @@ instructions and one more conditional branch per byte.
 processes, seven for the first item. Each process reports the median of five
 calls after a warmup, and each figure is the median over rounds.
 
-- Moving only the candidate's runtime objects to the baseline's addresses
+- Moving only the merged form's runtime objects to the baseline's addresses
   leaves records where it was. The tool was a 592-byte never-called function
-  appended to the module. The candidate measured 11.54 ms at W=2 and 6.13 ms
-  at W=4, against the baseline's 10.08 ms and 5.31 ms.
+  appended to the module. The merged form measured 11.54 ms at W=2 and
+  6.13 ms at W=4, against the baseline's 10.08 ms and 5.31 ms.
 - A never-called function placed before `wf__par_split_37` shifts both loop
   copies, and everything after them, by 0, 16, 32 or 48 bytes. No executed
   instruction changes:
 
-  | Width | Baseline at +0 / +16 / +32 / +48 | Candidate at +0 / +16 / +32 / +48 |
+  | Width | Baseline at +0 / +16 / +32 / +48 | Merged form at +0 / +16 / +32 / +48 |
   |---|---|---|
   | W=1 | 22.85 / 20.24 / 20.47 / 20.20 ms | 20.21 / 21.26 / 23.21 / 21.63 ms |
   | W=2 | 10.35 / 10.68 / 10.27 / 11.65 ms | 11.66 / 10.98 / 10.49 / 10.54 ms |
   | W=4 | 5.17 / 5.48 / 5.50 / 6.08 ms | 6.21 / 5.88 / 5.30 / 5.50 ms |
 
-- With both arms compiled with `-falign-loops=64`, the baseline and candidate
-  measured 21.16 and 21.84 ms at W=1, 11.14 and 10.58 ms at W=2, and 5.36 and
-  5.33 ms at W=4.
+- With both arms compiled with `-falign-loops=64`, the baseline and the merged
+  form measured 21.16 and 21.84 ms at W=1, 11.14 and 10.58 ms at W=2, and 5.36
+  and 5.33 ms at W=4.
 - ASCII records at the same four placements, W=1: baseline 11.69 / 9.46 /
-  9.39 / 9.65 ms, candidate 11.98 / 9.57 / 9.71 / 9.66 ms.
+  9.39 / 9.65 ms, merged form 11.98 / 9.57 / 9.71 / 9.66 ms.
 
 **Reading.** On the Intel host, a shift of at most 48 bytes that changes no
 instruction moves either arm by up to 15% at W=1 and up to 18% at W=2 and
 W=4. It reverses the arms' order at W=2 and W=4. The failing widths follow
 the kernel's placement and not the runtime's, and on the hosted fixture the
-candidate's kernel does less work. On this evidence the hosted verdict is a
+merged form's kernel does less work. On this evidence the hosted verdict is a
 reading of the linked placement, not of added work. The structural change is
 still real. The lost ASCII loop costs about 41% more kernel instructions on
 ASCII records, and between 0.1% and 3.4% of W=1 time at the four placements.
@@ -468,23 +543,40 @@ recorded in the
 [compute-runtime alignment comparison](../compute-runtime/RESULTS.md#alignment-comparison)
 and in `docs/todo.md`'s formal compute comparison entry.
 
+**Entry over body.** The selected form emits records' `validate_record` body
+and the `[3 x i64]` constructor's body byte-identical to their definitions on
+main, apart from the symbol and the internal linkage. In the optimized code,
+`validate_record` and both loop copies keep main's inner ASCII loop. In the
+linked images, `wf__par_split_37` is instruction-identical to main's at the
+same address, and the sequential clone is instruction-identical to main's,
+16 bytes earlier. On the local Intel host, the unchanged
+`tests/performance/compare.sh` passed with records at 1.156 (0/5) at W=1,
+0.979 (3/5) at W=2 and 1.008 (1/5) at W=4. Its three single-width suspects,
+`mandelbrot` W=4, `fir` W=2 and `stencil` W=4, are in kernels whose emitted
+code does not differ.
+
 ## Selection
 
-The register bound is selected:
+The register bound is selected, with the entry-over-body lowering:
 
 - It is the only candidate that passes criterion 2 while returning in
   registers every shape the probe keeps in registers.
 - It meets criterion 3: every admitted result that survives as a call now
-  returns in registers.
+  returns in registers, and no destination call of at most 16 bytes remains in
+  the corpus.
 - It meets criterion 4. No destination call was added, the find-heavy loop is
-  faster, and the out-of-line `find` loop is unchanged within its
+  4% to 7% faster, and the out-of-line `find` loop is unchanged within its
   variation. The maintained paired comparison, which the criterion does not
-  name, fails on `records` at this revision's linked placement
-  ([Hosted compute regression](#hosted-compute-regression)). The selection
-  does not decide whether that verdict blocks the change.
+  name, failed on `records` with the merged returns. The entry-over-body form
+  keeps records' loop structure
+  ([Hosted compute regression](#hosted-compute-regression)).
 - Under criterion 5 it is preferred over both bounds, because the 24-byte
   three-leaf results return in registers and the corpus has them. The cost is
-  one linked LLVM definition inside the one callable ABI.
+  one linked LLVM definition inside the one callable ABI, and one entry beside
+  each register-returned body.
+- Among the lowerings, only the entry over the destination-form body keeps
+  every loop structure that the destination form gives the host
+  ([Lowering](#lowering)).
 
 ## Limits
 
@@ -492,12 +584,17 @@ The register bound is selected:
   from the probe's register assignment, not measured.
 - The records placement controls ran on the local Intel host only. The hosted
   AMD verdicts have no placement control of their own.
-- A register-returned result can lose a loop-exit threading that the
-  destination form allowed, as in records' ASCII loop. Only records was
-  examined for it.
-- The `hashmap.wf` speedup comes mainly from LLVM choosing to inline `find`
-  and `remove`. That is the host optimizer's cost model responding to a
-  cheaper callee, and other programs may see different inlining.
+- The lowering depends on the host's pass order: the body must be optimized
+  alone before it is inlined into its entry. `result_abi.rs` checks the
+  emitted attributes, not the host's order. A host change is observed only by
+  the structural results above, which no maintained test repeats.
+- A value-returning body can lose a loop-exit threading that the destination
+  form allows, as records' ASCII loop showed. The selected form keeps every
+  body in its destination form, but only records and the hash map were
+  examined.
+- The merged form's faster hash-map trace came from LLVM inlining `find` and
+  `remove`, which the selected form does not change. That opportunity is
+  recorded in `docs/todo.md`, unmeasured on the selected form.
 - The timing variants are scratch programs derived from maintained sources.
   No paired performance workload was added.
 - Results that exceed the budget still pass through memory: every opaque

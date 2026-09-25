@@ -382,29 +382,34 @@ rarely insert at the same place.
   without a new demotion, a lost float bit pattern, or a regression in the
   program's timing, on each target that changes.
 
-- **The records comparison fails at the register-return revision's
-  placement.** For the small-result register ABI, the five maintained paired
-  comparisons the
-  [hosted comparison](../research/investigations/result-registers/DESIGN.md#hosted-compute-regression)
-  lists read `records` at 0.78--0.83 at W=2 and 0.68--0.82 at W=4 (baseline
-  over candidate) on two hosted AMD runner classes. At W=1 they read 0.93 on
-  one class and 1.15--1.16 on the other. The other four kernels pass, and
-  their emitted code is unchanged. On a local Intel host, the same images
-  show the same wider-row failure. Shifting both loop copies by 16--48 bytes,
-  with no instruction changed, reverses the arms' order at W=2 and W=4.
-  Moving only the runtime has no effect. On the hosted fixture the
-  candidate's kernel executes 1.2% fewer instructions. The register return
-  still loses one structure: its single return block lets SimplifyCFG turn
-  `validate_record`'s exit test into a `select`, so the threaded inner loop
-  over ASCII bytes is not formed. On ASCII records that costs 41% more kernel
-  instructions and 0.1--3.4% of local W=1 time. Clang shows the same loss for
-  a C transcription returning its two-field struct. The hosted runners have
-  no placement control, so the failure is not attributed on them. A lowering
-  that keeps the threading is unexamined. Reopen with a bounded placement
-  control on a hosted runner, or with a maintained workload whose time
-  follows the lost threading beyond its placement range. Validate against
-  unchanged source with an identical-image control. Neither a later passing
-  run nor a changed threshold closes this entry.
+- **The hash-map `find` stays out of line because its probe loop is
+  unrolled first.** In `tests/programs/containers/hashmap.wf`, LLVM fully
+  unrolls `find`'s eight-slot probe loop while it optimizes `find` alone.
+  When the inliner then reaches `map_trace`, `find` costs 580 against the
+  `-O2` threshold of 225 (595 on main), so its seven calls stay out of line,
+  as do the three `remove` calls
+  ([lowering comparison](../research/investigations/result-registers/DESIGN.md#lowering)).
+  In that investigation's rejected merged-returns lowering, the loop was not
+  yet unrolled at that point. `find` cost 105 and `remove` 140, both were
+  inlined and then peeled, and the hash-map trace ran at 0.601 of main's time
+  against 0.956 for the selected lowering. Both lowerings return in
+  registers, so the inlining separates them. How much of that gain an
+  inlined, fully unrolled `find` keeps is unmeasured, as is whether other
+  small container operations with fixed probe loops behave the same way.
+  Candidate levers: loop metadata on the emitted probe loop that leaves it
+  to the late unroll pass, after inlining; an unroll threshold or pass order
+  in the pipeline the driver requests that runs full unrolling after the
+  inliner; or an inline hint on small container operations, which alone
+  raises the threshold only to 325. Each lever changes emitted code for every
+  program. Validate on unchanged source against a criterion fixed before
+  measuring: `find` and `remove` are inlined into `map_trace`, the
+  20,000,000-repetition hash-map trace gains beyond run-to-run variation,
+  `.text` across the maintained programs and container bundles stays within
+  a stated growth bound, and the maintained paired compute comparison
+  passes. Deferred because it is a host inlining-policy question separate
+  from the result ABI, with one program as evidence. Reopen when a
+  maintained workload's time is dominated by an out-of-line container
+  lookup, or when the driver's optimization pipeline is revisited.
 
 - **Indexed small-payload costs with retained boundaries need attribution.**
   The [native-cost record](../research/experiments/container-representation/indexed-library/RESULTS.md#remaining-native-costs)
@@ -791,7 +796,13 @@ rarely insert at the same place.
   Its identical-image control nevertheless retained a `records` W4 suspect at
   0.962815708 with four adverse pairs. The concrete PR 70 regression is repaired,
   while its cause and the earlier and remaining control variation are not
-  attributed. The [PR 78 hosted records inspection](../research/investigations/compute-model/DESIGN.md#records-w4-hosted-comparison-remains-unresolved)
+  attributed. The
+  [result-register placement controls](../research/investigations/result-registers/DESIGN.md#hosted-compute-regression)
+  show on a local Intel host that shifting records' two loop copies by 16 to
+  48 bytes, with no executed instruction changed, moves main or that
+  investigation's rejected merged-returns lowering by up to 18% and reverses
+  their order at W2 and W4, while moving only the runtime does not. The
+  [PR 78 hosted records inspection](../research/investigations/compute-model/DESIGN.md#records-w4-hosted-comparison-remains-unresolved)
   retains repeated W4 suspects at `30198a19` and `53c68c29`: the latter has
   wall/CPU ratios 0.898002/0.908317 with four adverse pairs, while its records
   null is not suspect. Exact x86 objects show unchanged hot work and runtime
