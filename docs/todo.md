@@ -842,6 +842,11 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   deterministic. Unverified benefit: validate with a writer trial counting
   repair rounds on programs with two or more independent defects; reopen when
   such a trial or an agent harness shows the extra rounds dominate.
+  One consumer is already promised: [ERR-2] says variant addition "surfaces
+  site-enumerated edit lists", yet adding a variant to an enum matched in two
+  functions reports only the first non-exhaustive `match` per run. Either
+  every ERR-2 site of one enum is listed in a run, or ERR-2's sentence, which
+  no other rule defines, is amended to what the toolchain provides.
 - **A float constant in a rendered goal prints its internal form.** An FN-8
   `instantiated_goal` over a float constant renders it as
   `Float { ty: F64, bits: 4607182418800017408 }` instead of its source
