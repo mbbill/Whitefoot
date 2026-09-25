@@ -97,8 +97,8 @@ use super::model::{
     CheckedStatement, FunctionId, expression_children,
 };
 use super::places::{
-    CapturedRange, CapturedValue, PlaceMap, PlaceRoot, PlaceStep, ResolvedPlace, SeparationOracle,
-    UnprovedSeparations, places_overlap, range_separation_candidate,
+    CaptureId, CapturedRange, CapturedValue, PlaceMap, PlaceRoot, PlaceStep, ResolvedPlace,
+    SeparationOracle, UnprovedSeparations, places_overlap, range_separation_candidate,
 };
 use crate::NodePath;
 
@@ -121,6 +121,24 @@ pub(crate) struct PermissionSeparationQuery {
     pub(crate) second: NodePath,
     pub(crate) left: CapturedRange,
     pub(crate) right: CapturedRange,
+    /// Those of `left` and `right` that one of the pair's two calls forms as
+    /// an actual. Such a range has no image in the state before `first`,
+    /// because its formation runs with its call, so the flow evaluates these
+    /// endpoints in that state and judges the range exactly as it judges one
+    /// bound immediately before `first` [PAR-1, REF-4].
+    pub(crate) formations: Vec<PermissionRangeFormation>,
+}
+
+/// A range one statement forms as an actual of its own call [REF-4]: the
+/// captured pair its footprint's range step carries and the two endpoint
+/// atoms that formation evaluates when its call's actuals are evaluated.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PermissionRangeFormation {
+    /// The formation node, which a range image names as its source.
+    pub(crate) carrier: NodePath,
+    pub(crate) captured: CapturedRange,
+    pub(crate) start: CheckedExpression,
+    pub(crate) end: CheckedExpression,
 }
 
 /// The retained optional proof of one pair-scoped range question.
@@ -425,6 +443,7 @@ impl<'check> Program<'check> {
                 .iter()
                 .map(|statement| self.classify(&places, statement))
                 .collect::<Vec<_>>();
+            let formations = block.iter().map(call_range_formations).collect::<Vec<_>>();
             for (first_index, first) in classified.iter().enumerate() {
                 let (Some(first_site), Ok(first_footprint)) = (&first.site, &first.footprint)
                 else {
@@ -433,7 +452,7 @@ impl<'check> Program<'check> {
                 if first_footprint.unresolved.is_some() {
                     continue;
                 }
-                for second in classified.iter().skip(first_index + 1) {
+                for (second_index, second) in classified.iter().enumerate().skip(first_index + 1) {
                     let (Some(second_site), Ok(second_footprint)) =
                         (&second.site, &second.footprint)
                     else {
@@ -444,11 +463,16 @@ impl<'check> Program<'check> {
                     if second_footprint.unresolved.is_some() {
                         break;
                     }
+                    let evaluable = formations_before_first(
+                        &places,
+                        &classified[first_index..second_index],
+                        &formations[first_index],
+                        &formations[second_index],
+                    );
                     collect_footprint_range_queries(
-                        first_site,
-                        second_site,
-                        first_footprint,
-                        second_footprint,
+                        (first_site, first_footprint),
+                        (second_site, second_footprint),
+                        &evaluable,
                         &mut queries,
                     );
                 }
@@ -1074,10 +1098,9 @@ fn canonical_range_pair(
 }
 
 fn push_range_query(
-    first: &PermissionSite,
-    second: &PermissionSite,
-    left: &ResolvedPlace,
-    right: &ResolvedPlace,
+    (first, second): (&PermissionSite, &PermissionSite),
+    (left, right): (&ResolvedPlace, &ResolvedPlace),
+    evaluable: &[&PermissionRangeFormation],
     queries: &mut Vec<PermissionSeparationQuery>,
 ) {
     if !places_overlap(&UnprovedSeparations, left, right) {
@@ -1087,11 +1110,17 @@ fn push_range_query(
         return;
     };
     let (left, right) = canonical_range_pair(left, right);
+    let formations = evaluable
+        .iter()
+        .filter(|formation| formation.captured == left || formation.captured == right)
+        .map(|formation| (*formation).clone())
+        .collect();
     queries.push(PermissionSeparationQuery {
         first: first.statement.clone(),
         second: second.statement.clone(),
         left,
         right,
+        formations,
     });
 }
 
@@ -1099,10 +1128,9 @@ fn push_range_query(
 /// multi-target pair needs every such query: finding one separated access
 /// never hides a later overlapping access.
 fn collect_footprint_range_queries(
-    first: &PermissionSite,
-    second: &PermissionSite,
-    earlier: &Footprint,
-    later: &Footprint,
+    (first, earlier): (&PermissionSite, &Footprint),
+    (second, later): (&PermissionSite, &Footprint),
+    evaluable: &[&PermissionRangeFormation],
     queries: &mut Vec<PermissionSeparationQuery>,
 ) {
     for write in &earlier.writes {
@@ -1112,14 +1140,111 @@ fn collect_footprint_range_queries(
             .chain(later.reads.iter())
             .chain(&later.operand_reads)
         {
-            push_range_query(first, second, &write.place, &access.place, queries);
+            push_range_query(
+                (first, second),
+                (&write.place, &access.place),
+                evaluable,
+                queries,
+            );
         }
     }
     for write in &later.writes {
         for access in earlier.reads.iter().chain(&earlier.operand_reads) {
-            push_range_query(first, second, &write.place, &access.place, queries);
+            push_range_query(
+                (first, second),
+                (&write.place, &access.place),
+                evaluable,
+                queries,
+            );
         }
     }
+}
+
+/// The ranges one statement forms as actuals of the call it evaluates on
+/// entry [REF-4]: a `let`, `set` or expression statement's call, or a
+/// call-rooted match's scrutinee call. A range formed inside a match arm is
+/// formed after that statement's entry and is not one of them.
+///
+/// Only a formation whose start endpoint carries its own source occurrence is
+/// listed, because the flow's range images are named by that capture; a start
+/// without one names no single formation [OWN-7].
+fn call_range_formations(statement: &CheckedStatement) -> Vec<PermissionRangeFormation> {
+    let value = match statement {
+        CheckedStatement::Let { value, .. }
+        | CheckedStatement::Set { value, .. }
+        | CheckedStatement::Evaluate { value, .. }
+        | CheckedStatement::DropExpression { value, .. }
+        | CheckedStatement::Match {
+            scrutinee: value, ..
+        } => value,
+        _ => return Vec::new(),
+    };
+    let Some(call) = call_projection(value) else {
+        return Vec::new();
+    };
+    call.arguments
+        .iter()
+        .filter_map(|argument| match argument {
+            CheckedExpression::RangeOf {
+                carrier,
+                start,
+                end,
+                captured,
+                ..
+            } if matches!(captured.start.capture, CaptureId::Source(_)) => {
+                Some(PermissionRangeFormation {
+                    carrier: carrier.clone(),
+                    captured: *captured,
+                    start: start.as_ref().clone(),
+                    end: end.as_ref().clone(),
+                })
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// The pair's call formations whose endpoints hold, in the state before the
+/// first statement, the values their formation reads [PAR-1].
+///
+/// "The paths of both statements are interpreted in the state before the
+/// first statement." The first statement forms its ranges from that state.
+/// The second forms its ranges only after `before_second` — the first
+/// statement and every statement up to the second — has run, so its endpoint
+/// values are the values of that earlier state only when none of those
+/// statements writes what the endpoint expressions read. An endpoint that the
+/// first statement defines, or any earlier write reaches, therefore has no
+/// value there, and its formation is not evaluated before the first.
+fn formations_before_first<'formation>(
+    places: &PlaceMap,
+    before_second: &[Classified],
+    first: &'formation [PermissionRangeFormation],
+    second: &'formation [PermissionRangeFormation],
+) -> Vec<&'formation PermissionRangeFormation> {
+    let unwritten = |formation: &PermissionRangeFormation| {
+        let mut endpoints = Footprint::default();
+        for endpoint in [&formation.start, &formation.end] {
+            collect_operand_reads(places, endpoint, &formation.carrier, &mut endpoints);
+        }
+        endpoints.unresolved.is_none()
+            && before_second
+                .iter()
+                .map(|statement| statement.footprint.as_ref().ok())
+                .all(|footprint| {
+                    footprint.is_some_and(|footprint| {
+                        footprint.unresolved.is_none()
+                            && footprint.writes.iter().all(|write| {
+                                endpoints.operand_reads.iter().all(|read| {
+                                    !places_overlap(&UnprovedSeparations, &write.place, &read.place)
+                                })
+                            })
+                    })
+                })
+    };
+    first
+        .iter()
+        .chain(second.iter().filter(|formation| unwritten(formation)))
+        .collect()
 }
 
 struct PairSeparationOracle<'proof> {

@@ -359,6 +359,30 @@ rarely insert at the same place.
   referent omission is found; close when the consumers read one inventory or
   that inventory is shown unsuitable for point-current flow facts.
 
+- **Range images share one key for every non-atom start endpoint.** This is a
+  source-acceptance soundness defect. The flow files each formation's endpoint
+  images under its start capture, and `captured_of` gives every endpoint that
+  is not a literal, a const or a plain binding read (a field, a measure, a
+  dereference, a subscript) the same nonidentity `CaptureId::Unknown`. The last
+  such formation's image therefore answers for all of them in
+  `prove_range_separation`, for both EFF-5 call separations and PAR-1
+  questions, and in `captured_range_length_image`. Witness: in a function over
+  `v: &[u8]` and `b: Bounds`, `let l = &deref(v)[b.lo..deref(v).len];` and an
+  identical `r`, passed together to a callee that writes both, are rejected
+  under EFF-5, but the same function is accepted once
+  `let e = &deref(v)[deref(v).len..deref(v).len];` follows them, because both
+  lookups read `e`'s empty image. With `e` formed first, two adjacent calls
+  that each write one of `l` and `r` are likewise permitted under PAR-1, and
+  denied without it. Key range images by formation identity instead, for
+  example by the formation node, or never file or read an image under a
+  nonidentity capture. Validate with both witnesses rejected or denied with
+  and without the unrelated range; the existing range-separation,
+  loop-carried generation and PAR-1 cases unchanged; and every changed corpus
+  verdict explained. The PAR-1 inline-range change evaluates only formations
+  whose start carries a source occurrence, so it adds no use of the shared
+  key. Take this up before other work relies on range separation for
+  non-atom endpoints.
+
 ## Containers and storage lowering
 
 - **Validate a shared Ring wrap calculation independent of layout bounds.**
@@ -896,6 +920,23 @@ rarely insert at the same place.
   emitting the call as the join site with its release after the join and
   comparing published bytes at several worker counts with the sequential
   lowering.
+
+- **PAR-1 footprints do not read a reference holder a statement passes.** An
+  operand read of a reference binding resolves to the path the reference names,
+  while the `let` that defines the holder writes the holder binding itself. So
+  the holder's `let` and a later statement passing the holder show no
+  footprint conflict, although PAR-1 makes a `let`'s defined binding a write
+  path that the other statement's argument reads must avoid. A let-bound
+  recursive quicksort therefore forms the run `let larger = &deref(v)[after..n];`,
+  `quicksort(v: smaller);`, `quicksort(v: larger);`. The inline spelling's
+  second call reads `after` itself, so `let after` cannot join that run.
+  Lowering runs a non-call member before the call group after it, so no
+  emitted program is known to be affected. Whether any alias or scheduling
+  consumer reads the independence of non-call run members is unverified.
+  Record the holder binding as an operand read beside its referent, and
+  validate that the let-bound and inline spellings then form corresponding
+  runs while every verdict between two calls is unchanged. Reopen when a
+  lowering or metadata consumer starts using non-call run members.
 
 ## Platforms and host interfaces
 
