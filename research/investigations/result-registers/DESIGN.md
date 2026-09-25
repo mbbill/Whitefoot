@@ -570,6 +570,16 @@ passed. In its artifact, both loop copies and `wf_bench_records` are
 instruction-identical between the arms, `wf__par_split_37` at the same
 address, and records' bodies are byte-identical to main's definitions.
 
+The run of `ac8ca1d2f`
+([36104458730](https://github.com/mbbill/Whitefoot/actions/runs/36104458730))
+compared byte-identical records images on an AMD EPYC 9V74. It passed with
+one single-width suspect: records read 0.855 (5/5) at W=1, 1.001 (2/5) at W=2
+and 1.006 (1/5) at W=4, and the identical-image control passed. W=1 times the
+sequential clone, which is instruction-identical to main's and 16 bytes
+earlier. The same images therefore read 1.073 at W=1 on the EPYC 7763 and
+0.855 on the EPYC 9V74. As with the merged form, the W=1 row follows the host
+class, and the hosted runners have no placement control to attribute it.
+
 ## Selection
 
 The register bound is selected, with the entry-over-body lowering:
@@ -583,7 +593,8 @@ The register bound is selected, with the entry-over-body lowering:
   4% to 7% faster, and the out-of-line `find` loop is unchanged within its
   variation. The maintained paired comparison, which the criterion does not
   name, failed on `records` with the merged returns. The entry-over-body form
-  keeps records' loop structure and passed that comparison
+  keeps records' loop structure and passed that comparison in both of its
+  hosted runs, one of them with a W=1 suspect on the EPYC 9V74
   ([Hosted compute regression](#hosted-compute-regression)).
 - Under criterion 5 it is preferred over both bounds, because the 24-byte
   three-leaf results return in registers and the corpus has them. The cost is

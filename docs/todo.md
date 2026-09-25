@@ -805,7 +805,9 @@ rarely insert at the same place.
   show on a local Intel host that shifting records' two loop copies by 16 to
   48 bytes, with no executed instruction changed, moves main or that
   investigation's rejected merged-returns lowering by up to 18% and reverses
-  their order at W2 and W4, while moving only the runtime does not. The
+  their order at W2 and W4, while moving only the runtime does not. Its
+  selected lowering's byte-identical records images read 1.073 at W1 on an
+  EPYC 7763 and 0.855, a single-width suspect, on an EPYC 9V74. The
   [PR 78 hosted records inspection](../research/investigations/compute-model/DESIGN.md#records-w4-hosted-comparison-remains-unresolved)
   retains repeated W4 suspects at `30198a19` and `53c68c29`: the latter has
   wall/CPU ratios 0.898002/0.908317 with four adverse pairs, while its records
