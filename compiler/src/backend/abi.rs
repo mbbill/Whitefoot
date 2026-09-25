@@ -16,17 +16,21 @@
 //! value when every scalar leaf of that value gets its own return register
 //! on every admitted target (see [`fits_return_registers`]). Any larger
 //! stored aggregate is constructed through the caller's destination
-//! pointer. The two forms differ only at the boundary. A callee constructs
-//! its result in a `%wf.result` slot either way: its own frame slot for a
-//! value return, the caller's destination otherwise. A value-returning
-//! callee's returns all branch to one block that loads the slot, so SROA
-//! turns the slot into scalar phis there rather than into a phi of
-//! aggregates, which LLVM scalarizes poorly after inlining. The caller
-//! stores the returned value into the storage its plan selected, and SROA
-//! removes that copy too. A bound in bytes would not give this guarantee.
-//! On x86-64 LLVM silently passes a hidden result pointer for four 32-bit
-//! fields and returns the third of three 32-bit floats through the x87
-//! stack, while it returns three 64-bit words in registers.
+//! pointer. The two forms differ only at the boundary. The body that
+//! constructs a register-returned result is the destination-form body,
+//! emitted under an internal symbol ([`FunctionAbi::body`]). The
+//! definition's public symbol is a small entry that gives that body a frame
+//! slot, calls it, and returns the loaded value. The host optimizer
+//! simplifies the body on its own before it inlines the body into the
+//! entry, so the body's loops and exits keep the shape the destination form
+//! gives them. If the returns instead joined one block, or each loaded and
+//! returned the slot, the host would fold their exit tests into selects
+//! before that point. The caller stores the returned value into the storage
+//! its plan selected, and SROA removes that copy. A bound in bytes would not
+//! give the register guarantee. On x86-64 LLVM silently passes a hidden
+//! result pointer for four 32-bit fields and returns the third of three
+//! 32-bit floats through the x87 stack, while it returns three 64-bit words
+//! in registers.
 //!
 //! Representation is not the whole signature. A parameter's *source mode*
 //! does select the aliasing facts its emitted signature carries
@@ -69,10 +73,11 @@ impl ParameterAbi {
 pub(crate) enum ResultAbi {
     /// A scalar or descriptor, returned as its own SSA value.
     Value(IrType),
-    /// A stored aggregate small enough for the return registers. The callee
-    /// constructs it in a local `%wf.result` slot, and every return branches
-    /// to one block that loads the slot and returns the value. A caller
-    /// stores the returned value into the storage its plan selected.
+    /// A stored aggregate small enough for the return registers. The
+    /// definition's body still constructs it through a destination pointer,
+    /// under an internal symbol, and the public entry returns the value
+    /// ([`FunctionAbi::body`]). A caller stores the returned value into the
+    /// storage its plan selected.
     StoredValue(IrType),
     /// A larger stored aggregate. The callee constructs it through the
     /// caller's destination pointer, `ptr %wf.result`, and returns `void`.
@@ -88,12 +93,6 @@ impl ResultAbi {
 
     pub(crate) const fn uses_destination(self) -> bool {
         matches!(self, Self::Destination(_))
-    }
-
-    /// Whether the callee constructs its result in a `%wf.result` slot,
-    /// which is its own frame slot or the caller's destination.
-    pub(crate) const fn is_stored(self) -> bool {
-        matches!(self, Self::StoredValue(_) | Self::Destination(_))
     }
 }
 
@@ -136,6 +135,21 @@ impl FunctionAbi {
 
     pub(crate) const fn result(&self) -> ResultAbi {
         self.result
+    }
+
+    /// The ABI a definition's body is emitted under. A register-returned
+    /// result is constructed through a destination pointer inside the body,
+    /// as a larger result is, and only the definition's public entry
+    /// returns it as a value. Every other result keeps its ABI.
+    pub(crate) fn body(&self) -> Self {
+        let result = match self.result {
+            ResultAbi::StoredValue(ty) => ResultAbi::Destination(ty),
+            result => result,
+        };
+        Self {
+            parameters: self.parameters.clone(),
+            result,
+        }
     }
 }
 

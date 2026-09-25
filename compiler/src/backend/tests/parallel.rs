@@ -1530,6 +1530,18 @@ fn without_clones(module: &str) -> String {
 
 /// The text of one emitted function definition, from its `define` line to its
 /// closing brace.
+/// The definition that carries `symbol`'s emitted body: its own definition,
+/// or, for a result returned in registers, the internal destination-form
+/// body its public entry calls (compiler/src/backend/abi.rs).
+fn emitted_body_definition<'module>(module: &'module str, symbol: &str) -> &'module str {
+    let body = format!("{symbol}.body");
+    if module.contains(&format!("{body}(")) {
+        function_body(module, &body)
+    } else {
+        function_body(module, symbol)
+    }
+}
+
 pub(super) fn function_body<'module>(module: &'module str, symbol: &str) -> &'module str {
     let opening = format!("{symbol}(");
     let start = module
@@ -2370,14 +2382,18 @@ fn main() -> status: ExitStatus pure {{
                     );
                     continue; // Equality retains the emission check; its image already ran.
                 }
-                let entry = function_body(&module, "@wf_fold");
+                // `Answer` returns in registers, so each of these definitions
+                // is a public entry over an internal destination-form body
+                // that holds the calls and the cut (compiler/src/backend/abi.rs).
+                let entry = emitted_body_definition(&module, "@wf_fold");
                 let target = if mutual { "alternate" } else { "fold" };
                 assert_eq!(module.contains("@wf__par_budget_fold("), family);
                 if family {
                     // The entry keeps the writer's own signature and result
                     // ABI: what it adds is the budget it enters the family
                     // with, asked of the runtime unless it was pinned.
-                    let variant = function_body(&module, &format!("@wf__par_budget_{target}"));
+                    let variant =
+                        emitted_body_definition(&module, &format!("@wf__par_budget_{target}"));
                     assert!(entry.contains("@wf__par_budget_fold("), "{entry}");
                     assert!(!entry.contains("@wf__par_acquire_lane("), "{entry}");
                     assert_eq!(
@@ -2393,7 +2409,7 @@ fn main() -> status: ExitStatus pure {{
                         "{variant}"
                     );
                     assert_eq!(
-                        function_body(&module, "@wf__par_budget_fold")
+                        emitted_body_definition(&module, "@wf__par_budget_fold")
                             .matches(&format!("@wf__par_seq_{target}("))
                             .count(),
                         usize::from(!mutual) + usize::from(sequential)
@@ -2406,7 +2422,8 @@ fn main() -> status: ExitStatus pure {{
                 }
 
                 assert!(
-                    !function_body(&module, "@wf__par_seq_fold").contains("@wf__par_acquire_lane(")
+                    !emitted_body_definition(&module, "@wf__par_seq_fold")
+                        .contains("@wf__par_acquire_lane(")
                 );
                 let mut observed = module
                     .replace(

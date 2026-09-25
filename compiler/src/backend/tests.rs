@@ -689,6 +689,19 @@ fn emitted_function<'module>(module: &'module str, name: &str) -> &'module str {
     &module[function_start..function_end]
 }
 
+/// The definition that carries one source function's emitted body: the
+/// function's own definition, or, for a result returned in registers, the
+/// internal destination-form body its public entry calls
+/// (compiler/src/backend/abi.rs).
+fn emitted_body<'module>(module: &'module str, name: &str) -> &'module str {
+    let body = format!("{name}.body");
+    if module.contains(&format!(" @wf_{body}(")) {
+        emitted_function(module, &body)
+    } else {
+        emitted_function(module, name)
+    }
+}
+
 /// The first-class aggregate type one emitted definition returns in
 /// registers (compiler/src/backend/abi.rs), checked against its expected
 /// scalar fields independently of the module's nominal numbering.
@@ -715,8 +728,8 @@ fn register_result_type<'function>(
 /// These fixtures construct every variant of a result with scalar fields.
 /// Check the typed `%wf.result` construction and field writes independently
 /// of a preliminary whole-aggregate store or the module's nominal numbering.
-/// `%wf.result` is the caller's destination, or the function's own frame
-/// slot when the result returns in registers.
+/// `function` is the definition that constructs the result, as
+/// [`emitted_body`] finds it, and `%wf.result` is its destination.
 fn assert_scalar_result_fields(module: &str, function: &str, fields: &[&str]) {
     let mut initialized = vec![false; fields.len()];
     for line in function.lines() {

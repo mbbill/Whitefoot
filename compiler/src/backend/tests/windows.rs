@@ -930,15 +930,22 @@ fn a_referenced_pool_tree_preserves_range_reference_and_result_abi() {
     ));
     let build = emitted_function(&llvm, "build");
     let checksum = emitted_function(&llvm, "checksum");
+    let build_body = emitted_body(&llvm, "build");
+    let checksum_body = emitted_body(&llvm, "checksum");
     let main = emitted_function(&llvm, "main");
     // The case lends the pool as two range references and one ordinary
     // reference to a scalar-bearing struct. A range reference crosses this
     // boundary as its address-and-length pair [REF-4], passed as the element
     // pointer, which carries the reference facts, and the count
-    // (compiler/backend-facts). The three-leaf Result returns in registers,
-    // so the first range is the first argument.
+    // (compiler/backend-facts). The three-leaf Result returns in registers
+    // from the public entry, so the first range is its first argument. The
+    // internal body still constructs the result through its destination
+    // (compiler/src/backend/abi.rs), and carries the same facts.
     // `build` also takes its cursor by reference; `checksum` only reads.
-    for (function, name, references) in [(build, "build", 3), (checksum, "checksum", 2)] {
+    for (function, body, name, references) in [
+        (build, build_body, "build", 3),
+        (checksum, checksum_body, "checksum", 2),
+    ] {
         register_result_type(&llvm, function, &["i32", "i64", "i32"]);
         let header = function.lines().next().expect("helper signature");
         assert!(
@@ -946,44 +953,57 @@ fn a_referenced_pool_tree_preserves_range_reference_and_result_abi() {
             "{header}"
         );
         assert!(!header.contains("%wf.result"), "{header}");
-        for ordinal in 0..2 {
-            assert!(
-                header.contains(&format!(
-                    " %wf.arg.v{ordinal}.data, i64 %wf.arg.v{ordinal}.len, "
-                )),
+        let body_header = body.lines().next().expect("helper body signature");
+        assert!(
+            body_header.starts_with(&format!(
+                "define internal void @wf_{name}.body(ptr %wf.result, ptr noalias nonnull "
+            )),
+            "{body_header}"
+        );
+        for header in [header, body_header] {
+            for ordinal in 0..2 {
+                assert!(
+                    header.contains(&format!(
+                        " %wf.arg.v{ordinal}.data, i64 %wf.arg.v{ordinal}.len, "
+                    )),
+                    "{header}"
+                );
+            }
+            assert_eq!(
+                header.matches("ptr noalias nonnull ").count(),
+                references,
                 "{header}"
             );
         }
-        assert_eq!(
-            header.matches("ptr noalias nonnull ").count(),
-            references,
-            "{header}"
-        );
-        // The result slot still receives the tag, u64 success payload and
-        // three-variant PoolError, each written on its selected route.
-        assert_scalar_result_fields(&llvm, function, &["i32", "i64", "i32"]);
+        // The body's destination still receives the tag, u64 success
+        // payload and three-variant PoolError, each written on its route.
+        assert_scalar_result_fields(&llvm, body, &["i32", "i64", "i32"]);
     }
-    assert!(
-        build
-            .lines()
-            .next()
-            .expect("build signature")
-            .contains(", i32 %v3)")
-    );
-    assert!(
-        checksum
-            .lines()
-            .next()
-            .expect("checksum signature")
-            .contains(", i64 %v2)")
-    );
-    assert!(!build.contains("call void @free"));
-    assert!(!checksum.contains("call void @free"));
+    for definition in [build, build_body] {
+        assert!(
+            definition
+                .lines()
+                .next()
+                .expect("build signature")
+                .contains(", i32 %v3)")
+        );
+    }
+    for definition in [checksum, checksum_body] {
+        assert!(
+            definition
+                .lines()
+                .next()
+                .expect("checksum signature")
+                .contains(", i64 %v2)")
+        );
+    }
+    assert!(!build_body.contains("call void @free"));
+    assert!(!checksum_body.contains("call void @free"));
     // Bounds and arithmetic failures are typed results rather than written
     // proofs, so build and checksum contain no trap edge. Main owns two
     // `Box<Slots<u64>>` cells and releases both on each of its five exits.
-    assert!(!build.contains("call void @wf_trap"));
-    assert!(!checksum.contains("call void @wf_trap"));
+    assert!(!build_body.contains("call void @wf_trap"));
+    assert!(!checksum_body.contains("call void @wf_trap"));
     assert!(!main.contains("call void @wf_trap"));
     assert_eq!(main.matches("call void @wf_exit_status").count(), 5);
     let exits = main
@@ -1142,7 +1162,9 @@ fn main() -> status: ExitStatus pure {
 }
 "#;
     let llvm = compile(source);
-    let update = emitted_function(&llvm, "update");
+    // `Columns`, two Box pointers, returns in registers, so the projections
+    // are in `update`'s destination-form body (compiler/src/backend/abi.rs).
+    let update = emitted_body(&llvm, "update");
     // The length read projects the field once for the explicit control. The
     // target captures the complete element address once before the RHS, and
     // the store uses that address without rereading its parent [SET-1].

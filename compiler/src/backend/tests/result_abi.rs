@@ -1,6 +1,8 @@
 //! The callable result ABI (compiler/src/backend/abi.rs). A stored aggregate
 //! whose scalar leaves fit the return registers returns as its first-class
-//! value, and a larger one returns through the caller's destination.
+//! value, and a larger one returns through the caller's destination. A
+//! register-returned definition is a public entry over its internal
+//! destination-form body.
 //!
 //! The classification is checked against the leaves of the LLVM types the
 //! module actually emits, counted here from the module text, so a
@@ -9,7 +11,7 @@
 //! third floating leaf on x86-64, through the x87 stack.
 
 use super::system::with_ir;
-use super::{compile, compile_and_run, emitted_function};
+use super::{compile, compile_and_run, emitted_body, emitted_function};
 use crate::backend::abi::{FunctionAbi, ResultAbi};
 use crate::backend::emitter::llvm_type;
 use crate::{IrProgram, ORDINARY_VALUES_LLVM};
@@ -204,38 +206,62 @@ fn stored_results_return_in_registers_exactly_when_their_leaves_fit() {
             let result = FunctionAbi::build(program, function)
                 .expect("callable ABI")
                 .result();
-            let body = emitted_function(&module, name);
+            let entry = emitted_function(&module, name);
+            let body_symbol = format!("@wf_{name}.body(");
             if !registers {
                 assert!(matches!(result, ResultAbi::Destination(_)), "{name}");
                 assert!(
-                    body.starts_with(&format!("define void @wf_{name}(ptr %wf.result")),
-                    "{body}"
+                    entry.starts_with(&format!("define void @wf_{name}(ptr %wf.result")),
+                    "{entry}"
                 );
+                assert!(!module.contains(&body_symbol), "{name}");
                 continue;
             }
             assert!(matches!(result, ResultAbi::StoredValue(_)), "{name}");
             let ty = llvm_type(program, result.ty()).expect("result type");
             assert!(
-                body.starts_with(&format!("define {ty} @wf_{name}(")),
-                "{body}"
+                entry.starts_with(&format!("define {ty} @wf_{name}(")),
+                "{entry}"
             );
-            let header = body.lines().next().expect("definition header");
+            let header = entry.lines().next().expect("definition header");
             assert!(!header.contains("%wf.result"), "{header}");
-            // The result is constructed in the frame's own `%wf.result`
-            // slot, and every return branches to one block that loads it.
-            assert!(body.contains("  %wf.result = "), "{body}");
+            // The entry gives its body one slot, calls it, and returns the
+            // value the body constructed there.
+            assert!(entry.contains("  %wf.result = "), "{entry}");
             assert!(
-                body.contains(&format!(
-                    "\nwf.return:\n  %wf.returned = load {ty}, ptr %wf.result\n  ret {ty} %wf.returned\n"
+                entry.contains(&format!("  call void {body_symbol}ptr %wf.result")),
+                "{entry}"
+            );
+            assert!(
+                entry.ends_with(&format!(
+                    "\n  %wf.returned = load {ty}, ptr %wf.result\n  ret {ty} %wf.returned\n}}\n"
+                )),
+                "{entry}"
+            );
+            assert_eq!(entry.matches("\n  ret ").count(), 1, "{entry}");
+            // The body is the destination-form definition, internal and
+            // called only by its entry, so the host simplifies it on its
+            // own before it inlines it there. Nothing marks it always-inline.
+            let body = emitted_body(&module, name);
+            assert!(
+                body.starts_with(&format!(
+                    "define internal void @wf_{name}.body(ptr %wf.result"
                 )),
                 "{body}"
             );
-            assert_eq!(body.matches("\n  ret ").count(), 1, "{body}");
+            assert!(
+                body.lines()
+                    .filter(|line| line.starts_with("  ret "))
+                    .all(|line| line == "  ret void"),
+                "{body}"
+            );
+            assert_eq!(module.matches(&body_symbol).count(), 2, "{name}");
             assert!(
                 main.contains(&format!(" = call {ty} @wf_{name}(")),
                 "{name}: {main}"
             );
         }
+        assert!(!module.contains("alwaysinline"), "{module}");
     });
 }
 
