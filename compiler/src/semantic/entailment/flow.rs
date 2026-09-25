@@ -16204,9 +16204,18 @@ impl Analyzer<'_, '_> {
     ) {
         self.promote_flow_contradiction(states);
         // The header kills stand for the body's events on every iteration,
-        // whose entry states the header does not hold, so no index is proved
-        // live here and the ledger's own `false` stands [WIN-2].
-        let separations = states.separations.clone();
+        // and an index this state proves live stays live at each of them
+        // [WIN-2]: `r.len` falls only at an event that writes `r.last`,
+        // `r.filled` or the whole window [OP-10], each of which kills every
+        // fact below `r[i]` here because no ledger records `i != r.len - 1`,
+        // and a write of `i` kills the fact through its offset support
+        // [ENT-5]. A fact these kills leave therefore meets no such event.
+        let ledger = states.separations.clone();
+        let live = self.event_live_indices(states, &kills.events);
+        let separations = EventSeparations {
+            ledger: &ledger,
+            live: &live,
+        };
         self.kill_result_evidence(states, &kills.events);
         self.apply_loop_kills_one(&separations, &mut states.facts, kills);
         self.apply_affine_kills(&separations, &mut states.affine, &kills.events);

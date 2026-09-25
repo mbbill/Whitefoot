@@ -1292,9 +1292,9 @@ condition under which it is taken up.
   image, so `ensures result <= deref(nodes)[i].count` is refused and
   `requires deref(nodes)[i].first + deref(nodes)[i].count <= deref(kids).len`
   gives the body no usable affine premise. FN-9 needs the formal offset
-  substituted on both the body and the caller side first (see the next
-  entry) and clause subscripts judged (the entry after it); affine images
-  need their kill to follow the term's support, as measure atoms do. Validate with paired published and local cases, a kill of
+  substituted on both the body and the caller side and an `ensures` place
+  judged where it is formed (see the next entry); affine images need their
+  kill to follow the term's support, as measure atoms do. Validate with paired published and local cases, a kill of
   each support member, and unchanged verdicts elsewhere; reopen when an
   index-based program needs one of these surfaces.
 - **FN-9 relations read a formal subscript as an unknown offset.** A
@@ -1305,44 +1305,14 @@ condition under which it is taken up.
   as requirement instantiation already does. Nothing but standing facts is
   provable about that term, so the relation is unusable rather than unsound
   today, but any extension of what can be proved about it would conflate the
-  elements of two calls. Substitute the formal on both sides, then add a
-  case whose caller publishes over two different offsets and must not equate
-  them.
-- **Clause subscripts owe no judged bounds obligation.** ENT-2 submits each
-  subscript in a clause (b) place to MSR-4 where the place is formed, but a
-  `requires` or `define` place such as `deref(rows)[i].len` is never judged:
-  `requires k < deref(rows)[i].len` is accepted with `i` unconstrained. The
-  callee body then holds facts over an element that may not exist, and the
-  WIN-2 separation below lets such a fact survive the operation that creates
-  that element: with `requires i == deref(rows).len` and
-  `requires deref(rows)[i].width <= deref(cells).len`, a body that calls
-  `place_back` with a wide element and loops to `deref(rows)[i].width` is
-  accepted (review probe p50; v0.69 refused the clause under FN-8). It is not
-  reachable from an accepted caller today only because a caller can
-  discharge a requirement over an element that does not exist solely from
-  value-independent standing facts, which stay true of whatever element is
-  created: any other fact about an element needs its subscript discharged
-  where the place is formed, and every body event keeps that element live or
-  kills the fact. Decide where a clause place is formed (body entry after the
-  earlier requirements, as the existing tests write it, or the caller's
-  instantiation) and judge it there; validate with p50 (must reject), a
-  clause whose offset is unbounded, and one bounded by an earlier
-  requirement. The FN-9 extension above waits on this, because a published
-  relation would hand such a fact to a caller.
-- **WIN-2 separates a subscript from `next` and `free` without proving it
-  live.** The overlap relation answers `r[i]` against `r.next` and `r.free`
-  as separate because a live `r[i]` has `i < r.len`, but it never asks
-  whether `i < r.len` holds at the event: a fact over `r[i]` with `i` equal to
-  the length survives `place_back`, which writes exactly that slot. Every
-  body subscript is discharged where its place is formed and every later
-  event keeps it live or kills its facts, so only the clause route above
-  reaches the gap. PAR-1 already refuses these answers across a length change
-  through `SeparationOracle::window_length_is_shared`, but the flow's
-  `SeparationLedger`, which the ENT-5 kills consult, answers it `true`
-  unconditionally. Make the answer conditional on proving `i < r.len` in the
-  event's context, as `r.last` already is on `i != r.len - 1`; validate that
-  p50 is rejected even with clause subscripts still unjudged, and that the
-  window programs, containers and conformance corpus keep their verdicts.
+  elements of two calls. Nothing judges the subscript of an `ensures` place
+  either: ENT-2 fixes where a requirement's places are formed, at body entry,
+  but not an `ensures` place's, and `ensures r <= deref(rows)[i].len` with
+  `i` unconstrained is accepted. The extension must form such a place where
+  its relation is judged, each selected return, with its subscripts owing
+  OP-4 there, and state that point in ENT-2. Substitute the formal on both
+  sides, judge the subscripts, then add a case whose caller publishes over
+  two different offsets and must not equate them.
 - **Tracked-place offsets with projections are not captured.** ENT-2 admits
   any clause (a) term as an offset, but the compiler captures only literals,
   consts and bare bindings. A measure read such as `table[s.k].len` and a
@@ -1360,6 +1330,25 @@ condition under which it is taken up.
   offset rule non-recursive. Reopen when an index-based program needs it,
   after the capture above; validate with kills of the inner element, the
   inner offset and the outer element.
+- **PAR-1 proves no window liveness.** WIN-2 separates `r[i]` from `r.next`
+  and `r.free` only where `i < r.len` is proved. PAR-1's footprints carry an
+  effect row's index as an unknown value, and an offset no captured value
+  names as the same value, so a statement pair meeting on a part and such an
+  index gets no overlap permission even when the subscript was formed in the
+  compared state. This loses permission only. Reopen when a program needs it:
+  carry the row's argument capture into the footprint and ask the
+  entailment fragment for the bound, as EFF-5 already does through
+  `CheckedCallSeparationPositions::Live`.
+- **Loop-header liveness rests on no proof of `i != r.len - 1`.** A loop
+  header's kills stand for every iteration's events, and the flow answers
+  WIN-2's liveness there from the preheader state: `r.len` falls only at an
+  event writing `r.last`, `r.filled` or the whole window, each of which kills
+  every fact below `r[i]` because the ledger never records `i != r.len - 1`.
+  Recording that proof would let a fact survive a `take_back` in a loop body,
+  where a proof made at the header need not hold at a later iteration's
+  event, and would break the header argument above. Whoever first records it
+  must make it event-local as liveness is and revisit the header answer; a
+  loop that calls `take_back` once per iteration is the validating case.
 - **Member names `len`, `cap` and `head` are classified by spelling in two
   paths.** Contract clauses and subscripted body places pick the measure
   route by the member's name before its type is known, so a writer's field

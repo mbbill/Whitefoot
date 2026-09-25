@@ -32,6 +32,7 @@ argument at a written parameter. The complete set of events that change it:
 | `set P = v`, `set owner = v` | a prefix | prefix |
 | `swap(first: &P[a], second: &P[b])` | `P[a]`, `P[b]` | prefix unless both offsets are proved distinct from `i` |
 | `remove_at`, `insert_at` on a window | `P.filled` | [WIN-2]: every live index overlaps `filled` |
+| `place_back`, `append`, `split_off` into a window | `P.next`, `P.free` | [WIN-2]: separate from `P[i]` only where `i < P.len` is proved at the event; an index at the length is the slot written |
 | `place_front`, `take_front` | `P` | prefix |
 | `take_back` | `P.last` | overlaps `P[i]` unless `i != P.len - 1` is proved |
 | call whose row writes `P` or a prefix | projected actual | prefix; a range actual reaches its element storage [CALL-3] |
@@ -73,9 +74,41 @@ cover measure terms; `ent5-neg-readonly-field-inline-range-callee-write` and
 `ent5-neg-readonly-field-inline-reslice-callee-write` cover the new terms, and
 every review probe that read out of bounds is now rejected.
 
-The same review found that a requirement over an element that does not exist
-yet is now admitted and that its fact survives `place_back` in the callee;
-`docs/todo.md` records why no accepted caller reaches it and what closes it.
+The same review found that a requirement could name an element that does not
+exist yet and that its fact survived the `place_back` that creates it (review
+probe p50): nothing judged a clause subscript, and [WIN-2] separated every
+index from `r.next` without asking whether it was below the length at the
+event. Both halves are closed, and either alone rejects p50.
+
+- A requirement forms its places at body entry, in the state holding the
+  requirements before it, and a definition's places are formed in the first
+  requirement that expands it, so each subscript owes [OP-4] there [ENT-2].
+  Forming the place in each caller's instantiated goal instead was refused:
+  the callee establishes the requirement's fact in its own entry state, and a
+  place is a term only where its subscripts are discharged, so the place must
+  be formed in that state. A clause's own conjuncts come after nothing, so a
+  requirement cannot bound its own subscript.
+- [WIN-2] separates `r[i]` from `r.next`, `r.free` and `r.last` only where
+  `i < r.len` is proved in the state the two places are compared in. A
+  subscript formed there and a place a valid reference names are live by
+  construction; an [ENT-5] event proves each fact's index in its entry state,
+  a loop header in its preheader state because the length falls only at an
+  event that kills every such fact anyway; and an effect row's index position
+  beside a part is submitted to the call's entry state as index distinctness
+  is ([EFF-5]).
+
+With the judgment alone p50 is refused at its clause; with the liveness
+condition alone the fact dies at `place_back` and the loop's cell read is
+refused. The 107 review probes keep their verdicts except p50. The cases
+`ent2-neg-requirement-names-append-slot-element`,
+`ent2-neg-requirement-readonly-field-unbounded-subscript`,
+`ent2-neg-requirement-measure-unbounded-subscript` and
+`ent2-neg-definition-expanded-before-bound` reject at the clause, their
+`ent2-pos-requirement-*-bounded-by-earlier-requirement` pairs run,
+`win2-pos-live-index-survives-appends` keeps a live fact across two appends,
+and `eff5-pos-row-index-live-beside-append` admits a row position the call
+proves live. An `ensures` place's formation point is still unstated and
+unjudged; `docs/todo.md` records it with the FN-9 extension.
 
 Evidence: the conformance cases
 `ent5-neg-readonly-field-offset-reassigned-in-loop`,
