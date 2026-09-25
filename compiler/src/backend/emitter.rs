@@ -24,7 +24,7 @@ mod slice;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write;
 
-use super::abi::{FunctionAbi, ParameterAbi};
+use super::abi::{FunctionAbi, ParameterAbi, ResultAbi};
 pub use super::runtime::*;
 use super::storage::{FunctionStoragePlan, is_stored_aggregate};
 use super::target::{
@@ -478,7 +478,7 @@ fn ordinary_call_arguments(
 ) -> Result<String, BackendFailure> {
     let mut arguments = Vec::with_capacity(abi.parameters().len() + 1);
     if abi.result().uses_destination() {
-        arguments.push("ptr %wf.result".to_owned());
+        arguments.push(format!("ptr {RESULT_POINTER}"));
     }
     for ((value, _), parameter) in function.parameters().iter().zip(abi.parameters()) {
         arguments.push(incoming_parameter(program, *value, *parameter, "")?);
@@ -827,7 +827,17 @@ enum FunctionSlot {
     OwnedValue(usize),
     ArrayFillIndex(IrValueId),
     Address(IrValueId),
+    /// The result a function returns in registers, constructed here as a
+    /// destination result is constructed in its caller's storage.
+    Result,
 }
+
+/// Where a function constructs its stored result: its destination
+/// parameter, or its own frame slot when the result returns in registers.
+const RESULT_POINTER: &str = "%wf.result";
+
+/// The one block every return of a register-returned aggregate branches to.
+const RETURN_LABEL: &str = "wf.return";
 
 struct PlannedFunctionSlot {
     logical_index: usize,
@@ -850,6 +860,9 @@ struct FunctionFramePlan {
 struct FunctionFrameContents<'plan> {
     storage: &'plan FunctionStoragePlan,
     result_slot: Option<usize>,
+    /// The type of a result returned in registers, which this frame holds
+    /// at `%wf.result` until the shared return block loads it.
+    local_result: Option<IrType>,
 }
 
 impl FunctionFramePlan {
@@ -862,9 +875,19 @@ impl FunctionFramePlan {
         let FunctionFrameContents {
             storage,
             result_slot,
+            local_result,
         } = contents;
         let mut specifications = Vec::new();
         let mut ordered = Vec::new();
+        if let Some(ty) = local_result {
+            push_function_slot(
+                &mut specifications,
+                &mut ordered,
+                FunctionSlot::Result,
+                TargetStorageType::source(ty),
+                None,
+            )?;
+        }
         for (slot, ty) in storage.slots().iter().copied().enumerate() {
             if Some(slot) != result_slot
                 && storage.destination(slot).is_none()
@@ -912,6 +935,7 @@ impl FunctionFramePlan {
         for (logical_index, key) in ordered.iter().copied().enumerate() {
             let pointer = match key {
                 FunctionSlot::Address(result) => value_name(result),
+                FunctionSlot::Result => RESULT_POINTER.to_owned(),
                 _ => format!("%wf.slot.{logical_index}"),
             };
             if slots
@@ -1096,6 +1120,9 @@ struct FunctionEmitter<'program, 'state> {
     /// The caller's remaining budget, as an operand: the value a call that
     /// stays inside this component carries. Fixed for the whole emission.
     grain_next: Option<String>,
+    /// Whether an emitted return branched to [`RETURN_LABEL`], so the block
+    /// must follow the body.
+    returns_through_block: bool,
 }
 
 /// What one function's emission shares with the rest of its module, and the
@@ -1165,7 +1192,15 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             .collect();
         let storage =
             FunctionStoragePlan::build_in_world(program, function, sequential_clones.is_some())?;
-        let result_slot = places::returned_storage_slot(function, &storage);
+        // A stored result is constructed at `%wf.result`: the caller's
+        // destination, or this frame's own slot for a result returned in
+        // registers.
+        let result = FunctionAbi::build(program, function)?.result();
+        let result_slot = if result.is_stored() {
+            places::returned_storage_slot(function, &storage)
+        } else {
+            None
+        };
         let frame = FunctionFramePlan::build(
             target,
             program,
@@ -1173,6 +1208,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             FunctionFrameContents {
                 storage: &storage,
                 result_slot,
+                local_result: match result {
+                    ResultAbi::StoredValue(ty) => Some(ty),
+                    ResultAbi::Value(_) | ResultAbi::Destination(_) => None,
+                },
             },
         )?;
         let entry_prelude = frame.render(program)?;
@@ -1201,6 +1240,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             frontiers,
             grain,
             grain_next: None,
+            returns_through_block: false,
         })
     }
 
@@ -1378,7 +1418,8 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)?;
         let result_address = abi.result().uses_destination();
         if result_address {
-            self.output.push_str("ptr %wf.result");
+            self.output.push_str("ptr ");
+            self.output.push_str(RESULT_POINTER);
         }
         for (index, ((value, _), parameter)) in self
             .function
@@ -1470,6 +1511,14 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 self.emit_instruction(block_id, instruction_index, instruction)?;
             }
             self.emit_terminator(block_id, block.terminator())?;
+        }
+        if self.returns_through_block {
+            let result = llvm_type(self.program, abi.result().ty())?;
+            writeln!(
+                self.output,
+                "{RETURN_LABEL}:\n  %wf.returned = load {result}, ptr {RESULT_POINTER}\n  ret {result} %wf.returned"
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
         }
         self.output.push_str("}\n\n");
         if !self.entry_prelude.is_empty() {
@@ -1991,20 +2040,35 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 if self.value_type(*value) != Some(abi.result().ty()) {
                     return Err(BackendFailure::InvalidIr);
                 }
-                if abi.result().uses_destination() {
-                    self.store_value_at(*value, "%wf.result")?;
-                    self.emit_drops(drops)?;
-                    return writeln!(self.output, "  ret void")
-                        .map_err(|_| BackendFailure::TextEmission);
+                match abi.result() {
+                    ResultAbi::Destination(_) => {
+                        self.store_value_at(*value, RESULT_POINTER)?;
+                        self.emit_drops(drops)?;
+                        writeln!(self.output, "  ret void")
+                            .map_err(|_| BackendFailure::TextEmission)
+                    }
+                    // The same construction into this frame's own slot. One
+                    // shared block loads and returns it, so SROA meets a
+                    // single load and builds scalar phis rather than a phi
+                    // of aggregates.
+                    ResultAbi::StoredValue(_) => {
+                        self.store_value_at(*value, RESULT_POINTER)?;
+                        self.emit_drops(drops)?;
+                        self.returns_through_block = true;
+                        writeln!(self.output, "  br label %{RETURN_LABEL}")
+                            .map_err(|_| BackendFailure::TextEmission)
+                    }
+                    ResultAbi::Value(ty) => {
+                        self.emit_drops(drops)?;
+                        writeln!(
+                            self.output,
+                            "  ret {} {}",
+                            llvm_type(self.program, ty)?,
+                            self.value_name(*value)
+                        )
+                        .map_err(|_| BackendFailure::TextEmission)
+                    }
                 }
-                self.emit_drops(drops)?;
-                writeln!(
-                    self.output,
-                    "  ret {} {}",
-                    llvm_type(self.program, abi.result().ty())?,
-                    self.value_name(*value)
-                )
-                .map_err(|_| BackendFailure::TextEmission)
             }
             IrTerminator::Match {
                 scrutinee,

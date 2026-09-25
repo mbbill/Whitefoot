@@ -223,9 +223,13 @@ concludes with a recorded disposition; retain any selected follow-up work here.
 - **PriorityQueue has distinct sift and return-boundary costs.** The
   [complete library comparison](../research/experiments/container-representation/priority-library/RESULTS.md)
   measures retained scalar pop/push at 1.510--1.722 times same-algorithm C for
-  16/256 elements. WF returns push's Result through a pointer and clears its
-  inactive payload; C returns the scalar result in registers. Their causal
-  shares are unmeasured. Normal wide replacement also costs 1.178--1.289 times
+  16/256 elements. In that comparison WF returned push's Result through a
+  pointer and cleared its inactive payload; C returns the scalar result in
+  registers. The scalar cohort's three-leaf `Result<unit, u64>` now returns in
+  registers too ([result-register investigation](../research/investigations/result-registers/DESIGN.md#selection)),
+  while the inactive payload is still cleared and the wide cohort keeps its
+  destination. The causal shares, and what that change recovered, are
+  unmeasured. Normal wide replacement also costs 1.178--1.289 times
   the swap control at those sizes, while retained replacement reverses the
   direction. Separately, wide hole-sift C halves counted movement on large
   complete traces; ordinary WF swaps cannot be credited with that algorithm's
@@ -239,6 +243,22 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   interference obligations; reopen for the indexed heap composition or an
   application dominated by these paths. Do not report universal native parity
   from the large scalar queue results.
+
+- **Small results beyond the per-leaf register budget still use a
+  destination.** A stored result returns in registers only when its scalar
+  leaves fit the x86-64 budget of three integer-class words and two floating
+  leaves ([result-register investigation](../research/investigations/result-registers/DESIGN.md#demotion-probe)).
+  A 16-byte result with four 32-bit fields, a small byte array, the 32-byte
+  opaque `ExitStatus`, and every result with four to eight words on AArch64
+  still pass through memory. Packing small leaves into shared integer words,
+  or a per-target budget, could carry some of these. Either one adds
+  per-target lowering to emitted code and to linked definitions, and no
+  maintained program currently shows a surviving call with such a result. The
+  benefit is unmeasured. Reopen when a maintained program keeps such a call
+  on a measured path. Validate with unchanged source and both lowerings
+  compiled, requiring the destination round trip to disappear without a new
+  demotion or a regression in the program's timing, on each target that
+  changes.
 
 - **Indexed small-payload costs with retained boundaries need attribution.**
   The [native-cost record](../research/experiments/container-representation/indexed-library/RESULTS.md#remaining-native-costs)

@@ -61,6 +61,7 @@ mod ranges;
 mod reinterpret;
 mod requires;
 mod resource_enums;
+mod result_abi;
 mod stack_ledger;
 mod system;
 mod tail_calls;
@@ -688,9 +689,34 @@ fn emitted_function<'module>(module: &'module str, name: &str) -> &'module str {
     &module[function_start..function_end]
 }
 
+/// The first-class aggregate type one emitted definition returns in
+/// registers (compiler/src/backend/abi.rs), checked against its expected
+/// scalar fields independently of the module's nominal numbering.
+fn register_result_type<'function>(
+    module: &str,
+    function: &'function str,
+    fields: &[&str],
+) -> &'function str {
+    let (result_type, _) = function
+        .strip_prefix("define ")
+        .and_then(|header| header.split_once(" @"))
+        .expect("an emitted definition header");
+    assert!(
+        result_type.starts_with("%wf.t"),
+        "the result returns as its named aggregate: {result_type}"
+    );
+    assert!(
+        module.contains(&format!("{result_type} = type {{ {} }}", fields.join(", "))),
+        "the returned aggregate has the expected scalar layout: {result_type}"
+    );
+    result_type
+}
+
 /// These fixtures construct every variant of a result with scalar fields.
-/// Check its typed caller destination and field writes independently of a
-/// preliminary whole-aggregate store or the module's nominal numbering.
+/// Check the typed `%wf.result` construction and field writes independently
+/// of a preliminary whole-aggregate store or the module's nominal numbering.
+/// `%wf.result` is the caller's destination, or the function's own frame
+/// slot when the result returns in registers.
 fn assert_scalar_result_fields(module: &str, function: &str, fields: &[&str]) {
     let mut initialized = vec![false; fields.len()];
     for line in function.lines() {

@@ -114,7 +114,7 @@ static int wf_utf8_valid(const unsigned char *text, uint64_t length) {
 }
 #endif
 
-void wf_host_utf8_len(wf_utf8_result *result, const wf_value *value) {
+void wf__body_host_utf8_len(wf_utf8_result *result, const wf_value *value) {
     uint64_t length = value->words[1];
     memset(result, 0, sizeof(*result));
 #if defined(_WIN32)
@@ -131,7 +131,7 @@ void wf_host_utf8_len(wf_utf8_result *result, const wf_value *value) {
 void wf__body_host_copy_utf8(wf_copy_result *result, const wf_value *value,
                       wf_view *destination, uint64_t start, uint64_t end) {
     wf_utf8_result measured;
-    wf_host_utf8_len(&measured, value);
+    wf__body_host_utf8_len(&measured, value);
     memset(result, 0, sizeof(*result));
     if (measured.tag != 0) {
         result->tag = 1;

@@ -935,12 +935,17 @@ fn a_referenced_pool_tree_preserves_range_reference_and_result_abi() {
     // reference to a scalar-bearing struct. A range reference crosses this
     // boundary as its address-and-length pair [REF-4], passed as the element
     // pointer, which carries the reference facts, and the count
-    // (compiler/backend-facts).
-    assert!(build.starts_with("define void @wf_build(ptr %wf.result, "));
-    assert!(checksum.starts_with("define void @wf_checksum(ptr %wf.result, "));
+    // (compiler/backend-facts). The three-leaf Result returns in registers,
+    // so the first range is the first argument.
     // `build` also takes its cursor by reference; `checksum` only reads.
-    for (function, references) in [(build, 3), (checksum, 2)] {
+    for (function, name, references) in [(build, "build", 3), (checksum, "checksum", 2)] {
+        register_result_type(&llvm, function, &["i32", "i64", "i32"]);
         let header = function.lines().next().expect("helper signature");
+        assert!(
+            header.contains(&format!(" @wf_{name}(ptr noalias nonnull ")),
+            "{header}"
+        );
+        assert!(!header.contains("%wf.result"), "{header}");
         for ordinal in 0..2 {
             assert!(
                 header.contains(&format!(
@@ -954,8 +959,8 @@ fn a_referenced_pool_tree_preserves_range_reference_and_result_abi() {
             references,
             "{header}"
         );
-        // The result pointer still addresses the tag, u64 success payload
-        // and three-variant PoolError, each written on its selected route.
+        // The result slot still receives the tag, u64 success payload and
+        // three-variant PoolError, each written on its selected route.
         assert_scalar_result_fields(&llvm, function, &["i32", "i64", "i32"]);
     }
     assert!(

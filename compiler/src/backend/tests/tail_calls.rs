@@ -72,6 +72,18 @@ fn assert_self_tail_lowering(source: &[u8]) {
                 "the repeated body must reuse its physical frame: {body}"
             );
         }
+        // The two-word Pair returns in registers (compiler/src/backend/abi.rs).
+        // The transfer rebinds the parameters and keeps the one result slot,
+        // which the single return block loads.
+        let swap_pairs = emitted_function(&module, "swap_pairs");
+        assert!(
+            swap_pairs.starts_with("define %wf.t"),
+            "the Pair result returns in registers: {swap_pairs}"
+        );
+        let header = swap_pairs.lines().next().expect("definition header");
+        assert!(!header.contains("%wf.result"), "{header}");
+        assert!(swap_pairs.contains("\nwf.return:\n"), "{swap_pairs}");
+        assert_eq!(swap_pairs.matches("\n  ret ").count(), 1, "{swap_pairs}");
         // The conformance adapter executes the sequential module; this native
         // run additionally protects actualized parallel lowering.
         if overlap == OverlapLowering::On {

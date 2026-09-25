@@ -1,0 +1,396 @@
+//! The callable result ABI (compiler/src/backend/abi.rs). A stored aggregate
+//! whose scalar leaves fit the return registers returns as its first-class
+//! value, and a larger one returns through the caller's destination.
+//!
+//! The classification is checked against the leaves of the LLVM types the
+//! module actually emits, counted here from the module text, so a
+//! representation change that the classifier misses fails these tests
+//! instead of silently demoting a result to a hidden pointer.
+
+use super::system::with_ir;
+use super::{compile, compile_and_run, emitted_function};
+use crate::backend::abi::{FunctionAbi, ResultAbi};
+use crate::backend::emitter::llvm_type;
+use crate::{IrProgram, ORDINARY_VALUES_LLVM};
+
+/// Both sides of the x86-64 budget of three integer-class words and two
+/// floating leaves, which every admitted target meets. `Four` is 16 bytes
+/// and still exceeds it; `Mixed` is 40 bytes and fits it.
+const BUDGET_SIDES: &[u8] = br#"struct Three {
+  a: u32;
+  b: u32;
+  c: u32;
+}
+
+struct Four {
+  a: u32;
+  b: u32;
+  c: u32;
+  d: u32;
+}
+
+struct Floats {
+  x: f64;
+  y: f64;
+}
+
+struct MoreFloats {
+  x: f64;
+  y: f64;
+  z: f64;
+}
+
+struct Mixed {
+  a: u64;
+  b: u64;
+  c: u64;
+  x: f64;
+  y: f64;
+}
+
+fn three(seed: u32) -> result: Three pure {
+  let b = seed +wrap 1_u32;
+  let c = seed +wrap 2_u32;
+  return Three(a: seed, b: b, c: c);
+}
+
+fn four(seed: u32) -> result: Four pure {
+  let b = seed +wrap 1_u32;
+  let c = seed +wrap 2_u32;
+  let d = seed +wrap 3_u32;
+  return Four(a: seed, b: b, c: c, d: d);
+}
+
+fn floats(x: f64) -> result: Floats pure {
+  let y = fadd.strict(x, 1.0_f64);
+  return Floats(x: x, y: y);
+}
+
+fn more_floats(x: f64) -> result: MoreFloats pure {
+  let y = fadd.strict(x, 1.0_f64);
+  let z = fadd.strict(x, 2.0_f64);
+  return MoreFloats(x: x, y: y, z: z);
+}
+
+fn mixed(seed: u64, x: f64) -> result: Mixed pure {
+  let b = seed +wrap 1_u64;
+  let c = seed +wrap 2_u64;
+  let y = fadd.strict(x, 1.0_f64);
+  return Mixed(a: seed, b: b, c: c, x: x, y: y);
+}
+
+fn found(key: u64) -> result: Option<u64> pure {
+  if key == 0_u64 {
+    return None<u64>();
+  }
+  return Some<u64>(value: key);
+}
+
+fn sum(a: u32, b: u32) -> result: Result<u32, Overflow> pure {
+  return a +checked b;
+}
+
+fn bytes(value: u8) -> result: Array<u8, 16> pure {
+  return array_filled::<u8, 16>(value: value);
+}
+
+fn main() -> status: ExitStatus pure {
+  let small = three(seed: 5_u32);
+  if small.a != 5_u32 {
+    return exit_status(code: 1_u8);
+  }
+  if small.c != 7_u32 {
+    return exit_status(code: 2_u8);
+  }
+  let large = four(seed: 9_u32);
+  if large.a != 9_u32 {
+    return exit_status(code: 3_u8);
+  }
+  if large.d != 12_u32 {
+    return exit_status(code: 4_u8);
+  }
+  let pair = floats(x: 1.5_f64);
+  if fne(pair.x, 1.5_f64) {
+    return exit_status(code: 5_u8);
+  }
+  if fne(pair.y, 2.5_f64) {
+    return exit_status(code: 6_u8);
+  }
+  let triple = more_floats(x: 4.0_f64);
+  if fne(triple.z, 6.0_f64) {
+    return exit_status(code: 7_u8);
+  }
+  let blend = mixed(seed: 40_u64, x: 0.25_f64);
+  if blend.a != 40_u64 {
+    return exit_status(code: 8_u8);
+  }
+  if blend.c != 42_u64 {
+    return exit_status(code: 9_u8);
+  }
+  if fne(blend.x, 0.25_f64) {
+    return exit_status(code: 10_u8);
+  }
+  if fne(blend.y, 1.25_f64) {
+    return exit_status(code: 11_u8);
+  }
+  match found(key: 17_u64) {
+    Some(value: present) => {
+      if present != 17_u64 {
+        return exit_status(code: 12_u8);
+      }
+    }
+    None() => {
+      return exit_status(code: 13_u8);
+    }
+  }
+  match found(key: 0_u64) {
+    Some(value: unexpected) => {
+      return exit_status(code: 14_u8);
+    }
+    None() => {
+    }
+  }
+  match sum(a: 4000000000_u32, b: 300000000_u32) {
+    Ok(value: wrapped) => {
+      return exit_status(code: 15_u8);
+    }
+    Err(error: overflow) => {
+    }
+  }
+  match sum(a: 7_u32, b: 8_u32) {
+    Ok(value: total) => {
+      if total != 15_u32 {
+        return exit_status(code: 16_u8);
+      }
+    }
+    Err(error: overflow) => {
+      return exit_status(code: 17_u8);
+    }
+  }
+  let filled = bytes(value: 3_u8);
+  if filled[15_u64] != 3_u8 {
+    return exit_status(code: 18_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+#[test]
+fn stored_results_return_in_registers_exactly_when_their_leaves_fit() {
+    let expected = [
+        ("three", true),
+        ("four", false),
+        ("floats", true),
+        ("more_floats", false),
+        ("mixed", true),
+        ("found", true),
+        ("sum", true),
+        ("bytes", false),
+        ("main", false),
+    ];
+    with_ir(BUDGET_SIDES, |program| {
+        let module = crate::emit_llvm(program)
+            .expect("both result forms emit")
+            .into_string();
+        assert_classification_matches_emitted_leaves(program, &module);
+        let main = emitted_function(&module, "main");
+        for (name, registers) in expected {
+            let function = program
+                .functions()
+                .iter()
+                .find(|function| function.name() == name)
+                .expect("fixture function");
+            let result = FunctionAbi::build(program, function)
+                .expect("callable ABI")
+                .result();
+            let body = emitted_function(&module, name);
+            if !registers {
+                assert!(matches!(result, ResultAbi::Destination(_)), "{name}");
+                assert!(
+                    body.starts_with(&format!("define void @wf_{name}(ptr %wf.result")),
+                    "{body}"
+                );
+                continue;
+            }
+            assert!(matches!(result, ResultAbi::StoredValue(_)), "{name}");
+            let ty = llvm_type(program, result.ty()).expect("result type");
+            assert!(
+                body.starts_with(&format!("define {ty} @wf_{name}(")),
+                "{body}"
+            );
+            let header = body.lines().next().expect("definition header");
+            assert!(!header.contains("%wf.result"), "{header}");
+            // The result is constructed in the frame's own `%wf.result`
+            // slot, and every return branches to one block that loads it.
+            assert!(body.contains("  %wf.result = "), "{body}");
+            assert!(
+                body.contains(&format!(
+                    "\nwf.return:\n  %wf.returned = load {ty}, ptr %wf.result\n  ret {ty} %wf.returned\n"
+                )),
+                "{body}"
+            );
+            assert_eq!(body.matches("\n  ret ").count(), 1, "{body}");
+            assert!(
+                main.contains(&format!(" = call {ty} @wf_{name}(")),
+                "{name}: {main}"
+            );
+        }
+    });
+}
+
+/// The values themselves cross call boundaries that host optimization may
+/// not remove, on both sides of the budget and for both register classes.
+#[test]
+fn results_on_both_sides_of_the_budget_cross_retained_calls() {
+    let module = super::owned_places::retain_calls(&compile(BUDGET_SIDES));
+    let output = compile_and_run(&module);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
+/// A linked definition shares its declaration's callable ABI, so every
+/// linked implementation of a result returned in registers must return the
+/// same first-class value, one register per leaf, whatever its C body writes.
+#[test]
+fn linked_definitions_return_their_declared_register_results() {
+    with_ir(
+        b"fn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        |program| {
+            let module = crate::emit_llvm(program)
+                .expect("prelude declarations emit")
+                .into_string();
+            assert_classification_matches_emitted_leaves(program, &module);
+            let mut linked = Vec::new();
+            for function in program.functions() {
+                let result = FunctionAbi::build(program, function)
+                    .expect("callable ABI")
+                    .result();
+                if !function.blocks().is_empty() || !matches!(result, ResultAbi::StoredValue(_)) {
+                    continue;
+                }
+                let declared = llvm_type(program, result.ty()).expect("result type");
+                let symbol = format!(" @wf_{}(", function.name());
+                let definition = ORDINARY_VALUES_LLVM
+                    .lines()
+                    .find_map(|line| {
+                        line.strip_prefix("define ")
+                            .and_then(|header| header.split_once(&symbol))
+                            .map(|(ty, _)| ty)
+                    })
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "{} returns in registers but has no LLVM definition",
+                            function.name()
+                        )
+                    });
+                assert_eq!(
+                    expanded(&module, &declared),
+                    expanded(ORDINARY_VALUES_LLVM, definition),
+                    "{}",
+                    function.name()
+                );
+                linked.push(function.name().to_owned());
+            }
+            // `Result<u64, Utf8Error>` is the one linked result that fits.
+            assert_eq!(linked, ["host_utf8_len"]);
+        },
+    );
+}
+
+/// Every stored result is by value exactly when the leaves of the type the
+/// module emits for it fit three integer-class words and two floating
+/// leaves. The count is taken from the text, not from the classifier.
+fn assert_classification_matches_emitted_leaves(program: &IrProgram<'_, '_, '_>, module: &str) {
+    for function in program.functions() {
+        let result = FunctionAbi::build(program, function)
+            .expect("callable ABI")
+            .result();
+        if matches!(result, ResultAbi::Value(_)) {
+            continue;
+        }
+        let ty = llvm_type(program, result.ty()).expect("result type");
+        let (integer_words, floating) = leaves(&expanded(module, &ty));
+        assert_eq!(
+            matches!(result, ResultAbi::StoredValue(_)),
+            integer_words <= 3 && floating <= 2,
+            "{}: {ty} has {integer_words} integer words and {floating} floating leaves",
+            function.name()
+        );
+    }
+}
+
+/// One LLVM type with every named type replaced by its body.
+fn expanded(module: &str, ty: &str) -> String {
+    let ty = ty.trim();
+    if let Some(body) = module.lines().find_map(|line| {
+        line.strip_prefix(ty)
+            .and_then(|rest| rest.strip_prefix(" = type "))
+    }) {
+        return expanded(module, body);
+    }
+    if let Some(inner) = ty.strip_prefix('{').and_then(|rest| rest.strip_suffix('}')) {
+        let fields: Vec<_> = top_level_fields(inner)
+            .into_iter()
+            .map(|field| expanded(module, field))
+            .collect();
+        return if fields.is_empty() {
+            "{}".to_owned()
+        } else {
+            format!("{{ {} }}", fields.join(", "))
+        };
+    }
+    if let Some(inner) = ty.strip_prefix('[').and_then(|rest| rest.strip_suffix(']')) {
+        let (count, element) = inner.split_once(" x ").expect("array type");
+        return format!("[{count} x {}]", expanded(module, element));
+    }
+    ty.to_owned()
+}
+
+/// Integer-class words and floating leaves of one expanded type, as LLVM's
+/// return lowering assigns them: one register per scalar, two for `i128`.
+fn leaves(ty: &str) -> (u64, u64) {
+    let ty = ty.trim();
+    if let Some(inner) = ty.strip_prefix('{').and_then(|rest| rest.strip_suffix('}')) {
+        return top_level_fields(inner)
+            .into_iter()
+            .map(leaves)
+            .fold((0, 0), |(words, floats), (more_words, more_floats)| {
+                (words + more_words, floats + more_floats)
+            });
+    }
+    if let Some(inner) = ty.strip_prefix('[').and_then(|rest| rest.strip_suffix(']')) {
+        let (count, element) = inner.split_once(" x ").expect("array type");
+        let count: u64 = count.parse().expect("array length");
+        let (words, floats) = leaves(element);
+        return (words * count, floats * count);
+    }
+    match ty {
+        "i1" | "i8" | "i16" | "i32" | "i64" | "ptr" => (1, 0),
+        "i128" => (2, 0),
+        "float" | "double" => (0, 1),
+        other => panic!("unexpected emitted scalar {other}"),
+    }
+}
+
+fn top_level_fields(inner: &str) -> Vec<&str> {
+    let mut fields = Vec::new();
+    let mut depth = 0_u32;
+    let mut start = 0;
+    for (index, character) in inner.char_indices() {
+        match character {
+            '{' | '[' => depth += 1,
+            '}' | ']' => depth -= 1,
+            ',' if depth == 0 => {
+                fields.push(inner[start..index].trim());
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    let last = inner[start..].trim();
+    if !last.is_empty() {
+        fields.push(last);
+    }
+    fields
+}

@@ -1560,8 +1560,12 @@ fn an_interposed_builtin_retains_the_outlined_call_and_join() {
     assert!(fold.contains(", ptr @wf__par_thunk_"));
 }
 
-// Stored results need independent caller destinations after lane retirement;
+// Stored results need independent caller storage after lane retirement;
 // scalar and descriptor-returning fixtures do not exercise that adapter.
+// This two-leaf Pair returns in registers: the thunk stores the returned
+// value into the lane frame, and the join copies it out before release.
+// `owning_enum_windows_survive_lane_arguments_results_and_refusal` keeps a
+// result too large for the registers on the destination adapter.
 const OWNED_PAIR_RESULTS: &[u8] = br#"struct Pair {
   left: u64;
   right: u64;
@@ -1604,7 +1608,18 @@ fn owned_pair_results_survive_ordinary_join_and_forced_refusal() {
     assert!(main.contains("call void @wf__par_join(ptr "));
     assert!(main.contains("\npar.inline."));
     let make = function_body(&module, "@wf_make");
-    assert!(make.starts_with("define void @wf_make(ptr "));
+    let (result, _) = make
+        .strip_prefix("define ")
+        .and_then(|header| header.split_once(" @wf_make(i64 %v0)"))
+        .expect("make takes only its seed");
+    assert!(module.contains(&format!("{result} = type {{ i64, i64 }}")));
+    // The published thunk and the refused edge call the same by-value ABI;
+    // both edges join as one value that enters the caller's own storage.
+    let thunk = function_body(&module, "@wf__par_thunk_0");
+    assert!(thunk.contains(&format!("%result = call {result} @wf_make(i64 %a0)")));
+    assert!(thunk.contains(&format!("store {result} %result, ptr %slot")));
+    assert!(main.contains(&format!(" = call {result} @wf_make(i64 ")));
+    assert!(main.contains(&format!(" = phi {result} [ ")));
     run_owned_lane_cases(OWNED_PAIR_RESULTS, &module, 0, 1, 0, 0, 1);
 }
 

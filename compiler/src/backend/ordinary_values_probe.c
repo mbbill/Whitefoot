@@ -141,7 +141,7 @@ static void text_probe(void) {
     assert(copied.tag == 0 && copied.value == 5);
     assert(memcmp(bytes, expected, sizeof(bytes)) == 0);
     wf_arg_get(&value, &args, 1);
-    wf_host_utf8_len(&measured, &value.value);
+    wf__body_host_utf8_len(&measured, &value.value);
     assert(measured.tag == 0 && measured.value == 4);
     wf__body_host_copy_utf8(&copied, &value.value, &view, 5, 9);
     memcpy(expected + 5, "\xf0\x9f\x98\x80", 4);

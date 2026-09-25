@@ -73,3 +73,248 @@ This criterion was written before any probe or measurement below:
    the ABI of a linked definition must adapt that definition inside the one
    callable ABI of the compiler root decision. When candidates tie, prefer
    the least emitter and runtime machinery.
+
+## Demotion probe
+
+Criterion 2 was checked with one `llc -O2` module per admitted triple
+(LLVM 18.1.3). Each callee built its result from its arguments with
+`insertvalue` and returned it by value. The table counts the stores in each
+callee. A nonzero count means LLVM demoted the return to a hidden result
+pointer, which is exactly what `define void (ptr %wf.result, ...)` already
+costs.
+
+| Shape | LLVM type | x86-64 Linux | x86-64 Windows | x86-64 Darwin | AArch64 Linux | AArch64 Darwin |
+|---|---|---:|---:|---:|---:|---:|
+| `Option<u64>` | `{ i32, i64 }` | 0 | 0 | 0 | 0 | 0 |
+| `Result<u32, Overflow>` | `{ i32, i32, i1 }` | 0 | 0 | 0 | 0 | 0 |
+| three integers | `{ i32, i32, i32 }` | 0 | 0 | 0 | 0 | 0 |
+| four integers, 16 bytes | `{ i32, i32, i32, i32 }` | 4 | 4 | 4 | 0 | 0 |
+| 16 bytes | `[16 x i8]` | 16 | 16 | 16 | 16 | 9 |
+| three words, 24 bytes | `{ i64, i64, i64 }` | 0 | 0 | 0 | 0 | 0 |
+| `Result<u64, Utf8Error>`, 24 bytes | `{ i32, i64, i1 }` | 0 | 0 | 0 | 0 | 0 |
+| `(u64, Option<u64>)`, 24 bytes | `{ i64, { i32, i64 } }` | 0 | 0 | 0 | 0 | 0 |
+| three bits | `{ i1, i1, i1 }` | 0 | 0 | 0 | 0 | 0 |
+| `Slots<u8, 2>` | `{ i64, [2 x i8] }` | 0 | 0 | 0 | 0 | 0 |
+| two doubles | `{ double, double }` | 0 | 0 | 0 | 0 | 0 |
+| three doubles | `{ double, double, double }` | 2 | 2 | 2 | 0 | 0 |
+| three words and two doubles | `{ i64, i64, i64, double, double }` | 0 | 0 | 0 | 0 | 0 |
+| three words and three doubles | `{ i64, i64, i64, double, double, double }` | 2 | 1 | 2 | 0 | 0 |
+| three words, one of them wide | `{ i128, i64 }` | 0 | 0 | 0 | 0 | 0 |
+| opaque | `{ i128, i128 }` | 4 | 4 | 4 | 0 | 0 |
+| empty | `{}`, `[0 x i8]`, `{ i64, [0 x i8] }` | 0 | 0 | 0 | 0 | 0 |
+
+The x86-64 return convention gives each scalar leaf its own register,
+without packing small leaves together: three integer-class words (RAX, RDX,
+RCX, with an `i128` taking two) and two floating leaves (XMM0, XMM1). The
+same budget applies on all three x86-64 triples. AArch64 has eight of each,
+so every shape that fits x86-64 also fits AArch64.
+
+- **Every aggregate by value** fails: the four-leaf, sixteen-byte,
+  three-double and opaque shapes are demoted, and larger results would be
+  too.
+- **Byte bound** fails: `{ i32, i32, i32, i32 }` and `[16 x i8]` are 16 bytes
+  and are demoted on x86-64. It also excludes the 24-byte three-word shapes,
+  which return in registers.
+- **Register bound** passes by construction, and every boundary shape
+  confirms it.
+- **Both bounds** passes, but it sends every 24-byte three-leaf result
+  through a destination although it returns in registers.
+- **`fastcc`** is not a candidate for criterion 3. The destination is an IR
+  parameter that no calling convention removes. Linked C bodies also share
+  the ABI, so their calling convention cannot change alone.
+- **Packed coercion** was not built. It needs per-target coercion rules and
+  packing code at each boundary. Criterion 5 prefers the smaller machinery
+  when both reach the same results, and every surviving small result in the
+  maintained programs fits one register per leaf.
+
+## Lowering
+
+A register-returned result is constructed where a destination result is
+constructed: in `%wf.result`, which is now a slot of the callee's own frame
+rather than a parameter. The storage plan, the frame's target qualification
+and every construction path are therefore unchanged. The caller stores the
+returned value into the storage its plan selected. Parameters, their facts
+and the storage plans do not change.
+
+The first prototype loaded the returned value at each `ret`. LLVM merged
+those returns into one block with a phi of aggregate values, and after
+inlining it did not scalarize that phi. `wf_find` grew from 144 to 250
+instructions. Its inlined `view_entry` result tag was materialized and then
+tested again. The selected lowering sends every return to one block that
+loads `%wf.result` and returns it. SROA then forms one scalar phi per field
+at that block, and `wf_find` drops to 142 instructions. This is the form
+clang gives a C function with several returns, through its `%retval` slot.
+
+Every call route uses the value form it already had for scalar results:
+
+- direct and generic calls store the returned value into the result's
+  storage;
+- a handed-out call's thunk stores it into the lane frame's result field;
+- the refused edge calls by value, and both edges join in one phi that the
+  caller stores;
+- a loop split's chunk or splitter call is saved by the value-definition
+  bridge;
+- a recursion-budget entry and an exhausted variant forward the returned
+  value;
+- a self-tail transfer is a jump inside one activation
+  (compiler/self-tail-lowering), so it keeps the one result slot;
+- the build launcher's `ExitStatus` is opaque, four words, and keeps its
+  destination.
+
+A linked definition keeps the callable ABI of the compiler root decision.
+`host_utf8_len`, `Result<u64, Utf8Error>` or `{ i32, i64, i1 }`, is the one
+linked result that fits. Its C body became `wf__body_host_utf8_len`, and an
+LLVM definition in `compiler/src/backend/ordinary_values.ll` returns the
+first-class value. A test checks every linked register result against its
+declaration.
+
+## Result on the surviving calls
+
+Criterion 3 compared the emitted code of both compilers
+(`whitefootc --emit-llvm`, then `clang -O2` 18.1.3, x86-64 Linux). The
+baseline was main at `efe40194a`.
+
+`add_checked(a: u32, b: u32) -> Result<u32, Overflow>`:
+
+```asm
+; baseline                        ; candidate
+xorl   %eax, %eax                 xorl   %ecx, %ecx
+xorl   %ecx, %ecx                 xorl   %eax, %eax
+addl   %edx, %esi                 addl   %esi, %edi
+cmovbl %eax, %esi                 cmovbl %ecx, %edi
+setb   %cl                        setb   %al
+movl   %esi, 4(%rdi)              movl   %edi, %edx
+movl   %ecx, (%rdi)               xorl   %ecx, %ecx
+movb   $0, 8(%rdi)                retq
+retq
+```
+
+That is eight instructions with three stores before the change, and seven
+with none after. Rust 1.98.1 compiles `a.checked_add(b)` returning
+`Option<u32>` to four instructions. The remaining difference is the
+representation, not the boundary. The enum carries a separate one-bit
+`Overflow` payload, and it zeroes the inactive `Ok` value.
+
+The `find` of `owning-map.wf` stays out of line in both builds. Its `Some`
+return path and one of its 14 call sites:
+
+```asm
+; baseline                        ; candidate
+movq   $0, (%rdi)                 movq   (%rax), %rdx
+movl   $1, (%rdi)                 movl   $1, %eax
+movq   %rax, 8(%rdi)              retq
+retq
+
+leaq   1400(%rsp), %rdi           leaq   624(%rsp), %rdi
+leaq   624(%rsp), %rsi            movq   1040(%rsp), %rsi
+movq   1040(%rsp), %rdx           callq  wf_find@PLT
+callq  wf_find@PLT                movb   $9, %cl
+movb   $9, %cl                    testl  %eax, %eax
+movl   1400(%rsp), %eax
+testl  %eax, %eax
+```
+
+Per function:
+
+| Function | Instructions before → after | Stores before → after |
+|---|---|---|
+| `hashmap.wf` `find` | 144 → 142 | 4 → 0 |
+| `hashmap.wf` `insert` | 193 → 191 | 20 → 12 |
+| `hashmap.wf` `remove` | 156 → 154 | 12 → 6 |
+| `hashmap.wf` `view_entry` | 20 → 18 | 6 → 0 |
+| `owning-map.wf` `find` | 109 → 105 | 4 → 0 |
+| `owning-map.wf` `exercise` | 1709 → 1681 | 416 → 416, loads 725 → 700 |
+
+The count script counts surviving calls that pass a `%wf.result` destination,
+bucketed by the size of the destination alloca after optimization:
+
+| Program | `<=16` bytes | `>16` bytes |
+|---|---|---|
+| `hashmap.wf` | 12 → 0 | 3 → 0 |
+| `owning-map.wf` | 15 → 1 | 18 → 18 |
+
+In `hashmap.wf` the 7 `find` calls and 3 `remove` calls were no longer
+separate calls after the change: LLVM's inliner now inlines them into
+`map_trace`. The 5 `insert` calls survive and return in registers. The
+24-byte `remove` result `(u64, Option<u64>)` and `view_entry` result
+`SlotView` are the corpus results that separate the register bound from the
+both-bounds candidate. The one small destination left in `owning-map.wf` is
+the launcher's `ExitStatus`, whose alloca SROA narrows to its exit-code
+byte.
+
+## Corpus
+
+Every single-file program under `tests/programs` (73 that compile alone) and
+the seven library container bundles of `compiler/tests/programs/containers.rs`
+were compiled with both compilers:
+
+| Set | Destination calls `<=16` | Destination calls `>16` | `.text` bytes |
+|---|---:|---:|---:|
+| 73 single-file programs | 77 → 44 | 59 → 42 | 190,589 → 193,661 |
+| 7 container bundles | 3 → 3 | 0 → 0 | 225,475 → 223,699 |
+
+Every remaining small-bucket destination belongs to a result the register
+bound excludes. The 44 are the launcher's `ExitStatus` calls, 34 to `wf_main`
+and 10 to `wf_exercise`, whose opaque results need four words. `.text` grew
+by 5,040 bytes in `hashmap.wf` alone, because of the inlining above. Across
+the other 79 programs it shrank by 3,744 bytes (0.9%). Only
+`boxed-helper-gap.wf` (+16 bytes), `fixed_run_library.wf` (+256 bytes) and
+`wfgrep.wf` (+80 bytes) grew.
+
+## Timing
+
+Criterion 4 used two scratch variants of maintained programs. The first is
+`hashmap.wf` with `main` calling `map_trace(seed: 5, repetitions: 20000000)`.
+The second is `owning-map.wf` with `main` looping over 2,000,000 seeds, where
+`find` stays out of line in both builds. Each image was built by its own
+compiler and run 11 times, alternating the order and pinned with
+`taskset -c 3`. The host was a 4-vCPU x86-64 Linux container, with the
+repository's host-wide verification lock held during the runs.
+
+| Program | Baseline median | Candidate median | Paired ratio median (range) |
+|---|---:|---:|---:|
+| hash-map trace | 1.2716 s | 0.7668 s | 0.603 (0.595–0.632) |
+| owning-map exercise | 1.4625 s | 1.4843 s | 1.004 (0.942–1.051) |
+
+The same variants were also scaled down to 200,000 repetitions and 20,000
+seeds and run once each under `valgrind --tool=cachegrind`, which counts
+executed instructions deterministically:
+
+| Program | Instructions | Data references (reads + writes) |
+|---|---|---|
+| hash-map trace | 163,981,673 → 125,586,216 (−23.4%) | 59,117,685 → 36,119,218 (−38.9%) |
+| owning-map exercise | 149,623,833 → 148,363,833 (−0.84%) | 67,658,795 → 66,438,795 (−1.8%) |
+
+The hash-map gain is mostly the inlining that the cheaper callee now admits.
+The owning-map difference is the boundary alone: 14 calls per seed, each
+saving a store and reload of its result. It shows in the counts and stays
+within run-to-run variation in wall time.
+
+## Selection
+
+The register bound is selected:
+
+- It is the only candidate that passes criterion 2 while returning in
+  registers every shape the probe keeps in registers.
+- It meets criterion 3: every admitted result that survives as a call now
+  returns in registers.
+- It meets criterion 4. No destination call was added, the find-heavy loop is
+  faster, and the out-of-line `find` loop is unchanged within its
+  variation.
+- Under criterion 5 it is preferred over both bounds, because the 24-byte
+  three-leaf results return in registers and the corpus has them. The cost is
+  one linked LLVM definition inside the one callable ABI.
+
+## Limits
+
+- Only x86-64 Linux was timed. The AArch64 and Windows effects are inferred
+  from the probe's register assignment, not measured.
+- The `hashmap.wf` speedup comes mainly from LLVM choosing to inline `find`
+  and `remove`. That is the host optimizer's cost model responding to a
+  cheaper callee, and other programs may see different inlining.
+- The timing variants are scratch programs derived from maintained sources.
+  No paired performance workload was added.
+- Results that exceed the budget still pass through memory: every opaque
+  value, including `ExitStatus`, and every result with four or more integer
+  words. Packing small leaves into shared registers would carry more of them,
+  but no maintained program showed a surviving call that needs it.

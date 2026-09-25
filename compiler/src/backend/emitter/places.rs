@@ -508,7 +508,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         if let Some(destination) = self.storage.destination(slot) {
             self.binding_place(destination)
         } else if Some(slot) == self.result_slot {
-            Ok("%wf.result".to_owned())
+            Ok(RESULT_POINTER.to_owned())
         } else {
             self.entry_slot(FunctionSlot::OwnedValue(slot))
         }
