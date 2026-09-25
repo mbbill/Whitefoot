@@ -91,6 +91,17 @@ material-choice boundary and the affected-set procedure:
 Routine fixes under unchanged design need no decision record. Record reasons
 when choices settle, not by reconstructing them at task completion.
 
+**Fix or record what you notice.** Work in one place exposes defects in
+others: a bug, an awkward interface or architecture, duplicated logic, a file
+or function grown past what one reader can hold, a stale document or test.
+When you notice one, fix it in the same change if it is small and within the
+files you are changing; otherwise add an item to `docs/todo.md` before moving
+on, with its impact, the change you would make and when to reopen it. List
+each in the PR's *Found along the way* section with its disposition. Low
+priority defers the work, never the record: a finding kept only in the
+conversation is lost. `make static` requires every compiler source file over
+4,000 lines to be named in the Code structure section of `docs/todo.md`.
+
 Use a PR as the owner's ongoing review surface from the start, as a Draft
 until the design-tree workflow makes it ready. Push coherent progress to the
 same branch and keep its description and actual validation results current;
@@ -231,9 +242,7 @@ The compiler's implementation rules are its design decisions in
 subtree you are changing and its ancestors; a decision the tree does not cover
 is an amendment, never an edit to the tree. Apply the design-tree skill's
 [structural-choice assessment](design/skill/SKILL.md#workflow) when choosing or
-revising compiler code structure, including during implementation, and record
-deferred defects and improvement opportunities, with their validation, in
-`docs/todo.md`.
+revising compiler code structure, including during implementation.
 
 Automatic CI checks current correctness and performance regressions;
 exploratory timing runs only when requested. Use the guarded verification

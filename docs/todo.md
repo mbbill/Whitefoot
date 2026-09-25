@@ -882,6 +882,28 @@ rarely insert at the same place.
   `wfgrep.wf` now does; reopen when the program is pointed at a larger tree or
   its constant-capacity form stops being the point of the case.
 
+## Code structure
+
+- **The entailment flow module has outgrown one reader.**
+  `compiler/src/semantic/entailment/flow.rs` has 17,271 lines, 15,040 of them
+  in one `impl Analyzer` block; it grew from 8,670 lines on 2026-09-01 over 154
+  commits. `compiler/src/semantic/entailment/state.rs` (7,755 lines, including
+  a 1,729-line inline test module) and the tests in
+  `compiler/src/semantic/tests/entailment.rs` (10,996 lines, 155 tests) grew
+  with it. An agent reads such a file only in slices, and every
+  responsibility's changes land in the same file. The impl already marks eight
+  sections: binding prepass, place resolution and support, terms and relations,
+  kill collection, obligations, statement walk, loop kill summary and canonical
+  rendering. `flow/` already holds `conversions.rs`, `results.rs` and
+  `sources.rs`, split out the same way, so moving each section's methods into
+  its own `flow/` file is a mechanical first step. `state.rs` can move its test
+  module to its own file and its dense-closure algorithms apart from the fact
+  state and ledger types; the tests can group by the section they exercise.
+  Validate that each move changes no behavior: identical `make check` results
+  and a diff of moved items and module declarations only. Split when no open
+  branch has large edits in these files, or one section at a time; close when
+  every file named here is under 4,000 lines.
+
 ## Open language questions
 
 Questions the owner has left open on purpose. None of them is a decision;

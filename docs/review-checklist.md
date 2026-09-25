@@ -228,10 +228,13 @@ Source: [evidence practice](practice.md#evidence-guidance) and
   a causal claim has isolating evidence. A historical result or another agent's
   report is not silently presented as a fresh independent measurement.
 - [ ] **V3 — Delivery.** The reply/PR describes the current result and remaining
-  limitations. For specification revisions, check the conversation explanation
-  required by `AGENTS.md`: affected rules, before/after behavior, and selection
-  grounds. Conformance changes explain what changed and their selection
-  ground. If merging is requested, verify owner approval and root
+  limitations. Its *Found along the way* section gives every defect or
+  opportunity the work exposed a disposition: fixed, recorded in
+  `docs/todo.md`, or declined with a reason; report any the reviewer notices
+  that it omits. For specification revisions, check the conversation
+  explanation required by `AGENTS.md`: affected rules, before/after behavior,
+  and selection grounds. Conformance changes explain what changed and their
+  selection ground. If merging is requested, verify owner approval and root
   `make check` for the exact merge tree under the existing four rules; neither
   a fast review nor a focused test run substitutes for them.
 - [ ] **V4 — Existing PR updated.** The reviewed task changes are committed

@@ -33,10 +33,10 @@ flowchart TD
 | 3 | Decide | A [material choice](practice.md#decision-work) | Record its ground; a design-tree change stays an amendment until the owner rules | `design/amendments/`, then `design/language/`, `design/compiler/`, `design/log.md` | `design-tree` skill |
 | 4 | Amend the specification | The task changes language rules | Archive, retitle, bring derived material along, explain the rule changes | `spec/kernel-spec.md`, `tests/conformance/` | `spec-amendment` skill |
 | 5 | Implement | Code, test or library changes | One general path; read the design subtree and its ancestors first; wrap heavy commands | `compiler/`, `lib/`, `tests/` | `AGENTS.md` compiler rules, `design/compiler/` |
-| 6 | Record follow-up work | A defect, cost or opportunity is deferred | Add it at the end of its topic section with impact, validation criterion and reopening condition | `docs/todo.md` | `design-tree` skill workflow, review item G3 |
+| 6 | Fix or record what you notice | Whenever work exposes a defect or opportunity outside the requested change | Fix it in the same change when it is small and in the files being changed; otherwise add a `docs/todo.md` item at the end of its topic section with impact, intended change and reopening condition; list it in the PR's *Found along the way* section | `docs/todo.md`, the PR | `AGENTS.md` (How work proceeds), `make static` for oversized sources, review item V3 |
 | 7 | Validate | While working, before review, before merge | Focused commands, then `make static`; `make check` or the hosted gate on the revision to merge | [Checks](#checks) | `AGENTS.md` rule 3 |
 | 8 | Completion review | Before marking ready or reporting done, or on request | `make review-scope`; an independent reviewer at the printed depth; route findings; publish | The PR's Agent review section | `completion-review` skill, `docs/review-checklist.md` |
-| 9 | Hand off | End of every task, and whenever the owner must decide | Decision cards, result, specification revisions, design suitability | The conversation, in the owner's language | `owner-handoff` skill |
+| 9 | Hand off | End of every task, and whenever the owner must decide | Decision cards, result, specification revisions, what the work found along the way | The conversation, in the owner's language | `owner-handoff` skill |
 | 10 | Apply a ruling | The owner answers | Apply exactly what was approved, add the log entry, remove the resolved amendments | `design/`, `design/log.md` | `design-tree` skill |
 | 11 | Mark ready | No amendment pending and required CI green | Mark the PR ready; design readiness runs | The PR | `design-tree` skill workflow |
 | 12 | Merge | The owner approves the exact revision | Merge main into the branch first if it moved | `main` | `AGENTS.md` rules 2–4 |
@@ -58,7 +58,7 @@ branch. [AGENTS.md](../AGENTS.md#branch-and-main-boundary) holds the rules.
 
 | Check | Command | Locally | In CI | Covers |
 |---|---|---|---|---|
-| Static group | `make static` | Any time, before every push | `gate.yml`, every push | Repository invariants, specification archives, prose integrity, guidance references and this map's inventory, design-tree form |
+| Static group | `make static` | Any time, before every push | `gate.yml`, every push | Repository invariants, compiler sources over 4,000 lines named in `docs/todo.md`'s Code structure section, specification archives, prose integrity, guidance references and this map's inventory, design-tree form |
 | Full gate | `make check` | On the revision to merge | `gate.yml`, Linux and macOS | The static group plus the compiler build, tests, conformance adapter and runtime (`make check-groups` lists the groups) |
 | Design readiness | `make design-ready` | Before marking ready | `design-readiness.yml`, ready PRs and `main` | No pending amendment; tree changes logged |
 | Platform I/O | — | — | `io-hosts.yml`, every push | Linux io_uring and Windows IOCP runtime |
@@ -89,7 +89,7 @@ or self-description merely to satisfy this table.
 | `research/`; `governance/spec-evolution/` | Questions, alternatives, designs, change proposals, reproducible experiments, results and limitations; the research README provides navigation | Task completion as technical evidence, a proposal presented as an implemented rule, daily test implementations or inputs retained in research |
 | `design/` | Live design decisions with their reasons and refused alternatives, one log entry per ruling, and the procedure that maintains them | Module inventories, implementation transcripts, task progress, history |
 | `archive/` | Superseded material, such as retired research, moved here instead of deleted and kept as frozen historical evidence and rationale | Edits to archived content; anything an active source, build, test or tool depends on |
-| PR description | This change's problem, resulting behavior, selection grounds, validation and limitations | An obsolete description of an earlier diff, a new permanent source of project rules |
+| PR description | This change's problem, resulting behavior, selection grounds, validation, limitations and what it found along the way | An obsolete description of an earlier diff, a new permanent source of project rules |
 
 ### Citation boundaries
 

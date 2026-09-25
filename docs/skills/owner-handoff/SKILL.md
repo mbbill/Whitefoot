@@ -1,6 +1,6 @@
 ---
 name: owner-handoff
-description: Hand work back to the Whitefoot owner in the owner's language - decision cards first, then the result, specification revisions and design suitability. Use when stopping for the owner - a task is done, an amendment needs a ruling, or a finding awaits direction. Not for progress notes while work continues.
+description: Hand work back to the Whitefoot owner in the owner's language - decision cards first, then the result, specification revisions and what the work found along the way. Use when stopping for the owner - a task is done, an amendment needs a ruling, or a finding awaits direction. Not for progress notes while work continues.
 ---
 
 # Owner handoff
@@ -27,7 +27,8 @@ English.
 3. **Specification revisions.** Whenever `spec/kernel-spec.md` changed: which
    rules changed, their before and after behavior, and why they were selected.
    A version number or PR link does not replace this.
-4. **Design suitability.** A separate short paragraph: concerns and
-   improvement opportunities with their disposition (fixed, deferred to
-   `docs/todo.md`, or declined) and reasons, or one line naming the assessed
-   scope when none were found.
+4. **Found along the way.** A short paragraph summarizing the PR's section of
+   that name: what was fixed, what was recorded in `docs/todo.md` and what was
+   declined, with reasons, or one line naming the areas worked in when nothing
+   was found. The noticing happens while working, under AGENTS.md's "Fix or
+   record what you notice"; this step only reports it.

@@ -128,11 +128,10 @@ validation criterion, deferral reason and reopening condition. Reconsider as
 implementation reveals new information or later work touches these opportunities.
 Keep this proportional to the current work.
 
-When discussing implementation choices or handing back work, include a short,
-separate **Design suitability** paragraph in the owner's language. State
-concerns and improvement opportunities, their disposition and reasons; when
-none were found, one line naming the assessed scope suffices. This does not
-replace amendment or DCR explanations.
+List each concern and opportunity in the PR's *Found along the way* section
+as you find it, with its disposition and reason, and summarize them when
+handing back work; when none were found, one line naming the assessed scope
+suffices. This does not replace amendment or DCR explanations.
 
 ## Design Correspondence Review (DCR)
 

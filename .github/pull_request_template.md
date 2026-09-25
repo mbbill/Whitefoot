@@ -13,6 +13,13 @@ Report applicable findings, node count, depth, and net change as the
 lint prints them against the base.
 Link log entries for traceability. Use "none" when no decision changes. -->
 
+## Found along the way
+
+<!-- Defects and improvement opportunities this work exposed outside its
+requested change, kept current while working (AGENTS.md, "Fix or record what
+you notice"). Give each its disposition: fixed here, recorded in docs/todo.md
+(name the item), or declined (why). Write "none" when nothing was found. -->
+
 ## Agent review
 
 <!-- Populate at completion with the completion-review skill; opening a PR or
