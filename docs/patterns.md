@@ -31,8 +31,10 @@ An effect path is rooted at the bare parameter: write `writes(counter.value)`,
 never `writes(deref(counter).value)`. Use the narrowest truthful path. A body
 that reads a whole parameter and writes one field of it declares both,
 `reads(stats), writes(stats.count)`, so a call kills only the caller facts
-whose support overlaps that field; an entry at or below a written path is
-never listed, because the write already states it [EFF-1]. Two reads may overlap; a read/write or
+whose support overlaps that field. An entry another entry already states is
+never listed: a write states every access at or below its path and a read
+every read below it, so `reads(stats.count)` beside `reads(stats)` or
+`writes(stats)` is refused [EFF-1]. Two reads may overlap; a read/write or
 write/write pair must be proved disjoint when two arguments supply it, or when
 one argument supplies it at positions such as `values[i]` and `values[j]`
 [EFF-5].

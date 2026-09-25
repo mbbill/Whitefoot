@@ -948,16 +948,21 @@ rarely insert at the same place.
   `mechanical_fix` on main, and EFF-2's `EffectMismatch` prints "declare
   exactly the row the body exhibits: ..." though EFF-2 requires no
   restructuring. (EFF-1's subsumed-entry rejection, which requires no
-  restructuring, carries none.) Two of these printed fixes, applied
-  literally, lead to a further rejection:
+  restructuring, carries none.) EFF-1's repeated-entry fix also still quotes
+  the sentence v0.70 retired: "`writes(p)` already subsumes `reads(p)`, so
+  the pair is never written for one path". Two of these printed fixes,
+  applied literally, lead to a further rejection:
   (a) EFF-2's "add every missing category and path and remove every extra
-  one" never removes a declared entry that a missing write covers. A body
+  one" never removes a declared entry that a missing entry covers. A body
   that reads `stats.count` and then calls a helper declared `writes(stats)`,
   declared `reads(stats.count)`, gets `expected_row: "writes(stats)"`,
   `missing: ["writes(stats)"]` and `extra: []`, because the body does read
   `stats.count`; adding the missing entry and removing nothing gives
   `reads(stats.count), writes(stats)`, which EFF-1 refuses at
-  `reads(stats.count)`. Declaring `expected_row` itself is admitted.
+  `reads(stats.count)`. A body that reads `stats.count` and all of `stats`,
+  declared `reads(stats.count)`, likewise gets `missing: ["reads(stats)"]`,
+  and adding it gives `reads(stats), reads(stats.count)`, which EFF-1 also
+  refuses. Declaring `expected_row` itself is admitted in both.
   (b) EFF-1's category-order fix turns `writes(v), reads(v)` or
   `writes(v), reads(v.x)` into `reads(v), writes(v)` or
   `reads(v.x), writes(v)`, which then meets the subsumed-entry rejection,
@@ -1004,19 +1009,6 @@ rarely insert at the same place.
   the bounds. Either report each bound or collect through growable storage as
   `wfgrep.wf` now does; reopen when the program is pointed at a larger tree or
   its constant-capacity form stops being the point of the case.
-
-- **Question for the owner: should a row refuse a read below another
-  read?** [EFF-1] refuses an entry at or below another `writes` entry of its
-  row, but not a `reads` entry at or below another `reads` entry, so a body
-  that reads all of `stats` and its `count` admits both `reads(stats)` and
-  `reads(stats), reads(stats.count)`: two rows for one body, where [FORM-1]
-  asks for one spelling. Read pairs are never compared at a call and kill
-  nothing [EFF-5, CALL-1], so the redundancy costs callers nothing, and
-  EFF-2's suggested row already omits the covered read. Extending the EFF-1
-  subsumption to reads makes every row canonical; validate it by the rows it
-  would newly refuse in the conformance corpus and maintained programs.
-  Deferred because the owner's ruling on one-argument rows covered only
-  entries below a written path; close when the owner rules on reads.
 
 ## Code structure
 

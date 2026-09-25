@@ -1047,15 +1047,16 @@ pub enum SemanticIssueKind {
         /// Exact repair required by EFF-1 for that condition.
         mechanical_fix: &'static str,
     },
-    /// A row carries an entry at or below the path of another of its
-    /// `writes` entries, such as `reads(p)` or `writes(p.x)` beside
-    /// `writes(p)`, which EFF-1 never writes because that `writes` entry
-    /// already states every access at or below its path. EFF-1 names no
-    /// restructuring for it, so the rejection carries none.
+    /// A row carries an entry that another of its entries covers, such as
+    /// `reads(p)` or `writes(p.x)` beside `writes(p)`, or `reads(p.x)` beside
+    /// `reads(p)`, which EFF-1 never writes because the covering entry
+    /// already states it. EFF-1 names no restructuring for it, so the
+    /// rejection carries none.
     SubsumedEffectEntry {
         /// The redundant entry as the row writes it.
         entry: String,
-        /// The `writes` entry whose path covers it.
+        /// The first entry in written order whose path covers it: a `writes`
+        /// entry, or a `reads` entry covering a `reads` entry below it.
         covering: String,
     },
     /// The written effect row differs from syntactically exhibited effects.

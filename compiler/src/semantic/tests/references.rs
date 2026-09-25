@@ -527,12 +527,13 @@ fn main() -> status: ExitStatus pure {
 }
 "#;
 
-/// [EFF-1] a `writes` entry states every access at or below its path, so a
-/// row that also lists an entry at or below it states that access twice.
-/// The entry is refused where it is written, naming the entry that covers
-/// it, and no call is left to meet the pair [EFF-5].
+/// [EFF-1] a `writes` entry states every access at or below its path and a
+/// `reads` entry every observation at or below its path, so a row that also
+/// lists an entry one of them covers states that access twice. The entry is
+/// refused where it is written, naming the first entry in written order that
+/// covers it, and no call is left to meet the pair [EFF-5].
 #[test]
-fn an_entry_at_or_below_a_written_path_is_refused_at_the_row() {
+fn an_entry_another_entry_covers_is_refused_at_the_row() {
     let body = "let old = deref(pair).first;\n  set deref(pair).second = old;";
     for (row, entry, covering) in [
         (
@@ -549,6 +550,22 @@ fn an_entry_at_or_below_a_written_path_is_refused_at_the_row() {
             "writes(pair.first), writes(pair)",
             "writes(pair.first)",
             "writes(pair)",
+        ),
+        (
+            "reads(pair), reads(pair.first)",
+            "reads(pair.first)",
+            "reads(pair)",
+        ),
+        (
+            "reads(pair.first), reads(pair)",
+            "reads(pair.first)",
+            "reads(pair)",
+        ),
+        // Both later entries cover the first one; the earlier cover is named.
+        (
+            "reads(pair.first), reads(pair), writes(pair)",
+            "reads(pair.first)",
+            "reads(pair)",
         ),
     ] {
         let source = PAIR_ACT.replace("ROW", row).replace("BODY", body);
@@ -567,6 +584,16 @@ fn an_entry_at_or_below_a_written_path_is_refused_at_the_row() {
         });
         super::assert_rule_at(source.as_bytes(), SemanticRule::Eff1, entry);
     }
+    // Two sibling reads cover nothing of each other.
+    assert_accepts(
+        PAIR_ACT
+            .replace("ROW", "reads(pair.first), reads(pair.second)")
+            .replace(
+                "BODY",
+                "let first = deref(pair).first;\n  let second = deref(pair).second;",
+            )
+            .as_bytes(),
+    );
 }
 
 /// [EFF-5] two effects one argument supplies are compared only when the
@@ -1851,7 +1878,7 @@ fn an_outer_payload_reference_survives_a_nested_identical_refinement() {
   Idle();
 }
 
-fn examine(packet: &Packet) -> result: u64 reads(packet), reads(packet.Data.value) {
+fn examine(packet: &Packet) -> result: u64 reads(packet) {
   match deref(packet) {
     Data(value: outer_payload) => {
       let saved = &deref(outer_payload);

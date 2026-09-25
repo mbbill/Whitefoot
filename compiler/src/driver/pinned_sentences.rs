@@ -761,6 +761,28 @@ fn main() -> status: ExitStatus pure {
             "\n  entry: writes(pair.first)\n  covering: writes(pair)\n",
         ],
     },
+    Probe {
+        name: "read-below-a-read-path.wf",
+        source: br#"struct Pair {
+  first: u8;
+  second: u8;
+}
+
+fn inspect(pair: &Pair) -> result: u8 reads(pair), reads(pair.first) {
+  let whole = deref(pair);
+  return whole.second;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "EFF-1",
+        sentences: &[
+            "]: SubsumedEffectEntry\n",
+            "\n  entry: reads(pair.first)\n  covering: reads(pair)\n",
+        ],
+    },
     // -------------------------------------------------------------------
     // [TYPE-5] places, subscripts, and flat storage.
     // -------------------------------------------------------------------

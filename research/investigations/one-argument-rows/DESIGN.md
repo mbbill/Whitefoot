@@ -36,10 +36,14 @@ probes against the implementation. The baseline is PR #123 at `90259428`.
    below `p`, so an entry at or below the path of another `writes` entry of
    the same row (`reads(p.x)` or `writes(p.x)` beside `writes(p)`, and
    `reads(p)` beside `writes(p)` as before) is an EFF-1 rejection at that
-   entry's `effect`, carrying the `writes` entry that covers it. "At or
-   below" is EFF-2's covering relation: the same root and a step prefix, an
-   index or range position matching exactly when it names the same value
-   parameters.
+   entry's `effect`, carrying the entry that covers it. "At or below" is
+   EFF-2's covering relation: the same root and a step prefix, an index or
+   range position matching exactly when it names the same value parameters.
+   After the owner's ruling on this record's read-below-read question, a
+   `reads` entry below another `reads` entry (`reads(p.x)` beside
+   `reads(p)`) is refused the same way, since `reads(p)` states every read
+   below `p`; the same path twice in one category stays EFF-1's repeated
+   entry.
 3. EFF-2's suggested row becomes the exhibited row without the entries
    another of its entries covers. It needs no merge: every pair left on one
    parameter either overlaps at every position, and is not compared, or
@@ -212,15 +216,19 @@ verdict (Pass=1212), including the six uncalled rows of
 Two items outside the ruling surfaced:
 
 - EFF-2's printed fix, "add every missing category and path and remove every
-  extra one", never removes a declared entry a missing write covers: a body
+  extra one", never removes a declared entry a missing entry covers: a body
   that reads `stats.count` and calls a helper declared `writes(stats)`,
   declared `reads(stats.count)`, gets `missing: ["writes(stats)"]` and
-  `extra: []`, and adding the entry gives a row EFF-1 now refuses.
-  `expected_row` itself, `writes(stats)`, is admitted. This joins the
+  `extra: []`, and adding the entry gives a row EFF-1 now refuses; after the
+  read-below-read ruling, a missing `reads(stats)` does the same.
+  `expected_row` itself is admitted in both. This joins the
   printed-restructuring audit in `docs/todo.md`.
 - A read below another read of the same row, such as
-  `reads(stats), reads(stats.count)`, is still admitted beside the shorter
-  `reads(stats)` for the same body, so one body has two admitted rows. Read
+  `reads(stats), reads(stats.count)`, was still admitted beside the shorter
+  `reads(stats)` for the same body, so one body had two admitted rows. Read
   pairs are never compared at a call and kill nothing, so the redundancy
-  costs no caller anything; whether EFF-1 should refuse it is recorded in
-  `docs/todo.md` for the owner.
+  cost no caller anything. The owner ruled to refuse it as well, and EFF-1
+  now does (rule 2 above; conformance case `eff1-neg-read-below-read-path`).
+  One maintained row had this shape, a unit test declaring
+  `reads(packet), reads(packet.Data.value)`, and now declares
+  `reads(packet)`.

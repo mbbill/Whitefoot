@@ -609,8 +609,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// [EFF-1] one written row: every `reads` entry before every `writes`
     /// entry, each entry naming exactly one path, each path written at most
-    /// once per category, and no entry at or below the path of another
-    /// `writes` entry.
+    /// once per category, and no entry another entry covers: nothing at or
+    /// below the path of a `writes` entry, and no `reads` entry below the path
+    /// of another `reads` entry.
     ///
     /// `pure` is the unique spelling of the empty row. Allocation and release
     /// carry no effect entry at all [STOR-8], so the row has exactly these two
@@ -675,20 +676,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
         }
-        // [EFF-1] a `writes` entry states every access at or below its path,
-        // so an entry at or below the path of another `writes` entry of the
-        // row is a second spelling of what that entry already states
-        // [FORM-1]. "At or below" is [EFF-2]'s covering relation: one root
-        // and a step prefix. The first such entry in written order is refused
-        // at its own `effect`, naming the entry that covers it; EFF-1 names no
-        // restructuring, so none is carried.
-        for (index, (path, _, node)) in entries.iter().enumerate() {
+        // [EFF-1] a `writes` entry states every access at or below its path
+        // and a `reads` entry every observation at or below its path, so an
+        // entry that another entry of the row covers is a second spelling of
+        // what that entry already states [FORM-1]: a `writes` entry covers
+        // every entry at or below it, and a `reads` entry every `reads` entry
+        // at or below it. "At or below" is [EFF-2]'s covering relation: one
+        // root and a step prefix. Two entries of one category and one path
+        // were already refused above as a repeated entry, so a cover of the
+        // same category reaching this pass is a proper prefix. The first such
+        // entry in written order is refused at its own `effect`, naming the
+        // first entry that covers it; EFF-1 names no restructuring, so none is
+        // carried.
+        for (index, (path, write, node)) in entries.iter().enumerate() {
             let covering = entries
                 .iter()
                 .enumerate()
-                .find(|(other, (cover, write, _))| {
+                .find(|(other, (cover, cover_write, _))| {
                     *other != index
-                        && *write
+                        && (*cover_write || !*write)
                         && cover.root == path.root
                         && path.steps.starts_with(&cover.steps)
                 });
