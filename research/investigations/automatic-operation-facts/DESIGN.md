@@ -1,9 +1,11 @@
 # Automatic operation facts
 
-Status: research round complete; awaiting the owner's ruling. No
-specification, compiler or design-tree change is made here. If the direction
-is approved, the specification amendment, design-tree amendment and
-implementation follow on the same branch.
+Status: implemented. The owner approved the recommendation on 2026-09-25;
+specification v0.71, the compiler and the conformance cases implement it, and
+the [design-tree amendment](../../../design/amendments/operation-fact-table.md)
+awaits the owner's ruling. Sections 1 to 4 are the research round as it was
+ruled on; [section 5](#5-implementation) records what landed and its
+measurements.
 
 ## Question
 
@@ -47,7 +49,12 @@ while masking `hi` with `iand` first is accepted.
   The pre-recorded selection criterion selects this step (D, whose relations
   the recommendation narrows to order and offset) and rejects the larger
   exact-image step (X).
-- **Owner decisions** are listed in [Decisions for the owner](#decisions-for-the-owner).
+- **Owner decisions** are listed in [Decisions for the owner](#decisions-for-the-owner)
+  with the owner's ruling of 2026-09-25.
+- **Implementation.** [Section 5](#5-implementation) records the landed
+  rule, three conformance verdicts that moved from reject to accept where
+  one was predicted, one certificate the new facts made redundant, and the
+  checking cost against the pre-recorded criterion.
 
 ## Constraints recovered before choosing
 
@@ -591,6 +598,9 @@ ENT-2 term reader, which repairs that item for the replaced rows.
   permission, so `--par-ledger` output may change; lowering receives no new
   fact family ([backend facts](../../../design/compiler/backend-facts.md)).
 
+[Section 5.3](#53-predictions-and-outcomes) compares these predictions with
+the implementation.
+
 ### 3.6 Checking cost
 
 - **Premises.** Zero new listed premises.
@@ -657,6 +667,9 @@ operation (which would reopen X).
   nested goal-tree intervals.** Section 3.1.
 
 ### 4.3 Proposed specification text
+
+This is the text as proposed; [section 5.1](#51-specification-v071) records
+how the landed amendment differs.
 
 Replace the complete [ENT-3.S7] item with:
 
@@ -849,6 +862,181 @@ adapter and every program test.
 7. Decide whether the 18 already-unnecessary workarounds are removed with the
    implementation or separately.
 
+Ruling, 2026-09-25: decisions 1 to 6 as recommended, with X recorded in
+[docs/todo.md](../../../docs/todo.md) under its reopening condition; the
+workarounds of decision 7 are removed in the implementing change.
+
+## 5. Implementation
+
+### 5.1 Specification v0.71
+
+Main reached v0.70 with modular compilation (#85) before the amendment
+landed, so the amendment archives main's v0.70 bytes as
+`spec/kernel-spec-v0.70.md` and titles the active file v0.71. The ENT-3 edits
+were made against v0.70's text. They follow section 4.3, with these
+differences:
+
+- `irotl`, `irotr` and `ibswap` are table rows whose condition never holds, so
+  the single-value rule is their only fact, instead of a separate sentence.
+- S14 is deleted without the proposed retirement sentence: the specification
+  records no history, and S2, S3, S8 and S10 are already absent without one.
+- The division capture names its excluded forms directly: a signed
+  division, a nonterm operand, a conditional success payload and every other
+  division form capture no image.
+- [DIAG-2] gives each `OperationFact` as parents the closed operand bounds
+  the row read, or, for a `*` row over the interval-product rule's intervals,
+  that multiplication's discharged IntegerDomain derivation, and prunes it by
+  ordinary reachability. The literal scaled division image cites the
+  quotient's order relation `q <= a`, or the quotient's upper result bound
+  when the dividend is a literal or named-const value.
+
+The [design-tree amendment](../../../design/amendments/operation-fact-table.md)
+replaces the product-interval decision as section 4.4 proposes and lists M, K,
+I, the full difference interval and X as rejected. The division-image
+decision keeps its words: the quotient's bound it publishes is now the `/`
+row's order relation.
+
+### 5.2 Compiler
+
+- `compiler/src/semantic/entailment/flow/operation_facts.rs` holds the table
+  as data over checked `i128` intervals and reads no fact state. Its tests
+  compare every row with an independently written reference semantics at
+  every operand value of every 4-bit interval box and of 8-bit boxes whose
+  endpoints lie on type edges, around zero and at powers of two, and check
+  the single-value rows and the reported shift. Ten seeded unsound edits (a
+  remainder bound, a saturating relation, a wrap condition, the shift-amount
+  rule, the `ior` ceiling, the `iand` sign condition, the reinterpret offset,
+  the population-count bound, the divisor split and one exact value) each
+  fail these tests, and the unmodified table passes them.
+- One establishment path in `flow/sources.rs` serves an ordinary `let`, a
+  [SET-1] commit value and a checked row's success payload [ENT-5]. It reads
+  every operand with the one term reader that includes measure terms, closes
+  the state at most once per binding and only when an operand is a
+  nonconstant term, and records each fact as an `OperationFact` whose parents
+  are the derivations of the operand bounds it read.
+- Removed: the S14 event kind, the checked-arm outcome facts and the
+  `BitAndBound`, `ShiftOneNonzero`, `UnsignedDivisionBound`,
+  `UnsignedRemainderBound` and `SignedRemainderBound` roots with their
+  retention records.
+- Modular compilation (#85) needs nothing further here. S7 reads and
+  establishes facts inside one body, and a callee in another module reaches
+  its caller only through its contract, as before.
+
+### 5.3 Predictions and outcomes
+
+- **Conformance verdicts.** Section 3.5 predicted one change. Three cases
+  moved from reject to accept, each as a direct consequence of a table row.
+  Each is renamed to a positive id and paired with a new negative that keeps
+  the property the old case protected:
+
+  | Former case | Now | Why it is accepted | Paired negative |
+  |---|---|---|---|
+  | `ent3-neg-stage8b-local-one` | `ent3-pos-s7-local-one-shift` | the local one has the closed interval [1, 1], so `ishl.wrap` bounds the shift to [1, 2^31] (decision 4) | `ent3-neg-s7-shift-may-be-zero` |
+  | `op4-neg-callee-minimum-subscript` | `op4-pos-callee-minimum-subscript` | `imin(x, 7_u64)` is at most 7, an index of the eight-entry table | `op4-neg-callee-minimum-past-end` |
+  | `op2-neg-branch-quotient-images` | `op2-pos-branch-quotient-interval` | each branch's quotient by two has the interval [0, 2^63 - 1], which names only the result, survives the `give` join and proves the doubled product's domain | `op2-neg-branch-runtime-quotient-images` |
+
+  The seven other negatives named in section 3.5 keep their verdicts, and no
+  other case changed. The new cases are one accepted case per row family at
+  the endpoints its rows give (`ent3-pos-s7-arithmetic-rows`,
+  `-division-rows`, `-bit-rows`, `-shift-rows`, `-order-rows`,
+  `-count-rows`, `-reinterpret-and-single-values`), the support and reader
+  cases (`ent3-pos-s7-measure-operand`,
+  `ent3-pos-s7-interval-survives-operand-write`,
+  `ent3-neg-s7-relation-dies-with-operand`), the checked payloads
+  (`ent5-pos-checked-payload-facts`, `ent5-neg-checked-product-one-past`), and
+  rejected cases one past an endpoint or outside a condition
+  (`ent3-neg-s7-shift-right-one-past`, `-wrap-may-wrap`,
+  `-signed-and-without-mask`, `-shift-into-sign-bit`,
+  `-wrap-amount-past-width`, `-signed-remainder-one-past`,
+  `-popcount-one-past`, `-reinterpret-mixed-signs`,
+  `-unrepresentable-high-product`). They carry the sweep idioms in condensed
+  form, so the probes did not become cases one by one.
+- **[PRF-1].** Predicted: no newly redundant certificate. One became
+  redundant. Radix scatter's `output_count <= 33554944_u64` needed
+  `use full_low_bound; use full_high_bound; use 2 times capacity_limit;`; the
+  `+` row now reads both addends' closed upper bounds, so the sum's interval
+  alone proves the invariant. The block is removed and the invariant remains
+  a checked statement.
+- **Compiler tests.** Ten tests changed with the rule. Four
+  originating-acceptance canaries used `imin` or `imax` as a shape without a
+  fact and now sit one past the endpoint each row gives. Three tests whose
+  target the new facts make provable in L0 (conditional affine transport, an
+  indexed separation, an [MSR-4] bridge premise) were given operands that
+  still need the mechanism under test. The checked-offset kill test now
+  expects the payload's interval to survive the write and only its relation
+  to die, and two test helpers learned the new node.
+- **Measure operands.** `let r = x % deref(src).len;` now bounds `r` by the
+  measure, which repairs the todo item for every S7 row and the checked
+  payloads; the item stays open for the other readers it lists.
+- **Corpus.** The three sites of section 2.2 and all workarounds found there
+  are removed: 17 checked conversions (the 14 counted there and the three
+  same-shape ones) become bare `cvt`, the 4 guards are gone, telemetry's
+  shifted byte converts with bare `cvt`, and dir_walk clamps with
+  `imin(cursor, 126_u64)`, converts with bare `cvt` and drops its order guard.
+- **Sweep.** The candidate accepts all 21 sweep idioms, the uncertain c13,
+  the three controls and the sufficiency file.
+- **Diagnostics.** As section 3.5 allowed, `fn9-neg-wrapped-negation-nonnegative`
+  and `fn9-neg-saturation-is-not-wrapping` now report their postcondition
+  refuted rather than unproved, still under FN-9; the other five named
+  negatives keep their verdicts, and the two that report a disposition keep
+  it.
+
+### 5.4 Checking cost
+
+Measured on 2026-09-25 on a 4-CPU Intel Xeon (2.80 GHz) Linux 6.18.44 host
+with 15 GiB of memory and Rust 1.98.1. The host verification lock was held
+for every timing run. The base is the merge base with main, `6b66e5237`, and
+the candidate is `9db4b6361`. Each was built with the gate profile in its own
+tree. Both were warmed once, and every source then got five alternating pairs
+of `whitefootc --emit-llvm`, with the order reversed on odd rounds. The binary
+SHA-256 identities are:
+
+```text
+base      bdc8450950ae12c6f23660be412b2aaf871f191d26bffbbd97736a00cb105433
+candidate adeeae0b46412002388157c61196c32815770773b4dfdfedc0fc662b0de720c1
+```
+
+The raw pairs are in [cost/](cost/): one row per invocation with its time,
+exit status and LLVM SHA-256, for the program bundles and for the three
+fixture runs.
+
+| Criterion (section 4.5) | Threshold | Result |
+|---|---|---|
+| Summed median over the 82 program bundles the program tests compile, `lib/containers` included, each compiler compiling its own tree | at most +10% | 18.091 s against 18.091 s, +0.0% |
+| A bundle rising by both more than 25% and more than 50 ms | none | none; the largest rises are the three deflate bundles, +14.6% to +17.4% (+69 to +90 ms) |
+| Checking-cost fixtures (fixed, growing and control at 16, 64 and 256, fixed at 4096) | at most +10% | summed medians −2.5% and −1.1% in two full runs; see below for one cell |
+| LLVM of unchanged sources | byte-identical | identical for all 65 bundles whose sources are unchanged, and for radix scatter, whose edit removed only a `use` block |
+| `--par-ledger` differences | each explained | none for unchanged sources; the 16 bundles with edited sources differ only in line numbers, or where a removed `match` or guard changed the statement sequence the ledger pairs |
+
+By source, the 65 bundles with unchanged sources sum to −0.6% and the 17 with
+edited sources to +1.5%. To separate the rule's cost from the edits, both
+compilers also compiled the base tree's sources of the edited bundles with the
+most work. The deflate bundles take 16% to 20% longer (+79 to +111 ms, LLVM
+identical), dir_walk 10% longer, and wfgrep and telemetry within 3%. The
+table's cost therefore concentrates in operation-dense code, and it stays
+under the per-bundle line even there. On its own edited sources dir_walk is
+31% faster, because the removed workarounds were themselves checked.
+
+In the first fixture run, fixed-256 was 41% slower (48.1 ms against 67.8 ms).
+Its candidate samples ranged from 46.7 to 81.3 ms, while every other cell
+stayed within ±9%. The fixtures contain no integer operation binding, so S7
+does no work in them. Two repeats measured the cell at +3.3% and +6.4%, with
+candidate samples between 45.3 and 51.8 ms. During the repeats the host's
+load average was 1.5 to 2.7 while one compiler process ran at a time, so
+processes outside the lock shared the machine.
+
+The conformance run, every case once with `whitefootc --check`, took 32.6 s
+for the base over its 1266 cases and 33.6 s for the candidate over its 1290.
+
+No threshold failed, so the static-interval fallback K is not selected and
+no cost was attributed. The temporary counters and the falsifier of section
+4.5 exist for attribution and were not needed. The fixtures came from the
+proof-use-cost runner's generator and compare mode with its three `own`
+spellings removed. The committed generator still writes the parameter syntax
+from before the ownership redesign, which current compilers reject with
+GRAM-3, and its historical comparisons run the compilers that required that
+syntax.
+
 ## Concerns and opportunities
 
 Within the assessed scope (ENT-3's operation-derived sources, their ENT-4,
@@ -872,5 +1060,9 @@ edit one site of a copy placed under `<scratch-root>` and check it with its
 program's bundle (the deflate bundle is `raw_deflate.wf`,
 `raw_deflate_dynamic.wf`, `raw_deflate_dynamic_decode.wf`,
 `raw_deflate_boundary.wf`). The optimized bodies come from `opt -O2 -S` on the
-emitted modules. Remove this directory's probes when the conformance cases
-derived from them land, or if the owner refuses the direction.
+emitted modules. The probes stay beside this document as the selection
+experiment's evidence, as the deciding probes of other investigations do: they
+reproduce each idiom's rejection before the change, its acceptance after it
+(section 5.3) and the sufficiency simulation of section 2.5. The landed rule's
+regression evidence is the conformance cases listed in section 5.3, not these
+files.

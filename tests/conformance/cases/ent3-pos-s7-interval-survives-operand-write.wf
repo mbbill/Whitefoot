@@ -5,12 +5,12 @@ fn at_most(value: u64, limit: u64) -> result: unit pure contract {
 }
 
 fn rows(value: u64, other: u64) -> result: u64 pure {
-  let low = iand(value, 255_u64);
+  let high = ishr(value, 56_u32);
   set value = other;
-  at_most(value: low, limit: 255_u64);
+  at_most(value: high, limit: 255_u64);
   let total = 0_u64;
-  set total = low + 1_u64;
-  at_most(value: total, limit: 256_u64);
+  set total = imin(high, 7_u64);
+  at_most(value: total, limit: 7_u64);
   return total;
 }
 
