@@ -48,6 +48,10 @@ they are, and [AGENTS.md](../AGENTS.md) defines the work-branch and merge bounda
 - [Incremental L0 closure](investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md):
   keep fact states' closed cores and insert fresh edges instead of recomputing
   the cubic closure, relaxing only which equal-bound L0 derivation is retained.
+- [Repair wording](investigations/repair-wording/DESIGN.md): every repair the
+  specification prescribes against the compiler's printed text, refuted and
+  unproved probes of each, and whether the words belong to the specification
+  or the compiler.
 
 Open research questions and evidence links are in [ideas](../docs/ideas.md);
 known compiler defects and implementation costs are in [todo](../docs/todo.md).
