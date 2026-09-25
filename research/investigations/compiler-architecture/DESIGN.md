@@ -349,7 +349,15 @@ now in `design/amendments/compiler-composition-staging.md`.
 
 1. **Resolution publishes per-node indexes.** Build `NodePath` only for
    records and diagnostics, and replace the linear `(role, NodePath)` scans.
-   Cost: small. Validation: identical verdicts; no test changes.
+   Cost: small. Validation: identical verdicts; no test changes. Done on this
+   branch: resolution indexes its declaration, dependent-declaration,
+   lexical-use and deferred-use records by owner node, the checker reads them
+   by node, and a path finds its node by binary search. The checker still
+   builds one path per node for diagnostics. With `--check`, the median of
+   nine interleaved runs on four cores fell by 20 to 35% on the
+   bundled container programs (ordered map 1.04 to 0.68 s, indexed
+   membership 4.19 to 2.78 s) and by 5% on `wfgrep` (2.39 to 2.28 s), with
+   identical verdicts, diagnostics and LLVM.
 2. **Stable declaration keys.** Resolution mints a key per declaration and an
    item-relative key per occurrence; receipts, read sets and link names use
    them instead of respelled `Debug` text and item ordinals. Cost: medium.
@@ -485,7 +493,6 @@ test programs, and, for lowering and the backend, byte-identical LLVM.
 ## Not measured
 
 - The cost of the double structural check (F8).
-- How much of resolution and checking time the linear scans take (P3.1).
 - Whether the emitter's value-path arms that the place path shadows are
   dead; a coverage run would settle it.
 - Whether splicing an oversized loop candidate drops metadata in any current

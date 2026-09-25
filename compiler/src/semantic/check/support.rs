@@ -55,11 +55,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         role: DeclarationRole,
     ) -> Result<&crate::DeclarationRecord, CheckStop> {
-        let path = self.tree.path(node)?;
         self.resolved
-            .declarations()
-            .iter()
-            .find(|declaration| declaration.role() == role && declaration.origin().node() == path)
+            .declarations_at(node)
+            .find(|declaration| declaration.role() == role)
             .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
@@ -73,12 +71,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         role: DeclarationRole,
     ) -> Result<Vec<&crate::DeclarationRecord>, CheckStop> {
-        let path = self.tree.path(node)?;
         let mut found = self
             .resolved
-            .declarations()
-            .iter()
-            .filter(|declaration| declaration.role() == role && declaration.origin().node() == path)
+            .declarations_at(node)
+            .filter(|declaration| declaration.role() == role)
             .collect::<Vec<_>>();
         found.sort_by_key(|declaration| declaration.origin().coordinate().start());
         Ok(found)
@@ -89,10 +85,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         role: DeclarationRole,
     ) -> Result<Option<&crate::DeclarationRecord>, CheckStop> {
-        let path = self.tree.path(node)?;
-        let mut matches = self.resolved.declarations().iter().filter(|declaration| {
-            declaration.role() == role && declaration.origin().node() == path
-        });
+        let mut matches = self
+            .resolved
+            .declarations_at(node)
+            .filter(|declaration| declaration.role() == role);
         let declaration = matches.next();
         if matches.next().is_some() {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
@@ -138,9 +134,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let mut uses = self
             .resolved
-            .lexical_uses()
-            .iter()
-            .filter(|usage| usage.role() == role && usage.origin().node() == path)
+            .lexical_uses_at(node)
+            .filter(|usage| usage.role() == role)
             .collect::<Vec<_>>();
         uses.sort_by_key(|usage| usage.origin().role_ordinal());
         Ok(uses)
@@ -167,9 +162,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
         self.resolved
-            .lexical_uses()
-            .iter()
-            .find(|usage| roles.contains(&usage.role()) && usage.origin().node() == path)
+            .lexical_uses_at(node)
+            .find(|usage| roles.contains(&usage.role()))
             .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
@@ -178,11 +172,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         role: DependentDeclarationRole,
     ) -> Result<&crate::DependentDeclarationRecord, CheckStop> {
-        let path = self.tree.path(node)?;
         self.resolved
-            .dependent_declarations()
-            .iter()
-            .find(|declaration| declaration.role() == role && declaration.origin().node() == path)
+            .dependent_declarations_at(node)
+            .find(|declaration| declaration.role() == role)
             .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
@@ -191,11 +183,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         role: DeferredUseRole,
     ) -> Result<&crate::DeferredUseRecord, CheckStop> {
-        let path = self.tree.path(node)?;
         self.resolved
-            .deferred_uses()
-            .iter()
-            .find(|usage| usage.role() == role && usage.origin().node() == path)
+            .deferred_uses_at(node)
+            .find(|usage| usage.role() == role)
             .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 

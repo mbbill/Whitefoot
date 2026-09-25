@@ -2121,13 +2121,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(false);
         }
         for ty in self.tree.descendants_with(node, Production::Type)? {
-            if self.tree.names_nominal(ty)? {
-                let path = self.tree.path(ty)?;
-                if !self.resolved.lexical_uses().iter().any(|usage| {
-                    usage.role() == crate::LexicalUseRole::Type && usage.origin().node() == path
-                }) {
-                    return Ok(false);
-                }
+            if self.tree.names_nominal(ty)?
+                && !self
+                    .resolved
+                    .lexical_uses_at(ty)
+                    .any(|usage| usage.role() == crate::LexicalUseRole::Type)
+            {
+                return Ok(false);
             }
         }
         let value = self
@@ -2139,13 +2139,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .tree
                 .direct_token_with(value, crate::TerminalPredicate::Identifier)?
                 .is_some()
+            && !self
+                .resolved
+                .lexical_uses_at(value)
+                .any(|usage| usage.role() == crate::LexicalUseRole::ConstValue)
         {
-            let path = self.tree.path(value)?;
-            if !self.resolved.lexical_uses().iter().any(|usage| {
-                usage.role() == crate::LexicalUseRole::ConstValue && usage.origin().node() == path
-            }) {
-                return Ok(false);
-            }
+            return Ok(false);
         }
         Ok(true)
     }
