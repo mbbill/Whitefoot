@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-25 Refuse a read entry below another read of its row
+
+Nodes: language/effects, language/effects/call-site-check, compiler/rejection-payloads
+
+Owner-approved: The owner confirmed PR #126's covered-read-entries amendment ("126 ok"), 2026-09-25.
+
+Summary: Replace the language/effects decision that a row lists no entry at or below the path of another of its `writes` entries, which admitted a read below another read, with the confirmed decision: a row lists no entry that another of its entries covers, a `writes` entry covering every entry at or below its path and a `reads` entry every `reads` entry below its path, so `reads(p.x)` beside `reads(p)` is an EFF-1 rejection at that entry as `reads(p)`, `reads(p.x)` and `writes(p.x)` beside `writes(p)` are, carrying the entry that covers it. The owner ruled on PR #126 that such a read is refused as well, because `reads(stats), reads(stats.count)` and `reads(stats)` are two admitted rows for one body where FORM-1 asks for one spelling, although a read pair is never compared at a call and kills nothing. Add the rejected alternative admitting a read below another read, and rename the rejected alternative "Placing the rejection at the covering `writes` entry or at the whole row" to "Placing the rejection at the covering entry or at the whole row", since the covering entry can now be a `reads` entry. The amendment's sentences naming the replaced decision and alternative are recorded here instead. The settled wording is in kernel-spec v0.72 rule EFF-1; the [one-argument rows investigation](../research/investigations/one-argument-rows/DESIGN.md#results) records the case `eff1-neg-read-below-read-path` and the one maintained row the ruling changed. The other two nodes named here are unchanged by this entry and carry the ruling below; they are listed because this PR changes them. Remove the accepted amendment and the amendment directory. This ruling does not authorize a merge.
+
 ## 2026-09-25 Compare one argument's row entries only where positions decide their overlap
 
 Nodes: language/effects/call-site-check, language/effects, compiler/rejection-payloads
