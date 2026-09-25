@@ -9,7 +9,7 @@ use crate::{
     finalize, lex, lower_checked_with_layout, parse, resolve,
 };
 
-use crate::backend::target::TargetLayout;
+use crate::target::TargetLayout;
 
 use super::{
     CANONICAL_LIMITS, FINALIZE_LIMITS, LEX_LIMITS, PARSE_LIMITS, SOURCE_LIMITS, compile,

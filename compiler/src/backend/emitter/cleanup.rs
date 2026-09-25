@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 use std::fmt::Write;
 
+use crate::target::TargetLayout;
 use crate::{IrReleaseClass, IrVariant, IrWindowShape};
 
-use super::super::target::TargetLayout;
 use super::{
     BackendFailure, IrNominalKind, IrProgram, IrType, llvm_type, nominal_symbol, variant_field_base,
 };
@@ -156,14 +156,13 @@ fn emit_run_drop_helper(
     };
     let element_ty = program.element(element).ok_or(BackendFailure::InvalidIr)?;
     let element_llvm = llvm_type(program, element_ty)?;
-    let address_index =
-        if super::super::target::element_has_zero_stride(target, program, element_ty)
-            .map_err(BackendFailure::TargetLayout)?
-        {
-            "0"
-        } else {
-            "%physical"
-        };
+    let address_index = if crate::target::element_has_zero_stride(target, program, element_ty)
+        .map_err(BackendFailure::TargetLayout)?
+    {
+        "0"
+    } else {
+        "%physical"
+    };
     writeln!(
         output,
         "  br label %walk\nwalk:\n  %index = phi i64 [ 0, %entry ], [ %next, %body ]\n  %continue = icmp ult i64 %index, %length\n  br i1 %continue, label %body, label %done\nbody:\n  %raw = add i64 %origin, %index\n  %over = icmp uge i64 %raw, %capacity\n  %reduced = sub i64 %raw, %capacity\n  %physical = select i1 %over, i64 %reduced, i64 %raw\n  %element.pointer = getelementptr inbounds {element_llvm}, ptr %pointer, i64 {address_index}\n  %element = load {element_llvm}, ptr %element.pointer"
@@ -362,7 +361,7 @@ pub(super) fn type_requires_cleanup(
     ty: IrType,
 ) -> Result<bool, BackendFailure> {
     // Whether a value of this type derives release work [STOR-3, PROV-6].
-    crate::lowering::type_derives_release(program.nominals(), program.elements(), ty)
+    crate::ir::type_derives_release(program.nominals(), program.elements(), ty)
         .ok_or(BackendFailure::InvalidIr)
 }
 

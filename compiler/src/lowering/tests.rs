@@ -513,7 +513,8 @@ fn a_fitting_loop_retains_its_interface_and_one_extra_field_triggers_rescue() {
 /// lane exactly. One more byte needs alignment padding and makes 264 bytes.
 #[test]
 fn aggregate_loop_frames_fit_the_selected_target_before_outlining() {
-    use crate::backend::{emitter::emit_llvm_with_layout, target::TargetLayout};
+    use crate::backend::emitter::emit_llvm_with_layout;
+    use crate::target::TargetLayout;
 
     for target in [
         TargetLayout::host().expect("supported test target"),

@@ -66,15 +66,15 @@
 
 use std::{cell::RefCell, collections::HashMap};
 
-use crate::backend::target::parallel_lane_frame_layout;
 use crate::semantic::{
     BindingId, CheckedDrop, CheckedLoopId, CheckedStatement, LoopActualization, LoopCombine,
     LoopPermission,
 };
+use crate::target::{LANE_FRAME_BYTES, parallel_lane_frame_layout};
 use crate::{
     IrAddressed, IrBlock, IrBlockId, IrBooleanOperation, IrConstant, IrEnumType, IrFunction,
     IrInstruction, IrIntegerOperation, IrMatchTarget, IrNominalKind, IrOperation, IrOverlap,
-    IrSynthesis, IrTerminator, IrType, IrValueId, LANE_FRAME_BYTES, LoweringFailure, NodePath,
+    IrSynthesis, IrTerminator, IrType, IrValueId, LoweringFailure, NodePath,
 };
 
 use super::loops::U64;
@@ -726,7 +726,9 @@ impl IrBuilder<'_> {
         let (continuation, results) = self.new_block(&[function.result])?;
         let block_offset = self.blocks.len();
         let blocks = (0..function.blocks.len())
-            .map(|index| IrBlockId::from_index(block_offset + index))
+            .map(|index| {
+                IrBlockId::from_index(block_offset + index).ok_or(LoweringFailure::CounterOverflow)
+            })
             .collect::<Result<Vec<_>, _>>()?;
         let block = |original: IrBlockId| blocks[original.index()];
         for mut original in function.blocks {

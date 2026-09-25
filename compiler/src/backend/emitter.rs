@@ -27,7 +27,7 @@ use std::fmt::Write;
 use super::abi::{FunctionAbi, ParameterAbi};
 pub use super::runtime::*;
 use super::storage::{FunctionStoragePlan, is_stored_aggregate};
-use super::target::{
+use crate::target::{
     TargetAggregateLayout, TargetFramePlan, TargetFrameSlot, TargetLayout, TargetLayoutFailure,
     TargetStorageType, parallel_lane_frame_layout, plan_target_frame, validate_program,
     validate_static_storage,
@@ -1258,10 +1258,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         // extends past its statically typed header states only the header it
         // is sure of, which is the direction `dereferenceable` needs.
         if let Some(referent) = referent
-            && let Ok(layout) = crate::backend::target::validate_static_storage(
+            && let Ok(layout) = crate::target::validate_static_storage(
                 self.target,
                 self.program,
-                &crate::backend::target::TargetStorageType::source(referent.ty()),
+                &crate::target::TargetStorageType::source(referent.ty()),
             )
             && layout.size() > 0
         {
@@ -1323,7 +1323,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
         let arguments = ordinary_call_arguments(self.program, self.function, abi)?;
         let spent = RecursiveFrontiers::exhausted(self.function.name());
-        let body = block_label(IrBlockId::from_index(0).map_err(|_| BackendFailure::InvalidIr)?);
+        let body = block_label(IrBlockId::from_index(0).ok_or(BackendFailure::InvalidIr)?);
         writeln!(self.output, "{GRAIN_ENTRY_LABEL}:").map_err(|_| BackendFailure::TextEmission)?;
         let anchor = self.output.len();
         writeln!(
@@ -1430,8 +1430,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 continue;
             }
             self.materialized.clear();
-            let block_id =
-                IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
+            let block_id = IrBlockId::from_index(index).ok_or(BackendFailure::CounterOverflow)?;
             writeln!(self.output, "{}:", block_label(block_id))
                 .map_err(|_| BackendFailure::TextEmission)?;
             if index == 0 && prelude_anchor.is_none() {
@@ -1513,7 +1512,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             } = block.terminator()
             {
                 let predecessor =
-                    IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
+                    IrBlockId::from_index(index).ok_or(BackendFailure::CounterOverflow)?;
                 incoming
                     .get_mut(target.index())
                     .ok_or(BackendFailure::InvalidIr)?

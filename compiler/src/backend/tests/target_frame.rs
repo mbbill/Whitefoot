@@ -1,4 +1,4 @@
-use crate::backend::target::{
+use crate::target::{
     TargetAggregateLayout, TargetFramePlan, TargetFrameSlot, TargetLayout, TargetLayoutFailure,
     TargetObject, TargetStorageType, plan_target_frame, validate_static_storage,
 };

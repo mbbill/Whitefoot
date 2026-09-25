@@ -22,7 +22,8 @@ pub(crate) use diagnostic::Place;
 use diagnostic::{Anchor, Head, Record};
 pub use diagnostic::{DiagnosticFormat, render_driver_failure};
 
-use crate::backend::{emitter::emit_llvm_with_layout, target::TargetLayout};
+use crate::backend::emitter::emit_llvm_with_layout;
+use crate::target::TargetLayout;
 use crate::{
     ACTIVE_KERNEL_SPEC_HASH, BackendFailure, CanonicalLimits, CanonicalOutcome,
     CanonicalSyntaxUnit, CheckedProgram, FinalizeLimits, FinalizeOutcome, LexLimits, LexOutcome,

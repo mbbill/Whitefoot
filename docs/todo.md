@@ -512,7 +512,7 @@ rarely insert at the same place.
 ## Parallel lowering and runtime
 
 - **Validate reuse of selected-target element layouts during emission.**
-  [Zero-stride addressing](../compiler/src/backend/target.rs) currently queries
+  [Zero-stride addressing](../compiler/src/target.rs) currently queries
   the ordinary layout calculator afresh for each element-address step. Repeated
   accesses to a deeply nested nominal element may recompute the same layout.
   Compare checking/emission cost on repeated nested-element accesses before

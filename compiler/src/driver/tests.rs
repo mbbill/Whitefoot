@@ -2492,7 +2492,7 @@ fn unrepresentable_array_is_a_target_failure_without_a_source_rule() {
 
 #[test]
 fn a_loop_frame_outside_the_selected_address_domain_stays_a_target_failure() {
-    use crate::backend::target::{TargetLayout, TargetLayoutFailure, TargetObject};
+    use crate::target::{TargetLayout, TargetLayoutFailure, TargetObject};
 
     let source = br#"fn folded(values: Array<u8, 216>) -> result: u64 pure {
   let total = 0_u64;

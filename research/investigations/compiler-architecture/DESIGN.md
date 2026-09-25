@@ -389,7 +389,15 @@ now in `design/amendments/compiler-composition-staging.md`.
    (`docs/todo.md`, "Machinery with no remaining consumer").
 4. **One target module** for lowering and backend, holding the layout, the
    lane-frame bound and the runtime ABI spellings. Cost: small. No tree
-   change.
+   change. Done on this branch: the IR's definitions moved from `lowering.rs`
+   to `ir.rs` and the target layout, with the lane-frame bound, to
+   `target.rs`, so lowering names no backend item and lowering, the target
+   layout and the backend read one IR module. Rust has no visibility for a
+   single sibling module, so the IR fields lowering writes became
+   crate-visible; readers keep the accessors. The ABI records in
+   `backend/abi.rs` stay with the backend: lowering reads none of them, and
+   the launcher that does runs after the backend. The corpus and the module
+   graphs emit identical LLVM, diagnostics and exit codes before and after.
 
 ### P5. Driver and API
 

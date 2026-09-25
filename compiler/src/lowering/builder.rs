@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::backend::target::TargetLayout;
+use crate::target::TargetLayout;
 
 mod buffers;
 mod loops;

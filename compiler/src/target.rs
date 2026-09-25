@@ -1,3 +1,7 @@
+//! The selected target's layout of IR values and runtime objects, shared by
+//! lowering's optional loop actualization and by the backend's qualification
+//! and emission.
+
 use std::collections::{HashMap, HashSet};
 
 use crate::{
@@ -5,6 +9,16 @@ use crate::{
     IrNominalKind, IrOperation, IrProgram, IrTargetDomainObligation, IrType, IrValueId,
     IrWindowShape,
 };
+
+/// How large a lane frame a handed-out call is granted, in bytes.
+///
+/// This restates `WF_SCHED_FRAME_BYTES` in `backend/sched/core.h`, because the
+/// decision to emit a [`IrOperation::LoopSplit`] at all has to be made long
+/// before a runtime exists — and a split whose frame is over the bound would be
+/// refused every lane at run time and sequentialize with no report. The two
+/// numbers live in two languages and are pinned to each other by
+/// `ordinary_lane_frame_limits_match_the_runtime_slot`.
+pub(crate) const LANE_FRAME_BYTES: u64 = 256;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum TargetObject {
@@ -492,7 +506,7 @@ pub(crate) fn parallel_lane_frame_layout(
         );
     }
     let layout = layouts.aggregate_layout(fields, TargetObject::ParallelLaneFrame)?;
-    if layout.size > crate::LANE_FRAME_BYTES || layout.align > PARALLEL_LANE_FRAME_ALIGNMENT {
+    if layout.size > LANE_FRAME_BYTES || layout.align > PARALLEL_LANE_FRAME_ALIGNMENT {
         return Ok(None);
     }
     Ok(Some(TargetAggregateLayout {
