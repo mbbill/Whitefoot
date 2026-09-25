@@ -1385,6 +1385,13 @@ impl SeparationOracle for SeparationLedger {
     fn index_is_not_last(&self, window: &ResolvedPlace, index: CapturedValue) -> bool {
         self.not_last.contains(&(window.clone(), index.capture))
     }
+
+    /// The ledger answers [EFF-5] and [REF-2] at one program point: the
+    /// actuals of one call, or a live reference against a write at that
+    /// write's entry. Both places read that state's `r.len`.
+    fn window_length_is_shared(&self, _window: &ResolvedPlace) -> bool {
+        true
+    }
 }
 
 struct Analyzer<'check, 'unit> {
@@ -14370,9 +14377,10 @@ impl Analyzer<'_, '_> {
     fn walk_statement(&mut self, statement: &CheckedStatement, state: &mut ProofFlowState) -> bool {
         let permission_site = match statement {
             CheckedStatement::Proof(proof) => Some(&proof.node_path),
-            CheckedStatement::Let { node_path, .. } | CheckedStatement::Set { node_path, .. } => {
-                Some(node_path)
-            }
+            CheckedStatement::Let { node_path, .. }
+            | CheckedStatement::Set { node_path, .. }
+            | CheckedStatement::Evaluate { node_path, .. }
+            | CheckedStatement::DropExpression { node_path, .. } => Some(node_path),
             CheckedStatement::Match {
                 scrutinee: CheckedExpression::UserCall { call, .. },
                 ..
@@ -14602,7 +14610,8 @@ impl Analyzer<'_, '_> {
                 self.walk_set(node_path, target, value, state);
                 true
             }
-            CheckedStatement::Evaluate(value) | CheckedStatement::DropExpression { value, .. } => {
+            CheckedStatement::Evaluate { value, .. }
+            | CheckedStatement::DropExpression { value, .. } => {
                 let _ = self.expression_effects(value, state);
                 true
             }
@@ -15646,7 +15655,7 @@ impl Analyzer<'_, '_> {
             | CheckedStatement::DestructuringLet { .. }
             | CheckedStatement::PropagateLet { .. }
             | CheckedStatement::Set { .. }
-            | CheckedStatement::Evaluate(_)
+            | CheckedStatement::Evaluate { .. }
             | CheckedStatement::DropExpression { .. }
             | CheckedStatement::Proof(_) => normal_reaches,
             CheckedStatement::Return { .. } => false,
@@ -15728,7 +15737,7 @@ impl Analyzer<'_, '_> {
         match statement {
             CheckedStatement::Let { value, .. }
             | CheckedStatement::DestructuringLet { value, .. }
-            | CheckedStatement::Evaluate(value)
+            | CheckedStatement::Evaluate { value, .. }
             | CheckedStatement::DropExpression { value, .. }
             | CheckedStatement::PropagateLet {
                 scrutinee: value, ..

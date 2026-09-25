@@ -342,6 +342,19 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   consumption, exits and lowering for all result ordinals rather than granting
   a tuple-specific exception.
 
+- **A discarded affine result's call never joins a hand-out group.** Its
+  expression statement runs the result's release immediately after the call,
+  reading the value between a hand-out and its join, so
+  `compiler/src/lowering/builder.rs` leaves that call unrecorded and it ends
+  any overlap group through it, although PAR-1 permits it exactly as the
+  let-bound call. It could instead be a group's last member, as an addressed
+  binding already may. No measured
+  program discards an affine result beside an independent call, so the
+  benefit is unverified. Reopen when such a program appears; validate by
+  emitting the call as the join site with its release after the join and
+  comparing published bytes at several worker counts with the sequential
+  lowering.
+
 - **Initialized allocation can impose serial span on parallel work.** The
   [private-outbox representation](../research/investigations/compute-model/DESIGN.md#private-outboxes-without-frontier-compaction)
   requires a fresh C-by-D head matrix each level; its element fill is a
@@ -682,7 +695,18 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   repeated visits meet with logical AND. A segment of n members has n(n-1)/2
   pairs, but that logical requirement does not mandate quadratic repeated
   proof work. General index mapping through the first member's `ensures` is
-  still unavailable; missing evidence keeps sequential lowering. Investigate
+  still unavailable; missing evidence keeps sequential lowering. For windows
+  this means every [WIN-2] part-relative separation is refused when a member
+  before the later one writes that window's `len`, which also refuses a read
+  of an old slot after an append; the mapping would recover it. A cheaper
+  recovery needs no mapping: a place reached through a reference live at the
+  first statement's entry is interpreted in that state, and the reference's
+  validity gives `i < len` there, so WIN-2's single-state separation still
+  holds. That recovers the one pair this rule newly denies in the maintained
+  programs, `deque_push_back` against `let first_after_append =
+  deref(original_first)` at `tests/programs/containers/deque-program.wf:113`.
+  The ledger's denial should also name the length change as its cause; it
+  currently reports only the overlapping write and read. Investigate
   indexing and reuse without losing statement identity, captured endpoints,
   flow context or all-pairs composition. Close this item when larger segments
   have measured costs and the intended proof coverage, retaining guarded,
@@ -743,6 +767,26 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   concurrent one has no helper and queues with no timeout. The readiness-
   driven adapter that would lift this, one poll over every queued descriptor
   from inside the park, was never built.
+- **A directory named through a symbolic link cannot be opened.**
+  `open_directory` opens one component without following a link, which the
+  walk relies on to leave enumerated links alone, and the prelude has no
+  directory open over a `RelativePath`; `open_read` follows links but opens
+  only regular files. So `wfgrep PATTERN ROOT` reports a root that is, or
+  passes through, a link to a directory as `cannot read`, where `grep -r`
+  follows a link named on its command line. Lifting it needs a prelude
+  addition, a directory open over a `RelativePath` resolved as `open_read`
+  resolves it, so it is a specification change deferred from the wfgrep root
+  fix. Validate with a wfgrep case whose root and whose middle root component
+  are links while an enumerated link stays unfollowed. Reopen when a program
+  must walk a user-named linked directory.
+- **`tests/programs/dir_walk.wf` truncates silently past its fixture.** It
+  collects into constant-capacity frame storage and stops recording after 64
+  entries in the whole walk, stops descending at depth 8, and clips a path at
+  126 bytes, all while exiting 0, although its doc says it records every
+  entry. Its one corpus case walks a three-level tree, so no check depends on
+  the bounds. Either report each bound or collect through growable storage as
+  `wfgrep.wf` now does; reopen when the program is pointed at a larger tree or
+  its constant-capacity form stops being the point of the case.
 - **A `propagate` statement cannot be a [PAR-1] window member.** The rule
   admits only `let`-bound and scrutinee calls, so `let a = f(); let b =
   propagate g();` never overlaps. Allowing a `propagate` second member would
