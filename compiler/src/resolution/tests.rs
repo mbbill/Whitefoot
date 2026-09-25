@@ -161,18 +161,19 @@ fn helper() -> result: unit pure {
     });
 }
 
+/// [MOD-3, CONST-2] a module's named consts are visible throughout it; the
+/// checker orders their evaluation by dependency and refuses a cycle, so a
+/// use of a later const resolves.
 #[test]
-fn named_constants_remain_lexically_declaration_before_use() {
+fn named_constants_are_visible_throughout_their_module() {
     let source = b"const first: i32 = second;\n\nconst second: i32 = 2_i32;\n";
     with_one_resolution(source, |outcome| {
-        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("later named constant must not be visible: {outcome:?}");
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("a later named constant must be visible: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRule::Const2);
-        assert!(matches!(
-            issue.kind(),
-            ResolutionIssueKind::InvisibleUse { spelling, .. } if spelling == "second"
-        ));
+        assert!(resolved.lexical_uses().iter().any(|usage| {
+            usage.role() == LexicalUseRole::ConstValue && usage.spelling() == "second"
+        }));
     });
 }
 
@@ -205,8 +206,10 @@ fn probe() -> result: unit pure {
     });
 }
 
+/// [MOD-3, TYPE-6] a module's nominals are visible independently of item
+/// order, exactly as its functions are.
 #[test]
-fn source_nominals_are_not_visible_before_their_declaration() {
+fn source_nominals_are_visible_before_their_declaration() {
     let source = br#"fn consume(value: Later) -> result: unit pure {
 }
 
@@ -214,14 +217,14 @@ struct Later {
 }
 "#;
     with_one_resolution(source, |outcome| {
-        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("later nominal must not be visible: {outcome:?}");
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("a later nominal must be visible: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRule::Type5);
-        assert!(matches!(
-            issue.kind(),
-            ResolutionIssueKind::InvisibleUse { spelling, .. } if spelling == "Later"
-        ));
+        assert!(
+            resolved.lexical_uses().iter().any(|usage| {
+                usage.role() == LexicalUseRole::Type && usage.spelling() == "Later"
+            })
+        );
     });
 }
 
@@ -1654,8 +1657,11 @@ fn match_binder_cannot_equal_its_paired_field_name() {
     });
 }
 
+/// [TYPE-6] an arm label resolves against its scrutinee's enum type, so
+/// resolution defers it to the checker and never selects a constructor of
+/// the same spelling.
 #[test]
-fn arm_lookup_does_not_accept_a_struct_constructor() {
+fn arm_labels_wait_for_their_scrutinee_type() {
     let source = br#"struct Boxed {
 }
 
@@ -1668,15 +1674,18 @@ fn probe() -> result: unit pure {
 }
 "#;
     with_one_resolution(source, |outcome| {
-        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("arm must require an enum variant: {outcome:?}");
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("an arm label is deferred to the checker: {outcome:?}");
         };
-        assert_eq!(issue.rule(), ResolutionRule::Type6);
-        assert!(matches!(
-            issue.kind(),
-            ResolutionIssueKind::UnresolvedUse { spelling, available, .. }
-                if spelling == "Boxed" && available.contains(&DeclarationClass::StructConstructor)
-        ));
+        assert!(resolved.deferred_uses().iter().any(|usage| {
+            usage.role() == DeferredUseRole::ArmVariant && usage.spelling() == "Boxed"
+        }));
+        assert!(
+            !resolved
+                .lexical_uses()
+                .iter()
+                .any(|usage| usage.spelling() == "Boxed")
+        );
     });
 }
 
@@ -1759,7 +1768,7 @@ fn probe() -> result: unit pure {
   let called = user::<i32, one>(arg: borrowed);
   let taken = move called;
   let comparison = ordinary == two;
-  let chosen = Present(value: ordinary);
+  let chosen = Choice::Present(value: ordinary);
   let payload = chosen.Present.value;
   loop @done {
     break @done;
@@ -1841,7 +1850,7 @@ fn probe() -> result: unit pure {
             LexicalUseRole::FormalGroup,
             LexicalUseRole::TypeArgument,
             LexicalUseRole::Construct,
-            LexicalUseRole::ArmVariant,
+            LexicalUseRole::VariantOwner,
             LexicalUseRole::EffectRoot,
             LexicalUseRole::EffectIndex,
             LexicalUseRole::BreakLabel,
@@ -1867,6 +1876,7 @@ fn probe() -> result: unit pure {
         for role in [
             DeferredUseRole::FieldInitializer,
             DeferredUseRole::MatchField,
+            DeferredUseRole::ArmVariant,
             DeferredUseRole::ProjectedField,
             DeferredUseRole::PayloadVariant,
             DeferredUseRole::FunctionBinding,
@@ -2382,27 +2392,23 @@ fn diagnostics_ignore_logical_paths_and_repeat_byte_for_byte() {
     assert_eq!(issue("first.wf"), issue("first.wf"));
 }
 
+/// [MOD-3] record order no longer controls visibility inside one module,
+/// and logical paths still create no namespace.
 #[test]
-fn source_record_order_controls_const_visibility_but_paths_create_no_namespace() {
+fn source_record_order_controls_no_visibility_and_paths_create_no_namespace() {
     let use_source = SourceInput::new("consumer/first.wf", b"const first: i32 = second;\n");
     let declaration_source = SourceInput::new("library/second.wf", b"const second: i32 = 2_i32;\n");
-    with_resolution(&[use_source, declaration_source], |outcome| {
-        let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("later-source const must be invisible: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), ResolutionRule::Const2);
-        assert!(matches!(
-            issue.kind(),
-            ResolutionIssueKind::InvisibleUse { spelling, .. } if spelling == "second"
-        ));
-    });
-
-    with_resolution(&[declaration_source, use_source], |outcome| {
-        assert!(
-            matches!(outcome, ResolutionOutcome::Complete(_)),
-            "earlier source record must make the const visible: {outcome:?}"
-        );
-    });
+    for order in [
+        [use_source, declaration_source],
+        [declaration_source, use_source],
+    ] {
+        with_resolution(&order, |outcome| {
+            assert!(
+                matches!(outcome, ResolutionOutcome::Complete(_)),
+                "a module's const is visible in every record of it: {outcome:?}"
+            );
+        });
+    }
 
     let first = SourceInput::new("left/name.wf", b"fn same() -> result: unit pure {\n}\n");
     let second = SourceInput::new("right/name.wf", b"fn same() -> result: unit pure {\n}\n");
@@ -2497,7 +2503,7 @@ fn parsed_prelude_declarations_are_ordinary_visible_targets() {
 fn ordinary_prelude_names_cannot_be_shadowed_and_an_opaque_constructor_entry_resolves() {
     for source in [
         "struct HostString {\n}\n",
-        "enum Collision {\n  NotFound();\n}\n",
+        "struct NotFound {\n}\n",
         "fn helper() -> result: unit pure {\n  let args_count = 0_u64;\n  return unit;\n}\n",
     ] {
         with_resolution_sources(
@@ -2516,6 +2522,21 @@ fn ordinary_prelude_names_cannot_be_shadowed_and_an_opaque_constructor_entry_res
             },
         );
     }
+    // [TYPE-6] a source variant belongs to its enum and enters no
+    // constructor domain, so it shares a PRE-1 variant's spelling freely.
+    with_resolution_sources(
+        &[SourceInput::new(
+            "owned.wf",
+            b"enum Collision {\n  NotFound();\n}\n",
+        )],
+        true,
+        |outcome| {
+            assert!(
+                matches!(outcome, ResolutionOutcome::Complete(_)),
+                "a type-owned variant collides with no prelude constructor: {outcome:?}"
+            );
+        },
+    );
     // [TYPE-2] an opaque struct's constructor entry "exists to be refused", so
     // resolution supplies it and the refusal is the checker's hard error at
     // the complete `call`. What is checked here is that the entry resolves:

@@ -2206,6 +2206,11 @@ pub(crate) struct CheckedMatchBinder {
 pub(crate) struct CheckedMatchArm {
     pub(crate) tag: u32,
     pub(crate) binders: Vec<CheckedMatchBinder>,
+    /// [GRAM-10, WIN-3, STOR-3] in an own-place match, the release of each
+    /// payload field a final `..` covers, taken on entry to the arm: one
+    /// whole-field drop, its path the field's ordinal, for every covered
+    /// field whose release is non-empty. A reference match releases nothing.
+    pub(crate) covered: Vec<CheckedProjectedDrop>,
     pub(crate) body: Vec<CheckedStatement>,
     pub(crate) fallthrough_drops: Vec<CheckedDrop>,
 }
@@ -2499,8 +2504,16 @@ pub(crate) struct CheckedFunction {
     pub(crate) formal_hypothesis: bool,
     pub(crate) id: FunctionId,
     pub(crate) declaration: DeclarationId,
+    /// The module whose inventory declares it; the synthetic root module for
+    /// a PRE-1 function [MOD-3].
+    pub(crate) module: crate::ModuleId,
     pub(crate) name: String,
     pub(crate) symbol: String,
+    /// The concrete function-kind actuals this instance was built with, in
+    /// binding order; empty for a function without function-kind parameters.
+    /// [FN-9] forms a caller's component as though an instance of another
+    /// module's generic callable calls every one of them.
+    pub(crate) function_actuals: Vec<FunctionId>,
     /// Formal regions in the same declaration order `UserCall::goal_regions`
     /// uses. Retained for post-acceptance physical release specialization;
     /// semantic identity remains the canonical [`FunctionId`].
@@ -2649,6 +2662,13 @@ pub(crate) struct CheckedProgramData {
     /// physical function specialization. Loan regions do not become
     /// specialization axes merely by occurring in this table.
     pub(crate) constants: Vec<CheckedConstant>,
+    /// [MOD-8] each nominal's stable spelling, by module-qualified
+    /// declaration names and arguments, when it has one; lowering names its
+    /// link-visible type by it, so a type keeps its name in every build that
+    /// has it, whatever other types that build has.
+    pub(crate) nominal_spellings: Vec<Option<String>>,
+    /// Each constant's module-qualified name, for the same purpose.
+    pub(crate) constant_spellings: Vec<String>,
     /// Immutable structural table for every symbolic const expression named
     /// by retained schema metadata. `DerivedConstId` is meaningful only
     /// relative to this checked-program-owned table.

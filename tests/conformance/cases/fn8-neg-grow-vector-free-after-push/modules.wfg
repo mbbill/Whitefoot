@@ -1,0 +1,5 @@
+pkg::vec: [];
+pkg::wrap: [pkg::vec];
+pkg: [pkg::vec, pkg::wrap];
+
+entry main = pkg::main;

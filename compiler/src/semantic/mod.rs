@@ -27,6 +27,7 @@ pub use check::check_semantics;
 pub(crate) use check::check_semantics_arithmetic_obligations;
 #[cfg(test)]
 pub(crate) use check::check_semantics_division_obligations;
+pub(crate) use check::{ProofReceipts, check_semantics_with_receipts};
 
 /// The permission table the overlap lowering reads. It is the same table the
 /// ledger renders; nothing derives a second judgment from it.
@@ -69,6 +70,10 @@ pub enum SemanticRule {
     Gram11,
     /// Composite-type formation and element eligibility.
     Type2,
+    /// Cross-module access to a declaration's field [MOD-5].
+    Mod5,
+    /// A public signature naming an unpublished field [MOD-6].
+    Mod6,
     /// Exact mode/type agreement.
     Type5,
     /// Constructor/variant owner agreement.
@@ -209,6 +214,8 @@ impl SemanticRule {
             Self::Gram10 => "GRAM-10",
             Self::Gram11 => "GRAM-11",
             Self::Type2 => "TYPE-2",
+            Self::Mod5 => "MOD-5",
+            Self::Mod6 => "MOD-6",
             Self::Type5 => "TYPE-5",
             Self::Type6 => "TYPE-6",
             Self::Type9 => "TYPE-9",
@@ -328,7 +335,9 @@ impl SemanticRule {
             Self::Eff2 => Self::Eff5,
             Self::Eff5 => Self::Err2,
             Self::Err2 => Self::Err3,
-            Self::Err3 => Self::Ent2,
+            Self::Err3 => Self::Mod5,
+            Self::Mod5 => Self::Mod6,
+            Self::Mod6 => Self::Ent2,
             Self::Ent2 => Self::Msr3,
             Self::Msr3 => Self::Call6,
             Self::Call6 => Self::Inv1,
@@ -399,11 +408,13 @@ impl SemanticRule {
             Self::Eff5 => 48,
             Self::Err2 => 49,
             Self::Err3 => 50,
-            Self::Ent2 => 51,
-            Self::Msr3 => 52,
-            Self::Call6 => 53,
-            Self::Inv1 => 54,
-            Self::Prf1 => 55,
+            Self::Mod5 => 51,
+            Self::Mod6 => 52,
+            Self::Ent2 => 53,
+            Self::Msr3 => 54,
+            Self::Call6 => 55,
+            Self::Inv1 => 56,
+            Self::Prf1 => 57,
         }
     }
 }
@@ -549,6 +560,29 @@ pub enum SemanticIssueKind {
     InvalidFloatLiteral,
     /// A named constant value does not exactly inhabit its written type.
     InvalidConstValue,
+    /// Code or an annotation of another module selects, constructs or binds
+    /// a field its declaring module does not publish or its graph row does
+    /// not reach, or constructs a value with a readonly field [MOD-5,
+    /// TYPE-2].
+    InaccessibleField {
+        /// The field's spelling.
+        field: String,
+        /// What access the module lacks.
+        reason: &'static str,
+    },
+    /// An arm names a variant of an enum its module cannot access [MOD-5].
+    InaccessibleVariant {
+        /// The variant's spelling.
+        variant: String,
+        /// What access the module lacks.
+        reason: &'static str,
+    },
+    /// A named const's value depends on itself through the listed consts,
+    /// in dependency order [CONST-2].
+    ConstantCycle {
+        /// The consts on the cycle, beginning at the rejected one.
+        cycle: Vec<String>,
+    },
     /// A const-expression's compile-time evaluation has no u64 result: the
     /// mathematical result lies outside the domain or the divisor is zero.
     /// This is the const-eval overflow policy's rejection [CONST-1]; it is
@@ -1116,6 +1150,11 @@ pub struct SemanticIssue {
     pub(crate) rule: SemanticRule,
     pub(crate) location: SemanticLocation,
     pub(crate) kind: SemanticIssueKind,
+    /// The call that requested the concrete generic instance whose check
+    /// produced this rejection, when one did. The location stays at the
+    /// template's source, which owns the failure, and this names the
+    /// requester [FN-2, MOD-8].
+    pub(crate) request: Option<crate::SyntaxCoordinate>,
 }
 
 impl SemanticIssue {
@@ -1210,6 +1249,154 @@ pub struct CheckedProgram<'classified, 'lexed, 'source> {
 }
 
 impl CheckedProgram<'_, '_, '_> {
+    /// [STOR-8, MOD-9] the functions one run of `function` can call next:
+    /// every callee its checked concrete body names, in every branch. An
+    /// instance's body names the function-kind actuals it calls; erased proof
+    /// annotations call nothing.
+    fn closure_successors(&self, function: FunctionId) -> Vec<FunctionId> {
+        let mut calls = Vec::new();
+        if let Some(body) = self
+            .data
+            .functions
+            .get(function.0 as usize)
+            .and_then(|checked| checked.body.as_deref())
+        {
+            entailment::collect_statement_calls(function, body, &mut calls);
+        }
+        calls.into_iter().map(|call| call.callee).collect()
+    }
+
+    /// [MOD-9, STOR-8] an entry's execution closure, in breadth-first order
+    /// from the entry: every function its run can reach through calls.
+    /// Definitions outside it never run for that entry.
+    pub(crate) fn execution_closure(&self, entry: FunctionId) -> Vec<FunctionId> {
+        let mut order = vec![entry];
+        let mut seen = std::collections::HashSet::from([entry]);
+        let mut cursor = 0;
+        while let Some(function) = order.get(cursor).copied() {
+            cursor += 1;
+            for successor in self.closure_successors(function) {
+                if seen.insert(successor) {
+                    order.push(successor);
+                }
+            }
+        }
+        order
+    }
+
+    /// [STOR-8, MOD-9] the call path from an entry to the function of its
+    /// execution closure that introduces a heap requirement, when one does.
+    ///
+    /// A function of the closure uses the heap on its own when it calls an
+    /// allocating prelude row or `holds_heap_storage` finds heap storage in
+    /// its own concrete layout; it requires the heap when it uses it on its
+    /// own or reaches a function that requires it. The introducing component
+    /// is the first requiring component of the closure's call graph, in a
+    /// breadth-first walk from the entry, that reaches no other requiring
+    /// component, and the path ends at its first member in that walk that
+    /// uses the heap on its own. Uncalled definitions stay outside the
+    /// closure and impose nothing on the entry.
+    pub(crate) fn heap_introducer(
+        &self,
+        entry: FunctionId,
+        holds_heap_storage: impl Fn(&CheckedFunction) -> bool,
+    ) -> Option<Vec<FunctionId>> {
+        let functions = &self.data.functions;
+        let closure = self.execution_closure(entry);
+        let position = closure
+            .iter()
+            .enumerate()
+            .map(|(index, function)| (*function, index))
+            .collect::<std::collections::HashMap<_, _>>();
+        let successors = closure
+            .iter()
+            .map(|function| {
+                self.closure_successors(*function)
+                    .into_iter()
+                    .filter_map(|successor| position.get(&successor).copied())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let allocating_leaf = |index: usize| {
+            functions
+                .get(closure[index].0 as usize)
+                .is_some_and(|callee| callee.body.is_none() && callee.allocates)
+        };
+        let own = closure
+            .iter()
+            .zip(&successors)
+            .map(|(function, successors)| {
+                functions.get(function.0 as usize).is_some_and(|checked| {
+                    checked.body.is_some()
+                        && (holds_heap_storage(checked)
+                            || successors.iter().any(|callee| allocating_leaf(*callee)))
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut requires = own.clone();
+        loop {
+            let mut changed = false;
+            for index in (0..closure.len()).rev() {
+                if !requires[index] && successors[index].iter().any(|callee| requires[*callee]) {
+                    requires[index] = true;
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        if !requires.first().copied().unwrap_or(false) {
+            return None;
+        }
+        let components = entailment::strongly_connected_components(&successors);
+        let mut component_of = vec![0; closure.len()];
+        for (component, members) in components.iter().enumerate() {
+            for member in members {
+                component_of[*member] = component;
+            }
+        }
+        let introducing = |component: usize| {
+            components[component].iter().all(|member| {
+                requires[*member]
+                    && successors[*member]
+                        .iter()
+                        .all(|callee| component_of[*callee] == component || !requires[*callee])
+            })
+        };
+        let mut parents = vec![None; closure.len()];
+        let mut seen = vec![false; closure.len()];
+        let mut order = vec![0];
+        seen[0] = true;
+        let mut cursor = 0;
+        while let Some(node) = order.get(cursor).copied() {
+            cursor += 1;
+            for callee in &successors[node] {
+                if requires[*callee] && !seen[*callee] {
+                    seen[*callee] = true;
+                    parents[*callee] = Some(node);
+                    order.push(*callee);
+                }
+            }
+        }
+        let component = order
+            .iter()
+            .map(|node| component_of[*node])
+            .find(|component| introducing(*component))?;
+        let introducer = order
+            .iter()
+            .copied()
+            .find(|node| component_of[*node] == component && own[*node])?;
+        let mut path = vec![closure[introducer]];
+        let mut current = introducer;
+        while let Some(parent) = parents[current] {
+            path.push(closure[parent]);
+            current = parent;
+        }
+        path.reverse();
+        Some(path)
+    }
+
     #[cfg(test)]
     pub(crate) fn element_type(&self, element: CheckedElement) -> Option<CheckedType> {
         self.data.elements.get(element.0 as usize).copied()

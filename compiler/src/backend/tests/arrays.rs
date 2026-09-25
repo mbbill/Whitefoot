@@ -306,7 +306,7 @@ fn main() -> status: ExitStatus pure {
   let cell = box_slots_new::<u8>(capacity: 4_u64);
   place_back(window: &cell.inner, value: 7_u8);
   place_back(window: &cell.inner, value: 11_u8);
-  let spilled = Spilled<4>(values: move cell);
+  let spilled = SmallBytes<4>::Spilled(values: move cell);
   let observed = read::<4>(bytes: &spilled);
   if observed != 228_u64 {
     return exit_status(code: 1_u8);
@@ -316,7 +316,7 @@ fn main() -> status: ExitStatus pure {
   place_back(window: &inline_window, value: 23_u8);
   let rotated = remove_at(window: &inline_window, index: 0_u64);
   place_back(window: &inline_window, value: rotated);
-  let small = Inline<4>(values: move inline_window);
+  let small = SmallBytes<4>::Inline(values: move inline_window);
   let local = read::<4>(bytes: &small);
   if local != 732_u64 {
     return exit_status(code: 2_u8);
@@ -476,12 +476,12 @@ fn main() -> status: ExitStatus pure {
     // This observes recursive global layout independently of the WF access
     // test above, using the host's ordinary C array and struct layout.
     //
-    // KEPT AS WRITTEN for the lowering port: `@.wf_const.N` in declaration
-    // order and `private unnamed_addr constant` are the emitted constant-pool
-    // spelling the rename below depends on.
+    // `@.wf_const.` and the digest of the constant's name, and `private
+    // unnamed_addr constant`, are the emitted constant-pool spelling the
+    // rename below depends on [MOD-8].
     let module = compile(source)
-        .replace("@.wf_const.0", "@wf_test_rows")
-        .replace("@.wf_const.1", "@wf_test_entries")
+        .replace(&super::constant_global("rows"), "@wf_test_rows")
+        .replace(&super::constant_global("entries"), "@wf_test_entries")
         .replace("= private unnamed_addr constant", "= constant");
     let observer = r#"#include <stdint.h>
 #include <stdlib.h>
@@ -944,9 +944,10 @@ fn const_runs_are_immutable_globals_and_execute_through_index_and_len() {
     ));
     // KEPT AS WRITTEN for the lowering port: the constant pool's LLVM type and
     // element spelling for a four-byte `Array<u8, 4>` global.
-    assert!(llvm.contains(
-        "@.wf_const.0 = private unnamed_addr constant [4 x i8] [i8 10, i8 20, i8 30, i8 40]"
-    ));
+    assert!(llvm.contains(&format!(
+        "{} = private unnamed_addr constant [4 x i8] [i8 10, i8 20, i8 30, i8 40]",
+        super::constant_global("table")
+    )));
     let main = emitted_function(&llvm, "main");
     // The constant lookup is discharged [OP-4]: no bounds compare remains.
     // The source's two terminal result checks are ordinary control flow, not

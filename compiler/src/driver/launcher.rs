@@ -134,16 +134,12 @@ pub(crate) fn render(
 /// precondition test or an acceptance exception for the selected function.
 pub(super) fn caller_source(
     checked: &crate::CheckedProgram<'_, '_, '_>,
-    selected: &str,
+    function: &crate::semantic::CheckedFunction,
 ) -> Option<(String, String)> {
     use crate::Production;
     use crate::syntax::{FinalizedExtent, NodeId};
 
-    let function = checked
-        .data
-        .functions
-        .iter()
-        .find(|function| function.name == selected)?;
+    let selected = function.name.as_str();
     let resolved = &checked._resolved;
     let origin = resolved
         .declaration(function.declaration)?
