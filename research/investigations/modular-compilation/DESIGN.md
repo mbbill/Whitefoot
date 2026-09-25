@@ -1288,8 +1288,10 @@ persistent and reruns each changed composition whole:
   queries it names, all spelled by stable identities. An unchanged key takes
   the recorded conclusions.
 - An entry's composition check is accepted under its closure's
-  implementation records exactly and its interface records by their
-  declaration digests, and a build keeps the entry's emitted module under the
+  implementation records exactly and its interface records by their text
+  with every `doc` string emptied (a map of declaration digests by name lost
+  a repeated declaration and an alias edit in a record without
+  declarations), and a build keeps the entry's emitted module under the
   exact bytes of every record of the closure. When the key it reads changes,
   a check forms, resolves, type-checks, instantiates and summarizes the whole
   closure again, and a build also lowers it; each unchanged analysis comes

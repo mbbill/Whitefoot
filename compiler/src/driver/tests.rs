@@ -245,6 +245,49 @@ fn a_recorded_verdict_is_reused_exactly_while_its_inputs_are_unchanged() {
     );
 }
 
+/// [MOD-8] a composition acceptance stands only while every interface
+/// record means what it meant: a redeclaration written into an interface
+/// [TYPE-6] is rejected with the cache as without it, whether the new
+/// declaration repeats the old one or precedes it with other text.
+#[test]
+fn an_interface_redeclaration_is_rejected_with_the_cache_as_without_it() {
+    let directory = CacheDirectory::new("redeclaration");
+    let cache = directory.open();
+    let records = |base_interface: &'static [u8]| -> Vec<(&'static str, &'static [u8])> {
+        vec![
+            ("base/module.wfm", base_interface),
+            ("base/half.wf", BASE_BODY),
+            ("user/module.wfm", USER_INTERFACE),
+            ("user/use.wf", USER_BODY),
+            ("tool/module.wfm", TOOL_INTERFACE),
+            ("tool/spare.wf", TOOL_BODY),
+            ("module.wfm", ROOT_INTERFACE),
+            ("main.wf", ROOT_BODY),
+        ]
+    };
+    let original = records(BASE_INTERFACE);
+    recomputed(PROGRAM_GRAPH, &original, &cache);
+    let repeated: &'static [u8] = [BASE_INTERFACE, b"\n", BASE_INTERFACE].concat().leak();
+    let preceded: &'static [u8] = [
+        b"public fn half(value: u8) -> result: u8 pure doc \"Halves any value.\";\n\n".as_slice(),
+        BASE_INTERFACE,
+    ]
+    .concat()
+    .leak();
+    for interface in [repeated, preceded] {
+        let edited = records(interface);
+        let rule =
+            verdicts(PROGRAM_GRAPH, &edited, None)
+                .into_iter()
+                .find_map(|(subject, outcome, _)| match outcome {
+                    super::CheckOutcome::Rejected { rule, .. } if subject == "app" => rule,
+                    _ => None,
+                });
+        assert_eq!(rule.as_deref(), Some("TYPE-6"));
+        recomputed(PROGRAM_GRAPH, &edited, &cache);
+    }
+}
+
 /// [MOD-8] a verdict reads of another module's interface that it holds
 /// its judgments and the declarations its check reached, nothing more:
 /// a reworded `doc` string or a declaration no importer reaches recomputes

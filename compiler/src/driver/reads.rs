@@ -59,28 +59,64 @@ const fn declaration_role(role: DeclarationRole) -> Option<&'static str> {
 /// The digest of each declaration of one record, by role and spelling.
 pub(super) type Digests = BTreeMap<ItemName, [u8; 32]>;
 
+/// What the checks that read one record take from it: the digest of each
+/// declaration, and the record's text with every `doc` string emptied.
+#[derive(Clone)]
+struct Reading {
+    digests: Digests,
+    meaning: Vec<u8>,
+}
+
 thread_local! {
-    /// [`declaration_digests`] by the SHA-256 of the record's bytes: a pure
-    /// function of those bytes, which one invocation's checks ask again for
-    /// each module whose closure holds the record.
-    static DIGESTS: std::cell::RefCell<std::collections::HashMap<[u8; 32], Option<Digests>>> =
+    /// [`reading`] by the SHA-256 of the record's bytes: a pure function of
+    /// those bytes, which one invocation's checks ask again for each module
+    /// whose closure holds the record.
+    static READINGS: std::cell::RefCell<std::collections::HashMap<[u8; 32], Option<Reading>>> =
         std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+fn reading(bytes: &[u8], limits: CompilerLimits) -> Option<Reading> {
+    let key = crate::spec::sha256::digest(bytes);
+    if let Some(known) = READINGS.with(|readings| readings.borrow().get(&key).cloned()) {
+        return known;
+    }
+    let reading = record_reading(bytes, limits);
+    READINGS.with(|known| known.borrow_mut().insert(key, reading.clone()));
+    reading
 }
 
 /// The digest of every top-level declaration one record writes, or `None`
 /// when the record does not pass the syntax stages, which no verdict that
 /// read it can then stand on.
 pub(super) fn declaration_digests(bytes: &[u8], limits: CompilerLimits) -> Option<Digests> {
-    let key = crate::spec::sha256::digest(bytes);
-    if let Some(known) = DIGESTS.with(|digests| digests.borrow().get(&key).cloned()) {
-        return known;
-    }
-    let digests = record_digests(bytes, limits);
-    DIGESTS.with(|known| known.borrow_mut().insert(key, digests.clone()));
-    digests
+    reading(bytes, limits).map(|reading| reading.digests)
 }
 
-fn record_digests(bytes: &[u8], limits: CompilerLimits) -> Option<Digests> {
+/// The record's canonical text with every `doc` string emptied, or `None`
+/// when the record does not pass the syntax stages. Only an edit to a
+/// documentation string leaves it unchanged, so it stands for everything a
+/// check concludes from the record: repeated or reordered declarations and
+/// an alias header change it even where the digests of the declarations,
+/// which name each declaration once, stay the same [MOD-8].
+pub(super) fn record_meaning(bytes: &[u8], limits: CompilerLimits) -> Option<Vec<u8>> {
+    reading(bytes, limits).map(|reading| reading.meaning)
+}
+
+/// `bytes[start..end]` with each `doc` entry in `docs`, sorted and inside
+/// that range, written as an empty `doc` entry.
+fn without_docs(bytes: &[u8], (start, end): (usize, usize), docs: &[(usize, usize)]) -> Vec<u8> {
+    let mut text = Vec::with_capacity(end.saturating_sub(start));
+    let mut at = start;
+    for &(doc_start, doc_end) in docs {
+        text.extend_from_slice(bytes.get(at..doc_start).unwrap_or_default());
+        text.extend_from_slice(b"doc \"\";");
+        at = doc_end;
+    }
+    text.extend_from_slice(bytes.get(at..end).unwrap_or_default());
+    text
+}
+
+fn record_reading(bytes: &[u8], limits: CompilerLimits) -> Option<Reading> {
     let input = [SourceInput::new("interface.wf", bytes)];
     let bundle = SourceBundle::with_limits(&input, limits.source).ok()?;
     with_canonical_syntax(&bundle, limits, false, |canonical| {
@@ -101,6 +137,28 @@ fn record_digests(bytes: &[u8], limits: CompilerLimits) -> Option<Digests> {
             )),
             _ => None,
         };
+        // Every `doc` entry under `node`, whose string no judgment reads.
+        let docs_under = |node: NodeId| {
+            let mut docs = Vec::new();
+            let mut pending = vec![node];
+            while let Some(node) = pending.pop() {
+                let children = topology.node_children(node).unwrap_or(&[]);
+                for child in children {
+                    if topology.node(*child).map(|record| record.production)
+                        == Some(Production::Doc)
+                    {
+                        if let Some(range) = extent(*child) {
+                            docs.push(range);
+                        }
+                    } else {
+                        pending.push(*child);
+                    }
+                }
+            }
+            docs.sort_unstable();
+            docs
+        };
+        let meaning = without_docs(bytes, (0, bytes.len()), &docs_under(topology.root));
         let mut header = Vec::new();
         let mut items = Vec::new();
         for item in topology.node_children(topology.root).unwrap_or(&[]) {
@@ -135,32 +193,7 @@ fn record_digests(bytes: &[u8], limits: CompilerLimits) -> Option<Digests> {
             let Some(spelling) = spelling else {
                 continue;
             };
-            // Every `doc` entry of the item, whose string no judgment reads.
-            let mut docs = Vec::new();
-            let mut pending = vec![*item];
-            while let Some(node) = pending.pop() {
-                let children = topology.node_children(node).unwrap_or(&[]);
-                for child in children {
-                    if topology.node(*child).map(|record| record.production)
-                        == Some(Production::Doc)
-                    {
-                        if let Some(range) = extent(*child) {
-                            docs.push(range);
-                        }
-                    } else {
-                        pending.push(*child);
-                    }
-                }
-            }
-            docs.sort_unstable();
-            let mut text = Vec::with_capacity(end - start);
-            let mut at = start;
-            for (doc_start, doc_end) in docs {
-                text.extend_from_slice(bytes.get(at..doc_start).unwrap_or_default());
-                text.extend_from_slice(b"doc \"\";");
-                at = doc_end;
-            }
-            text.extend_from_slice(bytes.get(at..end).unwrap_or_default());
+            let text = without_docs(bytes, (start, end), &docs_under(*item));
             items.push(((role.to_owned(), spelling), text));
         }
         let mut digests = BTreeMap::new();
@@ -171,7 +204,7 @@ fn record_digests(bytes: &[u8], limits: CompilerLimits) -> Option<Digests> {
             material.extend_from_slice(&text);
             digests.insert(name, crate::spec::sha256::digest(&material));
         }
-        Ok(digests)
+        Ok(Reading { digests, meaning })
     })
     .ok()
 }

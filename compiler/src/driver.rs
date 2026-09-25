@@ -1761,8 +1761,8 @@ pub fn entry_verdict(
 
 /// [MOD-8] the key material of an accepted composition: the selection and
 /// its requirement, the graph facts its modules read, every implementation
-/// record exactly, and every interface record by the digests of its
-/// declarations, which a reworded `doc` string leaves unchanged. An
+/// record exactly, and every interface record by its text with each `doc`
+/// string emptied, which only a reworded `doc` string leaves unchanged. An
 /// interface record the syntax stages refuse enters exactly.
 fn composition_acceptance(
     graph: &crate::ModuleGraph,
@@ -1770,7 +1770,7 @@ fn composition_acceptance(
     (modules, selected): (&[crate::ModuleId], &[SourceInput<'_>]),
     limits: CompilerLimits,
 ) -> Vec<u8> {
-    let mut material = b"composition-acceptance 1\n".to_vec();
+    let mut material = b"composition-acceptance 2\n".to_vec();
     push_module_line(&mut material, "entry-module", graph, selection.module);
     material.extend_from_slice(
         format!(
@@ -1787,18 +1787,12 @@ fn composition_acceptance(
             fields
                 .push(module_name(graph, input.module()).as_bytes())
                 .push(input.logical_path().as_bytes());
-            let digests = (input.role() == crate::SourceRole::Interface)
-                .then(|| reads::declaration_digests(input.bytes(), limits))
+            let meaning = (input.role() == crate::SourceRole::Interface)
+                .then(|| reads::record_meaning(input.bytes(), limits))
                 .flatten();
-            match digests {
-                Some(digests) => {
-                    fields.push(b"interface");
-                    for ((role, spelling), digest) in &digests {
-                        fields
-                            .push(role.as_bytes())
-                            .push(spelling.as_bytes())
-                            .push(digest);
-                    }
+            match meaning {
+                Some(meaning) => {
+                    fields.push(b"interface").push(&meaning);
                 }
                 None => {
                     fields.push(b"exact").push(input.bytes());
