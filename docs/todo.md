@@ -831,6 +831,44 @@ concludes with a recorded disposition; retain any selected follow-up work here.
   explicit override, for example an environment variable, without changing
   which clang CI uses. Close when the owner decides for or against the
   override and, if accepted, its implementation lands.
+- **One rejection per compilation.** The pipeline stops at its first
+  violation, so an agent with several independent defects — two unproved
+  subscripts in different functions, say — meets them one compile at a time.
+  [DIAG-1] already leaves the order of violations at distinct nodes open, and
+  the [diagnostic record](../research/investigations/readable-diagnostics/DESIGN.md#the-record)
+  and its one-object-per-line JSON form can carry several. Reporting more than
+  one needs the semantic checker to continue past a `CheckStop` without
+  letting a later judgment consume an earlier failed premise, and stays
+  deterministic. Unverified benefit: validate with a writer trial counting
+  repair rounds on programs with two or more independent defects; reopen when
+  such a trial or an agent harness shows the extra rounds dominate.
+- **A float constant in a rendered goal prints its internal form.** An FN-8
+  `instantiated_goal` over a float constant renders it as
+  `Float { ty: F64, bits: 4607182418800017408 }` instead of its source
+  spelling `1.0_f64` (pinned in `driver::pinned_sentences` beside the integer
+  goals). The goal renderer should print the constant's canonical FORM-5
+  spelling, as it does for integers; update that pin with the fix.
+- **Validate the default diagnostic rendering.** Text by default is
+  provisional. The [readable-diagnostics investigation](../research/investigations/readable-diagnostics/DESIGN.md#default-format-text-with-json-on-request)
+  selected it on reading cost for an agent (the lean OP-4 and FN-8 records
+  measured there are 13-17% smaller than their JSON objects) and on the
+  familiar summary-line shape, not on a measured repair loop. Run a writer
+  trial over a fixed set of rejections covering lexical, grammar,
+  canonical-form and proof families, comparing text and JSON defaults and a
+  caret marker against a quoted span, with compile rounds to a fix as the
+  criterion. Reopen the default, and the marker form, when that trial or an
+  agent harness shows a difference.
+- **Structured fields for stops that are not source rejections: declined.**
+  Resource, invocation, internal-invariant, target-layout and backend stops
+  print their stage value's `Debug` text as one `payload` field. They have no
+  writer repair, and no consumer reads their fields separately. Reopen when a
+  harness or experiment acts on one of them, for example a resource ceiling a
+  writer can raise.
+- **Text lists are ambiguous when an item contains `, `.** A diagnostic list
+  such as `relations: [a, b]` prints items unquoted, so an item holding `, `
+  cannot be split exactly from text. The JSON form carries each item as its
+  own string and covers exact parsing; reopen only if an agent misreads such a
+  list in practice.
 
 ## Open language questions
 
@@ -1216,40 +1254,3 @@ condition under which it is taken up.
   required source work from removable lowering cost. Defer a broad repeat of all
   eight engineering tasks until it answers a concrete selection question;
   a passing new library does not dispose of the remaining matrix claims.
-- **One rejection per compilation.** The pipeline stops at its first
-  violation, so an agent with several independent defects — two unproved
-  subscripts in different functions, say — meets them one compile at a time.
-  [DIAG-1] already leaves the order of violations at distinct nodes open, and
-  the [diagnostic record](../research/investigations/readable-diagnostics/DESIGN.md#the-record)
-  and its one-object-per-line JSON form can carry several. Reporting more than
-  one needs the semantic checker to continue past a `CheckStop` without
-  letting a later judgment consume an earlier failed premise, and stays
-  deterministic. Unverified benefit: validate with a writer trial counting
-  repair rounds on programs with two or more independent defects; reopen when
-  such a trial or an agent harness shows the extra rounds dominate.
-- **A float constant in a rendered goal prints its internal form.** An FN-8
-  `instantiated_goal` over a float constant renders it as
-  `Float { ty: F64, bits: 4607182418800017408 }` instead of its source
-  spelling `1.0_f64` (pinned in `driver::pinned_sentences` beside the integer
-  goals). The goal renderer should print the constant's canonical FORM-5
-  spelling, as it does for integers; update that pin with the fix.
-- **Validate the default diagnostic rendering.** Text by default is
-  provisional. The [readable-diagnostics investigation](../research/investigations/readable-diagnostics/DESIGN.md#default-format-text-with-json-on-request)
-  selected it on reading cost for an agent (the lean OP-4 and FN-8 records
-  measured there are 13-17% smaller than their JSON objects) and on the
-  familiar summary-line shape, not on a measured repair loop. Run a writer trial over a fixed set of rejections
-  covering lexical, grammar, canonical-form and proof families, comparing text
-  and JSON defaults and a caret marker against a quoted span, with compile
-  rounds to a fix as the criterion. Reopen the default, and the marker form,
-  when that trial or an agent harness shows a difference.
-- **Structured fields for stops that are not source rejections: declined.**
-  Resource, invocation, internal-invariant, target-layout and backend stops
-  print their stage value's `Debug` text as one `payload` field. They have no
-  writer repair, and no consumer reads their fields separately. Reopen when a
-  harness or experiment acts on one of them, for example a resource ceiling a
-  writer can raise.
-- **Text lists are ambiguous when an item contains `, `.** A diagnostic list
-  such as `relations: [a, b]` prints items unquoted, so an item holding `, `
-  cannot be split exactly from text. The JSON form carries each item as its
-  own string and covers exact parsing; reopen only if an agent misreads such a
-  list in practice.
