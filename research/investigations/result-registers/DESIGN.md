@@ -319,31 +319,38 @@ within run-to-run variation in wall time.
 ## Hosted compute regression
 
 The criterion above does not name the maintained paired comparison,
-`.github/workflows/compute-regression.yml`. That comparison failed on both
-implementation commits for one kernel, `records`, and passed the other four.
-Its wall ratio is baseline over candidate, so a value below 1 means the
-candidate is slower. `lower` counts the pairs in which the baseline was
-faster:
+`.github/workflows/compute-regression.yml`. It ran once for each commit that
+carries the implementation, and every run failed for one kernel, `records`,
+and passed the other four. The three commits emit identical code; the third
+adds only this record. The wall ratio is baseline over candidate, so a value
+below 1 means the candidate is slower. `lower` counts the pairs in which the
+baseline was faster:
 
-| Commit and run | W=1 | W=2 | W=4 |
+| Commit, run and host | W=1 | W=2 | W=4 |
 |---|---:|---:|---:|
-| `a15347c25`, [36087145857](https://github.com/mbbill/Whitefoot/actions/runs/36087145857) | 0.932 (4/5) | 0.822 (5/5) | 0.810 (5/5) |
-| `d863e8e51`, [36089782067](https://github.com/mbbill/Whitefoot/actions/runs/36089782067) | 0.931 (5/5) | 0.832 (5/5) | 0.810 (5/5) |
+| `a15347c25`, [36087145857](https://github.com/mbbill/Whitefoot/actions/runs/36087145857), AMD EPYC 9V74 | 0.932 (4/5) | 0.822 (5/5) | 0.810 (5/5) |
+| `d863e8e51`, [36089782067](https://github.com/mbbill/Whitefoot/actions/runs/36089782067), AMD EPYC 9V74 | 0.931 (5/5) | 0.832 (5/5) | 0.810 (5/5) |
+| `f8d102ee8`, [36092739152](https://github.com/mbbill/Whitefoot/actions/runs/36092739152), AMD EPYC 7763 | 1.153 (0/5) | 0.779 (5/5) | 0.700 (5/5) |
 
-The identical-image control passed in both runs. The only other adverse line
-was a single-width `fir` W=4 suspect in the second run (0.958), and that line
-passed in the first run on identical code. The second run's host CPU was an
-AMD EPYC 9V74 with two cores of two threads each. The job was not rerun, and
-no threshold, fixture or instrument was changed.
+Each host had two cores of two threads each, and every run's `records.o`
+objects are byte-identical. The identical-image control passed in every run.
+The only other adverse line was a single-width `fir` W=4 suspect in the
+second run (0.958), and that line passed in the other runs. No run was
+repeated, and no threshold, fixture or instrument was changed. The W=1 row
+changes sign with the host, while W=2 and W=4 are adverse on both host
+classes.
 
 **What changed in the measured code.** Of the five kernels, only records'
 emitted module differs, apart from an unused declaration of
 `wf_host_utf8_len`. `validate_record` returns its two-leaf
 `RecordCheck { valid: Bool, scalars: u64 }` in registers, and
-`record_summary` stores the returned value into its slot. In the second
-run's artifact, `records.ll` and `records.o` of both arms are byte-identical
-to local builds with clang 18.1.3. The linked images disassemble identically
-to the local ones, with every symbol at the same address. On a 4-vCPU Intel
+`record_summary` stores the returned value into its slot. The `[3 x i64]`
+constructor `wf_array_filled$instance$36` also returns in registers. Its only
+callers are the fixture's two `main` bodies, which the timed entry
+`wf_bench_records` does not reach. In the second run's artifact, `records.ll`
+and `records.o` of both arms are byte-identical to local builds with clang
+18.1.3. The linked images disassemble identically to the local ones, with
+every symbol at the same address. On a 4-vCPU Intel
 Xeon (2.80 GHz) Linux host, the unchanged `tests/performance/compare.sh` also
 failed on records alone: 1.145 (0/5) at W=1, 0.860 (5/5) at W=2 and 0.816
 (5/5) at W=4.
@@ -362,10 +369,54 @@ through the exit test, `remaining == 0`, which is known on that path. The
 duplicated latch then becomes an inner loop over consecutive ASCII bytes. In
 the register form, every return joins `wf.return`, and SimplifyCFG turns that
 exit test into a `select`. Nothing is left to thread, and the loop keeps one
-level. Clang does the same for C. The same validator returning a two-field
-struct by value compiles at `-O2` to one loop, and a version that writes
-through a result pointer gets the inner ASCII loop. Cachegrind counted the
-W=1 kernel function over six calls:
+level.
+
+Clang 18.1.3 does the same to a line-for-line C transcription at `-O2`.
+Returning the two-field struct by value gives one loop. Writing it through a
+result pointer gives the inner ASCII loop. The pointer form replaces each
+`return (RecordCheck){...};` below with a store through the pointer and a
+bare `return;`. A shorter hand-written validator in the completion review did
+not show the inner loop in either form, so the effect depends on this loop's
+shape.
+
+```c
+typedef struct { bool valid; uint64_t scalars; } RecordCheck;
+
+RecordCheck validate_value(const uint8_t *input, uint64_t first, uint64_t end) {
+    uint64_t scalars = 0;
+    uint8_t remaining = 0, lower = 128, upper = 191;
+    for (uint64_t i = first; i < end; ++i) {
+        uint8_t byte = input[i];
+        if (remaining == 0) {
+            scalars += 1;
+            if (byte <= 127) {
+            } else {
+                if (byte < 194) return (RecordCheck){false, 0};
+                if (byte <= 223) remaining = 1;
+                else if (byte <= 239) {
+                    remaining = 2;
+                    if (byte == 224) lower = 160;
+                    if (byte == 237) upper = 159;
+                } else if (byte <= 244) {
+                    remaining = 3;
+                    if (byte == 240) lower = 144;
+                    if (byte == 244) upper = 143;
+                } else return (RecordCheck){false, 0};
+            }
+        } else {
+            if (byte < lower) return (RecordCheck){false, 0};
+            if (byte > upper) return (RecordCheck){false, 0};
+            remaining -= 1;
+            lower = 128;
+            upper = 191;
+        }
+    }
+    if (remaining != 0) return (RecordCheck){false, 0};
+    return (RecordCheck){true, scalars};
+}
+```
+
+Cachegrind counted the W=1 kernel function over six calls:
 
 | Input | Instructions | Conditional branches |
 |---|---|---|
@@ -409,8 +460,8 @@ candidate's kernel does less work. On this evidence the hosted verdict is a
 reading of the linked placement, not of added work. The structural change is
 still real. The lost ASCII loop costs about 41% more kernel instructions on
 ASCII records, and between 0.1% and 3.4% of W=1 time at the four placements.
-The AMD host had no placement control, so the verdict is not attributed on
-the machine that produced it. Records' placement sensitivity was already
+The AMD hosts had no placement control, so the verdict is not attributed on
+the machines that produced it. Records' placement sensitivity was already
 recorded in the
 [compute-runtime alignment comparison](../compute-runtime/RESULTS.md#alignment-comparison)
 and in `docs/todo.md`'s formal compute comparison entry.
@@ -438,7 +489,7 @@ The register bound is selected:
 - Only x86-64 Linux was timed. The AArch64 and Windows effects are inferred
   from the probe's register assignment, not measured.
 - The records placement controls ran on the local Intel host only. The hosted
-  AMD verdict has no placement control of its own.
+  AMD verdicts have no placement control of their own.
 - A register-returned result can lose a loop-exit threading that the
   destination form allowed, as in records' ASCII loop. Only records was
   examined for it.
