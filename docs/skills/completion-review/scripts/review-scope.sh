@@ -12,6 +12,13 @@ git rev-parse --verify --quiet "$main_ref^{commit}" >/dev/null || {
     echo "review scope: $main_ref must name a commit" >&2
     exit 1
 }
+# A clone that fetches only origin/main leaves its local main behind, and a
+# stale base would put already merged work in the review. Use the remote
+# branch when it contains the local one.
+if git rev-parse --verify --quiet "origin/$main_ref^{commit}" >/dev/null &&
+    git merge-base --is-ancestor "$main_ref" "origin/$main_ref"; then
+    main_ref=origin/$main_ref
+fi
 base=$(git merge-base "$main_ref" HEAD)
 head=$(git rev-parse --short HEAD)
 state=
@@ -29,7 +36,7 @@ function area(path) {
     if (path == "spec/kernel-spec.md") return "spec"
     if (path ~ /(^|\/)Makefile$|\.mk$/ || (path ~ /^\.github\// && path != ".github/pull_request_template.md")) return "gate"
     if (path ~ /^design\//) return "design"
-    if (path ~ /^(AGENTS\.md|README\.md|docs\/(practice|review-checklist|constitution|workflow)\.md|\.github\/pull_request_template\.md)$/ || path ~ /^(\.agents|\.claude|docs\/skills)\//) return "guidance"
+    if (path ~ /^(AGENTS\.md|README\.md|docs\/(review-checklist|constitution|workflow)\.md|\.github\/pull_request_template\.md)$/ || path ~ /^(\.agents|\.claude|docs\/skills)\//) return "guidance"
     if (path ~ /^research\//) return "research"
     if (path ~ /\.md$/) return "prose"
     return "other"
