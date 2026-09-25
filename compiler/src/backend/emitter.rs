@@ -840,8 +840,12 @@ const RESULT_POINTER: &str = "%wf.result";
 /// The internal symbol a register-returned definition's destination-form
 /// body is emitted under, beside the public entry that keeps `symbol`.
 ///
-/// [FORM-3] keeps `.` out of every source IDENT, so no declared function
-/// can name it.
+/// No other definition can hold it. A function outside the root module is
+/// spelled `path.name`, so a source function could take `<symbol>.body`
+/// only as a function `body` in a child module named after the entry's
+/// function, and [MOD-3] rejects a declaration that extends its module's
+/// path to a registered module. An instance's `$instance$` suffix and a
+/// compiler-owned `wf__` symbol hold spellings no IDENT has [FORM-3].
 fn result_body_symbol(symbol: &str) -> String {
     format!("{symbol}.body")
 }

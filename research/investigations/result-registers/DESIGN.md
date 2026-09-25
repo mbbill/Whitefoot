@@ -164,8 +164,12 @@ loads the slot and returns the value. The storage plan, the frame's target
 qualification, construction and every return of the body are therefore those
 of the destination form. The caller stores the returned value into the storage
 its plan selected. Parameters, their facts and the storage plans do not
-change. [FORM-3] keeps `.` out of source identifiers, so no source function
-can name a body.
+change. No source function can take a body's symbol. A function outside the
+root module is spelled `path.name`, so it would have to be a function `body`
+in a child module named after the entry's function, and [MOD-3] rejects a
+declaration that shares a registered module's qualified name. An instance
+suffix or a compiler-owned `wf__` symbol holds spellings no identifier has
+[FORM-3].
 
 The body is internal, its entry is its only caller, and it is never marked
 always-inline. LLVM's inliner visits a callee before its callers, so the host

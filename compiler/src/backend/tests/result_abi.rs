@@ -276,6 +276,89 @@ fn results_on_both_sides_of_the_budget_cross_retained_calls() {
     assert!(output.stderr.is_empty(), "{output:?}");
 }
 
+/// Signaling NaNs with distinct payloads, each checked bit for bit after it
+/// crosses a call. `Pair` returns its two floating leaves in registers from
+/// its entry; `Triple` keeps its destination. On x86-64 a third floating leaf
+/// would return through the x87 stack, whose load quiets a signaling NaN.
+const NAN_PAYLOADS: &[u8] = br#"struct Pair {
+  x: f64;
+  y: f64;
+}
+
+struct Triple {
+  x: f64;
+  y: f64;
+  z: f64;
+}
+
+fn pair(x_bits: u64, y_bits: u64) -> result: Pair pure {
+  let x = reinterpret::<u64, f64>(x_bits);
+  let y = reinterpret::<u64, f64>(y_bits);
+  return Pair(x: x, y: y);
+}
+
+fn triple(x_bits: u64, y_bits: u64, z_bits: u64) -> result: Triple pure {
+  let x = reinterpret::<u64, f64>(x_bits);
+  let y = reinterpret::<u64, f64>(y_bits);
+  let z = reinterpret::<u64, f64>(z_bits);
+  return Triple(x: x, y: y, z: z);
+}
+
+fn main() -> status: ExitStatus pure {
+  let two = pair(x_bits: 9218868437227405313_u64, y_bits: 18442240474082181122_u64);
+  let two_x = reinterpret::<f64, u64>(two.x);
+  if two_x != 9218868437227405313_u64 {
+    return exit_status(code: 1_u8);
+  }
+  let two_y = reinterpret::<f64, u64>(two.y);
+  if two_y != 18442240474082181122_u64 {
+    return exit_status(code: 2_u8);
+  }
+  let three = triple(x_bits: 9218868437227405315_u64, y_bits: 18442240474082181124_u64, z_bits: 9218868437227405317_u64);
+  let three_x = reinterpret::<f64, u64>(three.x);
+  if three_x != 9218868437227405315_u64 {
+    return exit_status(code: 3_u8);
+  }
+  let three_y = reinterpret::<f64, u64>(three.y);
+  if three_y != 18442240474082181124_u64 {
+    return exit_status(code: 4_u8);
+  }
+  let three_z = reinterpret::<f64, u64>(three.z);
+  if three_z != 9218868437227405317_u64 {
+    return exit_status(code: 5_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+/// A signaling NaN keeps every payload bit, `0x7ff0000000000001` and the
+/// others above, through a register-returned result's entry and body and
+/// through a destination, across calls host optimization may not remove.
+/// The exit code names the first leaf whose bits changed. Admitting a third
+/// floating leaf to the register budget would send `Triple` through the x87
+/// stack on x86-64 and quiet its `z`.
+#[test]
+fn signaling_nan_payloads_cross_both_result_forms_unchanged() {
+    let module = compile(NAN_PAYLOADS);
+    let output = compile_and_run(&super::owned_places::retain_calls(&module));
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    // The payloads crossed both forms: `Pair`'s entry returns the value its
+    // body constructed, and `Triple` returns through its destination.
+    let pair = emitted_function(&module, "pair");
+    assert!(pair.starts_with("define %wf.t."), "{pair}");
+    assert!(
+        pair.contains("  call void @wf_pair.body(ptr %wf.result, "),
+        "{pair}"
+    );
+    let triple = emitted_function(&module, "triple");
+    assert!(
+        triple.starts_with("define void @wf_triple(ptr %wf.result, "),
+        "{triple}"
+    );
+}
+
 /// A linked definition shares its declaration's callable ABI, so every
 /// linked implementation of a result returned in registers must return the
 /// same first-class value, one register per leaf, whatever its C body writes.
