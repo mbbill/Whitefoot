@@ -203,10 +203,12 @@ produced by a scratch rewrite of the returns and compiled with `clang -O2`
 Instruction counts include the return, and the inline threshold is 225.
 `add_checked` has eight instructions in every value form and nine on main. The
 `records` times are medians of five interleaved rounds on the local Intel host,
-each form at its own linked placement. On that host the [placement controls](#hosted-compute-regression)
-move either arm by up to 18%, so these times do not rank the forms. The
-structural columns do. The hash-map trace column is the paired median ratio to
-main over 11 rounds, measured as in [Timing](#timing).
+each form at its own linked placement. On that host the
+[placement controls](#hosted-compute-regression) move either arm by up to 18%,
+so these times do not rank the forms. The structural columns do. The hash-map
+trace column is the paired median ratio to main over 11 rounds, measured as in
+[Timing](#timing). The two per-exit forms link to identical images for both
+programs, so the differences between their rows are run-to-run variation.
 
 **Why the value forms lose the loop.** LLVM's SimplifyCFG gathers the returns
 of a function into one block. The merged form emits that block itself, and
@@ -540,7 +542,7 @@ ASCII records, and between 0.1% and 3.4% of W=1 time at the four placements.
 The AMD hosts had no placement control, so the verdict is not attributed on
 the machines that produced it. Records' placement sensitivity was already
 recorded in the
-[compute-runtime alignment comparison](../compute-runtime/RESULTS.md#alignment-comparison)
+[compute-runtime alignment comparison](../compute-runtime/RESULTS.md#2026-09-11--local-host-linux-x86_64-4-logical-cpus-loop-and-function-alignment-on-the-whitefoot-side-ab)
 and in `docs/todo.md`'s formal compute comparison entry.
 
 **Entry over body.** The selected form emits records' `validate_record` body
@@ -553,7 +555,16 @@ same address, and the sequential clone is instruction-identical to main's,
 `tests/performance/compare.sh` passed with records at 1.156 (0/5) at W=1,
 0.979 (3/5) at W=2 and 1.008 (1/5) at W=4. Its three single-width suspects,
 `mandelbrot` W=4, `fir` W=2 and `stencil` W=4, are in kernels whose emitted
-code does not differ.
+modules differ only in the unused `wf_host_utf8_len` declaration.
+
+The maintained hosted comparison of `9487fc24a`, the first pushed revision with
+this form, ran on an AMD EPYC 7763 against main at `6facd86b8`
+([36102882790](https://github.com/mbbill/Whitefoot/actions/runs/36102882790)).
+It passed every kernel with no suspect. Records read 1.073 (0/5) at W=1,
+1.015 (0/5) at W=2 and 0.996 (3/5) at W=4, and the identical-image control
+passed. In its artifact, both loop copies and `wf_bench_records` are
+instruction-identical between the arms, `wf__par_split_37` at the same
+address, and records' bodies are byte-identical to main's definitions.
 
 ## Selection
 
@@ -568,7 +579,7 @@ The register bound is selected, with the entry-over-body lowering:
   4% to 7% faster, and the out-of-line `find` loop is unchanged within its
   variation. The maintained paired comparison, which the criterion does not
   name, failed on `records` with the merged returns. The entry-over-body form
-  keeps records' loop structure
+  keeps records' loop structure and passed that comparison
   ([Hosted compute regression](#hosted-compute-regression)).
 - Under criterion 5 it is preferred over both bounds, because the 24-byte
   three-leaf results return in registers and the corpus has them. The cost is

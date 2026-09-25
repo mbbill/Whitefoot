@@ -698,6 +698,20 @@ pub fn emitted_function<'module>(module: &'module str, name: &str) -> &'module s
     &module[function_start..function_end]
 }
 
+/// The definition that carries one source function's emitted body: the
+/// function's own definition, or, for a result returned in registers, the
+/// internal destination-form body its public entry calls
+/// (compiler/src/backend/abi.rs). A check of what the body contains, or does
+/// not contain, reads this definition, because the entry holds only the call.
+pub fn emitted_body<'module>(module: &'module str, name: &str) -> &'module str {
+    let body = format!("{name}.body");
+    if module.contains(&format!(" @wf_{body}(")) {
+        emitted_function(module, &body)
+    } else {
+        emitted_function(module, name)
+    }
+}
+
 #[test]
 fn emitted_function_selects_exact_definitions_across_ordinary_linkages() {
     for linkage in ["", "internal "] {

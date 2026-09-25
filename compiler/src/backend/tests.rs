@@ -992,7 +992,9 @@ fn main() -> status: ExitStatus pure {
 }
 "#;
     let llvm = emit(source);
-    assert!(emitted_drop_ids(emitted_function(&llvm, "make")).is_empty());
+    // `Cell` returns in registers, so `make`'s moves and drops are in its
+    // destination-form body (compiler/src/backend/abi.rs).
+    assert!(emitted_drop_ids(emitted_body(&llvm, "make")).is_empty());
 
     let cleanup = emitted_function(&llvm, "cleanup");
     let cleanup_drops = emitted_drop_ids(cleanup);
