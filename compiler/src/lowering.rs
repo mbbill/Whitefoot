@@ -388,4 +388,3 @@ pub(crate) use builder::lower_checked;
 pub(crate) use builder::lower_checked_from;
 #[cfg(test)]
 pub(crate) use builder::lower_checked_with_layout;
-pub(crate) use specialize::holds_heap_storage;

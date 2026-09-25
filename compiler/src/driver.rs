@@ -26,10 +26,11 @@ use crate::backend::emitter::emit_llvm_with_layout;
 use crate::target::TargetLayout;
 use crate::{
     ACTIVE_KERNEL_SPEC_HASH, BackendFailure, CanonicalLimits, CanonicalOutcome,
-    CanonicalSyntaxUnit, CheckedProgram, FinalizeLimits, FinalizeOutcome, LexLimits, LexOutcome,
-    LoweringFailure, ParseLimits, ParseOutcome, ResolutionOutcome, SemanticOutcome, SourceBundle,
-    SourceInput, SourceLimits, TerminalLimits, TerminalOutcome, audit_canonical, check_semantics,
-    classify_terminals, finalize, lex, parse, parse_graph, resolve,
+    CanonicalSyntaxUnit, CheckedProgram, EntryRejection, EntryRequest, FinalizeLimits,
+    FinalizeOutcome, LexLimits, LexOutcome, LoweringFailure, ParseLimits, ParseOutcome,
+    ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput, SourceLimits, TerminalLimits,
+    TerminalOutcome, audit_canonical, check_semantics, classify_terminals, finalize, lex, parse,
+    parse_graph, resolve,
 };
 
 /// Host-compiler optimization arguments for every Whitefoot executable.
@@ -2241,6 +2242,17 @@ struct Selection<'a> {
     written: Option<&'a Place>,
 }
 
+impl<'a> Selection<'a> {
+    const fn request(&self) -> EntryRequest<'a> {
+        EntryRequest {
+            module: self.module,
+            name: self.name,
+            public: self.public,
+            no_heap: self.no_heap,
+        }
+    }
+}
+
 /// A rejection an entry's composition finds in its checked closure, beyond
 /// the module verdicts it requires first [MOD-8, MOD-9, STOR-8].
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2283,104 +2295,64 @@ fn compile_selected(
     })
 }
 
-/// The ordinary function a selection names, found by its declaration's
-/// module: a PRE-1 function's checked record carries the first registered
-/// module, but its declaration belongs to no module's inventory [MOD-9,
-/// PROG-3].
-fn selected_function<'checked>(
-    checked: &'checked CheckedProgram<'_, '_, '_>,
-    selection: &Selection<'_>,
-) -> Option<&'checked crate::semantic::CheckedFunction> {
-    checked.data.functions.iter().find(|function| {
-        !function.formal_hypothesis
-            && function.name == selection.name
-            && checked
-                ._resolved
-                .declaration(function.declaration)
-                .and_then(crate::DeclarationRecord::module)
-                == Some(selection.module)
-    })
-}
-
-/// [MOD-9, STOR-8] a module program's entry selects one ordinary function of
-/// its module, public for a named entry; a no-heap entry's execution closure
-/// introduces no heap requirement, and a closure that does is rejected at
-/// the function that introduces it.
+/// Locates and renders an entry's composition rejection [MOD-8, MOD-9,
+/// STOR-8]; the checked program makes the judgment.
 fn admit_entry(
     checked: &CheckedProgram<'_, '_, '_>,
     bundle: &SourceBundle,
     selection: &Selection<'_>,
 ) -> Result<(), CompilationFailure> {
-    // [MOD-8] composition needs every declared function's definition; a
-    // pending interface declaration blocks it at the declaration.
-    if let Some(pending) = checked
-        ._resolved
-        .interface_functions()
-        .iter()
-        .find(|function| function.definition().is_none())
-        .and_then(|function| checked._resolved.declaration(function.declaration()))
-    {
-        return Err(CompilationFailure::at_source(
-            CompilationStage::Semantics,
-            "MOD-8",
-            &CompositionIssue::PendingDeclaration {
-                declaration: pending.spelling().to_owned(),
-            },
-            bundle,
-            pending.origin().coordinate(),
-            Anchor::Start,
-        ));
-    }
+    let Err(rejection) = checked.admit_entry(selection.request()) else {
+        return Ok(());
+    };
+    let rule = rejection.rule();
     // A named entry's rejection is located at its `entry_decl` in the graph
     // record; an unnamed entry is written only in the build's selection.
-    let entry_failure = |issue: CompositionIssue| {
-        CompilationFailure::composition("MOD-9", &issue, bundle, selection.written.cloned())
+    let at_entry = |issue: CompositionIssue| {
+        CompilationFailure::composition(rule, &issue, bundle, selection.written.cloned())
     };
-    let Some(function) = selected_function(checked, selection) else {
-        return Err(entry_failure(CompositionIssue::EntryFunctionMissing {
-            function: selection.name.to_owned(),
-        }));
+    let at_declaration = |issue: CompositionIssue, declaration: &crate::DeclarationRecord| {
+        CompilationFailure::at_source(
+            CompilationStage::Semantics,
+            rule,
+            &issue,
+            bundle,
+            declaration.origin().coordinate(),
+            Anchor::Start,
+        )
     };
-    let declaration = checked._resolved.declaration(function.declaration);
-    if selection.public && !declaration.is_some_and(crate::DeclarationRecord::is_public) {
-        return Err(entry_failure(CompositionIssue::EntryFunctionPrivate {
+    Err(match rejection {
+        EntryRejection::PendingDeclaration(declaration) => at_declaration(
+            CompositionIssue::PendingDeclaration {
+                declaration: declaration.spelling().to_owned(),
+            },
+            declaration,
+        ),
+        EntryRejection::FunctionMissing => at_entry(CompositionIssue::EntryFunctionMissing {
             function: selection.name.to_owned(),
-        }));
-    }
-    if selection.no_heap
-        && let Some(path) = checked.heap_introducer(function.id, |function| {
-            crate::lowering::holds_heap_storage(&checked.data, function)
-        })
-    {
-        // The path names each function by its module's path and its source
-        // name; an instance keeps its template's name, since the walk passes
-        // through it with its supplied actuals.
-        let names = path
-            .iter()
-            .filter_map(|id| checked.data.functions.get(id.0 as usize))
-            .map(|function| match bundle.module(function.module) {
-                Some(module) => format!("{}::{}", module.qualified_name(), function.name),
-                None => function.name.clone(),
-            })
-            .collect::<Vec<_>>();
-        let introducer = path
-            .last()
-            .and_then(|id| checked.data.functions.get(id.0 as usize))
-            .and_then(|function| checked._resolved.declaration(function.declaration));
-        let issue = CompositionIssue::HeapInClosure { path: names };
-        return Err(match introducer {
-            Some(declaration) => CompilationFailure::at_source(
-                CompilationStage::Semantics,
-                "STOR-8",
-                &issue,
-                bundle,
-                declaration.origin().coordinate(),
-                Anchor::Start,
-            ),
-            None => CompilationFailure::composition("STOR-8", &issue, bundle, None),
-        });
-    }
-    Ok(())
+        }),
+        EntryRejection::FunctionPrivate => at_entry(CompositionIssue::EntryFunctionPrivate {
+            function: selection.name.to_owned(),
+        }),
+        EntryRejection::HeapInClosure { path, introducer } => {
+            // The path names each function by its module's path and its
+            // source name; an instance keeps its template's name, since the
+            // walk passes through it with its supplied actuals.
+            let names = path
+                .iter()
+                .filter_map(|id| checked.data.functions.get(id.0 as usize))
+                .map(|function| match bundle.module(function.module) {
+                    Some(module) => format!("{}::{}", module.qualified_name(), function.name),
+                    None => function.name.clone(),
+                })
+                .collect::<Vec<_>>();
+            let issue = CompositionIssue::HeapInClosure { path: names };
+            match introducer {
+                Some(declaration) => at_declaration(issue, declaration),
+                None => CompilationFailure::composition(rule, &issue, bundle, None),
+            }
+        }
+    })
 }
 
 /// Runs the syntax stages over one bundle, from raw lexical formation through
@@ -2683,7 +2655,7 @@ fn lower_selected(
     bundle: &SourceBundle,
     checked: CheckedProgram<'_, '_, '_>,
 ) -> Result<Reported, CompilationFailure> {
-    let entry = selected_function(&checked, selection);
+    let entry = checked.selected_function(selection.module, selection.name);
     let selected = entry
         .map_or(selection.name, |function| function.symbol.as_str())
         .to_owned();

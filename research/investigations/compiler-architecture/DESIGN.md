@@ -409,7 +409,13 @@ now in `design/amendments/compiler-composition-staging.md`.
    entry functions into one request or session type, fixing the dropped
    options. Cost: medium.
 3. **Entry rules in `semantic`**, next to the other acceptance rules, where
-   fact-based entry checks can reuse them. Cost: small.
+   fact-based entry checks can reuse them. Cost: small. Done on this branch:
+   `semantic/entry.rs` judges MOD-8, MOD-9 and STOR-8 and the driver only
+   locates and renders the rejection. The STOR-8 heap predicate came along
+   from lowering, which the driver had passed into the closure walk; it and
+   lowering's executable inventory now read one walk of the checked model
+   (`FunctionMentions`). The module graphs, which reach all three rules, and
+   the corpus report identically before and after.
 
 ### P6. The edit-build loop
 
