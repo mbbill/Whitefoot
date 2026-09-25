@@ -876,6 +876,21 @@ landed, so the amendment archives main's v0.70 bytes as
 were made against v0.70's text. They follow section 4.3, with these
 differences:
 
+- Relations are established only to an operand that is an admitted term other
+  than a literal or named-const value. A relation to a constant restates the
+  result bounds through Z, and each relation adds closure work (section 3.3).
+- A const generic operand, a symbolic constant term of [ENT-2] clause (c), is
+  read like any other admitted term: its interval comes from its closed L0
+  bounds rather than its type, and it takes the row's relations.
+- The two sentences on a one-value operand box and on a failed condition
+  became one positive rule: the result bounds are the exact value when every
+  operand interval is one value, and otherwise the table's bounds when the
+  condition holds and every computation is representable. The condition
+  column says "always" where the draft said "none". Neither changes a row.
+- A sentence after the table states why the rows hold: each corner hull is
+  exact because its expression is monotone in each operand while the others
+  are fixed, and each bit row's bounds read nonnegative operands, whose
+  two's-complement bits are their binary digits.
 - `irotl`, `irotr` and `ibswap` are table rows whose condition never holds, so
   the single-value rule is their only fact, instead of a separate sentence.
 - S14 is deleted without the proposed retirement sentence: the specification
