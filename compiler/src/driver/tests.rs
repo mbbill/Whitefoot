@@ -592,7 +592,7 @@ fn an_entry_selects_its_modules_own_function_and_is_located_when_refused() {
     assert!(
         named
             .to_string()
-            .contains("in line \"entry hidden = pkg::a::seven;\""),
+            .starts_with("modules.wfg:6:1: error[MOD-9]: EntryFunctionPrivate\n  source: entry hidden = pkg::a::seven;\n"),
         "{named}"
     );
 }
@@ -867,9 +867,12 @@ fn an_instance_failure_names_the_template_and_its_requesting_call() {
         .expect_err("the instance's capacity leaves the u64 domain");
     assert_eq!(failure.rule_id(), Some("CONST-1"));
     let detail = failure.to_string();
-    assert!(detail.contains(" at lib/module.wfm:1:"), "{detail}");
     assert!(
-        detail.contains("in the instance requested at main.wf:2:"),
+        detail.starts_with("lib/module.wfm:1:67: error[CONST-1]: ConstEvalOverflow\n"),
+        "{detail}"
+    );
+    assert!(
+        detail.contains("\n  requested_at: main.wf:2:15 "),
         "{detail}"
     );
 }
@@ -2625,24 +2628,30 @@ fn compiler_independent_negative_cases_keep_their_semantic_rule() {
         ),
         (
             "x-struct-neg-field-order.wf",
-            include_bytes!("../../../tests/conformance/cases/x-struct-neg-field-order.wf").as_slice(),
+            include_bytes!("../../../tests/conformance/cases/x-struct-neg-field-order.wf")
+                .as_slice(),
             "GRAM-8",
         ),
         (
             "x-match-gram10-out-of-order-fields.wf",
-            include_bytes!("../../../tests/conformance/cases/x-match-gram10-out-of-order-fields.wf")
-                .as_slice(),
+            include_bytes!(
+                "../../../tests/conformance/cases/x-match-gram10-out-of-order-fields.wf"
+            )
+            .as_slice(),
             "GRAM-10",
         ),
         (
             "err2-neg-missing-variant.wf",
-            include_bytes!("../../../tests/conformance/cases/err2-neg-missing-variant.wf").as_slice(),
+            include_bytes!("../../../tests/conformance/cases/err2-neg-missing-variant.wf")
+                .as_slice(),
             "ERR-2",
         ),
         (
             "x-ownmove-partial-move-kills-binding.wf",
-            include_bytes!("../../../tests/conformance/cases/x-ownmove-partial-move-kills-binding.wf")
-                .as_slice(),
+            include_bytes!(
+                "../../../tests/conformance/cases/x-ownmove-partial-move-kills-binding.wf"
+            )
+            .as_slice(),
             "OWN-1",
         ),
         (
@@ -2673,7 +2682,8 @@ fn compiler_independent_negative_cases_keep_their_semantic_rule() {
         ),
         (
             "x-match-give1-wrong-type.wf",
-            include_bytes!("../../../tests/conformance/cases/x-match-give1-wrong-type.wf").as_slice(),
+            include_bytes!("../../../tests/conformance/cases/x-match-give1-wrong-type.wf")
+                .as_slice(),
             // Moved TYPE-5 -> GIVE-1 by the 2026-08-08 M3b dispositions
             // ruling (d), source unchanged. The manifest row was updated
             // then and this second witness was not, which is exactly the

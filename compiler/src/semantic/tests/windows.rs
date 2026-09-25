@@ -159,7 +159,7 @@ fn a_readonly_field_is_never_a_write_target() {
         let failure = check_case_directory(case).expect_err("an external readonly write rejects");
         assert_eq!(failure.rule_id(), Some("TYPE-2"), "{case}: {failure}");
         assert!(
-            failure.detail().contains("ReadonlyWriteTarget"),
+            failure.to_string().contains(": ReadonlyWriteTarget\n"),
             "{case}: {failure}"
         );
     }
@@ -195,7 +195,7 @@ fn readonly_provenance_survives_reference_aliases_and_reborrows() {
         .expect_err("an external readonly write through a reference rejects");
         assert_eq!(failure.rule_id(), Some("TYPE-2"), "{failure}");
         assert!(
-            failure.detail().contains("ReadonlyWriteTarget"),
+            failure.to_string().contains(": ReadonlyWriteTarget\n"),
             "{failure}"
         );
     }

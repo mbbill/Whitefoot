@@ -275,7 +275,7 @@ fn a_grammar_rejection_quotes_the_expected_terminals_and_the_token_it_found() {
         r#"suffix.wf:2:11: error[FORM-5]: UnexpectedToken
   source:   let a = 42;
   marker:           ^^
-  expected: [TYPEID, IDENT, "&", "move", "if", "propagate", "match", literal, "musttail", OPNAME, "deref", "entry"]
+  expected: [IDENT, TYPEID, "pkg", "&", "entry", "move", "if", "propagate", "match", literal, "musttail", OPNAME, "deref"]
   found: "42""#
     );
 }
@@ -405,7 +405,7 @@ fn a_declaration_origin_quotes_its_declaration() {
 fn a_capability_stop_names_its_stage_and_never_cites_a_rule() {
     let failure = stop(
         "arms.wf",
-        b"enum Flag {\n  A();\n  B();\n}\n\nfn main() -> status: ExitStatus pure {\n  let flag = A();\n  match flag {\n    A() => {\n    }\n    A() => {\n    }\n    B() => {\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum Flag {\n  A();\n  B();\n}\n\nfn main() -> status: ExitStatus pure {\n  let flag = Flag::A();\n  match flag {\n    A() => {\n    }\n    A() => {\n    }\n    B() => {\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
     );
     let rendered = failure.to_string();
     assert!(
