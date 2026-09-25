@@ -62,7 +62,7 @@ impl Span {
     }
 
     /// The value whose pattern is the low `width` bits of `bits`.
-    fn from_bits(self, bits: u128) -> i128 {
+    fn value_of_bits(self, bits: u128) -> i128 {
         let bits = bits & self.mask();
         let value = bits.cast_signed();
         if self.signed && bits >> (self.width - 1) == 1 {
@@ -74,7 +74,7 @@ impl Span {
 
     /// [OP-2] `wrap_T(z)`: the member of T congruent to z modulo `2^width`.
     fn wrap(self, value: i128) -> i128 {
-        self.from_bits(value.cast_unsigned())
+        self.value_of_bits(value.cast_unsigned())
     }
 }
 
@@ -640,7 +640,7 @@ fn exact(row: Row, t: Span, result: Span, values: &[i128]) -> Option<i128> {
         Row::Multiply { wrap } => {
             let b = second?;
             if wrap {
-                t.from_bits(t.bits(a).wrapping_mul(t.bits(b)))
+                t.value_of_bits(t.bits(a).wrapping_mul(t.bits(b)))
             } else {
                 a.checked_mul(b)?
             }
@@ -671,12 +671,12 @@ fn exact(row: Row, t: Span, result: Span, values: &[i128]) -> Option<i128> {
             if wrap { t.wrap(magnitude) } else { magnitude }
         }
         Row::BitNot => t.maximum + t.minimum - a,
-        Row::BitAnd => t.from_bits(t.bits(a) & t.bits(second?)),
-        Row::BitOr => t.from_bits(t.bits(a) | t.bits(second?)),
-        Row::BitXor => t.from_bits(t.bits(a) ^ t.bits(second?)),
+        Row::BitAnd => t.value_of_bits(t.bits(a) & t.bits(second?)),
+        Row::BitOr => t.value_of_bits(t.bits(a) | t.bits(second?)),
+        Row::BitXor => t.value_of_bits(t.bits(a) ^ t.bits(second?)),
         Row::ShiftLeft { wrap } => {
             let amount = applied_shift(second?, t.width, wrap)?;
-            t.from_bits(t.bits(a) << amount)
+            t.value_of_bits(t.bits(a) << amount)
         }
         Row::ShiftRight { wrap } => a >> applied_shift(second?, t.width, wrap)?,
         Row::Minimum => a.min(second?),
@@ -710,7 +710,7 @@ fn exact(row: Row, t: Span, result: Span, values: &[i128]) -> Option<i128> {
             } else {
                 (t.width - amount) % t.width
             };
-            t.from_bits(rotate_left(t, t.bits(a), left))
+            t.value_of_bits(rotate_left(t, t.bits(a), left))
         }
         Row::ByteSwap => {
             let bits = t.bits(a);
@@ -718,9 +718,9 @@ fn exact(row: Row, t: Span, result: Span, values: &[i128]) -> Option<i128> {
             let swapped = (0..bytes).fold(0_u128, |swapped, byte| {
                 swapped | ((bits >> (8 * byte)) & 0xff) << (8 * (bytes - 1 - byte))
             });
-            t.from_bits(swapped)
+            t.value_of_bits(swapped)
         }
-        Row::Reinterpret => result.from_bits(t.bits(a)),
+        Row::Reinterpret => result.value_of_bits(t.bits(a)),
     };
     (result.minimum <= value && value <= result.maximum).then_some(value)
 }
