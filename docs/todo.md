@@ -11,93 +11,6 @@ rarely insert at the same place.
 
 ## Numeric conversions and value evidence
 
-- **Finish and qualify the modular incremental design.** The module
-  decisions in the [language](../design/language.md) and
-  [compiler](../design/compiler.md) design trees rest on the
-  [architecture](../research/investigations/modular-compilation/DESIGN.md),
-  [source rules](../research/investigations/modular-compilation/LANGUAGE.md)
-  and [complete specimen](../research/investigations/modular-compilation/demo/README.md);
-  the [build-cost measurements](../research/experiments/modular-build-cost/RESULTS.md)
-  record what the implementation costs. Remaining, each with the measurement
-  or limit that shows it: the later stage of the
-  [composition staging](../research/investigations/modular-compilation/DESIGN.md#composition-staging),
-  persistent formation, lookup, instance, summary and lowering queries inside
-  a composition through module build units, instance units and fact-based
-  entry checks, selected when edit-build measurements show the composition's
-  rerun to limit a current experiment (a build of an edited entry now forms,
-  resolves and type-checks the whole closure and reuses only its proof
-  analyses and unchanged objects: about 350 ms of a 590 to 620 ms body-edit
-  build of a 32-module chain, growing with the program); a cold build without
-  a cache, which checks each module and then the whole closure; the impact report,
-  which finds each further failing body by checking its module again with
-  the earlier ones set aside; ThinLTO's import threshold, which decays along
-  a deep cross-fragment call chain and left the innermost step of the
-  crossing benchmark's runtime-entry copy out of line (no measurable cost
-  there yet; watch for a workload where it shows, and compare import limits
-  or grouping); and an executable runner for entries that take other
-  parameters than `Inputs` or return other results than `ExitStatus` or
-  `unit`, which build only as libraries (`--emit-llvm`). Extract useful cases
-  into formal test ownership as each finer mechanism lands; no daily gate
-  depends on the research probe or specimen. Compare clean/warm verdicts and
-  executables across edits, including changed summary availability with
-  unchanged headers, published-field versus private-field changes, hidden
-  layout/heap changes, rejected import candidates becoming profitable, and
-  failed builds. Measure input-validation I/O, source/proof/planning/
-  backend/link work, runtime quality and peak memory separately on the queue,
-  GrowVector, wfgrep, SHA-256, a generic-heavy consumer and controlled
-  dependency scaling; an exploratory run found source checking and runtime
-  construction ahead of LLVM work at current sizes. A source module is not a
-  compulsory body/proof/object unit. Benefit: independently verified modules
-  for large projects and parallel architect/implementer agents without losing
-  runtime optimization; persistence correctness, LLVM integration cost and real
-  build/runtime and collaboration gains remain unverified. Reopen structural
-  choices when a discriminating control or matched workload fails; remove this
-  entry when the complete implementation evidence lands.
-  Defer resolved-public-surface CI reporting until
-  interface query values exist; its benefit is detecting capability/contract
-  changes that a `public` keyword diff misses. Validate same-identity alias
-  renames, retargeting and published or private representation edits before
-  wiring a report, with no additional approval gate. Named specification
-  projections, effect regions, representation-independent model properties
-  and mathematical functions remain deferred: they could keep client source
-  unchanged across representation edits or express algorithmic models, but add
-  abstraction and possibly termination/proof machinery. Reopen for a type that
-  must publish a quantity without publishing its storage, or a representation
-  migration or contract that makes this cost worthwhile; compare source edits,
-  invalidation, interface size and proof cost with published fields, retaining
-  deterministic polynomial checking and no runtime proof work. Measure the
-  conservative cross-module component rule on real higher-order code; reopen
-  it if it withholds postconditions that ordinary programs need. A persistent
-  LLVM planning adapter waits for warm-build measurements that show stock
-  ThinLTO planning to be a material share of edit latency. External-package
-  resolution and library composition remain deferred by scope; reopen only
-  when selected by the owner, with package identity/version/renaming cases.
-  Subtree-private independently compiled modules remain unselected; reconsider
-  for a concrete privacy consumer that cannot use one module's private
-  implementation files.
-
-- **Rebuild the prelude and a standard library on modules.** The owner
-  selected this as the work after the modular compilation PR: library code
-  becomes registered modules with `module.wfm` interfaces, checked and cached
-  like program modules, and programs reach it through the ordinary qualified
-  path, alias and access rules instead of declarations the compiler injects
-  into every source bundle. Its investigation must settle which prelude parts
-  stay compiler-owned (the PRE-1 operation identities, opaque storage and the
-  runtime units) and which become source modules; how a program names library
-  modules, given that the name-resolution decision defers external
-  dependency-name binding and the modular design keeps the prelude out of an
-  ordinary source package called `std`; whether library modules join every
-  closure or only the entries that name them; and how their verdicts, proof
-  receipts and objects are reused across programs. The measured container
-  libraries under `research/experiments/container-representation/` are the
-  first standard-library candidates. Benefit: one naming and visibility rule
-  for library and program code, library checks reused instead of repeated in
-  every composition, and fewer compiler-owned declaration paths; the cost, the
-  specification changes (PRE-1, PROG-2) and the reuse gain are unverified.
-  Validate with the whole conformance corpus and test programs unchanged in
-  meaning, and a composition's front-end time before and after. Start after
-  the modular compilation PR merges, as its own investigation.
-
 - **Select the modular conversion companion.** The
   [conversion comparison](../research/investigations/numeric-conversions/DESIGN.md#companion-operations-and-explicit-deferrals)
   recommends integer-only `cvt.wrap` for direct low-bit extraction and modular
@@ -1018,6 +931,95 @@ rarely insert at the same place.
   the bounds. Either report each bound or collect through growable storage as
   `wfgrep.wf` now does; reopen when the program is pointed at a larger tree or
   its constant-capacity form stops being the point of the case.
+
+## Modules and libraries
+
+- **Finish and qualify the modular incremental design.** The module
+  decisions in the [language](../design/language.md) and
+  [compiler](../design/compiler.md) design trees rest on the
+  [architecture](../research/investigations/modular-compilation/DESIGN.md),
+  [source rules](../research/investigations/modular-compilation/LANGUAGE.md)
+  and [complete specimen](../research/investigations/modular-compilation/demo/README.md);
+  the [build-cost measurements](../research/experiments/modular-build-cost/RESULTS.md)
+  record what the implementation costs. Remaining, each with the measurement
+  or limit that shows it: the later stage of the
+  [composition staging](../research/investigations/modular-compilation/DESIGN.md#composition-staging),
+  persistent formation, lookup, instance, summary and lowering queries inside
+  a composition through module build units, instance units and fact-based
+  entry checks, selected when edit-build measurements show the composition's
+  rerun to limit a current experiment (a build of an edited entry now forms,
+  resolves and type-checks the whole closure and reuses only its proof
+  analyses and unchanged objects: about 350 ms of a 590 to 620 ms body-edit
+  build of a 32-module chain, growing with the program); a cold build without
+  a cache, which checks each module and then the whole closure; the impact report,
+  which finds each further failing body by checking its module again with
+  the earlier ones set aside; ThinLTO's import threshold, which decays along
+  a deep cross-fragment call chain and left the innermost step of the
+  crossing benchmark's runtime-entry copy out of line (no measurable cost
+  there yet; watch for a workload where it shows, and compare import limits
+  or grouping); and an executable runner for entries that take other
+  parameters than `Inputs` or return other results than `ExitStatus` or
+  `unit`, which build only as libraries (`--emit-llvm`). Extract useful cases
+  into formal test ownership as each finer mechanism lands; no daily gate
+  depends on the research probe or specimen. Compare clean/warm verdicts and
+  executables across edits, including changed summary availability with
+  unchanged headers, published-field versus private-field changes, hidden
+  layout/heap changes, rejected import candidates becoming profitable, and
+  failed builds. Measure input-validation I/O, source/proof/planning/
+  backend/link work, runtime quality and peak memory separately on the queue,
+  GrowVector, wfgrep, SHA-256, a generic-heavy consumer and controlled
+  dependency scaling; an exploratory run found source checking and runtime
+  construction ahead of LLVM work at current sizes. A source module is not a
+  compulsory body/proof/object unit. Benefit: independently verified modules
+  for large projects and parallel architect/implementer agents without losing
+  runtime optimization; persistence correctness, LLVM integration cost and real
+  build/runtime and collaboration gains remain unverified. Reopen structural
+  choices when a discriminating control or matched workload fails; remove this
+  entry when the complete implementation evidence lands.
+  Defer resolved-public-surface CI reporting until
+  interface query values exist; its benefit is detecting capability/contract
+  changes that a `public` keyword diff misses. Validate same-identity alias
+  renames, retargeting and published or private representation edits before
+  wiring a report, with no additional approval gate. Named specification
+  projections, effect regions, representation-independent model properties
+  and mathematical functions remain deferred: they could keep client source
+  unchanged across representation edits or express algorithmic models, but add
+  abstraction and possibly termination/proof machinery. Reopen for a type that
+  must publish a quantity without publishing its storage, or a representation
+  migration or contract that makes this cost worthwhile; compare source edits,
+  invalidation, interface size and proof cost with published fields, retaining
+  deterministic polynomial checking and no runtime proof work. Measure the
+  conservative cross-module component rule on real higher-order code; reopen
+  it if it withholds postconditions that ordinary programs need. A persistent
+  LLVM planning adapter waits for warm-build measurements that show stock
+  ThinLTO planning to be a material share of edit latency. External-package
+  resolution and library composition remain deferred by scope; reopen only
+  when selected by the owner, with package identity/version/renaming cases.
+  Subtree-private independently compiled modules remain unselected; reconsider
+  for a concrete privacy consumer that cannot use one module's private
+  implementation files.
+
+- **Rebuild the prelude and a standard library on modules.** The owner
+  selected this as the work after the modular compilation PR: library code
+  becomes registered modules with `module.wfm` interfaces, checked and cached
+  like program modules, and programs reach it through the ordinary qualified
+  path, alias and access rules instead of declarations the compiler injects
+  into every source bundle. Its investigation must settle which prelude parts
+  stay compiler-owned (the PRE-1 operation identities, opaque storage and the
+  runtime units) and which become source modules; how a program names library
+  modules, given that the name-resolution decision defers external
+  dependency-name binding and the modular design keeps the prelude out of an
+  ordinary source package called `std`; whether library modules join every
+  closure or only the entries that name them; and how their verdicts, proof
+  receipts and objects are reused across programs. The measured container
+  libraries under `research/experiments/container-representation/` are the
+  first standard-library candidates. Benefit: one naming and visibility rule
+  for library and program code, library checks reused instead of repeated in
+  every composition, and fewer compiler-owned declaration paths; the cost, the
+  specification changes (PRE-1, PROG-2) and the reuse gain are unverified.
+  Validate with the whole conformance corpus and test programs unchanged in
+  meaning, and a composition's front-end time before and after. Start after
+  the modular compilation PR merges, as its own investigation.
 
 ## Code structure
 
