@@ -223,9 +223,10 @@ main at `6facd86b8`, equal `efe40194a`'s outside test modules.
   part of both records it measured, an OP-4 and an FN-8 rejection.
 - **#123** adds EFF-1's `SubsumedEffectRead` rejection with no repair, because
   EFF-1 prescribes none, and turns EFF-2's `expected_row` into the merged row
-  every call accepts. The EFF-2 repair text is unchanged, so it now describes a
-  different row from the one it names (probe `eff2-merge` below). EFF-5
-  payloads print source spellings instead of `<binding:0>`.
+  every call accepts. The EFF-2 repair text is unchanged, so following its
+  add-and-remove procedure no longer produces `expected_row` (probe
+  `eff2-merge` below). EFF-5 payloads print source spellings instead of
+  `<binding:0>`.
 
 ## 2. Disposition and literal application
 
@@ -440,10 +441,11 @@ pinned.
 ### (c) Considered: normative content, free words
 
 The specification would state each rule's remedies per disposition and leave
-only the words free. It keeps the case analysis of (a) (rows 16, 39, 44) while
-giving up exact words, so it pays (a)'s amendment for every content change and
-gains little over (b), whose conditions already exclude every failure the
-probes found.
+only the words free. It keeps the case analysis of (a): rows 16, 39 and 44
+show that the remedy itself, not only its wording, depends on position and on
+the goal's terms, so each rule's content statement must enumerate those cases
+or stay wrong for some of them, while (b)'s two conditions exclude every
+failure the probes found without enumerating any.
 
 ### Evaluation
 
