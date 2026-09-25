@@ -1,27 +1,25 @@
 //! Finite physical call inventory after source acceptance.
 //!
 //! Semantic function identities, proof summaries, and permission tables stay
-//! canonical. Only code emission distinguishes the release classes of stores
-//! reachable from each function's executable types and transitive calls.
+//! canonical. [STOR-8] gives the language one heap and no region parameters,
+//! so each emitted source function has exactly one physical variant, and the
+//! inventory is the set of functions a build emits with each call resolved to
+//! its callee's variant.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::HashSet;
 
+use crate::NodePath;
 use crate::semantic::{
     CheckedBodyDisposition, CheckedContainerRoot, CheckedElement, CheckedEnumType,
     CheckedExpression, CheckedFunction, CheckedNominalKind, CheckedPlaceStep, CheckedProgramData,
-    CheckedReleaseClass, CheckedSetTarget, CheckedStatement, CheckedType, FunctionId, NominalId,
-    expression_children,
+    CheckedSetTarget, CheckedStatement, CheckedType, FunctionId, NominalId, expression_children,
 };
-use crate::{DeclarationId, NodePath};
 
 use super::LoweringFailure;
 
 #[derive(Debug)]
 pub(super) struct PhysicalVariant {
     pub(super) source: FunctionId,
-    /// Closed class assignment in declaration order, including captured store
-    /// brands and local stores. Source region identity never enters a key.
-    pub(super) releases: Vec<(DeclarationId, CheckedReleaseClass)>,
     pub(super) calls: Vec<(NodePath, u32)>,
 }
 
@@ -34,7 +32,6 @@ pub(super) struct PhysicalFunctions {
 struct CallEdge {
     source: FunctionId,
     path: NodePath,
-    regions: Vec<DeclarationId>,
 }
 
 #[derive(Default)]
@@ -64,158 +61,78 @@ impl PhysicalFunctions {
             .iter()
             .map(FunctionDependencies::collect)
             .collect::<Vec<_>>();
-        // [STOR-8] gives the language one heap and no region parameters, so
-        // no checked type names a store and no call carries a region
-        // argument. The environment therefore starts empty and stays empty;
-        // what remains of this pass is the call table it interns, which is
-        // one variant per source function.
-        let mut defaults: Vec<(DeclarationId, CheckedReleaseClass)> = Vec::new();
-        let mut regions = Vec::with_capacity(dependencies.len());
+        debug_assert!(
+            program
+                .functions
+                .iter()
+                .all(|function| function.region_parameters.is_empty()),
+            "[STOR-8] no checked function takes a region parameter"
+        );
         for dependency in &dependencies {
-            let mut selected = BTreeSet::new();
-            let mut visited = HashSet::new();
-            for ty in &dependency.types {
-                collect_regions(program, *ty, &mut selected, &mut visited, &mut defaults)?;
-            }
-            regions.push(selected);
-        }
-        defaults.sort_unstable_by_key(|(region, _)| *region);
-        defaults.dedup_by_key(|(region, _)| *region);
-
-        // A caller needs every store on which a callee's physical body depends,
-        // even if that store appears only inside an instantiated type argument.
-        // Every iteration adds members of the finite checked declaration set.
-        loop {
-            let mut changed = false;
-            for (index, dependency) in dependencies.iter().enumerate() {
-                for call in &dependency.calls {
-                    let callee = source_function(program, call.source)?;
-                    validate_call_regions(callee, call)?;
-                    let required = regions
-                        .get(call.source.0 as usize)
-                        .ok_or(LoweringFailure::InvalidCheckedProgram)?
-                        .iter()
-                        .copied()
-                        .map(|region| actual_region(callee, call, region))
-                        .collect::<Vec<_>>();
-                    for region in required {
-                        changed |= regions[index].insert(region);
-                    }
-                }
-            }
-            if !changed {
-                break;
+            for call in &dependency.calls {
+                source_function(program, call.source)?;
             }
         }
-
-        let regions = regions
-            .into_iter()
-            .map(|regions| regions.into_iter().collect::<Vec<_>>())
-            .collect::<Vec<_>>();
-        let mut plan = Self {
-            variants: Vec::new(),
-        };
-        let mut interned = HashMap::new();
-        let mut represented = vec![false; program.functions.len()];
+        // With roots, the functions they reach through calls; without, every
+        // checked definition.
+        let mut emitted = vec![roots.is_none(); program.functions.len()];
+        let mut pending = Vec::new();
         for root in roots.unwrap_or_default() {
-            let root_regions = regions
-                .get(root.0 as usize)
+            let slot = emitted
+                .get_mut(root.0 as usize)
                 .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-            plan.intern(
-                *root,
-                default_environment(root_regions, &defaults),
-                &mut interned,
-                &mut represented,
-            )?;
+            if !*slot {
+                *slot = true;
+                pending.push(*root);
+            }
         }
-        let mut next = 0;
-        loop {
-            while next < plan.variants.len() {
-                let source = plan.variants[next].source;
-                let caller_releases = plan.variants[next].releases.clone();
-                let mut calls = Vec::new();
-                for call in &dependencies[source.0 as usize].calls {
-                    let callee = source_function(program, call.source)?;
-                    let releases = regions[call.source.0 as usize]
-                        .iter()
-                        .map(|region| {
-                            let actual = actual_region(callee, call, *region);
-                            (*region, release_at(&caller_releases, actual, &defaults))
-                        })
-                        .collect();
-                    let target =
-                        plan.intern(call.source, releases, &mut interned, &mut represented)?;
-                    calls.push((call.path.clone(), target));
+        while let Some(function) = pending.pop() {
+            for call in &dependencies[function.0 as usize].calls {
+                let slot = &mut emitted[call.source.0 as usize];
+                if !*slot {
+                    *slot = true;
+                    pending.push(call.source);
                 }
-                plan.variants[next].calls = calls;
-                next += 1;
-            }
-            if roots.is_some() {
-                return plan.order_by_source();
-            }
-            // Retain emission of otherwise unreferenced canonical definitions,
-            // closing each default's calls before selecting the next definition.
-            let Some(index) = represented.iter().position(|present| !present) else {
-                return plan.order_by_source();
-            };
-            let source = program.functions[index].id;
-            plan.intern(
-                source,
-                default_environment(&regions[index], &defaults),
-                &mut interned,
-                &mut represented,
-            )?;
-        }
-    }
-
-    fn order_by_source(mut self) -> Result<Self, LoweringFailure> {
-        let mut order = (0..self.variants.len()).collect::<Vec<_>>();
-        order.sort_by_key(|variant| self.variants[*variant].source.0);
-        let mut remapping = vec![0; order.len()];
-        for (new, old) in order.iter().enumerate() {
-            remapping[*old] = u32::try_from(new).map_err(|_| LoweringFailure::CounterOverflow)?;
-        }
-        for variant in &mut self.variants {
-            for (_, callee) in &mut variant.calls {
-                *callee = remapping[*callee as usize];
             }
         }
-        let mut variants = self.variants.into_iter().map(Some).collect::<Vec<_>>();
-        self.variants = order
-            .into_iter()
-            .map(|index| {
-                variants[index]
-                    .take()
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)
+        // A variant's ordinal is its source's rank among the emitted
+        // functions, so ordinals follow source order.
+        let mut ordinals = vec![None; program.functions.len()];
+        let mut next = 0u32;
+        for (index, emit) in emitted.iter().enumerate() {
+            if *emit {
+                ordinals[index] = Some(next);
+                next = next
+                    .checked_add(1)
+                    .ok_or(LoweringFailure::CounterOverflow)?;
+            }
+        }
+        let variants = program
+            .functions
+            .iter()
+            .zip(&dependencies)
+            .enumerate()
+            .filter(|(index, _)| emitted[*index])
+            .map(|(index, (function, dependency))| {
+                if function.id.0 as usize != index {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                let calls = dependency
+                    .calls
+                    .iter()
+                    .map(|call| {
+                        ordinals[call.source.0 as usize]
+                            .map(|ordinal| (call.path.clone(), ordinal))
+                            .ok_or(LoweringFailure::InvalidCheckedProgram)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(PhysicalVariant {
+                    source: function.id,
+                    calls,
+                })
             })
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(self)
-    }
-
-    fn intern(
-        &mut self,
-        source: FunctionId,
-        releases: Vec<(DeclarationId, CheckedReleaseClass)>,
-        interned: &mut HashMap<(FunctionId, Vec<CheckedReleaseClass>), u32>,
-        represented: &mut [bool],
-    ) -> Result<u32, LoweringFailure> {
-        let classes = releases.iter().map(|(_, class)| *class).collect();
-        let key = (source, classes);
-        if let Some(id) = interned.get(&key) {
-            return Ok(*id);
-        }
-        let id =
-            u32::try_from(self.variants.len()).map_err(|_| LoweringFailure::CounterOverflow)?;
-        *represented
-            .get_mut(source.0 as usize)
-            .ok_or(LoweringFailure::InvalidCheckedProgram)? = true;
-        self.variants.push(PhysicalVariant {
-            source,
-            releases,
-            calls: Vec::new(),
-        });
-        interned.insert(key, id);
-        Ok(id)
+            .collect::<Result<Vec<_>, LoweringFailure>>()?;
+        Ok(Self { variants })
     }
 }
 
@@ -228,122 +145,6 @@ fn source_function(
         .get(source.0 as usize)
         .filter(|function| function.id == source)
         .ok_or(LoweringFailure::InvalidCheckedProgram)
-}
-
-fn validate_call_regions(callee: &CheckedFunction, call: &CallEdge) -> Result<(), LoweringFailure> {
-    if callee.region_parameters.len() == call.regions.len() {
-        Ok(())
-    } else {
-        Err(LoweringFailure::InvalidCheckedProgram)
-    }
-}
-
-fn actual_region(
-    callee: &CheckedFunction,
-    call: &CallEdge,
-    region: DeclarationId,
-) -> DeclarationId {
-    callee
-        .region_parameters
-        .iter()
-        .position(|formal| *formal == region)
-        .map_or(region, |index| call.regions[index])
-}
-
-fn release_at(
-    environment: &[(DeclarationId, CheckedReleaseClass)],
-    region: DeclarationId,
-    defaults: &[(DeclarationId, CheckedReleaseClass)],
-) -> CheckedReleaseClass {
-    environment
-        .binary_search_by_key(&region, |(region, _)| *region)
-        .ok()
-        .map(|index| environment[index].1)
-        .or_else(|| {
-            defaults
-                .binary_search_by_key(&region, |(region, _)| *region)
-                .ok()
-                .map(|index| defaults[index].1)
-        })
-        .unwrap_or(CheckedReleaseClass::General)
-}
-
-fn default_environment(
-    regions: &[DeclarationId],
-    defaults: &[(DeclarationId, CheckedReleaseClass)],
-) -> Vec<(DeclarationId, CheckedReleaseClass)> {
-    regions
-        .iter()
-        .map(|region| (*region, release_at(&[], *region, defaults)))
-        .collect()
-}
-
-fn collect_regions(
-    program: &CheckedProgramData,
-    ty: CheckedType,
-    regions: &mut BTreeSet<DeclarationId>,
-    visited: &mut HashSet<NominalId>,
-    defaults: &mut Vec<(DeclarationId, CheckedReleaseClass)>,
-) -> Result<(), LoweringFailure> {
-    match ty {
-        CheckedType::Nominal(id) => {
-            if !visited.insert(id) {
-                return Ok(());
-            }
-            let nominal = program
-                .nominals
-                .get(id.0 as usize)
-                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-            match &nominal.kind {
-                CheckedNominalKind::Struct { fields } => {
-                    for field in fields {
-                        collect_regions(program, field.ty, regions, visited, defaults)?;
-                    }
-                }
-                CheckedNominalKind::Enum { variants } => {
-                    for variant in variants {
-                        for field in &variant.fields {
-                            collect_regions(program, field.ty, regions, visited, defaults)?;
-                        }
-                    }
-                }
-                CheckedNominalKind::Box {
-                    referent,
-                    region,
-                    release,
-                } => {
-                    if let Some(region) = region {
-                        regions.insert(*region);
-                        insert_default(defaults, *region, *release);
-                    }
-                    collect_regions(program, *referent, regions, visited, defaults)?;
-                }
-                CheckedNominalKind::Opaque => {}
-            }
-        }
-        CheckedType::Array { element, .. }
-        | CheckedType::Window { element, .. }
-        | CheckedType::Buffer { element } => {
-            collect_regions(
-                program,
-                *program
-                    .elements
-                    .get(element.index())
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)?,
-                regions,
-                visited,
-                defaults,
-            )?;
-        }
-        CheckedType::Unit
-        | CheckedType::Bool
-        | CheckedType::Integer(_)
-        | CheckedType::Float(_)
-        | CheckedType::Generic(_)
-        | CheckedType::GenericInt(_)
-        | CheckedType::GenericFloat(_) => {}
-    }
-    Ok(())
 }
 
 /// [STOR-8] whether a function's own concrete layout holds heap storage: the
@@ -414,16 +215,6 @@ pub(super) fn executable_storage(
 ) -> (Vec<CheckedType>, Vec<CheckedElement>) {
     let dependencies = FunctionDependencies::collect(function);
     (dependencies.types, dependencies.elements)
-}
-
-fn insert_default(
-    defaults: &mut Vec<(DeclarationId, CheckedReleaseClass)>,
-    region: DeclarationId,
-    class: CheckedReleaseClass,
-) {
-    if !defaults.iter().any(|(existing, _)| *existing == region) {
-        defaults.push((region, class));
-    }
 }
 
 impl FunctionDependencies {
@@ -550,10 +341,13 @@ impl FunctionDependencies {
                 goal_regions,
                 ..
             } => {
+                debug_assert!(
+                    goal_regions.is_empty(),
+                    "[STOR-8] no call carries a region argument"
+                );
                 self.calls.push(CallEdge {
                     source: *function,
                     path: call.clone(),
-                    regions: goal_regions.clone(),
                 });
             }
             CheckedExpression::BoxDeref { nominal, .. }

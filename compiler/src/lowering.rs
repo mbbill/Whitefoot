@@ -22,26 +22,13 @@ mod specialize;
 struct TypeLowering<'a> {
     nominals: &'a [IrNominalId],
     elements: &'a [Option<IrElement>],
-    releases: &'a [(crate::DeclarationId, crate::semantic::CheckedReleaseClass)],
 }
 
 impl TypeLowering<'_> {
     const EMPTY: Self = Self {
         nominals: &[],
         elements: &[],
-        releases: &[],
     };
-
-    fn release(
-        self,
-        region: crate::DeclarationId,
-        fallback: crate::semantic::CheckedReleaseClass,
-    ) -> crate::semantic::CheckedReleaseClass {
-        self.releases
-            .iter()
-            .find_map(|(candidate, class)| (*candidate == region).then_some(*class))
-            .unwrap_or(fallback)
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -287,9 +274,8 @@ pub(crate) const fn lower_release_class(
     }
 }
 
-/// One nominal's lowered identity, read through the region erasure
-/// [S20, PROV-1]: instances of one declaration with different regions share
-/// an IR nominal when their complete reclamation graphs also agree.
+/// One nominal's lowered identity: instances of one physical family share an
+/// IR nominal when their complete reclamation graphs agree.
 fn erased_nominal(erasure: TypeLowering<'_>, id: crate::NominalId) -> IrNominalId {
     erasure
         .nominals
@@ -1606,7 +1592,7 @@ impl IrOverlap {
 /// before a runtime exists — and a split whose frame is over the bound would be
 /// refused every lane at run time and sequentialize with no report. The two
 /// numbers live in two languages and are pinned to each other by
-/// `the_compile_time_frame_bound_is_the_runtimes`.
+/// `ordinary_lane_frame_limits_match_the_runtime_slot`.
 pub const LANE_FRAME_BYTES: u64 = 256;
 
 /// Why a function exists, for the one consumer that has to tell the two worlds

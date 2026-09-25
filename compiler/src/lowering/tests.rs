@@ -1702,7 +1702,6 @@ fn main() -> status: ExitStatus pure {
             variant.calls.is_empty(),
             "a proof-closed body has no executable calls"
         );
-        assert!(variant.releases.is_empty());
     });
 }
 
