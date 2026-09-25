@@ -203,11 +203,12 @@ pub(crate) enum GoalProjection {
     /// keeps an anonymous range distinct from the storage it was formed over,
     /// whose `len` is a different quantity [MSR-1].
     Range(super::places::CapturedRange),
-    /// One [OP-4] subscript of a measure place inside a `contract_block`,
-    /// whose written offset is a value parameter of the same callable.
+    /// One [OP-4] subscript of an [ENT-2] clause (b) place inside a
+    /// `contract_block`, whose written offset is a value parameter of the same
+    /// callable.
     ///
-    /// [MSR-1] admits an offset that is "a written integer literal, a live
-    /// `own` fragment-integer place, or an in-scope const generic", and in a
+    /// [ENT-2] admits an offset that is "a written integer literal, a live
+    /// `own` fragment-integer tracked place, or an in-scope const generic", and in a
     /// declaration-boundary template a parameter is named by its ordinal and
     /// not by any binding: the caller substitutes its own actual for it, as
     /// [EFF-5] already substitutes a row's index positions. It occurs only
