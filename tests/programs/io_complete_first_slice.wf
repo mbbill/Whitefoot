@@ -94,17 +94,9 @@ fn exercise(args: &Args, cwd: &DirectoryRead, out: &OutputStream, err: &OutputSt
               match write_once(factory: files, output: err, source: echo_window, start: 0_u64, end: name_length) {
                 Ok(value: written) => {
                   let masked = iand(total, 255_u64);
-                  let narrowed = cvt.checked::<u64, u8>(masked);
-                  match narrowed {
-                    Ok(value: code) => {
-                      close_read(factory: files, file: move file);
-                      return exit_status(code: code);
-                    }
-                    Err(error: overflowed) => {
-                      close_read(factory: files, file: move file);
-                      return exit_status(code: 200_u8);
-                    }
-                  }
+                  let code = cvt::<u64, u8>(masked);
+                  close_read(factory: files, file: move file);
+                  return exit_status(code: code);
                 }
                 Err(error: problem) => {
                   close_read(factory: files, file: move file);

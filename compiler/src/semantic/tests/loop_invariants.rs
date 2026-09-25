@@ -1773,11 +1773,11 @@ fn main() -> status: ExitStatus pure {
 
 #[test]
 fn admitted_product_publishes_its_interval_to_the_following_operation() {
-    // [ENT-3.S14]. The multiplication is admitted by [ENT-6]'s interval rule
-    // because both widened operands are u32-ranged, and the add that follows
-    // is in range only because the product's own interval bounds `base`.
-    // Before S14 the rule proved that interval and discarded it, so the add
-    // had no premise and was refused [OP-2].
+    // [ENT-3.S7]'s `*` row. The multiplication is admitted by [ENT-6]'s
+    // interval rule because both widened operands are u32-ranged, and the add
+    // that follows is in range only because the product's own interval bounds
+    // `base`. Without a product row the rule proved that interval and
+    // discarded it, so the add had no premise and was refused [OP-2].
     let source = br#"fn flat(row: u32, width: u32, col: u32) -> at: u64 pure {
   let r = cvt::<u32, u64>(row);
   let w = cvt::<u32, u64>(width);
@@ -1819,7 +1819,7 @@ fn main() -> status: ExitStatus pure {
         );
         assert!(
             sum.discharged,
-            "the addition discharges only from the interval S14 published on the product"
+            "the addition discharges only from the interval the `*` row published on the product"
         );
     });
 }

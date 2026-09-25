@@ -1,0 +1,19 @@
+fn at_most(value: u64, limit: u64) -> result: unit pure contract {
+  requires value <= limit;
+} {
+  return unit;
+}
+
+fn rows(value: u64, other: u64) -> result: u64 pure {
+  let low = iand(value, 255_u64);
+  set value = other;
+  at_most(value: low, limit: 255_u64);
+  let total = 0_u64;
+  set total = low + 1_u64;
+  at_most(value: total, limit: 256_u64);
+  return total;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
