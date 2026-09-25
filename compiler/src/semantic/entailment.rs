@@ -378,6 +378,12 @@ pub(crate) struct ObligationOutcome {
     pub(crate) affine_index_maps: Vec<ProvedAffineIndexMap>,
     /// Adjacent-range images retained only at a discharged VIEW-2 formation.
     pub(crate) range_partitions: Vec<ProvedRangePartition>,
+    /// For an undischarged obligation, every binding at which a kill event
+    /// on some path to its node roots its place, sorted [ENT-5]. A
+    /// requirement over a parameter outside this set still holds at the
+    /// node, which is what its repair reads to offer one [DIAG-1].
+    /// Discharged obligations retain none.
+    pub(crate) written_before: Vec<BindingId>,
 }
 
 /// Exact normalized identity of one obligation query in the function-local
@@ -665,6 +671,12 @@ pub(crate) struct CountedDerivationSet {
 pub(crate) struct LoopInvariantProof {
     pub(crate) base: bool,
     pub(crate) step: Option<bool>,
+    /// The preheader state derives the negation of one of the target's
+    /// bounds, so the base judgment is refuted rather than unproved [MSR-4].
+    pub(crate) base_refuted: bool,
+    /// Some reachable backedge derives the negation of one of the
+    /// next-header target's bounds [MSR-4].
+    pub(crate) step_refuted: bool,
 }
 
 impl LoopInvariantProof {
@@ -759,6 +771,9 @@ pub(crate) struct SourceProofCheck {
     /// A nonempty `use` block is invalid when the specification-defined AUTO
     /// route already proves its outer target from the entering context.
     pub(crate) redundant: bool,
+    /// A blockless target no step discharged whose negation, for one of its
+    /// bounds, the entering context derives [MSR-4].
+    pub(crate) target_refuted: bool,
 }
 
 impl SourceProofCheck {
@@ -1098,6 +1113,10 @@ pub(crate) struct CallGoalOutcome {
     /// One exact positive or contradiction root for a discharged call.
     /// Refuted and unproved calls carry none.
     pub(crate) derivation: Option<DerivationId>,
+    /// For a call no step discharged, every binding at which a kill event on
+    /// some path to the call roots its place, sorted [ENT-5], as
+    /// [`ObligationOutcome::written_before`] records it.
+    pub(crate) written_before: Vec<BindingId>,
 }
 
 /// One retained declaration-only [FN-4] implication result. Its enclosing
@@ -1162,6 +1181,70 @@ pub(crate) struct FunctionEntailment {
     /// Canonical term and goal identities moved from the analyzer so every
     /// retained dense ID remains exact and interpretable after analysis.
     pub(crate) inventory: DerivationInventory,
+}
+
+/// What one term of a rejected obligation reads, which is what selects the
+/// routes its repair names [DIAG-1].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TermRead {
+    /// A constant, a const-generic parameter, the zero term, or a measure of
+    /// a named constant.
+    Constant,
+    /// A place, or a measure of one, rooted at this binding and reached by
+    /// field selections and `deref` alone, so a clause can spell it.
+    Binding(BindingId),
+    /// An operand that is no term at all [ENT-2], such as an element read:
+    /// no fact names its value until a `let` binds it.
+    Unnamed,
+    /// A captured, computed, subscripted or compiler-owned value.
+    Computed,
+}
+
+impl FunctionEntailment {
+    /// What each term of one obligation's normalized relations reads, in
+    /// component order. A component without a left term relates an operand
+    /// that is no term [ENT-2], which reads as [`TermRead::Unnamed`].
+    pub(crate) fn obligation_term_reads(&self, outcome: &ObligationOutcome) -> Vec<TermRead> {
+        outcome
+            .components
+            .iter()
+            .flat_map(|component| {
+                [
+                    component
+                        .left
+                        .map_or(TermRead::Unnamed, |term| self.term_read(term)),
+                    self.term_read(component.right),
+                ]
+            })
+            .collect()
+    }
+
+    fn term_read(&self, term: TermId) -> TermRead {
+        let spelled = |place: &super::places::ResolvedPlace| {
+            let steps = place.path.iter().all(|step| {
+                matches!(
+                    step,
+                    super::places::PlaceStep::Field(_) | super::places::PlaceStep::Deref
+                )
+            });
+            match place.root {
+                term::PlaceRoot::Binding(binding) if steps => TermRead::Binding(binding),
+                term::PlaceRoot::Constant(_) if steps => TermRead::Constant,
+                _ => TermRead::Computed,
+            }
+        };
+        match self.inventory.terms.get(term.0 as usize) {
+            Some(
+                term::TermKind::Zero
+                | term::TermKind::Constant(_)
+                | term::TermKind::ConstParameter(..),
+            ) => TermRead::Constant,
+            Some(term::TermKind::Place(place, _) | term::TermKind::Measure(_, place)) => {
+                spelled(place)
+            }
+            _ => TermRead::Computed,
+        }
+    }
 }
 
 /// Computes the combined entailment analysis of one checked function body.

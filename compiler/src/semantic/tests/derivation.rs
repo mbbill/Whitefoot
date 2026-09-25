@@ -54,9 +54,10 @@ fn main() -> status: ExitStatus pure {
 }
 
 /// [GIVE-1] an empty delivery set — every arm leaves by `return` — has no
-/// type to derive, and its mechanical fix is the statement form with the
-/// binding dropped, so the citation is at the `let_stmt` rather than at any
-/// arm.
+/// type to derive, and its repair is the statement form with the binding
+/// dropped, so the citation is at the `let_stmt` rather than at any arm. The
+/// statements after it are unreachable once the binding is gone [FN-1], so
+/// the repair deletes them too [DIAG-1].
 #[test]
 fn an_empty_delivery_set_rejects_at_the_let_statement() {
     assert_rule(
@@ -77,7 +78,10 @@ fn main() -> status: ExitStatus pure {
 }
 "#,
         SemanticRule::Give1,
-        SemanticIssueKind::InvalidGive,
+        SemanticIssueKind::EmptyDeliverySet {
+            binding: "picked".to_owned(),
+            mechanical_fix: "every arm leaves by `return` or `break`, so no value reaches `picked`: drop `let picked =`, write the `match` as a statement, and delete the statements after it in this block, which no path reaches".to_owned(),
+        },
     );
 }
 

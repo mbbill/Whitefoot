@@ -757,6 +757,7 @@ impl FieldList for UndischargedPostconditionDetail {
             selector,
             relation,
             disposition,
+            mechanical_fix,
         });
     }
 }
@@ -821,6 +822,8 @@ impl Report for SemanticIssueKind {
             ConstEvalOverflow { operation };
             ConstRuntimeArithmeticMode { mechanical_fix };
             TypeMismatch { expected, found };
+            UnadmittedOperandShape { expected, mechanical_fix };
+            BehaviorArgumentMismatch { expected, mechanical_fix };
             ImmutableSetTarget;
             InvalidSetTarget { root_class, required_classes };
             ImmutableWrittenArgument { binding, mechanical_fix };
@@ -850,12 +853,12 @@ impl Report for SemanticIssueKind {
             InvalidOperation;
             InvalidPredicateCondition;
             InvalidConditionalForm { mechanical_fix };
-            UndischargedBoundsObligation { residual, mechanical_fix };
-            UndischargedEmptyRunRelease { residual, mechanical_fix };
+            UndischargedBoundsObligation { residual, disposition, mechanical_fix };
+            UndischargedEmptyRunRelease { residual, disposition, mechanical_fix };
             UndischargedIntegerDomainObligation { residual, disposition, mechanical_fix };
             UndischargedConversionDomainObligation { residual, disposition, mechanical_fix };
-            UndischargedAllocationFitObligation { residual, mechanical_fix };
-            UndischargedRangeFormationObligation { residual, mechanical_fix };
+            UndischargedAllocationFitObligation { residual, disposition, mechanical_fix };
+            UndischargedRangeFormationObligation { residual, disposition, mechanical_fix };
             UndischargedCallSeparation { residual, mechanical_fix };
             OverlappingCallEffects { first, second, mechanical_fix };
             AtomicUpdateReachesTargetPrefix { target, effect, mechanical_fix };
@@ -863,8 +866,8 @@ impl Report for SemanticIssueKind {
             InvalidCountedEndpoint { mechanical_fix };
             BreakOutsideLoop { mechanical_fix };
             InvalidInvariant { reason, mechanical_fix };
-            UndischargedLoopInvariant { name, obligation, required_relation, mechanical_fix };
-            UndischargedLocalInvariant { name, mechanical_fix };
+            UndischargedLoopInvariant { name, obligation, required_relation, disposition, mechanical_fix };
+            UndischargedLocalInvariant { name, disposition, mechanical_fix };
             InvalidSourceProof { reason, mechanical_fix };
             UndischargedSourceProof { name, obligation, mechanical_fix };
             ReturnMismatch;
@@ -874,7 +877,7 @@ impl Report for SemanticIssueKind {
             FunctionFallthrough;
             InvalidRequires;
             InvalidPostconditionSelector;
-            AmbiguousResultRoute;
+            AmbiguousResultRoute { mechanical_fix };
             InvalidPostconditionFields { required_fields };
             PostconditionCandidateNotFresh { spelling, conflicts };
             PostconditionLocalShadowsResult { spelling, selector };
@@ -883,7 +886,7 @@ impl Report for SemanticIssueKind {
             InvalidEntryFormer { mechanical_fix };
             ContradictoryPublishedRelations { relations, mechanical_fix };
             InvalidPostconditionReturn;
-            NoSelectedNormalExit { residual };
+            NoSelectedNormalExit { residual, mechanical_fix };
             UndischargedPostcondition[detail];
             InvalidNamedArguments { callee, declared_parameters };
             DuplicateFieldLabel { label };
@@ -893,6 +896,7 @@ impl Report for SemanticIssueKind {
             NonExhaustiveMatch { missing_variants };
             InvalidPropagation;
             InvalidGive;
+            EmptyDeliverySet { binding, mechanical_fix };
             InvalidEffectRow { reason, mechanical_fix };
             SubsumedEffectRead { entry };
             EffectMismatch { expected_row, found_row, missing, extra, mechanical_fix };
@@ -929,6 +933,7 @@ impl Report for ResolutionIssue {
             PrivateInPublicSignature { spelling };
             Correspondence { spelling, reason };
             UnresolvedUse { spelling, role, admissible, available };
+            UndeclaredSetTarget { spelling, mechanical_fix };
         )
     }
 }

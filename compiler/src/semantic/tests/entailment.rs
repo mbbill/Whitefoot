@@ -7,7 +7,7 @@
 
 use crate::{
     BindingId, CallRequirementDisposition, NodePath, SemanticIssueKind, SemanticOutcome,
-    SemanticRule, SourceInput,
+    SemanticRule, SourceInput, StaticObligationDisposition,
 };
 
 use super::super::entailment::affine::{AffineCheckState, AffineInequality};
@@ -30,7 +30,7 @@ use super::super::model::{
 // `PlaceStep`, and a term's place carries the whole resolved path rather than
 // a separate deref flag and field list.
 use super::super::places::{CapturedRange, PlaceStep};
-use super::{assert_rule, with_semantics, with_semantics_dark};
+use super::{assert_rule_kind, with_semantics, with_semantics_dark};
 
 fn obligations(source: &[u8], function: &str) -> Vec<ObligationOutcome> {
     with_semantics_dark(source, |outcome| {
@@ -8685,14 +8685,22 @@ fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule(
-        source,
-        SemanticRule::Op4,
-        SemanticIssueKind::UndischargedBoundsObligation {
-            residual: "i < values.len".to_owned(),
-            mechanical_fix: "when the relation must hold, establish the residual with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise restructure the access",
-        },
-    );
+    // Both terms are parameters no event of `read` writes, so the repair
+    // offers the requirement that holds at entry and reaches the access
+    // [DIAG-1]; its complete sentence is pinned in `driver::pinned_sentences`.
+    assert_rule_kind(source, SemanticRule::Op4, |kind| {
+        matches!(
+            kind,
+            SemanticIssueKind::UndischargedBoundsObligation {
+                residual,
+                disposition: StaticObligationDisposition::Unproved,
+                mechanical_fix,
+            } if residual == "i < values.len"
+                && mechanical_fix.starts_with(
+                    "add `requires i < values.len;` to the `contract` of `read`"
+                )
+        )
+    });
 }
 
 #[test]
@@ -10489,9 +10497,15 @@ fn main() -> status: ExitStatus pure {
             "band(value > 0_u64, value < 10_u64)"
         );
         assert_eq!(detail.disposition, CallRequirementDisposition::Unproved);
-        assert_eq!(
-            detail.mechanical_fix,
-            "when the call is required to succeed, establish the entire instantiated callee requirement with a verified requirement, a source invariant, or explicit finite proof steps before the call; use a dominating branch only when rejection is intended program behavior; otherwise restructure the call"
+        // `value` is a parameter of `caller` its body never writes, and the
+        // goal is no single comparison a clause could copy, so the repair
+        // asks for the relation as a requirement of `caller` [DIAG-1].
+        assert!(
+            detail
+                .mechanical_fix
+                .starts_with("state the relation over the parameters of `caller` as a `requires`"),
+            "{}",
+            detail.mechanical_fix
         );
         let crate::SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("offset fits");
@@ -10549,9 +10563,14 @@ fn main() -> status: ExitStatus pure {
         };
         assert_eq!(detail.disposition, CallRequirementDisposition::Unproved);
         assert_eq!(detail.instantiated_goal, "values[0_u64] < 10_u8");
-        assert_eq!(
-            detail.mechanical_fix,
-            "when the call is required to succeed, establish the entire instantiated callee requirement with a verified requirement, a source invariant, or explicit finite proof steps before the call; use a dominating branch only when rejection is intended program behavior; otherwise restructure the call"
+        // The admitted element read is part of the goal's identity, so a
+        // condition naming the same expression establishes it [ENT-3].
+        assert!(
+            detail
+                .mechanical_fix
+                .contains("guard the call with `if values[0_u64] < 10_u8`"),
+            "{}",
+            detail.mechanical_fix
         );
     });
     let admitted = entailment(admitted_actual, "caller");
@@ -11005,12 +11024,18 @@ fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule(
-        source,
-        SemanticRule::Op4,
-        SemanticIssueKind::UndischargedBoundsObligation {
-            residual: "offset < b.len".to_owned(),
-            mechanical_fix: "when the relation must hold, establish the residual with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise restructure the access",
-        },
-    );
+    // `offset` is a local the body writes, so no requirement names it and
+    // the repair offers the proof and guard routes [DIAG-1].
+    assert_rule_kind(source, SemanticRule::Op4, |kind| {
+        matches!(
+            kind,
+            SemanticIssueKind::UndischargedBoundsObligation {
+                residual,
+                disposition: StaticObligationDisposition::Unproved,
+                mechanical_fix,
+            } if residual == "offset < b.len"
+                && mechanical_fix.starts_with("`offset < b.len` is not proved here")
+                && mechanical_fix.contains("guard the access with `if offset < b.len`")
+        )
+    });
 }

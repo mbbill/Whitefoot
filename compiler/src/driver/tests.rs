@@ -2922,7 +2922,7 @@ fn main() -> status: ExitStatus pure {
         );
     assert!(
             detail.ends_with(
-                "\n  mechanical_fix: declare exactly the row the body exhibits: add every missing category and path and remove every extra one; EFF-2 admits no wider and no narrower declaration than the union of the body-syntactic and release contributions"
+                "\n  mechanical_fix: declare the row as `pure`, which covers every access the body makes and no other"
             ),
             "{detail}"
         );

@@ -1028,6 +1028,14 @@ pub enum ResolutionIssueKind {
         /// Visible exact-spelling classes in the candidate universe.
         available: Vec<DeclarationClass>,
     },
+    /// [SET-1] a bare `set` target whose name resolves to nothing, which
+    /// declares nothing.
+    UndeclaredSetTarget {
+        /// The target name.
+        spelling: String,
+        /// The repair [DIAG-1].
+        mechanical_fix: String,
+    },
 }
 
 /// The first active-specification resolver rejection in specified stage and event order.

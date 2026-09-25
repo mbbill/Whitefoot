@@ -30,10 +30,13 @@ and repair it fastest.
   pinned-sentence corpus, so wording can improve from agent evidence without a
   specification version.
 
-This round is research only: it changes neither the specification nor the
-compiler. It proposes the two design-tree amendments filed as
+The research round changed neither the specification nor the compiler. It
+proposed the two design-tree amendments filed as
 [`design/amendments/repair-scope.md`](../../../design/amendments/repair-scope.md)
 and [`design/amendments/diagnostic-repairs.md`](../../../design/amendments/diagnostic-repairs.md).
+The implementation round that followed, on the same branch, is recorded in
+[Implementation](#implementation); where it differs from sections 1 to 5,
+that section says so and why.
 
 Revisions examined: `main` at `efe40194a`, PR #117 (`feat/readable-diagnostics`)
 at `145f368f7`, and PR #123 (`fix/diagnostic-source-spelling`) at `902594280`.
@@ -684,6 +687,59 @@ specification's word; it is optional.
    only, not a ceiling on the language. It belongs in a new
    `research/experiments/` record when run.
 
+## Implementation
+
+Option (b) landed as specification v0.71 with the minimum repair set, the
+MSR-4 goal rules (FN-9 gains a repair) and OWN-8's rejections. It departs
+from section 4 where carrying it out showed a gap:
+
+- **DIAG-1's success condition.** Section 4's "Applied as written, each
+  alternative lets the rejected judgment succeed" cannot hold for the proof
+  routes of a goal over computed values: an invariant's `use` steps or a
+  callee's `ensures` succeed only when facts exist that the checker cannot
+  guess, so an unconditional requirement would forbid the routes a writer
+  needs most. v0.71 reads "Carried out as it directs, each alternative lets
+  the rejected judgment succeed at that construct in a state that is not
+  contradictory; an alternative that does so only when the program meets a
+  condition the checker has neither established nor refuted states that
+  condition", and the no-rejected-text condition reads "where it is written,
+  or at any use of it, independently of the rest of the program".
+- **INV-1 dispositions.** MSR-4 now also says when an INV-1 target is
+  refuted: when its disposition derives the negation of one of its bounds.
+  The compiler derives it with the same affine disposition, over the exact
+  integer complement of the bound (`sum <= u` becomes `-sum <= -u - 1`).
+- **What a goal reads**, which selects the unproved routes, is classified in
+  four ways rather than section 4's two. A requirement is offered only for
+  parameters that no event on a path to the goal writes or consumes, taken
+  from the kill events the entailment walk applied before the judgment (a
+  function-wide set lost the route for `free_empty(window: move window)`,
+  whose consume follows its requirement). An admitted element read is part
+  of the goal's identity, so a guard naming the same expression establishes
+  it [ENT-3], while a value only its occurrence identifies, or a range formed
+  at the call, is bound with a `let` first; for a subscript, whose bound
+  names terms alone, an offset that is itself an element is bound too, as the
+  retired MSR-4 sentence said.
+- **Guards through a reference.** A guard is executable code: `if hi <=
+  deref(values).len` in a `pure` function is a read EFF-2 rejects. The pinned
+  pairs found this; a guard over a goal that reads through a reference
+  parameter now also asks for any read the row does not yet declare.
+- **OP-14** offers no guard, since a window left alive is released at its
+  scope exit, which owes the same empty proof [PROV-6].
+- **Validation step 2** checks liveness without running programs: each
+  repaired source must be accepted, and no judgment in its functions may
+  succeed only in a contradictory state, which is what a guard around a
+  refuted goal compiles to (`op2-refuted-local-branch`); a separate test pins
+  that the check catches it. The pairs cover every repair branch the
+  compiler prints for a goal and every non-goal repair this round changed.
+  FN-8's occurrence-local argument, which section 2 never reached, is reached
+  by a field of an element read through a range reference, a value the
+  entailment does not admit. The EFF-1, EFF-2 and EFF-5 pairs pin today's
+  rules and change with PR #126's.
+- **Rendering.** FN-8's occurrence-local datum now renders as DIAG-1 spells
+  it, `argument #N pre-transfer value`, without angle brackets.
+
+The writer trial of validation step 3 has not run.
+
 ## Owner decisions
 
 1. Option (b) as recommended, or (a).
@@ -736,7 +792,9 @@ Outside the requested change, each with its disposition:
   building a compiler for it; adding a test that compares specification and
   printed texts would remove its drift but not the case analysis or the
   missing instance data.
-- The occurrence-local argument repair (row 40) was not reached by a probe.
+- The occurrence-local argument repair (row 40) was not reached by a probe in
+  the research round; the implementation round reached it (see
+  [Implementation](#implementation)).
 - Probe outcomes that depend on running a program were observed for
   `op2-refuted-local-branch` (exit 0), `fn8-refuted-branch` (exit 0) and
   `op6-refuted-checked` (exit 1); the other acceptances were compiled only.

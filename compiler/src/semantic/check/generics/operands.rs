@@ -272,8 +272,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.issue_node(
             row.rule,
             call,
-            SemanticIssueKind::type_mismatch(
-                match row.admitted {
+            SemanticIssueKind::UnadmittedOperandShape {
+                expected: match row.admitted {
                     AdmittedShapes::Window => "a `Slots` or `Ring` operand [OP-10]",
                     AdmittedShapes::Ring => "a `Ring` operand, which is what this row admits",
                     AdmittedShapes::BoxedRuntimeSlots => "a `Box<Slots<T>>` operand",
@@ -282,8 +282,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     }
                     AdmittedShapes::AnyValue => "an owned place of one type [OP-11]",
                 },
-                "an operand outside this operation's admitted set",
-            ),
+                mechanical_fix: "pass an operand of the admitted shape, or use an operation whose row admits this operand's shape",
+            },
         )
     }
 

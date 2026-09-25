@@ -43,7 +43,7 @@ const OPTION_TARGS_EXPECTED: &str = "Option with its type argument written: as a
 /// sites, so five conditions cover six rejections.
 const EFF1_CATEGORY_ORDER: &str =
     "a row is written in the canonical order, every `reads` entry before every `writes` entry";
-const EFF1_CATEGORY_ORDER_FIX: &str = "move every `reads` entry ahead of the first `writes` entry; a category may appear more than once";
+const EFF1_CATEGORY_ORDER_FIX: &str = "write every `reads` entry before the first `writes` entry, and delete each entry whose path is a `writes` entry's path or lies below it, which that `writes` already covers";
 const EFF1_REPEATED_PATH: &str =
     "a row lists each path at most once per category, and this entry repeats one";
 const EFF1_REPEATED_PATH_FIX: &str = "delete the repeated entry; `writes(p)` already subsumes `reads(p)`, so the pair is never written for one path";

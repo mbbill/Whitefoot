@@ -710,10 +710,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     SemanticIssueKind::OverlappingCallEffects {
                         first: self.render_resolved_place(&left.place, bindings)?,
                         second: self.render_resolved_place(&right.place, bindings)?,
+                        // No position separates this pair, so proving one
+                        // distinct is no repair here [DIAG-1].
                         mechanical_fix: if exchange {
                             "exchange equal or disjoint places without an ancestor relation"
+                        } else if left.argument == right.argument {
+                            "these two entries of the callee's row reach overlapping places through one argument, so every call rejects them: declare one `writes` entry of their common path in its row instead"
                         } else {
-                            "prove the two positions distinct, or pass one of them"
+                            "pass places that do not overlap, or pass the shared place through one argument only"
                         },
                     },
                 );

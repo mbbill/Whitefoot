@@ -15,7 +15,35 @@ use super::super::goal::{GoalExpression, GoalOperation};
 use super::super::model::{CheckedFunction, CheckedIntegerOperation, IntegerType};
 use super::with_semantics;
 
-const OVERFLOW_FIX: &str = "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic";
+/// [OP-2] one rejection's residual and disposition, and the fragment of its
+/// repair that shows which routes the goal's disposition and terms selected
+/// [DIAG-1]. The complete sentences are pinned with repaired programs in
+/// `driver::pinned_sentences`.
+fn assert_integer_domain(
+    kind: &SemanticIssueKind,
+    expected_residual: &str,
+    expected_disposition: StaticObligationDisposition,
+    route: &str,
+) {
+    let SemanticIssueKind::UndischargedIntegerDomainObligation {
+        residual,
+        disposition,
+        mechanical_fix,
+    } = kind
+    else {
+        panic!("expected an OP-2 domain rejection, got {kind:?}");
+    };
+    assert_eq!(
+        (residual.as_str(), *disposition),
+        (expected_residual, expected_disposition)
+    );
+    assert!(mechanical_fix.contains(route), "{mechanical_fix}");
+}
+
+/// The repair fragment for a goal over an element read, which a condition
+/// naming the same admitted expression establishes [ENT-3] although the
+/// read is no term [ENT-2].
+const ELEMENT_ROUTES: &str = "is not proved here: when facts that reach the operation imply it";
 
 fn named<'functions>(
     functions: &'functions [CheckedFunction],
@@ -191,13 +219,11 @@ fn main() -> status: ExitStatus pure {
             panic!("an unbounded literal site must reject: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Op2);
-        assert_eq!(
+        assert_integer_domain(
             issue.kind(),
-            &SemanticIssueKind::UndischargedIntegerDomainObligation {
-                residual: "x +defined 1_u64".to_owned(),
-                disposition: StaticObligationDisposition::Unproved,
-                mechanical_fix: OVERFLOW_FIX,
-            },
+            "x +defined 1_u64",
+            StaticObligationDisposition::Unproved,
+            "add `requires x +defined 1_u64;` to the `contract` of `bump`",
         );
         let SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("offset fits");
@@ -344,13 +370,11 @@ fn a_ground_obligation_discharges_in_range_and_rejects_on_inevitable_overflow() 
             panic!("an inevitable constant overflow must reject: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Op2);
-        assert_eq!(
+        assert_integer_domain(
             issue.kind(),
-            &SemanticIssueKind::UndischargedIntegerDomainObligation {
-                residual: "255_u8 +defined 1_u8".to_owned(),
-                disposition: StaticObligationDisposition::Refuted,
-                mechanical_fix: OVERFLOW_FIX,
-            },
+            "255_u8 +defined 1_u8",
+            StaticObligationDisposition::Refuted,
+            "make `255_u8 +defined 1_u8` false",
         );
     });
 }
@@ -373,13 +397,11 @@ fn main() -> status: ExitStatus pure {
             panic!("a non-term class operand must reject: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Op2);
-        assert_eq!(
+        assert_integer_domain(
             issue.kind(),
-            &SemanticIssueKind::UndischargedIntegerDomainObligation {
-                residual: "a[0_u64] +defined 1_u8".to_owned(),
-                disposition: StaticObligationDisposition::Unproved,
-                mechanical_fix: OVERFLOW_FIX,
-            },
+            "a[0_u64] +defined 1_u8",
+            StaticObligationDisposition::Unproved,
+            ELEMENT_ROUTES,
         );
     });
 }
@@ -400,13 +422,11 @@ fn an_owning_box_index_renders_its_content_step_as_a_dereference() {
             panic!("the indexed operand remains no term: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Op2);
-        assert_eq!(
+        assert_integer_domain(
             issue.kind(),
-            &SemanticIssueKind::UndischargedIntegerDomainObligation {
-                residual: "boxed.inner[0_u64] +defined 1_u8".to_owned(),
-                disposition: StaticObligationDisposition::Unproved,
-                mechanical_fix: OVERFLOW_FIX,
-            },
+            "boxed.inner[0_u64] +defined 1_u8",
+            StaticObligationDisposition::Unproved,
+            ELEMENT_ROUTES,
         );
     });
 }
@@ -436,13 +456,11 @@ fn main() -> status: ExitStatus pure {
             panic!("the indexed operand remains no term: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Op2);
-        assert_eq!(
+        assert_integer_domain(
             issue.kind(),
-            &SemanticIssueKind::UndischargedIntegerDomainObligation {
-                residual: "deref(values)[0_u64] +defined 1_u8".to_owned(),
-                disposition: StaticObligationDisposition::Unproved,
-                mechanical_fix: OVERFLOW_FIX,
-            },
+            "deref(values)[0_u64] +defined 1_u8",
+            StaticObligationDisposition::Unproved,
+            ELEMENT_ROUTES,
         );
     });
 }
@@ -491,13 +509,11 @@ fn main() -> status: ExitStatus pure {
             panic!("the unbounded class site must reject on OP-2: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Op2);
-        assert_eq!(
+        assert_integer_domain(
             issue.kind(),
-            &SemanticIssueKind::UndischargedIntegerDomainObligation {
-                residual: "x +defined 1_u64".to_owned(),
-                disposition: StaticObligationDisposition::Unproved,
-                mechanical_fix: OVERFLOW_FIX,
-            },
+            "x +defined 1_u64",
+            StaticObligationDisposition::Unproved,
+            "add `requires x +defined 1_u64;` to the `contract` of `bump`",
         );
     });
     let ground = br#"fn main() -> status: ExitStatus pure {
@@ -722,13 +738,11 @@ fn main() -> status: ExitStatus pure {
             SemanticRule::Op2,
             "the body obligation that demoted the value is the reported rejection",
         );
-        assert_eq!(
+        assert_integer_domain(
             issue.kind(),
-            &SemanticIssueKind::UndischargedIntegerDomainObligation {
-                residual: "step +defined step".to_owned(),
-                disposition: StaticObligationDisposition::Unproved,
-                mechanical_fix: OVERFLOW_FIX,
-            },
+            "step +defined step",
+            StaticObligationDisposition::Unproved,
+            "add `requires step +defined step;` to the `contract` of `accumulate`",
         );
         let SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("offset fits");

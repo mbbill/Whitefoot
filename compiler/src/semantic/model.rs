@@ -431,6 +431,16 @@ pub(crate) enum CheckedNumericType {
 }
 
 impl CheckedNumericType {
+    /// The checked type this numeric type names.
+    pub(crate) const fn checked_type(self) -> CheckedType {
+        match self {
+            Self::Integer(ty) => CheckedType::Integer(ty),
+            Self::Float(ty) => CheckedType::Float(ty),
+            Self::GenericInteger(declaration) => CheckedType::GenericInt(declaration),
+            Self::GenericFloat(declaration) => CheckedType::GenericFloat(declaration),
+        }
+    }
+
     pub(crate) const fn from_type(ty: CheckedType) -> Option<Self> {
         match ty {
             CheckedType::Integer(ty) => Some(Self::Integer(ty)),
