@@ -375,25 +375,76 @@ pub enum SourceRole {
     Implementation,
 }
 
-/// One registered module: its path components after `pkg` (none for the root
-/// module) and its direct dependencies in written order [MOD-1].
+/// The package a registered module belongs to [MOD-10]: the program's own,
+/// which its records name `pkg`, or the standard library the toolchain
+/// supplies, which every other package names `std`.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Package {
+    /// The program's own package.
+    Program,
+    /// The standard library.
+    Standard,
+}
+
+impl Package {
+    /// The qualifier other packages write for this package: `pkg` for the
+    /// program's own, `std` for the standard library.
+    #[must_use]
+    pub const fn qualifier(self) -> &'static str {
+        match self {
+            Self::Program => "pkg",
+            Self::Standard => "std",
+        }
+    }
+}
+
+/// One registered module: its package, its path components after the
+/// package qualifier (none for the root module) and its direct dependencies
+/// in written order [MOD-1, MOD-10].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModuleRecord {
+    package: Package,
     path: Vec<String>,
     dependencies: Vec<ModuleId>,
 }
 
 impl ModuleRecord {
-    /// Creates one module record.
+    /// Creates one module record of the program's own package.
     #[must_use]
     pub const fn new(path: Vec<String>, dependencies: Vec<ModuleId>) -> Self {
-        Self { path, dependencies }
+        Self {
+            package: Package::Program,
+            path,
+            dependencies,
+        }
     }
 
-    /// Returns the path components after `pkg`.
+    /// Creates one module record of the given package.
+    #[must_use]
+    pub const fn in_package(package: Package, path: Vec<String>, dependencies: Vec<ModuleId>) -> Self {
+        Self {
+            package,
+            path,
+            dependencies,
+        }
+    }
+
+    /// Returns the package the module belongs to.
+    #[must_use]
+    pub const fn package(&self) -> Package {
+        self.package
+    }
+
+    /// Returns the path components after the package qualifier.
     #[must_use]
     pub fn path(&self) -> &[String] {
         &self.path
+    }
+
+    /// Reports whether this module is registered at `path` in `package`.
+    #[must_use]
+    pub fn is_at(&self, package: Package, path: &[String]) -> bool {
+        self.package == package && self.path == path
     }
 
     /// Returns the direct dependencies in written order.
@@ -408,10 +459,12 @@ impl ModuleRecord {
         self.dependencies.contains(&target)
     }
 
-    /// Renders the module's qualified name, `pkg` or `pkg::a::b`.
+    /// Renders the module's qualified name as another package writes it:
+    /// `pkg` or `pkg::a::b` for the program's own modules, `std::a` for the
+    /// standard library's.
     #[must_use]
     pub fn qualified_name(&self) -> String {
-        let mut name = String::from("pkg");
+        let mut name = String::from(self.package.qualifier());
         for component in &self.path {
             name.push_str("::");
             name.push_str(component);
@@ -446,7 +499,6 @@ impl fmt::Debug for SourceFile {
 /// PRE-1 records use ordinary grammar without granting a writer a bodyless declaration form.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PreludeSource {
-    Items,
     Opaque,
     Function,
 }
@@ -830,6 +882,27 @@ impl SourceBundle {
         let mut bundle = Self::with_prelude(inputs, limits)?;
         bundle.modules = modules;
         bundle.module_program = true;
+        Ok(bundle)
+    }
+
+    /// Builds a source bundle whose records name standard library modules:
+    /// `inputs` are the bundle's records, placed in the root module, and the
+    /// selected standard library modules' interface records, and `modules`
+    /// the root module followed by the standard library's modules [PROG-2,
+    /// MOD-10]. The bundle stays a source bundle, not a module program.
+    pub fn with_prelude_and_library(
+        inputs: &[SourceInput<'_>],
+        modules: Vec<ModuleRecord>,
+        limits: SourceLimits,
+    ) -> Result<Self, SourceBundleError> {
+        if inputs
+            .iter()
+            .any(|input| input.module.index() >= modules.len())
+        {
+            return Err(SourceBundleError::UnknownModule);
+        }
+        let mut bundle = Self::with_prelude(inputs, limits)?;
+        bundle.modules = modules;
         Ok(bundle)
     }
 

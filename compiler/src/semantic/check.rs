@@ -1274,14 +1274,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// The symbol base of one source function [MOD-3]: its plain name in the
-    /// root module, and its module path joined by `.` before the name in
-    /// every other module, so equal names of different modules stay distinct.
+    /// root module, its module path joined by `.` before the name in every
+    /// other module of the program, and `std.` before that path in a
+    /// standard library module [MOD-10], so equal names of different modules
+    /// stay distinct and no program module, whose path cannot begin with the
+    /// reserved `std`, shares a library module's symbols.
     pub(in crate::semantic::check) fn module_symbol_base(
         &self,
         declaration: DeclarationId,
         name: &str,
     ) -> String {
-        let path = self
+        let module = self
             .resolved
             .declaration(declaration)
             .and_then(crate::DeclarationRecord::module)
@@ -1291,12 +1294,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .classified_bundle()
                     .source_bundle()
                     .module(module)
-            })
-            .map_or(&[][..], crate::ModuleRecord::path);
-        if path.is_empty() {
-            name.to_owned()
-        } else {
-            format!("{}.{name}", path.join("."))
+            });
+        match module {
+            Some(module) if module.package() == crate::Package::Standard => {
+                format!("std.{}.{name}", module.path().join("."))
+            }
+            Some(module) if !module.path().is_empty() => {
+                format!("{}.{name}", module.path().join("."))
+            }
+            _ => name.to_owned(),
         }
     }
 

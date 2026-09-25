@@ -414,7 +414,13 @@ fn run_module_program(
     }
     if options.check_modules {
         let mut verdicts = Vec::new();
-        for record in graph.modules() {
+        // [MOD-10] the program's own modules; a composition below judges the
+        // standard library modules its entry selects.
+        for record in graph
+            .modules()
+            .iter()
+            .filter(|record| record.package() == whitefoot::Package::Program)
+        {
             let module = record.qualified_name();
             let (verdict, analyses) = counting_analyses(cache, || {
                 module_verdict(&graph, &inputs, &module, false, limits, cache)

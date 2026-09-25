@@ -13,7 +13,8 @@ use std::path::{Path, PathBuf};
 use crate::syntax::terminal::{FixedTerminal, TerminalPredicate};
 use crate::syntax::{FinalizedExtent, NodeId};
 use crate::{
-    CanonicalSyntaxUnit, ModuleId, ModuleRecord, Production, SourceRole, SyntaxCoordinate,
+    CanonicalSyntaxUnit, ModuleId, ModuleRecord, Package, Production, SourceRole,
+    SyntaxCoordinate,
 };
 
 /// The logical path of a module program's graph record.
@@ -134,25 +135,39 @@ impl ModuleGraph {
         }
     }
 
-    /// Returns the module registered at this qualified name, `pkg` or
-    /// `pkg::a::b`.
+    /// Returns the module registered at this qualified name: `pkg` or
+    /// `pkg::a::b` for the program's own, `std::a` for the standard
+    /// library's [MOD-10].
     #[must_use]
     pub fn module_named(&self, qualified: &str) -> Option<ModuleId> {
-        let path = module_components(qualified)?;
+        let (package, path) = module_components(qualified)?;
         self.modules
             .iter()
-            .position(|module| module.path() == path.as_slice())
+            .position(|module| module.is_at(package, &path))
             .and_then(ModuleId::from_index)
+    }
+
+    /// Returns every module of the program's own package, in row order; the
+    /// standard library's modules follow them [MOD-10].
+    pub fn program_modules(&self) -> impl Iterator<Item = ModuleId> + '_ {
+        self.modules
+            .iter()
+            .enumerate()
+            .filter(|(_, module)| module.package() == Package::Program)
+            .filter_map(|(index, _)| ModuleId::from_index(index))
     }
 }
 
-/// The path components of a written qualified module name, `pkg::a::b`.
-fn module_components(qualified: &str) -> Option<Vec<String>> {
+/// The package and path components of a written qualified module name,
+/// `pkg::a::b` or `std::a`.
+fn module_components(qualified: &str) -> Option<(Package, Vec<String>)> {
     let mut parts = qualified.split("::");
-    if parts.next()? != "pkg" {
-        return None;
-    }
-    Some(parts.map(str::to_owned).collect())
+    let package = match parts.next()? {
+        "pkg" => Package::Program,
+        "std" => Package::Standard,
+        _ => return None,
+    };
+    Some((package, parts.map(str::to_owned).collect()))
 }
 
 /// Why a graph row or entry is refused [MOD-1].
@@ -194,6 +209,23 @@ pub enum GraphIssueKind {
         /// The written target.
         target: String,
     },
+    /// A row registers, or an entry names, a path of the standard library,
+    /// which only its own graph registers [MOD-10].
+    StandardPath {
+        /// The written path.
+        path: String,
+    },
+    /// A `std` dependency names no standard library module [MOD-10].
+    UnknownStandardModule {
+        /// The written dependency.
+        path: String,
+    },
+    /// The standard library's own graph writes `std`, where its records
+    /// name the library `pkg` [MOD-10].
+    StandardPrefixInLibrary {
+        /// The written path.
+        path: String,
+    },
 }
 
 /// One refused graph row or entry, at its written path [MOD-1].
@@ -207,7 +239,12 @@ impl GraphIssue {
     /// Returns the numbered rule owning the rejection.
     #[must_use]
     pub const fn rule_id(&self) -> &'static str {
-        "MOD-1"
+        match self.kind {
+            GraphIssueKind::StandardPath { .. }
+            | GraphIssueKind::UnknownStandardModule { .. }
+            | GraphIssueKind::StandardPrefixInLibrary { .. } => "MOD-10",
+            _ => "MOD-1",
+        }
     }
 
     /// Returns the coordinate of the offending written path.
@@ -238,13 +275,23 @@ impl core::fmt::Display for GraphCompilerFailure {
 
 /// One written module path and where it is written.
 struct WrittenPath {
+    /// Whether the path begins with `std` rather than `pkg` [MOD-10].
+    standard: bool,
     components: Vec<String>,
     coordinate: SyntaxCoordinate,
 }
 
+/// A row's dependency: an earlier row of the same graph, or a module of the
+/// standard library's graph [MOD-1, MOD-10].
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Dependency {
+    Row(usize),
+    Library(usize),
+}
+
 impl WrittenPath {
     fn qualified(&self) -> String {
-        let mut text = String::from("pkg");
+        let mut text = String::from(if self.standard { "std" } else { "pkg" });
         for component in &self.components {
             text.push_str("::");
             text.push_str(component);
@@ -253,16 +300,21 @@ impl WrittenPath {
     }
 }
 
-/// Forms the graph a canonical `graph_file` unit writes [MOD-1].
+/// Forms the graph a canonical `graph_file` unit writes [MOD-1, MOD-10].
 ///
-/// Rows are read in written order. Each row registers one module; each of
-/// its dependencies must be an earlier row, other than itself, listed once.
-/// Each entry takes a fresh name and targets a function of a registered
-/// module: the last component of its written path is the function's name and
-/// the components before it name the module. The first refusal in written
-/// order is returned.
+/// Rows are read in written order. Each row registers one module of
+/// `package`; each of its `pkg` dependencies must be an earlier row, other
+/// than itself, and each `std` dependency a module of `library`, the
+/// standard library's graph, every dependency listed once. Each entry takes a
+/// fresh name and targets a function of a registered module: the last
+/// component of its written path is the function's name and the components
+/// before it name the module. The formed graph holds the rows' modules in
+/// row order and then every module of `library`. The first refusal in
+/// written order is returned.
 pub(crate) fn form_graph(
     unit: &CanonicalSyntaxUnit<'_, '_, '_>,
+    package: Package,
+    library: Option<&ModuleGraph>,
 ) -> Result<Result<ModuleGraph, GraphIssue>, GraphCompilerFailure> {
     let topology = &unit.finalized.topology;
     let classified = unit.classified_bundle();
@@ -316,12 +368,15 @@ pub(crate) fn form_graph(
     };
     let written_path = |node: NodeId| -> Result<WrittenPath, GraphCompilerFailure> {
         let mut components = Vec::new();
+        let mut standard = false;
         for terminal in direct.get(node.index()).map_or(&[][..], Vec::as_slice) {
             if has(*terminal, TerminalPredicate::Identifier) {
                 components.push(spelling(*terminal)?);
             }
+            standard |= has(*terminal, TerminalPredicate::Fixed(FixedTerminal::Std));
         }
         Ok(WrittenPath {
+            standard,
             components,
             coordinate: coordinate(node)?,
         })
@@ -331,17 +386,27 @@ pub(crate) fn form_graph(
     if topology.node(root).map(|record| record.production) != Some(Production::GraphFile) {
         return Err(GraphCompilerFailure::InvalidGraphTree);
     }
-    let mut modules: Vec<ModuleRecord> = Vec::new();
+    let mut rows: Vec<(Vec<String>, Vec<Dependency>)> = Vec::new();
     for row in children_with(root, Production::ModuleRow) {
         let paths = children_with(row, Production::ModulePath);
         let Some((module, dependencies)) = paths.split_first() else {
             return Err(GraphCompilerFailure::InvalidGraphTree);
         };
         let module = written_path(*module)?;
-        if modules
-            .iter()
-            .any(|registered| registered.path() == module.components.as_slice())
-        {
+        if module.standard {
+            return Ok(Err(GraphIssue {
+                coordinate: module.coordinate,
+                kind: match package {
+                    Package::Program => GraphIssueKind::StandardPath {
+                        path: module.qualified(),
+                    },
+                    Package::Standard => GraphIssueKind::StandardPrefixInLibrary {
+                        path: module.qualified(),
+                    },
+                },
+            }));
+        }
+        if rows.iter().any(|(registered, _)| *registered == module.components) {
             return Ok(Err(GraphIssue {
                 coordinate: module.coordinate,
                 kind: GraphIssueKind::DuplicateModule {
@@ -358,45 +423,96 @@ pub(crate) fn form_graph(
                     kind,
                 }))
             };
-            if dependency.components == module.components {
-                return issue(GraphIssueKind::SelfDependency {
-                    path: dependency.qualified(),
+            let edge = if dependency.standard {
+                let found = library.and_then(|library| {
+                    library
+                        .modules()
+                        .iter()
+                        .position(|registered| registered.path() == dependency.components.as_slice())
                 });
-            }
-            let Some(target) = modules
-                .iter()
-                .position(|registered| registered.path() == dependency.components.as_slice())
-                .and_then(ModuleId::from_index)
-            else {
-                let later = children_with(root, Production::ModuleRow)
-                    .into_iter()
-                    .filter_map(|later| {
-                        children_with(later, Production::ModulePath)
-                            .first()
-                            .copied()
-                    })
-                    .map(written_path)
-                    .collect::<Result<Vec<_>, _>>()?
+                match (package, found) {
+                    (Package::Program, Some(index)) => Dependency::Library(index),
+                    (Package::Program, None) => {
+                        return issue(GraphIssueKind::UnknownStandardModule {
+                            path: dependency.qualified(),
+                        });
+                    }
+                    (Package::Standard, _) => {
+                        return issue(GraphIssueKind::StandardPrefixInLibrary {
+                            path: dependency.qualified(),
+                        });
+                    }
+                }
+            } else {
+                if dependency.components == module.components {
+                    return issue(GraphIssueKind::SelfDependency {
+                        path: dependency.qualified(),
+                    });
+                }
+                let Some(target) = rows
                     .iter()
-                    .any(|registered| registered.components == dependency.components);
-                return issue(if later {
-                    GraphIssueKind::LaterDependency {
-                        path: dependency.qualified(),
-                    }
-                } else {
-                    GraphIssueKind::UnregisteredDependency {
-                        path: dependency.qualified(),
-                    }
-                });
+                    .position(|(registered, _)| *registered == dependency.components)
+                else {
+                    let later = children_with(root, Production::ModuleRow)
+                        .into_iter()
+                        .filter_map(|later| {
+                            children_with(later, Production::ModulePath)
+                                .first()
+                                .copied()
+                        })
+                        .map(written_path)
+                        .collect::<Result<Vec<_>, _>>()?
+                        .iter()
+                        .any(|registered| {
+                            !registered.standard && registered.components == dependency.components
+                        });
+                    return issue(if later {
+                        GraphIssueKind::LaterDependency {
+                            path: dependency.qualified(),
+                        }
+                    } else {
+                        GraphIssueKind::UnregisteredDependency {
+                            path: dependency.qualified(),
+                        }
+                    });
+                };
+                Dependency::Row(target)
             };
-            if edges.contains(&target) {
+            if edges.contains(&edge) {
                 return issue(GraphIssueKind::DuplicateDependency {
                     path: dependency.qualified(),
                 });
             }
-            edges.push(target);
+            edges.push(edge);
         }
-        modules.push(ModuleRecord::new(module.components, edges));
+        rows.push((module.components, edges));
+    }
+    let program_count = rows.len();
+    let library_modules = library.map_or(&[][..], ModuleGraph::modules);
+    let mut modules: Vec<ModuleRecord> = Vec::with_capacity(program_count + library_modules.len());
+    for (path, edges) in &rows {
+        let dependencies = edges
+            .iter()
+            .map(|edge| match *edge {
+                Dependency::Row(index) => ModuleId::from_index(index),
+                Dependency::Library(index) => ModuleId::from_index(program_count + index),
+            })
+            .collect::<Option<Vec<_>>>()
+            .ok_or(GraphCompilerFailure::InvalidGraphTree)?;
+        modules.push(ModuleRecord::in_package(package, path.clone(), dependencies));
+    }
+    for module in library_modules {
+        let dependencies = module
+            .dependencies()
+            .iter()
+            .map(|dependency| ModuleId::from_index(program_count + dependency.index()))
+            .collect::<Option<Vec<_>>>()
+            .ok_or(GraphCompilerFailure::InvalidGraphTree)?;
+        modules.push(ModuleRecord::in_package(
+            Package::Standard,
+            module.path().to_vec(),
+            dependencies,
+        ));
     }
 
     let mut entries: Vec<GraphEntry> = Vec::new();
@@ -415,6 +531,14 @@ pub(crate) fn form_graph(
             return Err(GraphCompilerFailure::InvalidGraphTree);
         };
         let target = written_path(target)?;
+        if target.standard {
+            return Ok(Err(GraphIssue {
+                coordinate: target.coordinate,
+                kind: GraphIssueKind::StandardPath {
+                    path: target.qualified(),
+                },
+            }));
+        }
         if entries.iter().any(|earlier| earlier.name == name) {
             return Ok(Err(GraphIssue {
                 coordinate: coordinate(entry)?,
@@ -429,9 +553,9 @@ pub(crate) fn form_graph(
                 },
             }));
         };
-        let Some(module) = modules
+        let Some(module) = rows
             .iter()
-            .position(|registered| registered.path() == module_path)
+            .position(|(registered, _)| registered.as_slice() == module_path)
             .and_then(ModuleId::from_index)
         else {
             return Ok(Err(GraphIssue {
@@ -585,9 +709,10 @@ pub fn read_graph_record(path: &Path) -> Result<Vec<u8>, DiscoveryFailure> {
     std::fs::read(path).map_err(unreadable)
 }
 
-/// Reads every registered module's records from the package directory
-/// [MOD-2]: each module's `module.wfm` and then its direct `.wf` files in byte
-/// order of their names, modules in row order. Child directories are not
+/// Reads every registered module of the program's own package from the
+/// package directory [MOD-2]: each module's `module.wfm` and then its direct
+/// `.wf` files in byte order of their names, modules in row order. The
+/// standard library's records come with the compiler [MOD-10]. Child directories are not
 /// read into their parent, and no symbolic link or case-folding collision is
 /// followed or tolerated.
 pub fn discover_module_sources(
@@ -610,6 +735,10 @@ pub fn discover_module_sources(
     reject_link(root)?;
     let mut sources = Vec::new();
     for (index, module) in graph.modules().iter().enumerate() {
+        // [MOD-10] the standard library's records come with the compiler.
+        if module.package() != Package::Program {
+            continue;
+        }
         let module_id =
             ModuleId::from_index(index).ok_or_else(|| DiscoveryFailure::Unreadable {
                 path: root.to_path_buf(),

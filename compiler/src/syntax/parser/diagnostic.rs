@@ -254,7 +254,8 @@ fn forbidden_atom_override(
     let construct_head = has(first, TerminalPredicate::TypeIdentifier);
     let call_start = (named_head
         && (fixed(second, FixedTerminal::LeftParen) || fixed(second, FixedTerminal::ColonColon)))
-        || (fixed(first, FixedTerminal::Pkg) && fixed(second, FixedTerminal::ColonColon));
+        || ((fixed(first, FixedTerminal::Pkg) || fixed(first, FixedTerminal::Std))
+            && fixed(second, FixedTerminal::ColonColon));
     let construct_start = construct_head
         && (fixed(second, FixedTerminal::LeftParen)
             || fixed(second, FixedTerminal::LeftAngle)

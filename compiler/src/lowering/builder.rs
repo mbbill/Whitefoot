@@ -422,6 +422,7 @@ fn lower_nominals(
             Ok(IrNominal {
                 name: nominal.name.clone(),
                 link_name,
+                stable: data.nominal_spellings.get(index).cloned().flatten(),
                 id: IrNominalId(
                     u32::try_from(index).map_err(|_| LoweringFailure::CounterOverflow)?,
                 ),
