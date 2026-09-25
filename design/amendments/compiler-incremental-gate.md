@@ -1,0 +1,3 @@
+Node: compiler/verification
+
+Decision: Local builds of the `gate` profile compile incrementally, while hosted CI builds it with incremental compilation off, because without it an edit rebuilds the whole crate once for the binary and once for the test harness, 83 s and 141 s on four cores, where the [measured edits](../../research/investigations/compiler-architecture/DESIGN.md#f9-changing-the-compiler-costs-minutes-per-edit) took 10 to 25 s with it, while a fresh CI checkout has no incremental state to reuse and its first build ran 3 to 4% and its measured tests about 9% slower with it, instead of one construction for both or splitting the crate for build latency.
