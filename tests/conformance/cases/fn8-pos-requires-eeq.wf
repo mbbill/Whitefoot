@@ -12,8 +12,8 @@ fn guarded(left: ClauseEq, right: ClauseEq) -> result: unit pure contract {
 }
 
 fn main() -> status: ExitStatus pure {
-  let left = ClauseSecond();
-  let right = ClauseSecond();
+  let left = ClauseEq::ClauseSecond();
+  let right = ClauseEq::ClauseSecond();
   let same = eeq(left, right);
   if same {
     guarded(left: left, right: right);

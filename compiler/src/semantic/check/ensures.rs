@@ -793,6 +793,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             if !self.has_fixed(base, FixedTerminal::Entry)? {
                 continue;
             }
+            // A function-kind formal's own contract names that formal's
+            // parameters [FN-3]; its signature is judged as its own
+            // declaration, so an enclosing declaration skips it here.
+            let mut owner = self.tree.parent(base)?;
+            let mut nested = false;
+            while let Some(node) = owner {
+                if node == function.node {
+                    break;
+                }
+                if self.tree.production(node)? == Production::FnSig {
+                    nested = true;
+                    break;
+                }
+                owner = self.tree.parent(node)?;
+            }
+            if nested {
+                continue;
+            }
             // Clause uses remain provisional until selector admission. This
             // whole-function position check runs outside an active clause.
             let path = self.tree.path(base)?;
@@ -1276,7 +1294,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // length at all.
         let measured_result = selector.result_type.measured().is_some()
             || match selector.result_type {
-                CheckedType::Nominal(nominal) => self.boxed_measured_content(nominal)?,
+                CheckedType::Nominal(nominal) => self.measured_descendant(nominal)?,
                 _ => false,
             };
         let measured_result_only = measured_result
@@ -2240,14 +2258,39 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// Whether this nominal is a `Box` whose content the measure table gives
     /// a row [TYPE-9, MSR-1].
-    fn boxed_measured_content(
+    /// [CALL-4] whether a result of this nominal type reaches a measured
+    /// place through an owned descendant projection made of struct-field
+    /// selections and `Box` `inner` steps [MSR-3]: `made.storage.len`, or
+    /// the `result.inner.len` every boxed construction record publishes. An
+    /// enum payload step reaches none, because no route selects a variant of
+    /// an unrouted result.
+    fn measured_descendant(
         &self,
         nominal: super::super::model::NominalId,
     ) -> Result<bool, CheckStop> {
-        let CheckedNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind else {
-            return Ok(false);
-        };
-        Ok(referent.measured().is_some())
+        let mut pending = vec![nominal];
+        let mut seen = std::collections::HashSet::new();
+        while let Some(nominal) = pending.pop() {
+            if !seen.insert(nominal) {
+                continue;
+            }
+            let children = match &self.nominal(nominal)?.kind {
+                CheckedNominalKind::Box { referent, .. } => vec![*referent],
+                CheckedNominalKind::Struct { fields } => {
+                    fields.iter().map(|field| field.ty).collect()
+                }
+                _ => Vec::new(),
+            };
+            for child in children {
+                if child.measured().is_some() {
+                    return Ok(true);
+                }
+                if let CheckedType::Nominal(inner) = child {
+                    pending.push(inner);
+                }
+            }
+        }
+        Ok(false)
     }
 
     /// Whether one declared result type can carry a route in this version:
@@ -2263,7 +2306,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         )
     }
 
+    /// [FN-9, CALL-4] admits one clause's selector for one signature; a
+    /// rejection raised for a requested concrete instance names its requester
+    /// [FN-2, MOD-8].
     fn admit_postcondition_selector(
+        &self,
+        record: &PostconditionResolutionRecord,
+        signature: &FunctionSignature,
+        symbolic: bool,
+    ) -> Result<CheckedPostconditionSelector, CheckStop> {
+        self.admit_postcondition_selector_unattributed(record, signature, symbolic)
+            .map_err(|stop| self.attribute_to_request(signature.id, stop))
+    }
+
+    fn admit_postcondition_selector_unattributed(
         &self,
         record: &PostconditionResolutionRecord,
         signature: &FunctionSignature,
@@ -2311,11 +2367,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 // [MSR-1] admits a measure place formed with field-selection
                 // steps, and [TYPE-9] reaches a `Box`'s content by exactly
-                // one such step, `b.inner`. A `Box` result whose content is
-                // measured therefore supplies the same measured datum a
-                // directly measured result does, which is what every boxed
-                // construction record's `ensures result.inner.len` reads.
-                _ if self.boxed_measured_content(nominal)? => {
+                // one such step, `b.inner`. A result whose owned descendant
+                // reached by such steps is measured therefore supplies the
+                // same measured datum a directly measured result does: every
+                // boxed construction record's `ensures result.inner.len`,
+                // and a constructor's `ensures made.storage.len` [CALL-4].
+                _ if self.measured_descendant(nominal)? => {
                     (SelectorAdmissionType::Measured, declared.ty)
                 }
                 _ => (SelectorAdmissionType::Invalid, declared.ty),
@@ -2511,6 +2568,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             rule,
             location: SemanticLocation::SourceNode(origin.node().clone(), origin.coordinate()),
             kind,
+            request: None,
         }))
     }
 

@@ -398,8 +398,8 @@ fn a_counted_binders_reference_does_not_make_it_writable() {
         br#"fn main() -> status: ExitStatus pure {
   for (i in 0_u64..2_u64) {
     let held = &i;
-    let alias = held;
-    set deref(alias) = 9_u64;
+    let aliased = held;
+    set deref(aliased) = 9_u64;
   }
   return exit_status(code: 0_u8);
 }

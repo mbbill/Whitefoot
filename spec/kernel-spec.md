@@ -1,4 +1,4 @@
-# Kernel Specification v0.70
+# Kernel Specification v0.71
 
 Rule IDs are stable; diagnostics cite rule IDs.
 
@@ -32,10 +32,12 @@ A source forest is not a second `program` node, and a source with no items owns 
 That source's canonical bytes are exactly the result of rendering its forest by the following rules.
 The input bytes must equal that rendering byte for byte; the toolchain does not normalize or rewrite input.
 A source that has no complete `item*` derivation is rejected by its owning lexical or grammar rule before this forest-format comparison, and no tree or forest is fabricated [DIAG-1].
+A module graph record [MOD-1] is rendered by the same rules over its forest of `module_row` and `entry_decl` subtrees under its `graph_file` root.
 
 Outside terminal interiors, lines end only with LF and formatting bytes are only ASCII space and LF.
 There is no CR, tab, trailing horizontal whitespace, leading blank line, or blank line inside a top-level item.
 A nonempty source has exactly one empty line between consecutive top-level `item` nodes and no trailing blank line; its final nonempty line ends with exactly one LF.
+The one exception is a run of consecutive `alias_decl` items, and a run of consecutive `module_row`s of a graph record, which stand on consecutive lines with no empty line between them [MOD-1, MOD-4].
 A source containing zero items is exactly one LF.
 Terminal interiors retain their exact bytes and are checked by their owning FORM rule.
 
@@ -57,14 +59,16 @@ Every nonempty physical line begins with exactly two ASCII spaces for each enclo
 A closing brace is rendered after reducing the depth for the block it closes.
 A match-arm header is therefore one level inside its match, and statements in the arm body are two levels inside it.
 
-The line-bearing simple productions are `field`, `variant`, `fn_bind`, `const_decl`, `heap_decl`, `doc`, `contract_define`, `requires_clause`, `ensures_clause`, `set_stmt`, `expr_stmt`, `return_stmt`, `proof_use`, `break_stmt`, and `give_stmt`, plus a `let_stmt` whose selected right-hand side is `ordinary_let_rhs` or `propagate_let_rhs` and a `let_stmt` whose selected binder is a parenthesized binder list or a destructuring consume [GRAM-4].
+The line-bearing simple productions are `field`, `variant`, `fn_bind`, `const_decl`, `heap_decl`, `alias_decl`, `module_row`, `doc`, `contract_define`, `requires_clause`, `ensures_clause`, `set_stmt`, `expr_stmt`, `return_stmt`, `proof_use`, `break_stmt`, and `give_stmt`, plus a `let_stmt` whose selected right-hand side is `ordinary_let_rhs` or `propagate_let_rhs` and a `let_stmt` whose selected binder is a parenthesized binder list or a destructuring consume [GRAM-4].
 Each renders completely on one line, including its final semicolon.
 A `fn_sig` renders its signature inline, with a result-list space after `->` just as a `fn_decl` does. Its optional `contract_block` uses the ordinary block layout. In an interface body each member starts a new line and the following semicolon attaches to the signature or its contract's closing brace. In a `gparam` the signature stays in the surrounding generic header; no member semicolon is inserted.
 
 The generically block-bearing productions are `struct_decl`, `enum_decl`, `interface_decl`, `binding_decl`, the body of `fn_decl`, `contract_block`, `match_stmt`, `value_match`, `if_stmt`, `value_if`, and `arm`.
 Their introducer through `{` is one line; their children render on following lines at depth plus one; and `}` renders on its own line at the original depth.
 Empty blocks still use an opening line followed by a closing-brace line.
-An `invariant_stmt` ending in `;` renders completely on one line.
+An `invariant_stmt` ending in `;` renders completely on one line, and so does an `entry_decl` ending in `;`.
+An `entry_decl` carrying a requirement block renders its introducer through `{` on one line, `no_heap;` on a following line at depth plus one, and `}` on its own line at the original depth.
+A `module_row` renders exactly one space between its `:` and `[`, overriding the generic right attachment of `[` as the `for` header's stated space overrides that of `(`, so the canonical spelling is `pkg::runtime: [pkg::data, pkg::queue];`.
 An `invariant_stmt` carrying a proof block renders its introducer through `{` on one line, each `proof_use` on a following line at depth plus one, and `}` on its own line at the original depth.
 
 A `for_stmt` renders `for`, its optional label, exactly one space, and `(`; this stated space overrides the generic right attachment of `(`.
@@ -81,6 +85,7 @@ No one-line `if` form exists.
 A value-match or value-if let places its complete let prefix and the `match` or `if` introducer through `{` on one line.
 
 A function without a `contract_block` puts its complete header through the body `{` on one line.
+An interface `fn_decl` without a body [MOD-7] renders its complete header and its final `;`, or its `doc` entry, on one line; with a `contract_block`, that `;` or `doc` entry follows the block's closing `}` on its line, as `} doc "Appends one job.";`.
 A function with a `contract_block` puts its header through `contract {` on one line.
 After that block, render its close and the body open as the single line `} {`.
 Then render the body children and closing brace.
@@ -167,18 +172,22 @@ The only abbreviation expansion is FN-3's hygienic expansion of interface and bi
 
 ```wf-ebnf GRAM-2
 program      := item*
-item         := fn_decl | struct_decl | enum_decl | interface_decl | binding_decl | const_decl
+item         := alias_decl
+              | "public" ( fn_decl | struct_decl | enum_decl | interface_decl | binding_decl
+              | const_decl )
+              | fn_decl | struct_decl | enum_decl | interface_decl | binding_decl | const_decl
               | heap_decl
+alias_decl   := "alias" (IDENT | TYPEID) "=" "pkg" ("::" (IDENT | TYPEID))* ";"
 heap_decl    := "program" "no_heap" ";"
 struct_decl  := "opaque"? ("nocopy" | "nodrop")? "struct" TYPEID generics? "{" doc? field* "}"
-field        := "readonly"? IDENT ":" type ";"
+field        := "public"? "readonly"? IDENT ":" type ";"
 enum_decl    := ("nocopy" | "nodrop")? "enum" TYPEID generics? "{" doc? variant* "}"
 variant      := TYPEID "(" vfield_list? ")" ";"
 vfield_list  := vfield ("," vfield)*
-vfield       := IDENT ":" type
+vfield       := "public"? IDENT ":" type
 fn_decl      := "fn" IDENT generics? "(" param_list? ")"
                 "->" ( result_binding | "(" result_binding ("," result_binding)+ ")" )
-                effects contract_block? "{" doc? stmt* "}"
+                effects contract_block? ( ";" | doc | "{" doc? stmt* "}" )
 result_binding:= IDENT ":" rtype
 contract_block:= "contract" "{" contract_define* requires_clause* ensures_clause* "}"
 contract_define:= "define" IDENT "=" expr ";"
@@ -186,7 +195,7 @@ requires_clause:= "requires" clause_expr ";"
 ensures_clause:= "ensures" ("when" result_route ":")? clause_expr ";"
 result_route:= (IDENT "is")? TYPEID "(" fieldbind ")"
 interface_decl  := "interface" TYPEID generics? "{" doc? (fn_sig ";")* "}"
-binding_decl  := "binding" TYPEID ":" pack_use "{" doc? fn_bind* "}"
+binding_decl  := "binding" TYPEID ":" (pack_use | type_path targs?) "{" doc? fn_bind* "}"
 fn_sig       := "fn" IDENT "(" param_list? ")"
                 "->" (result_binding | "(" result_binding ("," result_binding)+ ")")
                 effects contract_block?
@@ -197,13 +206,17 @@ fn_bind      := IDENT "=" callee ("::" targs)? ";"
 doc          := "doc" STRING ";"
 generics     := "<" gparam ("," gparam)* ">"
 gparam       := TYPEID (":" (TYPEID | capability_bound))?
-              | "const" IDENT ":" type | fn_sig | "interface" pack_use
+              | "const" IDENT ":" type | fn_sig | "interface" (pack_use | type_path targs?)
 capability_bound:= "copy" | "drop"
 param_list   := param ("," param)*
 param        := IDENT ":" (type | "&" (type | "[" type "]"))
+graph_file   := module_row+ entry_decl*
+module_row   := module_path ":" "[" (module_path ("," module_path)*)? "]" ";"
+module_path  := "pkg" ("::" IDENT)*
+entry_decl   := "entry" IDENT "=" module_path (";" | "{" "no_heap" ";" "}")
 ```
 
-A `heap_decl` is admitted at most once in a compilation unit and only as the first `item` of the first source record [PROG-2]; a second `heap_decl`, or one at any later item position, is a hard error citing GRAM-2 at that `heap_decl` node.
+A `heap_decl` is admitted at most once in a source bundle and only as the first `item` of its first source record [PROG-2]; a second `heap_decl`, or one at any later item position, is a hard error citing GRAM-2 at that `heap_decl` node, and a module program admits none [MOD-9].
 Its two fixed atoms compete with no other `item` arm, so the decision is strong-LL(2) on the first token alone [GRAM-1].
 What the declaration means is [STOR-8]'s.
 
@@ -211,7 +224,8 @@ What the declaration means is [STOR-8]'s.
 
 ```wf-ebnf GRAM-3
 type   := "i8"|"i16"|"i32"|"i64"|"u8"|"u16"|"u32"|"u64"|"f32"|"f64"|"unit"
-        | TYPEID targs?
+        | TYPEID targs? | type_path targs?
+type_path := ("pkg" | IDENT) "::" (IDENT "::")* TYPEID
 rtype  := type
 targs  := "<" targ ("," targ)* ">"
 targ   := type | const | function_arg
@@ -230,7 +244,7 @@ let_stmt    := "let" ( IDENT "="
                ( ordinary_let_rhs | propagate_let_rhs
                | value_match | value_if )
                | "(" IDENT ("," IDENT)+ ")" "=" call ";"
-               | TYPEID "(" ( fieldbind_list ("," "..")? | ".." )? ")" "=" "move" place ";" )
+               | (TYPEID | type_path) "(" ( fieldbind_list ("," "..")? | ".." )? ")" "=" "move" place ";" )
 if_stmt     := "if" expr "{" stmt* "}" ("else" (if_stmt | "{" stmt* "}"))?
 value_if    := "if" expr "{" stmt* "}" "else" (value_if | "{" stmt* "}")
 ordinary_let_rhs:= expr ";"
@@ -256,7 +270,7 @@ break_stmt  := "break" LABEL? ";"
 give_stmt   := "give" expr ";"
 match_stmt  := "match" expr "{" arm+ "}"
 value_match := "match" expr "{" arm+ "}"
-arm            := TYPEID "(" fieldbind_list? ")" "=>" "{" stmt* "}"
+arm            := TYPEID "(" ( fieldbind_list ("," "..")? | ".." )? ")" "=>" "{" stmt* "}"
 fieldbind_list := fieldbind ("," fieldbind)*
 fieldbind      := IDENT ":" IDENT
 ```
@@ -274,7 +288,9 @@ infix_op       := "+" | "+wrap" | "+defined" | "+checked" | "+sat"
 compare_op     := "==" | "!=" | "<" | "<=" | ">" | ">="
 atom           := literal | "move" place | place | borrow_expr
 call           := "musttail"? callee ("::" targs)? "(" ( atom_list | fieldinit_list )? ")"
-callee         := IDENT | OPNAME | pack_use ("::" IDENT)?
+callee         := OPNAME | IDENT ("::" callee_path)? | "pkg" "::" callee_path
+                | pack_use ("::" (IDENT | TYPEID))?
+callee_path    := IDENT ("::" callee_path)? | pack_use ("::" (IDENT | TYPEID))?
 fieldinit_list := fieldinit ("," fieldinit)*
 fieldinit      := IDENT ":" atom
 borrow_expr    := "&" place
@@ -352,7 +368,8 @@ Nesting and let-splitting are not two spellings of one computation; there is no 
 `borrow_expr` is an `atom`, so references passed as arguments need no binding and [REF-1] is untouched.
 
 [GRAM-10] Named match binders.
-An `arm` for variant K writes every declared field of K exactly once as `IDENT ":" IDENT` (the declared field name, then a fresh binder), in declared order; a missing, extra, repeated, misspelled, or out-of-order field name is a hard error citing GRAM-10 and K's declared field list.
+An `arm` for variant K writes declared fields of K, each at most once as `IDENT ":" IDENT` (the declared field name, then a fresh binder), in declared order, and a final `..` covers every declared field the arm does not write; a missing field name with no `..`, an extra, a repeated, a misspelled, or an out-of-order field name is a hard error citing GRAM-10 and K's declared field list.
+In an own-place match [OWN-13] each covered field takes its compiler-derived release on entry to the arm [STOR-3], and a covered field of linear type is a hard error citing WIN-3 at the `arm` [PROV-6]; a reference-mode match covers a field without releasing it.
 The binder is a fresh IDENT chosen by the writer and distinct from the field name, so TYPE-6 no-shadowing is never engaged by two arms binding fields of the same name.
 Binder modes remain derived by [OWN-13] (not written), a reference-mode binder naming the scrutinee path extended by its payload step [REF-1].
 A nullary variant is written `K()`.
@@ -380,7 +397,7 @@ In this specification's prose `N` stands for a written const argument; source wr
 `Slots`, `Ring`, and `Box` are declared `nocopy`, so their values are affine unless an element or content type makes them linear, and an `Array` has exactly the capabilities of its element type [OWN-1, PROV-6].
 A `struct` or `enum` declaration may carry one capability modifier [GRAM-2]: `nodrop`, which states a logical must-consume obligation on values of that nominal in every scope, or `nocopy`, which makes its values non-duplicable although every part could be copied; neither changes a component, layout, or construction route [OWN-1, PROV-6].
 A `struct` declaration may carry the `opaque` modifier [GRAM-2], written before a capability modifier when both are present: an opaque struct has fields and no usable constructor. Its constructor entry [TYPE-6] exists to be refused: a constructor `call` whose leading TYPEID names an opaque struct is a hard error citing TYPE-2 at the complete `call`, and a destructuring `let_stmt` whose TYPEID names one is a hard error citing TYPE-2 at the complete `let_stmt`, each with the restructuring `build it with a construction function [OP-13, PRE-1]`. Its fields obey the ordinary field, ownership, and release rules [OWN-1, PROV-6, STOR-3], and a `move` out of one of its fields is the ordinary [WIN-3] consume. No source-declared opaque struct has a construction function, so a value of one is never formed; the prelude declares the three storage shapes, `Box<T>`, and every host handle as opaque structs and supplies their construction rows [PRE-1].
-A `field` may carry the `readonly` modifier [GRAM-2], in any struct. A path that ends at or passes through a readonly field is never a write target: a `set` whose target is such a path [SET-1], and an argument naming such a path at a reference parameter whose callee row writes that parameter [EFF-5], are each a hard error citing TYPE-2 at the complete target `place` or argument `atom`, with the restructuring `use the operation that changes it, or replace the whole value`. Construction gives a readonly field its value like any other field [GRAM-8], and a whole-value assignment replaces it together with its owner. Its value otherwise changes only through a compiler-owned [PRE-1] operation whose row declares `writes` of it [OP-10]; a declared row may name a readonly field in `writes`, because a row reports every change its callees make [EFF-2]. `readonly` states that the field is not assignable, not that its value is constant.
+A `field` may carry the `readonly` modifier [GRAM-2]; a source field carries it only together with `public` [MOD-6]. Inside the module that declares a source struct its readonly field is an ordinary field. Outside that module — and everywhere, for a PRE-1 struct's field — a path that ends at or passes through a readonly field is never a write target: a `set` whose target is such a path [SET-1], and an argument naming such a path at a reference parameter whose callee row writes that parameter [EFF-5], are each a hard error citing TYPE-2 at the complete target `place` or argument `atom`, with the restructuring `use the operation that changes it, or replace the whole value`. Construction gives a readonly field its value like any other field [GRAM-8], and a construction outside the declaring module supplies none [MOD-5]; a whole-value assignment replaces it together with its owner. Its value otherwise changes only through a compiler-owned [PRE-1] operation whose row declares `writes` of it [OP-10]; a declared row may name a readonly field in `writes`, because a row reports every change its callees make [EFF-2]. `readonly` states that the field is not assignable, not that its value is constant.
 
 [TYPE-3] Nameability: every constructible type, parameter kind and effect has a canonical, finite source spelling requiring no compiler execution [GRAM-3, EFF-1].
 A capability modifier and a generic parameter's capability bound are properties of a declaration and not components of a type name: two instances of one nominal have one name whether or not its declaration is marked, and no name spells a capability [PROV-6].
@@ -420,27 +437,25 @@ The grammar role, never an inferred type or expected result, selects the domain 
 
 | domain | declarations | admitted uses |
 |---|---|---|
-| lexical IDENT | top-level `fn_decl`; raw function-kind `gparam`; top-level `const_decl`; const `gparam`; `param`; `let_stmt`; `for_stmt` binder; arm `fieldbind` binders; `contract_define`; FN-9-owned result and route candidates; PRE-1 functions | a `callee` IDENT admits a top-level function, in-scope function parameter, or PRE-1 function; an unqualified `function_arg` or `fn_bind` right side admits an ordinary function or function parameter; `const` IDENT admits an in-scope const generic or earlier named const; `cvalue` IDENT admits an earlier named const; `pbase` admits an in-scope runtime value binding, contract definition, admitted symbolic result datum, named const, or in-scope const generic [MSR-6] |
+| lexical IDENT | top-level `fn_decl`; raw function-kind `gparam`; top-level `const_decl`; const `gparam`; `param`; `let_stmt`; `for_stmt` binder; arm `fieldbind` binders; `contract_define`; FN-9-owned result and route candidates; PRE-1 functions | a `callee` IDENT admits a top-level function, in-scope function parameter, or PRE-1 function; an unqualified `function_arg` or `fn_bind` right side admits an ordinary function or function parameter; `const` IDENT admits an in-scope const generic or a named const; `cvalue` IDENT admits a named const; `pbase` admits an in-scope runtime value binding, contract definition, admitted symbolic result datum, named const, or in-scope const generic [MSR-6] |
 | nominal-type TYPEID | source `struct_decl` and `enum_decl` names; source interface and binding groups; PRE-1 nominal types; lexical type `gparam`s overlay this domain while live | a runtime `type` or generic-numeric suffix admits only its ordinary type class; an explicit `targ` additionally admits a interface or binding abbreviation; a `pack_use` admits a interface or binding group, with FN-3/FN-5 checking its position and member selection |
-| constructor TYPEID | each source struct constructor under its struct TYPEID; every source enum `variant`; PRE-1 variants, classified as struct-constructor or enum-variant; PRE-1 struct constructors; an opaque struct's constructor, existing only to be refused [TYPE-2] | the leading TYPEID of constructor `call` admits either class; the leading TYPEID of `arm` or `result_route` admits only enum-variant |
+| constructor TYPEID | each source struct constructor under its struct TYPEID; PRE-1 variants, classified as struct-constructor or enum-variant; PRE-1 struct constructors; an opaque struct's constructor, existing only to be refused [TYPE-2] | the constructor TYPEID of a `call`, `cvalue` or destructuring `let_stmt` admits either class |
 | numeric-bound TYPEID | the two built-in bounds `Int` and `Float` [PRE-1] | the bound TYPEID of a type `gparam`; a capability bound instead uses its fixed grammar spelling [GRAM-2, PROV-6] |
 | LABEL | an optional LABEL written by `loop_stmt` or `for_stmt` | an optional LABEL written by `break_stmt` |
 | invariant IDENT | names written by `header_invariant` and `invariant_stmt` | the IDENT premise alternative of `use_premise` |
 
 A source struct contributes one declaration event that adds one nominal-type entry and one constructor entry with the same spelling.
-Those entries do not collide because the grammar distinguishes a `type` role from a constructor `call` or `arm` role.
-An enum declaration adds only its nominal type; each variant adds its constructor.
+Those entries do not collide because the grammar distinguishes a `type` role from a constructor `call` role.
+An enum declaration adds only its nominal type. Each source variant belongs to its enum and enters no constructor domain: a construction writes it after its enum, `E::V(...)` or `E<args>::V(...)`, directly or behind a module prefix [MOD-5], or through an alias of it [MOD-4]; an enum declares each variant spelling once, and variants of different enums never collide.
+The label of an `arm` resolves against its scrutinee's already known enum type, and the label of a `result_route` against its result ordinal's declared type: it names the variant of that enum with its spelling, and an arm label naming no variant of the scrutinee's enum is a hard error citing TYPE-6 at the `arm`. A PRE-1 variant is written unqualified.
 Entries must be unique within, but not across, the nominal-type, constructor, and numeric-bound domains. Interface and binding group names share the nominal-type collision domain, but neither is a runtime type or a constructor.
-Constructor uniqueness is whole-unit and context-free, so construction and matching never consult an expected nominal type.
+Construction and matching never consult an expected nominal type: a constructor names its struct, its PRE-1 variant or its variant's enum, and an arm or route label reads the type its scrutinee or result already has.
 
 PRE-1 contributes its declaration records in the preorder stated there.
-The prelude's nominals, constructors, functions and numeric bounds, including the construction functions [OP-13] and the window operations [OP-10], enter the ordinary whole-unit lookup inventory and are visible throughout the closed unit. A declaration's type parameters, value parameters and fields are owner-local and enter only that declaration's ordinary owner tables.
+The prelude's nominals, constructors, functions and numeric bounds, including the construction functions [OP-13] and the window operations [OP-10], enter the ordinary lookup inventory and are visible in every module. A declaration's type parameters, value parameters and fields are owner-local and enter only that declaration's ordinary owner tables.
 PRE-1 records have no source event or source node.
-Every top-level function signature is visible throughout the closed compilation unit after unit formation and before any semantic use is resolved [FN-1].
-A source nominal type, interface group, or binding group becomes visible immediately after its declaring TYPEID terminal.
-A source struct constructor becomes visible at that same terminal; an enum-variant constructor becomes visible immediately after its variant TYPEID terminal.
-Each remains visible through the end of the unit.
-Whole-unit inventory checks uniqueness but grants no earlier visibility; a use before one of these declaration points is rejected even though inventory knows the later declaration exists.
+Every top-level declaration of a module — function, struct with its constructor, enum, interface group, binding group and named const — is visible, independently of record and item order, in the records of its module that [MOD-3] selects, after inventory formation and before any use is resolved [FN-1].
+An alias is visible throughout its own record [MOD-4]. Another module's declarations are reached only through a module prefix or an alias [MOD-5].
 
 A generic TYPEID parameter becomes visible after its declaring terminal through the remainder of its declaration's generic, header, and body scope.
 It may not redeclare another parameter in the same generic list or shadow a live nominal type or enclosing generic type.
@@ -472,16 +487,16 @@ An `invariant_stmt` name becomes visible only after its complete statement throu
 An invariant name never denotes a runtime value, place, ownership object, label, or callable, and it is referenced only by the IDENT premise alternative of `use_premise` under [PRF-1].
 Within the invariant-name domain a new live declaration may not shadow another live declaration, while disjoint expired scopes may reuse a spelling.
 Adding, removing, or changing a loop label cannot change any invariant binding.
-A named const becomes visible only after its complete `const_decl`, preserving CONST-2's explicitly-earlier rule.
+A named const is visible in its whole module like every top-level declaration; [CONST-2] judges the dependencies among constants.
 
-Within one domain, two declarations in the compilation-unit root or in the same lexical scope are a redeclaration attributed to the later declaration event.
+Within one domain, two declarations in one module's inventory, in one record's alias header, or in the same lexical scope are a redeclaration attributed to the later declaration event.
 Declarations in unrelated function or declaration owners are not duplicates merely because their spellings match.
 A nested lexical declaration may not shadow an entry live at that declaration.
 GRAM-10 exclusively owns arm match-binder distinctness and freshness: a second IDENT of an arm `fieldbind` equal to its paired field label, an earlier binder in the same arm list, or any lexical-IDENT declaration live on arm entry is rejected citing GRAM-10 at that later/offending binder before it becomes a declaration, rather than also being reported as TYPE-6 shadowing.
 FN-9 exclusively owns the analogous result-datum checks described above; failure creates no TYPE-6 declaration or duplicate event.
-Because every top-level function is live throughout the unit, any other parameter, local, or const generic in a nested scope may not use a top-level function spelling even when that function's source item occurs later; the nested declaration is the offending shadow event.
+Because every top-level declaration and every alias is live throughout its module or record, any other parameter, local, or generic in a nested scope may not use such a spelling in its domain even when that declaration's source item occurs later; the nested declaration is the offending shadow event.
 Disjoint expired lexical scopes may reuse an ordinary value or label spelling.
-Logical paths and record boundaries never create a namespace, scope, or lookup key [PROG-2].
+Within one module, logical paths and record boundaries never create a namespace or lookup key; a module and a record's alias header are the only scopes above a declaration [MOD-3, MOD-4].
 
 The owner-dependent declaration and use roles are exactly the carriers classified by [DIAG-1].
 They do not enter or query a lexical name domain.
@@ -575,12 +590,13 @@ This keeps the const-generic forwarding path closed under the one operation: `co
 [CONST-2] A `const IDENT: type = cvalue;` item declares an immutable, program-lifetime, read-only static value, with the `cvalue` production of the fence below.
 
 ```wf-ebnf CONST-2
-cvalue := literal | IDENT | "[" cvalue ("," cvalue)* "]" | TYPEID targs? "(" (IDENT ":" cvalue ("," IDENT ":" cvalue)*)? ")"
+cvalue := literal | IDENT | "[" cvalue ("," cvalue)* "]"
+        | (TYPEID | type_path) targs? ("::" TYPEID)? "(" (IDENT ":" cvalue ("," IDENT ":" cvalue)*)? ")"
 ```
 
 `type` must be const-eligible: a primitive [TYPE-1], `Array<T, N>` of const-eligible T, or a source non-opaque `struct` whose every field type is const-eligible; `enum`, `Box`, `Slots`, and `Ring` are not const-eligible (a const is pure static rodata: no allocation, no drop).
-The `cvalue` totally defines the value: a primitive-typed const takes a FORM-5 numeric or unit literal or an IDENT naming an earlier const of that exact type; an `Array<T, N>`-typed const takes `[cvalue, ..., cvalue]` with exactly N entries, each of type T, and a struct-typed const takes the construction form `TYPEID(field: cvalue, ...)` naming its exact struct and writing every declared field in declared order [GRAM-8], each field value a cvalue of the declared field type.
-The const-dependency graph is acyclic and declaration-before-use [TYPE-6]; evaluation is substitution and layout only.
+The `cvalue` totally defines the value: a primitive-typed const takes a FORM-5 numeric or unit literal or an IDENT naming a const of that exact type; an `Array<T, N>`-typed const takes `[cvalue, ..., cvalue]` with exactly N entries, each of type T, and a struct-typed const takes the construction form `TYPEID(field: cvalue, ...)` naming its exact struct and writing every declared field in declared order [GRAM-8], each field value a cvalue of the declared field type.
+The const-dependency graph is acyclic: consts are visible throughout their module [MOD-3], and a const whose value depends on itself through any chain of consts is a hard error citing CONST-2 at the first const in item order on that cycle. Evaluation follows the dependencies and is substitution and layout only.
 A const item is never `move`d or `set`, and no declared row may write a path rooted at one [EFF-1, EFF-5].
 It is read via a subscript, a measure member [OP-15], a field suffix, or a `&` reference [REF-1], so a const table may be passed to a consumer.
 A struct-typed const is additionally read via its field suffixes exactly as subscript reads: a copy-scalar selection copies out, and a composite selection keeps the whole-composite read rules.
@@ -756,7 +772,7 @@ This vocabulary is ordinary: a user function may declare the same rows a built-i
 
 [WIN-3] There is no take operation and no hole.
 A move out of a field or out of `Box` content consumes the whole owner: the owner ceases to exist, its other affine parts take their compiler-derived release [STOR-3], and a remaining linear part is a hard error citing WIN-3 at the complete consumed `place`, with the restructuring `take it in the same destructuring: let N(f: a, ..) = move v;`.
-A destructuring consume binds the fields it names and covers the rest with `..` [GRAM-4].
+A destructuring consume binds the fields it names and covers the rest with `..` [GRAM-4], and an own-place `arm` does the same [GRAM-10].
 A move out of a window slot or an array element is a hard error citing WIN-3 at that `place`, with the restructuring `use take_back, remove_at, or swap [OP-10, OP-11]`.
 Assigning over any owned place releases the old value when it is affine and is a hard error citing WIN-3 at the target `place` when it is linear.
 At scope exit the compiler releases the slots inside the window recursively and frees the block; an `Array` releases every slot.
@@ -772,7 +788,10 @@ Exhaustion of the heap terminates the program from the trusted base, outside the
 The arithmetic that computes an allocation size carries the static overflow obligation [OP-9].
 Addresses are not observable, so allocator concurrency does not affect program determinism.
 Allocation and release carry no effect entry [EFF-1] and never prevent two statements from overlapping [PAR-1].
-A program whose compilation unit carries the no-heap declaration [GRAM-2, PROG-3] cannot name `Box` or the runtime-capacity shapes [TYPE-9] and cannot call an allocating prelude row — `box_new`, `box_array_filled`, `box_slots_new`, `box_ring_new`, and `grow` [OP-13, OP-10]; naming such a type is a hard error citing STOR-8 at the complete `type`, and calling such a row is a hard error citing STOR-8 at the complete `call`, each with the restructuring `use a constant-capacity shape, or withdraw the no-heap declaration`.
+A source bundle that carries the no-heap declaration [GRAM-2, PROG-3] cannot name `Box` or the runtime-capacity shapes [TYPE-9] and cannot call an allocating prelude row — `box_new`, `box_array_filled`, `box_slots_new`, `box_ring_new`, and `grow` [OP-13, OP-10]; naming such a type is a hard error citing STOR-8 at the complete `type`, and calling such a row is a hard error citing STOR-8 at the complete `call`, each with the restructuring `use a constant-capacity shape, or withdraw the no-heap declaration`.
+A module program entry whose `no_heap` states the requirement [MOD-9] withdraws the heap from that entry's execution closure: the entry function and every function its checked body reaches through its calls, in every branch, each as the concrete instance the call selects [FN-6]; an instance's body calls the function-kind actuals it names, and an erased proof annotation calls nothing.
+A function of that closure uses the heap on its own when its body calls an allocating prelude row, or when the concrete type of one of its parameters, its results, or a value its body evaluates, binds or releases holds a `Box` or a runtime-capacity shape [TYPE-9] as itself, a field, a payload field or an element, private fields included, since releasing such a value frees heap storage [STOR-3]; it requires the heap when it uses it on its own or calls a function that requires it.
+A component of the closure's call graph introduces the requirement when its functions require the heap and no function of another component that they call does; the first such component a breadth-first walk from the entry reaches is a hard error citing STOR-8 at the declaration of its first function in that walk that uses the heap on its own, reporting the call path from the entry. Definitions the closure does not reach impose nothing on the entry.
 
 [STOR-3] Deallocation and resource release are compiler-derived and explicit in the checked program [DIAG-2]: every release is represented before lowering.
 Release actions run on every source control-flow edge that leaves their owner scope, in reverse declaration order; [FN-10] places a guaranteed self-tail transfer's releases before that transfer.
@@ -1271,7 +1290,7 @@ The diagnostic names the function/nominal cycle and the changed argument, with t
 This criterion deliberately rejects some finite permutation cycles. Acyclic expansion is finite and a cycle creates no new instance key; deterministic checking visits each admitted instance. It assumes no behavior laws and uses no fuel.
 
 [FN-7] Program start selects an ordinary function and supplies ordinary arguments [PROG-3]. Its name, signature, result types, written contracts, and source callers obey FN-1 through FN-10 without an entry-specific restriction.
-The compilation unit need not declare a function with any reserved entry name. Selection, argument construction and binding, and interpretation of a normal result belong to the build invocation and do not select source acceptance.
+A module program names its entries in its graph [MOD-9]; a source bundle's build selects its function `main`, and the language reserves no entry name. Selection, argument construction and binding, and interpretation of a normal result belong to the build invocation and do not select source acceptance.
 
 [FN-8] Every source `fn_decl`, generic or nongeneric, and every `fn_sig` may carry one optional `contract_block`. A function formal's block has the same formation rules and constrains bindings under FN-4. Every supplied definition must satisfy the ordinary declared contract; a Whitefoot body is checked under FN-9 and a PRE-1 declaration is supplied under SCOPE-3.
 A present block must contain at least one `requires_clause` or `ensures_clause`; an empty or define-only block is an FN-8 rejection at `contract_block`.
@@ -1363,9 +1382,10 @@ The relation is queried once in the current ProofContext at that return.
 Every query must discharge; the first clause/return failure rejects with no runtime fallback.
 
 Postcondition verification has no summary fixed point.
-Form the concrete ordinary-call graph, its SCCs, and the callee-before-caller condensation. PRE-1 supplied declarations are leaves whose declared relations are already available; source definitions undergo the following body verification.
+Form the concrete ordinary-call graph, its SCCs, and the callee-before-caller condensation. PRE-1 supplied declarations and pending interface declarations [MOD-8] are leaves whose declared relations are already available; source definitions undergo the following body verification.
+The graph treats a call from one module to an instance of another module's generic callable as reaching every function-kind actual that instance was supplied, whether or not its body calls them [MOD-8]; components formed this way only grow, and an edit to that body cannot change which summaries the calling module's proofs may use. Within one module the graph is the calls alone.
 While verifying a component, all same-component S12 summaries are unavailable; previously completed callee components remain available.
-Only after every relation of every inhabited instance in the component succeeds are all its relation summaries published atomically; any failure publishes none.
+Only after every relation of every inhabited instance in the component succeeds are all its relation summaries published atomically; any failure publishes none. Publication is per module: the members one module's check verifies publish their summaries to that module's other proofs once all of them verify, another module's instance never delays it, and composition still requires every member to verify.
 Uninhabited instances contribute no summary.
 Declaration or worklist order and iteration cannot change the result.
 
@@ -1406,7 +1426,7 @@ A `fn_decl` declares one result or an ordered result list of two or more [GRAM-2
 Every ordinal is a datum of every clause, written as that ordinal's binder spelling, and a single-result declaration is the one-ordinal case of this sentence rather than a second rule.
 A result ordinal's declared type is a fragment integer after concrete [FN-2] substitution [FN-9] or a measured type [MSR-1], and which of the two decides what that ordinal supplies: a fragment ordinal is a datum of the clause as its own value, and a measured ordinal is a datum only as a measure member of that ordinal's place.
 A measure member of a result place is instantiated at that ordinal's own destination [ENT-3.S12] — the place the destination names — exactly as a measure member of a formal place is instantiated at the formal's, and is queried at a selected return over the place that return hands back.
-An `ensures_clause` admits a measure member of a result place exactly when that place is the bare result place or is reached through the one field step `inner` of a `Box` result — `result.inner.len`; the construction rows publish the latter for a boxed runtime-capacity shape [OP-13, PRE-1, TYPE-9].
+An `ensures_clause` admits a measure member of a result place exactly when that place is the bare result place or is reached from it through an owned descendant projection [MSR-3] made only of struct-field selections and `Box` `inner` steps — `result.len`, `result.inner.len`, `made.storage.len`; the construction rows publish `result.inner.len` for a boxed runtime-capacity shape [OP-13, PRE-1, TYPE-9]. An enum-payload step admits no such member, because no route selects a variant of an unrouted result.
 
 A routed clause is written `when V(f: r):` or `when b is V(f: r):`, where `b` names the result ordinal the route applies to.
 The ordinal binder may be omitted exactly when one declared ordinal has that route's enum type; when two or more do, the route is ambiguous and the declaration is a hard error citing CALL-4 at the `ensures_clause`, `AmbiguousResultRoute`, carrying the restructuring `name the result ordinal the route applies to: write `when b is V(f: r):``.
@@ -1524,25 +1544,76 @@ An operation's classification is fixed by its table row and attached static obli
 The overlap permissions of [PAR-1, PAR-2] are implementation permissions over an already accepted sequential program, not source obligations in this version: absence of a complete permission derivation retains sequential lowering and never rejects the source.
 If an implementation does select an overlapping lowering, every premise of that permission must be discharged before emission; a failed premise cannot be repaired by a runtime check or partially parallel fallback.
 
-## 11. Programs, closed world
+## 11. Programs and modules
 
-[PROG-1] One closed compilation unit is formed by PROG-2. Every language name is defined within it or by the prelude [PRE-1].
-This version has no source include, import, module, source-path lookup, or separate-compilation form.
+[PROG-1] A program is a module program, whose graph [MOD-1] registers its modules, or a source bundle [PROG-2], which forms one module. Every language name is declared by one of the program's modules or by the prelude [PRE-1].
+There is no source include, external package, glob import, source-path search, dynamic loading or reflection: a module program reads exactly the records its graph registers [MOD-2].
 Build and link supply definitions for ordinary declarations and select the invocation [PROG-3]; implementation language and linkage are not source semantic inputs.
 
-[PROG-2] One compilation unit is one ordered nonempty sequence of logical source records.
+[PROG-2] A source bundle is one ordered nonempty sequence of logical source records.
 Each record contains one logical path and one exact source-byte sequence.
 A logical path is an ASCII relative path made from one or more nonempty components separated by exactly one `/` byte, with no leading, trailing, or repeated `/`; each component contains only ASCII letters, ASCII digits, `.`, `_`, or `-`, and no component is `.` or `..`.
 Path spelling is preserved exactly and compared case-sensitively.
 An empty record sequence, an invalid logical path, or two records with the same logical path is an input-envelope failure, not a source-language rejection.
 Record order is exactly the order in the bound invocation; no path sort, host enumeration order, or other reordering is applied.
 Within that bound unit, a source record is identified by its zero-based ordinal, exact logical path, and exact source bytes.
+A source bundle forms one module, the root module `pkg`, whose every record is an implementation record [MOD-2]: it has no interface record, so no declaration of it is public [MOD-6], and every other module rule applies to it unchanged.
+Its first record may begin with `program no_heap;` [GRAM-2, STOR-8].
 
-[PROG-3] Execution starts by an ordinary call to the build-selected function with arguments matching its ordinary signature. The implementation must establish the arguments' declared types, ownership, and requirements before making that call, exactly as any caller must [FN-1, FN-8].
+[PROG-3] Execution starts by an ordinary call to the build-selected function with arguments matching its ordinary signature: a source bundle's function `main`, or a module program's entry [MOD-9]. The implementation must establish the arguments' declared types, ownership, and requirements before making that call, exactly as any caller must [FN-1, FN-8].
 A program may use the ordinary PRE-1 `Inputs` struct or any other admitted signature; the heap is ambient and has no source spelling [STOR-8].
-A program declares that it uses no heap by writing `program no_heap;` as the first `item` of its first source record [GRAM-2, PROG-2]; what that declaration withdraws is [STOR-8]'s.
+A source bundle declares that it uses no heap by writing `program no_heap;` as the first `item` of its first source record [GRAM-2, PROG-2]; a module program states that requirement on an entry [MOD-9]. What either withdraws is [STOR-8]'s.
 The ordinary call ABI, result transfer, and scope-exit rules apply to both Whitefoot and linked definitions. Implementation engines may wait or schedule internally only while preserving this same boundary. The build interprets returned values and performs any invocation teardown outside the source call; neither operation adds a source effect or changes acceptance.
 Resource unavailability before that call and trusted-computing-base termination remain outside the source outcome guarantee [SCOPE-3].
+
+[MOD-1] A module program is selected by one graph record, `modules.wfg`, whose directory is the package root; no other location, working directory or search selects it.
+The graph record derives `graph_file` [GRAM-2] and passes the lexical, grammar and canonical [FORM-2] stages as every source record does [DIAG-1].
+Each `module_row` registers one module: `pkg` alone registers the root module, and `pkg::a::b` the directory `a/b` below the package root; registering a directory registers none of its ancestors or descendants.
+The row's bracketed list is the module's exact set of direct dependencies, and every dependency is an earlier row, which is what makes the graph acyclic.
+A row that registers an already registered module, a dependency naming the row's own module, a dependency listed twice in one row, and a dependency that no earlier row registers are each a hard error citing MOD-1 at that `module_path`.
+Each `entry_decl` takes a fresh entry name and names one function by a `module_path` whose last component is the function's name and whose other components name its module; a repeated entry name, or an entry whose module is not registered, is a hard error citing MOD-1.
+Written row and dependency order is preserved and never inferred; the meaning of a graph does not depend on it.
+
+[MOD-2] A registered module's records are the file `module.wfm` in its directory, its interface record, and the directory's direct regular files whose names end in `.wf`, its implementation records; a child directory's files belong to no ancestor module.
+The bound unit orders modules by row and each module's interface record before its implementation records, which follow in byte order of their names; a record's logical path is its path below the package root [PROG-2].
+An absent registered directory, a missing `module.wfm`, a symbolic link at the package root or on the path of a module directory or record, a record name that is not a logical path component, and two entries of one directory that differ only in letter case are input-envelope failures, not source-language rejections.
+
+[MOD-3] Each module has one declaration inventory.
+Every top-level declaration of the module's interface and implementation records other than an alias enters it. A declaration of the interface record is visible in every record of the module, and a declaration of an implementation record in every implementation record, independently of record and item order, so the interface closes over its own declarations, the public declarations of the modules it may name and PRE-1 [MOD-8]; local declarations keep their lexical scopes [TYPE-6].
+The inventory declares each spelling once in each domain [TYPE-6], and an interface declaration of a function together with its one definition is one declaration of that function [MOD-7].
+A lowercase top-level declaration whose spelling extends the declaring module's path to the path of a registered module is a hard error citing MOD-3 at the declaration: the two would occupy one qualified name.
+Visibility grants no value, proof or layout: constant dependencies, group expansion, finite instantiation and layout are judged by their own rules [CONST-2, FN-3, FN-6, STOR-6].
+
+[MOD-4] An `alias_decl` is written only in its record's initial alias header, before any other `item`; an alias item after another item is a hard error citing MOD-4 at the alias.
+An alias binds its IDENT or TYPEID, in its own record alone, to the identity its complete `pkg` path names in the alias's module: a lowercase alias binds a registered module, or a function or named const of one; an uppercase alias binds a struct, enum, interface or binding of one, or a variant of a nongeneric enum of one, written as that enum's path followed by the variant TYPEID.
+A path whose registered module the alias's module may not name is a hard error citing [MOD-5] at the alias. Otherwise a path naming nothing an alias of that case binds where the alias is written, or a variant of a generic enum, is a hard error citing MOD-4 at the alias: of another module's declarations an alias binds only public ones, and an alias of an interface record sees what that record sees [MOD-3].
+An alias takes its target's lookup classes and collision domains, and a module alias the lexical-IDENT domain, and it collides as a declaration of its record's scope does [TYPE-6]: with another alias, with a declaration of its module's inventory, with a PRE-1 declaration, and with a local declaration that would shadow it.
+Every use of an alias resolves to its target's own identity. An alias is never public, never another alias's target, and grants no graph edge; an unused alias receives the same checks.
+
+[MOD-5] A qualified `type`, `callee`, construction or destructuring target begins with a module prefix: `pkg`, or a module alias of the record, followed by lowercase path components [GRAM-3, GRAM-5].
+The prefix names the registered module with the resulting path; a prefix naming no registered module, or rooted at an IDENT that is not a module alias of the record, is a hard error citing MOD-5 at the prefix.
+A record may name its own module and the modules its module's graph row lists; naming any other module, by a prefix or an alias, is a hard error citing MOD-5 whatever transitive or ancestral relation connects them.
+The final name resolves in the named module's inventory in the grammar-selected domain [TYPE-6]; a name that inventory does not declare is a hard error citing MOD-5, and so is a declaration of another module that is not public [MOD-6].
+One accessibility rule serves executable code and annotations: every name and field selection in a body, a contract clause or `define`, an invariant, a `use` premise, an effect row and a function-kind formal must be accessible where it is written.
+A private declaration or field is accessible only in its declaring module; a public one also in each module whose graph row lists its declaring module. PRE-1 declarations and members keep their ordinary availability.
+A construction names every field [GRAM-8], so a construction outside the declaring module requires every field to be public and supplies no readonly field [TYPE-2]; a destructuring consume or an `arm` outside it binds only public fields, covering the rest with `..`. Each inaccessible selection, binding or construction is a hard error citing MOD-5 at its `psuffix`, `effect_path`, `fieldbind`, `arm`, `call` or `cvalue`.
+
+[MOD-6] `public` is written only in an interface record, on a top-level declaration, a struct `field` or an enum `vfield`; a declaration or field without it is private to its module, and a public enum's variants are public.
+`public` in an implementation record or a source bundle, and `public` on a field or payload field of a private type, are each a hard error citing MOD-6 at that `item`, `field` or `vfield`; so is `readonly` on a field that is not `public` [TYPE-2].
+A public function's parameter and result types, bounds, effect row, contract clauses and function-kind formals, a public field's type and a public const's type name only declarations and fields its module's clients can access: public declarations of the module, public declarations of its dependencies, PRE-1 declarations, and public fields along every written path [MOD-5]. A name or field selection there that its clients cannot access is a hard error citing MOD-6 at that use, in the declaring module as elsewhere; a private function's contract and row may name its module's private declarations and fields.
+
+[MOD-7] A function item of an interface record is a declaration without a body that ends in its `doc` entry, and a function item of an implementation record or a source bundle writes its body; a function item of any other form is a hard error citing MOD-7 at the `fn_decl`.
+An interface function declaration has at most one definition among its module's implementation records, and the definition repeats the declaration's complete signature and contract without `public`: equal parameter order, names, kinds and types; equal result order, names and types; equal generic order, kinds and bounds; an equal effect row; and equal requires and ensures clauses in written order, compared after resolving every alias to its identity and renaming generic and contract-local binders consistently.
+`doc` entries are not compared, and a `define` whose expression is one atom is erased sharing: a use of it corresponds to that atom written in place, while a `define` of a compound expression corresponds only to a `define` of the same expression at the same position. A definition that differs is a hard error citing MOD-7 at its `fn_decl`.
+A struct, enum, interface, binding or const that an interface record declares has that one definition, used by every record of the module; a declaration of the same name in an implementation record is a redeclaration [TYPE-6].
+
+[MOD-8] A module's source verdict covers every judgment on its records and depends only on them, the graph, the prelude and the interfaces of the modules it may name; it never depends on another module's implementation records.
+An interface function declaration without a definition is pending: callers use its written boundary as they use every callee's [FN-8, FN-9], and it blocks only composition, lowering and publication.
+A program composes when every selected module's verdict holds, every declared function has its definition, every required concrete instance checks [FN-2, FN-6] and every target requirement of its entry holds [MOD-9]. Composition judges the selected modules' verdicts in row order before its own conditions and reports the first rejection. A rejection raised while checking a required concrete instance is reported at its template's source, in the module that declares the template, and names a call that requested the instance.
+
+[MOD-9] A named entry selects one public, ordinary, nongeneric function by its full path, and a build may select any ordinary nongeneric function of a registered module as an unnamed entry; the build calls the selected function under [PROG-3], and an entry naming no such function is a hard error citing MOD-9, at a named entry's `entry_decl`.
+An entry's `no_heap` states the no-heap requirement over that entry's execution closure [STOR-8]; entries of one graph share its modules and proofs and impose no requirement on one another.
+A module program's record never writes `program no_heap`: a `heap_decl` in one is a hard error citing MOD-9 at the `heap_decl`.
 
 ## 12. Diagnostics and checked compilation (toolchain floor)
 
@@ -1617,7 +1688,7 @@ Its coordinate is the complete interval from the first IDENT through the second 
 An allowed suffix would already be one maximal OPNAME token, while a field place cannot be called or given targs.
 This bounded diagnostic window may include already recognized tokens, performs no operation-table or name lookup, consumes nothing, and does not enlarge recognition's two-token lookahead.
 2.
-If source-EBNF provenance reaches or would next enter an `atom` occurrence in `atom_list`, `fieldinit`, an `infix` operand, the subscript offset, or either endpoint of a `for_stmt`, and the two actual tokens at the start of that occurrence are `(IDENT, "(")`, `(IDENT, "::")`, `(OPNAME, "(")`, `(OPNAME, "::")`, `(TYPEID, "(")`, or `(TYPEID, "<")`, the rejection cites [GRAM-9]; in an infix-operand occurrence, a two-token start whose second token is an `infix_op` or `compare_op` token — the forbidden nested-infix start — likewise cites [GRAM-9].
+If source-EBNF provenance reaches or would next enter an `atom` occurrence in `atom_list`, `fieldinit`, an `infix` operand, the subscript offset, or either endpoint of a `for_stmt`, and the two actual tokens at the start of that occurrence are `(IDENT, "(")`, `(IDENT, "::")`, `("pkg", "::")`, `(OPNAME, "(")`, `(OPNAME, "::")`, `(TYPEID, "(")`, `(TYPEID, "<")`, or `(TYPEID, "::")`, the rejection cites [GRAM-9]; in an infix-operand occurrence, a two-token start whose second token is an `infix_op` or `compare_op` token — the forbidden nested-infix start — likewise cites [GRAM-9].
 These are exactly the `call` and constructor `call` starts forbidden in an atom-only position; no name lookup participates.
 Its coordinate is the complete interval from the first through the second token of that forbidden call or construct start.
 3.
@@ -1667,7 +1738,8 @@ An input-envelope failure, resource failure, target-layout failure [STOR-6], com
 After canonical FORM-2 succeeds for every source, semantic diagnostic selection first runs [FN-8]'s contract-presence judgment over every `contract_block`.
 An empty or define-only block uses `SourceNode` at that complete `contract_block`; no declaration, route reservation, or use role inside such a rejected block is classified or counted.
 Grammar already fixes each admitted block's definitions-before-requirements-before-postconditions structure and excludes every statement form, so no second structural-entry filter exists.
-Only complete unit-wide FN-8 admission permits ordinary role classification, declaration inventory, and lexical resolution in their existing order.
+Only complete unit-wide FN-8 admission permits the remaining resolution stages, each complete over the unit before the next begins: the [GRAM-2] heap-declaration position of a source bundle; the module forms, one scan in source order judging [MOD-4]'s alias placement, [MOD-9]'s heap declaration of a module program, [MOD-6]'s `public` and `readonly` placement and [MOD-7]'s function item forms; ordinary role classification and declaration inventory, whose event order also reports each refused alias target [MOD-4, MOD-5]; lexical resolution, including qualified references [MOD-5]; [MOD-6]'s closure of public signatures, in source order of the offending use; and [MOD-7]'s correspondence of each definition with its interface declaration, in definition source order.
+A module program's graph record is formed first [MOD-1]; no module record is read before its graph forms.
 Within an admitted routed `ensures_clause`, the route's leading lookup and [FN-9] route-admission subjudgment occur before lexical resolution of that clause expression; every unrelated block and event retains the ordinary global ordering.
 Poison declarations and partial resolution are forbidden.
 An early FN-8 rejection outranks every inventory or resolution rejection; inventory still outranks resolution even when the later-stage event has an earlier source coordinate.
@@ -3259,11 +3331,11 @@ enum Sign {
 fn sign_of(x: i32) -> result: Sign pure {
   doc "Conditional value produced by returning from branches (canonical for return position).";
   if x < 0_i32 {
-    return Neg();
+    return Sign::Neg();
   } else if x == 0_i32 {
-    return Zero();
+    return Sign::Zero();
   } else {
-    return Pos();
+    return Sign::Pos();
   }
 }
 

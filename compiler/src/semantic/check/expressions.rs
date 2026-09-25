@@ -606,6 +606,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ),
                 );
             };
+            self.reject_inaccessible_field(nominal_id, None, index, name, suffix)?;
             fields
                 .push(u32::try_from(index).map_err(|_| SemanticCompilerFailure::CounterOverflow)?);
             ty = field.ty;
@@ -1974,6 +1975,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
             },
         };
+        // [MOD-5, TYPE-2] a construction names every field [GRAM-8], so
+        // outside the declaring module each must be published, and a
+        // readonly field takes no value there.
+        let (owner, variant) = match constructor {
+            Constructor::Struct(nominal) => (nominal, None),
+            Constructor::Enum { nominal, variant } => (nominal, Some(variant as usize)),
+        };
+        for (index, field) in declared_fields.iter().enumerate() {
+            self.reject_inaccessible_field(owner, variant, index, &field.name, node)?;
+            if field.readonly && self.field_withholds_writes(owner, field) {
+                return self.issue_node(
+                    SemanticRule::Mod5,
+                    node,
+                    SemanticIssueKind::InaccessibleField {
+                        field: field.name.clone(),
+                        reason: "a readonly field takes its value only from its declaring module, so a construction outside that module is refused; use one of its operations",
+                    },
+                );
+            }
+        }
         let written_fields = if let Some(list) = self
             .tree
             .first_child_with(node, Production::FieldinitList)?

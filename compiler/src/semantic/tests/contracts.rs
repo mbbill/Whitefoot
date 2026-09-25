@@ -339,7 +339,7 @@ fn bound_call_rows_keep_formal_and_actual_parameter_namespaces_distinct() {
 }
 
 interface Mixer {
-  fn mix(target: &Pair, alias: &Pair) -> result: unit reads(alias.right), writes(target.left);
+  fn mix(target: &Pair, aliased: &Pair) -> result: unit reads(aliased.right), writes(target.left);
 }
 
 fn mix(destination: &Pair, observer: &Pair) -> result: unit reads(observer.right), writes(destination.left) {
@@ -353,7 +353,7 @@ binding PairMixer : Mixer {
 }
 
 fn apply<interface Mixer>(value: &Pair) -> result: unit reads(value.right), writes(value.left) {
-  return Mixer::mix(target: value, alias: value);
+  return Mixer::mix(target: value, aliased: value);
 }
 
 fn main() -> status: ExitStatus pure {
@@ -373,7 +373,7 @@ fn main() -> status: ExitStatus pure {
     // overlap its field write. The actual uses different binder names, so
     // this also guards declaration-identity rebasing at the retained edge.
     assert_behavior_rule(
-        &source.replace("reads(alias.right)", "reads(alias)"),
+        &source.replace("reads(aliased.right)", "reads(aliased)"),
         SemanticRule::Eff5,
     );
 }

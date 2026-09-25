@@ -9,7 +9,8 @@ that measure, and the endpoint paragraph confined the subscript admission to
 measure places. A writer's own readonly field reached through a subscript,
 such as `deref(nodes)[i].count` in an index-based tree, was therefore no term:
 it could not bound a counted loop, appear in a `requires`, or be copied with a
-`let` equal to its source.
+`let` equal to its source. Specification v0.70, which added modules, left these
+rules unchanged, and this change lands as v0.71.
 
 This investigation decides, from the kill semantics and the index-based tree
 and layout use cases, whether that field should be a term, and bounds what the
@@ -186,14 +187,14 @@ restriction is kept exactly where it is principled: an offset must itself be
 something whose changes the fact system tracks, a clause (a) term or a
 constant, because a term dies only through its support and an offset's support
 is part of it. A write to `idx[0]` changes which element `table[idx[0]]`
-selects, and no term records `idx[0]` as support. So v0.70 states: every offset
+selects, and no term records `idx[0]` as support. So v0.71 states: every offset
 of a clause (b) place is a clause (a) or clause (c) term; a place with any other
 offset is no term; an implementation that cannot represent an admitted offset
 reports the place as unsupported [DIAG-1].
 
 Observable before and after:
 
-| program | v0.69 compiler | v0.70 |
+| program | v0.69 compiler | v0.71 |
 | --- | --- | --- |
 | `requires k < deref(table)[deref(idx)[0_u64]].len` | unsupported | FN-8 rejection (`fn8-neg-element-offset-in-clause-place`) |
 | endpoint `table[idx[0_u64]].len` | OP-4 at the offset | ENT-2 rejection |
@@ -209,7 +210,7 @@ rule non-recursive and is a recorded follow-up.
 "A term is exactly one of" needs the clauses to be disjoint. v0.69's clause (b)
 began "a place whose final step selects a readonly field", which every
 unsubscripted readonly field and every unsubscripted measure such as `run.len`
-also is under clause (a). v0.70 separates them by subscripts alone: clause (a)
+also is under clause (a). v0.71 separates them by subscripts alone: clause (a)
 has none, clause (b) has at least one. An unsubscripted measure and a range's
 `len` are clause (a) tracked places, whose support (the resolved place, that is
 the descriptor word) is what [MSR-2] already gives a measure, so no fact
