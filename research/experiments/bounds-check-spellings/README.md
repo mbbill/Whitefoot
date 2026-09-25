@@ -28,8 +28,9 @@ what does that compare lead to, and which spellings that remove it need
 
 ## Method
 
-[`spellings.rs`](spellings.rs) holds ten spellings, `s1` to `s10`, each a
-`#[no_mangle]` function so that its loop stays a separate symbol.
+[`spellings.rs`](spellings.rs) holds eleven spellings, `s1` to `s11`, each a
+`#[no_mangle]` function so that its loop stays a separate symbol. `s1` to `s9`
+keep the loop's shape; `s10` and `s11` change the algorithm.
 [`squeeze.wf`](squeeze.wf) holds the README's Whitefoot function and a `main`
 that squeezes `" h i "` to `"hi"` and exits 0 only when the count and both kept
 bytes are right; `wf_squeeze` has external linkage in the emitted module, so
@@ -55,7 +56,8 @@ store index, with the buffer length.
 The two optimization levels give the same answer for every spelling. `-C
 opt-level=3` emits the same code as `-C opt-level=2` for `s1` to `s7`; in
 `s8`, `s9` and `s10` it duplicates one byte test (`cmpb $32`) of the unrolled
-loop and adds no other compare.
+loop and adds no other compare, and in `s11` it duplicates the block that
+clamps the copy length before `memcpy`.
 
 | Function | Spelling | Compare against the length in the loop | Where the compare leads | Needs `unsafe` |
 |---|---|---|---|---|
@@ -69,6 +71,7 @@ loop and adds no other compare.
 | `s8_unsafe_unchecked` | `unsafe { *buf.get_unchecked_mut(kept) = b }` | no | none | yes |
 | `s9_unsafe_assume` | `unsafe { std::hint::assert_unchecked(kept <= i) }` | no | none | yes |
 | `s10_vec_retain` | `v.retain(\|&b\| b != b' ')` on `&mut Vec<u8>` | no | none | no |
+| `s11_filter_copy_back` | `collect` the non-space bytes into a new `Vec<u8>`, then `zip` it with `buf.iter_mut()` | no | none | no |
 | `wf_squeeze` | Whitefoot, `invariant behind: kept <= i` | no | none | no |
 
 The key instructions, from `spellings-O2.s` and `squeeze.s`, with comments
@@ -155,6 +158,13 @@ the proof leaves no check to optimize away, and `kept + 1` is emitted as
 `Vec::retain` (`s10`) first scans to the first space, then moves the kept
 bytes down with no compare of the write index; only an owned `Vec` has it, and
 a `&mut [u8]` borrowed from a caller has no `retain`.
+
+`s11` works on the borrowed slice by giving up the single in-place pass. It
+allocates a vector (`__rust_alloc`, growing it through `reserve` as bytes are
+kept), copies it back with one `memcpy` whose length is the smaller of the two
+lengths (`cmpq`, `cmovbq`), and frees it. No index is compared with the
+length, but the function allocates, reads the kept bytes twice, and has a path
+for a failed allocation (`handle_error`) that the in-place loops do not have.
 
 Without its invariant the Whitefoot function is rejected. Canonical layout
 puts a loop header without an invariant on one line, so the header becomes
