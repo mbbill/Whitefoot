@@ -68,7 +68,7 @@ fn bound_components(operand: Option<TermId>, minimum: i128, maximum: i128) -> Ve
     ]
 }
 
-impl Analyzer<'_, '_> {
+impl Reasoning<'_, '_, '_> {
     pub(super) fn conversion_goal_normalization(
         &mut self,
         expression: &GoalExpression,
@@ -77,7 +77,8 @@ impl Analyzer<'_, '_> {
         let constant = if source.converts_totally_to(destination) {
             Some(true)
         } else {
-            self.conversion_goal_constant(operand)
+            self.input
+                .conversion_goal_constant(operand)
                 .and_then(|value| constant_domain(source, destination, value))
         };
         if let Some(defined) = constant {
@@ -98,7 +99,9 @@ impl Analyzer<'_, '_> {
                 .collect(),
         ))
     }
+}
 
+impl Input<'_, '_> {
     fn conversion_goal_constant<'a>(
         &'a self,
         operand: &'a GoalExpression,
@@ -110,13 +113,15 @@ impl Analyzer<'_, '_> {
                 projections,
                 ty,
             }) if projections.is_empty() => {
-                let value = &self.input.context.constant(*declaration)?.value;
+                let value = &self.context.constant(*declaration)?.value;
                 (value.ty() == *ty).then_some(value)
             }
             _ => None,
         }
     }
+}
 
+impl Judging<'_, '_, '_> {
     pub(super) fn judge_conversion_domain_obligation(
         &mut self,
         source: CheckedNumericType,
@@ -134,19 +139,27 @@ impl Analyzer<'_, '_> {
             type_arguments: vec![source.ty(), destination.ty()],
             const_arguments: Vec::new(),
             result: CheckedType::Bool,
-            arguments: vec![self.obligation_goal_operand(site, 0, operand, &state.facts)],
+            arguments: vec![self.reasoning().obligation_goal_operand(
+                site,
+                0,
+                operand,
+                &state.facts,
+            )],
         };
         let operand_term = self
+            .reasoning()
             .measure_operand(operand)
-            .or_else(|| self.read_operand(operand));
+            .or_else(|| self.reasoning().read_operand(operand));
         let components = domain_interval(source, destination)
             .map_or_else(Vec::new, |(minimum, maximum)| {
                 bound_components(operand_term, minimum, maximum)
             });
         let candidate_atom_start = self.vocabulary.affine_atoms.len();
         let mut prepared = state.affine.clone();
-        let image = self.affine_pre_domain_form(operand, &mut prepared);
-        let outcome = self.prove(
+        let image = self
+            .reasoning()
+            .affine_pre_domain_form(operand, &mut prepared);
+        let outcome = self.reasoning().prove(
             ProofContext::new(&state.facts, &prepared),
             ProofGoal::ConversionDomain {
                 canonical: &canonical,
@@ -168,7 +181,7 @@ impl Analyzer<'_, '_> {
                 root,
             );
         }
-        let residual = (!discharged).then(|| self.render_concrete_goal(&canonical));
+        let residual = (!discharged).then(|| self.input.render_concrete_goal(&canonical));
         self.output.obligations.push(ObligationOutcome {
             node_path: site.clone(),
             family: ObligationFamily::ConversionDomain,
@@ -187,7 +200,9 @@ impl Analyzer<'_, '_> {
             range_partitions: Vec::new(),
         });
     }
+}
 
+impl Reasoning<'_, '_, '_> {
     pub(super) fn prove_conversion_domain(
         &mut self,
         context: ProofContext<'_>,
@@ -248,8 +263,8 @@ impl Analyzer<'_, '_> {
         let components = bound_components(operand, minimum, maximum);
         let affine = image.and_then(|value| {
             Some([
-                Self::affine_less_equal(value, &AffineForm::constant(maximum))?,
-                Self::affine_less_equal(&AffineForm::constant(minimum), value)?,
+                affine_less_equal(value, &AffineForm::constant(maximum))?,
+                affine_less_equal(&AffineForm::constant(minimum), value)?,
             ])
         });
         let mut parents = Vec::with_capacity(2);

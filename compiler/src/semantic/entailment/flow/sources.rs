@@ -33,7 +33,10 @@ use super::super::{
     CountedEqualityDerivation, CountedProofPoint, RemainderEndpoint, S7Derivation,
     S7DerivationKind, S7Subject, ShiftOneIdentity,
 };
-use super::{Analyzer, ArmFacts, ProofFlowState};
+use super::{
+    Analyzer, ArmFacts, Input, Judging, ProofFlowState, Reasoning, Vocabulary, array_root_place,
+    container_root_path, expression_node_path, is_holder,
+};
 /// Which term one evaluated value's [ENT-3] image is established on: the
 /// place a `let` binder introduces, the compiler-owned commit value of one
 /// `set` occurrence, or a checked integer conversion's private success
@@ -73,7 +76,7 @@ pub(super) struct CountedPreheader {
     binder_eq_lower_capture: CountedEqualityDerivation,
 }
 
-impl Analyzer<'_, '_> {
+impl Reasoning<'_, '_, '_> {
     // ------------------------------------------------------------------
     // S11 counted-range structural facts
     // ------------------------------------------------------------------
@@ -147,55 +150,56 @@ impl Analyzer<'_, '_> {
             upper_source,
         }
     }
+}
 
-    /// Captures the three once-only S11 equality roots from the already
-    /// materialized post-capture state. This does not close or walk again.
-    pub(super) fn capture_counted_preheader(
-        &self,
-        terms: CountedTerms,
-        state: &FactState,
-    ) -> CountedPreheader {
-        let equality = |left: TermId, right: TermId| {
-            let forward = Relation::Bound {
+/// Captures the three once-only S11 equality roots from the already
+/// materialized post-capture state. This does not close or walk again.
+pub(super) fn capture_counted_preheader(
+    terms: CountedTerms,
+    state: &FactState,
+) -> CountedPreheader {
+    let equality = |left: TermId, right: TermId| {
+        let forward = Relation::Bound {
+            left,
+            right,
+            bound: 0,
+        };
+        let reverse = Relation::Bound {
+            left: right,
+            right: left,
+            bound: 0,
+        };
+        CountedEqualityDerivation {
+            relation: Relation::Equal {
                 left,
                 right,
-                bound: 0,
-            };
-            let reverse = Relation::Bound {
-                left: right,
-                right: left,
-                bound: 0,
-            };
-            CountedEqualityDerivation {
-                relation: Relation::Equal {
-                    left,
-                    right,
-                    difference: 0,
-                },
-                forward: CountedAtomicDerivation {
-                    relation: forward,
-                    proof_point: CountedProofPoint::PreheaderSnapshot,
-                    parent: state
-                        .bound_parent(left, right, 0)
-                        .expect("materialized S11 equality must retain its forward parent"),
-                },
-                reverse: CountedAtomicDerivation {
-                    relation: reverse,
-                    proof_point: CountedProofPoint::PreheaderSnapshot,
-                    parent: state
-                        .bound_parent(right, left, 0)
-                        .expect("materialized S11 equality must retain its reverse parent"),
-                },
-            }
-        };
-        CountedPreheader {
-            lower_capture_eq_endpoint: equality(terms.lower, terms.lower_source),
-            upper_capture_eq_endpoint: equality(terms.upper, terms.upper_source),
-            binder_eq_lower_capture: equality(terms.binder, terms.lower),
-            terms,
+                difference: 0,
+            },
+            forward: CountedAtomicDerivation {
+                relation: forward,
+                proof_point: CountedProofPoint::PreheaderSnapshot,
+                parent: state
+                    .bound_parent(left, right, 0)
+                    .expect("materialized S11 equality must retain its forward parent"),
+            },
+            reverse: CountedAtomicDerivation {
+                relation: reverse,
+                proof_point: CountedProofPoint::PreheaderSnapshot,
+                parent: state
+                    .bound_parent(right, left, 0)
+                    .expect("materialized S11 equality must retain its reverse parent"),
+            },
         }
+    };
+    CountedPreheader {
+        lower_capture_eq_endpoint: equality(terms.lower, terms.lower_source),
+        upper_capture_eq_endpoint: equality(terms.upper, terms.upper_source),
+        binder_eq_lower_capture: equality(terms.binder, terms.lower),
+        terms,
     }
+}
 
+impl Vocabulary {
     /// Adds exactly S11's two facts on an executed true header edge.
     pub(super) fn establish_counted_body_entry(
         &mut self,
@@ -213,7 +217,7 @@ impl Analyzer<'_, '_> {
             counted.terms.lower,
             counted.terms.binder,
             0,
-            &mut self.vocabulary.derivations,
+            &mut self.derivations,
             event,
         );
         let upper_relation = Relation::Bound {
@@ -225,7 +229,7 @@ impl Analyzer<'_, '_> {
             counted.terms.binder,
             counted.terms.upper,
             -1,
-            &mut self.vocabulary.derivations,
+            &mut self.derivations,
             event,
         );
         CountedDerivationSet {
@@ -251,7 +255,9 @@ impl Analyzer<'_, '_> {
             },
         }
     }
+}
 
+impl Judging<'_, '_, '_> {
     // ------------------------------------------------------------------
     // S4 requires facts
     // ------------------------------------------------------------------
@@ -264,10 +270,10 @@ impl Analyzer<'_, '_> {
         state: &mut FactState,
         event: FlowEventId,
     ) {
-        let Some(goal) = self.body_requirement_goal(requirement) else {
+        let Some(goal) = self.input.body_requirement_goal(requirement) else {
             return;
         };
-        let goal = self.intern_goal_expression(goal);
+        let goal = self.reasoning().intern_goal_expression(goal);
         state.establish_goal(
             goal,
             super::super::state::GoalSign::Positive,
@@ -278,7 +284,7 @@ impl Analyzer<'_, '_> {
             state.establish(&relation, &mut self.vocabulary.derivations, event);
         }
         // [ENT-3] Signed Boolean decomposition of the established body goal.
-        self.establish_boolean_decomposition(
+        self.reasoning().establish_boolean_decomposition(
             goal,
             super::super::state::GoalSign::Positive,
             state,
@@ -286,7 +292,9 @@ impl Analyzer<'_, '_> {
         );
         self.record_boolean_decomposition(goal, super::super::state::GoalSign::Positive, state);
     }
+}
 
+impl Analyzer<'_, '_> {
     // ------------------------------------------------------------------
     // Establishment of one evaluated value's image: S5, S6, S7, S9
     // ------------------------------------------------------------------
@@ -309,29 +317,46 @@ impl Analyzer<'_, '_> {
         // runs beside the mutually exclusive image rules below instead of
         // consuming the value from them.
         self.establish_product_interval(node_path, destination, value, state, event);
-        if self.establish_length_facts(node_path, destination, value, state, event) {
-            return None;
-        }
-        if self.establish_element_range(node_path, destination, value, state, event) {
-            return None;
-        }
-        if let Some(image) =
-            self.establish_unsigned_division_bound(node_path, destination, value, state, event)
+        if self
+            .reasoning()
+            .establish_length_facts(node_path, destination, value, state, event)
         {
+            return None;
+        }
+        if self
+            .reasoning()
+            .establish_element_range(node_path, destination, value, state, event)
+        {
+            return None;
+        }
+        if let Some(image) = self.judging().establish_unsigned_division_bound(
+            node_path,
+            destination,
+            value,
+            state,
+            event,
+        ) {
             return Some(image);
         }
-        if self.establish_offset_fact(node_path, destination, value, state, event) {
+        if self
+            .judging()
+            .establish_offset_fact(node_path, destination, value, state, event)
+        {
             return None;
         }
         if let ValueImage::Binding(binding) = destination {
             // Outcome origins are keyed by the binding a `match` can name;
             // a commit value is unnameable and carries none.
-            self.record_outcome_origin(binding, value, state);
+            self.reasoning()
+                .record_outcome_origin(binding, value, state);
         }
-        self.establish_copy_fact(node_path, destination, value, state, event);
+        self.reasoning()
+            .establish_copy_fact(node_path, destination, value, state, event);
         None
     }
+}
 
+impl Vocabulary {
     fn binding_event(
         &mut self,
         event: &mut Option<(FlowEventKind, FlowEventId)>,
@@ -362,7 +387,7 @@ impl Analyzer<'_, '_> {
             ResolvedPlace::spelled(PlaceRoot::Binding(binding), false, fields.to_vec()),
             fragment,
         );
-        Some(self.vocabulary.terms.intern(kind))
+        Some(self.terms.intern(kind))
     }
 
     /// [ENT-3.S5] admits direct scalar places, including fields and Box
@@ -380,12 +405,8 @@ impl Analyzer<'_, '_> {
                     .any(|step| matches!(step, CheckedPlaceStep::Subscript(_))) =>
             {
                 let fragment = fragment_type(target.ty)?;
-                let place = self.container_root_path(target);
-                Some(
-                    self.vocabulary
-                        .terms
-                        .intern(TermKind::Place(place, fragment)),
-                )
+                let place = container_root_path(target);
+                Some(self.terms.intern(TermKind::Place(place, fragment)))
             }
             _ => None,
         }
@@ -404,16 +425,18 @@ impl Analyzer<'_, '_> {
             ValueImage::ResultPayload(payload) => Some(payload),
         }
     }
+}
 
-    /// The retained identity of the value one S7 image was established on.
-    fn s7_subject(destination: ValueImage<'_>) -> S7Subject {
-        match destination {
-            ValueImage::Binding(binding) => S7Subject::Binding(binding),
-            ValueImage::Commit(node_path) => S7Subject::Commit(node_path.clone()),
-            ValueImage::ResultPayload(payload) => S7Subject::ResultPayload(payload),
-        }
+/// The retained identity of the value one S7 image was established on.
+fn s7_subject(destination: ValueImage<'_>) -> S7Subject {
+    match destination {
+        ValueImage::Binding(binding) => S7Subject::Binding(binding),
+        ValueImage::Commit(node_path) => S7Subject::Commit(node_path.clone()),
+        ValueImage::ResultPayload(payload) => S7Subject::ResultPayload(payload),
     }
+}
 
+impl Vocabulary {
     /// The commit-value term of one `set` occurrence, interned on first use.
     /// Its identity is the statement's NodePath and the value's fragment
     /// type, so every source establishing at that one occurrence names one
@@ -423,8 +446,8 @@ impl Analyzer<'_, '_> {
         node_path: &crate::NodePath,
         value: &CheckedExpression,
     ) -> Option<TermId> {
-        let kind = Self::commit_value_kind(node_path, value)?;
-        Some(self.vocabulary.terms.intern(kind))
+        let kind = commit_value_kind(node_path, value)?;
+        Some(self.terms.intern(kind))
     }
 
     /// The same term when a source above already formed it, and nothing when
@@ -435,22 +458,19 @@ impl Analyzer<'_, '_> {
         node_path: &crate::NodePath,
         value: &CheckedExpression,
     ) -> Option<TermId> {
-        self.vocabulary
-            .terms
-            .interned(&Self::commit_value_kind(node_path, value)?)
+        self.terms.interned(&commit_value_kind(node_path, value)?)
     }
+}
 
-    fn commit_value_kind(
-        node_path: &crate::NodePath,
-        value: &CheckedExpression,
-    ) -> Option<TermKind> {
-        let ty = fragment_type(value.ty())?;
-        Some(TermKind::CommitValue {
-            commit_path: node_path.components().to_vec(),
-            ty,
-        })
-    }
+fn commit_value_kind(node_path: &crate::NodePath, value: &CheckedExpression) -> Option<TermKind> {
+    let ty = fragment_type(value.ty())?;
+    Some(TermKind::CommitValue {
+        commit_path: node_path.components().to_vec(),
+        ty,
+    })
+}
 
+impl Reasoning<'_, '_, '_> {
     /// The value image shared by an ordinary let, a direct-place SET-1
     /// commit and a counted endpoint capture [FN-1]. Every admitted exact
     /// integer conversion preserves its input's mathematical value; checked
@@ -469,7 +489,9 @@ impl Analyzer<'_, '_> {
                 .or_else(|| self.read_operand(value)),
         }
     }
+}
 
+impl Vocabulary {
     fn establish_copy_equality(
         &mut self,
         node_path: &crate::NodePath,
@@ -485,17 +507,19 @@ impl Analyzer<'_, '_> {
                 right: source,
                 difference: 0,
             },
-            &mut self.vocabulary.derivations,
+            &mut self.derivations,
             event,
         );
     }
+}
 
-    /// The place term a binding names directly, for length facts over an
-    /// allocated or borrowed collection.
-    pub(super) fn bound_place(&self, binding: BindingId) -> ResolvedPlace {
-        ResolvedPlace::binding(binding)
-    }
+/// The place term a binding names directly, for length facts over an
+/// allocated or borrowed collection.
+pub(super) fn bound_place(binding: BindingId) -> ResolvedPlace {
+    ResolvedPlace::binding(binding)
+}
 
+impl Reasoning<'_, '_, '_> {
     /// [ENT-3] S5: `let x: T = lit;` establishes x = value(lit);
     /// `let x: T = p;` with p a term establishes x = p; and
     /// `let y: Dst = cvt::<Src, Dst>(p);` after its [OP-6] domain proof
@@ -517,7 +541,7 @@ impl Analyzer<'_, '_> {
         value: &CheckedExpression,
         state: &mut ProofFlowState,
     ) -> Option<MeasureCarry> {
-        let source = self.placement_source_place(value)?;
+        let source = self.input.placement_source_place(value)?;
         self.mint_measure_datums(
             node_path,
             ordinal,
@@ -527,7 +551,9 @@ impl Analyzer<'_, '_> {
             state,
         )
     }
+}
 
+impl Input<'_, '_> {
     /// A placement reads the exact checked source place, including a moved
     /// field or Box content. Computed values and calls have their own fact
     /// sources and are not placements [MSR-3].
@@ -556,7 +582,9 @@ impl Analyzer<'_, '_> {
         }))
         .then_some(source)
     }
+}
 
+impl Reasoning<'_, '_, '_> {
     /// [MSR-3] the first half of every placement below the entry and the
     /// call: at the point before the statement's own kills, one immutable
     /// datum per [MSR-1] measure of the source place, established equal to
@@ -589,7 +617,9 @@ impl Analyzer<'_, '_> {
             let constant = super::type_constant(measured_type);
             let mut place = source.clone();
             place.path.extend(path.iter().copied());
-            let event = self.proof_event(FlowEventKind::S5, Some(node_path));
+            let event = self
+                .vocabulary
+                .proof_event(FlowEventKind::S5, Some(node_path));
             let mut datums = Vec::with_capacity(4);
             for measure in MEASURES {
                 let live = self.place_measure_term(measure, place.clone(), measured, constant);
@@ -600,7 +630,8 @@ impl Analyzer<'_, '_> {
                     placement,
                     measure,
                 });
-                self.adopt_measure_atom(datum, live, &state.affine);
+                self.vocabulary
+                    .adopt_measure_atom(datum, live, &state.affine);
                 state.facts.establish(
                     &Relation::Equal {
                         left: datum,
@@ -638,7 +669,10 @@ impl Analyzer<'_, '_> {
         ty: CheckedType,
     ) -> Vec<(Vec<PlaceStep>, CheckedType)> {
         let mut found = Vec::new();
-        if !self.collect_measured_paths(ty, &mut Vec::new(), &mut Vec::new(), &mut found) {
+        if !self
+            .input
+            .collect_measured_paths(ty, &mut Vec::new(), &mut Vec::new(), &mut found)
+        {
             return found;
         }
         let source = source.clone().term_identity();
@@ -656,7 +690,7 @@ impl Analyzer<'_, '_> {
             // No alias resolution or overlap test turns a possible target
             // into this source. The suffix must select concrete owned
             // fields; an unknown descendant cover is never such a step.
-            let Some(selected) = self.measured_path_type(ty, path) else {
+            let Some(selected) = self.input.measured_path_type(ty, path) else {
                 continue;
             };
             if !found.iter().any(|(existing, _)| existing == path) {
@@ -665,7 +699,9 @@ impl Analyzer<'_, '_> {
         }
         found
     }
+}
 
+impl Input<'_, '_> {
     /// Returns whether a nominal cycle left paths for the finite source-term
     /// inventory to supply. Acyclic operands need no registry scan.
     fn collect_measured_paths(
@@ -683,7 +719,6 @@ impl Analyzer<'_, '_> {
             return false;
         };
         let Some(kind) = self
-            .input
             .context
             .nominals
             .get(nominal.0 as usize)
@@ -740,10 +775,7 @@ impl Analyzer<'_, '_> {
             let CheckedType::Nominal(nominal) = ty else {
                 return None;
             };
-            ty = match (
-                &self.input.context.nominals.get(nominal.0 as usize)?.kind,
-                step,
-            ) {
+            ty = match (&self.context.nominals.get(nominal.0 as usize)?.kind, step) {
                 (CheckedNominalKind::Struct { fields }, PlaceStep::Field(field)) => {
                     fields.get(*field as usize)?.ty
                 }
@@ -761,7 +793,9 @@ impl Analyzer<'_, '_> {
         }
         super::measured_kind(ty).map(|_| ty)
     }
+}
 
+impl Reasoning<'_, '_, '_> {
     /// [MSR-3] the rebind placement, second half: after the transfer, the
     /// destination binding's own measures equal the datums minted before it.
     pub(super) fn establish_rebind_datums(
@@ -771,7 +805,7 @@ impl Analyzer<'_, '_> {
         rebind: &MeasureCarry,
         state: &mut FactState,
     ) {
-        let target = self.bound_place(binding);
+        let target = bound_place(binding);
         self.establish_measure_datums(node_path, target, rebind, state);
     }
 
@@ -785,7 +819,9 @@ impl Analyzer<'_, '_> {
         carry: &MeasureCarry,
         state: &mut FactState,
     ) {
-        let event = self.proof_event(FlowEventKind::S5, Some(node_path));
+        let event = self
+            .vocabulary
+            .proof_event(FlowEventKind::S5, Some(node_path));
         for carried in &carry.carried {
             let mut place = destination.clone();
             place.path.extend(carried.path.iter().copied());
@@ -820,12 +856,15 @@ impl Analyzer<'_, '_> {
         let Some(source) = self.copy_source(value) else {
             return;
         };
-        let Some(bound) = self.bound_term(destination, value) else {
+        let Some(bound) = self.vocabulary.bound_term(destination, value) else {
             return;
         };
-        self.establish_copy_equality(node_path, bound, source, state, event);
+        self.vocabulary
+            .establish_copy_equality(node_path, bound, source, state, event);
     }
+}
 
+impl Vocabulary {
     /// [ENT-3] S5 at a SET-1 value commit. The caller has already evaluated
     /// the right-hand side to the `commit` term above and killed every fact
     /// about the old target value; this equality names that evaluated value,
@@ -846,7 +885,9 @@ impl Analyzer<'_, '_> {
         };
         self.establish_copy_equality(node_path, destination, commit, state, event);
     }
+}
 
+impl Reasoning<'_, '_, '_> {
     /// [ENT-3] S6: `len::<T>(P)` for a tracked P establishes m = len_of(P); and
     /// `slice_of…(&'r P)` for a tracked P establishes len_of(s) = len_of(P).
     ///
@@ -863,8 +904,10 @@ impl Analyzer<'_, '_> {
     ) -> bool {
         match self.measure_operand(value) {
             Some(source_length) => {
-                if let Some(bound) = self.bound_term(destination, value) {
-                    let event = self.binding_event(event, FlowEventKind::S6, node_path);
+                if let Some(bound) = self.vocabulary.bound_term(destination, value) {
+                    let event = self
+                        .vocabulary
+                        .binding_event(event, FlowEventKind::S6, node_path);
                     state.establish(
                         &Relation::Equal {
                             left: bound,
@@ -895,7 +938,7 @@ impl Analyzer<'_, '_> {
                 length,
             } => (
                 *measure,
-                self.array_root_place(root),
+                array_root_place(root),
                 MeasuredKind::ConstantArray,
                 Some(*length),
             ),
@@ -915,7 +958,7 @@ impl Analyzer<'_, '_> {
                 *measure,
                 ResolvedPlace::spelled(
                     PlaceRoot::Binding(root.binding),
-                    self.is_holder(root.binding),
+                    is_holder(root.binding),
                     Vec::new(),
                 ),
                 MeasuredKind::Range,
@@ -929,7 +972,7 @@ impl Analyzer<'_, '_> {
             {
                 return Some(self.place_measure_term(
                     *measure,
-                    self.container_root_path(root),
+                    container_root_path(root),
                     root.measured()?,
                     root.type_constant(),
                 ));
@@ -948,7 +991,9 @@ impl Analyzer<'_, '_> {
         };
         Some(self.place_measure_term(measure, place, measured, array_length))
     }
+}
 
+impl Judging<'_, '_, '_> {
     /// [ENT-3] S7 constant-offset arithmetic at a `let` binding.
     ///
     /// `iadd.wrap::<T>(p, k)` and `isub.wrap::<T>(p, k)` with a constant k
@@ -971,10 +1016,10 @@ impl Analyzer<'_, '_> {
         {
             return true;
         }
-        let Some((base, delta, exact)) = self.constant_offset(value) else {
+        let Some((base, delta, exact)) = self.reasoning().constant_offset(value) else {
             return false;
         };
-        let Some(bound) = self.bound_term(destination, value) else {
+        let Some(bound) = self.vocabulary.bound_term(destination, value) else {
             return true;
         };
         if !exact {
@@ -996,7 +1041,9 @@ impl Analyzer<'_, '_> {
                 return true;
             }
         }
-        let event = self.binding_event(event, FlowEventKind::S7, node_path);
+        let event = self
+            .vocabulary
+            .binding_event(event, FlowEventKind::S7, node_path);
         establish_shifted(
             state,
             bound,
@@ -1042,10 +1089,12 @@ impl Analyzer<'_, '_> {
             }
             _ => None,
         };
-        let result = self.bound_term(destination, value)?;
-        let dividend = self.read_operand(dividend)?;
-        let divisor = self.read_operand(divisor)?;
-        let event = self.binding_event(shared_event, FlowEventKind::S7, node_path);
+        let result = self.vocabulary.bound_term(destination, value)?;
+        let dividend = self.reasoning().read_operand(dividend)?;
+        let divisor = self.reasoning().read_operand(divisor)?;
+        let event = self
+            .vocabulary
+            .binding_event(shared_event, FlowEventKind::S7, node_path);
         let relation = Relation::Bound {
             left: result,
             right: dividend,
@@ -1061,7 +1110,7 @@ impl Analyzer<'_, '_> {
         self.retain_s7_derivation(S7Derivation {
             source: node_path.clone(),
             row: *row,
-            subject: Self::s7_subject(destination),
+            subject: s7_subject(destination),
             kind: S7DerivationKind::UnsignedDivisionBound { dividend, divisor },
             relation,
             event,
@@ -1098,13 +1147,15 @@ impl Analyzer<'_, '_> {
         let [_dividend, divisor] = arguments.as_slice() else {
             return true;
         };
-        let Some(result) = self.bound_term(destination, value) else {
+        let Some(result) = self.vocabulary.bound_term(destination, value) else {
             return true;
         };
-        let Some(divisor) = self.read_operand(divisor) else {
+        let Some(divisor) = self.reasoning().read_operand(divisor) else {
             return true;
         };
-        let event = self.binding_event(shared_event, FlowEventKind::S7, node_path);
+        let event = self
+            .vocabulary
+            .binding_event(shared_event, FlowEventKind::S7, node_path);
         if !row.signed() {
             let relation = Relation::Bound {
                 left: result,
@@ -1121,7 +1172,7 @@ impl Analyzer<'_, '_> {
             self.retain_s7_derivation(S7Derivation {
                 source: node_path.clone(),
                 row: *row,
-                subject: Self::s7_subject(destination),
+                subject: s7_subject(destination),
                 kind: S7DerivationKind::UnsignedRemainderBound { divisor },
                 relation,
                 event,
@@ -1131,6 +1182,7 @@ impl Analyzer<'_, '_> {
         }
 
         let Some(divisor_value) = self
+            .vocabulary
             .constant_term_value(divisor)
             .filter(|value| *value != 0)
         else {
@@ -1161,7 +1213,7 @@ impl Analyzer<'_, '_> {
             self.retain_s7_derivation(S7Derivation {
                 source: node_path.clone(),
                 row: *row,
-                subject: Self::s7_subject(destination),
+                subject: s7_subject(destination),
                 kind: S7DerivationKind::SignedRemainderBound {
                     divisor: divisor_value,
                     endpoint,
@@ -1194,14 +1246,16 @@ impl Analyzer<'_, '_> {
         if row.signed() {
             return true;
         }
-        let Some(result) = self.bound_term(destination, value) else {
+        let Some(result) = self.vocabulary.bound_term(destination, value) else {
             return true;
         };
         for (operand, argument) in arguments.iter().enumerate() {
-            let Some(admitted) = self.read_operand(argument) else {
+            let Some(admitted) = self.reasoning().read_operand(argument) else {
                 continue;
             };
-            let event = self.binding_event(shared_event, FlowEventKind::S7, node_path);
+            let event = self
+                .vocabulary
+                .binding_event(shared_event, FlowEventKind::S7, node_path);
             let relation = Relation::Bound {
                 left: result,
                 right: admitted,
@@ -1217,7 +1271,7 @@ impl Analyzer<'_, '_> {
             self.retain_s7_derivation(S7Derivation {
                 source: node_path.clone(),
                 row: *row,
-                subject: Self::s7_subject(destination),
+                subject: s7_subject(destination),
                 kind: S7DerivationKind::BitAndBound {
                     operand: u8::try_from(operand)
                         .expect("integer-operation operand ordinal exceeds u8"),
@@ -1281,10 +1335,12 @@ impl Analyzer<'_, '_> {
             CheckedIntegerArgumentSource::GenericNumericIdentity
             | CheckedIntegerArgumentSource::Other => return true,
         };
-        let Some(result) = self.bound_term(destination, value) else {
+        let Some(result) = self.vocabulary.bound_term(destination, value) else {
             return true;
         };
-        let event = self.binding_event(shared_event, FlowEventKind::S7, node_path);
+        let event = self
+            .vocabulary
+            .binding_event(shared_event, FlowEventKind::S7, node_path);
         let (left, right) = if result < ZERO {
             (result, ZERO)
         } else {
@@ -1304,7 +1360,7 @@ impl Analyzer<'_, '_> {
         self.retain_s7_derivation(S7Derivation {
             source: node_path.clone(),
             row: *row,
-            subject: Self::s7_subject(destination),
+            subject: s7_subject(destination),
             kind: S7DerivationKind::ShiftOneNonzero {
                 count_atom: count_metadata.node_path.clone(),
                 one,
@@ -1315,7 +1371,9 @@ impl Analyzer<'_, '_> {
         });
         true
     }
+}
 
+impl Reasoning<'_, '_, '_> {
     /// The `(p, k, exact)` reading of one constant-offset arithmetic call.
     /// Exact rows have already discharged their static IntegerDomain
     /// obligation; wrapping rows need the additional range proof above.
@@ -1344,10 +1402,12 @@ impl Analyzer<'_, '_> {
         };
         let left = self.read_operand(left)?;
         let right = self.read_operand(right)?;
-        let (base, delta) = self.split_offset(left, right, adding)?;
+        let (base, delta) = self.vocabulary.split_offset(left, right, adding)?;
         Some((base, delta, exact))
     }
+}
 
+impl Vocabulary {
     /// Splits one operand pair into a base term and a constant offset.
     fn split_offset(&self, left: TermId, right: TermId, adding: bool) -> Option<(TermId, i128)> {
         if let Some(value) = self.constant_term_value(right) {
@@ -1362,13 +1422,15 @@ impl Analyzer<'_, '_> {
     /// The mathematical value of a constant term. Z is the interned form of
     /// the written constant zero, so it reads as one here.
     fn constant_term_value(&self, term: TermId) -> Option<i128> {
-        match *self.vocabulary.terms.kind(term) {
+        match *self.terms.kind(term) {
             TermKind::Zero => Some(0),
             TermKind::Constant(value) => Some(value),
             _ => None,
         }
     }
+}
 
+impl Analyzer<'_, '_> {
     /// [ENT-3.S14] the interval one admitted non-constant multiplication
     /// proved, published on the value it bound.
     ///
@@ -1402,10 +1464,12 @@ impl Analyzer<'_, '_> {
         let Some(interval) = self.frames.product_intervals.get(carrier).cloned() else {
             return;
         };
-        let Some(bound) = self.bound_term(destination, value) else {
+        let Some(bound) = self.vocabulary.bound_term(destination, value) else {
             return;
         };
-        let event = self.binding_event(event, FlowEventKind::S14, node_path);
+        let event = self
+            .vocabulary
+            .binding_event(event, FlowEventKind::S14, node_path);
         state.establish(
             &Relation::Bound {
                 left: ZERO,
@@ -1425,7 +1489,9 @@ impl Analyzer<'_, '_> {
             event,
         );
     }
+}
 
+impl Reasoning<'_, '_, '_> {
     /// [ENT-3] S9: `let x: T = c[i];` where c is the bare IDENT of a
     /// named const of type `array<T, N>` and T a fragment type establishes
     /// vlo <= x and x <= vhi over its N declared element values. The index's
@@ -1475,10 +1541,14 @@ impl Analyzer<'_, '_> {
                 None => (element, element),
             });
         }
-        let (Some((low, high)), Some(bound)) = (range, self.bound_term(destination, value)) else {
+        let (Some((low, high)), Some(bound)) =
+            (range, self.vocabulary.bound_term(destination, value))
+        else {
             return true;
         };
-        let event = self.binding_event(event, FlowEventKind::S9, node_path);
+        let event = self
+            .vocabulary
+            .binding_event(event, FlowEventKind::S9, node_path);
         state.establish(
             &Relation::Bound {
                 left: ZERO,
@@ -1530,7 +1600,7 @@ impl Analyzer<'_, '_> {
         enum_type: CheckedEnumType,
         state: &FactState,
     ) -> ArmFacts {
-        let node_path = Self::expression_node_path(scrutinee).cloned();
+        let node_path = expression_node_path(scrutinee).cloned();
         if enum_type == CheckedEnumType::Bool {
             return ArmFacts {
                 node_path,
@@ -1544,7 +1614,8 @@ impl Analyzer<'_, '_> {
             _ => self.outcome_fact(scrutinee),
         };
         let outcome = outcome.and_then(|outcome| {
-            self.variant_tag(enum_type, outcome.variant)
+            self.input
+                .variant_tag(enum_type, outcome.variant)
                 .map(|tag| (tag, outcome))
         });
         ArmFacts {
@@ -1554,13 +1625,15 @@ impl Analyzer<'_, '_> {
             outcome,
         }
     }
+}
 
+impl Input<'_, '_> {
     /// The tag of one named variant of a checked enum type.
     fn variant_tag(&self, enum_type: CheckedEnumType, variant: &str) -> Option<u32> {
         let CheckedEnumType::Nominal(nominal) = enum_type else {
             return None;
         };
-        let nominal = self.input.context.nominals.get(nominal.0 as usize)?;
+        let nominal = self.context.nominals.get(nominal.0 as usize)?;
         let CheckedNominalKind::Enum { variants } = &nominal.kind else {
             return None;
         };
@@ -1569,7 +1642,9 @@ impl Analyzer<'_, '_> {
             .find(|candidate| candidate.name == variant)
             .map(|candidate| candidate.tag)
     }
+}
 
+impl Reasoning<'_, '_, '_> {
     /// The outcome fact one call expression carries, if any: S7's checked
     /// `Ok(value: w)` shift on the observing arm.
     fn outcome_fact(&mut self, value: &CheckedExpression) -> Option<OutcomeFact> {
@@ -1600,7 +1675,7 @@ impl Analyzer<'_, '_> {
         };
         let left = self.read_operand(left)?;
         let right = self.read_operand(right)?;
-        let (base, delta) = self.split_offset(left, right, adding)?;
+        let (base, delta) = self.vocabulary.split_offset(left, right, adding)?;
         Some(OutcomeFact {
             variant: "Ok",
             base,
@@ -1608,7 +1683,9 @@ impl Analyzer<'_, '_> {
             event_kind: FlowEventKind::S7,
         })
     }
+}
 
+impl Vocabulary {
     /// Establishes one arm's binder fact at arm entry: the value binder of
     /// the observing variant gains the recorded relation against its base.
     pub(super) fn establish_binder_fact(
@@ -1625,10 +1702,7 @@ impl Analyzer<'_, '_> {
             return;
         };
         let place = ResolvedPlace::spelled(PlaceRoot::Binding(binder.binding), false, Vec::new());
-        let bound = self
-            .vocabulary
-            .terms
-            .intern(TermKind::Place(place, fragment));
+        let bound = self.terms.intern(TermKind::Place(place, fragment));
         match outcome.relation {
             OutcomeRelation::Shifted(delta) => {
                 establish_shifted(
@@ -1636,7 +1710,7 @@ impl Analyzer<'_, '_> {
                     bound,
                     outcome.base,
                     delta,
-                    &mut self.vocabulary.derivations,
+                    &mut self.derivations,
                     event,
                 );
             }
