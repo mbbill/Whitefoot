@@ -463,7 +463,7 @@ and applied (`design/log.md`, 2026-09-25).
      classified bundles keep a handle on it, and the parsed bundle owns the
      classified bundle. The classified bundle no longer keeps the lexemes and
      trivia, which no stage after classification read. The three source
-     lifetimes, on 241 lines in 56 files, are gone, and the driver's syntax
+     lifetimes, on 239 lines in 55 files, are gone, and the driver's syntax
      step returns the canonical unit instead of lending it to a
      continuation.
    - **Checked program.** Checking borrows the resolved unit, and the checked

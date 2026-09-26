@@ -532,7 +532,8 @@ fn claims_rendering(function: &CheckedFunction) -> String {
 impl Checker<'_> {
     /// The key resolution minted for every top-level item of this unit, by
     /// the item's ordinal among the root's children, as [`receipt_item`]
-    /// spells it.
+    /// spells it. An alias binds names only and no analysis reads a node of
+    /// one, so an alias item has no spelling here.
     pub(super) fn receipt_items(&self) -> Result<ItemSpellings, CheckStop> {
         let count = self.tree.children(self.tree.root())?.len();
         let by_ordinal = (0..count)
@@ -540,6 +541,7 @@ impl Checker<'_> {
                 u32::try_from(ordinal)
                     .ok()
                     .and_then(|ordinal| self.resolved.item_key(ordinal))
+                    .filter(|key| !matches!(key, crate::ItemKey::Alias { .. }))
                     .map(|key| receipt_item(key).to_string())
             })
             .collect();
@@ -575,7 +577,16 @@ impl Checker<'_> {
                     | DeclarationRole::Binding
                     | DeclarationRole::NamedConst => Some(Spelling::Stable(match record.key() {
                         crate::DeclarationKey::Item(item) => receipt_item(item).to_string(),
-                        local => local.to_string(),
+                        crate::DeclarationKey::Local {
+                            item,
+                            path,
+                            ordinal,
+                        } => crate::DeclarationKey::Local {
+                            item: receipt_item(item),
+                            path: path.clone(),
+                            ordinal: *ordinal,
+                        }
+                        .to_string(),
                     })),
                     // An alias binds names only; every use names its target.
                     DeclarationRole::Alias => None,
@@ -606,15 +617,18 @@ impl Checker<'_> {
             IdKind::Node => {
                 let node = crate::syntax::NodeId::from_index(index)?;
                 let path = self.tree.path(node).ok()?;
-                self.resolved.occurrence_key(path).map(|key| {
-                    Spelling::Stable(format!(
-                        "node {}",
-                        crate::OccurrenceKey {
-                            item: receipt_item(&key.item),
-                            path: key.path,
-                        }
-                    ))
-                })
+                self.resolved
+                    .occurrence_key(path)
+                    .filter(|key| !matches!(key.item, crate::ItemKey::Alias { .. }))
+                    .map(|key| {
+                        Spelling::Stable(format!(
+                            "node {}",
+                            crate::OccurrenceKey {
+                                item: receipt_item(&key.item),
+                                path: key.path,
+                            }
+                        ))
+                    })
             }
             IdKind::DerivedConst
             | IdKind::FunctionReference
