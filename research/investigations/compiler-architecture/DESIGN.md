@@ -442,10 +442,11 @@ and applied (`design/log.md`, 2026-09-25).
      resolution minted, not by a spelling the receipt module assembles from
      declaration records and item ordinals. A function's interface
      declaration and its definition are two keys and still one receipt
-     spelling, since a receipt one check records is read by another: an
-     entry build of a three-module program reuses 68 analyses and records
-     24 on main and here, and spelling the two apart analyzes one function
-     afresh. A read set follows uses from item key to item key.
+     spelling, since a receipt one check records is read by another: once
+     the module verdicts of a four-module program record 25 analyses, its
+     entry build records none, on main and here, and spelling the two apart
+     analyzes one function afresh. A read set follows uses from item key to
+     item key.
 3. **Owned syntax and an owned checked program.** Tokens become a source id
    and a byte range; `CheckedProgram` stops holding the resolved unit and
    `IrProgram` drops `_checked`. Formed interfaces can then be kept between
