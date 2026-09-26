@@ -21,6 +21,22 @@ Owner-approved: After the handoff for PR #129 at 715b05dd, which showed the std-
 
 Summary: The prelude keeps only the declarations a language rule names, and every host declaration, ExitStatus and Inputs included, becomes an ordinary public declaration of a standard library module interface whose definition the build supplies, because no rule names them and injecting them into every check costs 36 to 62 percent of a check's instructions ([library-modules E1](../research/investigations/library-modules/DESIGN.md#measurement-e1-what-the-host-rows-cost-every-check)). A fixed std qualifier names the toolchain's standard library beside pkg; a graph row lists the standard library modules its module may name and a source bundle may name any of them; a check or composition reads a standard library module only then; and the specification keeps the exact interface text of the modules whose definitions the build supplies. Binding other external packages stays deferred. The container decision of the standard-library amendment is not applied: the owner asked about it, so it stays an amendment with a proposed home for the library's source.
 
+## 2026-09-25 Form requirement places at body entry and separate window parts only from live indices
+
+Nodes: language/checks-and-proofs/requires-entry-contract, language/ownership, language/checks-and-proofs
+
+Owner-approved: The owner approved PR #118's clause-place-formation and window-part-liveness amendments as recommended, 2026-09-25.
+
+Summary: Add the requires-entry-contract decision that a requirement's places are formed at the callee's body entry in the state holding the requirements written before its clause, and a definition's places in the first requirement whose expansion reaches them, so every subscript in such a place owes its bounds obligation there, with its two rejected alternatives: forming the place in each caller's instantiated goal, and leaving clause subscripts unjudged. Add the ownership decision that an indexed position of a window is separated from its append slot, free slots or last filled slot only where the compared state proves the index below the window's length, with its three rejected alternatives: assuming every indexed position live, never separating an indexed position from the append slot, and treating an effect row's index as never live. Both close the gap review probe p50 exposed, a requirement over an element not yet appended whose fact survived the append; the [readonly-field term investigation](../research/investigations/readonly-field-terms/DESIGN.md#soundness-every-change-is-an-overlapping-write) records the probe and the cases. The node language/checks-and-proofs is named because this PR's earlier ruling, the entry below, changed it; this ruling leaves it as that ruling set it. The settled wording is in kernel-spec v0.71 rules ENT-2 and WIN-2. Where an `ensures` place is formed stays open, recorded in the maintained TODO for later. Remove both amendments and the amendment directory. This ruling does not authorize a merge.
+
+## 2026-09-25 Admit readonly fields below subscripts as fact-language terms
+
+Nodes: language/checks-and-proofs
+
+Owner-approved: The owner approved the readonly-field-terms amendment as shown on PR #118 on 2026-09-25.
+
+Summary: Replace the checks-and-proofs decision that admitted a subscripted place as a term exactly when its last step selects a readonly field, whose ground covered only the storage measures, with the approved decision: such a place is a term exactly when its last step selects a readonly integer field, prelude measure or writer-declared alike, and each offset is itself a tracked place or a constant, because a readonly field changes only through a write to a place containing it and such an offset only through a write to its own support, so the ordinary overlap kill ends every fact about the term. Add its three rejected alternatives: only the prelude's measures, a let-bound copy instead of a term, and any offset with unrepresentable ones reported as a compiler limit. The node keeps the decision and its evidence link; the amendment's sentence naming the replaced decision is recorded here instead. The [readonly-field term investigation](../research/investigations/readonly-field-terms/DESIGN.md) supplies the killing events, the offset rule and the evidence. The settled wording is in kernel-spec v0.71 rules ENT-2, MSR-1, ENT-5 and FN-8. Remove the accepted amendment and its directory. This ruling does not authorize a merge.
+
 ## 2026-09-25 Name source constructs in rejection payloads as written
 
 Nodes: compiler/rejection-payloads
@@ -28,6 +44,7 @@ Nodes: compiler/rejection-payloads
 Owner-approved: The owner approved PR #123's rejection-payloads amendment as shown on 2026-09-25, having set the criterion that a diagnostic is chosen by how fast an agent understands and locates the problem.
 
 Summary: Add the node with its two decisions and three rejected alternatives unchanged: every payload string that names a place, function or type instance, or literal prints it in canonical source spelling through one checker renderer per kind, and EFF-2's suggested row is one EFF-1, EFF-2 and EFF-5 admit wherever it is applied, because an agent repairs the source it wrote and applies a suggestion literally. The review's remaining items O1 and O2 (where EFF-1 places the subsumed-read rejection, and a merged suggestion wider than the body's writes) belong to the EFF-5 one-argument amendment the owner selected the same day, which will present any change to this node's second decision for its own ruling. Remove the accepted amendment and its directory. No specification rule changes; this ruling does not authorize a merge.
+
 ## 2026-09-25 Stage the dependency-recording decision
 
 Nodes: compiler/incremental-compilation, language/name-resolution, language/checks-and-proofs, language, language/effects, language/data-model/readonly-field, compiler

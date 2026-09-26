@@ -15,7 +15,7 @@ pub const TERMINAL_CONTRACT_SPEC_HASH: SpecHash = ACTIVE_KERNEL_SPEC_HASH;
 /// to first grammar-occurrence order, which [`ALL_FIXED_TERMINALS`] carries.
 /// v0.70 opens [GRAM-2]'s `item` with the `public` item marker and the file
 /// alias header, so `public`, `alias`, `=`, `pkg`, `::` and `;` take the first
-/// six slots and every other index moves; v0.71's alias header also admits the
+/// six slots and every other index moves; v0.72's alias header also admits the
 /// standard library qualifier `std` [MOD-10], which takes the slot after `pkg`; retired source atoms leave this
 /// current-grammar inventory outright. The indices are
 /// compiler-local and are never serialized.
@@ -824,7 +824,7 @@ mod tests {
         }
         // v0.70's [GRAM-2] `item` opens with its `public` item marker and its
         // file alias header arm, so `public`, `alias`, `=`, `pkg`, `::` and `;`
-        // take the first six slots and `heap_decl`'s two atoms follow; v0.71's
+        // take the first six slots and `heap_decl`'s two atoms follow; v0.72's
         // `std` qualifier [MOD-10] first occurs beside `pkg` in that header. The graph
         // productions close [GRAM-2], so `entry` now first occurs there, before
         // the primitive type atoms, and a call's `musttail` first occurs in

@@ -178,7 +178,7 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("public", "Public"),
         ("alias", "Alias"),
         ("pkg", "Pkg"),
-        // v0.71 [MOD-10]: the standard library qualifier.
+        // v0.72 [MOD-10]: the standard library qualifier.
         ("std", "Std"),
     ];
     if spelling == "[0-9]+" {

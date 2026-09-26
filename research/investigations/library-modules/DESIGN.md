@@ -8,7 +8,7 @@ and the rules they need go to the specification. The owner approved D1 to D5
 and D7, now [`language/standard-library`](../../../design/language/standard-library.md),
 [`language/name-resolution`](../../../design/language/name-resolution.md) and
 [`language/system-interface/declaration-home`](../../../design/language/system-interface/declaration-home.md).
-Specification v0.71 states D1 to D4 and the compiler implements all six.
+Specification v0.72 states D1 to D4 and the compiler implements all six.
 Measurements of the implemented split follow E1.
 
 ## Question
@@ -423,7 +423,7 @@ Rejected:
 
 ## Specification changes
 
-Specification v0.71 made them as one amendment, with MOD-10 stating the
+Specification v0.72 made them as one amendment, with MOD-10 stating the
 standard library package, its `std` qualifier and which of its modules a
 program selects:
 

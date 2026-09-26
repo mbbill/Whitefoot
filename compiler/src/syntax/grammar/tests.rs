@@ -14,7 +14,7 @@ use super::generated::{DECISIONS, SELECT_ROWS};
 #[test]
 fn complete_inventory_is_pinned() {
     assert_eq!(productions().len(), 92);
-    // v0.71's standard library qualifier [MOD-10] adds a `"pkg" | "std"`
+    // v0.72's standard library qualifier [MOD-10] adds a `"pkg" | "std"`
     // alternation to `alias_decl`, `module_path` and `callee`, three
     // decisions, and extends `type_path`'s existing root alternation.
     assert_eq!(DECISIONS.len(), 157);
@@ -88,7 +88,7 @@ fn complete_inventory_is_pinned() {
     // that modifier entered the grammar.
     // `item`'s alias, public-item and declaration choice and the public
     // item's declaration group precede the alias header's own decisions,
-    // among them v0.71's `"pkg" | "std"` root [MOD-10], which moves every
+    // among them v0.72's `"pkg" | "std"` root [MOD-10], which moves every
     // later decision by one; `module_path`'s and `callee`'s own root
     // alternations move the decisions after them by one more each.
     assert_eq!(DECISIONS[1].production(), Production::Item);

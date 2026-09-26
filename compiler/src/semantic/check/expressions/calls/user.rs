@@ -14,7 +14,8 @@ use super::super::super::super::model::{
     CheckedExpression, CheckedMode, CheckedNominalKind, CheckedStatePath, CheckedType,
 };
 use super::super::super::super::places::{
-    CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace, UnprovedSeparations, places_overlap,
+    CapturedRange, CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace, SeparationOracle,
+    UnprovedSeparations, WindowPart, places_overlap,
 };
 use super::super::super::generics::HEAP_ALLOCATING_PRELUDE_FUNCTIONS;
 use super::super::super::references::InvalidationEvent;
@@ -48,6 +49,53 @@ struct SubstitutedEntry {
     /// pairwise conflict with each other. Distinct effects still compare when
     /// they came through the same actual argument [EFF-5].
     origin: usize,
+    /// How many leading steps of `place` the caller formed: the actual
+    /// argument's own path. Every later step is the declared row's suffix,
+    /// whose index positions take the values other arguments supply and are
+    /// bounded by no obligation at the call [EFF-5, WIN-2].
+    formed: usize,
+}
+
+/// [EFF-5, WIN-2] the separation oracle of one pair of substituted entries.
+///
+/// A window part is named only by a row, so the index beside it is the other
+/// entry's. An index of an actual's own path was formed at the call and
+/// discharged [OP-4] there, or is named by a reference that stays valid only
+/// while that bound holds [OP-10], so it is live in the call's entry state.
+/// An index a row supplies is the value of another argument, which no
+/// obligation at the call bounds by the window's length, so this oracle holds
+/// it not live and the pair overlaps; the pairwise comparison then hands the
+/// pair to the entailment fragment, which separates it where the call's entry
+/// state proves the bound (`CheckedCallSeparationPositions::Live`). Every
+/// other question is answered as [`UnprovedSeparations`] answers it, and the
+/// index and range pairs its families discharge are handed over the same way.
+struct EntryPairSeparations<'entry> {
+    entries: [&'entry SubstitutedEntry; 2],
+}
+
+impl SeparationOracle for EntryPairSeparations<'_> {
+    fn indices_distinct(&self, left: CapturedValue, right: CapturedValue) -> bool {
+        UnprovedSeparations.indices_distinct(left, right)
+    }
+
+    fn ranges_disjoint(&self, left: CapturedRange, right: CapturedRange) -> bool {
+        UnprovedSeparations.ranges_disjoint(left, right)
+    }
+
+    fn index_is_live(&self, window: &ResolvedPlace, index: CapturedValue) -> bool {
+        let depth = window.path.len();
+        self.entries.iter().all(|entry| {
+            depth < entry.formed || entry.place.path.get(depth) != Some(&PlaceStep::Index(index))
+        })
+    }
+
+    fn index_is_not_last(&self, window: &ResolvedPlace, index: CapturedValue) -> bool {
+        UnprovedSeparations.index_is_not_last(window, index)
+    }
+
+    fn window_length_is_shared(&self, window: &ResolvedPlace) -> bool {
+        UnprovedSeparations.window_length_is_shared(window)
+    }
 }
 
 /// A bound call's row and contract come from the same instantiated formal.
@@ -511,6 +559,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     let mut place = base.clone();
                     place.path.extend_from_slice(&steps);
                     entries.push(SubstitutedEntry {
+                        formed: base.path.len(),
                         place,
                         write,
                         consuming: false,
@@ -535,6 +584,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .is_copy_place_type(signature, index)
                     .is_none_or(|copy| !copy);
                 entries.push(SubstitutedEntry {
+                    formed: place.path.len(),
                     place: place.clone(),
                     // A `move` empties the place, which [EFF-1] classes with
                     // the writes; a copy argument observes it.
@@ -672,12 +722,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<(), CheckStop> {
         let exchange = self.is_swap_row(signature);
-        let oracle = UnprovedSeparations;
         for (index, left) in entries.iter().enumerate() {
             for right in entries.iter().skip(index + 1) {
                 if left.origin == right.origin || !(left.write || right.write) {
                     continue;
                 }
+                let oracle = EntryPairSeparations {
+                    entries: [left, right],
+                };
                 if !places_overlap(&oracle, &left.place, &right.place) {
                     continue;
                 }
@@ -685,9 +737,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     continue;
                 }
                 // A pair whose only unseparated steps are index or range
-                // positions is the fixed families' question; every other
-                // overlap is refused here and now.
-                if let Some(positions) = Self::separable_by_position(&left.place, &right.place) {
+                // positions, or an index beside a window part, is the fixed
+                // families' question; every other overlap is refused here and
+                // now.
+                if let Some((positions, window)) =
+                    Self::separable_by_position(&left.place, &right.place)
+                {
                     self.call_separations
                         .borrow_mut()
                         .push(CheckedCallSeparation {
@@ -695,6 +750,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             exchange,
                             reference_use: None,
                             positions,
+                            window,
                             left_spelling: self.render_resolved_place(&left.place, bindings)?,
                             right_spelling: self.render_resolved_place(&right.place, bindings)?,
                         });
@@ -724,37 +780,56 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// The ordered position disagreements an admitted [OWN-7] family can
     /// still separate. Index suffixes remain candidates; a range divergence
-    /// is the final candidate because its coordinate frames then differ.
+    /// is the final candidate because its coordinate frames then differ, and
+    /// so is an index beside a window's `next` or `free`, which [WIN-2]
+    /// separates once the index is proved live, together with the window it
+    /// indexes.
     pub(in crate::semantic::check) fn separable_by_position(
         left: &ResolvedPlace,
         right: &ResolvedPlace,
-    ) -> Option<Vec<super::super::super::super::model::CheckedCallSeparationPositions>> {
+    ) -> Option<(
+        Vec<super::super::super::super::model::CheckedCallSeparationPositions>,
+        Option<ResolvedPlace>,
+    )> {
         use super::super::super::super::model::CheckedCallSeparationPositions;
         let mut candidates = Vec::new();
-        for (left, right) in left.path.iter().zip(&right.path) {
-            match (left, right) {
-                (PlaceStep::Index(left), PlaceStep::Index(right)) if left.provably_same(*right) => {
-                    continue;
-                }
-                (PlaceStep::Range(left), PlaceStep::Range(right))
-                    if left.start.provably_same(right.start)
-                        && left.end.provably_same(right.end) =>
+        let mut window = None;
+        for (depth, steps) in left.path.iter().zip(&right.path).enumerate() {
+            match steps {
+                (PlaceStep::Index(first), PlaceStep::Index(second))
+                    if first.provably_same(*second) =>
                 {
                     continue;
                 }
-                (PlaceStep::Index(left), PlaceStep::Index(right)) => {
-                    candidates.push(CheckedCallSeparationPositions::Indices(*left, *right));
+                (PlaceStep::Range(first), PlaceStep::Range(second))
+                    if first.start.provably_same(second.start)
+                        && first.end.provably_same(second.end) =>
+                {
+                    continue;
                 }
-                (PlaceStep::Range(left), PlaceStep::Range(right)) => {
-                    candidates.push(CheckedCallSeparationPositions::Ranges(*left, *right));
+                (PlaceStep::Index(first), PlaceStep::Index(second)) => {
+                    candidates.push(CheckedCallSeparationPositions::Indices(*first, *second));
+                }
+                (PlaceStep::Range(first), PlaceStep::Range(second)) => {
+                    candidates.push(CheckedCallSeparationPositions::Ranges(*first, *second));
                     break;
                 }
-                (left, right) if left == right => continue,
+                (PlaceStep::Index(index), PlaceStep::Part(WindowPart::Next | WindowPart::Free))
+                | (PlaceStep::Part(WindowPart::Next | WindowPart::Free), PlaceStep::Index(index)) =>
+                {
+                    candidates.push(CheckedCallSeparationPositions::Live(*index));
+                    window = Some(ResolvedPlace {
+                        root: left.root,
+                        path: left.path[..depth].to_vec(),
+                    });
+                    break;
+                }
+                (first, second) if first == second => continue,
                 _ if candidates.is_empty() => return None,
                 _ => break,
             }
         }
-        (!candidates.is_empty()).then_some(candidates)
+        (!candidates.is_empty()).then_some((candidates, window))
     }
 
     /// [OP-10] the window operations that end the bound a reference into the
@@ -959,9 +1034,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // [REF-4, MSR-1] a range reference's one measure is `len`, equal
             // to `hi - lo`, and that is no measure of the storage the range
             // was formed over: `&a[2..4]` names two elements whatever `a.len`
-            // is. [ENT-2] clause (b) admits `deref(view)` as a measure place
-            // — a root with `deref` wrappings, field selections and
-            // subscripts — and admits no place formed with a range step, so
+            // is. [MSR-1] admits `deref(view)` as a measure place — a root
+            // with `deref` wrappings, field selections and subscripts — and
+            // admits no place formed with a range step, so
             // the term this instantiation names is the reference the actual
             // names and never that reference's base. Resolving through the
             // reference here would drop the range step and read
