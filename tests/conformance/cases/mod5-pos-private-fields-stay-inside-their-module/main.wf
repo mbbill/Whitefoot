@@ -1,4 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
 alias data = pkg::data;
+alias exit_status = std::process::exit_status;
 
 fn main() -> status: ExitStatus pure {
   doc "Another module reads the public field directly and the private one through its declaring module's operation.";

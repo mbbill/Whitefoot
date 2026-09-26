@@ -1,5 +1,7 @@
-alias kinds = pkg::kinds;
 alias Entry = pkg::kinds::Entry;
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+alias kinds = pkg::kinds;
 
 fn main() -> status: ExitStatus pure {
   doc "ENT-5, OWN-7: a write to a sibling field of the same element and a replacement of an element at a distinct literal offset overlap no storage of entries[1].width, so the guard's bound survives both and the cell reads discharge.";

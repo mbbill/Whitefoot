@@ -1,37 +1,3 @@
-struct OrderedPair<K, V> {
-  key: K;
-  value: V;
-}
-
-struct OrderedEntry<K, V, N> {
-  pair: OrderedPair<K, V>;
-  after: Slots<Box<N>, 1>;
-}
-
-struct OrderedNode<K, V> {
-  leading: Slots<Box<OrderedNode<K, V>>, 1>;
-  entries: Slots<OrderedEntry<K, V, OrderedNode<K, V>>, 15>;
-}
-
-struct OrderedMap<K, V, const ceiling: u64> {
-  root: Slots<Box<OrderedNode<K, V>>, 1>;
-  length: u64;
-}
-
-enum OrderedReturnReason {
-  OrderedReplaced();
-  OrderedFull();
-}
-
-enum OrderedPut<K, V> {
-  OrderedInserted();
-  OrderedReturned(reason: OrderedReturnReason, pair: OrderedPair<K, V>);
-}
-
-interface OrderedKey<K, E> {
-  fn compare(env: &E, left: &K, right: &K) -> order: i32 reads(env), reads(left), reads(right);
-}
-
 fn ordered_map_new<K, V, const ceiling: u64>() -> result: OrderedMap<K, V, ceiling> pure {
   let root = slots_new::<Box<OrderedNode<K, V>>, 1>();
   return OrderedMap<K, V, ceiling>(root: move root, length: 0_u64);

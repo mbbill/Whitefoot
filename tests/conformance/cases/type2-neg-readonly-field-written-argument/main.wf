@@ -1,3 +1,5 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
 alias packets = pkg::packets;
 
 fn main() -> status: ExitStatus pure {

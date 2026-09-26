@@ -1,3 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 fn touch(a: &Slots<u64, 4>, b: &Slots<u64, 4>, j: u64) -> result: unit writes(a.next), writes(a.len), writes(b[j]) contract {
   requires deref(a).len < deref(a).cap;
   requires j < deref(b).len;

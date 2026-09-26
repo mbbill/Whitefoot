@@ -1,7 +1,9 @@
-alias data = pkg::data;
+alias ExitStatus = std::process::ExitStatus;
 alias Point = pkg::data::Point;
 alias Pos = pkg::data::Sign::Pos;
 alias classify = pkg::data::sign_of;
+alias data = pkg::data;
+alias exit_status = std::process::exit_status;
 alias origin = pkg::data::origin;
 
 fn main() -> status: ExitStatus pure {

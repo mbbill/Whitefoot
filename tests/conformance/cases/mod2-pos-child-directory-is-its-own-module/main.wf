@@ -1,3 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 fn seven() -> result: u8 pure {
   doc "The root module's own seven: the child directory's records are another module and do not collide with it.";
   return 0_u8;

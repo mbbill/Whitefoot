@@ -21,10 +21,10 @@ fn assert_complete(source: &[u8]) {
 #[test]
 fn memory_reclamation_contributes_no_release_row() {
     assert_complete(
-        b"fn consume(data: Box<u64>) -> result: unit pure {\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn consume(data: Box<u64>) -> result: unit pure {\n  return unit;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
     );
     assert_complete(
-        b"fn main() -> status: ExitStatus pure {\n  let boxed = box_new::<u64>(value: 0_u64);\n  let stored = box_array_filled::<u8>(count: 4_u64, value: 0_u8);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: std::process::ExitStatus pure {\n  let boxed = box_new::<u64>(value: 0_u64);\n  let stored = box_array_filled::<u8>(count: 4_u64, value: 0_u8);\n  return std::process::exit_status(code: 0_u8);\n}\n",
     );
 }
 
@@ -43,8 +43,8 @@ fn read_nested(cell: &Box<Outer>) -> result: u64 pure {
   return deref(cell).inner.next.len;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Eff2,
@@ -81,8 +81,8 @@ fn release(run: Slots<Token, 4>) -> result: unit pure contract {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Prov6,
@@ -95,8 +95,8 @@ fn main() -> status: ExitStatus pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
     );
@@ -109,8 +109,8 @@ fn release(run: Slots<Token, 4>) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Prov6,
@@ -138,8 +138,8 @@ fn discard(slot: Slot) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Prov6,
@@ -159,8 +159,8 @@ fn take_returned<T>(carrier: Carrier<T>) -> result: Box<u64> pure {
   return move carrier.returned;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Prov6,
@@ -178,16 +178,16 @@ fn main() -> status: ExitStatus pure {
 #[test]
 fn live_effect_categories_keep_eff1_canonical_order_and_multiplicity() {
     super::assert_parse_rule(
-        b"fn probe(file: &ReadFile) -> result: unit pure, writes(file) {\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(file: &std::fs::ReadFile) -> result: unit pure, writes(file) {\n  return unit;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
         crate::SyntaxRule::Gram2,
     );
     assert_rule_kind(
-        b"fn probe(file: &ReadFile) -> result: unit writes(file), writes(file) {\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(file: &std::fs::ReadFile) -> result: unit writes(file), writes(file) {\n  return unit;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff1,
         |kind| matches!(kind, SemanticIssueKind::InvalidEffectRow { .. }),
     );
     assert_rule_kind(
-        b"fn probe(file: &ReadFile) -> result: unit writes(file), reads(file) {\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(file: &std::fs::ReadFile) -> result: unit writes(file), reads(file) {\n  return unit;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff1,
         |kind| matches!(kind, SemanticIssueKind::InvalidEffectRow { .. }),
     );
@@ -199,12 +199,12 @@ fn a_by_value_parameter_is_no_effect_root_and_a_reference_one_must_be_exhibited(
     // [EFF-1] now roots every path at a reference parameter of the same
     // callable, so a by-value root is refused at the row itself.
     assert_rule_kind(
-        b"fn probe(value: u64) -> result: unit reads(value) {\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(value: u64) -> result: unit reads(value) {\n  return unit;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff1,
         |kind| matches!(kind, SemanticIssueKind::InvalidEffectRow { .. }),
     );
     assert_rule_kind(
-        b"fn probe(value: &u64) -> result: unit reads(value) {\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(value: &u64) -> result: unit reads(value) {\n  return unit;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
@@ -213,7 +213,7 @@ fn a_by_value_parameter_is_no_effect_root_and_a_reference_one_must_be_exhibited(
 #[test]
 fn external_and_blocks_are_ordinary_function_and_parameter_names() {
     assert_complete(
-        b"fn external(blocks: &Args) -> result: u64 reads(blocks) {\n  let total = args_count(args: blocks);\n  return total;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn external(blocks: &std::text::Args) -> result: u64 reads(blocks) {\n  let total = std::text::args_count(args: blocks);\n  return total;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
     );
 }
 
@@ -234,8 +234,8 @@ fn read_second(pair: &Pair) -> result: unit reads(pair.second) {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
     );
@@ -254,9 +254,9 @@ fn an_affine_bounded_own_exchange_supports_a_copy_instantiation() {
   return move current, move previous;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let (current, previous) = exchange_owned::<u64>(target: 1_u64, incoming: 2_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_complete(source);
@@ -269,8 +269,8 @@ fn an_uncalled_recursive_owner_transfer_needs_no_routing_summary() {
   return move next;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_complete(source);
@@ -284,8 +284,8 @@ fn a_nonreturning_helper_keeps_its_structural_read_effect() {
   return next;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_complete(source.as_bytes());
@@ -308,8 +308,8 @@ fn observe(owner: &Box<u64>, spare: &Box<u64>, incoming: Box<u64>) -> result: un
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_complete(source.as_bytes());
@@ -331,8 +331,8 @@ fn a_full_window_conversion_keeps_its_inherent_capacity() {
   return slots_into_array::<u64, 0>(values: move values);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
     );
@@ -341,8 +341,8 @@ fn main() -> status: ExitStatus pure {
   return slots_into_array::<u64, 1>(values: move values);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Fn8,
@@ -355,8 +355,8 @@ fn main() -> status: ExitStatus pure {
   return slots_into_array::<u64, 1>(values: move values);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
     );
@@ -443,8 +443,8 @@ fn advance(source: &Array<Slot, 4>, progress: &Progress, budget: u64) -> examine
   return inspected;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_complete(source.as_bytes());
@@ -476,8 +476,8 @@ fn rotate(value: Box<u64>) -> result: Slots<Box<u64>, 4> pure {
   return move values;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_complete(source);
@@ -490,7 +490,7 @@ fn a_recursive_exchange_of_two_linear_owners_uses_swap() {
     // linear owned place because a linear value has no release, and [OP-11]
     // `swap` is the exchange that exists precisely because no source body can
     // write it without a hole.
-    let source = br#"fn recursive_exchange(target: &ReadFile, incoming: &ReadFile, stop: Bool) -> result: unit writes(target), writes(incoming) {
+    let source = br#"fn recursive_exchange(target: &std::fs::ReadFile, incoming: &std::fs::ReadFile, stop: Bool) -> result: unit writes(target), writes(incoming) {
   if stop {
     swap(first: target, second: incoming);
     return unit;
@@ -499,8 +499,8 @@ fn a_recursive_exchange_of_two_linear_owners_uses_swap() {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_complete(source);
@@ -558,8 +558,8 @@ fn observe(value: Box<u64>, witness: &Box<u64>) -> result: u64 pure {
   return local.inner;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_complete(source.as_bytes());
@@ -596,8 +596,8 @@ fn observe(values: &Slots<Slot, 2>, spare: &Box<u64>, first: Box<u64>, second: B
   return OBSERVE;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     for observation in [
@@ -637,8 +637,8 @@ fn inspect(holder: &Holder, incoming: Box<u64>) -> result: unit writes(holder.va
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
 
@@ -684,29 +684,29 @@ fn field_effects_reject_missing_selected_access_and_extra_siblings() {
 fn a_linear_field_refuses_the_assignment_and_takes_the_exchange_instead() {
     // Assigning over an owned place releases the old value when it is affine;
     // a linear value has no release, so [WIN-3] refuses the write outright.
-    let refused = FIELD_ASSIGNMENT.replace("Box<u64>", "ReadFile");
+    let refused = FIELD_ASSIGNMENT.replace("Box<u64>", "std::fs::ReadFile");
     assert_rule_kind(refused.as_bytes(), SemanticRule::Win3, |kind| {
         matches!(kind, SemanticIssueKind::LinearAssignmentTarget { .. })
     });
     assert_complete(
         br#"struct Holder {
   before: u64;
-  value: ReadFile;
+  value: std::fs::ReadFile;
   after: u64;
 }
 
-fn exchange(target: &ReadFile, incoming: &ReadFile) -> result: unit writes(target), writes(incoming) {
+fn exchange(target: &std::fs::ReadFile, incoming: &std::fs::ReadFile) -> result: unit writes(target), writes(incoming) {
   swap(first: target, second: incoming);
   return unit;
 }
 
-fn inspect(holder: &Holder, spare: &ReadFile) -> result: unit writes(holder.value), writes(spare) {
+fn inspect(holder: &Holder, spare: &std::fs::ReadFile) -> result: unit writes(holder.value), writes(spare) {
   exchange(target: &deref(holder).value, incoming: spare);
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
     );
@@ -719,12 +719,12 @@ fn a_generic_swap_needs_no_result_routing_summary() {
   return unit;
 }
 
-fn transfer(target: &ReadFile, incoming: &ReadFile) -> result: unit writes(target), writes(incoming) {
-  return exchange::<ReadFile>(target: target, incoming: incoming);
+fn transfer(target: &std::fs::ReadFile, incoming: &std::fs::ReadFile) -> result: unit writes(target), writes(incoming) {
+  return exchange::<std::fs::ReadFile>(target: target, incoming: incoming);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_complete(source.as_bytes());
@@ -743,7 +743,7 @@ fn provide(end: u64) -> (result: Result<unit, TestError>, next: u64, count: u64)
   return Ok<unit, TestError>(value: unit), end, 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let (outcome, next, count) = provide(end: 4096_u64);
   match outcome {
     Ok(value: done) => {
@@ -752,7 +752,7 @@ fn main() -> status: ExitStatus pure {
     Err(error: problem) => {
     }
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
     );
@@ -792,11 +792,11 @@ fn record(stats: &Stats, spare: &u64) -> result: unit ROW {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let stats = Stats(count: 0_u64, total: 0_u64);
   let other = 0_u64;
   record(stats: &stats, spare: &other);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
 
@@ -928,7 +928,7 @@ fn the_suggested_row_keeps_positions_a_call_can_separate() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let window = slots_new::<u8, 2>();
   place_back(window: &window, value: 7_u8);
   let other = 0_u64;
@@ -937,7 +937,7 @@ fn main() -> status: ExitStatus pure {
   if i < j {
     copy_within(window: &window, spare: &other, from: i, to: j);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let (expected, _, _) = effect_mismatch(&source.replace("ROW", "reads(spare), writes(window)"));

@@ -93,8 +93,8 @@ fn over_frame(values: Array<u8, 256>) -> result: u8 pure {
   return values[0_u64];
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
 
@@ -102,14 +102,14 @@ fn lane_frame_program(length: u64) -> Vec<u8> {
     format!(
         "fn first(values: Array<u8, {length}>) -> result: u8 pure {{\n  \
          return values[0_u64];\n}}\n\n\
-         fn main() -> status: ExitStatus pure {{\n  \
+         fn main() -> status: std::process::ExitStatus pure {{\n  \
          let left_values = array_filled::<u8, {length}>(value: 7_u8);\n  \
          let right_values = array_filled::<u8, {length}>(value: 9_u8);\n  \
          let left = first(values: left_values);\n  \
          let right = first(values: right_values);\n  \
-         if left != 7_u8 {{\n    return exit_status(code: 1_u8);\n  }}\n  \
-         if right != 9_u8 {{\n    return exit_status(code: 2_u8);\n  }}\n  \
-         return exit_status(code: 0_u8);\n}}\n"
+         if left != 7_u8 {{\n    return std::process::exit_status(code: 1_u8);\n  }}\n  \
+         if right != 9_u8 {{\n    return std::process::exit_status(code: 2_u8);\n  }}\n  \
+         return std::process::exit_status(code: 0_u8);\n}}\n"
     )
     .into_bytes()
 }
@@ -151,10 +151,10 @@ fn last_byte(v: u64) -> result: u8 pure {
   }
 }
 
-fn main(inputs: Inputs) -> status: ExitStatus pure {
+fn main(inputs: std::process::Inputs) -> status: std::process::ExitStatus pure {
   doc "A pure call handed out while a pure call written as an if condition runs.";
-  let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  close_directory(factory: &entry_factory, directory: move unused_cwd);
+  let std::process::Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  std::fs::close_directory(factory: &entry_factory, directory: move unused_cwd);
   let report = box_array_filled::<u8>(count: 2_u64, value: 0_u8);
   let value = mixdown(a: 11_u64, b: 22_u64);
   if odd(v: 33_u64) {
@@ -163,12 +163,12 @@ fn main(inputs: Inputs) -> status: ExitStatus pure {
   let byte = last_byte(v: value);
   set report.inner[0_u64] = byte;
   let ordinary_source_2 = &report.inner[0_u64..2_u64];
-  match write_once(factory: &entry_factory, output: &out, source: ordinary_source_2, start: 0_u64, end: 2_u64) {
+  match std::io::write_once(factory: &entry_factory, output: &out, source: ordinary_source_2, start: 0_u64, end: 2_u64) {
     Ok(value: accepted) => {
-      return exit_status(code: 0_u8);
+      return std::process::exit_status(code: 0_u8);
     }
     Err(error: problem) => {
-      return exit_status(code: 1_u8);
+      return std::process::exit_status(code: 1_u8);
     }
   }
 }
@@ -180,11 +180,11 @@ const DEPENDENT_SIBLINGS: &[u8] = br#"fn twice(v: u64) -> result: u64 pure {
   return imax(v, v);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let first = twice(v: 3_u64);
   let second = twice(v: first);
   let total = imax(first, second);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
 
@@ -214,7 +214,7 @@ fn par_thunk_0(x: u64) -> result: u64 pure {
   return imax(x, x);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let a = par_acquire_lane(x: 1_u64);
   let b = par_publish(x: 2_u64);
   let c = par_thunk_0(x: 3_u64);
@@ -224,7 +224,7 @@ fn main() -> status: ExitStatus pure {
   let cd = imax(c, d);
   let abcd = imax(ab, cd);
   let total = imax(abcd, e);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
 
@@ -602,7 +602,7 @@ const THREE_MEMBER_GROUP_BEFORE_A_LOOP: &[u8] = br#"fn choose(value: u64) -> res
   return imax(value, value);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let prefix = 0_u64;
   let a = choose(value: 1_u64);
   let b = choose(value: 2_u64);
@@ -620,10 +620,10 @@ fn main() -> status: ExitStatus pure {
   }
   match cvt.checked::<u64, u8>(acc) {
     Ok(value: code) => {
-      return exit_status(code: code);
+      return std::process::exit_status(code: code);
     }
     Err(error: problem) => {
-      return exit_status(code: 255_u8);
+      return std::process::exit_status(code: 255_u8);
     }
   }
 }
@@ -743,17 +743,17 @@ fn fill_right(pair: &Pair, seed: u64) -> result: unit writes(pair.right) {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let pair = Pair(left: 0_u64, right: 0_u64);
   fill_left(pair: &pair, seed: 2_u64);
   fill_right(pair: &pair, seed: 4_u64);
   let total = pair.left +wrap pair.right;
   match cvt.checked::<u64, u8>(total) {
     Ok(value: code) => {
-      return exit_status(code: code);
+      return std::process::exit_status(code: code);
     }
     Err(error: problem) => {
-      return exit_status(code: 255_u8);
+      return std::process::exit_status(code: 255_u8);
     }
   }
 }
@@ -850,16 +850,16 @@ fn spine(depth: u64, v: f64) -> result: f64 pure {
   return fadd.strict(a, b);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let total = spine(depth: DEPTH_u64, v: 1.0009765625_f64);
   let bits = reinterpret::<f64, u64>(total);
   let low = iand(bits, 1_u64);
   match cvt.checked::<u64, u8>(low) {
     Ok(value: byte) => {
-      return exit_status(code: byte);
+      return std::process::exit_status(code: byte);
     }
     Err(error: wide) => {
-      return exit_status(code: 2_u8);
+      return std::process::exit_status(code: 2_u8);
     }
   }
 }
@@ -1170,11 +1170,11 @@ fn peek(v: &u64) -> result: u64 reads(v) {
   return deref(v);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let first = make();
   let second = make();
   let seen = peek(v: &first);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let module = emit_with_overlap(borrowed);
@@ -1194,11 +1194,11 @@ fn peek(v: &u64) -> result: u64 reads(v) {
   return deref(v);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let first = make();
   let second = make();
   let seen = peek(v: &second);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert!(
@@ -1573,26 +1573,26 @@ fn make(seed: u64) -> result: Pair pure {
   return Pair(left: scaled, right: adjacent);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let first = make(seed: 7_u64);
   let second = make(seed: 11_u64);
   if first.left != 21_u64 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
   if first.right != 107_u64 {
-    return exit_status(code: 2_u8);
+    return std::process::exit_status(code: 2_u8);
   }
   if second.left != 33_u64 {
-    return exit_status(code: 3_u8);
+    return std::process::exit_status(code: 3_u8);
   }
   if second.right != 111_u64 {
-    return exit_status(code: 4_u8);
+    return std::process::exit_status(code: 4_u8);
   }
   set first.left = 41_u64;
   if second.left != 33_u64 {
-    return exit_status(code: 5_u8);
+    return std::process::exit_status(code: 5_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
 
@@ -1639,7 +1639,7 @@ fn transform(owner: Owner, value: u64) -> result: Owner pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let left_values = slots_new::<Box<u64>, 3>();
   let left_cell = box_new::<u64>(value: 17_u64);
   place_back(window: &left_values, value: move left_cell);
@@ -1658,20 +1658,20 @@ fn main() -> status: ExitStatus pure {
     Empty() => {
     }
     Full(values: unexpected_first) => {
-      return exit_status(code: 1_u8);
+      return std::process::exit_status(code: 1_u8);
     }
   }
   match move second {
     Empty() => {
-      return exit_status(code: 2_u8);
+      return std::process::exit_status(code: 2_u8);
     }
     Full(values: second_values) => {
       if second_values.len != 1_u64 {
-        return exit_status(code: 3_u8);
+        return std::process::exit_status(code: 3_u8);
       }
       let second_cell = take_back(window: &second_values);
       if second_cell.inner != 41_u64 {
-        return exit_status(code: 4_u8);
+        return std::process::exit_status(code: 4_u8);
       }
     }
   }
@@ -1679,24 +1679,24 @@ fn main() -> status: ExitStatus pure {
     Empty() => {
     }
     Full(values: unexpected_fourth) => {
-      return exit_status(code: 5_u8);
+      return std::process::exit_status(code: 5_u8);
     }
   }
   match move third {
     Empty() => {
-      return exit_status(code: 6_u8);
+      return std::process::exit_status(code: 6_u8);
     }
     Full(values: third_values) => {
       if third_values.len != 1_u64 {
-        return exit_status(code: 7_u8);
+        return std::process::exit_status(code: 7_u8);
       }
       let third_cell = take_back(window: &third_values);
       if third_cell.inner != 53_u64 {
-        return exit_status(code: 8_u8);
+        return std::process::exit_status(code: 8_u8);
       }
     }
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let module = super::owned_places::retain_calls(&emit_with_overlap(source));
@@ -1943,22 +1943,22 @@ fn a_linked_body_and_source_bodies_use_one_ordinary_call_protocol() {
   return value;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let first = choose(value: 17_u64);
-  let linked = exit_status(code: 0_u8);
+  let linked = std::process::exit_status(code: 0_u8);
   let second = choose(value: 19_u64);
   let third = choose(value: 23_u64);
   let pair = first +wrap second;
   let total = pair +wrap third;
   if total != 59_u64 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
   return move linked;
 }
 "#;
     let module = emit_with_overlap(source);
     a_mixed_fixture_reports(&module, 0);
-    assert!(module.contains("@wf_exit_status"));
+    assert!(module.contains("@wf_std.process.exit_status"));
     assert!(!module.contains("@wf__completion_file_"));
 }
 
@@ -1967,12 +1967,12 @@ fn main() -> status: ExitStatus pure {
 /// hoping the worker steals the single task before the caller reaches join.
 #[test]
 fn an_ordinary_worker_helper_can_call_the_linked_io_library() {
-    let source = br#"fn write_byte(inputs: Inputs) -> result: u64 pure {
-  let Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: factory, stdin: input) = move inputs;
-  close_directory(factory: &factory, directory: move cwd);
+    let source = br#"fn write_byte(inputs: std::process::Inputs) -> result: u64 pure {
+  let std::process::Inputs(args: args, cwd: cwd, stdout: out, stderr: err, handles: factory, stdin: input) = move inputs;
+  std::fs::close_directory(factory: &factory, directory: move cwd);
   let bytes = box_array_filled::<u8>(count: 1_u64, value: 88_u8);
   let window = &bytes.inner[0_u64..1_u64];
-  match write_once(factory: &factory, output: &out, source: window, start: 0_u64, end: 1_u64) {
+  match std::io::write_once(factory: &factory, output: &out, source: window, start: 0_u64, end: 1_u64) {
     Ok(value: accepted) => {
       return accepted;
     }
@@ -1986,13 +1986,13 @@ fn choose(value: u64) -> result: u64 pure {
   return value;
 }
 
-fn main(inputs: Inputs) -> status: ExitStatus pure {
+fn main(inputs: std::process::Inputs) -> status: std::process::ExitStatus pure {
   let first = write_byte(inputs: move inputs);
   let second = choose(value: 1_u64);
   if first != second {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let module = emit_with_overlap(source);
@@ -2001,7 +2001,7 @@ fn main(inputs: Inputs) -> status: ExitStatus pure {
     // as the parameter kind `&[T]` [REF-4, TYPE-8], so its emitted argument
     // list is whatever the range-reference ABI becomes. Only the `void` return
     // (the `Result` destination) is asserted here.
-    assert!(helper.contains("call void @wf_write_once("));
+    assert!(helper.contains("call void @wf_std.io.write_once("));
     assert!(!helper.contains("@wf__completion_"));
     let main = function_body(&module, "@wf_main");
     let publishes = main
@@ -2149,12 +2149,12 @@ fn mixed(x: u64) -> result: u64 pure {
   return partial +wrap e;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let result = mixed(x: 3_u64);
   if result == 290_u64 {
-    return exit_status(code: 0_u8);
+    return std::process::exit_status(code: 0_u8);
   }
-  return exit_status(code: 1_u8);
+  return std::process::exit_status(code: 1_u8);
 }
 "#;
     let all = super::emit_lowered(source, crate::OverlapLowering::On);
@@ -2209,14 +2209,14 @@ fn scalar_leaf_control_drops_small_offers_without_clones() {
   return x +wrap x;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let a = twice(x: 3_u64);
   let b = twice(x: 4_u64);
   let value = a +wrap b;
   if value == 14_u64 {
-    return exit_status(code: 0_u8);
+    return std::process::exit_status(code: 0_u8);
   }
-  return exit_status(code: 1_u8);
+  return std::process::exit_status(code: 1_u8);
 }
 "#;
     let filtered = super::emit_lowered(
@@ -2290,13 +2290,13 @@ fn recursive_controls_preserve_scalar_and_destination_results() {
   return {merged};
 }}
 
-fn main() -> status: ExitStatus pure {{
+fn main() -> status: std::process::ExitStatus pure {{
   let seed = 2_u64;
   let answer = fold(depth: 5_u64, seed: &seed);
   if {read} == 64_u64 {{
-    return exit_status(code: 0_u8);
+    return std::process::exit_status(code: 0_u8);
   }}
-  return exit_status(code: 1_u8);
+  return std::process::exit_status(code: 1_u8);
 }}
 "#
             );
@@ -2472,14 +2472,14 @@ fn recursive_controls_keep_leaf_calls_unchanged() {
   return x +wrap 1_u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let a = leaf(x: 1_u64);
   let b = leaf(x: 2_u64);
   let sum = a +wrap b;
   if sum == 5_u64 {
-    return exit_status(code: 0_u8);
+    return std::process::exit_status(code: 0_u8);
   }
-  return exit_status(code: 1_u8);
+  return std::process::exit_status(code: 1_u8);
 }
 "#;
     let reference = emit_with_overlap(source);

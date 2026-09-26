@@ -1,3 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 fn main() -> status: ExitStatus pure {
   doc "The upper capture equals run.len only in the preheader. take_back writes that length on a path reaching the next header, so the equality is not in the counted head state and the element read has no bound against the current length.";
   let run = slots_new::<u8, 4>();

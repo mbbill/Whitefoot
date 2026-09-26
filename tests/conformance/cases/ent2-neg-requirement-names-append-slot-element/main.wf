@@ -1,5 +1,7 @@
-alias kinds = pkg::kinds;
 alias Entry = pkg::kinds::Entry;
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+alias kinds = pkg::kinds;
 
 fn fill(rows: &Slots<Entry, 4>, cells: &Array<u8, 3>, i: u64) -> total: u64 reads(cells), writes(rows) contract {
   requires i == deref(rows).len;

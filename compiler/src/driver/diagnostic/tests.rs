@@ -39,8 +39,8 @@ const BOUNDS: &[u8] =
   return kept;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
 
@@ -101,11 +101,11 @@ fn a_call_requirement_names_the_callee_clause_by_its_position_and_text() {
   return kept;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let text = array_filled::<u8, 6>(value: 32_u8);
   let buffer = array_filled::<u8, 5>(value: 0_u8);
   let kept = drop_spaces(out: &buffer[0_u64..5_u64], src: &text[0_u64..6_u64]);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let failure = stop("caller.wf", source);
@@ -132,14 +132,29 @@ fn main() -> status: ExitStatus pure {
     );
 }
 
-/// A requirement of a compiler-supplied declaration is quoted too, under a
-/// name no writer will try to open as a file.
+/// A requirement of a supplied declaration is quoted from the record that
+/// declares it: a PRE-1 record under a name no writer will try to open as a
+/// file, and a host module's function from the standard library record
+/// [PRE-2, MOD-10] that states it.
 #[test]
-fn a_prelude_requirement_is_named_as_the_prelude() {
-    let source = br#"fn walk(factory: &HandleFactory, root: &DirectoryRead, name: &[u8]) -> result: u8 reads(root), reads(name), writes(factory) {
-  match open_file(factory: factory, root: root, name: name, start: 0_u64, end: 1_u64) {
+fn a_supplied_requirement_is_quoted_from_its_declaring_record() {
+    let prelude = br#"fn fill() -> result: u64 pure {
+  let slots = slots_new::<u64, 0>();
+  place_back(window: &slots, value: 1_u64);
+  return slots.len;
+}
+"#;
+    let detail = stop("fill.wf", prelude).detail();
+    assert!(
+        detail.contains(
+            "requires_clause: <prelude>/place_back.wf:2:3 \"requires deref(window).len < deref(window).cap;\"\n"
+        ),
+        "{detail}"
+    );
+    let host = br#"fn walk(factory: &std::io::HandleFactory, root: &std::fs::DirectoryRead, name: &[u8]) -> result: u8 reads(root), reads(name), writes(factory) {
+  match std::fs::open_file(factory: factory, root: root, name: name, start: 0_u64, end: 1_u64) {
     Ok(value: handle) => {
-      close_read(factory: factory, file: move handle);
+      std::fs::close_read(factory: factory, file: move handle);
     }
     Err(error: problem) => {
     }
@@ -147,10 +162,10 @@ fn a_prelude_requirement_is_named_as_the_prelude() {
   return 0_u8;
 }
 "#;
-    let detail = stop("walk.wf", source).detail();
+    let detail = stop("walk.wf", host).detail();
     assert!(
         detail.contains(
-            "requires_clause: <prelude>/open_file.wf:3:3 \"requires end <= deref(name).len;\"\n"
+            "requires_clause: std/fs/module.wfm:54:3 \"requires end <= deref(name).len;\"\n"
         ),
         "{detail}"
     );
@@ -170,8 +185,8 @@ fn a_postcondition_names_its_clause_and_selector_by_their_own_text() {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let failure = stop("ensures.wf", source);
@@ -216,8 +231,8 @@ fn a_failed_loop_invariant_names_its_obligation_and_required_relation() {
   return kept;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_eq!(
@@ -246,8 +261,8 @@ fn a_failed_certificate_part_prints_its_use_ordinal_as_a_field() {
   return x;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let failure = stop("premise.wf", source);
@@ -268,21 +283,21 @@ fn main() -> status: ExitStatus pure {
 
 #[test]
 fn a_grammar_rejection_quotes_the_expected_terminals_and_the_token_it_found() {
-    let source = b"fn main() -> status: ExitStatus pure {\n  let a = 42;\n  return exit_status(code: 0_u8);\n}\n";
+    let source = b"fn main() -> status: std::process::ExitStatus pure {\n  let a = 42;\n  return std::process::exit_status(code: 0_u8);\n}\n";
     // A fixed terminal is quoted as its spelling; a token class is named.
     assert_eq!(
         stop("suffix.wf", source).to_string(),
         r#"suffix.wf:2:11: error[FORM-5]: UnexpectedToken
   source:   let a = 42;
   marker:           ^^
-  expected: [IDENT, TYPEID, "pkg", "&", "entry", "move", "if", "propagate", "match", literal, "musttail", OPNAME, "deref"]
+  expected: [IDENT, TYPEID, "pkg", "std", "&", "entry", "move", "if", "propagate", "match", literal, "musttail", OPNAME, "deref"]
   found: "42""#
     );
 }
 
 #[test]
 fn a_canonical_rejection_quotes_the_trivia_and_marks_the_line_it_ends_in() {
-    let source = b"fn main() -> status: ExitStatus pure {\n    let a = 1_i32;\n  return exit_status(code: 0_u8);\n}\n";
+    let source = b"fn main() -> status: std::process::ExitStatus pure {\n    let a = 1_i32;\n  return std::process::exit_status(code: 0_u8);\n}\n";
     let failure = stop("indent.wf", source);
     assert_eq!(
         failure.to_string(),
@@ -295,7 +310,7 @@ fn a_canonical_rejection_quotes_the_trivia_and_marks_the_line_it_ends_in() {
     // JSON carries the same escaped spelling the text form quotes.
     assert_eq!(
         failure.render(DiagnosticFormat::Json),
-        r#"{"rule":"FORM-2","kind":"NonCanonicalTrivia","category":"Source","stage":"CanonicalSource","at":{"file":"indent.wf","line":2,"column":1},"bytes":{"start":38,"end":43},"source":"    let a = 1_i32;","detail":{"expected":"\\n  ","found":"\\n    "}}"#
+        r#"{"rule":"FORM-2","kind":"NonCanonicalTrivia","category":"Source","stage":"CanonicalSource","at":{"file":"indent.wf","line":2,"column":1},"bytes":{"start":52,"end":57},"source":"    let a = 1_i32;","detail":{"expected":"\\n  ","found":"\\n    "}}"#
     );
 }
 
@@ -306,7 +321,7 @@ fn a_canonical_rejection_quotes_the_trivia_and_marks_the_line_it_ends_in() {
 /// stays the exact interval.
 #[test]
 fn a_multi_byte_scalar_is_marked_as_one_character_and_escaped_where_quoted() {
-    let source = "fn main() -> status: ExitStatus pure {\n  let x = \u{2192} caf\u{e9};\n  return exit_status(code: 0_u8);\n}\n";
+    let source = "fn main() -> status: std::process::ExitStatus pure {\n  let x = \u{2192} caf\u{e9};\n  return std::process::exit_status(code: 0_u8);\n}\n";
     let failure = stop("utf8.wf", source.as_bytes());
     assert_eq!(
         failure.to_string(),
@@ -317,7 +332,7 @@ fn a_multi_byte_scalar_is_marked_as_one_character_and_escaped_where_quoted() {
     );
     assert_eq!(
         failure.render(DiagnosticFormat::Json),
-        "{\"rule\":\"FORM-1\",\"kind\":\"UnexpectedByte\",\"category\":\"Source\",\"stage\":\"Lexing\",\"at\":{\"file\":\"utf8.wf\",\"line\":2,\"column\":11},\"bytes\":{\"start\":49,\"end\":52},\"source\":\"  let x = \u{2192} caf\u{e9};\",\"detail\":{\"found\":\"\\\\u{2192}\"}}"
+        "{\"rule\":\"FORM-1\",\"kind\":\"UnexpectedByte\",\"category\":\"Source\",\"stage\":\"Lexing\",\"at\":{\"file\":\"utf8.wf\",\"line\":2,\"column\":11},\"bytes\":{\"start\":63,\"end\":66},\"source\":\"  let x = \u{2192} caf\u{e9};\",\"detail\":{\"found\":\"\\\\u{2192}\"}}"
     );
 }
 
@@ -328,7 +343,7 @@ fn a_multi_byte_scalar_is_marked_as_one_character_and_escaped_where_quoted() {
 fn an_invalid_byte_is_escaped_in_both_formats() {
     let failure = stop(
         "byte.wf",
-        b"fn main() -> status: ExitStatus pure {\n  let x = \xff;\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: std::process::ExitStatus pure {\n  let x = \xff;\n  return std::process::exit_status(code: 0_u8);\n}\n",
     );
     assert_eq!(
         failure.to_string(),
@@ -339,7 +354,7 @@ fn an_invalid_byte_is_escaped_in_both_formats() {
     );
     assert_eq!(
         failure.render(DiagnosticFormat::Json),
-        r#"{"rule":"FORM-2","kind":"InvalidUtf8","category":"Source","stage":"Lexing","at":{"file":"byte.wf","line":2,"column":11},"bytes":{"start":49,"end":50},"source":"  let x = \\xff;","detail":{"found":"\\xff"}}"#
+        r#"{"rule":"FORM-2","kind":"InvalidUtf8","category":"Source","stage":"Lexing","at":{"file":"byte.wf","line":2,"column":11},"bytes":{"start":63,"end":64},"source":"  let x = \\xff;","detail":{"found":"\\xff"}}"#
     );
 }
 
@@ -348,7 +363,7 @@ fn an_invalid_byte_is_escaped_in_both_formats() {
 /// marker stays under the defect.
 #[test]
 fn a_quoted_line_escapes_control_and_reordering_characters() {
-    let source = "fn main() -> status: ExitStatus pure {\n  let x = @ \t\u{202e}y;\n  return exit_status(code: 0_u8);\n}\n";
+    let source = "fn main() -> status: std::process::ExitStatus pure {\n  let x = @ \t\u{202e}y;\n  return std::process::exit_status(code: 0_u8);\n}\n";
     assert_eq!(
         stop("bidi.wf", source.as_bytes()).to_string(),
         "bidi.wf:2:11: error[FORM-3]: MissingLabelName
@@ -364,7 +379,7 @@ fn a_quoted_line_escapes_control_and_reordering_characters() {
 /// printed escape.
 #[test]
 fn a_quoted_line_escapes_zero_width_and_separator_characters() {
-    let source = "fn main() -> status: ExitStatus pure {\n  let x = \u{200b}y\u{2028}z\u{feff}\u{2029}\u{200d};\n  return exit_status(code: 0_u8);\n}\n";
+    let source = "fn main() -> status: std::process::ExitStatus pure {\n  let x = \u{200b}y\u{2028}z\u{feff}\u{2029}\u{200d};\n  return std::process::exit_status(code: 0_u8);\n}\n";
     assert_eq!(
         stop("zero-width.wf", source.as_bytes()).to_string(),
         "zero-width.wf:2:11: error[FORM-1]: UnexpectedByte
@@ -379,7 +394,7 @@ fn a_quoted_line_escapes_zero_width_and_separator_characters() {
 /// is rather than repeating the spelling it already names.
 #[test]
 fn a_declaration_origin_quotes_its_declaration() {
-    let source = b"fn scale(factor: u64) -> result: u64 pure {\n  let factor = 2_u64;\n  return factor;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    let source = b"fn scale(factor: u64) -> result: u64 pure {\n  let factor = 2_u64;\n  return factor;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n";
     let failure = stop("shadow.wf", source);
     let rendered = failure.to_string();
     assert!(
@@ -405,7 +420,7 @@ fn a_declaration_origin_quotes_its_declaration() {
 fn a_capability_stop_names_its_stage_and_never_cites_a_rule() {
     let failure = stop(
         "arms.wf",
-        b"enum Flag {\n  A();\n  B();\n}\n\nfn main() -> status: ExitStatus pure {\n  let flag = Flag::A();\n  match flag {\n    A() => {\n    }\n    A() => {\n    }\n    B() => {\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum Flag {\n  A();\n  B();\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  let flag = Flag::A();\n  match flag {\n    A() => {\n    }\n    A() => {\n    }\n    B() => {\n    }\n  }\n  return std::process::exit_status(code: 0_u8);\n}\n",
     );
     let rendered = failure.to_string();
     assert!(

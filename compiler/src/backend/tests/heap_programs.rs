@@ -90,14 +90,14 @@ fn the_byte_accessor_without_its_length_branch_is_an_op4_rejection() {
   }
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let bytes = array_filled::<u8, 4>(value: 7_u8);
   let whole = &bytes[0_u64..4_u64];
   let first = byte_at(s: whole, index: 0_u64);
   if first != 7_u8 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let guarded = "  let within = index < stored;";

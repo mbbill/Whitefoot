@@ -1,3 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 const prefix_input: Array<u8, 5> =[43_u8, 50_u8, 43_u8, 51_u8, 52_u8];
 
 const prefix_incomplete: Array<u8, 2> =[43_u8, 50_u8];

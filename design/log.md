@@ -5,6 +5,22 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-25 Keep the standard library in lib/std and move the containers into it
+
+Nodes: language/standard-library, language/name-resolution, language/system-interface/declaration-home
+
+Owner-approved: After the handoff for PR #129 at 5373afcc, whose first decision card showed the standard-library amendment (the library's source in lib/std, embedded in the compiler; the containers as std::collections) with its reasons in Chinese, the owner approved that card.
+
+Summary: Add the amendment's two decisions and its rejected alternative to language/standard-library unchanged: the standard library's source lives in lib/std as one package with its own graph and the compiler carries its records from its own build, so a program is always checked against the library its compiler ships, and the container libraries become the library's first Whitefoot modules under std::collections, because a module program can reach no source outside its package root and binding other packages stays deferred. Remove the accepted amendment. The other nodes named here are unchanged by this entry and carry the earlier ruling below; they are listed because this PR changes them. The same handoff's second card asked whether std::process keeps Inputs beside ExitStatus, which makes a program that names only ExitStatus read the std::io, std::text and std::fs interfaces; the owner chose to keep that layout and fix the checker's nominal passes instead, which changes no node. This ruling does not authorize a merge.
+
+## 2026-09-25 Move the host declarations into a standard library
+
+Nodes: language/standard-library, language/name-resolution, language/system-interface/declaration-home
+
+Owner-approved: After the handoff for PR #129 at 715b05dd, which showed the std-qualifier, host-declarations-in-std and standard-library amendments with a Chinese summary, the owner approved all three, answering that ExitStatus goes into std and that rewriting tests is no cost, and asked where std lives and whether the containers belong in it.
+
+Summary: The prelude keeps only the declarations a language rule names, and every host declaration, ExitStatus and Inputs included, becomes an ordinary public declaration of a standard library module interface whose definition the build supplies, because no rule names them and injecting them into every check costs 36 to 62 percent of a check's instructions ([library-modules E1](../research/investigations/library-modules/DESIGN.md#measurement-e1-what-the-host-rows-cost-every-check)). A fixed std qualifier names the toolchain's standard library beside pkg; a graph row lists the standard library modules its module may name and a source bundle may name any of them; a check or composition reads a standard library module only then; and the specification keeps the exact interface text of the modules whose definitions the build supplies. Binding other external packages stays deferred. The container decision of the standard-library amendment is not applied: the owner asked about it, so it stays an amendment with a proposed home for the library's source.
+
 ## 2026-09-25 Form requirement places at body entry and separate window parts only from live indices
 
 Nodes: language/checks-and-proofs/requires-entry-contract, language/ownership, language/checks-and-proofs

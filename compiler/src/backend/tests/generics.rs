@@ -26,20 +26,20 @@ const GENERIC_CONSUMER: &[u8] = br#"fn forward<T: Int>(value: T) -> pair: Pair<T
   return bundle_pair::<T>(value: value);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let small = forward::<u8>(value: 13_u8);
   let wide = forward::<i64>(value: -17_i64);
   let small_value = small.value;
   let wide_value = wide.value;
   if small_value == 13_u8 {
   } else {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
   if wide_value == -17_i64 {
   } else {
-    return exit_status(code: 2_u8);
+    return std::process::exit_status(code: 2_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
 

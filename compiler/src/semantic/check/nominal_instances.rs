@@ -650,7 +650,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.source_nominal_instances
             .push(Some((template_index, substitution.clone())));
         self.prelude_types.push(None);
-        self.nominals.push(CheckedNominal {
+        self.push_nominal(CheckedNominal {
             id,
             name,
             kind: match template.role {
@@ -919,6 +919,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .get_mut(id.0 as usize)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?
             .kind = kind;
+        self.nominal_table_changed();
         self.nominal_states[id.0 as usize] = 2;
         Ok(())
     }
@@ -1640,6 +1641,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .borrow_mut()
             .retain(|_, id| retained.contains(id));
         self.nominals.truncate(checkpoint);
+        self.nominal_table_changed();
         self.nominal_nodes.truncate(checkpoint);
         self.nominal_states.truncate(checkpoint);
         self.source_nominal_instances.truncate(checkpoint);

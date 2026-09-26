@@ -1,11 +1,3 @@
-interface DequeVisit<T, E> {
-  fn accept(env: &E, value: &T) -> result: unit reads(value), writes(env);
-}
-
-interface DequeDrain<T, E> {
-  fn accept(env: &E, value: T) -> result: unit writes(env);
-}
-
 fn deque_new<T, const ceiling: u64>(capacity: u64) -> made: Box<Ring<T>> pure contract {
   requires capacity <= ceiling;
   ensures made.inner.len == 0_u64;

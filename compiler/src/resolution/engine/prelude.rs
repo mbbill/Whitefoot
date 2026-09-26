@@ -44,9 +44,10 @@ impl PreludeInventory {
                 let Some(file) = sources.file(role.origin.coordinate.source()) else {
                     return Err(ResolutionCompilerFailure::InvalidRoleShape);
                 };
+                // [PRE-1] declares no ordinary struct or enum beyond the
+                // built-in catalog, so phase 2 has no record.
                 let record_phase = match file.prelude() {
                     Some(PreludeSource::Opaque) => 0,
-                    Some(PreludeSource::Items) => 2,
                     Some(PreludeSource::Function) => 4,
                     None => continue,
                 };

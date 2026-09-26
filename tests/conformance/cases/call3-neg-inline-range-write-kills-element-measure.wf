@@ -1,3 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 fn refill(part: &[Slots<u64, 8>], at: u64) -> result: unit writes(part) contract {
   requires at < deref(part).len;
 } {

@@ -426,8 +426,8 @@ fn repeated_normalized_uses_are_a_prf1_rejection() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(source, SemanticRule::Prf1, |kind| {
@@ -437,9 +437,9 @@ fn main() -> status: ExitStatus pure {
 
 #[test]
 fn a_local_invariant_equality_is_an_inv1_target() {
-    let source = br#"fn main() -> status: ExitStatus pure {
+    let source = br#"fn main() -> status: std::process::ExitStatus pure {
   invariant held: 0_u64 == 0_u64;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_accepts(source);
@@ -447,9 +447,9 @@ fn a_local_invariant_equality_is_an_inv1_target() {
 
 #[test]
 fn an_unproved_blockless_local_invariant_target_is_an_inv1_rejection() {
-    let source = br#"fn main() -> status: ExitStatus pure {
+    let source = br#"fn main() -> status: std::process::ExitStatus pure {
   invariant impossible: 1_u64 <= 0_u64;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(source, SemanticRule::Inv1, |kind| {
@@ -470,8 +470,8 @@ fn a_non_ordered_use_relation_is_a_prf1_rejection() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(source, SemanticRule::Prf1, |kind| {
@@ -487,9 +487,9 @@ fn add(x: i32, y: i32) -> result: i32 pure {
   return x +wrap y;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let result = add(x: base, y: 2_i32);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -504,17 +504,17 @@ fn main() -> status: ExitStatus pure {
 #[test]
 fn semantic_rule_owners_remain_distinct() {
     assert_rule(
-        b"fn main() -> status: ExitStatus pure {\n  let value = 128_i8;\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: std::process::ExitStatus pure {\n  let value = 128_i8;\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Form7,
         SemanticIssueKind::InvalidIntegerLiteral,
     );
     assert_rule(
-        b"fn main() -> status: ExitStatus pure {\n  return 0_i32;\n}\n",
+        b"fn main() -> status: std::process::ExitStatus pure {\n  return 0_i32;\n}\n",
         SemanticRule::Fn1,
         SemanticIssueKind::ReturnMismatch,
     );
     assert_rule_kind(
-        b"fn main() -> status: ExitStatus pure {\n  invariant bad: 0_u64 != 0_u64;\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: std::process::ExitStatus pure {\n  invariant bad: 0_u64 != 0_u64;\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Inv1,
         |kind| matches!(kind, SemanticIssueKind::InvalidInvariant { .. }),
     );
@@ -538,12 +538,12 @@ fn semantic_rule_owners_remain_distinct() {
 #[test]
 fn function_control_is_checked_and_main_has_an_ordinary_signature() {
     assert_rule(
-        b"fn main() -> status: ExitStatus pure {\n}\n",
+        b"fn main() -> status: std::process::ExitStatus pure {\n}\n",
         SemanticRule::Fn1,
         SemanticIssueKind::FunctionFallthrough,
     );
     assert_rule(
-        b"fn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn1,
         SemanticIssueKind::UnreachableStatement,
     );
@@ -558,7 +558,7 @@ fn function_control_is_checked_and_main_has_an_ordinary_signature() {
         },
     );
     assert_rule(
-        b"fn main() -> status: ExitStatus pure {\n  loop @done {\n    break @done;\n    return exit_status(code: 0_u8);\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: std::process::ExitStatus pure {\n  loop @done {\n    break @done;\n    return std::process::exit_status(code: 0_u8);\n  }\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn1,
         SemanticIssueKind::UnreachableStatement,
     );
@@ -578,12 +578,12 @@ fn loops_enforce_own11_for_outer_affine_moves() {
   return n;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let c = slots_new::<u8, 4>();
   for (i in 0_u64..2_u64) {
     let taken = measure(cell: move c);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own11,
@@ -600,13 +600,13 @@ fn main() -> status: ExitStatus pure {
   return n;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let c = slots_new::<u8, 4>();
   for (i in 0_u64..2_u64) {
     let taken = measure(cell: move c);
     set c = slots_new::<u8, 4>();
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         |outcome| {
@@ -618,7 +618,7 @@ fn main() -> status: ExitStatus pure {
         },
     );
     with_semantics(
-        b"fn main() -> status: ExitStatus pure {\n  loop @forever {\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: std::process::ExitStatus pure {\n  loop @forever {\n  }\n  return std::process::exit_status(code: 0_u8);\n}\n",
         |outcome| {
             assert!(
                 matches!(outcome, SemanticOutcome::Complete(_)),
@@ -634,7 +634,7 @@ fn loop_break_and_backedge_cleanup_is_explicit() {
   value: i32;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   loop @again {
     let first = Cell(value: 1_i32);
     if True() {
@@ -642,7 +642,7 @@ fn main() -> status: ExitStatus pure {
     }
     let second = Cell(value: 2_i32);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -677,9 +677,9 @@ fn named_arguments_and_copy_move_spelling_are_checked_generally() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   take(other: 1_i32);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule(
@@ -691,7 +691,7 @@ fn main() -> status: ExitStatus pure {
         },
     );
     assert_rule(
-        b"fn main() -> status: ExitStatus pure {\n  let a = 1_i32;\n  let b = move a;\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: std::process::ExitStatus pure {\n  let a = 1_i32;\n  let b = move a;\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Own1,
         SemanticIssueKind::MoveOfCopy {
             mechanical_fix: "use the copy place without `move`",
@@ -715,12 +715,12 @@ fn operation_call_shapes_keep_their_exact_rule_owners() {
     // and [TYPE-5] is what mandates these arguments, so their absence is its
     // violation — the reading `finf`/`fnan` already carried.
     assert_rule(
-        b"fn main() -> status: ExitStatus pure {\n  let value = 4_i32;\n  let narrowed = cvt(value);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: std::process::ExitStatus pure {\n  let value = 4_i32;\n  let narrowed = cvt(value);\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         SemanticIssueKind::InvalidOperation,
     );
     assert_rule(
-        b"fn main() -> status: ExitStatus pure {\n  let left = 1_i32;\n  let right = 2_i32;\n  let value = imin(left: left, right: right);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: std::process::ExitStatus pure {\n  let left = 1_i32;\n  let right = 2_i32;\n  let value = imin(left: left, right: right);\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Gram11,
         SemanticIssueKind::InvalidNamedArguments {
             callee: "imin".to_owned(),
@@ -743,24 +743,24 @@ fn operation_call_shapes_keep_their_exact_rule_owners() {
 fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
     // Missing the arguments the callee's class mandates.
     assert_rule_kind(
-        b"struct Held {\n  v: i32;\n}\n\nfn pick<T: drop>(value: T) -> result: T pure {\n  return move value;\n}\n\nfn main() -> status: ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick(value: move a);\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Held {\n  v: i32;\n}\n\nfn pick<T: drop>(value: T) -> result: T pure {\n  return move value;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick(value: move a);\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn2,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
     assert_rule(
-        b"fn main() -> status: ExitStatus pure {\n  let value = 4_i32;\n  let narrowed = cvt(value);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: std::process::ExitStatus pure {\n  let value = 4_i32;\n  let narrowed = cvt(value);\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         SemanticIssueKind::InvalidOperation,
     );
 
     // A wrong-count argument list, the same failure on both classes.
     assert_rule_kind(
-        b"struct Held {\n  v: i32;\n}\n\nfn pick<T: drop>(value: T) -> result: T pure {\n  return move value;\n}\n\nfn main() -> status: ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick::<Held, Held>(value: move a);\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Held {\n  v: i32;\n}\n\nfn pick<T: drop>(value: T) -> result: T pure {\n  return move value;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick::<Held, Held>(value: move a);\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn2,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
     assert_rule(
-        b"fn main() -> status: ExitStatus pure {\n  let value = 4_i32;\n  let narrowed = cvt::<i32>(value);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: std::process::ExitStatus pure {\n  let value = 4_i32;\n  let narrowed = cvt::<i32>(value);\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
@@ -770,7 +770,7 @@ fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
     // user-generic call, so it is the control that the rule is not simply
     // keyed on that reader.
     assert_rule_kind(
-        b"struct Pair<T: drop> {\n  v: T;\n}\n\nfn main() -> status: ExitStatus pure {\n  let p = Pair(v: 1_i32);\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Pair<T: drop> {\n  v: T;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  let p = Pair(v: 1_i32);\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -789,10 +789,10 @@ fn effect_mismatch_is_located_at_the_written_effect_row() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let block = slots_new::<u8, 4>();
   fill(target: &block);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -833,14 +833,14 @@ fn nominal_diagnostics_retain_required_lists_and_repairs() {
         },
     );
     assert_rule(
-        b"struct Pair {\n  x: i32;\n  x: i32;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Pair {\n  x: i32;\n  x: i32;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type6,
         SemanticIssueKind::DuplicateFieldLabel {
             label: "x".to_owned(),
         },
     );
     assert_rule(
-        b"enum Pairing {\n  Both(a: i32, b: i32);\n}\n\nfn main() -> status: ExitStatus pure {\n  let pair = Pairing::Both(a: 1_i32, b: 2_i32);\n  match pair {\n    Both(a: first) => {\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum Pairing {\n  Both(a: i32, b: i32);\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  let pair = Pairing::Both(a: 1_i32, b: 2_i32);\n  match pair {\n    Both(a: first) => {\n    }\n  }\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Gram10,
         SemanticIssueKind::InvalidMatchFields {
             variant: "Both".to_owned(),
@@ -852,12 +852,12 @@ fn nominal_diagnostics_retain_required_lists_and_repairs() {
 #[test]
 fn give_completeness_rejects_each_structural_failure() {
     assert_rule(
-        b"fn main() -> status: ExitStatus pure {\n  let flag = True();\n  let result = if flag {\n  } else {\n    give 0_i32;\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: std::process::ExitStatus pure {\n  let flag = True();\n  let result = if flag {\n  } else {\n    give 0_i32;\n  }\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Give1,
         SemanticIssueKind::InvalidGive,
     );
     assert_rule(
-        b"fn main() -> status: ExitStatus pure {\n  let flag = True();\n  let result = if flag {\n    give 1_i32;\n    give 2_i32;\n  } else {\n    give 0_i32;\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: std::process::ExitStatus pure {\n  let flag = True();\n  let result = if flag {\n    give 1_i32;\n    give 2_i32;\n  } else {\n    give 0_i32;\n  }\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Give1,
         SemanticIssueKind::InvalidGive,
     );
@@ -866,12 +866,12 @@ fn give_completeness_rejects_each_structural_failure() {
 #[test]
 fn enum_equality_exclusions_reach_the_intended_rule() {
     assert_rule(
-        b"enum PayloadEq {\n  PayloadEmpty();\n  PayloadValue(value: u32);\n}\n\nfn main() -> status: ExitStatus pure {\n  let left = PayloadEq::PayloadEmpty();\n  let right = PayloadEq::PayloadEmpty();\n  let equal = eeq(left, right);\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum PayloadEq {\n  PayloadEmpty();\n  PayloadValue(value: u32);\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  let left = PayloadEq::PayloadEmpty();\n  let right = PayloadEq::PayloadEmpty();\n  let equal = eeq(left, right);\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Op1,
         SemanticIssueKind::InvalidOperation,
     );
     assert_rule_kind(
-        b"enum LeftEq {\n  LeftFirst();\n}\n\nenum RightEq {\n  RightFirst();\n}\n\nfn main() -> status: ExitStatus pure {\n  let left = LeftEq::LeftFirst();\n  let right = RightEq::RightFirst();\n  let equal = eeq(left, right);\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum LeftEq {\n  LeftFirst();\n}\n\nenum RightEq {\n  RightFirst();\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  let left = LeftEq::LeftFirst();\n  let right = RightEq::RightFirst();\n  let equal = eeq(left, right);\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -884,7 +884,7 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
     // `x-struct-set-field.wf` additionally proves its exact increment from
     // the S5 post-write image.
     with_semantics(
-        b"struct Counter {\n  n: i32;\n}\n\nfn main() -> status: ExitStatus pure {\n  let c = Counter(n: 1_i32);\n  set c.n = 41_i32;\n  let v = c.n;\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Counter {\n  n: i32;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  let c = Counter(n: 1_i32);\n  set c.n = 41_i32;\n  let v = c.n;\n  return std::process::exit_status(code: 0_u8);\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     // Borrow-mode parameters and `let` borrows of scalars and enums, and the
@@ -897,15 +897,15 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
     // borrow-matched through `&'r` whose scrutinee stays live for a second
     // read, with each derived binder explicitly dereferenced.
     with_semantics(
-        b"enum Cell {\n  Full(v: i32);\n  Void();\n}\n\nfn main() -> status: ExitStatus pure {\n  let c = Cell::Full(v: 20_i32);\n  let p = &c;\n  let a = match deref(p) {\n    Full(v: x) => {\n      give deref(x);\n    }\n    Void() => {\n      give 0_i32;\n    }\n  }\n  let q = &c;\n  let b = match deref(q) {\n    Full(v: y) => {\n      give deref(y);\n    }\n    Void() => {\n      give 0_i32;\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum Cell {\n  Full(v: i32);\n  Void();\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  let c = Cell::Full(v: 20_i32);\n  let p = &c;\n  let a = match deref(p) {\n    Full(v: x) => {\n      give deref(x);\n    }\n    Void() => {\n      give 0_i32;\n    }\n  }\n  let q = &c;\n  let b = match deref(q) {\n    Full(v: y) => {\n      give deref(y);\n    }\n    Void() => {\n      give 0_i32;\n    }\n  }\n  return std::process::exit_status(code: 0_u8);\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     assert_unsupported(
-        b"struct Node {\n  next: Node;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Node {\n  next: Node;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
         UnsupportedSemanticFeature::RecursiveNominalLayout,
     );
     assert_unsupported(
-        b"enum Flag {\n  A();\n  B();\n}\n\nfn main() -> status: ExitStatus pure {\n  let flag = Flag::A();\n  match flag {\n    A() => {\n    }\n    A() => {\n    }\n    B() => {\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        b"enum Flag {\n  A();\n  B();\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  let flag = Flag::A();\n  match flag {\n    A() => {\n    }\n    A() => {\n    }\n    B() => {\n    }\n  }\n  return std::process::exit_status(code: 0_u8);\n}\n",
         UnsupportedSemanticFeature::DuplicateMatchArm,
     );
     // Each iteration consumes the local run and installs the returned run in
@@ -916,12 +916,12 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
   return move cell;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let c = slots_new::<u8, 4>();
   for (i in 0_u64..2_u64) {
     set c = consume(cell: move c);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
@@ -935,17 +935,17 @@ fn ordinary_signature_effects_reject_both_row_directions() {
     // over a reference parameter, because [EFF-1] gives a by-value parameter
     // no effect entry at all; a row rooted at one is the third assertion.
     assert_rule_kind(
-        b"fn probe(args: &Args) -> result: unit reads(args) {\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(args: &std::text::Args) -> result: unit reads(args) {\n  return unit;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
     assert_rule_kind(
-        b"fn probe(args: &Args) -> result: u64 pure {\n  let total = args_count(args: args);\n  return total;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(args: &std::text::Args) -> result: u64 pure {\n  let total = std::text::args_count(args: args);\n  return total;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
     assert_rule_kind(
-        b"fn probe(args: Args) -> result: unit reads(args) {\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(args: std::text::Args) -> result: unit reads(args) {\n  return unit;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff1,
         |kind| matches!(kind, SemanticIssueKind::InvalidEffectRow { .. }),
     );
@@ -1041,8 +1041,8 @@ fn bare(outcome: Result<i32, StepError>) -> result: Result<Pair, StepError> pure
   return Ok<Pair, StepError>(value: pair);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -1080,8 +1080,8 @@ fn reuse(outcome: Result<i32, StepError>) -> result: Result<i32, StepError> pure
   return Ok<i32, StepError>(value: accepted);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own1,
@@ -1101,7 +1101,7 @@ fn main() -> status: ExitStatus pure {
   Second();
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let flag = Flag::First();
   match Err(error: flag) {
     Ok(value: ok_value) => {
@@ -1109,7 +1109,7 @@ fn main() -> status: ExitStatus pure {
     Err(error: err_value) => {
     }
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Type5,
@@ -1133,13 +1133,13 @@ struct Outer {
   other: i32;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let number = 1_i32;
   set number = 2_i32;
   let inner = Inner(value: 3_i32);
   let outer = Outer(inner: inner, other: 4_i32);
   set outer.inner.value = number;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -1167,7 +1167,7 @@ fn main() -> status: ExitStatus pure {
 #[test]
 fn set_rejections_keep_their_exact_rule_owners() {
     assert_rule(
-        b"const answer: i32 = 1_i32;\n\nfn main() -> status: ExitStatus pure {\n  set answer = 2_i32;\n  return exit_status(code: 0_u8);\n}\n",
+        b"const answer: i32 = 1_i32;\n\nfn main() -> status: std::process::ExitStatus pure {\n  set answer = 2_i32;\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Const2,
         SemanticIssueKind::ImmutableSetTarget,
     );
@@ -1176,7 +1176,7 @@ fn set_rejections_keep_their_exact_rule_owners() {
     // owned place releases the old value when it is affine, and is a hard
     // error only when it is linear. The linear half is the live successor.
     assert_rule(
-        b"nodrop struct Token {\n  value: i32;\n}\n\nfn main() -> status: ExitStatus pure {\n  let left = Token(value: 1_i32);\n  let right = Token(value: 2_i32);\n  set left = move right;\n  let Token(value: v) = move left;\n  return exit_status(code: 0_u8);\n}\n",
+        b"nodrop struct Token {\n  value: i32;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  let left = Token(value: 1_i32);\n  let right = Token(value: 2_i32);\n  set left = move right;\n  let Token(value: v) = move left;\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Win3,
         SemanticIssueKind::LinearAssignmentTarget {
             target_type: "Token".to_owned(),
@@ -1184,7 +1184,7 @@ fn set_rejections_keep_their_exact_rule_owners() {
         },
     );
     assert_rule_kind(
-        b"fn main() -> status: ExitStatus pure {\n  let number = 1_i32;\n  set number = True();\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: std::process::ExitStatus pure {\n  let number = 1_i32;\n  set number = True();\n  return std::process::exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -1202,7 +1202,7 @@ fn set_rejections_keep_their_exact_rule_owners() {
 #[test]
 fn an_affine_assignment_releases_its_old_value() {
     with_semantics(
-        b"nocopy struct Cell {\n  value: i32;\n}\n\nfn main() -> status: ExitStatus pure {\n  let left = Cell(value: 1_i32);\n  let right = Cell(value: 2_i32);\n  set left = move right;\n  let seen = left.value;\n  return exit_status(code: 0_u8);\n}\n",
+        b"nocopy struct Cell {\n  value: i32;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  let left = Cell(value: 1_i32);\n  let right = Cell(value: 2_i32);\n  set left = move right;\n  let seen = left.value;\n  return std::process::exit_status(code: 0_u8);\n}\n",
         |outcome| {
             let SemanticOutcome::Complete(_) = outcome else {
                 panic!("an affine overwrite releases the old value: {outcome:?}");
@@ -1219,11 +1219,11 @@ fn walk(running: Counts) -> result: Counts pure {
   return move running;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let totals = Counts(lines: 0_u64, bytes: 0_u64);
   set totals = walk(running: move totals);
   let lines = totals.lines;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         |outcome| {
@@ -1244,7 +1244,7 @@ fn walk(running: Counts) -> result: Counts pure {
   return move running;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let totals = Counts(lines: 0_u64, bytes: 0_u64);
   let sub = walk(running: move totals);
   let lines = sub.lines;
@@ -1252,9 +1252,9 @@ fn main() -> status: ExitStatus pure {
   let total = lines +wrap bytes;
   let empty = total == 0_u64;
   if empty {
-    return exit_status(code: 0_u8);
+    return std::process::exit_status(code: 0_u8);
   }
-  return exit_status(code: 1_u8);
+  return std::process::exit_status(code: 1_u8);
 }
 "#,
         |outcome| {
@@ -1273,8 +1273,8 @@ fn entry_dead_owner_reinitialization_has_no_displaced_owner_write() {
   return move file, move previous;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source.as_bytes(), |outcome| {
@@ -1322,11 +1322,11 @@ fn repeated_by_value_moves_are_rejected_before_call_effect_comparison() {
   return move left;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let c = slots_new::<u8, 4>();
   let spare = slots_new::<u8, 4>();
   set c = pair(other: move spare, left: move c, right: move c);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own1,
@@ -1341,12 +1341,12 @@ fn pair(other: Slots<u8, 4>, left: Slots<u8, 4>, right: Slots<u8, 4>) -> out: Sl
   return move left;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let first = slots_new::<u8, 4>();
   let spare = slots_new::<u8, 4>();
   let holder = Holder(run: move first);
   set holder.run = pair(other: move spare, left: move holder.run, right: move holder.run);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own1,
@@ -1362,13 +1362,13 @@ fn take(other: Slots<u8, 4>, left: Slots<u8, 4>, right: Holder) -> out: Slots<u8
   return move left;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let first = slots_new::<u8, 4>();
   let second = slots_new::<u8, 4>();
   let spare = slots_new::<u8, 4>();
   let holder = Holder(run: move first, spare: move second);
   set holder.run = take(other: move spare, left: move holder.run, right: move holder);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Own1,
@@ -1386,10 +1386,10 @@ fn forward(other: u64, value: Cell) -> result: Cell pure {
   return move value;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let cell = Cell(value: 7_u64);
   set cell = forward(other: 0_u64, value: move cell);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(ordinary_whole, |outcome| {
@@ -1412,12 +1412,12 @@ fn forward(other: u64, value: Cell) -> result: Cell pure {
   return move value;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let first = Cell(value: 7_u64);
   let second = Cell(value: 8_u64);
   let holder = Holder(cell: move first, spare: move second);
   set holder.cell = forward(other: 0_u64, value: move holder.cell);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(projected_later, SemanticRule::Own1, |kind| {
@@ -1432,10 +1432,10 @@ fn extract(value: Cell) -> result: u64 pure {
   return value.value;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let cell = Cell(value: 7_u64);
   set cell = extract(value: move cell);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(failed_result, SemanticRule::Own1, |kind| {
@@ -1455,11 +1455,11 @@ fn main() -> status: ExitStatus pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let owner = box_new::<u64>(value: 7_u64);
   let wrapped = Err<u64, Box<u64>>(error: move owner);
   set wrapped = retain(value: move wrapped);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(routed_result, SemanticRule::Own1, |kind| {
@@ -1477,10 +1477,10 @@ fn take(cell: Cell) -> result: i32 pure {
   return cell.value;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let cell = Cell(value: 1_i32);
   set cell.value = take(cell: move cell);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule(
@@ -1570,8 +1570,8 @@ fn consume_projection() -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
