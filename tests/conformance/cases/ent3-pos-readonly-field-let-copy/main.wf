@@ -1,5 +1,7 @@
-alias kinds = pkg::kinds;
 alias Entry = pkg::kinds::Entry;
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+alias kinds = pkg::kinds;
 
 fn main() -> status: ExitStatus pure {
   doc "S5: a let of a readonly field below a subscript is the ordinary copy equality with that clause (b) term, so the guard on the element's field bounds the copy and the copy discharges every cell read as an endpoint.";

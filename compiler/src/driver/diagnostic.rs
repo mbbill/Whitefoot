@@ -792,6 +792,9 @@ impl Report for GraphIssue {
             LaterDependency { path };
             DuplicateEntry { name };
             UnregisteredEntryModule { target };
+            StandardPath { path };
+            UnknownStandardModule { path };
+            StandardPrefixInLibrary { path };
         )
     }
 }
@@ -924,6 +927,7 @@ impl Report for ResolutionIssue {
             ModuleProgramHeapDeclaration;
             MisplacedAlias;
             InvalidAliasTarget { spelling, target, reason };
+            LibraryNamesItself { path };
             UnknownModule { path };
             MissingModuleEdge { from, to };
             QualifiedNameNotFound { spelling, module, role };

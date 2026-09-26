@@ -235,9 +235,9 @@ fn write_work(count: u64, lower: u64, upper: u64) -> result: u64 pure contract {
   return first +wrap second;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let total = write_work(count: 2_u64, lower: 0_u64, upper: 17_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     // The written run is a frame-resident `Array<u64, 2>` [TYPE-9] and the
@@ -414,7 +414,7 @@ fn probe_{name}(count: u64, iterations: u64) -> result: u64 pure contract {{
         ));
     }
     source.push_str(
-        "\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        "\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
     );
     let mut llvm = emit_with_overlap(source.as_bytes())
         .replace("@main(", "@wf_reference_price_main(")
@@ -522,8 +522,8 @@ fn write_{extent}_{position}(upper: u64, repeats: u64) -> result: u64 pure {{
         }
     }
     source.push_str(
-        r#"fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+        r#"fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
     );
@@ -752,36 +752,36 @@ fn fill(values: &STORAGE) -> result: unit writes(values) contract {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let initial = array_filled::<u64, 8>(value: 7_u64);
   let values = INITIAL;
   let packet = Packet(before: 53_u64, values: TRANSFER, after: 59_u64);
   let done = fill(values: &packet.values);
   if packet.before != 53_u64 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
   if packet.after != 59_u64 {
-    return exit_status(code: 2_u8);
+    return std::process::exit_status(code: 2_u8);
   }
   if packet.values[0_u64] != 11_u64 {
-    return exit_status(code: 3_u8);
+    return std::process::exit_status(code: 3_u8);
   }
   if packet.values[3_u64] != 13_u64 {
-    return exit_status(code: 4_u8);
+    return std::process::exit_status(code: 4_u8);
   }
   if packet.values[4_u64] != 17_u64 {
-    return exit_status(code: 5_u8);
+    return std::process::exit_status(code: 5_u8);
   }
   if packet.values[7_u64] != 19_u64 {
-    return exit_status(code: 6_u8);
+    return std::process::exit_status(code: 6_u8);
   }
   if packet.values[1_u64] != 7_u64 {
-    return exit_status(code: 7_u8);
+    return std::process::exit_status(code: 7_u8);
   }
   if packet.values[6_u64] != 7_u64 {
-    return exit_status(code: 8_u8);
+    return std::process::exit_status(code: 8_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     for (storage, initial, transfer) in [
@@ -1094,7 +1094,7 @@ fn overwrite(view: &[u64], index: u64, value: u64) -> result: unit writes(view) 
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u64, 4>(value: 7_u64);
   let before0 = values[0_u64];
   let before2 = values[2_u64];
@@ -1102,57 +1102,57 @@ fn main() -> status: ExitStatus pure {
   set deref(view)[0_u64] = 19_u64;
   let done = overwrite(view: view, index: 2_u64, value: 31_u64);
   if values[0_u64] != 19_u64 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
   if values[1_u64] != 7_u64 {
-    return exit_status(code: 2_u8);
+    return std::process::exit_status(code: 2_u8);
   }
   if values[2_u64] != 31_u64 {
-    return exit_status(code: 3_u8);
+    return std::process::exit_status(code: 3_u8);
   }
   if values[3_u64] != 7_u64 {
-    return exit_status(code: 4_u8);
+    return std::process::exit_status(code: 4_u8);
   }
   if before0 != 7_u64 {
-    return exit_status(code: 5_u8);
+    return std::process::exit_status(code: 5_u8);
   }
   if before2 != 7_u64 {
-    return exit_status(code: 6_u8);
+    return std::process::exit_status(code: 6_u8);
   }
   let bytes = array_filled::<u64, 4>(value: 13_u64);
   let packet = Packet(before: 53_u64, bytes: bytes, after: 59_u64);
   let field = &packet.bytes[0_u64..4_u64];
   let written = overwrite(view: field, index: 1_u64, value: 41_u64);
   if packet.before != 53_u64 {
-    return exit_status(code: 7_u8);
+    return std::process::exit_status(code: 7_u8);
   }
   if packet.after != 59_u64 {
-    return exit_status(code: 8_u8);
+    return std::process::exit_status(code: 8_u8);
   }
   if packet.bytes[0_u64] != 13_u64 {
-    return exit_status(code: 9_u8);
+    return std::process::exit_status(code: 9_u8);
   }
   if packet.bytes[1_u64] != 41_u64 {
-    return exit_status(code: 10_u8);
+    return std::process::exit_status(code: 10_u8);
   }
   if packet.bytes[2_u64] != 13_u64 {
-    return exit_status(code: 11_u8);
+    return std::process::exit_status(code: 11_u8);
   }
   if packet.bytes[3_u64] != 13_u64 {
-    return exit_status(code: 12_u8);
+    return std::process::exit_status(code: 12_u8);
   }
   let shared = &packet.bytes[0_u64..4_u64];
   let seen = deref(shared)[1_u64];
   if seen != 41_u64 {
-    return exit_status(code: 13_u8);
+    return std::process::exit_status(code: 13_u8);
   }
   let empty = array_filled::<u64, 0>(value: 0_u64);
   let nothing = &empty[0_u64..0_u64];
   let length = deref(nothing).len;
   if length != 0_u64 {
-    return exit_status(code: 14_u8);
+    return std::process::exit_status(code: 14_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     for overlap in [OverlapLowering::Off, OverlapLowering::On] {
@@ -1178,31 +1178,31 @@ const RANGE_ALIAS_FACTS: &str = r#"fn add_into(dst: &[u32], src: &[u32]) -> resu
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let x = array_filled::<u32, 16>(value: 1_u32);
   let y = array_filled::<u32, 16>(value: 2_u32);
   add_into(dst: &x[0_u64..16_u64], src: &y[0_u64..16_u64]);
   set x[9_u64] = 5_u32;
   add_into(dst: &x[0_u64..8_u64], src: &x[8_u64..16_u64]);
   if x[0_u64] != 6_u32 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
   if x[1_u64] != 8_u32 {
-    return exit_status(code: 2_u8);
+    return std::process::exit_status(code: 2_u8);
   }
   if x[9_u64] != 5_u32 {
-    return exit_status(code: 3_u8);
+    return std::process::exit_status(code: 3_u8);
   }
   if y[15_u64] != 2_u32 {
-    return exit_status(code: 4_u8);
+    return std::process::exit_status(code: 4_u8);
   }
   let first = box_new::<u64>(value: 1_u64);
   let second = box_new::<u64>(value: 2_u64);
   swap(first: &first, second: &second);
   if first.inner != 2_u64 {
-    return exit_status(code: 5_u8);
+    return std::process::exit_status(code: 5_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
 
@@ -1291,7 +1291,7 @@ fn rewrite(records: &[Record]) -> previous: u64 writes(records) contract {
   return old;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let records = slots_new::<Record, 1>();
   let cell = box_new::<u64>(value: 41_u64);
   let record = Record(cell: move cell, marker: 17_u64);
@@ -1299,15 +1299,15 @@ fn main() -> status: ExitStatus pure {
   let part = &records[0_u64..1_u64];
   let previous = rewrite(records: part);
   if previous != 41_u64 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
   if records[0_u64].cell.inner != 99_u64 {
-    return exit_status(code: 2_u8);
+    return std::process::exit_status(code: 2_u8);
   }
   if records[0_u64].marker != 23_u64 {
-    return exit_status(code: 3_u8);
+    return std::process::exit_status(code: 3_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -1363,8 +1363,8 @@ fn nested_range_checksum() -> result: u64 pure {
   return checksum4;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source)
@@ -1475,8 +1475,8 @@ fn carried_range(count: u64) -> result: u64 pure contract {
   return 2_u64;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source)
@@ -1561,7 +1561,7 @@ int main(int argc, char **argv) { return wf__floor_run(argc, argv); }
 /// unused measure expression.
 #[test]
 fn a_measured_range_element_has_its_observable_inner_length() {
-    let source = br#"fn main() -> status: ExitStatus pure {
+    let source = br#"fn main() -> status: std::process::ExitStatus pure {
   let inner = slots_new::<u64, 2>();
   place_back(window: &inner, value: 41_u64);
   let outer = slots_new::<Slots<u64, 2>, 1>();
@@ -1569,9 +1569,9 @@ fn a_measured_range_element_has_its_observable_inner_length() {
   let items = &outer[0_u64..1_u64];
   let observed = deref(items)[0_u64].len;
   if observed != 1_u64 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -1612,18 +1612,18 @@ fn joined_range_element_measures_select_each_runtime_target() {
   return 1_u8;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let selected_left = 0_u64 == 0_u64;
   let left_status = observe(flag: selected_left, expected: 1_u64);
   if left_status != 0_u8 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
   let selected_right = 0_u64 != 0_u64;
   let right_status = observe(flag: selected_right, expected: 2_u64);
   if right_status != 0_u8 {
-    return exit_status(code: 2_u8);
+    return std::process::exit_status(code: 2_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -1652,7 +1652,7 @@ fn sum(values: &[u8]) -> result: u64 reads(values) {
   return total;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let code = 0_u8;
   let constant = &bytes[0_u64..4_u64];
   let constant_total = sum(values: constant);
@@ -1685,7 +1685,7 @@ fn main() -> status: ExitStatus pure {
   if runtime_total != 8_u64 {
     set code = 3_u8;
   }
-  return exit_status(code: code);
+  return std::process::exit_status(code: code);
 }
 "#;
     let llvm = compile(source);
@@ -1710,13 +1710,13 @@ fn an_out_of_bounds_range_reference_read_is_an_op4_compile_rejection() {
     // A range reference's one measure is `hi - lo` [REF-4], so the constant
     // offset is refutable at compile time and the program rejects with the
     // residual [OP-4, ENT-6] - the same residual the window origin gives.
-    let source = br#"fn main() -> status: ExitStatus pure {
+    let source = br#"fn main() -> status: std::process::ExitStatus pure {
   let bytes = slots_new::<u8, 2>();
   place_back(window: &bytes, value: 0_u8);
   place_back(window: &bytes, value: 0_u8);
   let window = &bytes[0_u64..2_u64];
   let value = deref(window)[2_u64];
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let failure = compile_rejection(source);
@@ -1737,10 +1737,10 @@ fn an_out_of_bounds_range_reference_read_is_an_op4_compile_rejection() {
 /// and the process publishes exactly the bytes the fill loop wrote.
 #[test]
 fn a_range_reference_over_a_frame_resident_window_reaches_its_own_slots() {
-    let source = br#"fn main(inputs: Inputs) -> status: ExitStatus pure {
+    let source = br#"fn main(inputs: std::process::Inputs) -> status: std::process::ExitStatus pure {
   doc "Publishes a frame-resident window through a range reference held until the linked write returns.";
-  let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  close_directory(factory: &entry_factory, directory: move unused_cwd);
+  let std::process::Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  std::fs::close_directory(factory: &entry_factory, directory: move unused_cwd);
   let page = slots_new::<u8, 4>();
   for @fill (
     at in 0_u64..4_u64,
@@ -1750,17 +1750,17 @@ fn a_range_reference_over_a_frame_resident_window_reaches_its_own_slots() {
     place_back(window: &page, value: 65_u8);
   }
   let window = &page[0_u64..4_u64];
-  match write_once(factory: &entry_factory, output: &out, source: window, start: 0_u64, end: 4_u64) {
+  match std::io::write_once(factory: &entry_factory, output: &out, source: window, start: 0_u64, end: 4_u64) {
     Ok(value: written) => {
       if written != 4_u64 {
-        return exit_status(code: 1_u8);
+        return std::process::exit_status(code: 1_u8);
       }
     }
     Err(error: problem) => {
-      return exit_status(code: 2_u8);
+      return std::process::exit_status(code: 2_u8);
     }
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
@@ -1823,12 +1823,12 @@ fn a_returning_loop_with_no_break_has_a_valid_unreachable_continuation() {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let value = count_down(count: 17_u64);
   if value != 7_u64 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     for module in [compile(source), emit_with_overlap(source)] {

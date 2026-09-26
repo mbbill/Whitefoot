@@ -1,31 +1,3 @@
-struct SlabHandle {
-  index: u64;
-  generation: u64;
-}
-
-struct SlabCell<T> {
-  storage: Slots<T, 1>;
-  generation: u64;
-  next: u64;
-}
-
-struct Slab<T, const ceiling: u64, const generation_limit: u64> {
-  cells: Box<Slots<SlabCell<T>>>;
-  free_head: u64;
-}
-
-interface SlabVisit<T, E, R> {
-  fn visit(env: &E, value: &T) -> result: R reads(value), writes(env);
-}
-
-interface SlabEdit<T, E, R> {
-  fn edit(env: &E, value: &T) -> result: R writes(env), writes(value);
-}
-
-interface SlabConsume<T, E> {
-  fn consume(env: &E, value: T) -> result: unit writes(env);
-}
-
 fn slab_new<T, const ceiling: u64, const generation_limit: u64>(capacity: u64) -> result: Slab<T, ceiling, generation_limit> pure contract {
   requires capacity <= ceiling;
 } {

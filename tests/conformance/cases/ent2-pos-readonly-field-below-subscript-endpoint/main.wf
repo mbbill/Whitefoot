@@ -1,5 +1,7 @@
-alias kinds = pkg::kinds;
 alias Entry = pkg::kinds::Entry;
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+alias kinds = pkg::kinds;
 
 fn row_sum(entries: &[Entry], cells: &[u8], i: u64) -> total: u64 reads(entries), reads(cells) contract {
   requires i < deref(entries).len;

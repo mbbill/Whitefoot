@@ -1,3 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 fn branch_part(count: u64, divisor: u64, choose_left: Bool) -> result: u64 pure contract {
   requires 1_u64 <= divisor;
 } {

@@ -232,7 +232,7 @@ fn shifted_bound(values: &Box<Array<u64>>, n: u64) -> result: unit writes(values
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let n = 200000_u64;
   let last = n - 1_u64;
   let values = box_array_filled::<u64>(count: n, value: 0_u64);
@@ -243,7 +243,7 @@ fn main() -> status: ExitStatus pure {
     let once = values.inner[last];
     if once == n {
     } else {
-      return exit_status(code: 1_u8);
+      return std::process::exit_status(code: 1_u8);
     }
   }
   if n <= values.inner.len {
@@ -253,11 +253,11 @@ fn main() -> status: ExitStatus pure {
     let twice = values.inner[last];
     let expected = n + n;
     if twice == expected {
-      return exit_status(code: 0_u8);
+      return std::process::exit_status(code: 0_u8);
     }
-    return exit_status(code: 2_u8);
+    return std::process::exit_status(code: 2_u8);
   }
-  return exit_status(code: 3_u8);
+  return std::process::exit_status(code: 3_u8);
 }
 "#;
 

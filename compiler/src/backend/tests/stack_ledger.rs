@@ -408,10 +408,10 @@ fn boxed_branch(left: Box<Tree>, right: Box<Tree>) -> made: Box<Tree> pure {
   return move cell;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let boxed_left = boxed_leaf();
   let boxed_right = boxed_leaf();
   let root = boxed_branch(left: move boxed_left, right: move boxed_right);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;

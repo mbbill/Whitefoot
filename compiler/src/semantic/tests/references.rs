@@ -49,8 +49,8 @@ fn rebound_parameter_summaries_preserve_every_entry_root() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -145,8 +145,8 @@ fn inspect(first: &Parent, second: &Parent, flag: Bool) -> result: unit reads(fi
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -248,8 +248,8 @@ fn descend(root: &Node) -> result: unit reads(root.next) {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -308,7 +308,7 @@ fn long_parameter_rebindings_keep_captured_entry_targets() {
     for index in 0..39 {
         writeln!(source, "  set p{index} = &deref(p{});", index + 1).unwrap();
     }
-    source.push_str("  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n");
+    source.push_str("  return unit;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n");
     with_semantics(source.as_bytes(), |outcome| {
         use crate::semantic::places::{PlaceMap, PlaceRoot, ResolvedPlace};
 
@@ -383,14 +383,14 @@ fn a_same_dynamic_index_prefix_replacement_invalidates_the_reference() {
   value: u8;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let table = slots_new::<Record, 1>();
   let record = Record(value: 7_u8);
   place_back(window: &table, value: move record);
   let index = 0_u64;
   let p = &table[index].value;
   set table[index] = Record(value: 9_u8);
-  return exit_status(code: deref(p));
+  return std::process::exit_status(code: deref(p));
 }
 "#;
     assert_rule_kind(
@@ -407,11 +407,11 @@ fn a_whole_nocopy_owner_move_invalidates_its_reference() {
   value: u8;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let record = Record(value: 7_u8);
   let p = &record;
   let moved = move record;
-  return exit_status(code: deref(p).value);
+  return std::process::exit_status(code: deref(p).value);
 }
 "#;
     assert_rule_kind(
@@ -429,12 +429,12 @@ fn consuming_box_content_invalidates_a_reference_to_the_whole_box() {
   value: u8;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let record = Record(value: 7_u8);
   let boxed = box_new::<Record>(value: move record);
   let p = &boxed;
   let extracted = move boxed.inner;
-  return exit_status(code: deref(p).inner.value);
+  return std::process::exit_status(code: deref(p).inner.value);
 }
 "#;
     assert_rule_kind(source, SemanticRule::Ref2, |kind| {
@@ -461,7 +461,7 @@ fn exact_content_and_distinct_literal_index_writes_preserve_references() {
   value: u8;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let table = slots_new::<Record, 2>();
   let first = Record(value: 7_u8);
   place_back(window: &table, value: move first);
@@ -470,7 +470,7 @@ fn main() -> status: ExitStatus pure {
   let p = &table[0_u64].value;
   set table[0_u64].value = 9_u8;
   set table[1_u64] = Record(value: 4_u8);
-  return exit_status(code: deref(p));
+  return std::process::exit_status(code: deref(p));
 }
 "#,
     );
@@ -520,10 +520,10 @@ fn act(pair: &Pair) -> result: unit ROW {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let pair = Pair(first: 1_u8, second: 2_u8);
   act(pair: &pair);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
 
@@ -637,8 +637,8 @@ fn pick(values: &Array<Cell, 4>, i: u64, j: u64, choose: Bool) -> result: unit r
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
     );
@@ -659,10 +659,10 @@ fn position_dependent_and_cross_argument_pairs_are_still_compared() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u8, 4>(value: 1_u8);
   copy_within(values: &values, i: 1_u64, j: 1_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Eff5,
@@ -679,12 +679,12 @@ fn main() -> status: ExitStatus pure {
   return observed +wrap taken;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let window = slots_new::<u64, 4>();
   place_back(window: &window, value: 5_u64);
   place_back(window: &window, value: 6_u64);
   let sum = take_after_read(window: &window, i: 0_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Eff5,
@@ -705,10 +705,10 @@ fn record(stats: &Stats, extra: &u64) -> result: unit reads(stats), reads(extra)
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let stats = Stats(count: 1_u64, total: 7_u64);
   record(stats: &stats, extra: &stats.count);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#,
         SemanticRule::Eff5,
@@ -739,12 +739,12 @@ fn act(pair: &Pair, seen: &u8) -> result: unit reads(seen), writes(pair) {
 "#;
     for (caller, first, second) in [
         (
-            "fn main() -> status: ExitStatus pure {\n  let pair = Pair(first: 1_u8, second: 2_u8);\n  act(pair: &pair, seen: &pair.first);\n  return exit_status(code: 0_u8);\n}\n",
+            "fn main() -> status: std::process::ExitStatus pure {\n  let pair = Pair(first: 1_u8, second: 2_u8);\n  act(pair: &pair, seen: &pair.first);\n  return std::process::exit_status(code: 0_u8);\n}\n",
             "pair.first",
             "pair",
         ),
         (
-            "fn relay(holder: &Pair) -> result: unit writes(holder) {\n  act(pair: holder, seen: &deref(holder).first);\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+            "fn relay(holder: &Pair) -> result: unit writes(holder) {\n  act(pair: holder, seen: &deref(holder).first);\n  return unit;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
             "deref(holder).first",
             "deref(holder)",
         ),
@@ -786,13 +786,13 @@ fn an_undischarged_call_separation_names_the_captured_indices() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let window = slots_new::<u8, 2>();
   place_back(window: &window, value: 7_u8);
   let i = 0_u64;
   let j = 0_u64;
   write_two(window: &window, first: i, second: j);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -828,11 +828,11 @@ fn an_undischarged_call_separation_names_ranges_formed_at_the_call() {
 "#;
     for (caller, residual) in [
         (
-            "fn main() -> status: ExitStatus pure {\n  let values = array_filled::<u8, 4>(value: 0_u8);\n  let lo = 1_u64;\n  let hi = 3_u64;\n  fill_two(first: &values[0_u64..2_u64], second: &values[lo..hi]);\n  return exit_status(code: 0_u8);\n}\n",
+            "fn main() -> status: std::process::ExitStatus pure {\n  let values = array_filled::<u8, 4>(value: 0_u8);\n  let lo = 1_u64;\n  let hi = 3_u64;\n  fill_two(first: &values[0_u64..2_u64], second: &values[lo..hi]);\n  return std::process::exit_status(code: 0_u8);\n}\n",
             "values[0_u64..2_u64] and values[lo..hi] select different storage (one ends before the other starts, or one is empty)",
         ),
         (
-            "fn relay(part: &[u8]) -> result: unit writes(part) {\n  if 2_u64 <= deref(part).len {\n    fill_two(first: &deref(part)[0_u64..2_u64], second: &deref(part)[1_u64..2_u64]);\n  }\n  return unit;\n}\n\nfn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+            "fn relay(part: &[u8]) -> result: unit writes(part) {\n  if 2_u64 <= deref(part).len {\n    fill_two(first: &deref(part)[0_u64..2_u64], second: &deref(part)[1_u64..2_u64]);\n  }\n  return unit;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
             "deref(part)[0_u64..2_u64] and deref(part)[1_u64..2_u64] select different storage (one ends before the other starts, or one is empty)",
         ),
     ] {
@@ -869,12 +869,12 @@ fn substituted_index_values_do_not_inherit_their_actual_storage_separation() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let indices = array_filled::<u64, 2>(value: 0_u64);
   let window = slots_new::<u8, 2>();
   place_back(window: &window, value: 7_u8);
   write_two(window: &window, first: indices[0_u64], second: indices[1_u64]);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(source, SemanticRule::Eff5, |kind| {
@@ -902,7 +902,7 @@ fn indexed_call_separation_accepts_strict_orderings_and_disequality() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let window = slots_new::<u8, 2>();
   place_back(window: &window, value: 7_u8);
   let i = 0_u64;
@@ -910,7 +910,7 @@ fn main() -> status: ExitStatus pure {
   if i < j {
     write_two(window: &window, first: i, second: j);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_accepts(source);
@@ -925,7 +925,7 @@ fn indexed_call_separation_does_not_retarget_captured_bindings() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u8, 2>(value: 0_u8);
   let i = 0_u64;
   let j = 0_u64;
@@ -935,7 +935,7 @@ fn main() -> status: ExitStatus pure {
   if i < j {
     write_refs(first: first, second: second);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(source, SemanticRule::Eff5, |kind| {
@@ -953,7 +953,7 @@ fn indexed_call_separation_keeps_formation_proof_after_source_writes() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u8, 2>(value: 0_u8);
   let i = 0_u64;
   let j = 1_u64;
@@ -963,7 +963,7 @@ fn main() -> status: ExitStatus pure {
     set j = 0_u64;
     write_refs(first: first, second: second);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_accepts(source);
@@ -982,7 +982,7 @@ fn indexed_call_separation_is_unique_per_call_actual() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let window = slots_new::<u8, 2>();
   place_back(window: &window, value: 7_u8);
   let i = 0_u64;
@@ -992,7 +992,7 @@ fn main() -> status: ExitStatus pure {
   }
   set j = 0_u64;
   write_two(window: &window, first: i, second: j);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(source, SemanticRule::Eff5, |kind| {
@@ -1101,8 +1101,8 @@ fn examine(flag: Bool) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(source, SemanticRule::Const2, |kind| {
@@ -1123,8 +1123,8 @@ fn a_joined_dereference_exhibits_every_possible_parameter_read() {
   return deref(selected);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(source, SemanticRule::Eff2, |kind| {
@@ -1146,15 +1146,15 @@ fn retain(old: Token) -> result: Token pure {
   return move old;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let token = Token(value: 7_u64);
   let target = &token;
   let aliased = &token;
   set deref(target) = retain(old: move deref(aliased));
   if deref(target).value == 7_u64 {
-    return exit_status(code: 0_u8);
+    return std::process::exit_status(code: 0_u8);
   }
-  return exit_status(code: 1_u8);
+  return std::process::exit_status(code: 1_u8);
 }
 "#;
     assert_accepts(source);
@@ -1186,8 +1186,8 @@ fn examine(flag: Bool) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(source, SemanticRule::Own1, |kind| {
@@ -1219,8 +1219,8 @@ fn examine(flag: Bool) -> result: unit pure {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(source, SemanticRule::Fn8, |kind| {
@@ -1254,10 +1254,10 @@ fn examine(flag: Bool) -> result: u64 pure {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let flag = False();
   let value = examine(flag: flag);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(source, SemanticRule::Op2, |kind| {
@@ -1286,10 +1286,10 @@ fn a_reslice_of_a_joined_range_is_invalidated_by_either_origin_replacement() {
   return deref(first)[0_u64];
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let flag = False();
   let value = examine(flag: flag);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(source, SemanticRule::Ref2, |kind| {
@@ -1321,9 +1321,9 @@ fn examine(flag: u64) -> result: u64 pure {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let value = examine(flag: 1_u64);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(source, SemanticRule::Op2, |_| true);
@@ -1369,10 +1369,10 @@ fn overwrite(target: &u64) -> result: unit writes(target) {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let copied = observe(value: &permanent);
   overwrite(target: &copied);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     super::assert_accepts(source);
@@ -1399,8 +1399,8 @@ fn examine(packet: &Packet) -> result: u64 reads(packet) {
   return deref(selected);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_accepts(source);
@@ -1420,8 +1420,8 @@ fn a_reference_to_an_if_local_dies_at_branch_exit() {
   return deref(selected);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(source, SemanticRule::Ref2, |kind| {
@@ -1442,8 +1442,8 @@ fn a_non_loop_reference_may_change_path_shape() {
   return deref(selected);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_accepts(source);
@@ -1461,8 +1461,8 @@ fn a_reference_rebinding_keeps_its_referent_type() {
   return deref(selected);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(source, SemanticRule::Type5, |kind| {
@@ -1481,8 +1481,8 @@ fn a_reference_rebinding_keeps_its_reference_kind() {
   return deref(selected);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(source, SemanticRule::Type5, |kind| {
@@ -1512,8 +1512,8 @@ fn examine(packet: &Packet) -> result: u64 reads(packet) {
   return deref(selected);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_accepts(source);
@@ -1544,8 +1544,8 @@ fn examine(packet: &Packet, choose: Bool) -> result: u64 reads(packet) {
   return deref(selected);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_accepts(source);
@@ -1576,8 +1576,8 @@ fn examine(packet: &Packet) -> result: u64 reads(packet) {
   return deref(selected);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_accepts(source);
@@ -1600,8 +1600,8 @@ fn a_loop_carried_reference_may_change_its_captured_index() {
   return result;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_accepts(source);
@@ -1625,8 +1625,8 @@ fn a_counted_reference_continuation_includes_zero_trip_and_backedges() {
   return deref(selected);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_accepts(source);
@@ -1652,8 +1652,8 @@ fn a_loop_head_use_observes_a_prior_iteration_window_invalidation() {
   return result;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(source, SemanticRule::Ref2, |kind| {
@@ -1704,8 +1704,8 @@ fn one_trip(owner: &Box<Slots<u64>>) -> result: u64 writes(owner) contract {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_accepts(source);
@@ -1744,8 +1744,8 @@ fn examine(packet: &Packet) -> result: u64 writes(packet) {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(source, SemanticRule::Ref2, |kind| {
@@ -1783,8 +1783,8 @@ fn examine(choose: Bool) -> result: u64 pure {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(source, SemanticRule::Ref2, |kind| {
@@ -1822,8 +1822,8 @@ fn examine() -> result: u64 pure {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_accepts(source);
@@ -1859,8 +1859,8 @@ fn examine() -> result: u64 pure {
   return 0_u64;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(source, SemanticRule::Ref2, |kind| {
@@ -1897,8 +1897,8 @@ fn examine(packet: &Packet) -> result: u64 reads(packet) {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_accepts(source);
@@ -1934,8 +1934,8 @@ fn examine(packet: &Packet) -> result: u64 writes(packet) {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_accepts(source);
@@ -1960,8 +1960,8 @@ fn a_loop_local_reference_cannot_escape_on_a_give_edge() {
   return deref(selected);
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     assert_rule_kind(source, SemanticRule::Ref2, |kind| {
@@ -1980,8 +1980,8 @@ const INDEXED_CALL_HELPER: &str = r#"fn write_two(values: &Array<u8, 4>, first: 
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
 
@@ -2097,8 +2097,8 @@ fn indexed_call_separation_uses_ordered_nested_candidates() {
   return unit;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let outer = format!(

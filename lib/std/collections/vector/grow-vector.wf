@@ -1,11 +1,3 @@
-struct GrowVector<T, const ceiling: u64> {
-  storage: Box<Slots<T>>;
-}
-
-interface VectorDrain<T, E> {
-  fn accept(env: &E, value: T) -> result: unit writes(env);
-}
-
 fn grow_vector_new<T, const ceiling: u64>() -> made: GrowVector<T, ceiling> pure {
   doc "One empty vector over a zero-capacity backing window. The caller-selected ceiling is the static capacity domain later reserve, append, and insert calls must prove; zero therefore constructs a useful empty value whose growth operations are unavailable. A runtime-capacity window exists only as the content of a cell [TYPE-9], and allocation is total in the source [STOR-8], so the construction has no refusal arm and hands back no Result.";
   let storage = box_slots_new::<T>(capacity: 0_u64);

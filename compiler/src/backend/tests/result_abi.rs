@@ -97,65 +97,65 @@ fn bytes(value: u8) -> result: Array<u8, 16> pure {
   return array_filled::<u8, 16>(value: value);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let small = three(seed: 5_u32);
   if small.a != 5_u32 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
   if small.c != 7_u32 {
-    return exit_status(code: 2_u8);
+    return std::process::exit_status(code: 2_u8);
   }
   let large = four(seed: 9_u32);
   if large.a != 9_u32 {
-    return exit_status(code: 3_u8);
+    return std::process::exit_status(code: 3_u8);
   }
   if large.d != 12_u32 {
-    return exit_status(code: 4_u8);
+    return std::process::exit_status(code: 4_u8);
   }
   let pair = floats(x: 1.5_f64);
   if fne(pair.x, 1.5_f64) {
-    return exit_status(code: 5_u8);
+    return std::process::exit_status(code: 5_u8);
   }
   if fne(pair.y, 2.5_f64) {
-    return exit_status(code: 6_u8);
+    return std::process::exit_status(code: 6_u8);
   }
   let triple = more_floats(x: 4.0_f64);
   if fne(triple.z, 6.0_f64) {
-    return exit_status(code: 7_u8);
+    return std::process::exit_status(code: 7_u8);
   }
   let blend = mixed(seed: 40_u64, x: 0.25_f64);
   if blend.a != 40_u64 {
-    return exit_status(code: 8_u8);
+    return std::process::exit_status(code: 8_u8);
   }
   if blend.c != 42_u64 {
-    return exit_status(code: 9_u8);
+    return std::process::exit_status(code: 9_u8);
   }
   if fne(blend.x, 0.25_f64) {
-    return exit_status(code: 10_u8);
+    return std::process::exit_status(code: 10_u8);
   }
   if fne(blend.y, 1.25_f64) {
-    return exit_status(code: 11_u8);
+    return std::process::exit_status(code: 11_u8);
   }
   match found(key: 17_u64) {
     Some(value: present) => {
       if present != 17_u64 {
-        return exit_status(code: 12_u8);
+        return std::process::exit_status(code: 12_u8);
       }
     }
     None() => {
-      return exit_status(code: 13_u8);
+      return std::process::exit_status(code: 13_u8);
     }
   }
   match found(key: 0_u64) {
     Some(value: unexpected) => {
-      return exit_status(code: 14_u8);
+      return std::process::exit_status(code: 14_u8);
     }
     None() => {
     }
   }
   match sum(a: 4000000000_u32, b: 300000000_u32) {
     Ok(value: wrapped) => {
-      return exit_status(code: 15_u8);
+      return std::process::exit_status(code: 15_u8);
     }
     Err(error: overflow) => {
     }
@@ -163,18 +163,18 @@ fn main() -> status: ExitStatus pure {
   match sum(a: 7_u32, b: 8_u32) {
     Ok(value: total) => {
       if total != 15_u32 {
-        return exit_status(code: 16_u8);
+        return std::process::exit_status(code: 16_u8);
       }
     }
     Err(error: overflow) => {
-      return exit_status(code: 17_u8);
+      return std::process::exit_status(code: 17_u8);
     }
   }
   let filled = bytes(value: 3_u8);
   if filled[15_u64] != 3_u8 {
-    return exit_status(code: 18_u8);
+    return std::process::exit_status(code: 18_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
 
@@ -304,30 +304,30 @@ fn triple(x_bits: u64, y_bits: u64, z_bits: u64) -> result: Triple pure {
   return Triple(x: x, y: y, z: z);
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let two = pair(x_bits: 9218868437227405313_u64, y_bits: 18442240474082181122_u64);
   let two_x = reinterpret::<f64, u64>(two.x);
   if two_x != 9218868437227405313_u64 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
   let two_y = reinterpret::<f64, u64>(two.y);
   if two_y != 18442240474082181122_u64 {
-    return exit_status(code: 2_u8);
+    return std::process::exit_status(code: 2_u8);
   }
   let three = triple(x_bits: 9218868437227405315_u64, y_bits: 18442240474082181124_u64, z_bits: 9218868437227405317_u64);
   let three_x = reinterpret::<f64, u64>(three.x);
   if three_x != 9218868437227405315_u64 {
-    return exit_status(code: 3_u8);
+    return std::process::exit_status(code: 3_u8);
   }
   let three_y = reinterpret::<f64, u64>(three.y);
   if three_y != 18442240474082181124_u64 {
-    return exit_status(code: 4_u8);
+    return std::process::exit_status(code: 4_u8);
   }
   let three_z = reinterpret::<f64, u64>(three.z);
   if three_z != 9218868437227405317_u64 {
-    return exit_status(code: 5_u8);
+    return std::process::exit_status(code: 5_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
 
@@ -365,7 +365,7 @@ fn signaling_nan_payloads_cross_both_result_forms_unchanged() {
 #[test]
 fn linked_definitions_return_their_declared_register_results() {
     with_ir(
-        b"fn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
         |program| {
             let module = crate::emit_llvm(program)
                 .expect("prelude declarations emit")

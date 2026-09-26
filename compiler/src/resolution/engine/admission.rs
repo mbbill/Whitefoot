@@ -204,7 +204,9 @@ pub(super) fn check_module_forms(
         if file.prelude().is_some() {
             continue;
         }
-        let interface = bundle.is_module_program() && file.role() == SourceRole::Interface;
+        // A standard library interface record joins a source bundle's unit
+        // as an interface record [MOD-10], so the role decides.
+        let interface = file.role() == SourceRole::Interface;
         if let Some(alias) = child(*item, Production::AliasDecl) {
             if header_closed.contains(&source) {
                 return issue(
@@ -215,8 +217,12 @@ pub(super) fn check_module_forms(
             }
             continue;
         }
-        header_closed.push(source);
-        if let Some(heap) = child(*item, Production::HeapDecl)
+        // [MOD-4] the alias header follows the record's heap declaration.
+        let heap = child(*item, Production::HeapDecl);
+        if heap.is_none() {
+            header_closed.push(source);
+        }
+        if let Some(heap) = heap
             && bundle.is_module_program()
         {
             return issue(
@@ -368,7 +374,11 @@ pub(super) fn check_public_closure<'a>(
     uses: impl Iterator<Item = &'a super::super::LexicalUseRecord>,
 ) -> Result<Option<ResolutionIssue>, ResolutionCompilerFailure> {
     let bundle = classified.source_bundle();
-    if !bundle.is_module_program() {
+    if !bundle
+        .files()
+        .iter()
+        .any(|file| file.role() == SourceRole::Interface)
+    {
         return Ok(None);
     }
     let writes = |node: NodeId, fixed: FixedTerminal| {

@@ -1,7 +1,7 @@
 # Automatic operation facts
 
 Status: implemented. The owner approved the recommendation on 2026-09-25;
-specification v0.72, the compiler and the conformance cases implement it, and
+specification v0.73, the compiler and the conformance cases implement it, and
 the owner's approval of the design-tree amendment the same day placed its
 decision in
 [language/checks-and-proofs/automatic-facts](../../../design/language/checks-and-proofs/automatic-facts.md).
@@ -869,15 +869,17 @@ workarounds of decision 7 are removed in the implementing change.
 
 ## 5. Implementation
 
-### 5.1 Specification v0.72
+### 5.1 Specification v0.73
 
-Main reached v0.70 with modular compilation (#85) and then v0.71 with the
-readonly-field terms (#118) before the amendment landed, so the amendment
-landed as v0.72 on top of #118's v0.71: it archives main's v0.71 bytes as
-`spec/kernel-spec-v0.71.md` and titles the active file v0.72. The edits were
-made against v0.70's text and apply unchanged to v0.71: the one paragraph both
-amendments edit is [ENT-2]'s term list, where #118 rewrote clause (b) and this
-amendment edits clause (g). The ENT-3 edits follow section 4.3, with these
+Main reached v0.70 with modular compilation (#85), v0.71 with the
+readonly-field terms (#118) and v0.72 with the standard library (#129) before
+the amendment landed, so the amendment lands as v0.73, in one merge with the
+one-argument rows (#126) and the repair wording (#125): it archives main's
+v0.72 bytes as `spec/kernel-spec-v0.72.md` and titles the active file v0.73.
+The edits were made against v0.70's text and apply unchanged to v0.71 and
+v0.72: the one paragraph both earlier amendments and this one edit is
+[ENT-2]'s term list, where #118 rewrote clause (b) and this amendment edits
+clause (g). The ENT-3 edits follow section 4.3, with these
 differences:
 
 - Relations are established only to an operand that is an admitted term other

@@ -414,7 +414,13 @@ fn run_module_program(
     }
     if options.check_modules {
         let mut verdicts = Vec::new();
-        for record in graph.modules() {
+        // [MOD-10] the program's own modules; a composition below judges the
+        // standard library modules its entry selects.
+        for record in graph
+            .modules()
+            .iter()
+            .filter(|record| record.package() == whitefoot::Package::Program)
+        {
             let module = record.qualified_name();
             let (verdict, analyses) = counting_analyses(cache, || {
                 module_verdict(&graph, &inputs, &module, false, limits, cache)
@@ -1754,7 +1760,7 @@ mod tests {
             .expect("the program checks")
         };
         require_runner(&checked(
-            "fn main() -> status: ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+            "fn main() -> status: std::process::ExitStatus pure {\n  return std::process::exit_status(code: 0_u8);\n}\n",
         ))
         .expect("an ExitStatus entry has a runner");
         let integer = require_runner(&checked(
@@ -2446,7 +2452,7 @@ mod tests {
                 "const lookup: Array<u8, 8> =[0_u8, 1_u8, 2_u8, 3_u8, 4_u8, 5_u8, 6_u8, 7_u8];\n\n\
                  fn clamp(value: u64) -> result: u64 pure contract {{\n  ensures result <= 7_u64;\n}} {{\n  if value <= 7_u64 {{\n    return value;\n  }}\n  return {fallback}_u64;\n}}\n\n\
                  fn select(index: u64) -> result: u8 pure {{\n  let bounded = clamp(value: index);\n  return lookup[bounded];\n}}\n\n\
-                 fn main() -> status: ExitStatus pure {{\n  let code = select(index: 9_u64);\n  return exit_status(code: code);\n}}\n"
+                 fn main() -> status: std::process::ExitStatus pure {{\n  let code = select(index: 9_u64);\n  return std::process::exit_status(code: code);\n}}\n"
             );
             compile(
                 &[SourceInput::new("fragments.wf", source.as_bytes())],
@@ -2504,7 +2510,7 @@ mod tests {
     #[test]
     fn a_full_lto_build_runs_the_program() {
         use whitefoot::{CompilerLimits, SourceInput, compile};
-        let source = b"fn select(index: u64) -> result: u64 pure {\n  let result = index *wrap 3_u64;\n  return result;\n}\n\nfn main() -> status: ExitStatus pure {\n  let chosen = select(index: 3_u64);\n  match cvt.checked::<u64, u8>(chosen) {\n    Ok(value: code) => {\n      return exit_status(code: code);\n    }\n    Err(error: refused) => {\n      return exit_status(code: 255_u8);\n    }\n  }\n}\n";
+        let source = b"fn select(index: u64) -> result: u64 pure {\n  let result = index *wrap 3_u64;\n  return result;\n}\n\nfn main() -> status: std::process::ExitStatus pure {\n  let chosen = select(index: 3_u64);\n  match cvt.checked::<u64, u8>(chosen) {\n    Ok(value: code) => {\n      return std::process::exit_status(code: code);\n    }\n    Err(error: refused) => {\n      return std::process::exit_status(code: 255_u8);\n    }\n  }\n}\n";
         let llvm = compile(
             &[SourceInput::new("lto.wf", source)],
             CompilerLimits::default(),

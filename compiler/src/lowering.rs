@@ -512,12 +512,15 @@ pub struct IrNominal {
     name: String,
     /// The stable part of the type's link-visible name [MOD-8].
     link_name: String,
+    /// The type's module-qualified spelling, when it has one.
+    stable: Option<String>,
     id: IrNominalId,
     kind: IrNominalKind,
 }
 
 impl IrNominal {
-    /// The ordinary declaration name retained for debug and link descriptions.
+    /// The ordinary declaration name, which tests read.
+    #[cfg(test)]
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -527,6 +530,13 @@ impl IrNominal {
     /// when another type is added or removed [MOD-8].
     pub fn link_name(&self) -> &str {
         &self.link_name
+    }
+
+    /// The type's module-qualified spelling, `std.process.Inputs` for a
+    /// standard library type [MOD-10], which names it apart from any
+    /// program type of the same name.
+    pub fn stable_spelling(&self) -> Option<&str> {
+        self.stable.as_deref()
     }
 
     pub const fn id(&self) -> IrNominalId {
@@ -1925,8 +1935,8 @@ pub enum LoweringFailure {
     /// program reaches this. It remains the stop a row added to that list
     /// ahead of its body would take.
     ///
-    /// These records are declared body-less like the host rows, but unlike a
-    /// host row no trusted-base object defines them: the compiler is supposed
+    /// These records are declared body-less like the host functions [PRE-2],
+    /// but unlike a host function no trusted-base object defines them: the compiler is supposed
     /// to emit their bodies. Reaching here means a program called one, and
     /// stopping is what keeps an unimplemented capability from becoming a
     /// module that names a symbol nothing defines. It is never a source
@@ -1947,9 +1957,9 @@ impl From<crate::backend::target::TargetLayoutFailure> for LoweringFailure {
 /// construction functions [OP-13], the nine window operations [OP-10],
 /// `swap` [OP-11] and `free_empty` [OP-14].
 ///
-/// The host rows are deliberately absent: those are body-less because the
-/// trusted base defines them, and calling one emits an ordinary external
-/// call. A name that is on this list but that `lower_prelude_row` does not
+/// The host functions [PRE-2] are deliberately absent: those are body-less
+/// because the trusted base defines them, and calling one emits an ordinary
+/// external call. A name that is on this list but that `lower_prelude_row` does not
 /// build reaches [`LoweringFailure::UnimplementedPreludeRow`], so a row this
 /// version has not built can never become a module that names a symbol
 /// nothing defines.

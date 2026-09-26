@@ -66,8 +66,8 @@ fn a_verified_requirement_discharges_the_literal_site() {
   return y;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -123,8 +123,8 @@ fn a_guarded_two_value_subtraction_uses_the_l0_affine_bridge() {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -150,8 +150,8 @@ fn main() -> status: ExitStatus pure {
   return difference;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(unguarded, |outcome| {
@@ -175,12 +175,12 @@ fn main() -> status: ExitStatus pure {
 /// index obligation uses.
 #[test]
 fn the_counted_binder_increment_discharges_by_transitive_closure() {
-    let source = br#"fn main() -> status: ExitStatus pure {
+    let source = br#"fn main() -> status: std::process::ExitStatus pure {
   let n = 10_u64;
   for @steps (i in 0_u64..n) {
     let next = i + 1_u64;
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -210,8 +210,8 @@ fn an_unbounded_literal_site_rejects_citing_op2_with_the_folded_residual() {
   return y;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -249,8 +249,8 @@ fn a_dominating_branch_discharges_the_site() {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -273,10 +273,10 @@ fn main() -> status: ExitStatus pure {
 /// pure, and the checked program keeps its wrap identity.
 #[test]
 fn a_wrap_site_attaches_no_obligation() {
-    let source = br#"fn main() -> status: ExitStatus pure {
+    let source = br#"fn main() -> status: std::process::ExitStatus pure {
   let x = 6_u64;
   let y = x +wrap 1_u64;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -299,11 +299,11 @@ fn a_wrap_site_attaches_no_obligation() {
 /// upper interval and still require proof at the exact site.
 #[test]
 fn exact_local_values_discharge_a_two_variable_sum_but_parameters_remain_bounded() {
-    let exact_locals = br#"fn main() -> status: ExitStatus pure {
+    let exact_locals = br#"fn main() -> status: std::process::ExitStatus pure {
   let a = 6_u64;
   let b = 7_u64;
   let c = a + b;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(exact_locals, |outcome| {
@@ -325,8 +325,8 @@ fn exact_local_values_discharge_a_two_variable_sum_but_parameters_remain_bounded
   return result;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(unbounded_parameters, |outcome| {
@@ -341,9 +341,9 @@ fn main() -> status: ExitStatus pure {
 /// discharges, while an inevitable overflow is a compile-time rejection.
 #[test]
 fn a_ground_obligation_discharges_in_range_and_rejects_on_inevitable_overflow() {
-    let in_range = br#"fn main() -> status: ExitStatus pure {
+    let in_range = br#"fn main() -> status: std::process::ExitStatus pure {
   let x = 254_u8 + 1_u8;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(in_range, |outcome| {
@@ -360,9 +360,9 @@ fn a_ground_obligation_discharges_in_range_and_rejects_on_inevitable_overflow() 
         assert_eq!(overflow.len(), 1, "one exact site, one obligation");
         assert!(overflow[0].discharged, "the ground obligation is true");
     });
-    let overflowing = br#"fn main() -> status: ExitStatus pure {
+    let overflowing = br#"fn main() -> status: std::process::ExitStatus pure {
   let x = 255_u8 + 1_u8;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(overflowing, |outcome| {
@@ -387,9 +387,9 @@ fn a_ground_obligation_discharges_in_range_and_rejects_on_inevitable_overflow() 
 fn a_subscripted_class_operand_is_underivable_and_rejects() {
     let source = br#"const a: Array<u8, 2> =[7_u8, 7_u8];
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let y = a[0_u64] + 1_u8;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -410,11 +410,11 @@ fn main() -> status: ExitStatus pure {
 /// that ordinary field step. The indexed operand remains no term.
 #[test]
 fn an_owning_box_index_renders_its_content_step_as_a_dereference() {
-    let source = br#"fn main() -> status: ExitStatus pure {
+    let source = br#"fn main() -> status: std::process::ExitStatus pure {
   let values = array_filled::<u8, 2>(value: 7_u8);
   let boxed = box_new::<Array<u8, 2>>(value: values);
   let result = boxed.inner[0_u64] + 1_u8;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -447,8 +447,8 @@ fn a_reference_parameter_index_renders_under_its_deref_step() {
   return deref(values)[0_u64] + 1_u8;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -480,8 +480,8 @@ fn effect_mismatch_precedes_static_integer_domain_rejection() {
   return y;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(extra_effect_row, |outcome| {
@@ -500,8 +500,8 @@ fn main() -> status: ExitStatus pure {
   return y;
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(pure_row, |outcome| {
@@ -516,9 +516,9 @@ fn main() -> status: ExitStatus pure {
             "add `requires x +defined 1_u64;` to the `contract` of `bump`",
         );
     });
-    let ground = br#"fn main() -> status: ExitStatus pure {
+    let ground = br#"fn main() -> status: std::process::ExitStatus pure {
   let x = 255_u8 + 1_u8;
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(ground, |outcome| {
@@ -548,8 +548,8 @@ fn a_defined_guard_reuses_the_complete_identity_of_an_exact_let_operand() {
   }
 }
 
-fn main() -> status: ExitStatus pure {
-  return exit_status(code: 0_u8);
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
@@ -724,9 +724,9 @@ fn a_body_domain_failure_precedes_the_backedge_it_breaks() {
   return sum;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let total = accumulate(step: 1_u32);
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {

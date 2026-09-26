@@ -1,4 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
 alias Node = pkg::nodes::Node;
+alias exit_status = std::process::exit_status;
 
 fn inspect(root: &Node) -> result: u64 writes(root) {
   let cursor = root;

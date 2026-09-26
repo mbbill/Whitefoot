@@ -112,26 +112,26 @@ fn folded(lo: u64, hi: u64) -> result: u64 pure {
   return total;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   doc "Every degenerate range folds to the accumulator it arrived with, and one wide range folds to the same value split or not.";
   let empty = folded(lo: 5_u64, hi: 5_u64);
   if empty == 7_u64 {
   } else {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
   let inverted = folded(lo: 400000_u64, hi: 5_u64);
   if inverted == 7_u64 {
   } else {
-    return exit_status(code: 2_u8);
+    return std::process::exit_status(code: 2_u8);
   }
   let single = folded(lo: 5_u64, hi: 6_u64);
   let one = mix(seed: 5_u64);
   let expected = one +wrap 7_u64;
   if single == expected {
   } else {
-    return exit_status(code: 3_u8);
+    return std::process::exit_status(code: 3_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
 
@@ -159,7 +159,7 @@ const WIDE_FRAME: &[u8] = br#"fn mix(seed: u64) -> result: u64 pure {
   return state;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   doc "Thirty-two live scalars stand between the loop and a frame that fits.";
   let a0 = 0_u64;
   let a1 = 1_u64;
@@ -232,9 +232,9 @@ fn main() -> status: ExitStatus pure {
     set total = total +wrap biased;
   }
   if total == 0_u64 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
 
@@ -322,19 +322,19 @@ fn folded(salt: u64, rounds: u64, stride: u64) -> result: u64 pure {
   return total;
 }
 
-fn main(inputs: Inputs) -> status: ExitStatus pure {
-  let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  close_directory(factory: &entry_factory, directory: move unused_cwd);
+fn main(inputs: std::process::Inputs) -> status: std::process::ExitStatus pure {
+  let std::process::Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  std::fs::close_directory(factory: &entry_factory, directory: move unused_cwd);
   let value = folded(salt: 9876543210_u64, rounds: 24_u64, stride: 7_u64);
   let report = box_array_filled::<u8>(count: 8_u64, value: 0_u8);
   let window = &report.inner[0_u64..8_u64];
   let stored = spell(destination: window, at: 0_u64, value: value);
-  match write_once(factory: &entry_factory, output: &out, source: window, start: 0_u64, end: 8_u64) {
+  match std::io::write_once(factory: &entry_factory, output: &out, source: window, start: 0_u64, end: 8_u64) {
     Ok(value: accepted) => {
-      return exit_status(code: 0_u8);
+      return std::process::exit_status(code: 0_u8);
     }
     Err(error: problem) => {
-      return exit_status(code: 1_u8);
+      return std::process::exit_status(code: 1_u8);
     }
   }
 }
@@ -385,18 +385,18 @@ fn mapped() -> result: Box<Array<u8>> pure {
   return move out;
 }
 
-fn main(inputs: Inputs) -> status: ExitStatus pure {
-  let Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
-  close_directory(factory: &entry_factory, directory: move unused_cwd);
+fn main(inputs: std::process::Inputs) -> status: std::process::ExitStatus pure {
+  let std::process::Inputs(args: unused_args, cwd: unused_cwd, stdout: out, stderr: unused_stderr, handles: entry_factory, stdin: unused_stdin) = move inputs;
+  std::fs::close_directory(factory: &entry_factory, directory: move unused_cwd);
   let report = mapped();
   let size = report.inner.len;
   let source = &report.inner[0_u64..size];
-  match write_once(factory: &entry_factory, output: &out, source: source, start: 0_u64, end: size) {
+  match std::io::write_once(factory: &entry_factory, output: &out, source: source, start: 0_u64, end: size) {
     Ok(value: accepted) => {
-      return exit_status(code: 0_u8);
+      return std::process::exit_status(code: 0_u8);
     }
     Err(error: problem) => {
-      return exit_status(code: 1_u8);
+      return std::process::exit_status(code: 1_u8);
     }
   }
 }
@@ -475,32 +475,32 @@ fn mapped(count: u64) -> result: Box<Array<Aligned>> pure contract {
   return move output;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let empty = mapped(count: 0_u64);
   if empty.inner.len != 0_u64 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
   let output = mapped(count: 400000_u64);
   if output.inner.len != 400000_u64 {
-    return exit_status(code: 2_u8);
+    return std::process::exit_status(code: 2_u8);
   }
   let first = output.inner[0_u64];
   let first_expected = mix(seed: 400000_u64);
   if first.tag != 7_u8 {
-    return exit_status(code: 3_u8);
+    return std::process::exit_status(code: 3_u8);
   }
   if first.word != first_expected {
-    return exit_status(code: 4_u8);
+    return std::process::exit_status(code: 4_u8);
   }
   let last = output.inner[399999_u64];
   let last_expected = mix(seed: 799999_u64);
   if last.tag != 7_u8 {
-    return exit_status(code: 5_u8);
+    return std::process::exit_status(code: 5_u8);
   }
   if last.word != last_expected {
-    return exit_status(code: 6_u8);
+    return std::process::exit_status(code: 6_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
 
@@ -523,12 +523,12 @@ const NESTED_PAYLOAD_REDUCTIONS: &[u8] = br#"fn nested() -> result: u64 pure {
   return total;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let observed = nested();
   if observed != 3407872_u64 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
 
@@ -1455,20 +1455,20 @@ fn rows(width: u64) -> result: Box<Array<u64>> pure contract {
   return move values;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let values = rows(width: 1024_u64);
   let count = values.inner.len;
   if count != 65536_u64 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
   for (i in 0_u64..count) {
     let seen = values.inner[i];
     let expected = i / 1024_u64;
     if seen != expected {
-      return exit_status(code: 2_u8);
+      return std::process::exit_status(code: 2_u8);
     }
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
 
@@ -1869,9 +1869,9 @@ fn admitted_combine_source() -> Vec<u8> {
     }
     let width = 8 * ADMITTED_COMBINES.len();
     source.push_str(&format!(
-        "\nfn main(inputs: Inputs) -> status: ExitStatus pure {{\n  \
-         let Inputs(args: unused_args, cwd: cwd, stdout: out, stderr: unused_stderr, handles: factory, stdin: unused_stdin) = move inputs;\n  \
-         close_directory(factory: &factory, directory: move cwd);\n  \
+        "\nfn main(inputs: std::process::Inputs) -> status: std::process::ExitStatus pure {{\n  \
+         let std::process::Inputs(args: unused_args, cwd: cwd, stdout: out, stderr: unused_stderr, handles: factory, stdin: unused_stdin) = move inputs;\n  \
+         std::fs::close_directory(factory: &factory, directory: move cwd);\n  \
          let report = box_array_filled::<u8>(count: {width}_u64, value: 0_u8);\n  \
          let window = &report.inner[0_u64..{width}_u64];\n"
     ));
@@ -1885,10 +1885,10 @@ fn admitted_combine_source() -> Vec<u8> {
         at = format!("a{index}");
     }
     source.push_str(&format!(
-        "  match write_once(factory: &factory, output: &out, source: window, start: 0_u64, \
+        "  match std::io::write_once(factory: &factory, output: &out, source: window, start: 0_u64, \
          end: {width}_u64) {{\n    Ok(value: accepted) => {{\n      \
-         return exit_status(code: 0_u8);\n    }}\n    Err(error: problem) => {{\n      \
-         return exit_status(code: 1_u8);\n    }}\n  }}\n}}\n"
+         return std::process::exit_status(code: 0_u8);\n    }}\n    Err(error: problem) => {{\n      \
+         return std::process::exit_status(code: 1_u8);\n    }}\n  }}\n}}\n"
     ));
     source.into_bytes()
 }
@@ -2074,12 +2074,12 @@ fn composed(limit: u64) -> result: u64 pure {
   return acc;
 }
 
-fn main() -> status: ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {
   let result = composed(limit: 4_u64);
   if result != 97_u64 {
-    return exit_status(code: 1_u8);
+    return std::process::exit_status(code: 1_u8);
   }
-  return exit_status(code: 0_u8);
+  return std::process::exit_status(code: 0_u8);
 }
 "#;
     let module = emit_with_overlap(source);

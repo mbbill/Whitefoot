@@ -1,3 +1,6 @@
+alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
 fn stamp_two_ranges(first: &[u8], second: &[u8]) -> result: u64 writes(first), writes(second) {
   if 0_u64 < deref(first).len {
     set deref(first)[0_u64] = 7_u8;
