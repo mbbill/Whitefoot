@@ -33,8 +33,8 @@ fn a_write_through_a_reference_kills_the_value_fact_a_requirement_needs() {
             "  let seen = deref(value);\n".to_owned()
         };
         for changed in [false, true] {
-            // [EFF-1] `writes(p)` subsumes `reads(p)`, so the pair is never
-            // written for one path: the writing row declares the write alone.
+            // [EFF-1] `writes(p)` states every access at or below `p`, so the
+            // writing row declares the write alone.
             let (write, forward_effect) = if changed {
                 ("  overwrite(cell: value);\n", "writes(value)")
             } else {

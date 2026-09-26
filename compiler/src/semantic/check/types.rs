@@ -600,8 +600,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// [EFF-1] one written row: every `reads` entry before every `writes`
-    /// entry, each entry naming exactly one path, and each path written at
-    /// most once per category.
+    /// entry, each entry naming exactly one path, each path written at most
+    /// once per category, and no entry another entry covers: nothing at or
+    /// below the path of a `writes` entry, and no `reads` entry below the path
+    /// of another `reads` entry.
     ///
     /// `pure` is the unique spelling of the empty row. Allocation and release
     /// carry no effect entry at all [STOR-8], so the row has exactly these two
@@ -618,9 +620,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut previous = None;
         let mut declared = EffectSet::NONE;
         let mut written = [Vec::new(), Vec::new()];
-        // The `effect` node of each `reads` entry, so a later `writes` of the
-        // same path is refused where the redundant read is written.
-        let mut read_nodes = Vec::new();
+        // Every entry in written order with its category and `effect` node,
+        // for the subsumption judgment once the whole row is read.
+        let mut entries = Vec::new();
         for effect in effects {
             let ordinal = if self.has_fixed(effect, FixedTerminal::Reads)? {
                 0_usize
@@ -657,30 +659,46 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                     );
                 }
-                // [EFF-1] "`writes(p)` subsumes `reads(p)`, so the pair is
-                // never written for one path"; the redundant `reads` entry is
-                // a second spelling of the read [FORM-1]. Canonical order puts
-                // the read first, so the pair is complete when its write
-                // arrives. EFF-1 names no restructuring, so none is carried.
-                if ordinal == 1
-                    && let Some((_, read)) =
-                        read_nodes.iter().find(|(read_path, _)| *read_path == path)
-                {
-                    return self.issue_node(
-                        SemanticRule::Eff1,
-                        *read,
-                        SemanticIssueKind::SubsumedEffectRead {
-                            entry: self.tree.source_spelling(*read)?,
-                        },
-                    );
-                }
                 written[ordinal].push(path.clone());
+                entries.push((path.clone(), ordinal == 1, effect));
                 if ordinal == 0 {
-                    read_nodes.push((path.clone(), effect));
                     declared.add_read(path);
                 } else {
                     declared.add_write(path);
                 }
+            }
+        }
+        // [EFF-1] a `writes` entry states every access at or below its path
+        // and a `reads` entry every observation at or below its path, so an
+        // entry that another entry of the row covers is a second spelling of
+        // what that entry already states [FORM-1]: a `writes` entry covers
+        // every entry at or below it, and a `reads` entry every `reads` entry
+        // at or below it. "At or below" is [EFF-2]'s covering relation: one
+        // root and a step prefix. Two entries of one category and one path
+        // were already refused above as a repeated entry, so a cover of the
+        // same category reaching this pass is a proper prefix. The first such
+        // entry in written order is refused at its own `effect`, naming the
+        // first entry that covers it; EFF-1 names no restructuring, so none is
+        // carried.
+        for (index, (path, write, node)) in entries.iter().enumerate() {
+            let covering = entries
+                .iter()
+                .enumerate()
+                .find(|(other, (cover, cover_write, _))| {
+                    *other != index
+                        && (*cover_write || !*write)
+                        && cover.root == path.root
+                        && path.steps.starts_with(&cover.steps)
+                });
+            if let Some((_, (_, _, covering))) = covering {
+                return self.issue_node(
+                    SemanticRule::Eff1,
+                    *node,
+                    SemanticIssueKind::SubsumedEffectEntry {
+                        entry: self.tree.source_spelling(*node)?,
+                        covering: self.tree.source_spelling(*covering)?,
+                    },
+                );
             }
         }
         Ok(declared)

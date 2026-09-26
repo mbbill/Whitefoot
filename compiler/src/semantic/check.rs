@@ -808,136 +808,44 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    /// The row an [EFF-2] rejection suggests: one EFF-2 admits for this body
-    /// in both directions, that [EFF-1] admits as written, and that no call
-    /// refuses against itself [EFF-5].
+    /// The row an [EFF-2] rejection suggests: the exhibited row without the
+    /// entries another of its entries covers.
     ///
     /// The exhibited set records each access as the body made it, so it can
-    /// hold a read and a write of one path, or a read of a whole parameter
-    /// beside a write below it. [EFF-1] never writes the first pair, because
-    /// `writes(p)` subsumes `reads(p)`. [EFF-5] compares every pair of one
-    /// call's substituted entries, including two that one argument supplies,
-    /// so the second pair is refused at every call even though EFF-2 admits
-    /// it at the declaration. Every pair of entries on one parameter that a
-    /// call refuses whatever its arguments are is therefore merged into one
-    /// `writes` of the two paths' common prefix, and every entry another
-    /// entry covers is dropped. Each merge keeps EFF-2's covering relation
-    /// both ways: the merged write lies at or above an exhibited write, and it
-    /// covers everything its two members covered. Two positions whose
-    /// separation depends on the values a call supplies stay apart; that is
-    /// the call site's own proof question.
-    fn suggested_effect_row(
-        &self,
-        exhibited: &EffectSet,
-        signature: &FunctionSignature,
-    ) -> Result<EffectSet, CheckStop> {
-        let mut reads = exhibited.reads.clone();
-        let mut writes = exhibited.writes.clone();
-        loop {
-            let mut merged = None;
-            'search: for write in &writes {
-                for other in reads.iter().chain(&writes) {
-                    if std::ptr::eq(write, other) || write.root != other.root {
-                        continue;
-                    }
-                    if self.row_entries_conflict(signature, write, other)? {
-                        merged = Some(Self::common_effect_prefix(write, other));
-                        break 'search;
-                    }
-                }
-            }
-            let Some(prefix) = merged else {
-                break;
-            };
-            writes.retain(|path| !Self::effect_path_covers(&prefix, path));
-            reads.retain(|path| !Self::effect_path_covers(&prefix, path));
-            writes.push(prefix);
-        }
+    /// hold a read and a write of one path, or a write of a whole parameter
+    /// beside a write below it. A `writes` entry states every access at or
+    /// below its path, so [EFF-1] refuses any entry it covers, and a `reads`
+    /// entry covered by another `reads` entry adds nothing to the row. What
+    /// remains is exact: every entry is an exhibited path, EFF-2 admits it in
+    /// both directions, and EFF-1 admits it as written. Two entries left on one
+    /// parameter either overlap at every position, which [EFF-5] does not
+    /// compare, or overlap only for some position values, which the call's
+    /// own proof decides.
+    fn suggested_effect_row(exhibited: &EffectSet) -> EffectSet {
         let mut suggested = EffectSet::NONE;
-        for path in &writes {
-            suggested.add_write(path.clone());
+        for path in &exhibited.writes {
+            let covered = exhibited
+                .writes
+                .iter()
+                .any(|entry| entry != path && Self::effect_path_covers(entry, path));
+            if !covered {
+                suggested.add_write(path.clone());
+            }
         }
-        for path in &reads {
-            let covered_by_write = writes
+        for path in &exhibited.reads {
+            let covered_by_write = exhibited
+                .writes
                 .iter()
                 .any(|entry| Self::effect_path_covers(entry, path));
-            let covered_by_read = reads
+            let covered_by_read = exhibited
+                .reads
                 .iter()
                 .any(|entry| entry != path && Self::effect_path_covers(entry, path));
             if !covered_by_write && !covered_by_read {
                 suggested.add_read(path.clone());
             }
         }
-        Ok(suggested)
-    }
-
-    /// [EFF-5] whether one call refuses these two entries of one row against
-    /// each other whatever arguments it supplies.
-    ///
-    /// Both entries are placed in the callee's own frame: each reference
-    /// parameter is its own root and each index or range position reads the
-    /// value parameter it names, exactly as the body sees them. Two entries
-    /// conflict when the one [OWN-7] relation finds them overlapping with no
-    /// index or range position left for a call's values to separate — the
-    /// pair [EFF-5] refuses outright rather than asks the fixed families.
-    fn row_entries_conflict(
-        &self,
-        signature: &FunctionSignature,
-        left: &super::model::CheckedStatePath,
-        right: &super::model::CheckedStatePath,
-    ) -> Result<bool, CheckStop> {
-        let captures = (0..signature.parameters.len())
-            .map(|ordinal| {
-                let ordinal = u32::try_from(ordinal)
-                    .map_err(|_| CheckStop::from(SemanticCompilerFailure::CounterOverflow))?;
-                Ok(super::places::CapturedValue::new(
-                    super::places::CaptureId::source(ordinal),
-                    super::places::CapturedTerm::Binding(BindingId(ordinal)),
-                ))
-            })
-            .collect::<Result<Vec<_>, CheckStop>>()?;
-        // Only a reference parameter roots a row entry [EFF-1]; an exhibited
-        // path with any other root names nothing a call substitutes.
-        let place =
-            |path: &super::model::CheckedStatePath| -> Result<Option<ResolvedPlace>, CheckStop> {
-                let Some(ordinal) = signature
-                    .parameters
-                    .iter()
-                    .position(|parameter| parameter.declaration == path.root)
-                else {
-                    return Ok(None);
-                };
-                let ordinal =
-                    u32::try_from(ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
-                Ok(Some(ResolvedPlace {
-                    root: super::places::PlaceRoot::Binding(BindingId(ordinal)),
-                    path: self.substitute_effect_steps(signature, path, &captures)?,
-                }))
-            };
-        let (Some(left), Some(right)) = (place(left)?, place(right)?) else {
-            return Ok(false);
-        };
-        Ok(
-            super::places::places_overlap(&super::places::UnprovedSeparations, &left, &right)
-                && Self::separable_by_position(&left, &right).is_none(),
-        )
-    }
-
-    /// The longest step prefix two effect paths of one root share [EFF-1].
-    fn common_effect_prefix(
-        left: &super::model::CheckedStatePath,
-        right: &super::model::CheckedStatePath,
-    ) -> super::model::CheckedStatePath {
-        let shared = left
-            .steps
-            .iter()
-            .zip(&right.steps)
-            .take_while(|(left, right)| left == right)
-            .count();
-        super::model::CheckedStatePath {
-            root: left.root,
-            steps: left.steps[..shared].to_vec(),
-        }
+        suggested
     }
 
     /// One `effect_path` in its written spelling [EFF-1]: the parameter's own
@@ -1071,12 +979,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// while a row declaring only a field is not covered by an access to the
     /// whole.
     ///
-    /// The two categories are not independent. [EFF-1] states that
-    /// "`writes(p)` subsumes `reads(p)`, so the pair is never written for one
-    /// path", so a declared write covers an exhibited read at or below its
-    /// path and an exhibited write answers for a declared read. A declared
-    /// write is answered only by an exhibited write: nothing subsumes a write
-    /// the body never makes.
+    /// The two categories are not independent. [EFF-1] states that a
+    /// `writes` entry "states every access at that path and below it", so a
+    /// declared write covers an exhibited read at or below its path and an
+    /// exhibited write answers for a declared read. A declared write is
+    /// answered only by an exhibited write: nothing subsumes a write the body
+    /// never makes.
     fn effect_row_matches(declared: &EffectSet, exhibited: &EffectSet) -> bool {
         exhibited.reads.iter().all(|access| {
             declared
@@ -2533,7 +2441,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // Each category is judged by [EFF-2]'s own two-way covering relation
         // rather than by set equality.
         if !Self::effect_row_matches(&signature.declared_effects, &exhibited) {
-            let suggested = self.suggested_effect_row(&exhibited, signature)?;
+            let suggested = Self::suggested_effect_row(&exhibited);
             let (missing, extra) = self.effect_row_difference(
                 &exhibited,
                 &suggested,

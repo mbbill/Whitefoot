@@ -1081,19 +1081,23 @@ pub enum SemanticIssueKind {
         /// Exact repair required by EFF-1 for that condition.
         mechanical_fix: &'static str,
     },
-    /// A row carries `reads(p)` beside `writes(p)` for one path, which
-    /// EFF-1 never writes because `writes(p)` subsumes `reads(p)`. EFF-1
-    /// names no restructuring for it, so the rejection carries none.
-    SubsumedEffectRead {
-        /// The redundant `reads` entry as the row writes it.
+    /// A row carries an entry that another of its entries covers, such as
+    /// `reads(p)` or `writes(p.x)` beside `writes(p)`, or `reads(p.x)` beside
+    /// `reads(p)`, which EFF-1 never writes because the covering entry
+    /// already states it. EFF-1 names no restructuring for it, so the
+    /// rejection carries none.
+    SubsumedEffectEntry {
+        /// The redundant entry as the row writes it.
         entry: String,
+        /// The first entry in written order whose path covers it: a `writes`
+        /// entry, or a `reads` entry covering a `reads` entry below it.
+        covering: String,
     },
     /// The written effect row differs from syntactically exhibited effects.
     EffectMismatch {
-        /// A row EFF-2 admits for the body, in EFF-1 canonical spelling, that
-        /// no call refuses against itself [EFF-5]: the exhibited row with
-        /// every subsumed entry dropped and every pair of entries on one
-        /// parameter that a call always refuses merged into one write.
+        /// The exhibited row without the entries another of its entries
+        /// covers, in EFF-1 canonical spelling: EFF-2 admits it for the body,
+        /// EFF-1 admits it as written, and every entry is an exhibited path.
         expected_row: String,
         /// The row the declaration writes, in the same spelling.
         found_row: String,

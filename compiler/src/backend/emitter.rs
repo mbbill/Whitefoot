@@ -1262,10 +1262,16 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     /// A reference is a local name for a path that is live where it is used
     /// [REF-1, REF-2], so it is `nonnull` and `dereferenceable` for the
     /// referent's own extent; [REF-3] keeps it from escaping, so nothing in
-    /// the callee captures it; and [EFF-5]'s pairwise check runs at every
-    /// call and rejects any program whose substituted paths are not disjoint
-    /// where one of them writes, so the surviving callers are exactly the
-    /// ones for which `noalias` holds.
+    /// the callee captures it; and `noalias` holds because every place the
+    /// call writes is reached only through the parameter whose row entry
+    /// names it. [EFF-5] runs at every call and rejects any program in which
+    /// a place one argument's entries write is not proved disjoint from every
+    /// place another argument's entries reach; entries one argument supplies
+    /// may overlap each other, but they are all reached through that one
+    /// parameter's pointer, which is what LLVM's `noalias` on that parameter
+    /// concerns. The attribute is per parameter and no per-access alias scope
+    /// is emitted, so nothing here asserts two entries of one parameter
+    /// disjoint.
     ///
     /// `swap` is the stated exception: [OP-11] admits the one call whose two
     /// arguments name the same place, so its two parameters carry every fact
@@ -1273,14 +1279,15 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
     ///
     /// A `&[T]` range reference [REF-4] is a reference too, and the facts go
     /// on the element pointer it arrives as. LLVM's `noalias` constrains only
-    /// memory the call modifies, and [EFF-5] proved every written path of the
-    /// call disjoint from every other substituted path; the callee reaches
-    /// caller storage only through its reference parameters, whose accesses
-    /// its exact row covers [EFF-2]. Two read-only ranges may overlap, which
-    /// `noalias` permits because neither is modified. The pointer addresses
-    /// storage that exists while the range is valid, even for an empty range,
-    /// so it is `nonnull`. Its extent is `len` elements, known only at run
-    /// time and possibly zero, so it states no `dereferenceable` extent.
+    /// memory the call modifies, and [EFF-5] proved every place one argument
+    /// writes disjoint from every place another argument reaches; the callee
+    /// reaches caller storage only through its reference parameters, whose
+    /// accesses its exact row covers [EFF-2]. Two read-only ranges may
+    /// overlap, which `noalias` permits because neither is modified. The
+    /// pointer addresses storage that exists while the range is valid, even
+    /// for an empty range, so it is `nonnull`. Its extent is `len` elements,
+    /// known only at run time and possibly zero, so it states no
+    /// `dereferenceable` extent.
     fn reference_parameter_facts(
         &self,
         index: usize,

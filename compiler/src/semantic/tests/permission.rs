@@ -54,9 +54,9 @@ fn main() -> status: ExitStatus pure {
 
 // Scalar state keeps the ordinary adjacency tests independent of a library
 // API. The shared-factory tests below exercise the linked declarations
-// separately. `writes(p)` subsumes `reads(p)` [EFF-1], so the write row is
-// written once and the read entry of v0.59's row is gone with the permission
-// marker on `output`.
+// separately. `writes(p)` states every access at or below `p` [EFF-1], so
+// the write row is written once and the read entry of v0.59's row is gone
+// with the permission marker on `output`.
 const MARKER: &str = "fn write_marker(output: &u64, source: &[u8], start: u64, end: u64) -> result: Result<u64, IoError> reads(source), writes(output) {\n  let previous = deref(output);\n  let length = deref(source).len;\n  set deref(output) = previous +wrap start;\n  return Ok<u64, IoError>(value: end);\n}\n\n";
 
 fn permission_of(source: &[u8]) -> PermissionMetadata {
