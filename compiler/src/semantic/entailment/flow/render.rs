@@ -405,8 +405,9 @@ impl Input<'_, '_> {
                 ..
             } => {
                 let base = match occurrence {
+                    // [DIAG-1] fixes this spelling for an FN-8 payload.
                     EvaluatedValueOccurrence::CallArgument { argument, .. } => {
-                        format!("<argument #{argument} pre-transfer value>")
+                        format!("argument #{argument} pre-transfer value")
                     }
                     EvaluatedValueOccurrence::ObligationOperand { operand, .. } => {
                         format!("<operand #{operand} evaluated value>")

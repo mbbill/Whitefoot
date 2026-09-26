@@ -7,7 +7,7 @@
 
 use crate::{
     BindingId, CallRequirementDisposition, NodePath, SemanticIssueKind, SemanticOutcome,
-    SemanticRule, SourceInput,
+    SemanticRule, SourceInput, StaticObligationDisposition,
 };
 
 use super::super::entailment::affine::{AffineCheckState, AffineInequality};
@@ -17,9 +17,8 @@ use super::super::entailment::{
     DerivationNode, DerivationRootKind, FlowEvent, FlowEventId, FlowEventKind, FunctionEntailment,
     GoalId, GoalSign, ImplicitBoundKind, JoinParent, MeasureBound, ObligationFamily,
     ObligationOutcome, PlaceRoot, PostconditionCallDetail, PostconditionDeliveryJoinDetail,
-    PostconditionDisposition, RangeSeparationOrdering, Relation, RemainderEndpoint, S7Derivation,
-    S7DerivationKind, S7Subject, ShiftOneIdentity, SourceAffineFactRef, TermId, TermKind, ZERO,
-    type_range,
+    PostconditionDisposition, RangeSeparationOrdering, Relation, SourceAffineFactRef, TermId,
+    TermKind, ZERO, type_range,
 };
 use super::super::goal::{GoalExpression, GoalOperation};
 use super::super::model::{
@@ -30,7 +29,7 @@ use super::super::model::{
 // `PlaceStep`, and a term's place carries the whole resolved path rather than
 // a separate deref flag and field list.
 use super::super::places::{CapturedRange, PlaceStep};
-use super::{assert_rule, with_semantics, with_semantics_dark};
+use super::{assert_rule_kind, with_semantics, with_semantics_dark};
 
 fn obligations(source: &[u8], function: &str) -> Vec<ObligationOutcome> {
     with_semantics_dark(source, |outcome| {
@@ -218,34 +217,6 @@ fn retained_term(summary: &FunctionEntailment, id: TermId) -> &TermKind {
         .unwrap_or_else(|| panic!("retained term ID {id:?} must resolve"))
 }
 
-/// One retained S7 image names exactly the value its subject identifies: the
-/// `let` binder's own place term, or the commit value of the `set`
-/// occurrence whose right-hand side produced it [ENT-2, ENT-3.S7].
-fn s7_result_names_subject(
-    summary: &FunctionEntailment,
-    result: TermId,
-    source: &S7Derivation,
-) -> bool {
-    match &source.subject {
-        S7Subject::Binding(binding) => matches!(
-            retained_term(summary, result),
-            TermKind::Place(place, row)
-                if place.root == PlaceRoot::Binding(*binding)
-                    && place.path.is_empty()
-                    && *row == source.row
-        ),
-        S7Subject::Commit(commit) => matches!(
-            retained_term(summary, result),
-            TermKind::CommitValue { commit_path, ty }
-                if commit_path.as_slice() == commit.components() && *ty == source.row
-        ),
-        S7Subject::ResultPayload(payload) => {
-            result == *payload
-                && matches!(retained_term(summary, result), TermKind::ResultPayload(_))
-        }
-    }
-}
-
 fn assert_relation_terms_resolve(summary: &FunctionEntailment, relation: &Relation) {
     for term in relation.terms() {
         retained_term(summary, term);
@@ -317,6 +288,7 @@ fn node_event(node: &DerivationNode) -> Option<FlowEventId> {
         DerivationNode::SourceBound { event, .. }
         | DerivationNode::SourceDistinct { event, .. }
         | DerivationNode::SourceGoal { event, .. }
+        | DerivationNode::OperationFact { event, .. }
         | DerivationNode::JoinBound { event, .. }
         | DerivationNode::JoinDistinct { event, .. }
         | DerivationNode::JoinGoal { event, .. }
@@ -426,7 +398,6 @@ fn assert_source_event(summary: &FunctionEntailment, id: FlowEventId, used: &mut
             | FlowEventKind::S9
             | FlowEventKind::S11
             | FlowEventKind::S13
-            | FlowEventKind::S14
     ));
 }
 
@@ -903,6 +874,32 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     sign: *sign,
                 }
             }
+            // [ENT-3.S7, DIAG-2] one table fact stands on the closed operand
+            // bounds its row read, each a bound of one term against Z, or on
+            // the discharged domain whose interval-product measurement it
+            // states.
+            DerivationNode::OperationFact {
+                relation,
+                event,
+                parents,
+            } => {
+                assert_relation_terms_resolve(summary, relation);
+                assert!(matches!(relation, Relation::Bound { .. }));
+                assert_eq!(retained_event(summary, *event).kind, FlowEventKind::S7);
+                assert_source_event(summary, *event, &mut used_events);
+                for parent in parents {
+                    match retained_conclusion(&conclusions, *parent) {
+                        DerivationConclusion::Relation(bound) => assert!(
+                            bound.terms().contains(&ZERO),
+                            "an operand bound relates its term to Z"
+                        ),
+                        DerivationConclusion::IntegerDomain(_)
+                        | DerivationConclusion::Contradiction => {}
+                        other => panic!("an operation fact cannot stand on {other:?}"),
+                    }
+                }
+                DerivationConclusion::Relation(relation.clone())
+            }
             DerivationNode::BooleanLiteral { goal, sign } => {
                 assert!(summary.inventory.goals.get(goal.0 as usize).is_some());
                 DerivationConclusion::Goal {
@@ -1192,10 +1189,15 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 domain,
             } => {
                 assert!(!product.components().is_empty());
-                assert!(summary.s7_derivations.iter().any(|source| {
-                    source.parent == *division
-                        && matches!(source.kind, S7DerivationKind::UnsignedDivisionBound { .. })
-                }));
+                // [DIAG-2] the division parent is the S7 fact bounding the
+                // quotient by its dividend.
+                assert!(matches!(
+                    summary.derivations.nodes[division.0 as usize],
+                    DerivationNode::OperationFact {
+                        relation: Relation::Bound { .. },
+                        ..
+                    }
+                ));
                 assert!(matches!(
                     retained_conclusion(&conclusions, *domain),
                     DerivationConclusion::IntegerDomain(_)
@@ -1980,7 +1982,6 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
     let mut seen_calls = vec![false; summary.call_goals.len()];
     let mut seen_contracts = vec![false; summary.contract_goals.len()];
     let mut seen_counted = vec![[false; 8]; summary.counted_derivations.len()];
-    let mut seen_s7 = vec![false; summary.s7_derivations.len()];
     let mut seen_postcondition_exits = summary
         .postconditions
         .iter()
@@ -2367,102 +2368,6 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert_eq!(Some(*domain), obligation.derivation);
                 assert_eq!(conclusion, &DerivationConclusion::UnsignedDivisionProduct);
             }
-            DerivationRootKind::BitAndBound(occurrence)
-            | DerivationRootKind::ShiftOneNonzero(occurrence)
-            | DerivationRootKind::UnsignedDivisionBound(occurrence)
-            | DerivationRootKind::UnsignedRemainderBound(occurrence)
-            | DerivationRootKind::SignedRemainderBound(occurrence) => {
-                let source = summary
-                    .s7_derivations
-                    .get(occurrence as usize)
-                    .expect("S7-root occurrence must resolve");
-                assert!(!seen_s7[occurrence as usize], "one root per S7 relation");
-                seen_s7[occurrence as usize] = true;
-                assert_eq!(source.parent, root.node);
-                assert_eq!(
-                    summary.derivations.node_event(root.node),
-                    Some(source.event)
-                );
-                assert_eq!(
-                    conclusion,
-                    &DerivationConclusion::Relation(source.relation.clone())
-                );
-                assert_eq!(
-                    matches!(source.kind, S7DerivationKind::BitAndBound { .. }),
-                    matches!(root.kind, DerivationRootKind::BitAndBound(_))
-                );
-                assert_eq!(
-                    matches!(source.kind, S7DerivationKind::UnsignedDivisionBound { .. }),
-                    matches!(root.kind, DerivationRootKind::UnsignedDivisionBound(_))
-                );
-                assert_eq!(
-                    matches!(source.kind, S7DerivationKind::UnsignedRemainderBound { .. }),
-                    matches!(root.kind, DerivationRootKind::UnsignedRemainderBound(_))
-                );
-                assert_eq!(
-                    matches!(source.kind, S7DerivationKind::SignedRemainderBound { .. }),
-                    matches!(root.kind, DerivationRootKind::SignedRemainderBound(_))
-                );
-                match (&source.kind, &source.relation) {
-                    (
-                        S7DerivationKind::BitAndBound { admitted, .. },
-                        Relation::Bound { left, right, bound },
-                    ) => {
-                        assert_eq!(right, admitted);
-                        assert_eq!(*bound, 0);
-                        assert!(s7_result_names_subject(summary, *left, source));
-                    }
-                    (
-                        S7DerivationKind::ShiftOneNonzero { count_atom, one },
-                        Relation::Distinct { left, right, .. },
-                    ) => {
-                        assert!(!count_atom.components().is_empty());
-                        if let ShiftOneIdentity::TypedLiteral { source } = one {
-                            assert!(!source.components().is_empty());
-                        }
-                        let result = if *left == ZERO { *right } else { *left };
-                        assert!(*left == ZERO || *right == ZERO);
-                        assert!(s7_result_names_subject(summary, result, source));
-                    }
-                    (
-                        S7DerivationKind::UnsignedDivisionBound { dividend, divisor },
-                        Relation::Bound { left, right, bound },
-                    ) => {
-                        assert_eq!(right, dividend);
-                        assert_eq!(*bound, 0);
-                        retained_term(summary, *divisor);
-                        assert!(!source.row.signed());
-                        assert!(s7_result_names_subject(summary, *left, source));
-                    }
-                    (
-                        S7DerivationKind::UnsignedRemainderBound { divisor },
-                        Relation::Bound { left, right, bound },
-                    ) => {
-                        assert_eq!(right, divisor);
-                        assert_eq!(*bound, -1);
-                        assert!(s7_result_names_subject(summary, *left, source));
-                    }
-                    (
-                        S7DerivationKind::SignedRemainderBound { divisor, endpoint },
-                        Relation::Bound { left, right, bound },
-                    ) => {
-                        let limit = divisor.abs() - 1;
-                        assert_eq!(*bound, limit);
-                        let result = match endpoint {
-                            RemainderEndpoint::Minimum => {
-                                assert_eq!(*left, ZERO);
-                                *right
-                            }
-                            RemainderEndpoint::Maximum => {
-                                assert_eq!(*right, ZERO);
-                                *left
-                            }
-                        };
-                        assert!(s7_result_names_subject(summary, result, source));
-                    }
-                    _ => panic!("S7 root kind, metadata, and relation must agree"),
-                }
-            }
             DerivationRootKind::PostconditionExit {
                 relation_ordinal,
                 occurrence,
@@ -2682,7 +2587,6 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
             .all(|occurrence| occurrence.iter().all(|seen| *seen)),
         "every counted statement must retain all eight atomic roots"
     );
-    assert!(seen_s7.into_iter().all(|seen| seen));
     for ((proof, seen), seen_aggregates) in summary
         .postconditions
         .iter()
@@ -7236,8 +7140,10 @@ fn main() -> status: std::process::ExitStatus pure {
     );
 }
 
+/// [ENT-3.S7] the `%` row's strict divisor relation proves the postcondition,
+/// and the retained fact is the divisor relation itself.
 #[test]
-fn unsigned_remainder_publishes_its_strict_divisor_bound() {
+fn unsigned_remainder_publishes_its_strict_divisor_relation() {
     let source = br#"fn reduce(dividend: u64, divisor: u64) -> result: u64 pure contract {
   requires divisor != 0_u64;
   ensures result < divisor;
@@ -7252,19 +7158,31 @@ fn main() -> status: std::process::ExitStatus pure {
 "#;
     let summary = accepted_entailment(source, "reduce");
     validate_derivations(&summary);
-    assert_eq!(summary.s7_derivations.len(), 1);
-    assert!(
-        summary
-            .s7_derivations
-            .iter()
-            .all(|source| matches!(source.kind, S7DerivationKind::UnsignedRemainderBound { .. }))
-    );
     let [postcondition] = summary.postconditions.as_slice() else {
         panic!("reduce must retain one postcondition proof");
     };
     assert!(postcondition.aggregate.discharged);
+    assert_root_contains(
+        &summary,
+        postcondition
+            .aggregate
+            .derivation
+            .expect("discharged aggregate root"),
+        |node| {
+            matches!(
+                node,
+                DerivationNode::OperationFact {
+                    relation: Relation::Bound { bound: -1, .. },
+                    ..
+                }
+            )
+        },
+        "the remainder's strict divisor relation",
+    );
 }
 
+/// [ENT-3.S7] signed remainders by constant divisors publish their intervals,
+/// and the exact sum's domain stands on them.
 #[test]
 fn signed_constant_remainders_publish_intervals_for_exact_arithmetic() {
     let source = br#"fn combine(left_seed: i32, right_seed: i32) -> result: i32 pure {
@@ -7279,264 +7197,190 @@ fn main() -> status: std::process::ExitStatus pure {
 "#;
     let summary = accepted_entailment(source, "combine");
     validate_derivations(&summary);
-    assert_eq!(summary.s7_derivations.len(), 4);
-    assert!(
-        summary
-            .s7_derivations
-            .iter()
-            .all(|source| matches!(source.kind, S7DerivationKind::SignedRemainderBound { .. }))
-    );
-    assert_eq!(
-        summary
-            .s7_derivations
-            .iter()
-            .filter(|source| matches!(
-                source.kind,
-                S7DerivationKind::SignedRemainderBound {
-                    endpoint: RemainderEndpoint::Minimum,
-                    ..
-                }
-            ))
-            .count(),
-        2
-    );
     assert_eq!(summary.obligations.len(), 3);
     assert!(summary.obligations.iter().all(|outcome| outcome.discharged));
+    assert_root_contains(
+        &summary,
+        obligation_root(&summary, 2),
+        |node| {
+            matches!(
+                node,
+                DerivationNode::OperationFact {
+                    relation: Relation::Bound { right, bound: 40, .. },
+                    ..
+                } if *right == ZERO
+            )
+        },
+        "the left remainder's upper bound 40",
+    );
 }
 
+/// [ENT-3.S7, DIAG-2] a fact no required root reaches is not retained, and
+/// a consumed fact stands on the closed bound its operand read.
 #[test]
-fn unsigned_bit_and_and_shift_one_retain_exact_s7_sources() {
-    let source = br#"const earlier_one: u32 = 1_u32;
-
-fn sources(left: u32, right: u32, count: u32) -> result: u32 pure {
-  let masked = iand(left, right);
-  let shifted_literal = ishl.wrap(1_u32, count);
-  let shifted_named = ishl.wrap(earlier_one, count);
-  return masked;
-}
-
-fn main() -> status: std::process::ExitStatus pure {
-  return std::process::exit_status(code: 0_u8);
-}
-"#;
-    let summary = entailment(source, "sources");
-    validate_derivations(&summary);
-    assert_eq!(summary.s7_derivations.len(), 4);
-
-    let bit_and = &summary.s7_derivations[..2];
-    assert!(bit_and.iter().all(|source| source.row == IntegerType::U32));
-    assert!(
-        bit_and
-            .iter()
-            .all(|source| source.subject == bit_and[0].subject)
-    );
-    assert!(
-        bit_and
-            .iter()
-            .all(|source| source.event == bit_and[0].event)
-    );
-    assert!(
-        bit_and
-            .iter()
-            .all(|source| source.source == bit_and[0].source)
-    );
-    assert_eq!(
-        bit_and
-            .iter()
-            .map(|source| match source.kind {
-                S7DerivationKind::BitAndBound { operand, .. } => operand,
-                S7DerivationKind::ShiftOneNonzero { .. } => {
-                    panic!("the first S7 group must be the bit-and bounds")
-                }
-                S7DerivationKind::UnsignedDivisionBound { .. } => {
-                    panic!("the first S7 group must be the bit-and bounds")
-                }
-                S7DerivationKind::UnsignedRemainderBound { .. } => {
-                    panic!("the first S7 group must be the bit-and bounds")
-                }
-                S7DerivationKind::SignedRemainderBound { .. } => {
-                    panic!("the first S7 group must be the bit-and bounds")
-                }
-            })
-            .collect::<Vec<_>>(),
-        vec![0, 1]
-    );
-
-    let literal_shift = &summary.s7_derivations[2..3];
-    let named_shift = &summary.s7_derivations[3..4];
-    for group in [literal_shift, named_shift] {
-        assert!(group.iter().all(|source| source.row == IntegerType::U32));
-        assert!(
-            group
-                .iter()
-                .all(|source| source.subject == group[0].subject)
-        );
-        assert!(group.iter().all(|source| source.event == group[0].event));
-        assert!(group.iter().all(|source| source.source == group[0].source));
-        assert!(group.iter().all(|source| match &source.kind {
-            S7DerivationKind::ShiftOneNonzero { count_atom, .. } => {
-                count_atom
-                    == match &group[0].kind {
-                        S7DerivationKind::ShiftOneNonzero { count_atom, .. } => count_atom,
-                        S7DerivationKind::BitAndBound { .. } => unreachable!(),
-                        S7DerivationKind::UnsignedDivisionBound { .. } => unreachable!(),
-                        S7DerivationKind::UnsignedRemainderBound { .. } => unreachable!(),
-                        S7DerivationKind::SignedRemainderBound { .. } => unreachable!(),
-                    }
-            }
-            S7DerivationKind::BitAndBound { .. } => false,
-            S7DerivationKind::UnsignedDivisionBound { .. } => false,
-            S7DerivationKind::UnsignedRemainderBound { .. } => false,
-            S7DerivationKind::SignedRemainderBound { .. } => false,
-        }));
-    }
-    assert!(literal_shift.iter().all(|source| matches!(
-        source.kind,
-        S7DerivationKind::ShiftOneNonzero {
-            one: ShiftOneIdentity::TypedLiteral { .. },
-            ..
-        }
-    )));
-    let named_declaration = match named_shift[0].kind {
-        S7DerivationKind::ShiftOneNonzero {
-            one: ShiftOneIdentity::NamedConstant { declaration },
-            ..
-        } => declaration,
-        _ => panic!("the named-one shift must retain its declaration identity"),
-    };
-    assert!(named_shift.iter().all(|source| matches!(
-        source.kind,
-        S7DerivationKind::ShiftOneNonzero {
-            one: ShiftOneIdentity::NamedConstant { declaration },
-            ..
-        } if declaration == named_declaration
-    )));
-}
-
-#[test]
-fn repeated_bit_and_operands_keep_two_ordered_s7_roots() {
-    let source = br#"fn repeated(value: u32) -> result: u32 pure {
-  let masked = iand(value, value);
-  return masked;
-}
-
-fn main() -> status: std::process::ExitStatus pure {
-  return std::process::exit_status(code: 0_u8);
-}
-"#;
-    let summary = entailment(source, "repeated");
-    validate_derivations(&summary);
-    assert_eq!(summary.s7_derivations.len(), 2);
-    let pair = &summary.s7_derivations;
-    let S7DerivationKind::BitAndBound {
-        operand: first,
-        admitted: first_term,
-    } = pair[0].kind
-    else {
-        panic!("the first repeated operand must be a bit-and source");
-    };
-    let S7DerivationKind::BitAndBound {
-        operand: second,
-        admitted: second_term,
-    } = pair[1].kind
-    else {
-        panic!("the second repeated operand must be a bit-and source");
-    };
-    assert_eq!((first, second), (0, 1));
-    assert_eq!(first_term, second_term);
-    assert_eq!(pair[0].parent, pair[1].parent);
-    assert_eq!(summary.derivations.roots.len(), 2);
-    assert_eq!(
-        summary
-            .derivations
-            .roots
-            .iter()
-            .map(|root| root.kind)
-            .collect::<Vec<_>>(),
-        (0..2)
-            .map(DerivationRootKind::BitAndBound)
-            .collect::<Vec<_>>()
-    );
-}
-
-#[test]
-fn one_ineligible_bit_and_operand_does_not_hide_the_other_s7_bound() {
-    let source = br#"const count: u64 = 4_u64;
-
-const values: Array<u32, count> =[0_u32, 0_u32, 0_u32, 0_u32];
-
-fn independent(admitted: u32) -> result: u32 pure {
-  let masked = iand(values[0_u64], admitted);
-  return masked;
-}
-
-fn main() -> status: std::process::ExitStatus pure {
-  return std::process::exit_status(code: 0_u8);
-}
-"#;
-    let summary = entailment(source, "independent");
-    validate_derivations(&summary);
-    assert_eq!(summary.s7_derivations.len(), 1);
-    assert!(summary.s7_derivations.iter().all(|source| matches!(
-        source.kind,
-        S7DerivationKind::BitAndBound { operand: 1, .. }
-    )));
-}
-
-#[test]
-fn signed_generic_local_nondirect_and_wrong_operation_shapes_have_no_s7_source() {
-    let source = br#"fn signed(left: i32, right: i32) -> result: i32 pure {
-  let masked = iand(left, right);
-  return masked;
-}
-
-fn generic<T: Int>(count: u32) -> result: T pure {
-  let shifted = ishl.wrap(1_T, count);
-  return shifted;
-}
-
-fn local(count: u32) -> result: u32 pure {
-  let one = 1_u32;
-  let shifted = ishl.wrap(one, count);
-  return shifted;
-}
-
-fn nondirect(count: u32) -> result: u32 pure {
-  return ishl.wrap(1_u32, count);
-}
-
-fn wrong_bit_operation(left: u32, right: u32) -> result: u32 pure {
-  let combined = ior(left, right);
-  return combined;
-}
-
-fn wrong_shift_mode(count: u32) -> result: u32 pure contract {
-  requires ishl.defined(1_u32, count);
+fn operation_facts_are_retained_where_a_root_reaches_them() {
+    let source = br#"fn at_most(value: u32, limit: u32) -> result: unit pure contract {
+  requires value <= limit;
 } {
-  let shifted = ishl(1_u32, count);
-  return shifted;
+  return unit;
+}
+
+fn unused(left: u32, right: u32, count: u32) -> result: u32 pure {
+  let masked = iand(left, right);
+  let shifted = ishl.wrap(1_u32, count);
+  let joined = ior(masked, shifted);
+  return joined;
+}
+
+fn consumed(value: u32) -> result: unit pure {
+  if value <= 1000_u32 {
+    let shifted = ishr(value, 3_u32);
+    at_most(value: shifted, limit: 125_u32);
+  }
+  return unit;
 }
 
 fn main() -> status: std::process::ExitStatus pure {
-  let ignored = generic::<u32>(count: 2_u32);
   return std::process::exit_status(code: 0_u8);
 }
 "#;
-    for function in [
-        "signed",
-        "generic",
-        "local",
-        "nondirect",
-        "wrong_bit_operation",
-        "wrong_shift_mode",
-    ] {
-        let summary = entailment(source, function);
-        validate_derivations(&summary);
-        assert!(
-            summary.s7_derivations.is_empty(),
-            "{function} must not establish an S7 bit/shift source"
-        );
+    let unused = accepted_entailment(source, "unused");
+    validate_derivations(&unused);
+    assert!(
+        !unused
+            .derivations
+            .nodes
+            .iter()
+            .any(|node| matches!(node, DerivationNode::OperationFact { .. })),
+        "an unconsumed S7 fact is pruned like every other source fact"
+    );
+
+    let consumed = accepted_entailment(source, "consumed");
+    validate_derivations(&consumed);
+    assert_root_contains(
+        &consumed,
+        call_root(&consumed, 0),
+        |node| {
+            matches!(
+                node,
+                DerivationNode::OperationFact {
+                    relation: Relation::Bound { right, bound: 125, .. },
+                    parents,
+                    ..
+                } if *right == ZERO && !parents.is_empty()
+            )
+        },
+        "the shift's upper bound over its guarded operand",
+    );
+}
+
+/// [ENT-3.S7, ENT-2] a measure operand is read as its term: the remainder by
+/// a length relates the result to that length directly.
+#[test]
+fn a_measure_operand_is_read_as_its_term() {
+    let source = br#"fn pick(source: &[u64], seed: u64) -> result: u64 reads(source) contract {
+  define length = deref(source).len;
+  requires length != 0_u64;
+} {
+  let slot = seed % deref(source).len;
+  let value = deref(source)[slot];
+  return value;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
+}
+"#;
+    let summary = accepted_entailment(source, "pick");
+    validate_derivations(&summary);
+    assert!(summary.obligations.iter().all(|outcome| outcome.discharged));
+    let bounds = summary
+        .obligations
+        .iter()
+        .position(|outcome| outcome.family == ObligationFamily::Bounds)
+        .expect("the subscript owns one bounds obligation");
+    assert_root_contains(
+        &summary,
+        obligation_root(&summary, bounds),
+        |node| {
+            matches!(
+                node,
+                DerivationNode::OperationFact {
+                    relation: Relation::Bound { right, bound: -1, .. },
+                    ..
+                } if *right != ZERO
+            )
+        },
+        "the remainder's strict relation to the length term",
+    );
+}
+
+/// [ENT-5, ENT-3.S7] a checked row's success payload carries the exact row's
+/// offset relation into its `Ok` arm, through the payload transport.
+#[test]
+fn a_checked_row_payload_carries_the_exact_row_facts() {
+    let source = br#"fn at_least(value: u64, floor: u64) -> result: unit pure contract {
+  requires floor <= value;
+} {
+  return unit;
+}
+
+fn advance(start: u64, count: u64) -> result: u64 pure {
+  match start +checked count {
+    Ok(value: end) => {
+      at_least(value: end, floor: start);
+      return end;
     }
+    Err(error: overflow) => {
+      return start;
+    }
+  }
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
+}
+"#;
+    let summary = accepted_entailment(source, "advance");
+    validate_derivations(&summary);
+    let root = call_root(&summary, 0);
+    assert_root_contains(
+        &summary,
+        root,
+        |node| matches!(node, DerivationNode::ResultTransport { .. }),
+        "the payload's transport to the Ok binder",
+    );
+    assert_root_contains(
+        &summary,
+        root,
+        |node| matches!(node, DerivationNode::OperationFact { .. }),
+        "the exact row's offset relation on the payload",
+    );
+}
+
+/// [ENT-3.S7] a signed `iand` whose operands may both be negative has no
+/// row fact, so a nonnegativity requirement on its result stays unproved.
+#[test]
+fn a_signed_bit_and_without_a_nonnegative_operand_has_no_bound() {
+    let source = br#"fn nonnegative(value: i32) -> result: unit pure contract {
+  requires 0_i32 <= value;
+} {
+  return unit;
+}
+
+fn signed(left: i32, right: i32) -> result: unit pure {
+  let masked = iand(left, right);
+  nonnegative(value: masked);
+  return unit;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Fn8, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
+    });
 }
 
 #[test]
@@ -7903,7 +7747,7 @@ fn main() -> status: std::process::ExitStatus pure {
 }
 
 #[test]
-fn a_checked_offset_establishes_in_the_ok_arm_only_and_dies_with_its_base() {
+fn a_checked_offset_payload_keeps_its_interval_and_loses_its_relation_with_its_base() {
     let source = br#"const count: u64 = 4_u64;
 
 const values: Array<i32, count> =[0_i32, 0_i32, 0_i32, 0_i32];
@@ -7939,10 +7783,10 @@ fn through_binding(i: u64) -> result: i32 pure {
   }
 }
 
-fn killed(i: u64) -> result: i32 pure {
+fn interval_survives(i: u64, j: u64) -> result: i32 pure {
   if i < 3_u64 {
     let outcome = i +checked 1_u64;
-    set i = 9_u64;
+    set i = j;
     match outcome {
       Ok(value: next) => {
         return values[next];
@@ -7956,6 +7800,30 @@ fn killed(i: u64) -> result: i32 pure {
   }
 }
 
+fn relation_lives(i: u64) -> result: u64 pure {
+  match i +checked 1_u64 {
+    Ok(value: next) => {
+      return next - i;
+    }
+    Err(error: overflowed) => {
+      return 0_u64;
+    }
+  }
+}
+
+fn relation_killed(i: u64, j: u64) -> result: u64 pure {
+  let outcome = i +checked 1_u64;
+  set i = j;
+  match outcome {
+    Ok(value: next) => {
+      return next - i;
+    }
+    Err(error: overflowed) => {
+      return 0_u64;
+    }
+  }
+}
+
 fn main() -> status: std::process::ExitStatus pure {
   return std::process::exit_status(code: 0_u8);
 }
@@ -7964,12 +7832,22 @@ fn main() -> status: std::process::ExitStatus pure {
     assert_eq!(
         discharge_flags(source, "through_binding"),
         vec![true],
-        "a bare IDENT naming the outcome carries the same fact"
+        "a bare IDENT naming the outcome carries the same conditional facts"
     );
     assert_eq!(
-        discharge_flags(source, "killed"),
+        discharge_flags(source, "interval_survives"),
+        vec![true],
+        "the payload's interval names only the payload, so a base write leaves it"
+    );
+    assert_eq!(
+        discharge_flags(source, "relation_lives"),
+        vec![true],
+        "the offset relation to the base proves the difference's domain"
+    );
+    assert_eq!(
+        discharge_flags(source, "relation_killed"),
         vec![false],
-        "writing the base between the initializer and the match ends the origin"
+        "writing the base between the evaluation and the match kills the offset relation"
     );
 }
 
@@ -8686,14 +8564,22 @@ fn main() -> status: std::process::ExitStatus pure {
   return std::process::exit_status(code: 0_u8);
 }
 "#;
-    assert_rule(
-        source,
-        SemanticRule::Op4,
-        SemanticIssueKind::UndischargedBoundsObligation {
-            residual: "i < values.len".to_owned(),
-            mechanical_fix: "when the relation must hold, establish the residual with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise restructure the access",
-        },
-    );
+    // Both terms are parameters no event of `read` writes, so the repair
+    // offers the requirement that holds at entry and reaches the access
+    // [DIAG-1]; its complete sentence is pinned in `driver::pinned_repairs`.
+    assert_rule_kind(source, SemanticRule::Op4, |kind| {
+        matches!(
+            kind,
+            SemanticIssueKind::UndischargedBoundsObligation {
+                residual,
+                disposition: StaticObligationDisposition::Unproved,
+                mechanical_fix,
+            } if residual == "i < values.len"
+                && mechanical_fix.starts_with(
+                    "add `requires i < values.len;` to the `contract` of `read`"
+                )
+        )
+    });
 }
 
 #[test]
@@ -10490,9 +10376,15 @@ fn main() -> status: std::process::ExitStatus pure {
             "band(value > 0_u64, value < 10_u64)"
         );
         assert_eq!(detail.disposition, CallRequirementDisposition::Unproved);
-        assert_eq!(
-            detail.mechanical_fix,
-            "when the call is required to succeed, establish the entire instantiated callee requirement with a verified requirement, a source invariant, or explicit finite proof steps before the call; use a dominating branch only when rejection is intended program behavior; otherwise restructure the call"
+        // `value` is a parameter of `caller` its body never writes, and the
+        // goal is no single comparison a clause could copy, so the repair
+        // asks for the relation as a requirement of `caller` [DIAG-1].
+        assert!(
+            detail
+                .mechanical_fix
+                .starts_with("state the relation over the parameters of `caller` as a `requires`"),
+            "{}",
+            detail.mechanical_fix
         );
         let crate::SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("offset fits");
@@ -10550,9 +10442,14 @@ fn main() -> status: std::process::ExitStatus pure {
         };
         assert_eq!(detail.disposition, CallRequirementDisposition::Unproved);
         assert_eq!(detail.instantiated_goal, "values[0_u64] < 10_u8");
-        assert_eq!(
-            detail.mechanical_fix,
-            "when the call is required to succeed, establish the entire instantiated callee requirement with a verified requirement, a source invariant, or explicit finite proof steps before the call; use a dominating branch only when rejection is intended program behavior; otherwise restructure the call"
+        // The admitted element read is part of the goal's identity, so a
+        // condition naming the same expression establishes it [ENT-3].
+        assert!(
+            detail
+                .mechanical_fix
+                .contains("guard the call with `if values[0_u64] < 10_u8`"),
+            "{}",
+            detail.mechanical_fix
         );
     });
     let admitted = entailment(admitted_actual, "caller");
@@ -11006,12 +10903,18 @@ fn main() -> status: std::process::ExitStatus pure {
   return std::process::exit_status(code: 0_u8);
 }
 "#;
-    assert_rule(
-        source,
-        SemanticRule::Op4,
-        SemanticIssueKind::UndischargedBoundsObligation {
-            residual: "offset < b.len".to_owned(),
-            mechanical_fix: "when the relation must hold, establish the residual with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise restructure the access",
-        },
-    );
+    // `offset` is a local the body writes, so no requirement names it and
+    // the repair offers the proof and guard routes [DIAG-1].
+    assert_rule_kind(source, SemanticRule::Op4, |kind| {
+        matches!(
+            kind,
+            SemanticIssueKind::UndischargedBoundsObligation {
+                residual,
+                disposition: StaticObligationDisposition::Unproved,
+                mechanical_fix,
+            } if residual == "offset < b.len"
+                && mechanical_fix.starts_with("`offset < b.len` is not proved here")
+                && mechanical_fix.contains("guard the access with `if offset < b.len`")
+        )
+    });
 }

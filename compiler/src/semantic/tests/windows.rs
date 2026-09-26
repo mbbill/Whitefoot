@@ -860,8 +860,9 @@ fn main() -> status: std::process::ExitStatus pure {
 "#
         .as_slice(),
     ] {
+        // The shape refusal carries its repair [OP-14, DIAG-1].
         assert_rule_kind(source, SemanticRule::Op14, |kind| {
-            matches!(kind, SemanticIssueKind::TypeMismatch { .. })
+            matches!(kind, SemanticIssueKind::UnadmittedOperandShape { .. })
         });
     }
 }

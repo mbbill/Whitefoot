@@ -202,7 +202,9 @@ fn an_explicit_three_premise_invariant_survives_source_writes() {
 /// `length < widened` is a valid blockless invariant target through Step 6.
 /// In the sibling branch the same relation is only one source of a genuine
 /// three-premise certificate, so the whole target is not already automatic
-/// and redundancy cannot mask the premise-authority check.
+/// and redundancy cannot mask the premise-authority check. The doubling is a
+/// scaled product, whose [ENT-3.S7] row relates the result to no operand, so
+/// `length < widened` needs the affine image of the product.
 #[test]
 fn a_relation_use_cannot_borrow_the_msr4_right_bridge() {
     let source = format!(
@@ -224,7 +226,7 @@ fn inspect(length: u64, capacity: u64, first: u64, first_limit: u64, second: u64
   if capacity == 0_u64 {{
     return unit;
   }}
-  let doubled = capacity + capacity;
+  let doubled = capacity * 2_u64;
   let widened = larger(current: capacity, total: doubled);
   if choose_blockless {{
     invariant bridge_target: length < widened;

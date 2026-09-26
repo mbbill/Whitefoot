@@ -54,18 +54,20 @@ fn main() -> status: std::process::ExitStatus pure {
 
 // Scalar state keeps the ordinary adjacency tests independent of a library
 // API. The shared-factory tests below exercise the linked declarations
-// separately. `writes(p)` subsumes `reads(p)` [EFF-1], so the write row is
-// written once and the read entry of v0.59's row is gone with the permission
-// marker on `output`.
+// separately. `writes(p)` states every access at or below `p` [EFF-1], so
+// the write row is written once and the read entry of v0.59's row is gone
+// with the permission marker on `output`.
 const MARKER: &str = "fn write_marker(output: &u64, source: &[u8], start: u64, end: u64) -> result: Result<u64, std::io::IoError> reads(source), writes(output) {\n  let previous = deref(output);\n  let length = deref(source).len;\n  set deref(output) = previous +wrap start;\n  return Ok<u64, std::io::IoError>(value: end);\n}\n\n";
 
 fn permission_of(source: &[u8]) -> PermissionMetadata {
-    permission_of_with_discharged_query(source, None)
+    permission_of_with_discharged_query(source, &[])
 }
 
+/// The permission table of one fixture, after asserting that each named
+/// function retains a discharged range question with the named ordering.
 fn permission_of_with_discharged_query(
     source: &[u8],
-    expected: Option<(&str, RangeSeparationOrdering)>,
+    expected: &[(&str, RangeSeparationOrdering)],
 ) -> PermissionMetadata {
     // The marker follows the fixture, whose alias header leads its record
     // [MOD-4].
@@ -83,7 +85,7 @@ fn permission_of_with_discharged_query(
         for function in &program.data.functions {
             super::entailment::validate_derivations(&function.entailment);
         }
-        if let Some((expected_function, expected_ordering)) = expected {
+        for &(expected_function, expected_ordering) in expected {
             let function = program
                 .data
                 .functions
@@ -106,7 +108,8 @@ fn permission_of_with_discharged_query(
                             )
                         })
                     }),
-                "the permitted range pair must retain its exact {expected_ordering:?} conclusion"
+                "{expected_function}: the permitted range pair must retain its exact \
+                 {expected_ordering:?} conclusion"
             );
         }
         program.data.permission.clone()
@@ -1842,11 +1845,146 @@ fn separated(values: &Array<u8, 4>, split: u64) -> result: u64 writes(values) co
     );
     let table = permission_of_with_discharged_query(
         source.as_bytes(),
-        Some(("separated", RangeSeparationOrdering::LeftBeforeRight)),
+        &[("separated", RangeSeparationOrdering::LeftBeforeRight)],
     );
     assert_eq!(
         pair_of(&table, "separated", "stamp_range", "stamp_range").verdict,
         PermissionVerdict::PermittedEligible
+    );
+}
+
+/// [PAR-1] a `let`'s defined binding is a write path, and a call that passes
+/// a local reference variable reads that binding, which holds the endpoints
+/// its formation captured. Resolving the argument only to the path the
+/// reference names left the formation and its use unordered.
+#[test]
+fn a_call_passing_a_reference_reads_the_let_that_formed_it() {
+    let source = format!(
+        "{RANGE_PERMISSION_HELPERS}
+fn front(values: &Array<u8, 4>, split: u64) -> result: u64 writes(values) contract {{
+  requires 1_u64 <= split;
+  requires split < 4_u64;
+}} {{
+  let left = &deref(values)[0_u64..split];
+  let a = stamp_range(part: left);
+  return a;
+}}
+"
+    );
+    let table = permission_of(source.as_bytes());
+    let pair = pair_of(&table, "front", "a let statement", "stamp_range");
+    let Denial::Footprint {
+        kind,
+        left,
+        right,
+        sides,
+    } = denial(pair, 1)
+    else {
+        panic!("expected a footprint conflict, got {:?}", pair.verdict);
+    };
+    assert_eq!(kind.halves(), ("write", "operand read"));
+    let holder = ResolvedPlace::binding(pair.first.binding.expect("s1 defines a binding"));
+    assert_eq!(left.place, holder, "the cited write is the formed binding");
+    assert_eq!(right.place, holder, "the cited read is the same binding");
+    assert_eq!(*sides, (PairSide::First, PairSide::Second));
+}
+
+/// The same holder read keeps a run from joining a reference's formation to
+/// its use across another member: the quicksort shape forms both ranges
+/// before either call, and the second call reads what the second `let`
+/// formed. The two calls still form their own run.
+#[test]
+fn a_run_does_not_join_a_reference_formation_to_a_later_use() {
+    let source = format!(
+        "{RANGE_PERMISSION_HELPERS}
+fn halves(values: &Array<u8, 4>, split: u64) -> result: u64 writes(values) contract {{
+  requires 1_u64 <= split;
+  requires split < 4_u64;
+}} {{
+  let left = &deref(values)[0_u64..split];
+  let right = &deref(values)[split..4_u64];
+  let a = stamp_range(part: left);
+  let b = stamp_range(part: right);
+  return a +wrap b;
+}}
+"
+    );
+    let table = permission_of_with_discharged_query(
+        source.as_bytes(),
+        &[("halves", RangeSeparationOrdering::LeftBeforeRight)],
+    );
+    let permissions = function_table(&table, "halves");
+    assert!(
+        !permissions.runs.iter().any(|run| {
+            run.sites
+                .iter()
+                .any(|site| site.callee_name == "a let statement")
+                && run
+                    .sites
+                    .iter()
+                    .any(|site| site.callee_name == "stamp_range")
+        }),
+        "no run may hold a range formation together with a call that uses it: {:?}",
+        permissions.runs
+    );
+    run_of(&table, "halves", &["stamp_range", "stamp_range"]);
+    assert_eq!(
+        pair_of(&table, "halves", "stamp_range", "stamp_range").verdict,
+        PermissionVerdict::PermittedEligible
+    );
+}
+
+/// A `set` through a local reference variable reads that binding too, so it
+/// does not join the `let` that formed the reference in a run.
+#[test]
+fn a_set_through_a_reference_reads_the_let_that_formed_it() {
+    let source = br#"fn clear(values: &Array<u8, 4>) -> result: unit writes(values) {
+  let head = &deref(values)[0_u64..2_u64];
+  set deref(head)[0_u64] = 0_u8;
+  return unit;
+}
+"#;
+    let table = permission_of(source);
+    let permissions = function_table(&table, "clear");
+    assert!(
+        !permissions.runs.iter().any(|run| {
+            run.sites
+                .iter()
+                .any(|site| site.callee_name == "a let statement")
+                && run
+                    .sites
+                    .iter()
+                    .any(|site| site.callee_name == "a set statement")
+        }),
+        "the formation and the write through it must stay ordered: {:?}",
+        permissions.runs
+    );
+}
+
+/// A `set` that rebinds a reference variable writes it, so the rebinding
+/// stays ordered against a later statement that forms a range from the
+/// variable, as the `let` that first formed it is [REF-1, PAR-1].
+#[test]
+fn a_rebinding_set_writes_the_reference_it_rebinds() {
+    let source = br#"fn rebind(values: &Array<u8, 4>) -> result: unit writes(values) {
+  let whole = &deref(values)[0_u64..4_u64];
+  set whole = &deref(values)[1_u64..3_u64];
+  let head = &deref(whole)[0_u64..1_u64];
+  set deref(head)[0_u64] = 0_u8;
+  return unit;
+}
+"#;
+    let table = permission_of(source);
+    let permissions = function_table(&table, "rebind");
+    assert!(
+        !permissions.runs.iter().any(|run| {
+            run.sites.windows(2).any(|sites| {
+                sites[0].callee_name == "a set statement"
+                    && sites[1].callee_name == "a let statement"
+            })
+        }),
+        "the rebinding and the formation through it must stay ordered: {:?}",
+        permissions.runs
     );
 }
 
@@ -1873,7 +2011,7 @@ fn separated(values: &Array<u8, 4>, split: u64) -> result: u64 writes(values) co
     );
     let table = permission_of_with_discharged_query(
         source.as_bytes(),
-        Some(("separated", RangeSeparationOrdering::LeftBeforeRight)),
+        &[("separated", RangeSeparationOrdering::LeftBeforeRight)],
     );
     let permissions = function_table(&table, "separated");
     assert!(
@@ -2054,6 +2192,246 @@ fn shared(values: &Array<u8, 4>) -> result: u64 writes(values) {{
         );
     };
     assert_eq!(kind.halves(), ("write", "write"));
+}
+
+// A partition-based recursive subdivision over one range parameter. The
+// split point is a call result, so only its `ensures` places it inside the
+// range, and each caller below forms its two child ranges either as call
+// actuals or as bound ranges first.
+const PARTITION_HELPER: &str = r#"fn partition(v: &[u8]) -> pivot_at: u64 writes(v) contract {
+  requires 2_u64 <= deref(v).len;
+  ensures pivot_at < deref(v).len;
+} {
+  let first = deref(v)[0_u64];
+  set deref(v)[0_u64] = first;
+  return 0_u64;
+}
+"#;
+
+/// The body of one recursive subdivision: `children` is the pair of
+/// statements that forms and passes the two child ranges.
+fn subdivision(name: &str, children: &str) -> String {
+    format!(
+        "fn {name}(v: &[u8]) -> result: unit writes(v) {{
+  let n = deref(v).len;
+  if n <= 1_u64 {{
+    return unit;
+  }}
+  let p = partition(v: v);
+  let after = p + 1_u64;
+{children}  return unit;
+}}
+"
+    )
+}
+
+/// [PAR-1, REF-4, OWN-7] a range formed at the call names exactly the storage
+/// the same range bound first names, so the verdict cannot depend on the
+/// spelling. Both spellings of the two splits — at `p` and `p + 1`, and at one
+/// shared `p` — are permitted by the same retained ordering, proved in the
+/// state before the first call. The recursive calls read `after` and `n` but
+/// write only their child ranges, so nothing the first call writes changes
+/// the second call's endpoints.
+#[test]
+fn a_range_formed_at_the_call_is_judged_as_the_same_range_bound_first() {
+    let source = [
+        PARTITION_HELPER.to_owned(),
+        subdivision(
+            "split_inline",
+            "  split_inline(v: &deref(v)[0_u64..p]);\n  split_inline(v: &deref(v)[after..n]);\n",
+        ),
+        subdivision(
+            "split_bound",
+            "  let smaller = &deref(v)[0_u64..p];\n  let larger = &deref(v)[after..n];\n  \
+             split_bound(v: smaller);\n  split_bound(v: larger);\n",
+        ),
+        subdivision(
+            "shared_inline",
+            "  shared_inline(v: &deref(v)[0_u64..p]);\n  shared_inline(v: &deref(v)[p..n]);\n",
+        ),
+        subdivision(
+            "shared_bound",
+            "  let smaller = &deref(v)[0_u64..p];\n  let larger = &deref(v)[p..n];\n  \
+             shared_bound(v: smaller);\n  shared_bound(v: larger);\n",
+        ),
+    ]
+    .join("\n");
+    let spellings = [
+        "split_inline",
+        "split_bound",
+        "shared_inline",
+        "shared_bound",
+    ];
+    let table = permission_of_with_discharged_query(
+        source.as_bytes(),
+        &spellings.map(|name| (name, RangeSeparationOrdering::LeftBeforeRight)),
+    );
+    for name in spellings {
+        assert_eq!(
+            pair_of(&table, name, name, name).verdict,
+            PermissionVerdict::PermittedEligible,
+            "{name}"
+        );
+    }
+}
+
+/// [PAR-1, OWN-7] the negative control of the case above: `[0..p+1)` and
+/// `[p..n)` share element `p`, and evaluating the inline formations before
+/// the first call must not separate them in either spelling.
+#[test]
+fn overlapping_ranges_formed_at_the_call_are_denied_in_both_spellings() {
+    let source = [
+        PARTITION_HELPER.to_owned(),
+        subdivision(
+            "overlap_inline",
+            "  overlap_inline(v: &deref(v)[0_u64..after]);\n  overlap_inline(v: &deref(v)[p..n]);\n",
+        ),
+        subdivision(
+            "overlap_bound",
+            "  let smaller = &deref(v)[0_u64..after];\n  let larger = &deref(v)[p..n];\n  \
+             overlap_bound(v: smaller);\n  overlap_bound(v: larger);\n",
+        ),
+    ]
+    .join("\n");
+    let table = permission_of(source.as_bytes());
+    for name in ["overlap_inline", "overlap_bound"] {
+        let pair = pair_of(&table, name, name, name);
+        let Denial::Footprint { kind, .. } = denial(pair, 1) else {
+            panic!("{name}: the shared element must deny: {:?}", pair.verdict);
+        };
+        assert_eq!(kind.halves(), ("write", "write"), "{name}");
+    }
+}
+
+/// [PAR-1] interprets both statements' paths in the state before the first,
+/// so an endpoint the first statement writes has no value there. Here the
+/// first statement both writes `[0..p)` and replaces `q`, which held `p`
+/// before it; the callee's `ensures` makes the new `q` zero, so the second
+/// statement's `[q..n)` covers `[0..p)`. Reading `q` as it was before the
+/// first statement would prove `p <= q` and separate them. The retained
+/// question must stay undischarged, and the denial is the overlap of the two
+/// ranges themselves rather than the later read of `q`.
+#[test]
+fn an_endpoint_the_first_statement_writes_is_not_read_before_it() {
+    let source = r#"fn stamp_at(part: &[u8]) -> result: u64 writes(part) contract {
+  ensures result <= 0_u64;
+} {
+  if 0_u64 < deref(part).len {
+    set deref(part)[0_u64] = 9_u8;
+  }
+  return 0_u64;
+}
+
+fn rebound(v: &[u8], p: u64) -> result: u64 writes(v) contract {
+  requires p <= deref(v).len;
+} {
+  let n = deref(v).len;
+  let q = p;
+  set q = stamp_at(part: &deref(v)[0_u64..p]);
+  let b = stamp_at(part: &deref(v)[q..n]);
+  return b;
+}
+"#;
+    let combined = [MARKER.as_bytes(), source.as_bytes()].concat();
+    let table = with_semantics(&combined, |outcome| {
+        let SemanticOutcome::Complete(program) = outcome else {
+            panic!("permission fixture must check: {outcome:?}");
+        };
+        for function in &program.data.functions {
+            super::entailment::validate_derivations(&function.entailment);
+        }
+        let function = program
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "rebound")
+            .expect("rebound is checked");
+        let proofs = &function.entailment.permission_separations;
+        assert!(
+            !proofs.is_empty() && proofs.iter().all(|proof| !proof.discharged),
+            "the range pair must be asked and left undischarged: {proofs:?}"
+        );
+        program.data.permission.clone()
+    });
+    let pair = pair_of(&table, "rebound", "a set statement", "stamp_at");
+    let Denial::Footprint { kind, .. } = denial(pair, 1) else {
+        panic!("the replaced endpoint must deny: {:?}", pair.verdict);
+    };
+    assert_eq!(kind.halves(), ("write", "write"));
+}
+
+/// [PAR-1, OWN-7, REF-1] a range's captured endpoints belong to its own
+/// formation, whatever their form. `collide` writes two ranges of one
+/// field-read spelling and `twice` writes one range twice, each through two
+/// adjacent calls; the empty range formed before those calls captures only
+/// its own endpoints, so it separates neither pair and both are denied.
+/// `apart` meets at one measure, `deref(w).len`, so the state before its
+/// first call proves the first range ends where the second starts, and that
+/// retained ordering permits the pair although no endpoint is a literal or a
+/// binding.
+#[test]
+fn range_endpoints_of_every_form_belong_to_their_own_formation() {
+    let source = br#"struct Bounds {
+  lo: u64;
+}
+
+fn mark(part: &[u8]) -> result: u64 writes(part) {
+  if 0_u64 < deref(part).len {
+    set deref(part)[0_u64] = 9_u8;
+  }
+  return 1_u64;
+}
+
+fn collide(v: &[u8], b: Bounds) -> result: u64 writes(v) contract {
+  requires b.lo <= deref(v).len;
+} {
+  let left = &deref(v)[b.lo..deref(v).len];
+  let right = &deref(v)[b.lo..deref(v).len];
+  let empty = &deref(v)[deref(v).len..deref(v).len];
+  let x = mark(part: left);
+  let y = mark(part: right);
+  return x +wrap y;
+}
+
+fn twice(v: &[u8], b: Bounds) -> result: u64 writes(v) contract {
+  requires b.lo <= deref(v).len;
+} {
+  let part = &deref(v)[b.lo..deref(v).len];
+  let empty = &deref(v)[deref(v).len..deref(v).len];
+  let x = mark(part: part);
+  let y = mark(part: part);
+  return x +wrap y;
+}
+
+fn apart(v: &[u8], u: &[u8], w: &[u8]) -> result: u64 reads(u), reads(w), writes(v) contract {
+  requires deref(u).len <= deref(w).len;
+  requires deref(w).len <= deref(v).len;
+} {
+  let low = &deref(v)[deref(u).len..deref(w).len];
+  let high = &deref(v)[deref(w).len..deref(v).len];
+  let x = mark(part: low);
+  let y = mark(part: high);
+  return x +wrap y;
+}
+"#;
+    let table = permission_of_with_discharged_query(
+        source,
+        &[("apart", RangeSeparationOrdering::LeftBeforeRight)],
+    );
+    for function in ["collide", "twice"] {
+        let pair = pair_of(&table, function, "mark", "mark");
+        let Denial::Footprint { kind, .. } = denial(pair, 1) else {
+            panic!(
+                "{function}: the overlapping writes must deny: {:?}",
+                pair.verdict
+            );
+        };
+        assert_eq!(kind.halves(), ("write", "write"), "{function}");
+    }
+    assert_eq!(
+        pair_of(&table, "apart", "mark", "mark").verdict,
+        PermissionVerdict::PermittedEligible
+    );
 }
 
 /// Prelude calls use the ordinary call permission judgment. This pure call

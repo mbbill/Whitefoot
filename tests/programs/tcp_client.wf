@@ -223,14 +223,8 @@ fn main(inputs: Inputs) -> status: ExitStatus pure {
     invariant spare_payload: payload.cap - payload.len + position >= 8_u64
   ) {
     let letter = 65_u8;
-    let step = cvt.checked::<u64, u8>(position);
-    match step {
-      Ok(value: offset) => {
-        set letter = 65_u8 +wrap offset;
-      }
-      Err(error: problem) => {
-      }
-    }
+    let offset = cvt::<u64, u8>(position);
+    set letter = 65_u8 +wrap offset;
     place_back(window: &payload, value: letter);
   }
   let room = 16_u64;

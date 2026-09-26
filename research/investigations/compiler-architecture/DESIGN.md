@@ -376,21 +376,24 @@ and applied (`design/log.md`, 2026-09-25).
    Supersedes the current `docs/todo.md` plan for `flow.rs`. Tree: a new
    decision, `design/compiler/engine-components.md` (owner-approved).
    Done on the follow-up branch, in three behavior-preserving steps.
-   - **Sub-contexts.** The 37 fields became `Input`, `Vocabulary` (the ledger
+   - **Sub-contexts.** The 36 fields became `Input`, `Vocabulary` (the ledger
      and the ordinals numbering its roots included), `Output` and `Frames`.
-   - **Receivers.** Each of the 391 methods then took as its receiver the
-     narrowest part that it and its callees touch: 77 are on `Input`, 59 on
-     `Vocabulary`, 153 on `Reasoning` (inputs with the vocabulary), 28 on
-     `Judging` (with outputs), 34 stay on `Analyzer`, which owns the walk,
+   - **Receivers.** Each of the 386 methods then took as its receiver the
+     narrowest part that it and its callees touch: 76 are on `Input`, 58 on
+     `Vocabulary`, 154 on `Reasoning` (inputs with the vocabulary), 22 on
+     `Judging` (with outputs), 36 stay on `Analyzer`, which owns the walk,
      and 40 became free functions.
    - **Modules.** The methods moved into the component modules listed above,
-     with `sources`, `results` and `conversions` kept. The types and the
-     entry points stay in `flow.rs`, now 2,263 lines; no module exceeds
-     3,200.
+     with `sources`, `results`, `conversions` and `operation_facts` kept. The
+     types and the entry points stay in `flow.rs`, now 2,366 lines; no module
+     exceeds 3,200.
 
    The corpus and the module graphs emit identical LLVM, diagnostics and
    exit codes after each step, and the unit tests, the entailment tests'
-   ledgers included, pass.
+   ledgers included, pass. Main changed the flow while the branch was open,
+   and the merge reapplied the three steps to main's flow with the one-shot
+   scripts that made them, which reproduce the original steps byte for byte;
+   the merged compiler was checked the same way against main's.
 2. **Checker components.** A `TypeContext` that can intern during body checks
    (removing `DeferredNominal`'s restarts of whole function walks), a
    read-only `DeclarationInventory` and a per-attempt `BodyChecker` owning its

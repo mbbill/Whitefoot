@@ -131,13 +131,13 @@ impl Reasoning<'_, '_, '_> {
         ))
     }
 
-    /// Whether every member of one written invariant's batch is proved in
-    /// this state [INV-1]: one inequality, or both bounds of an equality.
+    /// The disposition of one written invariant's batch in this state
+    /// [INV-1]: one inequality, or both bounds of an equality.
     pub(super) fn prove_affine_relation_batch(
         &mut self,
         relation: &CheckedAffineRelation,
         state: &mut ProofFlowState,
-    ) -> bool {
+    ) -> TargetDisposition {
         let target = self
             .checked_affine_relation_inequality(
                 relation,
@@ -153,24 +153,64 @@ impl Reasoning<'_, '_, '_> {
             )
             .map(|partner| partner.ok());
         let right = self.checked_affine_right_term(&relation.right);
-        let mut members = vec![(target, right)];
+        let left = self.checked_affine_right_term(&relation.left);
+        let mut members = vec![(target, right, left)];
         if let Some(partner) = partner {
-            let right = self.checked_affine_right_term(&relation.left);
-            members.push((partner, right));
+            members.push((partner, left, right));
         }
-        members.into_iter().all(|(member, right)| {
-            member.is_some_and(|inequality| {
+        self.affine_target_disposition(&members, &state.facts, &state.affine)
+    }
+
+    /// [MSR-4] the disposition of one [INV-1] target's bounds in one state:
+    /// proved when every bound is, refuted when the state derives the
+    /// negation of one bound, and unproved otherwise. Each member carries its
+    /// bound, that bound's own right-hand term, and the opposite side's term,
+    /// which is the right-hand term of the bound's negation.
+    pub(super) fn affine_target_disposition(
+        &mut self,
+        members: &[(Option<AffineInequality>, Option<TermId>, Option<TermId>)],
+        facts: &FactState,
+        affine: &AffineFlowState,
+    ) -> TargetDisposition {
+        let proved = members.iter().all(|(member, right, _)| {
+            member.as_ref().is_some_and(|inequality| {
                 self.prove(
-                    ProofContext::new(&state.facts, &state.affine),
+                    ProofContext::new(facts, affine),
                     ProofGoal::Affine {
-                        inequality: &inequality,
-                        right,
+                        inequality,
+                        right: *right,
                     },
                 )
                 .disposition
                     == ProofDisposition::Proved
             })
-        })
+        });
+        if proved {
+            return TargetDisposition::Proved;
+        }
+        // A contradictory state proves every bound, so no negation below is
+        // proved from a contradiction.
+        let refuted = members.iter().any(|(member, _, opposite)| {
+            member
+                .as_ref()
+                .and_then(|inequality| inequality.negated(&mut AffineCheckState::new()).ok())
+                .is_some_and(|negation| {
+                    self.prove(
+                        ProofContext::new(facts, affine),
+                        ProofGoal::Affine {
+                            inequality: &negation,
+                            right: *opposite,
+                        },
+                    )
+                    .disposition
+                        == ProofDisposition::Proved
+                })
+        });
+        if refuted {
+            TargetDisposition::Refuted
+        } else {
+            TargetDisposition::Unproved
+        }
     }
 
     /// INV-1 base is a simultaneous batch: every target is checked against
@@ -180,7 +220,7 @@ impl Reasoning<'_, '_, '_> {
         &mut self,
         invariants: &[CheckedLoopInvariant],
         state: &mut ProofFlowState,
-    ) -> Vec<bool> {
+    ) -> Vec<TargetDisposition> {
         invariants
             .iter()
             .map(|invariant| self.prove_affine_relation_batch(&invariant.relation, state))
@@ -425,8 +465,8 @@ impl Judging<'_, '_, '_> {
         &mut self,
         loop_id: CheckedLoopId,
         invariants: &[CheckedLoopInvariant],
-        base: &[bool],
-        step: &[Option<bool>],
+        base: &[TargetDisposition],
+        step: &[Option<TargetDisposition>],
         counted_binder: Option<BindingId>,
     ) {
         for (index, invariant) in invariants.iter().enumerate() {
@@ -442,8 +482,10 @@ impl Judging<'_, '_, '_> {
                     .input
                     .render_checked_invariant_relation(&invariant.relation, counted_binder),
                 proof: LoopInvariantProof {
-                    base: base[index],
-                    step: step[index],
+                    base: base[index] == TargetDisposition::Proved,
+                    step: step[index].map(|step| step == TargetDisposition::Proved),
+                    base_refuted: base[index] == TargetDisposition::Refuted,
+                    step_refuted: step[index] == Some(TargetDisposition::Refuted),
                 },
             });
         }

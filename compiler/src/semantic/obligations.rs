@@ -184,6 +184,7 @@ mod tests {
             allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(),
             range_partitions: Vec::new(),
+            written_before: Vec::new(),
         }
     }
 

@@ -2,8 +2,12 @@
 #define WHITEFOOT_ORDINARY_VALUES_H
 
 /* Ordinary linked definitions. These declarations describe the library's C
- * representation, not additional compiler metadata. All aggregates follow the
- * compiler's ordinary destination/result and content-address parameter ABI. */
+ * representation, not additional compiler metadata. Every C body writes its
+ * aggregate result through a destination pointer and takes aggregate
+ * parameters by content address. Where the compiler's ABI differs, a
+ * `wf__body_` C body sits behind the LLVM definition in ordinary_values.ll.
+ * The ABI differs for a split range argument, and for a result small enough
+ * for the return registers. */
 #include <stddef.h>
 #include <stdint.h>
 #include <stdalign.h>

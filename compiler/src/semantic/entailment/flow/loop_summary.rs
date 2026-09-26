@@ -199,9 +199,6 @@ impl Reasoning<'_, '_, '_> {
             .origins
             .retain(|binding, _| !kills.set_bindings.contains(binding));
         state
-            .outcomes
-            .retain(|binding, _| !kills.set_bindings.contains(binding));
-        state
             .goal_origins
             .retain(|binding, _| !kills.set_bindings.contains(binding));
         state
@@ -232,6 +229,7 @@ impl Reasoning<'_, '_, '_> {
         self.kill_result_evidence(states, &kills.events);
         self.apply_loop_kills_one(&separations, &mut states.facts, kills);
         self.apply_affine_kills(&separations, &mut states.affine, &kills.events);
+        states.record_writes(&kills.events);
         let mut groups = kills.entry_image_groups.iter().collect::<Vec<_>>();
         groups.sort_by(|left, right| left.owner.components().cmp(right.owner.components()));
         for group in groups {

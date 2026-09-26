@@ -8,13 +8,38 @@ use crate::{
     SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule, StaticObligationDisposition,
 };
 
-use super::super::entailment::{DerivationNode, ObligationFamily, S7DerivationKind, TermKind};
+use super::super::entailment::{
+    DerivationNode, FunctionEntailment, ObligationFamily, Relation, TermKind,
+};
 use super::super::goal::{GoalExpression, GoalOperation};
 use super::super::model::{CheckedFunction, CheckedIntegerOperation, MeasuredKind};
 use super::entailment::validate_derivations;
 use super::with_semantics;
 
-const DIVISION_FIX: &str = "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic";
+/// [OP-2] one rejection's residual and disposition, and the fragment of its
+/// repair that shows which routes the goal's disposition and terms selected
+/// [DIAG-1]. The complete sentences are pinned with repaired programs in
+/// `driver::pinned_repairs`.
+fn assert_integer_domain(
+    kind: &SemanticIssueKind,
+    expected_residual: &str,
+    expected_disposition: StaticObligationDisposition,
+    route: &str,
+) {
+    let SemanticIssueKind::UndischargedIntegerDomainObligation {
+        residual,
+        disposition,
+        mechanical_fix,
+    } = kind
+    else {
+        panic!("expected an OP-2 domain rejection, got {kind:?}");
+    };
+    assert_eq!(
+        (residual.as_str(), *disposition),
+        (expected_residual, expected_disposition)
+    );
+    assert!(mechanical_fix.contains(route), "{mechanical_fix}");
+}
 
 fn named<'functions>(
     functions: &'functions [CheckedFunction],
@@ -131,13 +156,11 @@ fn main() -> status: std::process::ExitStatus pure {
             panic!("an unconstrained divisor must reject: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Op2);
-        assert_eq!(
+        assert_integer_domain(
             issue.kind(),
-            &SemanticIssueKind::UndischargedIntegerDomainObligation {
-                residual: "n /defined d".to_owned(),
-                disposition: StaticObligationDisposition::Unproved,
-                mechanical_fix: DIVISION_FIX,
-            },
+            "n /defined d",
+            StaticObligationDisposition::Unproved,
+            "add `requires n /defined d;` to the `contract` of `ratio`",
         );
         let SemanticLocation::SourceNode(_, coordinate) = issue.location();
         let start = usize::try_from(coordinate.start().value()).expect("offset fits");
@@ -169,13 +192,11 @@ fn main() -> status: std::process::ExitStatus pure {
             panic!("an unconstrained remainder divisor must reject: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Op2);
-        assert_eq!(
+        assert_integer_domain(
             issue.kind(),
-            &SemanticIssueKind::UndischargedIntegerDomainObligation {
-                residual: "n %defined d".to_owned(),
-                disposition: StaticObligationDisposition::Unproved,
-                mechanical_fix: DIVISION_FIX,
-            },
+            "n %defined d",
+            StaticObligationDisposition::Unproved,
+            "add `requires n %defined d;` to the `contract` of `residue`",
         );
     });
 }
@@ -222,13 +243,11 @@ fn a_constant_zero_divisor_is_rejected_everywhere() {
             panic!("a constant zero divisor must reject: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Op2);
-        assert_eq!(
+        assert_integer_domain(
             issue.kind(),
-            &SemanticIssueKind::UndischargedIntegerDomainObligation {
-                residual: "x /defined 0_i32".to_owned(),
-                disposition: StaticObligationDisposition::Refuted,
-                mechanical_fix: DIVISION_FIX,
-            },
+            "x /defined 0_i32",
+            StaticObligationDisposition::Refuted,
+            "make `x /defined 0_i32` false",
         );
     });
 }
@@ -253,13 +272,11 @@ fn main() -> status: std::process::ExitStatus pure {
             panic!("an unconstrained dividend over -1 must reject: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Op2);
-        assert_eq!(
+        assert_integer_domain(
             issue.kind(),
-            &SemanticIssueKind::UndischargedIntegerDomainObligation {
-                residual: "n /defined -1_i32".to_owned(),
-                disposition: StaticObligationDisposition::Unproved,
-                mechanical_fix: DIVISION_FIX,
-            },
+            "n /defined -1_i32",
+            StaticObligationDisposition::Unproved,
+            "add `requires n /defined -1_i32;` to the `contract` of `negate`",
         );
     });
 }
@@ -361,15 +378,31 @@ fn the_default_checker_rejects_a_constant_zero_divisor() {
             panic!("the default path rejects a constant zero divisor: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Op2);
-        assert_eq!(
+        assert_integer_domain(
             issue.kind(),
-            &SemanticIssueKind::UndischargedIntegerDomainObligation {
-                residual: "x /defined 0_i32".to_owned(),
-                disposition: StaticObligationDisposition::Refuted,
-                mechanical_fix: DIVISION_FIX,
-            },
+            "x /defined 0_i32",
+            StaticObligationDisposition::Refuted,
+            "make `x /defined 0_i32` false",
         );
     });
+}
+
+/// [ENT-3.S7] the retained postcondition proof stands on the division row's
+/// order relation `quotient <= count`: the quotient, bound by a `let` or as a
+/// commit value, against the dividend's place.
+fn quotient_order_is_retained(summary: &FunctionEntailment) -> bool {
+    summary.derivations.nodes.iter().any(|node| {
+        matches!(
+            node,
+            DerivationNode::OperationFact {
+                relation: Relation::Bound { left, right, bound: 0 },
+                ..
+            } if matches!(
+                summary.inventory.terms[left.0 as usize],
+                TermKind::Place(..) | TermKind::CommitValue { .. }
+            ) && matches!(summary.inventory.terms[right.0 as usize], TermKind::Place(..))
+        )
+    })
 }
 
 #[test]
@@ -392,21 +425,7 @@ fn main() -> status: std::process::ExitStatus pure {
         let function = named(&checked.data.functions, "half_floor");
         validate_derivations(&function.entailment);
         assert!(function.entailment.postconditions[0].aggregate.discharged);
-        assert!(
-            function
-                .entailment
-                .s7_derivations
-                .iter()
-                .any(|source| match source.kind {
-                    S7DerivationKind::UnsignedDivisionBound { divisor, .. } => {
-                        matches!(
-                            function.entailment.inventory.terms[divisor.0 as usize],
-                            TermKind::Constant(2)
-                        )
-                    }
-                    _ => false,
-                })
-        );
+        assert!(quotient_order_is_retained(&function.entailment));
     });
 }
 
@@ -437,10 +456,7 @@ fn main() -> status: std::process::ExitStatus pure {{
             let function = named(&checked.data.functions, "quotient_bound");
             validate_derivations(&function.entailment);
             assert!(function.entailment.postconditions[0].aggregate.discharged);
-            assert!(function.entailment.s7_derivations.iter().any(|source| {
-                matches!(source.kind, S7DerivationKind::UnsignedDivisionBound { divisor, .. }
-                    if !matches!(function.entailment.inventory.terms[divisor.0 as usize], TermKind::Constant(_)))
-            }));
+            assert!(quotient_order_is_retained(&function.entailment));
         });
     }
 }
@@ -672,13 +688,11 @@ fn main() -> status: std::process::ExitStatus pure {
             panic!("without either route the conjunct must stay undischarged: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Op2);
-        assert_eq!(
+        assert_integer_domain(
             issue.kind(),
-            &SemanticIssueKind::UndischargedIntegerDomainObligation {
-                residual: "100_i32 /defined d".to_owned(),
-                disposition: StaticObligationDisposition::Unproved,
-                mechanical_fix: DIVISION_FIX,
-            },
+            "100_i32 /defined d",
+            StaticObligationDisposition::Unproved,
+            "add `requires 100_i32 /defined d;` to the `contract` of `ratio`",
         );
     });
 }

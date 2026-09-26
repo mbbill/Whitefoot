@@ -83,7 +83,6 @@ impl Judging<'_, '_, '_> {
         facts: &ArmFacts,
         state: &mut FactState,
         event: Option<FlowEventId>,
-        outcome_event: Option<FlowEventId>,
     ) {
         if let Some(relation) = &facts.comparison {
             // Bool arms: tag 1 is `True()`, tag 0 is `False()`; the False
@@ -134,16 +133,6 @@ impl Judging<'_, '_, '_> {
                 );
                 self.record_boolean_decomposition(*goal, GoalSign::Negative, state);
             }
-        }
-        if let Some((tag, outcome)) = &facts.outcome
-            && arm.tag == *tag
-        {
-            self.vocabulary.establish_binder_fact(
-                arm,
-                outcome,
-                state,
-                outcome_event.expect("outcome arm has a shared proof event"),
-            );
         }
     }
 }
@@ -872,6 +861,21 @@ impl Analyzer<'_, '_> {
                             == ProofDisposition::Proved
                     }));
                 let redundant = !proof.uses.is_empty() && target_proved;
+                // [MSR-4] a blockless target no step discharged is refuted
+                // when the entering context derives the negation of one of
+                // its bounds.
+                let target_refuted =
+                    proof.uses.is_empty() && !target_proved && target_failure.is_none() && {
+                        let mut members = vec![(target.clone(), target_right, partner_right)];
+                        if partner_written {
+                            members.push((partner.clone(), partner_right, target_right));
+                        }
+                        self.reasoning().affine_target_disposition(
+                            &members,
+                            &state.facts,
+                            &state.affine,
+                        ) == TargetDisposition::Refuted
+                    };
                 let certificate_sum = if proof.uses.is_empty() || source_failure.is_some() {
                     None
                 } else {
@@ -954,6 +958,7 @@ impl Analyzer<'_, '_> {
                     certificate_failure_use_index,
                     residual_failure,
                     redundant,
+                    target_refuted,
                 };
 
                 if let Some(target) = target
@@ -1237,7 +1242,9 @@ impl Analyzer<'_, '_> {
                 let base = self
                     .reasoning()
                     .prove_loop_invariant_bases(invariants, state);
-                let base_batch = base.iter().all(|proved| *proved);
+                let base_batch = base
+                    .iter()
+                    .all(|disposition| *disposition == TargetDisposition::Proved);
 
                 // The generic header starts from the preheader minus every
                 // fact a continuing kill may invalidate. Invariants then add
@@ -1403,7 +1410,9 @@ impl Analyzer<'_, '_> {
                 let base = self
                     .reasoning()
                     .prove_loop_invariant_bases(invariants, state);
-                let base_batch = base.iter().all(|proved| *proved);
+                let base_batch = base
+                    .iter()
+                    .all(|disposition| *disposition == TargetDisposition::Proved);
 
                 let mut kills = LoopKills::default();
                 let body_reaches_head = self.input.collect_continuing_loop_kills(
@@ -1495,7 +1504,7 @@ impl Analyzer<'_, '_> {
                 // never widens acceptance.
                 let current_binder = body_state.affine.values.get(binder).cloned();
                 if body_falls_through && current_binder.is_none() {
-                    step = vec![Some(false); invariants.len()];
+                    step = vec![Some(TargetDisposition::Unproved); invariants.len()];
                 }
                 if let (true, Some(current_binder)) = (body_falls_through, current_binder) {
                     let next_binder = current_binder
@@ -1555,28 +1564,25 @@ impl Analyzer<'_, '_> {
                         let right = self
                             .reasoning()
                             .checked_affine_right_term(&invariant.relation.right);
-                        let mut members = vec![(next_target, right)];
+                        let left = self
+                            .reasoning()
+                            .checked_affine_right_term(&invariant.relation.left);
+                        let mut members = vec![(next_target, right, left)];
                         if let Some(partner) = next_partner {
-                            let right = self
-                                .reasoning()
-                                .checked_affine_right_term(&invariant.relation.left);
-                            members.push((partner, right));
+                            members.push((partner, left, right));
                         }
-                        let proved = members.into_iter().all(|(member, right)| {
-                            member.is_some_and(|inequality| {
-                                self.reasoning()
-                                    .prove(
-                                        ProofContext::new(&body_state.facts, &body_state.affine),
-                                        ProofGoal::Affine {
-                                            inequality: &inequality,
-                                            right,
-                                        },
-                                    )
-                                    .disposition
-                                    == ProofDisposition::Proved
-                            })
+                        let disposition = self.reasoning().affine_target_disposition(
+                            &members,
+                            &body_state.facts,
+                            &body_state.affine,
+                        );
+                        // An unrepresentable hidden update fails the step
+                        // without refuting the target it would reach.
+                        step[index] = Some(if hidden_update {
+                            disposition
+                        } else {
+                            TargetDisposition::Unproved
                         });
-                        step[index] = Some(hidden_update && proved);
                     }
                 }
 
@@ -1587,7 +1593,9 @@ impl Analyzer<'_, '_> {
                     &step,
                     Some(*binder),
                 );
-                let step_batch = step.iter().all(|proved| proved.unwrap_or(true));
+                let step_batch = step.iter().all(|disposition| {
+                    disposition.is_none_or(|disposition| disposition == TargetDisposition::Proved)
+                });
                 let export = lower_le_upper && base_batch && step_batch && hidden_update;
                 let frame = self.frames.loops.pop();
                 let mut breaks = frame.map(|frame| frame.breaks).unwrap_or_default();
@@ -1678,18 +1686,8 @@ impl Analyzer<'_, '_> {
             self.vocabulary
                 .proof_event(FlowEventKind::S1, facts.node_path.as_ref())
         });
-        let outcome_event = facts
-            .outcome
-            .as_ref()
-            .map(|(_, outcome)| outcome.event_kind)
-            .and_then(|kind| {
-                arm.binders
-                    .iter()
-                    .find(|binder| binder.field == 0)
-                    .map(|binder| self.vocabulary.proof_event(kind, Some(&binder.node_path)))
-            });
         self.judging()
-            .establish_arm_entry(arm, facts, &mut state.facts, s1_event, outcome_event);
+            .establish_arm_entry(arm, facts, &mut state.facts, s1_event);
         // [MSR-3] the payload placement's second half: on the arm whose
         // variant carries the payload, the binder that names it has the
         // measures the payload had before the consume.

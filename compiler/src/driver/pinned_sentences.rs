@@ -7,7 +7,8 @@
 //! rendered, and not pinned by a test. This module is the one home for the corpus that
 //! closes that: one minimal source per form, the rule it must cite, and the
 //! exact fragments its rendered rejection must contain. Adding a sentence to
-//! the compiler means adding a row here.
+//! the compiler means adding a row here, or, for a repair [DIAG-1], a pair in
+//! `driver::pinned_repairs`, which pins the programs the repair produces.
 //!
 //! The rows are deliberately redundant with the per-item tests in
 //! `driver::tests` and in `semantic::tests`: those pin one sentence beside the
@@ -640,7 +641,7 @@ fn main() -> status: std::process::ExitStatus pure {
         rule: "EFF-1",
         sentences: &[
             "]: InvalidEffectRow\n",
-            "\n  reason: a row lists each path at most once per category, and this entry repeats one\n  mechanical_fix: delete the repeated entry; `writes(p)` already subsumes `reads(p)`, so the pair is never written for one path\n",
+            "\n  reason: a row lists each path at most once per category, and this entry repeats one\n  mechanical_fix: delete the repeated entry\n",
         ],
     },
     Probe {
@@ -693,7 +694,7 @@ fn main() -> status: std::process::ExitStatus pure {
         rule: "EFF-2",
         sentences: &[
             "]: EffectMismatch\n",
-            "\n  expected_row: reads(data.len)\n  found_row: pure\n  missing: [reads(data.len)]\n  extra: []\n  mechanical_fix: declare exactly the row the body exhibits: add every missing category and path and remove every extra one; EFF-2 admits no wider and no narrower declaration than the union of the body-syntactic and release contributions\n",
+            "\n  expected_row: reads(data.len)\n  found_row: pure\n  missing: [reads(data.len)]\n  extra: []\n  mechanical_fix: declare the row as `reads(data.len)`, which covers every access the body makes and no other\n",
         ],
     },
     Probe {
@@ -735,8 +736,52 @@ fn main() -> status: std::process::ExitStatus pure {
 "#,
         rule: "EFF-1",
         sentences: &[
-            "]: SubsumedEffectRead\n",
-            "\n  entry: reads(value)\n",
+            "]: SubsumedEffectEntry\n",
+            "\n  entry: reads(value)\n  covering: writes(value)\n",
+        ],
+    },
+    Probe {
+        name: "write-below-a-written-path.wf",
+        source: br#"struct Pair {
+  first: u8;
+  second: u8;
+}
+
+fn reset(pair: &Pair) -> result: unit writes(pair), writes(pair.first) {
+  set deref(pair) = Pair(first: 0_u8, second: 0_u8);
+  return unit;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+        rule: "EFF-1",
+        sentences: &[
+            "]: SubsumedEffectEntry\n",
+            "\n  entry: writes(pair.first)\n  covering: writes(pair)\n",
+        ],
+    },
+    Probe {
+        name: "read-below-a-read-path.wf",
+        source: br#"struct Pair {
+  first: u8;
+  second: u8;
+}
+
+fn inspect(pair: &Pair) -> result: u8 reads(pair), reads(pair.first) {
+  let whole = deref(pair);
+  return whole.second;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+        rule: "EFF-1",
+        sentences: &[
+            "]: SubsumedEffectEntry\n",
+            "\n  entry: reads(pair.first)\n  covering: reads(pair)\n",
         ],
     },
     // -------------------------------------------------------------------

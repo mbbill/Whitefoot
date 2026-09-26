@@ -489,10 +489,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 );
             }
             // [GIVE-1] an empty delivery set — every arm leaves by `return`
-            // or by `break` — rejects at the `let_stmt` node, because the
-            // mechanical fix is the statement form with the binding dropped.
+            // or by `break` — rejects at the `let_stmt` node: its repair is
+            // the statement form with the binding dropped, and the statements
+            // after it, which no path reaches [FN-1], go with it.
             let Some((mode, expected)) = matched.delivered else {
-                return self.issue_node(SemanticRule::Give1, node, SemanticIssueKind::InvalidGive);
+                let binding = declaration.spelling().to_owned();
+                let form = if value_if.is_some() { "if" } else { "match" };
+                return self.issue_node(
+                    SemanticRule::Give1,
+                    node,
+                    SemanticIssueKind::EmptyDeliverySet {
+                        mechanical_fix: format!(
+                            "every arm leaves by `return` or `break`, so no value reaches `{binding}`: drop `let {binding} =`, write the `{form}` as a statement, and delete the statements after it in this block, which no path reaches"
+                        ),
+                        binding,
+                    },
+                );
             };
             let result_range_element = if mode == CheckedMode::Range {
                 Some(self.intern_element(expected)?)

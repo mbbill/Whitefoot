@@ -215,14 +215,15 @@ completion criterion were refused.
   fragment split as the remaining edit costs; no build mode shows a repeatable
   runtime loss at the measured noise level.
 - [bounds-check-spellings/](bounds-check-spellings/README.md) — the root
-  README's first example: ten Rust spellings of one in-place loop, compiled
+  README's first example: eleven Rust spellings of one in-place loop, compiled
   with rustc 1.98.1 at `-C opt-level=2` and `3` for x86-64, against the
   Whitefoot function with one checked invariant at clang `-O2`. Seven safe
   spellings keep a compare in the loop, leading to a bounds panic, an
   assertion panic, a `copy_within` panic or a skipped store; the two `unsafe`
-  spellings and `Vec::retain` on an owned `Vec` keep none, and neither does the
-  Whitefoot loop, which without its invariant is rejected with the residual
-  `kept < deref(buf).len`. Code generation only, no timing.
+  spellings, `Vec::retain` on an owned `Vec` and collecting into a second
+  buffer keep none, and neither does the Whitefoot loop, which without its
+  invariant is rejected with the residual `kept < deref(buf).len`. Code
+  generation only, no timing.
 - [par-quicksort/](par-quicksort/README.md) — the root README's second
   example: whole-process wall time of a quicksort over 2,000,000 `u64` values
   built without and with `--par`, best of seven under the host lock on a

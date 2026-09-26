@@ -566,8 +566,8 @@ impl Input<'_, '_> {
         }
     }
 
-    /// The commit kill of one `set` target, and the goal-origin and outcome
-    /// state a whole-place commit invalidates. One target list's commits are
+    /// The commit kill of one `set` target, and the goal-origin state a
+    /// whole-place commit invalidates. One target list's commits are
     /// exactly this event per target, on the same edge.
     pub(super) fn collect_target_kill(
         &self,
@@ -581,7 +581,6 @@ impl Input<'_, '_> {
             && place.fields.is_empty()
         {
             state.facts.origins.remove(&place.binding);
-            state.facts.outcomes.remove(&place.binding);
         }
     }
 }
@@ -849,8 +848,11 @@ impl Reasoning<'_, '_, '_> {
 
     /// One batch of kill events on the path components after the Result
     /// states: the facts, the affine images and the entry images, in that
-    /// order. Every kill transfer applies its events through here, so a new
-    /// path component joins every one of them at once.
+    /// order, and the path's record of written bindings [DIAG-1]. Every kill
+    /// transfer but a loop head's applies its events through here, so a new
+    /// path component joins every one of them at once;
+    /// [`Self::apply_loop_kills`] applies the same components, the written
+    /// record included, from its summary.
     pub(super) fn kill_path_components(
         &mut self,
         separations: &dyn SeparationOracle,
@@ -861,6 +863,7 @@ impl Reasoning<'_, '_, '_> {
         self.apply_kills_one(separations, &mut states.facts, events);
         self.apply_affine_kills(separations, &mut states.affine, events);
         self.invalidate_entry_images(states, separations, events, shared_event);
+        states.record_writes(events);
     }
 
     /// [WIN-2, ENT-5] the indices the entry state of `events` proves live.
@@ -1165,9 +1168,6 @@ impl Analyzer<'_, '_> {
             .kill_s12_candidates_for_scope(state, &exited);
         state.kill_goals(|goal| self.reasoning().scope_kills_goal(goal, &exited));
         state.origins.retain(|binding, _| !exited.contains(binding));
-        state
-            .outcomes
-            .retain(|binding, _| !exited.contains(binding));
         state
             .goal_origins
             .retain(|binding, _| !exited.contains(binding));

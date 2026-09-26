@@ -410,6 +410,47 @@ impl Reasoning<'_, '_, '_> {
         Some(self.vocabulary.terms.intern(kind))
     }
 
+    /// Files one [REF-4] formation's endpoint images under its start capture,
+    /// the key every reader of the range-image table looks them up by.
+    ///
+    /// Only a source occurrence names one formation, and the checker gives
+    /// every endpoint the occurrence that evaluated it. An image filed under
+    /// any other capture would answer for every range carrying that capture
+    /// [OWN-7], so nothing is filed for it and no ordering separates it.
+    pub(super) fn file_range_image(
+        &mut self,
+        carrier: &crate::NodePath,
+        captured: CapturedRange,
+        start: &CheckedExpression,
+        end: &CheckedExpression,
+        affine: &mut AffineFlowState,
+    ) {
+        if !matches!(captured.start.capture, CaptureId::Source(_)) {
+            return;
+        }
+        if let Some(image) = self.range_formation_image(carrier, start, end, affine) {
+            affine.ranges.insert(captured.start.capture, image);
+        }
+    }
+
+    /// The image one [REF-4] formation publishes: its two endpoints' affine
+    /// forms in `affine`, attached to the formation node.
+    pub(super) fn range_formation_image(
+        &mut self,
+        carrier: &crate::NodePath,
+        start: &CheckedExpression,
+        end: &CheckedExpression,
+        affine: &mut AffineFlowState,
+    ) -> Option<AffineRangeImage> {
+        self.affine_expression_form(start, affine)
+            .zip(self.affine_expression_form(end, affine))
+            .map(|(start, end)| AffineRangeImage {
+                source: carrier.clone(),
+                start,
+                end,
+            })
+    }
+
     pub(super) fn new_affine_binding_atom(&mut self, binding: BindingId) -> Option<AffineForm> {
         let ty = self.input.affine_binding_type(binding)?;
         Some(self.vocabulary.new_affine_atom(ty))
@@ -892,6 +933,10 @@ impl Judging<'_, '_, '_> {
                 contributing.iter().map(|state| &state.separations),
             ),
             affine: self.join_affine_states(&contributing),
+            written: contributing
+                .iter()
+                .flat_map(|state| state.written.iter().copied())
+                .collect(),
             continuing,
         }
     }

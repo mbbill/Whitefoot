@@ -1877,10 +1877,11 @@ impl Reasoning<'_, '_, '_> {
         &mut self,
         left: CapturedRange,
         right: CapturedRange,
-        state: &ProofFlowState,
+        facts: &FactState,
+        affine: &AffineFlowState,
     ) -> Option<ProofResult> {
-        let left_image = state.affine.ranges.get(&left.start.capture)?.clone();
-        let right_image = state.affine.ranges.get(&right.start.capture)?.clone();
+        let left_image = affine.ranges.get(&left.start.capture)?.clone();
+        let right_image = affine.ranges.get(&right.start.capture)?.clone();
         for (ordering, end, start) in [
             (
                 RangeSeparationOrdering::LeftBeforeRight,
@@ -1909,7 +1910,7 @@ impl Reasoning<'_, '_, '_> {
                 continue;
             };
             let mut proof = self.prove(
-                ProofContext::new(&state.facts, &state.affine),
+                ProofContext::new(facts, affine),
                 ProofGoal::Affine {
                     inequality: &inequality,
                     right: None,
@@ -1933,6 +1934,48 @@ impl Reasoning<'_, '_, '_> {
             }
         }
         None
+    }
+
+    /// One [PAR-1] range question in the state before its first statement.
+    ///
+    /// A range bound before that statement has the image its formation
+    /// published. A range one of the pair's calls forms as an actual has
+    /// none yet, because its formation runs with its call; it names the same
+    /// storage as that range bound immediately before the first statement
+    /// [REF-4], so its endpoints are evaluated here, in a copy of this state,
+    /// into exactly the image such a binding would publish. The planner lists
+    /// a later statement's formation only when nothing before it writes what
+    /// its endpoints read, so these are the values that formation evaluates.
+    /// The copy keeps the atoms this evaluation mints out of the ordinary
+    /// walk and replaces any image an earlier evaluation left under the same
+    /// capture.
+    pub(super) fn prove_permission_separation(
+        &mut self,
+        query: &PermissionSeparationQuery,
+        state: &ProofFlowState,
+    ) -> Option<ProofResult> {
+        if query.formations.is_empty() {
+            return self.prove_range_separation(
+                query.left,
+                query.right,
+                &state.facts,
+                &state.affine,
+            );
+        }
+        let mut affine = state.affine.clone();
+        for formation in &query.formations {
+            let capture = formation.captured.start.capture;
+            match self.range_formation_image(
+                &formation.carrier,
+                &formation.start,
+                &formation.end,
+                &mut affine,
+            ) {
+                Some(image) => affine.ranges.insert(capture, image),
+                None => affine.ranges.remove(&capture),
+            };
+        }
+        self.prove_range_separation(query.left, query.right, &state.facts, &affine)
     }
 
     pub(super) fn prove_integer_domain(
@@ -1975,10 +2018,11 @@ impl Reasoning<'_, '_, '_> {
                 route: Some(ProofRoute::Affine),
                 derivation: Some(derivation),
                 numeric_upper_bound: None,
-                // [ENT-3.S14] establishes this interval on whatever value the
-                // multiplication binds. It travels with the judgment because
-                // only this route proved it: a domain discharged by the finite
-                // L0 or affine-clause route publishes no product interval.
+                // [ENT-3.S7]'s multiplication row establishes this interval on
+                // whatever value the multiplication binds. It travels with the
+                // judgment because only this route proved it: a domain
+                // discharged by the finite L0 or affine-clause route leaves
+                // that row to read the closed operand intervals instead.
                 product_interval: Some(interval),
             };
         }
@@ -2091,10 +2135,10 @@ impl Reasoning<'_, '_, '_> {
     }
 
     /// The one measurement the fixed interval-product rule performs. The four
-    /// endpoint products decide [ENT-6]'s domain admission and bound
-    /// [ENT-3.S14]'s published interval, so both read this result rather than
-    /// proving the same endpoints twice: the admitted range and the published
-    /// bound then cannot disagree by construction.
+    /// endpoint products decide [ENT-6]'s domain admission and bound the
+    /// interval [ENT-3.S7]'s multiplication row publishes, so both read this
+    /// result rather than proving the same endpoints twice: the admitted
+    /// range and the published bound then cannot disagree by construction.
     pub(super) fn affine_integer_product_interval(
         &mut self,
         product: &AffineIntegerProduct,

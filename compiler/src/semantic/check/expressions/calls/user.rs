@@ -10,12 +10,12 @@ use super::super::super::super::goal::{
     EvaluatedValueOccurrence, GoalDatum, GoalExpression, GoalOperation, GoalProjection,
 };
 use super::super::super::super::model::{
-    CheckedCallContract, CheckedCallSeparation, CheckedEffectStep, CheckedEffects,
+    BindingId, CheckedCallContract, CheckedCallSeparation, CheckedEffectStep, CheckedEffects,
     CheckedExpression, CheckedMode, CheckedNominalKind, CheckedStatePath, CheckedType,
 };
 use super::super::super::super::places::{
-    CapturedRange, CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace, SeparationOracle,
-    UnprovedSeparations, WindowPart, places_overlap,
+    CaptureId, CapturedRange, CapturedTerm, CapturedValue, PlaceRoot, PlaceStep, ResolvedPlace,
+    SeparationOracle, UnprovedSeparations, WindowPart, overlaps_at_every_position, places_overlap,
 };
 use super::super::super::generics::HEAP_ALLOCATING_PRELUDE_FUNCTIONS;
 use super::super::super::references::InvalidationEvent;
@@ -599,9 +599,50 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(entries)
     }
 
+    /// [EFF-5] the declared row's entries in the callee's own frame, in the
+    /// order [`Self::substitute_call_row`] numbers their origins: every
+    /// `reads` entry, then every `writes` entry.
+    ///
+    /// Each reference parameter is its own root and each index or range
+    /// position holds the value parameter it names, so two positions are one
+    /// value exactly when they name one parameter [EFF-1]. No actual enters:
+    /// whether two entries overlap at every position is a property of the
+    /// row, the same at every call.
+    fn formal_row_places(
+        &self,
+        signature: &FunctionSignature,
+    ) -> Result<Vec<ResolvedPlace>, CheckStop> {
+        let captures = (0..signature.parameters.len())
+            .map(|ordinal| {
+                let ordinal = u32::try_from(ordinal)
+                    .map_err(|_| CheckStop::from(SemanticCompilerFailure::CounterOverflow))?;
+                Ok(CapturedValue::new(
+                    CaptureId::source(ordinal),
+                    CapturedTerm::Binding(BindingId(ordinal)),
+                ))
+            })
+            .collect::<Result<Vec<_>, CheckStop>>()?;
+        let declared = &signature.declared_effects;
+        let mut places = Vec::with_capacity(declared.reads.len() + declared.writes.len());
+        for formal in declared.reads.iter().chain(&declared.writes) {
+            let ordinal = signature
+                .parameters
+                .iter()
+                .position(|parameter| parameter.declaration == formal.root)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let ordinal =
+                u32::try_from(ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+            places.push(ResolvedPlace {
+                root: PlaceRoot::Binding(BindingId(ordinal)),
+                path: self.substitute_effect_steps(signature, formal, &captures)?,
+            });
+        }
+        Ok(places)
+    }
+
     /// One declared `epsuffix*`, with its index and range positions replaced
     /// by the values their own arguments supply [EFF-5].
-    pub(in crate::semantic::check) fn substitute_effect_steps(
+    fn substitute_effect_steps(
         &self,
         signature: &FunctionSignature,
         formal: &CheckedStatePath,
@@ -705,8 +746,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(Some(target))
     }
 
-    /// [EFF-5] clause 1: two effects on overlapping paths where at least one
-    /// is a write must be proved disjoint.
+    /// [EFF-5] clause 1: two compared effects on overlapping paths where at
+    /// least one is a write must be proved disjoint.
     ///
     /// The checker holds the actual spellings and the live reference state,
     /// so it owns this comparison; what it cannot do is discharge the index
@@ -714,6 +755,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// leaves open is recorded for the entailment fragment and refused there
     /// if it stays undischarged. `swap` is the one operation whose two
     /// arguments may name the same place [OP-11].
+    ///
+    /// Two effects one argument supplies are compared only when their
+    /// declared paths may be separated by the values of their positions: a
+    /// pair that overlaps at every position is reached through that one
+    /// parameter, which the callee's own body is checked against, so the
+    /// call has nothing to prove about it. The caller's kills and reference
+    /// invalidations still take every substituted write [REF-2, ENT-5].
     fn check_call_pairwise_disjointness(
         &self,
         node: NodeId,
@@ -722,9 +770,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Result<(), CheckStop> {
         let exchange = self.is_swap_row(signature);
+        let formal = self.formal_row_places(signature)?;
         for (index, left) in entries.iter().enumerate() {
             for right in entries.iter().skip(index + 1) {
                 if left.origin == right.origin || !(left.write || right.write) {
+                    continue;
+                }
+                if left.argument == right.argument
+                    && let (Some(left_formal), Some(right_formal)) =
+                        (formal.get(left.origin), formal.get(right.origin))
+                    && overlaps_at_every_position(left_formal, right_formal)
+                {
                     continue;
                 }
                 let oracle = EntryPairSeparations {
@@ -753,6 +809,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             window,
                             left_spelling: self.render_resolved_place(&left.place, bindings)?,
                             right_spelling: self.render_resolved_place(&right.place, bindings)?,
+                            one_argument: left.argument == right.argument,
                         });
                     continue;
                 }
@@ -766,10 +823,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     SemanticIssueKind::OverlappingCallEffects {
                         first: self.render_resolved_place(&left.place, bindings)?,
                         second: self.render_resolved_place(&right.place, bindings)?,
+                        // No position separates this pair, so proving one
+                        // distinct is no repair here [DIAG-1]. One
+                        // argument's pair got here because this call gives
+                        // the declared positions that tell its entries apart
+                        // the same values over one place the argument names,
+                        // or because no family this checker poses at a call
+                        // separates the steps at which the two paths differ:
+                        // a range beside an index, an index beside `.last`,
+                        // or two places a joined argument may name. Only the
+                        // first is repaired at the call's positions.
                         mechanical_fix: if exchange {
                             "exchange equal or disjoint places without an ancestor relation"
+                        } else if left.argument == right.argument
+                            && left.place.root == right.place.root
+                            && left.place.path.get(..left.formed)
+                                == right.place.path.get(..right.formed)
+                            && let (Some(left_formal), Some(right_formal)) =
+                                (formal.get(left.origin), formal.get(right.origin))
+                            && Self::separable_by_position(left_formal, right_formal).is_some()
+                        {
+                            "this call gives these two entries of the callee's row the same positions: pass positions this call proves do not overlap, or replace the callee's row entries at or below their common path with one `writes` entry of that path"
+                        } else if left.argument == right.argument {
+                            "these two entries of the callee's row may reach overlapping places through one argument, and no position this call passes separates them: replace the callee's row entries at or below their common path with one `writes` entry of that path"
                         } else {
-                            "prove the two positions distinct, or pass one of them"
+                            "pass places that do not overlap, or pass the shared place through one argument only"
                         },
                     },
                 );

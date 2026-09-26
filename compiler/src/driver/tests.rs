@@ -2975,11 +2975,9 @@ fn an_effect_row_defect_names_its_condition_and_the_row_that_repairs_it() {
             "{detail}"
         );
     assert!(
-            detail.contains(
-                "\n  mechanical_fix: delete the repeated entry; `writes(p)` already subsumes `reads(p)`, so the pair is never written for one path"
-            ),
-            "{detail}"
-        );
+        detail.contains("\n  mechanical_fix: delete the repeated entry"),
+        "{detail}"
+    );
 }
 
 /// [EFF-2] publishes both rows and the exact difference between them.
@@ -3008,7 +3006,7 @@ fn main() -> status: std::process::ExitStatus pure {
         );
     assert!(
             detail.ends_with(
-                "\n  mechanical_fix: declare exactly the row the body exhibits: add every missing category and path and remove every extra one; EFF-2 admits no wider and no narrower declaration than the union of the body-syntactic and release contributions"
+                "\n  mechanical_fix: declare the row as `pure`, which covers every access the body makes and no other"
             ),
             "{detail}"
         );

@@ -26,15 +26,8 @@ fn main(inputs: Inputs) -> status: ExitStatus pure {
   }
   match write_once(factory: &entry_factory, output: &out, source: window, start: 1_u64, end: 3_u64) {
     Ok(value: written) => {
-      let narrowed = cvt.checked::<u64, u8>(written);
-      match narrowed {
-        Ok(value: code) => {
-          return exit_status(code: code);
-        }
-        Err(error: overflowed) => {
-          return exit_status(code: 200_u8);
-        }
-      }
+      let code = cvt::<u64, u8>(written);
+      return exit_status(code: code);
     }
     Err(error: problem) => {
       return exit_status(code: 212_u8);

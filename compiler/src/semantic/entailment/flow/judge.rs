@@ -133,7 +133,7 @@ impl Judging<'_, '_, '_> {
         requires_clause: crate::NodePath,
         goal: ConcreteGoal,
         argument_count: usize,
-        context: ProofContext<'_>,
+        (context, written): (ProofContext<'_>, &ProofFlowState),
     ) -> (CallGoalDisposition, Option<DerivationId>) {
         let (disposition, evidence, derivation) =
             self.reasoning().call_goal_disposition(&goal, context);
@@ -156,6 +156,7 @@ impl Judging<'_, '_, '_> {
             disposition,
             evidence,
             derivation,
+            written_before: written.written_before(disposition == CallGoalDisposition::Discharged),
         });
         (disposition, derivation)
     }
@@ -278,6 +279,7 @@ impl Judging<'_, '_, '_> {
             allocation_length_upper_bound_derivation,
             affine_index_maps: Vec::new(),
             range_partitions: Vec::new(),
+            written_before: states.written_before(discharged),
         });
     }
 
@@ -333,9 +335,9 @@ impl Judging<'_, '_, '_> {
                 CheckedCallSeparationPositions::Indices(left, right) => {
                     self.reasoning().prove_index_separation(left, right, state)
                 }
-                CheckedCallSeparationPositions::Ranges(left, right) => {
-                    self.reasoning().prove_range_separation(left, right, state)
-                }
+                CheckedCallSeparationPositions::Ranges(left, right) => self
+                    .reasoning()
+                    .prove_range_separation(left, right, &state.facts, &state.affine),
                 CheckedCallSeparationPositions::Live(index) => separation
                     .window
                     .as_ref()
@@ -369,15 +371,18 @@ impl Judging<'_, '_, '_> {
         self.output.obligations.push(ObligationOutcome {
             node_path: separation.reference_use.as_ref()
                 .map_or_else(|| separation.site.clone(), |use_site| use_site.site.clone()),
-            family: {
-                let query = u32::try_from(query).expect("separation queries exceed u32");
-                if separation.reference_use.is_some() {
-                    ObligationFamily::ReferencePreservation(query)
-                } else if separation.exchange {
-                    ObligationFamily::ExchangeSeparation(query)
-                } else {
-                    ObligationFamily::CallSeparation(query)
-                }
+            family: if separation.reference_use.is_some() {
+                ObligationFamily::ReferencePreservation(
+                    u32::try_from(query).expect("reference-preservation queries exceed u32"),
+                )
+            } else if separation.exchange {
+                ObligationFamily::ExchangeSeparation(
+                    u32::try_from(query).expect("exchange-separation queries exceed u32"),
+                )
+            } else {
+                ObligationFamily::CallSeparation(
+                    u32::try_from(query).expect("call-separation queries exceed u32"),
+                )
             },
             conjunct: 0,
             canonical_goal: None,
@@ -409,6 +414,7 @@ impl Judging<'_, '_, '_> {
             allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(),
             range_partitions: Vec::new(),
+            written_before: state.written_before(discharged),
         });
         discharged
     }
@@ -434,7 +440,7 @@ impl Judging<'_, '_, '_> {
             let query = self.output.permission_separations[index].query.clone();
             let derivation = self
                 .reasoning()
-                .prove_range_separation(query.left, query.right, state)
+                .prove_permission_separation(&query, state)
                 .and_then(|proof| proof.derivation);
             let attempt = &mut self.output.permission_separations[index];
             attempt.attempted = true;
@@ -568,6 +574,7 @@ impl Judging<'_, '_, '_> {
             allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(),
             range_partitions: Vec::new(),
+            written_before: states.written_before(discharged),
         });
     }
 
@@ -764,7 +771,7 @@ impl Analyzer<'_, '_> {
                             requirement.requires_clause.clone(),
                             goal,
                             arguments.len(),
-                            ProofContext::new(&states.facts, &states.affine),
+                            (ProofContext::new(&states.facts, &states.affine), &*states),
                         );
                         goals_ok &= disposition == CallGoalDisposition::Discharged;
                         if let Some(derivation) = derivation {
@@ -921,21 +928,13 @@ impl Analyzer<'_, '_> {
                 // formation by that occurrence [REF-1], so a separation
                 // submitted at a later call reads exactly these two forms and
                 // never re-reads a spelling whose bindings may have moved on.
-                if let Some(image) = self
-                    .reasoning()
-                    .affine_expression_form(start, &mut states.affine)
-                    .zip(
-                        self.reasoning()
-                            .affine_expression_form(end, &mut states.affine),
-                    )
-                    .map(|(start, end)| AffineRangeImage {
-                        source: carrier.clone(),
-                        start,
-                        end,
-                    })
-                {
-                    states.affine.ranges.insert(captured.start.capture, image);
-                }
+                self.reasoning().file_range_image(
+                    carrier,
+                    *captured,
+                    start,
+                    end,
+                    &mut states.affine,
+                );
                 let obligation_start = self.output.obligations.len();
                 let source_subscripts = match source {
                     CheckedRangeSource::Storage(root) => self.judge_place_subscripts(root, states),
@@ -1398,6 +1397,7 @@ impl Analyzer<'_, '_> {
                 Vec::new()
             },
             range_partitions: Vec::new(),
+            written_before: states.written_before(discharged),
         });
     }
 
@@ -1584,13 +1584,14 @@ impl Analyzer<'_, '_> {
         // must leave nothing behind for the binding to read.
         self.frames.product_intervals.remove(node_path);
         self.frames.product_operands.remove(node_path);
-        // [ENT-3.S14] publishes only what an admitted multiplication proved,
-        // so the interval is retained exactly when this obligation discharged
+        // [ENT-3.S7]'s multiplication row reads the interval-product rule's
+        // intervals only when that rule discharged the domain, so the
+        // interval is retained exactly when this obligation discharged
         // through the interval-product route.
         if discharged && let Some(interval) = outcome.product_interval.clone() {
             self.frames
                 .product_intervals
-                .insert(node_path.clone(), interval);
+                .insert(node_path.clone(), (interval, outcome.derivation));
         }
         // That the exact multiplication's domain held, for [PRF-1] to fold a
         // term-scaled premise against. Recorded only when the domain
@@ -1628,6 +1629,7 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(),
             range_partitions: Vec::new(),
+            written_before: states.written_before(discharged),
         });
     }
 

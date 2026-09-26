@@ -52,6 +52,10 @@ the work-branch and merge boundary.
 - [Incremental L0 closure](investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md):
   keep fact states' closed cores and insert fresh edges instead of recomputing
   the cubic closure, relaxing only which equal-bound L0 derivation is retained.
+- [Automatic operation facts](investigations/automatic-operation-facts/DESIGN.md):
+  the inventory of operation-derived facts, corpus and idiom-sweep evidence,
+  and the operation table that replaced the idiom menu of [ENT-3], with its
+  measured checking cost.
 - [Modular compilation](investigations/modular-compilation/DESIGN.md):
   modules for large projects and for an architect agent that owns module
   interfaces while implementer agents write bodies in parallel. Self-contained
@@ -67,6 +71,10 @@ the work-branch and merge boundary.
   rules. A [complete source demo](investigations/modular-compilation/demo/README.md)
   follows a queue through shared libraries, a no-heap entry and a heap-using
   tool.
+- [Repair wording](investigations/repair-wording/DESIGN.md): every repair the
+  specification prescribes against the compiler's printed text, refuted and
+  unproved probes of each, and whether the words belong to the specification
+  or the compiler.
 
 Open research questions and evidence links are in [ideas](../docs/ideas.md);
 known compiler defects and implementation costs are in [todo](../docs/todo.md).

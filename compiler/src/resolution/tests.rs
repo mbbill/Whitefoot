@@ -904,7 +904,8 @@ fn a_heap_declaration_is_admitted_only_as_the_leading_item() {
 
 /// [SET-1] "A `set` whose target name resolves to nothing declares nothing and
 /// is a hard error citing SET-1 at that `place`." v0.59's [LIV-2] promoted
-/// exactly this target into a `let` declaration instead.
+/// exactly this target into a `let` declaration instead, which is what the
+/// repair now tells the writer to do [DIAG-1].
 #[test]
 fn an_unresolved_bare_set_target_declares_nothing_and_cites_set1() {
     let source = br#"fn probe() -> result: unit pure {
@@ -917,14 +918,13 @@ fn an_unresolved_bare_set_target_declares_nothing_and_cites_set1() {
             panic!("an unresolvable set target must reject: {outcome:?}");
         };
         assert_eq!(issue.rule(), ResolutionRule::Set1);
-        assert!(matches!(
+        assert_eq!(
             issue.kind(),
-            ResolutionIssueKind::UnresolvedUse {
-                spelling,
-                role: LexicalUseRole::PlaceBase,
-                ..
-            } if spelling == "missing"
-        ));
+            &ResolutionIssueKind::UndeclaredSetTarget {
+                spelling: "missing".to_owned(),
+                mechanical_fix: "no binding `missing` is in scope, so this `set` declares nothing: write it as `let missing = ...;`, keeping its right-hand side, to declare the binding here, or name a binding that is in scope".to_owned(),
+            }
+        );
     });
 }
 

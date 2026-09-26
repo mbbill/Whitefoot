@@ -21,9 +21,10 @@
 //! The components are its children: the fact [`domain`] and its joins, kill
 //! and scope [`events`], [`goals`], the one [`prover`] dispatcher, the
 //! [`judge`]ments, the [ENT-3] fact [`sources`] with Result transport in
-//! [`results`] and conversions in [`conversions`], [`postconditions`], loop
-//! [`invariants`], [PRF-1] [`certificates`], the [`walk`], the
-//! [`loop_summary`], and canonical [`render`]ing.
+//! [`results`], conversions in [`conversions`] and the [ENT-3.S7] operation
+//! table in [`operation_facts`], [`postconditions`], loop [`invariants`],
+//! [PRF-1] [`certificates`], the [`walk`], the [`loop_summary`], and
+//! canonical [`render`]ing.
 
 mod certificates;
 mod conversions;
@@ -33,6 +34,7 @@ mod goals;
 mod invariants;
 mod judge;
 mod loop_summary;
+mod operation_facts;
 mod postconditions;
 mod prover;
 mod render;
@@ -57,7 +59,7 @@ use super::super::postcondition::PostconditionPlace;
 use results::ResultEvidence;
 use sources::{MeasureCarry, ValueImage};
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::rc::Rc;
 
 use super::super::goal::{
@@ -95,10 +97,10 @@ use super::state::{
     AffinePremiseUse, ClosedState, CountedRootAtom, DerivationId, DerivationInventory,
     DerivationLedger, DerivationNode, DerivationRootKind, FactState, FlowEventId, FlowEventKind,
     GoalId, GoalNormalization, GoalSign, GoalSupport, GoalTable, IndexCaptureSubstitution,
-    IndexSeparationDetail, JoinParent, OutcomeFact, PostconditionCallSubstitution,
-    RangeSeparationDetail, RangeSeparationOrdering, Relation, SourceAffineFactRef,
-    SourceLoopInvariantRef, WordHashMap, close, close_excluding_term, closure_is_seeded,
-    contradiction_without_proofs, join_at, materialize_closure_at, materialize_closure_before_kill,
+    IndexSeparationDetail, JoinParent, PostconditionCallSubstitution, RangeSeparationDetail,
+    RangeSeparationOrdering, Relation, SourceAffineFactRef, SourceLoopInvariantRef, WordHashMap,
+    close, close_excluding_term, closure_is_seeded, contradiction_without_proofs, join_at,
+    materialize_closure_at, materialize_closure_before_kill,
 };
 use super::term::{
     CountedCaptureSide, MeasureBound, MeasurePlacement, PlaceRoot, TermId, TermKind, TermTable,
@@ -110,9 +112,8 @@ use super::{
     FunctionPostconditionProof, JoinedSourceProofProvenance, LoopInvariantOutcome,
     LoopInvariantProof, ObligationFamily, ObligationOutcome, PostconditionAggregate,
     PostconditionDisposition, PostconditionEntryImage, PostconditionEntryImageOutcome,
-    PostconditionExit, S7Derivation, SourceProofCertificateFailure, SourceProofCheck,
-    SourceProofOutcome, VerifiedPostconditionSummaryRef, fragment_type,
-    overflow_conjuncts_for_values,
+    PostconditionExit, SourceProofCertificateFailure, SourceProofCheck, SourceProofOutcome,
+    VerifiedPostconditionSummaryRef, fragment_type, overflow_conjuncts_for_values,
 };
 
 /// One [ENT-5] kill event gathered from a statement or expression.
@@ -159,6 +160,21 @@ impl KillEvent {
             | Self::EntryImageHolderWrite { source, .. } => source,
         }
     }
+
+    /// The binding the event's place is rooted at; a constant root has none.
+    fn root_binding(&self) -> Option<BindingId> {
+        match self {
+            Self::Write { place, .. } | Self::EntryImageHolderWrite { place, .. } => {
+                match place.root {
+                    PlaceRoot::Binding(binding) => Some(binding),
+                    PlaceRoot::Constant(_) => None,
+                }
+            }
+            Self::Consume { binding, .. } | Self::EntryImageHolderConsume { binding, .. } => {
+                Some(*binding)
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -191,14 +207,14 @@ struct LoopFrame {
 
 /// The [ENT-3] facts one `match` scrutinee admits at its arms' entries: the
 /// S1 comparison relation, taken positively on `True()` and exactly negated
-/// on `False()`, and the S7/S10 fact one named arm's value binder gains,
-/// carried with that arm's tag. Every other arm establishes nothing.
+/// on `False()`. Every other arm establishes nothing of its own; an `Ok`
+/// arm's success facts arrive through the scrutinee's conditional Result
+/// context [ENT-5].
 #[derive(Default)]
 struct ArmFacts {
     node_path: Option<crate::NodePath>,
     comparison: Option<Relation>,
     goals: Vec<GoalId>,
-    outcome: Option<(u32, OutcomeFact)>,
 }
 
 /// A value initializer collecting give-edge states for its continuation.
@@ -257,11 +273,37 @@ struct ProofFlowState {
     /// Exact integer value images and active source-proved loop invariants.
     /// Executing a statement computes the runtime value represented here.
     affine: AffineFlowState,
+    /// [DIAG-1] every binding at which a kill event on some path to this edge
+    /// roots its place [ENT-5]. It branches and joins with the rest of the
+    /// state, so a write in one arm of a conditional is no write in a
+    /// sibling arm, and a loop header carries every continuing kill of its
+    /// body before the body is walked. A failed judgment retains it so that
+    /// its repair offers a `requires` only over parameters that still hold
+    /// their entry values where the goal is asked.
+    written: BTreeSet<BindingId>,
     /// The kill events applied on this path since the innermost enclosing
     /// loop head, kept only where debug assertions are on: at the loop's back
     /// edge every one must be an event of the summary its head subtracted
     /// [ENT-5].
     continuing: Vec<KillEvent>,
+}
+
+impl ProofFlowState {
+    /// Records on this edge the bindings these events root their places at.
+    fn record_writes(&mut self, events: &[KillEvent]) {
+        self.written
+            .extend(events.iter().filter_map(KillEvent::root_binding));
+    }
+
+    /// What a judgment recorded at this edge retains of [`Self::written`]:
+    /// all of it when the judgment failed, and nothing when it succeeded.
+    fn written_before(&self, discharged: bool) -> Vec<BindingId> {
+        if discharged {
+            Vec::new()
+        } else {
+            self.written.iter().copied().collect()
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -270,6 +312,10 @@ struct AffineFlowState {
     /// Current measure images belong to this control-flow edge. Queries mint
     /// images lazily, but cloning a predecessor isolates its later kills.
     measure_atoms: RefCell<WordHashMap<TermId, AffineForm>>,
+    /// Each range formation's endpoint images [REF-4], filed under its start
+    /// endpoint's source occurrence, which names that one formation. Nothing
+    /// is filed under a capture naming no single evaluation, so one
+    /// formation's image never answers for another's [OWN-7, ENT-3.S6].
     ranges: WordHashMap<CaptureId, AffineRangeImage>,
     indices: WordHashMap<CaptureId, AffineForm>,
     /// One atom standing for the whole value of a binding whose image is not
@@ -506,6 +552,15 @@ enum ProofDisposition {
     Unknown,
 }
 
+/// [MSR-4] the disposition of one [INV-1] target, which no Goal identity
+/// carries: refuted when the state derives the negation of one of its bounds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TargetDisposition {
+    Proved,
+    Refuted,
+    Unproved,
+}
+
 /// Complete route selected by one [`Reasoning::prove`] call.  The signed
 /// ordinary route retains every simultaneously available finite ground so
 /// FN-8 can preserve its existing evidence payload without running a second
@@ -531,8 +586,9 @@ struct ProofResult {
     numeric_upper_bound: Option<ProvedNumericUpperBound>,
     /// The interval [ENT-6]'s fixed interval-product rule proved for an
     /// admitted non-constant multiplication. Carried out of the judgment so
-    /// [ENT-3.S14] publishes exactly the measurement the domain decision
-    /// consumed, rather than proving the same endpoints a second time.
+    /// [ENT-3.S7]'s multiplication row publishes exactly the measurement the
+    /// domain decision consumed, rather than proving the same endpoints a
+    /// second time.
     product_interval: Option<AffineProductInterval>,
 }
 
@@ -1019,7 +1075,6 @@ fn analyze_candidate_inner(
         loop_invariants: run.loop_invariants,
         source_proofs: run.source_proofs,
         joined_source_proofs: run.joined_source_proofs,
-        s7_derivations: run.s7_derivations,
         postconditions: run.postconditions,
         boolean_decompositions: run.boolean_decompositions,
         permission_separations: run.permission_separations,
@@ -1040,7 +1095,6 @@ struct AnalysisRun {
     loop_invariants: Vec<LoopInvariantOutcome>,
     source_proofs: Vec<SourceProofOutcome>,
     joined_source_proofs: Vec<JoinedSourceProofProvenance>,
-    s7_derivations: Vec<S7Derivation>,
     postconditions: Vec<super::FunctionPostconditionProof>,
     boolean_decompositions: Vec<super::BooleanGoalDecomposition>,
     permission_separations: Vec<PermissionSeparationProof>,
@@ -1134,7 +1188,6 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         loop_invariants: analyzer.output.loop_invariants,
         source_proofs: analyzer.output.source_proofs,
         joined_source_proofs: analyzer.output.joined_source_proofs,
-        s7_derivations: analyzer.output.s7_derivations,
         postconditions: analyzer.output.postconditions,
         boolean_decompositions: analyzer.output.boolean_decompositions,
         permission_separations,
@@ -1178,7 +1231,6 @@ impl<'check, 'unit> Analyzer<'check, 'unit> {
                 loop_invariants: Vec::new(),
                 source_proofs: Vec::new(),
                 joined_source_proofs: Vec::new(),
-                s7_derivations: Vec::new(),
                 postconditions: Vec::new(),
                 boolean_decompositions: Vec::new(),
                 permission_separations: function
@@ -1269,18 +1321,6 @@ pub(super) fn finish(entailment: &mut FunctionEntailment) {
     }
     for counted in &mut entailment.counted_derivations {
         remap_counted_derivations(counted, &remap.nodes);
-    }
-    for source in &mut entailment.s7_derivations {
-        source.parent = remap
-            .nodes
-            .get(source.parent.0 as usize)
-            .copied()
-            .flatten()
-            .expect("required S7 source root retained by the sole ledger root channel");
-        source.event = entailment
-            .derivations
-            .node_event(source.parent)
-            .expect("S7 source parent retains its shared structural event");
     }
     for postcondition in &mut entailment.postconditions {
         remap_postcondition(postcondition, &remap.nodes, &remap.events);
@@ -1563,7 +1603,6 @@ struct Output {
     loop_invariants: Vec<LoopInvariantOutcome>,
     source_proofs: Vec<SourceProofOutcome>,
     joined_source_proofs: Vec<JoinedSourceProofProvenance>,
-    s7_derivations: Vec<S7Derivation>,
     postconditions: Vec<super::FunctionPostconditionProof>,
     /// O11 candidate decomposition sets, recorded at
     /// signed-goal establishments and never established as facts.
@@ -1584,11 +1623,12 @@ struct Frames {
     loops: Vec<LoopFrame>,
     gives: Vec<GiveFrame>,
     /// The interval [ENT-6]'s interval-product rule proved at each admitted
-    /// non-constant multiplication, keyed by that operation's own node. The
-    /// domain is judged while the initializer is walked and [ENT-3.S14]
-    /// establishes at the binding the walk then reaches, so the measurement
-    /// waits here between the two rather than being proved again.
-    product_intervals: HashMap<crate::NodePath, AffineProductInterval>,
+    /// non-constant multiplication, with that domain's derivation, keyed by
+    /// that operation's own node. The domain is judged while the initializer
+    /// is walked and [ENT-3.S7]'s multiplication row establishes at the
+    /// binding the walk then reaches, so the measurement waits here between
+    /// the two rather than being proved again.
+    product_intervals: HashMap<crate::NodePath, (AffineProductInterval, Option<DerivationId>)>,
     /// Which exact multiplications discharged their [OP-2] domain over affine
     /// operand images, keyed by the operation's own node. Read once at the
     /// binding the walk then reaches, exactly as the interval above is. It
@@ -1985,13 +2025,12 @@ mod range_argument_kill_tests {
         })
     }
 
-    /// [EFF-5, REF-4, CALL-3] a range formed at a call names the path a bound
-    /// range reference would name, so its projected write kills a measure of
-    /// an element that range may contain and keeps the origin's own measure
-    /// and the range's own measure. Before this path existed, an inline
-    /// actual named no referent and its write killed nothing.
-    #[test]
-    fn an_inline_range_actual_names_its_formation_path_for_kills() {
+    /// Runs `check` on the analyzer of one bodiless function whose binding i
+    /// names the places `reference_origins[i]` lists [REF-1].
+    fn with_analyzer<R>(
+        reference_origins: Vec<Vec<ResolvedPlace>>,
+        check: impl FnOnce(&mut Analyzer<'_, '_>) -> R,
+    ) -> R {
         let constant_ids = HashMap::new();
         let const_parameter_types = HashMap::new();
         let context = EntailmentContext {
@@ -2007,7 +2046,6 @@ mod range_argument_kill_tests {
             verified_postcondition_proofs: &[],
             binding_names: &[],
         };
-        let outer = range(10, 0, 3);
         let function = CheckedFunction {
             formal_hypothesis: false,
             id: crate::semantic::model::FunctionId(0),
@@ -2025,8 +2063,7 @@ mod range_argument_kill_tests {
             requirement_places: Vec::new(),
             postconditions: Vec::new(),
             body: None,
-            // `view` names `origin[0..3]`.
-            reference_origins: vec![Vec::new(), vec![place(vec![PlaceStep::Range(outer)])]],
+            reference_origins,
             body_disposition: Default::default(),
             allocates: false,
             call_separations: Vec::new(),
@@ -2036,7 +2073,73 @@ mod range_argument_kill_tests {
         };
         let mut analyzer = Analyzer::new(&context, &function);
         analyzer.input.places = PlaceMap::for_function(&function);
+        check(&mut analyzer)
+    }
 
+    /// [OWN-7, REF-4] a range formation's endpoint images are filed only
+    /// under a source occurrence, which names that one formation. Filed under
+    /// the capture that names no single evaluation, one formation's images
+    /// would answer for every range carrying that capture, so such a
+    /// formation files nothing and keeps its own formation's images apart.
+    #[test]
+    fn a_range_image_is_filed_only_under_its_own_formation() {
+        with_analyzer(Vec::new(), |analyzer| {
+            let carrier = crate::NodePath {
+                components: vec![0],
+            };
+            let mut affine = AffineFlowState::default();
+            let shared = CapturedRange {
+                start: CapturedValue::unknown(),
+                end: CapturedValue::unknown(),
+            };
+            analyzer.reasoning().file_range_image(
+                &carrier,
+                shared,
+                &endpoint(4),
+                &endpoint(4),
+                &mut affine,
+            );
+            assert!(
+                affine.ranges.is_empty(),
+                "a capture shared by formations files no image: {:?}",
+                affine.ranges
+            );
+            let own = range(20, 1, 3);
+            analyzer.reasoning().file_range_image(
+                &carrier,
+                own,
+                &endpoint(1),
+                &endpoint(3),
+                &mut affine,
+            );
+            let image = affine
+                .ranges
+                .get(&own.start.capture)
+                .expect("a formation files its images under its own start occurrence");
+            assert_eq!(
+                (&image.start, &image.end),
+                (&AffineForm::constant(1), &AffineForm::constant(3))
+            );
+            assert_eq!(affine.ranges.len(), 1);
+        });
+    }
+
+    /// [EFF-5, REF-4, CALL-3] a range formed at a call names the path a bound
+    /// range reference would name, so its projected write kills a measure of
+    /// an element that range may contain and keeps the origin's own measure
+    /// and the range's own measure. Before this path existed, an inline
+    /// actual named no referent and its write killed nothing.
+    #[test]
+    fn an_inline_range_actual_names_its_formation_path_for_kills() {
+        let outer = range(10, 0, 3);
+        // `view` names `origin[0..3]`.
+        let origins = vec![Vec::new(), vec![place(vec![PlaceStep::Range(outer)])]];
+        with_analyzer(origins, |analyzer| {
+            an_inline_range_actual_kills(analyzer, outer)
+        });
+    }
+
+    fn an_inline_range_actual_kills(analyzer: &mut Analyzer<'_, '_>, outer: CapturedRange) {
         let inner = range(20, 1, 3);
         let direct = formation(storage_source(), inner, 1, 3);
         assert_eq!(

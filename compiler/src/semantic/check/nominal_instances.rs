@@ -1577,6 +1577,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         )
     }
 
+    /// [TYPE-2, PRE-2] where an opaque struct a construct names comes from,
+    /// which selects the repair of its refusal. The standard library declares
+    /// opaque structs only in its host modules, each a fieldless host handle
+    /// that a host function forms [PRE-2], so its package decides; a program's
+    /// own opaque struct never has a value.
+    pub(super) fn opaque_struct_kind(
+        &self,
+        declaration: crate::DeclarationId,
+    ) -> Result<super::repairs::OpaqueStruct, CheckStop> {
+        if !self
+            .declaring_module(declaration)
+            .is_some_and(|module| module.package() == crate::Package::Standard)
+        {
+            return Ok(super::repairs::OpaqueStruct::Program);
+        }
+        let template = self
+            .nominal_templates_by_declaration
+            .get(&declaration)
+            .and_then(|&index| self.nominal_templates.get(index))
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        Ok(super::repairs::OpaqueStruct::HostHandle {
+            linear: self.declaration_is_linear(template.node)?,
+        })
+    }
+
     pub(super) fn source_constructor(
         &self,
         node: NodeId,
