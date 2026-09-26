@@ -9,38 +9,29 @@ use crate::{
     finalize, lex, lower_checked_with_layout, parse, resolve,
 };
 
-use crate::backend::target::TargetLayout;
+use crate::target::TargetLayout;
 
 use super::{
     CANONICAL_LIMITS, FINALIZE_LIMITS, LEX_LIMITS, PARSE_LIMITS, SOURCE_LIMITS, compile,
     compile_and_run, compile_and_run_with, compile_rejection, emitted_function,
 };
 
-pub(super) fn with_ir<R>(
-    source: &[u8],
-    run: impl for<'a, 'b, 'c> FnOnce(&IrProgram<'a, 'b, 'c>) -> R,
-) -> R {
+pub(super) fn with_ir<R>(source: &[u8], run: impl FnOnce(&IrProgram) -> R) -> R {
     with_mutated_ir(source, |program| run(program))
 }
 
-pub(super) fn with_mutated_ir<R>(
-    source: &[u8],
-    run: impl for<'a, 'b, 'c> FnOnce(&mut IrProgram<'a, 'b, 'c>) -> R,
-) -> R {
+pub(super) fn with_mutated_ir<R>(source: &[u8], run: impl FnOnce(&mut IrProgram) -> R) -> R {
     with_mutated_ir_lowering(source, OverlapLowering::Off, run)
 }
 
-pub(super) fn with_parallel_ir<R>(
-    source: &[u8],
-    run: impl for<'a, 'b, 'c> FnOnce(&IrProgram<'a, 'b, 'c>) -> R,
-) -> R {
+pub(super) fn with_parallel_ir<R>(source: &[u8], run: impl FnOnce(&IrProgram) -> R) -> R {
     with_mutated_ir_lowering(source, OverlapLowering::On, |program| run(program))
 }
 
 pub(super) fn with_mutated_ir_lowering<R>(
     source: &[u8],
     overlap: OverlapLowering,
-    run: impl for<'a, 'b, 'c> FnOnce(&mut IrProgram<'a, 'b, 'c>) -> R,
+    run: impl FnOnce(&mut IrProgram) -> R,
 ) -> R {
     with_ir_layout(
         source,
@@ -54,7 +45,7 @@ pub(super) fn with_ir_layout<R>(
     source: &[u8],
     overlap: OverlapLowering,
     target: TargetLayout,
-    run: impl for<'a, 'b, 'c> FnOnce(&mut IrProgram<'a, 'b, 'c>) -> R,
+    run: impl FnOnce(&mut IrProgram) -> R,
 ) -> R {
     let inputs = [SourceInput::new("test.wf", source)];
     let bundle = SourceBundle::with_prelude(&inputs, SOURCE_LIMITS).expect("valid test bundle");

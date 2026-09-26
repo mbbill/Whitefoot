@@ -415,7 +415,7 @@ fn linked_definitions_return_their_declared_register_results() {
 /// Every stored result is by value exactly when the leaves of the type the
 /// module emits for it fit three integer-class words and two floating
 /// leaves. The count is taken from the text, not from the classifier.
-fn assert_classification_matches_emitted_leaves(program: &IrProgram<'_, '_, '_>, module: &str) {
+fn assert_classification_matches_emitted_leaves(program: &IrProgram, module: &str) {
     for function in program.functions() {
         let result = FunctionAbi::build(program, function)
             .expect("callable ABI")

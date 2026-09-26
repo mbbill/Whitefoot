@@ -249,6 +249,7 @@ struct Tables {
     deferred_uses: Vec<DeferredUseRecord>,
     postconditions: Vec<PostconditionResolutionRecord>,
     interface_functions: Vec<super::InterfaceFunction>,
+    by_node: super::NodeRecords,
 }
 
 enum BuildStop {
@@ -278,6 +279,7 @@ pub fn resolve<'classified, 'lexed, 'source>(
             deferred_uses: tables.deferred_uses,
             postconditions: tables.postconditions,
             interface_functions: tables.interface_functions,
+            by_node: tables.by_node,
         }),
         Err(BuildStop::Issue(issue)) => ResolutionOutcome::SourceIssue {
             syntax,
@@ -654,6 +656,15 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
                 _ => None,
             })
             .collect();
+        let nodes_by_path = scopes.nodes_by_path();
+        let by_node = super::NodeRecords::build(
+            topology.nodes.len(),
+            |path| nodes_by_path.get(path).copied(),
+            &declarations,
+            &dependent_declarations,
+            &lexical_uses,
+            &deferred_uses,
+        );
         Ok(Tables {
             scopes: scopes.records,
             prelude: prelude.records,
@@ -663,6 +674,7 @@ fn build_tables(syntax: &CanonicalSyntaxUnit<'_, '_, '_>) -> Result<Tables, Buil
             deferred_uses,
             postconditions,
             interface_functions,
+            by_node,
         })
     }
 }

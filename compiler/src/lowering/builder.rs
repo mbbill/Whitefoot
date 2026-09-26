@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::backend::target::TargetLayout;
+use crate::target::TargetLayout;
 
 mod buffers;
 mod loops;
@@ -33,7 +33,7 @@ use storage::collect_addressed_bindings;
 pub fn lower_checked<'classified, 'lexed, 'source>(
     checked: CheckedProgram<'classified, 'lexed, 'source>,
     overlap: OverlapLowering,
-) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
+) -> Result<IrProgram, LoweringFailure> {
     lower_checked_with_layout(checked, overlap, TargetLayout::host()?)
 }
 
@@ -44,7 +44,7 @@ pub(crate) fn lower_checked_with_layout<'classified, 'lexed, 'source>(
     checked: CheckedProgram<'classified, 'lexed, 'source>,
     overlap: OverlapLowering,
     target: TargetLayout,
-) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
+) -> Result<IrProgram, LoweringFailure> {
     lower_checked_from(checked, overlap, target, None)
 }
 
@@ -57,7 +57,7 @@ pub(crate) fn lower_checked_from<'classified, 'lexed, 'source>(
     overlap: OverlapLowering,
     target: TargetLayout,
     roots: Option<&[crate::semantic::FunctionId]>,
-) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
+) -> Result<IrProgram, LoweringFailure> {
     let sequential_compute_refusal = matches!(
         overlap,
         OverlapLowering::OnWithSequentialRefusal { .. }
@@ -94,9 +94,8 @@ pub(crate) fn lower_checked_from<'classified, 'lexed, 'source>(
         OverlapLowering::Off => OverlapLowering::Off,
         _ => OverlapLowering::On,
     };
-    // [S20, PROV-1] the region erasure: where a nominal instance's region
-    // arguments leave the program. Two instances of one declaration that
-    // differ only in them are two checked types and one IR nominal.
+    // Each checked nominal's IR nominal before physical merging: the lowering
+    // alias the checker assigned it.
     let erasure = checked
         .data
         .nominal_lowering_alias
@@ -107,7 +106,6 @@ pub(crate) fn lower_checked_from<'classified, 'lexed, 'source>(
     let base_types = TypeLowering {
         nominals: &erasure,
         elements: &base_element_map,
-        releases: &[],
     };
     let base_nominals = lower_nominals(base_types, &checked.data)?;
     let constants = lower_constants(base_types, &checked.data)?;
@@ -118,33 +116,25 @@ pub(crate) fn lower_checked_from<'classified, 'lexed, 'source>(
         base_elements,
         base_element_map,
     );
-    let maps = physical
-        .variants
-        .iter()
-        .map(|variant| types.map(&variant.releases))
-        .collect::<Result<Vec<_>, _>>()?;
+    let map = types.map()?;
     let nominals = types.nominals;
     let elements = types.elements;
     // Each function's declared IR result carries its result *mode*: a borrow
     // of addressed content is an address. A call site must produce exactly
     // the callee's declared result type, so the declared results are computed
     // once and consulted at every `UserCall` [REF-1, TYPE-7].
+    let types = TypeLowering {
+        nominals: &map.nominals,
+        elements: &map.elements,
+    };
     let function_results = physical
         .variants
         .iter()
-        .zip(&maps)
-        .map(|(variant, map)| {
+        .map(|variant| {
             let function = &checked.data.functions[variant.source.0 as usize];
             lower_borrow_mode_type(
                 function.result_mode,
-                lower_type(
-                    TypeLowering {
-                        nominals: &map.nominals,
-                        elements: &map.elements,
-                        releases: &variant.releases,
-                    },
-                    function.result,
-                )?,
+                lower_type(types, function.result)?,
                 &nominals,
             )
         })
@@ -170,20 +160,10 @@ pub(crate) fn lower_checked_from<'classified, 'lexed, 'source>(
     let symbols = physical
         .variants
         .iter()
-        .enumerate()
-        .map(|(index, variant)| {
-            let symbol = &checked.data.functions[variant.source.0 as usize].symbol;
-            if physical
-                .variants
-                .iter()
-                .filter(|other| other.source == variant.source)
-                .count()
-                == 1
-            {
-                symbol.clone()
-            } else {
-                format!("{symbol}$release${index}")
-            }
+        .map(|variant| {
+            checked.data.functions[variant.source.0 as usize]
+                .symbol
+                .clone()
         })
         .collect::<Vec<_>>();
     let mut functions = physical
@@ -194,11 +174,7 @@ pub(crate) fn lower_checked_from<'classified, 'lexed, 'source>(
             let function = &checked.data.functions[variant.source.0 as usize];
             let context = LoweringContext {
                 target,
-                erasure: TypeLowering {
-                    nominals: &maps[index].nominals,
-                    elements: &maps[index].elements,
-                    releases: &variant.releases,
-                },
+                erasure: types,
                 physical_calls: &variant.calls,
                 nominals: &nominals,
                 elements: &elements,
@@ -225,7 +201,6 @@ pub(crate) fn lower_checked_from<'classified, 'lexed, 'source>(
         scalar_grain::prune(&mut functions, limit, &mut actualization);
     }
     Ok(IrProgram {
-        _checked: checked,
         nominals,
         elements,
         constants,
@@ -248,8 +223,7 @@ pub(crate) fn lower_checked_from<'classified, 'lexed, 'source>(
 #[derive(Clone, Copy)]
 struct LoweringContext<'program> {
     target: TargetLayout,
-    /// [S20, PROV-1] each nominal's lowered identity, with its region axis
-    /// erased.
+    /// The IR nominal and element each checked nominal and element lowers to.
     erasure: TypeLowering<'program>,
     physical_calls: &'program [(NodePath, u32)],
     nominals: &'program [IrNominal],
@@ -647,8 +621,7 @@ struct BuildingBlock {
 
 struct IrBuilder<'program> {
     target: TargetLayout,
-    /// [S20, PROV-1] each nominal's lowered identity, with its region axis
-    /// erased.
+    /// The IR nominal and element each checked nominal and element lowers to.
     erasure: TypeLowering<'program>,
     physical_calls: &'program [(NodePath, u32)],
     nominals: &'program [IrNominal],
@@ -759,8 +732,7 @@ impl<'program> IrBuilder<'program> {
         Ok(builder)
     }
 
-    /// One nominal's lowered identity [S20, PROV-1]: the instance it lowers
-    /// as, with its region axis erased.
+    /// One nominal's lowered identity: the IR nominal it lowers as.
     fn erased(&self, id: crate::NominalId) -> IrNominalId {
         self.erasure
             .nominals

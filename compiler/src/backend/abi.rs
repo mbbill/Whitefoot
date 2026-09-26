@@ -104,7 +104,7 @@ pub(crate) struct FunctionAbi {
 
 impl FunctionAbi {
     pub(crate) fn build(
-        program: &IrProgram<'_, '_, '_>,
+        program: &IrProgram,
         function: &IrFunction,
     ) -> Result<Self, BackendFailure> {
         let parameters = function
@@ -181,7 +181,7 @@ const RETURN_FLOATING_LEAVES: u64 = 2;
 /// budget, so the ABI and the linked definitions are the same on every
 /// target.
 pub(crate) fn fits_return_registers(
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     ty: IrType,
 ) -> Result<bool, BackendFailure> {
     let mut leaves = ReturnLeaves::default();
@@ -203,7 +203,7 @@ impl ReturnLeaves {
     /// representation `llvm_type` emits for it.
     fn add(
         &mut self,
-        program: &IrProgram<'_, '_, '_>,
+        program: &IrProgram,
         ty: IrType,
         copies: u64,
     ) -> Result<(), BackendFailure> {

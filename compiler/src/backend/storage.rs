@@ -23,10 +23,7 @@ use super::BackendFailure;
 /// These values contain their payload inline. Descriptors retain their
 /// ordinary SSA representation: their payload is elsewhere. This
 /// choice depends on representation, not source names or a size threshold.
-pub(super) fn is_stored_aggregate(
-    program: &IrProgram<'_, '_, '_>,
-    ty: IrType,
-) -> Result<bool, BackendFailure> {
+pub(super) fn is_stored_aggregate(program: &IrProgram, ty: IrType) -> Result<bool, BackendFailure> {
     Ok(match ty {
         IrType::Array { .. }
         | IrType::Window {
@@ -82,7 +79,7 @@ struct FieldReuse {
 impl FunctionStoragePlan {
     #[cfg(test)]
     pub(super) fn build(
-        program: &IrProgram<'_, '_, '_>,
+        program: &IrProgram,
         function: &IrFunction,
     ) -> Result<Self, BackendFailure> {
         Self::build_in_world(program, function, false)
@@ -91,7 +88,7 @@ impl FunctionStoragePlan {
     /// Storage interference follows the world being emitted. A sequential
     /// clone has no deferred hand-out operands, including in its callees.
     pub(super) fn build_in_world(
-        program: &IrProgram<'_, '_, '_>,
+        program: &IrProgram,
         function: &IrFunction,
         sequential: bool,
     ) -> Result<Self, BackendFailure> {
@@ -163,7 +160,7 @@ impl FunctionStoragePlan {
 
     fn select_field_destinations(
         &mut self,
-        program: &IrProgram<'_, '_, '_>,
+        program: &IrProgram,
         function: &IrFunction,
         graph: &FlowGraph,
         sequential: bool,
@@ -448,7 +445,7 @@ impl FlowGraph {
     }
 
     fn from_function(
-        program: &IrProgram<'_, '_, '_>,
+        program: &IrProgram,
         function: &IrFunction,
         sequential: bool,
     ) -> Result<Self, BackendFailure> {
@@ -761,7 +758,7 @@ impl FlowGraph {
 /// destination equal this one input address preserves argument evaluation.
 /// Calls which can leave the current synchronous extent keep distinct storage.
 fn call_reuse_operand(
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     caller: &IrFunction,
     result: IrValueId,
     operation: &IrOperation,
@@ -772,7 +769,7 @@ fn call_reuse_operand(
 }
 
 fn call_reuse_operand_for_type(
-    program: &IrProgram<'_, '_, '_>,
+    program: &IrProgram,
     caller: &IrFunction,
     result: IrValueId,
     operation: &IrOperation,
@@ -836,7 +833,7 @@ fn call_reuse_operand_for_type(
 
 impl FlowInstruction {
     fn from_ir(
-        program: &IrProgram<'_, '_, '_>,
+        program: &IrProgram,
         function: &IrFunction,
         instruction: &IrInstruction,
         sequential: bool,
@@ -1368,7 +1365,7 @@ fn main() -> status: std::process::ExitStatus pure {
         assert_ne!(plan.values[1], plan.values[2]);
     }
 
-    fn with_program(source: &[u8], test: impl FnOnce(&IrProgram<'_, '_, '_>)) {
+    fn with_program(source: &[u8], test: impl FnOnce(&IrProgram)) {
         use crate::*;
 
         let limits = CompilerLimits::default();

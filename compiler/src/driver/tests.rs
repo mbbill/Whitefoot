@@ -250,6 +250,86 @@ fn a_recorded_verdict_is_reused_exactly_while_its_inputs_are_unchanged() {
     );
 }
 
+/// [MOD-8] a composition acceptance stands only while every interface
+/// record means what it meant: a redeclaration written into an interface
+/// [TYPE-6] is rejected with the cache as without it, whether the new
+/// declaration repeats the old one or precedes it with other text.
+#[test]
+fn an_interface_redeclaration_is_rejected_with_the_cache_as_without_it() {
+    let directory = CacheDirectory::new("redeclaration");
+    let cache = directory.open();
+    let records = |base_interface: &'static [u8]| -> Vec<(&'static str, &'static [u8])> {
+        vec![
+            ("base/module.wfm", base_interface),
+            ("base/half.wf", BASE_BODY),
+            ("user/module.wfm", USER_INTERFACE),
+            ("user/use.wf", USER_BODY),
+            ("tool/module.wfm", TOOL_INTERFACE),
+            ("tool/spare.wf", TOOL_BODY),
+            ("module.wfm", ROOT_INTERFACE),
+            ("main.wf", ROOT_BODY),
+        ]
+    };
+    let original = records(BASE_INTERFACE);
+    recomputed(PROGRAM_GRAPH, &original, &cache);
+    let repeated: &'static [u8] = [BASE_INTERFACE, b"\n", BASE_INTERFACE].concat().leak();
+    let preceded: &'static [u8] = [
+        b"public fn half(value: u8) -> result: u8 pure doc \"Halves any value.\";\n\n".as_slice(),
+        BASE_INTERFACE,
+    ]
+    .concat()
+    .leak();
+    for interface in [repeated, preceded] {
+        let edited = records(interface);
+        let rule =
+            verdicts(PROGRAM_GRAPH, &edited, None)
+                .into_iter()
+                .find_map(|(subject, outcome, _)| match outcome {
+                    super::CheckOutcome::Rejected { rule, .. } if subject == "app" => rule,
+                    _ => None,
+                });
+        assert_eq!(rule.as_deref(), Some("TYPE-6"));
+        recomputed(PROGRAM_GRAPH, &edited, &cache);
+    }
+}
+
+/// [MOD-8] an interface record that declares nothing still enters a
+/// composition's acceptance by what it writes: an alias edit that breaks the
+/// record is rejected with the cache as without it.
+#[test]
+fn an_alias_edit_in_a_declaration_free_interface_is_rejected_with_the_cache_as_without_it() {
+    let directory = CacheDirectory::new("alias-only");
+    let cache = directory.open();
+    let graph: &[u8] = b"pkg::base: [];\npkg::user: [pkg::base];\npkg::names: [pkg::base];\npkg: [pkg::base, pkg::user, pkg::names, std::fs, std::io, std::process, std::text];\n\nentry app = pkg::main;\n";
+    let records = |names: &'static [u8]| -> Vec<(&'static str, &'static [u8])> {
+        vec![
+            ("base/module.wfm", BASE_INTERFACE),
+            ("base/half.wf", BASE_BODY),
+            ("user/module.wfm", USER_INTERFACE),
+            ("user/use.wf", USER_BODY),
+            ("names/module.wfm", names),
+            ("module.wfm", ROOT_INTERFACE),
+            ("main.wf", ROOT_BODY),
+        ]
+    };
+    let app = |records: &[(&str, &[u8])]| {
+        verdicts(graph, records, None)
+            .into_iter()
+            .find(|(subject, _, _)| subject == "app")
+            .map(|(_, outcome, _)| outcome)
+            .expect("the entry's verdict")
+    };
+    let original = records(b"alias half = pkg::base::half;\n");
+    assert!(matches!(
+        app(&original),
+        super::CheckOutcome::Accepted { .. }
+    ));
+    recomputed(graph, &original, &cache);
+    let edited = records(b"alias half = pkg::base::missing;\n");
+    assert!(matches!(app(&edited), super::CheckOutcome::Rejected { .. }));
+    recomputed(graph, &edited, &cache);
+}
+
 /// [MOD-8] a verdict reads of another module's interface that it holds
 /// its judgments and the declarations its check reached, nothing more:
 /// a reworded `doc` string or a declaration no importer reaches recomputes
@@ -2455,7 +2535,7 @@ fn unrepresentable_array_is_a_target_failure_without_a_source_rule() {
 
 #[test]
 fn a_loop_frame_outside_the_selected_address_domain_stays_a_target_failure() {
-    use crate::backend::target::{TargetLayout, TargetLayoutFailure, TargetObject};
+    use crate::target::{TargetLayout, TargetLayoutFailure, TargetObject};
 
     let source = br#"fn folded(values: Array<u8, 216>) -> result: u64 pure {
   let total = 0_u64;

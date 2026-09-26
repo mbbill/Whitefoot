@@ -66,7 +66,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         element: IrType,
         index: &'index str,
     ) -> Result<&'index str, BackendFailure> {
-        if crate::backend::target::element_has_zero_stride(self.target, self.program, element)
+        if crate::target::element_has_zero_stride(self.target, self.program, element)
             .map_err(BackendFailure::TargetLayout)?
         {
             Ok("0")

@@ -24,6 +24,9 @@ pub(super) enum ConditionalAlternative {
 pub(super) struct TreeView<'unit, 'classified, 'lexed, 'source> {
     resolved: &'unit ResolvedSyntaxUnit<'classified, 'lexed, 'source>,
     paths: Vec<NodePath>,
+    /// Every node ordered by its path, so a path finds its node by binary
+    /// search.
+    by_path: Vec<NodeId>,
     direct_terminals: Vec<Vec<usize>>,
 }
 
@@ -50,6 +53,15 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
             paths.push(NodePath { components });
         }
 
+        let mut by_path = (0..paths.len())
+            .map(|index| NodeId::from_index(index).ok_or(SemanticCompilerFailure::CounterOverflow))
+            .collect::<Result<Vec<_>, _>>()?;
+        by_path.sort_by(|left, right| {
+            paths[left.index()]
+                .components()
+                .cmp(paths[right.index()].components())
+        });
+
         let mut direct_terminals = vec![Vec::new(); topology.nodes.len()];
         for (terminal_index, terminal) in topology.terminals.iter().enumerate() {
             let owner = terminal
@@ -63,6 +75,7 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
         Ok(Self {
             resolved,
             paths,
+            by_path,
             direct_terminals,
         })
     }
@@ -379,10 +392,10 @@ impl<'unit, 'classified, 'lexed, 'source> TreeView<'unit, 'classified, 'lexed, '
     }
 
     pub(super) fn node_with_path(&self, path: &NodePath) -> Option<NodeId> {
-        self.paths
-            .iter()
-            .position(|candidate| candidate == path)
-            .and_then(NodeId::from_index)
+        self.by_path
+            .binary_search_by(|node| self.paths[node.index()].components().cmp(path.components()))
+            .ok()
+            .map(|position| self.by_path[position])
     }
 
     pub(super) fn parent(&self, node: NodeId) -> Result<Option<NodeId>, SemanticCompilerFailure> {

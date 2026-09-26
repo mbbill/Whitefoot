@@ -700,29 +700,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(false);
         }
         for ty in self.tree.descendants_with(targs, Production::Type)? {
-            if self.tree.names_nominal(ty)? {
-                let path = self.tree.path(ty)?;
-                if !self.resolved.lexical_uses().iter().any(|usage| {
+            if self.tree.names_nominal(ty)?
+                && !self.resolved.lexical_uses_at(ty).any(|usage| {
                     matches!(
                         usage.role(),
                         LexicalUseRole::Type | LexicalUseRole::TypeArgument
-                    ) && usage.origin().node() == path
-                }) {
-                    return Ok(false);
-                }
+                    )
+                })
+            {
+                return Ok(false);
             }
         }
         for constant in self.tree.descendants_with(targs, Production::Const)? {
             let identifiers = self.tree.direct_identifiers(constant)?;
             if !identifiers.is_empty() {
-                let path = self.tree.path(constant)?;
                 let uses = self
                     .resolved
-                    .lexical_uses()
-                    .iter()
-                    .filter(|usage| {
-                        usage.role() == LexicalUseRole::Const && usage.origin().node() == path
-                    })
+                    .lexical_uses_at(constant)
+                    .filter(|usage| usage.role() == LexicalUseRole::Const)
                     .collect::<Vec<_>>();
                 if uses.len() != identifiers.len() {
                     return Ok(false);
@@ -771,10 +766,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(call, Production::Callee)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let path = self.tree.path(callee)?;
-        let Some(usage) = self.resolved.lexical_uses().iter().find(|usage| {
-            usage.role() == LexicalUseRole::IdentifierCallee && usage.origin().node() == path
-        }) else {
+        let Some(usage) = self
+            .resolved
+            .lexical_uses_at(callee)
+            .find(|usage| usage.role() == LexicalUseRole::IdentifierCallee)
+        else {
             return Ok(None);
         };
         let declaration = match usage.target() {
@@ -1016,29 +1012,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return Ok(false);
             }
             for ty in self.tree.descendants_with(node, Production::Type)? {
-                if self.tree.names_nominal(ty)? {
-                    let path = self.tree.path(ty)?;
-                    if !self.resolved.lexical_uses().iter().any(|usage| {
+                if self.tree.names_nominal(ty)?
+                    && !self.resolved.lexical_uses_at(ty).any(|usage| {
                         matches!(
                             usage.role(),
                             LexicalUseRole::Type | LexicalUseRole::TypeArgument
-                        ) && usage.origin().node() == path
-                    }) {
-                        return Ok(false);
-                    }
+                        )
+                    })
+                {
+                    return Ok(false);
                 }
             }
             for constant in self.tree.descendants_with(node, Production::Const)? {
                 let identifiers = self.tree.direct_identifiers(constant)?;
                 if !identifiers.is_empty() {
-                    let path = self.tree.path(constant)?;
                     let uses = self
                         .resolved
-                        .lexical_uses()
-                        .iter()
-                        .filter(|usage| {
-                            usage.role() == LexicalUseRole::Const && usage.origin().node() == path
-                        })
+                        .lexical_uses_at(constant)
+                        .filter(|usage| usage.role() == LexicalUseRole::Const)
                         .count();
                     if uses != identifiers.len() {
                         return Ok(false);
@@ -2218,18 +2209,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let declaration = self
                 .declaration_at(node, DeclarationRole::GenericType)?
                 .id();
-            let path = self.tree.path(node)?;
             // [GRAM-2, PROV-6] the bound is optional and never inferred: a
             // `capability_bound` atom, a numeric marker TYPEID, or nothing,
             // and an absent bound grants the body no capability, which is
             // the linear class read at the parameter.
             let bound = match self
                 .resolved
-                .lexical_uses()
-                .iter()
-                .find(|usage| {
-                    usage.role() == LexicalUseRole::GenericBound && usage.origin().node() == path
-                })
+                .lexical_uses_at(node)
+                .find(|usage| usage.role() == LexicalUseRole::GenericBound)
                 .map(|usage| (usage.target(), usage.origin().coordinate()))
             {
                 None => GenericBound::Class(

@@ -496,9 +496,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 member: *declaration,
             }));
         }
-        let path = self.tree.path(callee)?;
-        Ok(self.resolved.lexical_uses().iter().find_map(|usage| {
-            if usage.origin().node() != path || usage.role() != LexicalUseRole::IdentifierCallee {
+        Ok(self.resolved.lexical_uses_at(callee).find_map(|usage| {
+            if usage.role() != LexicalUseRole::IdentifierCallee {
                 return None;
             }
             match usage.target() {

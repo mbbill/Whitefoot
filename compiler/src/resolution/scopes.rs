@@ -344,6 +344,15 @@ impl ScopeBuild {
             .ok_or(ResolutionCompilerFailure::InvalidScopeTree)
     }
 
+    /// Each node's index by its path, the inverse of [`Self::path`].
+    pub(crate) fn nodes_by_path(&self) -> std::collections::HashMap<&NodePath, usize> {
+        self.paths
+            .iter()
+            .enumerate()
+            .filter_map(|(node, path)| path.as_ref().map(|path| (path, node)))
+            .collect()
+    }
+
     pub(crate) fn path(&self, node: NodeId) -> Result<&NodePath, ResolutionCompilerFailure> {
         self.paths
             .get(node.index())
