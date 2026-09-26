@@ -2784,7 +2784,8 @@ pub(crate) enum CheckedCallSeparationPositions {
     /// indexes, which the pair's separation needs proved below that window's
     /// length in the call's entry state.
     Live(super::places::CapturedValue),
-    /// [OWN-7] an index beside a range under one containing path, which the
+    /// [OWN-7] an index beside a range under containing paths that are
+    /// identical step for step or differ only in index steps, which the
     /// separation needs proved before the range's start or at or after its
     /// end, or the range empty.
     IndexOutsideRange(super::places::CapturedValue, super::places::CapturedRange),
