@@ -46,14 +46,6 @@
 //!   sentence, retires with the same former for the same reason: a measure
 //!   member read on an unmeasured place is [MSR-1]'s own [TYPE-5] rejection
 //!   carrying the measured types, not this one.
-//! - The two-argument call-separation repair for an index beside a window's
-//!   `next` or `free` in `check.rs`, "when the index can be below the
-//!   window's length here, prove that before this call; otherwise pass an
-//!   index this call proves below it". A callee reads `x[i]` only under a
-//!   proof of `i < x.len`: a requirement, whose [FN-8] rejection at the call
-//!   comes first, or a read of `x.len`, which overlaps the other argument's
-//!   write of that length, declared by every prelude row that writes `next`
-//!   or `free`, so the checker refuses the call under [EFF-5] first.
 //!
 //! Two bullets this list used to carry are gone with their sentences rather
 //! than with their reachability: `check::expressions::region_spelling` and
@@ -3427,6 +3419,61 @@ fn main() -> status: ExitStatus pure {
   let window = slots_new::<u64, 4>();
   place_back(window: &window, value: 5_u64);
   let x = caller(r: &window, k: 0_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+        ],
+    },
+    RepairPair {
+        // The same [WIN-2] question from two arguments: an interface member's
+        // row is declared without a body, so nothing before the call bounds
+        // `i` and neither argument writes the window's length.
+        name: "call-separation-index-beside-next-two-arguments.wf",
+        rejected: br#"interface Stage {
+  fn step(x: &Slots<u64, 4>, w: &Slots<u64, 4>, i: u64) -> result: u64 reads(x[i]), writes(w.next);
+}
+
+fn outer<interface Stage>(r: &Slots<u64, 4>, k: u64) -> result: u64 writes(r) {
+  let y = Stage::step(x: r, w: r, i: k);
+  return y;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "EFF-5",
+        sentences: &[
+            "\n  mechanical_fix: when the index can be below the window's length here, prove that before this call; otherwise pass an index this call proves below it\n",
+        ],
+        repaired: &[
+            br#"interface Stage {
+  fn step(x: &Slots<u64, 4>, w: &Slots<u64, 4>, i: u64) -> result: u64 reads(x[i]), writes(w.next);
+}
+
+fn outer<interface Stage>(r: &Slots<u64, 4>, k: u64) -> result: u64 writes(r) contract {
+  requires k < deref(r).len;
+} {
+  let y = Stage::step(x: r, w: r, i: k);
+  return y;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+            br#"interface Stage {
+  fn step(x: &Slots<u64, 4>, w: &Slots<u64, 4>, i: u64) -> result: u64 reads(x[i]), writes(w.next);
+}
+
+fn outer<interface Stage>(r: &Slots<u64, 4>, k: u64) -> result: u64 writes(r) contract {
+  requires 0_u64 < deref(r).len;
+} {
+  let y = Stage::step(x: r, w: r, i: 0_u64);
+  return y;
+}
+
+fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#,
