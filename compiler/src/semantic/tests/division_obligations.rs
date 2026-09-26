@@ -8,7 +8,9 @@ use crate::{
     SemanticIssueKind, SemanticLocation, SemanticOutcome, SemanticRule, StaticObligationDisposition,
 };
 
-use super::super::entailment::{DerivationNode, ObligationFamily, S7DerivationKind, TermKind};
+use super::super::entailment::{
+    DerivationNode, FunctionEntailment, ObligationFamily, Relation, TermKind,
+};
 use super::super::goal::{GoalExpression, GoalOperation};
 use super::super::model::{CheckedFunction, CheckedIntegerOperation, MeasuredKind};
 use super::entailment::validate_derivations;
@@ -372,6 +374,24 @@ fn the_default_checker_rejects_a_constant_zero_divisor() {
     });
 }
 
+/// [ENT-3.S7] the retained postcondition proof stands on the division row's
+/// order relation `quotient <= count`: the quotient, bound by a `let` or as a
+/// commit value, against the dividend's place.
+fn quotient_order_is_retained(summary: &FunctionEntailment) -> bool {
+    summary.derivations.nodes.iter().any(|node| {
+        matches!(
+            node,
+            DerivationNode::OperationFact {
+                relation: Relation::Bound { left, right, bound: 0 },
+                ..
+            } if matches!(
+                summary.inventory.terms[left.0 as usize],
+                TermKind::Place(..) | TermKind::CommitValue { .. }
+            ) && matches!(summary.inventory.terms[right.0 as usize], TermKind::Place(..))
+        )
+    })
+}
+
 #[test]
 fn unsigned_literal_division_publishes_the_quotient_bound() {
     let source = br#"fn half_floor(count: u64) -> result: u64 pure contract {
@@ -392,21 +412,7 @@ fn main() -> status: ExitStatus pure {
         let function = named(&checked.data.functions, "half_floor");
         validate_derivations(&function.entailment);
         assert!(function.entailment.postconditions[0].aggregate.discharged);
-        assert!(
-            function
-                .entailment
-                .s7_derivations
-                .iter()
-                .any(|source| match source.kind {
-                    S7DerivationKind::UnsignedDivisionBound { divisor, .. } => {
-                        matches!(
-                            function.entailment.inventory.terms[divisor.0 as usize],
-                            TermKind::Constant(2)
-                        )
-                    }
-                    _ => false,
-                })
-        );
+        assert!(quotient_order_is_retained(&function.entailment));
     });
 }
 
@@ -437,10 +443,7 @@ fn main() -> status: ExitStatus pure {{
             let function = named(&checked.data.functions, "quotient_bound");
             validate_derivations(&function.entailment);
             assert!(function.entailment.postconditions[0].aggregate.discharged);
-            assert!(function.entailment.s7_derivations.iter().any(|source| {
-                matches!(source.kind, S7DerivationKind::UnsignedDivisionBound { divisor, .. }
-                    if !matches!(function.entailment.inventory.terms[divisor.0 as usize], TermKind::Constant(_)))
-            }));
+            assert!(quotient_order_is_retained(&function.entailment));
         });
     }
 }

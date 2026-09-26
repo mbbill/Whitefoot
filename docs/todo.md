@@ -159,22 +159,20 @@ rarely insert at the same place.
 
 ## Checker precision and proof cost
 
-- **Some ENT-3 sources read no measure operand.** S7's constant-offset,
-  checked-offset, exact-division, remainder and unsigned `iand` rows read an
-  operand the specification calls an admitted term or constant through the
-  flow's tracked-place and constant reader, which omits ENT-2 clause (b)
-  measure terms; S5/S6 copies, S1 comparisons and S11 counted captures do
-  read measures. So `let r = x % deref(src).len;` establishes no
-  `r < deref(src).len`, and a following `deref(src)[r]` is rejected under
-  OP-4 although binding the length first is accepted. Other flow readers of
-  the same shape (subscript offset terms, S13 index captures, allocation
-  lengths, range-formation operands, integer-domain operands, the ENT-5 `Ok`
-  payload) are unverified; affine images already cover some of them. Repair
-  with one complete ENT-2 term reader, and validate it with paired direct and
-  let-bound cases for each source, including a write that kills the measure,
-  requiring no other verdict change. Deferred from the counted-endpoint
-  repair, which changed only S11's reading; reopen with the next entailment
-  change or when a program needs the direct form.
+- **Some ENT-3 sources read no measure operand.** S5/S6 copies, S1
+  comparisons, S11 counted captures, every S7 operation row and a checked
+  integer row's success payload read an operand the specification calls an
+  admitted term or constant through one reader that includes the MSR-1
+  measure terms, so `let r = x % deref(src).len;` establishes
+  `r < deref(src).len`. Other flow readers of the same shape (subscript offset
+  terms, S13 index captures, allocation lengths, range-formation operands,
+  integer-domain operands, the `Ok` constructor's payload) are unverified;
+  affine images already cover some of them. Repair with the same reader, and
+  validate it with paired direct and let-bound cases for each source,
+  including a write that kills the measure, requiring no other verdict change.
+  Deferred from the counted-endpoint and operation-fact repairs, which changed
+  only S11's and S7's reading; reopen with the next entailment change or when
+  a program needs the direct form.
 
 - **Joined reference proofs lose useful target-relative information.** A
   reference selecting either of two freshly empty Slots cannot establish the
@@ -1352,11 +1350,16 @@ each is resolved by a discussion and a tree change.
   growth or rebase dominates its work. Evaluate the already-open affine
   contract question below before choosing a new storage operation; require
   exact length, emptied-old-owner and unchanged element-order evidence.
-- **The automatic-fact menu is a leftover.** [ENT-3] admits a narrow and
-  asymmetric set of arithmetic idioms as automatic facts, each added for one
-  proof pattern, with no general criterion and no counterpart for rows it
-  omits, such as a lower bound from `ior`. The owner wants it made principled;
-  nobody has had the time.
+- **Exact images for non-wrapping wrap forms and lossless shifts.** A
+  wrapping add, subtract or multiply whose operand intervals prove it cannot
+  wrap, and a shift by a constant that loses no bit, receive their
+  [ENT-3.S7] interval and offset relations but not the [ENT-6] affine image
+  of the corresponding exact operation. The
+  [operation-fact investigation](../research/investigations/automatic-operation-facts/DESIGN.md#42-rejected-alternatives)
+  deferred that step (X): no recorded probe needed it, the exact row already
+  states the identity, and with the new intervals the exact row is provable
+  wherever the step would apply. Reopen when a proof needs the identity and
+  the writer cannot use the exact row.
 - **The two-premise cutoff of automatic affine derivation.** [ENT-6] tries
   zero, one, and two premises and no more without a written certificate. Why
   the line sits at two, against one or three, is not remembered and needs a

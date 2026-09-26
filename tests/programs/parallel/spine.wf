@@ -16,14 +16,8 @@ fn spine(depth: u64, v: f64) -> result: f64 pure {
 
 fn low_byte(v: u64) -> result: u8 pure {
   let nibble = iand(v, 255_u64);
-  match cvt.checked::<u64, u8>(nibble) {
-    Ok(value: byte) => {
-      return byte;
-    }
-    Err(error: wide) => {
-      return 0_u8;
-    }
-  }
+  let byte = cvt::<u64, u8>(nibble);
+  return byte;
 }
 
 fn spell(destination: &[u8], value: u64) -> result: u64 writes(destination) {

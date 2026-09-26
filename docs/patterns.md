@@ -571,11 +571,24 @@ identity pairs. Use `cvt.defined::<Src, Dst>(value)` when the program needs a
 Boolean domain answer. Its true branch proves a bare conversion of that same
 value and type pair; calculating and ignoring the Bool proves nothing.
 
-Integer bounds can prove narrowing or signedness changes. For conversion to
-f32, the interval from -2^24 through 2^24 is a sufficient automatic proof;
-larger exactly representable constants also work. A float's integer range
-alone does not prove integrality: branch on the exact domain query or declare
-that query as a requirement. Generic helpers can use `Int` or `Float` endpoint
-bounds and a `cvt.defined` requirement without changing their return type when
-the selected pair changes. Same-type conversion copies bits, while conversion
-between float formats uses the destination's canonical quiet NaN [OP-6].
+Integer bounds can prove narrowing or signedness changes. An integer operation
+bound by a `let` already carries the interval its operation row gives from its
+operands' bounds, so a shift, mask, minimum or remainder whose result fits the
+destination converts with bare `cvt` and needs no mask or `cvt.checked` added
+only for the proof [ENT-3]:
+
+```whitefoot
+fn high_half(word: u64) -> result: u32 pure {
+  let high = ishr(word, 32_u32);
+  return cvt::<u64, u32>(high);
+}
+```
+
+For conversion to f32, the interval from -2^24 through 2^24 is a sufficient
+automatic proof; larger exactly representable constants also work. A float's
+integer range alone does not prove integrality: branch on the exact domain
+query or declare that query as a requirement. Generic helpers can use `Int` or
+`Float` endpoint bounds and a `cvt.defined` requirement without changing their
+return type when the selected pair changes. Same-type conversion copies bits,
+while conversion between float formats uses the destination's canonical quiet
+NaN [OP-6].

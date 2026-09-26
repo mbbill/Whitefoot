@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-25 Derive every integer operation row's facts from one table
+
+Nodes: language/checks-and-proofs/automatic-facts
+
+Owner-approved: The owner approved PR #127's operation-fact-table amendment ("127 approved", written in Chinese), 2026-09-25.
+
+Summary: Replace the automatic-facts decision that published only an admitted nonconstant multiplication's proved interval with the approved decision, as the amendment reads: every integer operation row other than a conversion publishes on the value it binds the interval one fixed table computes from its operands' closed intervals, rows bounded by an operand publish that order, additive rows publish their offset, and a checked row's success payload receives the same facts, because rows added one proof pattern at a time forced proof-only masks, guards and checked conversions at every one of the 21 natural integer idioms of the idiom sweep. The replaced decision becomes the table's multiplication row rather than a rejected alternative. Add the amendment's five rejected alternatives: one more row per demanded idiom, intervals read from operand types and literals alone, closed intervals without operand relations, the difference interval of every result against every operand, and exact affine images for wrap forms that cannot wrap and for shifts that lose no bits, the last with its reopening condition. Only the evidence link is corrected for the node's location, and the amendment's clause naming the replaced decision is recorded in this entry instead of the node, which holds only the live decision. The [operation-fact investigation](../research/investigations/automatic-operation-facts/DESIGN.md) supplies the sweep, the table's soundness argument and the measurements. The settled wording is in kernel-spec v0.72 rules ENT-3.S7, ENT-5, ENT-6, ENT-2 and DIAG-2, with ENT-3.S14 deleted. Remove the accepted amendment and the amendment directory. This ruling does not authorize a merge.
+
 ## 2026-09-25 Return small stored results in registers behind an entry
 
 Nodes: compiler/result-registers
@@ -12,6 +20,7 @@ Nodes: compiler/result-registers
 Owner-approved: The owner approved PR #124's result-registers amendment, 2026-09-25.
 
 Summary: Add the node with its two decisions and ten rejected alternatives unchanged. A stored aggregate result returns as its LLVM first-class value when every scalar leaf of its representation gets its own return register on every admitted target, at most three integer-class words and two floating leaves, and a larger one keeps the caller's destination, because beyond that budget LLVM returns through a hidden pointer anyway or, for a third floating leaf on x86-64, through the x87 stack, which quiets a signaling NaN. A register-returned definition keeps its unchanged destination-form body under an internal symbol behind a public entry that returns the value, so the host optimizes the body as a destination-form definition before inlining it, while joined or per-exit value returns folded `records`' exit test into a select and lost its threaded ASCII loop. The measured gain is the call boundary's, and the merged form's faster hash-map trace came from inlining, not from the register return. The [result-register investigation](../research/investigations/result-registers/DESIGN.md) holds the demotion probe, the lowering comparison and the measurements. Remove the accepted amendment and the amendments directory. No specification rule or conformance evidence changes; this ruling does not authorize a merge.
+
 ## 2026-09-25 Form requirement places at body entry and separate window parts only from live indices
 
 Nodes: language/checks-and-proofs/requires-entry-contract, language/ownership, language/checks-and-proofs

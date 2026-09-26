@@ -1,0 +1,4 @@
+pkg::bits: [];
+pkg: [pkg::bits];
+
+entry main = pkg::main;

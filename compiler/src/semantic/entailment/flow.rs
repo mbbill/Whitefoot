@@ -14,6 +14,7 @@
 //! at each establishment point.
 
 mod conversions;
+mod operation_facts;
 mod results;
 mod sources;
 
@@ -59,10 +60,10 @@ use super::state::{
     AffinePremiseUse, ClosedState, CountedRootAtom, DerivationId, DerivationInventory,
     DerivationLedger, DerivationNode, DerivationRootKind, FactState, FlowEventId, FlowEventKind,
     GoalId, GoalNormalization, GoalSign, GoalSupport, GoalTable, IndexCaptureSubstitution,
-    IndexSeparationDetail, JoinParent, OutcomeFact, PostconditionCallSubstitution,
-    RangeSeparationDetail, RangeSeparationOrdering, Relation, SourceAffineFactRef,
-    SourceLoopInvariantRef, WordHashMap, close, close_excluding_term, closure_is_seeded,
-    contradiction_without_proofs, join_at, materialize_closure_at, materialize_closure_before_kill,
+    IndexSeparationDetail, JoinParent, PostconditionCallSubstitution, RangeSeparationDetail,
+    RangeSeparationOrdering, Relation, SourceAffineFactRef, SourceLoopInvariantRef, WordHashMap,
+    close, close_excluding_term, closure_is_seeded, contradiction_without_proofs, join_at,
+    materialize_closure_at, materialize_closure_before_kill,
 };
 use super::term::{
     CountedCaptureSide, MeasureBound, MeasurePlacement, PlaceRoot, TermId, TermKind, TermTable,
@@ -74,9 +75,8 @@ use super::{
     FunctionPostconditionProof, JoinedSourceProofProvenance, LoopInvariantOutcome,
     LoopInvariantProof, ObligationFamily, ObligationOutcome, PostconditionAggregate,
     PostconditionDisposition, PostconditionEntryImage, PostconditionEntryImageOutcome,
-    PostconditionExit, S7Derivation, SourceProofCertificateFailure, SourceProofCheck,
-    SourceProofOutcome, VerifiedPostconditionSummaryRef, fragment_type,
-    overflow_conjuncts_for_values,
+    PostconditionExit, SourceProofCertificateFailure, SourceProofCheck, SourceProofOutcome,
+    VerifiedPostconditionSummaryRef, fragment_type, overflow_conjuncts_for_values,
 };
 
 /// One [ENT-5] kill event gathered from a statement or expression.
@@ -155,14 +155,14 @@ struct LoopFrame {
 
 /// The [ENT-3] facts one `match` scrutinee admits at its arms' entries: the
 /// S1 comparison relation, taken positively on `True()` and exactly negated
-/// on `False()`, and the S7/S10 fact one named arm's value binder gains,
-/// carried with that arm's tag. Every other arm establishes nothing.
+/// on `False()`. Every other arm establishes nothing of its own; an `Ok`
+/// arm's success facts arrive through the scrutinee's conditional Result
+/// context [ENT-5].
 #[derive(Default)]
 struct ArmFacts {
     node_path: Option<crate::NodePath>,
     comparison: Option<Relation>,
     goals: Vec<GoalId>,
-    outcome: Option<(u32, OutcomeFact)>,
 }
 
 /// A value initializer collecting give-edge states for its continuation.
@@ -490,8 +490,9 @@ struct ProofResult {
     numeric_upper_bound: Option<ProvedNumericUpperBound>,
     /// The interval [ENT-6]'s fixed interval-product rule proved for an
     /// admitted non-constant multiplication. Carried out of the judgment so
-    /// [ENT-3.S14] publishes exactly the measurement the domain decision
-    /// consumed, rather than proving the same endpoints a second time.
+    /// [ENT-3.S7]'s multiplication row publishes exactly the measurement the
+    /// domain decision consumed, rather than proving the same endpoints a
+    /// second time.
     product_interval: Option<AffineProductInterval>,
 }
 
@@ -998,7 +999,6 @@ fn analyze_candidate_inner(
         loop_invariants: run.loop_invariants,
         source_proofs: run.source_proofs,
         joined_source_proofs: run.joined_source_proofs,
-        s7_derivations: run.s7_derivations,
         postconditions: run.postconditions,
         boolean_decompositions: run.boolean_decompositions,
         permission_separations: run.permission_separations,
@@ -1015,7 +1015,6 @@ struct AnalysisRun {
     loop_invariants: Vec<LoopInvariantOutcome>,
     source_proofs: Vec<SourceProofOutcome>,
     joined_source_proofs: Vec<JoinedSourceProofProvenance>,
-    s7_derivations: Vec<S7Derivation>,
     postconditions: Vec<super::FunctionPostconditionProof>,
     boolean_decompositions: Vec<super::BooleanGoalDecomposition>,
     permission_separations: Vec<PermissionSeparationProof>,
@@ -1099,7 +1098,6 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         loop_invariants: analyzer.loop_invariants,
         source_proofs: analyzer.source_proofs,
         joined_source_proofs: analyzer.joined_source_proofs,
-        s7_derivations: analyzer.s7_derivations,
         postconditions: analyzer.postconditions,
         boolean_decompositions: analyzer.boolean_decompositions,
         permission_separations,
@@ -1141,7 +1139,6 @@ impl<'check, 'unit> Analyzer<'check, 'unit> {
             source_proofs: Vec::new(),
             joined_source_proofs: Vec::new(),
             invariant_targets: HashMap::new(),
-            s7_derivations: Vec::new(),
             postconditions: Vec::new(),
             boolean_decompositions: Vec::new(),
             entry_images: Vec::new(),
@@ -1226,18 +1223,6 @@ pub(super) fn finish(entailment: &mut FunctionEntailment) {
     }
     for counted in &mut entailment.counted_derivations {
         remap_counted_derivations(counted, &remap.nodes);
-    }
-    for source in &mut entailment.s7_derivations {
-        source.parent = remap
-            .nodes
-            .get(source.parent.0 as usize)
-            .copied()
-            .flatten()
-            .expect("required S7 source root retained by the sole ledger root channel");
-        source.event = entailment
-            .derivations
-            .node_event(source.parent)
-            .expect("S7 source parent retains its shared structural event");
     }
     for postcondition in &mut entailment.postconditions {
         remap_postcondition(postcondition, &remap.nodes, &remap.events);
@@ -1482,11 +1467,12 @@ struct Analyzer<'check, 'unit> {
     derivations: DerivationLedger,
     obligations: Vec<ObligationOutcome>,
     /// The interval [ENT-6]'s interval-product rule proved at each admitted
-    /// non-constant multiplication, keyed by that operation's own node. The
-    /// domain is judged while the initializer is walked and [ENT-3.S14]
-    /// establishes at the binding the walk then reaches, so the measurement
-    /// waits here between the two rather than being proved again.
-    product_intervals: HashMap<crate::NodePath, AffineProductInterval>,
+    /// non-constant multiplication, with that domain's derivation, keyed by
+    /// that operation's own node. The domain is judged while the initializer
+    /// is walked and [ENT-3.S7]'s multiplication row establishes at the
+    /// binding the walk then reaches, so the measurement waits here between
+    /// the two rather than being proved again.
+    product_intervals: HashMap<crate::NodePath, (AffineProductInterval, Option<DerivationId>)>,
     /// Which exact multiplications discharged their [OP-2] domain over affine
     /// operand images, keyed by the operation's own node. Read once at the
     /// binding the walk then reaches, exactly as the interval above is. It
@@ -1522,7 +1508,6 @@ struct Analyzer<'check, 'unit> {
     /// proposition even on a path where that proposition is unavailable;
     /// availability is checked later as an independent premise judgment.
     invariant_targets: HashMap<crate::DeclarationId, Result<AffineInequality, AffineCheckError>>,
-    s7_derivations: Vec<S7Derivation>,
     postconditions: Vec<super::FunctionPostconditionProof>,
     /// O11 candidate decomposition sets, recorded at
     /// signed-goal establishments and never established as facts.
@@ -3871,30 +3856,6 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    fn retain_s7_derivation(&mut self, source: S7Derivation) {
-        let occurrence = u32::try_from(self.s7_derivations.len())
-            .expect("S7 source roots exceed the u32 identity space");
-        let kind = match &source.kind {
-            super::S7DerivationKind::BitAndBound { .. } => {
-                DerivationRootKind::BitAndBound(occurrence)
-            }
-            super::S7DerivationKind::ShiftOneNonzero { .. } => {
-                DerivationRootKind::ShiftOneNonzero(occurrence)
-            }
-            super::S7DerivationKind::UnsignedDivisionBound { .. } => {
-                DerivationRootKind::UnsignedDivisionBound(occurrence)
-            }
-            super::S7DerivationKind::UnsignedRemainderBound { .. } => {
-                DerivationRootKind::UnsignedRemainderBound(occurrence)
-            }
-            super::S7DerivationKind::SignedRemainderBound { .. } => {
-                DerivationRootKind::SignedRemainderBound(occurrence)
-            }
-        };
-        self.derivations.add_root(kind, source.parent);
-        self.s7_derivations.push(source);
-    }
-
     fn retain_counted_derivations(&mut self, occurrence: u32, counted: CountedDerivationSet) {
         assert_eq!(
             occurrence, self.completed_counted_roots,
@@ -4818,9 +4779,6 @@ impl Analyzer<'_, '_> {
         self.kill_s12_candidates_for_scope(state, &exited);
         state.kill_goals(|goal| self.scope_kills_goal(goal, &exited));
         state.origins.retain(|binding, _| !exited.contains(binding));
-        state
-            .outcomes
-            .retain(|binding, _| !exited.contains(binding));
         state
             .goal_origins
             .retain(|binding, _| !exited.contains(binding));
@@ -10238,11 +10196,13 @@ impl Analyzer<'_, '_> {
         // must leave nothing behind for the binding to read.
         self.product_intervals.remove(node_path);
         self.product_operands.remove(node_path);
-        // [ENT-3.S14] publishes only what an admitted multiplication proved,
-        // so the interval is retained exactly when this obligation discharged
+        // [ENT-3.S7]'s multiplication row reads the interval-product rule's
+        // intervals only when that rule discharged the domain, so the
+        // interval is retained exactly when this obligation discharged
         // through the interval-product route.
         if discharged && let Some(interval) = outcome.product_interval.clone() {
-            self.product_intervals.insert(node_path.clone(), interval);
+            self.product_intervals
+                .insert(node_path.clone(), (interval, outcome.derivation));
         }
         // That the exact multiplication's domain held, for [PRF-1] to fold a
         // term-scaled premise against. Recorded only when the domain
@@ -10599,10 +10559,11 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::Affine),
                 derivation: Some(derivation),
                 numeric_upper_bound: None,
-                // [ENT-3.S14] establishes this interval on whatever value the
-                // multiplication binds. It travels with the judgment because
-                // only this route proved it: a domain discharged by the finite
-                // L0 or affine-clause route publishes no product interval.
+                // [ENT-3.S7]'s multiplication row establishes this interval on
+                // whatever value the multiplication binds. It travels with the
+                // judgment because only this route proved it: a domain
+                // discharged by the finite L0 or affine-clause route leaves
+                // that row to read the closed operand intervals instead.
                 product_interval: Some(interval),
             };
         }
@@ -10860,10 +10821,10 @@ impl Analyzer<'_, '_> {
     }
 
     /// The one measurement the fixed interval-product rule performs. The four
-    /// endpoint products decide [ENT-6]'s domain admission and bound
-    /// [ENT-3.S14]'s published interval, so both read this result rather than
-    /// proving the same endpoints twice: the admitted range and the published
-    /// bound then cannot disagree by construction.
+    /// endpoint products decide [ENT-6]'s domain admission and bound the
+    /// interval [ENT-3.S7]'s multiplication row publishes, so both read this
+    /// result rather than proving the same endpoints twice: the admitted
+    /// range and the published bound then cannot disagree by construction.
     fn affine_integer_product_interval(
         &mut self,
         product: &AffineIntegerProduct,
@@ -14372,7 +14333,6 @@ impl Analyzer<'_, '_> {
                 });
                 if place.fields.is_empty() {
                     state.facts.origins.remove(&place.binding);
-                    state.facts.outcomes.remove(&place.binding);
                 }
             }
             CheckedSetTarget::RangeIndex(target) => {
@@ -15742,17 +15702,7 @@ impl Analyzer<'_, '_> {
         let mut state = entry.clone();
         let s1_event = (!facts.goals.is_empty() || facts.comparison.is_some())
             .then(|| self.proof_event(FlowEventKind::S1, facts.node_path.as_ref()));
-        let outcome_event = facts
-            .outcome
-            .as_ref()
-            .map(|(_, outcome)| outcome.event_kind)
-            .and_then(|kind| {
-                arm.binders
-                    .iter()
-                    .find(|binder| binder.field == 0)
-                    .map(|binder| self.proof_event(kind, Some(&binder.node_path)))
-            });
-        self.establish_arm_entry(arm, facts, &mut state.facts, s1_event, outcome_event);
+        self.establish_arm_entry(arm, facts, &mut state.facts, s1_event);
         // [MSR-3] the payload placement's second half: on the arm whose
         // variant carries the payload, the binder that names it has the
         // measures the payload had before the consume.
@@ -15816,7 +15766,6 @@ impl Analyzer<'_, '_> {
         facts: &ArmFacts,
         state: &mut FactState,
         event: Option<FlowEventId>,
-        outcome_event: Option<FlowEventId>,
     ) {
         if let Some(relation) = &facts.comparison {
             // Bool arms: tag 1 is `True()`, tag 0 is `False()`; the False
@@ -15867,16 +15816,6 @@ impl Analyzer<'_, '_> {
                 );
                 self.record_boolean_decomposition(*goal, GoalSign::Negative, state);
             }
-        }
-        if let Some((tag, outcome)) = &facts.outcome
-            && arm.tag == *tag
-        {
-            self.establish_binder_fact(
-                arm,
-                outcome,
-                state,
-                outcome_event.expect("outcome arm has a shared proof event"),
-            );
         }
     }
 
@@ -16184,9 +16123,6 @@ impl Analyzer<'_, '_> {
         });
         state
             .origins
-            .retain(|binding, _| !kills.set_bindings.contains(binding));
-        state
-            .outcomes
             .retain(|binding, _| !kills.set_bindings.contains(binding));
         state
             .goal_origins

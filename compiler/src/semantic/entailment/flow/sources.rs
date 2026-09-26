@@ -14,26 +14,26 @@
 use super::super::super::goal::CheckedRequirement;
 use super::super::super::model::{
     BindingId, CheckedArrayRoot, CheckedConst, CheckedConversionMode, CheckedEnumType,
-    CheckedExpression, CheckedIntegerArgumentSource, CheckedIntegerOperation, CheckedMatchArm,
-    CheckedMeasure, CheckedNominalKind, CheckedNumericType, CheckedPlaceStep, CheckedSetTarget,
-    CheckedType, CheckedValue, IntegerType, MeasuredKind, NominalId, SubscriptedTerm,
+    CheckedExpression, CheckedIntegerOperation, CheckedMeasure, CheckedNominalKind,
+    CheckedNumericType, CheckedPlaceStep, CheckedSetTarget, CheckedType, CheckedValue, IntegerType,
+    MeasuredKind, NominalId, SubscriptedTerm,
 };
 use super::super::super::places::CapturedTerm;
 use super::super::fragment_type;
 use super::super::state::{
-    DerivationId, DerivationLedger, FactState, FlowEventId, FlowEventKind, OutcomeFact,
-    OutcomeRelation, Relation, close,
+    DerivationId, DerivationNode, FactState, FlowEventId, FlowEventKind, Relation, close,
 };
 use super::super::term::{
     CountedCaptureSide, MeasurePlacement, PlaceRoot, PlaceStep, ResolvedPlace, TermId, TermKind,
-    ZERO, integer_value, type_range,
+    ZERO, integer_value,
 };
 use super::super::{
     CountedAtomicDerivation, CountedBoundDerivation, CountedDerivationSet,
-    CountedEqualityDerivation, CountedProofPoint, RemainderEndpoint, S7Derivation,
-    S7DerivationKind, S7Subject, ShiftOneIdentity,
+    CountedEqualityDerivation, CountedProofPoint,
 };
+use super::operation_facts::{self, Interval, Row, Span};
 use super::{Analyzer, ArmFacts, ProofFlowState};
+use std::rc::Rc;
 /// Which term one evaluated value's [ENT-3] image is established on: the
 /// place a `let` binder introduces, the compiler-owned commit value of one
 /// `set` occurrence, or a checked integer conversion's private success
@@ -57,11 +57,22 @@ pub(super) struct CountedTerms {
 }
 
 /// The affine half of one admitted unsigned exact-division transfer.
-/// The ordinary S7 relation supplies the retained source proof; the parent
-/// flow binds the scaled quotient image to the exact current operand values.
+/// The S7 fact bounding the quotient by its dividend supplies the retained
+/// source proof; the parent flow binds the scaled quotient image to the exact
+/// current operand values.
 pub(super) struct EstablishedUnsignedDivision {
     pub(super) literal_divisor: Option<i128>,
     pub(super) parent: DerivationId,
+}
+
+/// One right-hand side read as a row of the [ENT-3.S7] table: its row, its
+/// selected and result types, and its operands in order.
+struct OperationShape<'a> {
+    row: Row,
+    operand: IntegerType,
+    result: IntegerType,
+    operands: &'a [CheckedExpression],
+    carrier: &'a crate::NodePath,
 }
 
 /// The three preheader relations after their complete S11 snapshot has been
@@ -304,29 +315,21 @@ impl Analyzer<'_, '_> {
         state: &mut FactState,
         event: &mut Option<(FlowEventKind, FlowEventId)>,
     ) -> Option<EstablishedUnsignedDivision> {
-        // [ENT-3.S14] attaches to the multiplication the initializer already
-        // performed rather than competing for the initializer's shape, so it
-        // runs beside the mutually exclusive image rules below instead of
-        // consuming the value from them.
-        self.establish_product_interval(node_path, destination, value, state, event);
         if self.establish_length_facts(node_path, destination, value, state, event) {
             return None;
         }
         if self.establish_element_range(node_path, destination, value, state, event) {
             return None;
         }
-        if let Some(image) =
-            self.establish_unsigned_division_bound(node_path, destination, value, state, event)
-        {
-            return Some(image);
-        }
-        if self.establish_offset_fact(node_path, destination, value, state, event) {
-            return None;
-        }
-        if let ValueImage::Binding(binding) = destination {
-            // Outcome origins are keyed by the binding a `match` can name;
-            // a commit value is unnameable and carries none.
-            self.record_outcome_origin(binding, value, state);
+        if let Some(shape) = Self::operation_shape(value) {
+            return self.establish_operation_facts(
+                node_path,
+                destination,
+                value,
+                &shape,
+                state,
+                event,
+            );
         }
         self.establish_copy_fact(node_path, destination, value, state, event);
         None
@@ -401,15 +404,6 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    /// The retained identity of the value one S7 image was established on.
-    fn s7_subject(destination: ValueImage<'_>) -> S7Subject {
-        match destination {
-            ValueImage::Binding(binding) => S7Subject::Binding(binding),
-            ValueImage::Commit(node_path) => S7Subject::Commit(node_path.clone()),
-            ValueImage::ResultPayload(payload) => S7Subject::ResultPayload(payload),
-        }
-    }
-
     /// The commit-value term of one `set` occurrence, interned on first use.
     /// Its identity is the statement's NodePath and the value's fragment
     /// type, so every source establishing at that one occurrence names one
@@ -459,10 +453,16 @@ impl Analyzer<'_, '_> {
                 value: operand,
                 ..
             } => self.copy_source(operand),
-            _ => self
-                .measure_operand(value)
-                .or_else(|| self.read_operand(value)),
+            _ => self.copy_operand(value),
         }
+    }
+
+    /// One atom read as an admitted [ENT-2] term or constant: a measure term
+    /// through its [MSR-1] former, otherwise a tracked place or constant. This
+    /// is the one complete reader every value image and S7 operand uses.
+    fn copy_operand(&mut self, value: &CheckedExpression) -> Option<TermId> {
+        self.measure_operand(value)
+            .or_else(|| self.read_operand(value))
     }
 
     fn establish_copy_equality(
@@ -939,378 +939,87 @@ impl Analyzer<'_, '_> {
         Some(self.place_measure_term(measure, place, measured, array_length))
     }
 
-    /// [ENT-3] S7 constant-offset arithmetic at a `let` binding.
-    ///
-    /// `iadd.wrap::<T>(p, k)` and `isub.wrap::<T>(p, k)` with a constant k
-    /// establish s = p ± k only where the closed state already proves the
-    /// unwrapped result stays in T's range, so the established equality is
-    /// over the mathematical value the wrap did not reach. Exact `+` and `-`
-    /// establish it unconditionally on their normal continuation because
-    /// their IntegerDomain obligation was proved before acceptance [OP-2].
-    fn establish_offset_fact(
-        &mut self,
-        node_path: &crate::NodePath,
-        destination: ValueImage<'_>,
-        value: &CheckedExpression,
-        state: &mut FactState,
-        event: &mut Option<(FlowEventKind, FlowEventId)>,
-    ) -> bool {
-        if self.establish_remainder_bounds(node_path, destination, value, state, event)
-            || self.establish_bit_and_bounds(node_path, destination, value, state, event)
-            || self.establish_shift_one_nonzero(node_path, destination, value, state, event)
-        {
-            return true;
+    // ------------------------------------------------------------------
+    // S7 operation facts
+    // ------------------------------------------------------------------
+
+    /// The [ENT-3.S7] row one right-hand side reads as: an integer-valued
+    /// operation of the table or an integer `reinterpret`. Defined, checked
+    /// and comparison rows produce no integer, and a type-parameter-typed
+    /// operation has no fragment type, so neither is a row here.
+    fn operation_shape(value: &CheckedExpression) -> Option<OperationShape<'_>> {
+        match value {
+            CheckedExpression::IntegerOperation {
+                carrier,
+                operation,
+                operand_type: CheckedType::Integer(operand),
+                arguments,
+                result: CheckedType::Integer(result),
+                ..
+            } => Some(OperationShape {
+                row: Row::of(*operation)?,
+                operand: *operand,
+                result: *result,
+                operands: arguments,
+                carrier,
+            }),
+            CheckedExpression::Reinterpret {
+                carrier,
+                source: CheckedNumericType::Integer(operand),
+                destination: CheckedNumericType::Integer(result),
+                value,
+            } => Some(OperationShape {
+                row: Row::Reinterpret,
+                operand: *operand,
+                result: *result,
+                operands: std::slice::from_ref(value.as_ref()),
+                carrier,
+            }),
+            _ => None,
         }
-        let Some((base, delta, exact)) = self.constant_offset(value) else {
-            return false;
-        };
-        let Some(bound) = self.bound_term(destination, value) else {
-            return true;
-        };
-        if !exact {
-            let Some(ty) = fragment_type(value.ty()) else {
-                return true;
-            };
-            let (minimum, maximum) = type_range(ty);
-            let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
-            // `min(T) <= p + k` and `p + k <= max(T)`, as bounds on p through
-            // Z: p - Z <= max(T) - k and Z - p <= k - min(T).
-            let within = closed.derives_bound(base, ZERO, maximum.saturating_sub(delta))
-                && closed.derives_bound(ZERO, base, delta.saturating_sub(minimum));
-            if !within {
-                return true;
-            }
-        }
-        let event = self.binding_event(event, FlowEventKind::S7, node_path);
-        establish_shifted(state, bound, base, delta, &mut self.derivations, event);
-        true
     }
 
-    /// [ENT-3] S7: an admitted unsigned exact division over admitted terms
-    /// publishes `quotient <= dividend`. The returned source proof also
-    /// supports the literal scaled image and captured quotient-product image.
-    /// Signed division deliberately has no member of this rule.
-    fn establish_unsigned_division_bound(
-        &mut self,
-        node_path: &crate::NodePath,
-        destination: ValueImage<'_>,
-        value: &CheckedExpression,
-        state: &mut FactState,
-        shared_event: &mut Option<(FlowEventKind, FlowEventId)>,
-    ) -> Option<EstablishedUnsignedDivision> {
+    /// The exact row a checked row's success payload is read as [ENT-5].
+    fn checked_operation_shape(value: &CheckedExpression) -> Option<OperationShape<'_>> {
         let CheckedExpression::IntegerOperation {
-            operation: CheckedIntegerOperation::DivideExact,
-            operand_type: CheckedType::Integer(row),
+            carrier,
+            operation,
+            operand_type: CheckedType::Integer(operand),
             arguments,
             ..
         } = value
         else {
             return None;
         };
-        if row.signed() {
-            return None;
-        }
-        let [dividend, divisor] = arguments.as_slice() else {
-            return None;
-        };
-        let literal_divisor = match divisor {
-            CheckedExpression::Constant(CheckedValue::Integer { ty, bits }) if ty == row => {
-                let value = integer_value(*ty, *bits);
-                (value > 0).then_some(value)
-            }
-            _ => None,
-        };
-        let result = self.bound_term(destination, value)?;
-        let dividend = self.read_operand(dividend)?;
-        let divisor = self.read_operand(divisor)?;
-        let event = self.binding_event(shared_event, FlowEventKind::S7, node_path);
-        let relation = Relation::Bound {
-            left: result,
-            right: dividend,
-            bound: 0,
-        };
-        let parent =
-            state.establish_bound_with_proof(result, dividend, 0, &mut self.derivations, event);
-        self.retain_s7_derivation(S7Derivation {
-            source: node_path.clone(),
-            row: *row,
-            subject: Self::s7_subject(destination),
-            kind: S7DerivationKind::UnsignedDivisionBound { dividend, divisor },
-            relation,
-            event,
-            parent,
-        });
-        Some(EstablishedUnsignedDivision {
-            literal_divisor,
-            parent,
+        Some(OperationShape {
+            row: Row::of_checked(*operation)?,
+            operand: *operand,
+            result: *operand,
+            operands: arguments,
+            carrier,
         })
     }
 
-    /// [ENT-3] S7: an admitted unsigned exact remainder publishes
-    /// `result < divisor`. A signed remainder by a written constant `d`
-    /// publishes the closed interval `-(|d| - 1) <= result <= |d| - 1`.
-    /// The operation's ordinary IntegerDomain judgment has already proved its
-    /// domain before acceptance; this transfer performs no proof search.
-    fn establish_remainder_bounds(
+    /// [ENT-5] a checked integer row's private success payload denotes the
+    /// exact row's mathematical result and receives that row's [ENT-3.S7]
+    /// facts, read in the ordinary closed state `facts` already holds.
+    pub(super) fn establish_checked_payload(
         &mut self,
-        node_path: &crate::NodePath,
-        destination: ValueImage<'_>,
+        statement: &crate::NodePath,
+        payload: TermId,
         value: &CheckedExpression,
-        state: &mut FactState,
-        shared_event: &mut Option<(FlowEventKind, FlowEventId)>,
-    ) -> bool {
-        let CheckedExpression::IntegerOperation {
-            operation: CheckedIntegerOperation::RemainderExact,
-            operand_type: CheckedType::Integer(row),
-            arguments,
-            ..
-        } = value
-        else {
-            return false;
-        };
-        let [_dividend, divisor] = arguments.as_slice() else {
-            return true;
-        };
-        let Some(result) = self.bound_term(destination, value) else {
-            return true;
-        };
-        let Some(divisor) = self.read_operand(divisor) else {
-            return true;
-        };
-        let event = self.binding_event(shared_event, FlowEventKind::S7, node_path);
-        if !row.signed() {
-            let relation = Relation::Bound {
-                left: result,
-                right: divisor,
-                bound: -1,
-            };
-            let parent =
-                state.establish_bound_with_proof(result, divisor, -1, &mut self.derivations, event);
-            self.retain_s7_derivation(S7Derivation {
-                source: node_path.clone(),
-                row: *row,
-                subject: Self::s7_subject(destination),
-                kind: S7DerivationKind::UnsignedRemainderBound { divisor },
-                relation,
-                event,
-                parent,
-            });
-            return true;
+        facts: &mut FactState,
+    ) {
+        if let Some(shape) = Self::checked_operation_shape(value) {
+            let _ = self.establish_operation_facts(
+                statement,
+                ValueImage::ResultPayload(payload),
+                value,
+                &shape,
+                facts,
+                &mut None,
+            );
         }
-
-        let Some(divisor_value) = self
-            .constant_term_value(divisor)
-            .filter(|value| *value != 0)
-        else {
-            return true;
-        };
-        let Some(limit) = divisor_value
-            .checked_abs()
-            .and_then(|value| value.checked_sub(1))
-        else {
-            return true;
-        };
-        for (endpoint, left, right) in [
-            (RemainderEndpoint::Minimum, ZERO, result),
-            (RemainderEndpoint::Maximum, result, ZERO),
-        ] {
-            let relation = Relation::Bound {
-                left,
-                right,
-                bound: limit,
-            };
-            let parent =
-                state.establish_bound_with_proof(left, right, limit, &mut self.derivations, event);
-            self.retain_s7_derivation(S7Derivation {
-                source: node_path.clone(),
-                row: *row,
-                subject: Self::s7_subject(destination),
-                kind: S7DerivationKind::SignedRemainderBound {
-                    divisor: divisor_value,
-                    endpoint,
-                },
-                relation,
-                event,
-                parent,
-            });
-        }
-        true
-    }
-
-    fn establish_bit_and_bounds(
-        &mut self,
-        node_path: &crate::NodePath,
-        destination: ValueImage<'_>,
-        value: &CheckedExpression,
-        state: &mut FactState,
-        shared_event: &mut Option<(FlowEventKind, FlowEventId)>,
-    ) -> bool {
-        let CheckedExpression::IntegerOperation {
-            operation: CheckedIntegerOperation::BitAnd,
-            operand_type: CheckedType::Integer(row),
-            arguments,
-            ..
-        } = value
-        else {
-            return false;
-        };
-        if row.signed() {
-            return true;
-        }
-        let Some(result) = self.bound_term(destination, value) else {
-            return true;
-        };
-        for (operand, argument) in arguments.iter().enumerate() {
-            let Some(admitted) = self.read_operand(argument) else {
-                continue;
-            };
-            let event = self.binding_event(shared_event, FlowEventKind::S7, node_path);
-            let relation = Relation::Bound {
-                left: result,
-                right: admitted,
-                bound: 0,
-            };
-            let parent =
-                state.establish_bound_with_proof(result, admitted, 0, &mut self.derivations, event);
-            self.retain_s7_derivation(S7Derivation {
-                source: node_path.clone(),
-                row: *row,
-                subject: Self::s7_subject(destination),
-                kind: S7DerivationKind::BitAndBound {
-                    operand: u8::try_from(operand)
-                        .expect("integer-operation operand ordinal exceeds u8"),
-                    admitted,
-                },
-                relation,
-                event,
-                parent,
-            });
-        }
-        true
-    }
-
-    fn establish_shift_one_nonzero(
-        &mut self,
-        node_path: &crate::NodePath,
-        destination: ValueImage<'_>,
-        value: &CheckedExpression,
-        state: &mut FactState,
-        shared_event: &mut Option<(FlowEventKind, FlowEventId)>,
-    ) -> bool {
-        let CheckedExpression::IntegerOperation {
-            operation: CheckedIntegerOperation::ShiftLeftWrap,
-            operand_type: CheckedType::Integer(row),
-            argument_metadata,
-            arguments,
-            ..
-        } = value
-        else {
-            return false;
-        };
-        if row.signed() {
-            return true;
-        }
-        let [one, _count] = arguments.as_slice() else {
-            return true;
-        };
-        let [one_metadata, count_metadata] = argument_metadata.as_slice() else {
-            return true;
-        };
-        let one_value = match one {
-            CheckedExpression::Constant(CheckedValue::Integer { ty, bits }) => {
-                (integer_value(*ty, *bits) == 1).then_some(())
-            }
-            CheckedExpression::NamedConstant {
-                value: CheckedValue::Integer { ty, bits },
-                ..
-            } => (integer_value(*ty, *bits) == 1).then_some(()),
-            _ => None,
-        };
-        if one_value.is_none() {
-            return true;
-        }
-        let one = match one_metadata.source {
-            CheckedIntegerArgumentSource::TypedLiteral => ShiftOneIdentity::TypedLiteral {
-                source: one_metadata.node_path.clone(),
-            },
-            CheckedIntegerArgumentSource::NamedConstant { declaration } => {
-                ShiftOneIdentity::NamedConstant { declaration }
-            }
-            CheckedIntegerArgumentSource::GenericNumericIdentity
-            | CheckedIntegerArgumentSource::Other => return true,
-        };
-        let Some(result) = self.bound_term(destination, value) else {
-            return true;
-        };
-        let event = self.binding_event(shared_event, FlowEventKind::S7, node_path);
-        let (left, right) = if result < ZERO {
-            (result, ZERO)
-        } else {
-            (ZERO, result)
-        };
-        let relation = Relation::Distinct {
-            left,
-            right,
-            difference: 0,
-        };
-        let parent =
-            state.establish_distinct_with_proof(result, ZERO, &mut self.derivations, event);
-        self.retain_s7_derivation(S7Derivation {
-            source: node_path.clone(),
-            row: *row,
-            subject: Self::s7_subject(destination),
-            kind: S7DerivationKind::ShiftOneNonzero {
-                count_atom: count_metadata.node_path.clone(),
-                one,
-            },
-            relation,
-            event,
-            parent,
-        });
-        true
-    }
-
-    /// The `(p, k, exact)` reading of one constant-offset arithmetic call.
-    /// Exact rows have already discharged their static IntegerDomain
-    /// obligation; wrapping rows need the additional range proof above.
-    /// Addition accepts its constant in either operand position, subtraction
-    /// only as the subtrahend, since `k - p` is no offset of p.
-    fn constant_offset(&mut self, value: &CheckedExpression) -> Option<(TermId, i128, bool)> {
-        let CheckedExpression::IntegerOperation {
-            operation,
-            operand_type,
-            arguments,
-            ..
-        } = value
-        else {
-            return None;
-        };
-        fragment_type(*operand_type)?;
-        let [left, right] = arguments.as_slice() else {
-            return None;
-        };
-        let (adding, exact) = match operation {
-            CheckedIntegerOperation::AddWrap => (true, false),
-            CheckedIntegerOperation::AddExact => (true, true),
-            CheckedIntegerOperation::SubtractWrap => (false, false),
-            CheckedIntegerOperation::SubtractExact => (false, true),
-            _ => return None,
-        };
-        let left = self.read_operand(left)?;
-        let right = self.read_operand(right)?;
-        let (base, delta) = self.split_offset(left, right, adding)?;
-        Some((base, delta, exact))
-    }
-
-    /// Splits one operand pair into a base term and a constant offset.
-    fn split_offset(&self, left: TermId, right: TermId, adding: bool) -> Option<(TermId, i128)> {
-        if let Some(value) = self.constant_term_value(right) {
-            return Some((left, if adding { value } else { -value }));
-        }
-        if adding && let Some(value) = self.constant_term_value(left) {
-            return Some((right, value));
-        }
-        None
     }
 
     /// The mathematical value of a constant term. Z is the interned form of
@@ -1323,61 +1032,176 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    /// [ENT-3.S14] the interval one admitted non-constant multiplication
-    /// proved, published on the value it bound.
+    /// [ENT-3.S7] the result bounds and operand relations one table row
+    /// establishes on the value it binds.
     ///
-    /// [ENT-6]'s fixed interval-product rule proves an inclusive interval for
-    /// each operand and forms the four products of their endpoint pairs; the
-    /// multiplication is admitted exactly when all four lie in the result
-    /// type. Those same four products bound the value the operation produced,
-    /// so this publishes the minimum and maximum of the measurement the
-    /// domain decision already consumed. It is retained by the judgment only
-    /// when that route discharged the obligation, so a domain proved by the
-    /// finite L0 or affine-clause route publishes nothing here.
+    /// Each operand reads one interval in the closed state where the
+    /// right-hand side is evaluated: a literal or named-const value is its
+    /// value, any other admitted term its strongest closed bounds through Z,
+    /// and every other operand its type's interval. The closed bounds read are
+    /// the parents of every fact the row establishes, so the retained
+    /// derivation shows what each fact stood on [DIAG-2]. Operands are read
+    /// with the one complete term reader, so a measure operand is a term here
+    /// exactly as it is in a copy [ENT-2].
     ///
-    /// Both published relations are ground: each names the bound value and
-    /// the zero term, and neither names an operand. The support [ENT-5]
-    /// derives from those terms is therefore the bound value alone, which is
-    /// what the relation means — it describes the value already produced, so
-    /// a later write to an operand leaves it true, while a write to the bound
-    /// place kills it under the ordinary rule. A binder is fresh and a commit
-    /// value is compiler-owned, so the bound value never aliases an operand.
-    fn establish_product_interval(
+    /// An unsigned exact division bound at a binding or commit also returns
+    /// the fact bounding the quotient by its dividend, which the caller's
+    /// affine division images cite.
+    fn establish_operation_facts(
         &mut self,
         node_path: &crate::NodePath,
         destination: ValueImage<'_>,
         value: &CheckedExpression,
+        shape: &OperationShape<'_>,
         state: &mut FactState,
-        event: &mut Option<(FlowEventKind, FlowEventId)>,
-    ) {
-        let CheckedExpression::IntegerOperation { carrier, .. } = value else {
-            return;
-        };
-        let Some(interval) = self.product_intervals.get(carrier).cloned() else {
-            return;
-        };
-        let Some(bound) = self.bound_term(destination, value) else {
-            return;
-        };
-        let event = self.binding_event(event, FlowEventKind::S14, node_path);
-        state.establish(
-            &Relation::Bound {
-                left: ZERO,
-                right: bound,
-                bound: -interval.minimum,
-            },
-            &mut self.derivations,
-            event,
+        shared_event: &mut Option<(FlowEventKind, FlowEventId)>,
+    ) -> Option<EstablishedUnsignedDivision> {
+        let terms = shape
+            .operands
+            .iter()
+            .map(|operand| self.copy_operand(operand))
+            .collect::<Vec<_>>();
+        let mut closed = None;
+        let mut intervals = Vec::with_capacity(terms.len());
+        let mut related = Vec::with_capacity(terms.len());
+        let mut parents = Vec::new();
+        for (operand, term) in shape.operands.iter().zip(&terms) {
+            let ty = fragment_type(operand.ty())?;
+            let span = Span::of(ty).interval();
+            let Some(term) = *term else {
+                intervals.push(span);
+                related.push(None);
+                continue;
+            };
+            if let Some(value) = self.constant_term_value(term) {
+                intervals.push(Interval::value(value));
+                related.push(None);
+                continue;
+            }
+            let view = match &closed {
+                Some(view) => Rc::clone(view),
+                None => {
+                    let view = close(state, &self.terms, &self.goals, &mut self.derivations);
+                    closed = Some(Rc::clone(&view));
+                    view
+                }
+            };
+            // At a contradictory point every relation is already derivable.
+            if view.contradictory() {
+                return None;
+            }
+            let high = view.tight_bound(term, ZERO).unwrap_or(span.high);
+            let low = view
+                .tight_bound(ZERO, term)
+                .and_then(i128::checked_neg)
+                .unwrap_or(span.low);
+            parents.extend(view.bound_proof(term, ZERO, high, &mut self.derivations));
+            parents.extend(view.bound_proof(ZERO, term, -low, &mut self.derivations));
+            intervals.push(Interval::new(low, high));
+            related.push(Some(term));
+        }
+        let single = intervals
+            .iter()
+            .all(|interval| interval.low == interval.high);
+        let product = matches!(shape.row, Row::Multiply { wrap: false })
+            .then(|| self.product_intervals.get(shape.carrier).cloned())
+            .flatten();
+        if let (Some((_, Some(domain))), false) = (&product, single) {
+            // The interval-product rule's four products are the measurement
+            // the domain decision consumed; that decision is the parent.
+            parents = vec![*domain];
+        }
+        let facts = operation_facts::facts(
+            shape.row,
+            Span::of(shape.operand),
+            Span::of(shape.result),
+            &intervals,
+            product.map(|(interval, _)| Interval::new(interval.minimum, interval.maximum)),
         );
-        state.establish(
-            &Relation::Bound {
-                left: bound,
-                right: ZERO,
-                bound: interval.maximum,
-            },
-            &mut self.derivations,
+        if facts.bounds.is_none() && facts.relations.is_empty() {
+            return None;
+        }
+        let result = self.bound_term(destination, value)?;
+        let event = self.binding_event(shared_event, FlowEventKind::S7, node_path);
+        let parents = parents.into_boxed_slice();
+        let mut upper = None;
+        if let Some(bounds) = facts.bounds {
+            if let Some(low) = bounds.low.checked_neg() {
+                self.establish_operation_fact(state, ZERO, result, low, event, &parents);
+            }
+            upper = Some(self.establish_operation_fact(
+                state,
+                result,
+                ZERO,
+                bounds.high,
+                event,
+                &parents,
+            ));
+        }
+        let mut dividend_order = None;
+        for relation in &facts.relations {
+            let Some(term) = related.get(relation.operand).copied().flatten() else {
+                continue;
+            };
+            if let Some(high) = relation.high {
+                let proof =
+                    self.establish_operation_fact(state, result, term, high, event, &parents);
+                if relation.operand == 0 && high == 0 {
+                    dividend_order = Some(proof);
+                }
+            }
+            if let Some(low) = relation.low.and_then(i128::checked_neg) {
+                self.establish_operation_fact(state, term, result, low, event, &parents);
+            }
+        }
+        // [ENT-3.S7] an unsigned exact division at a binding or commit also
+        // captures its value images; a conditional payload captures none.
+        if shape.row != Row::Divide
+            || shape.operand.signed()
+            || matches!(destination, ValueImage::ResultPayload(_))
+            || terms.iter().any(Option::is_none)
+        {
+            return None;
+        }
+        let literal_divisor = match &shape.operands[1] {
+            CheckedExpression::Constant(CheckedValue::Integer { ty, bits })
+                if *ty == shape.operand =>
+            {
+                let value = integer_value(*ty, *bits);
+                (value > 0).then_some(value)
+            }
+            _ => None,
+        };
+        let parent = if related[0].is_some() {
+            dividend_order
+        } else {
+            upper
+        }?;
+        Some(EstablishedUnsignedDivision {
+            literal_divisor,
+            parent,
+        })
+    }
+
+    /// Establishes `left - right <= bound` as one [ENT-3.S7] fact whose
+    /// parents are the closed operand bounds its row read [DIAG-2].
+    fn establish_operation_fact(
+        &mut self,
+        state: &mut FactState,
+        left: TermId,
+        right: TermId,
+        bound: i128,
+        event: FlowEventId,
+        parents: &[DerivationId],
+    ) -> DerivationId {
+        let relation = Relation::Bound { left, right, bound };
+        let proof = self.derivations.intern(DerivationNode::OperationFact {
+            relation: relation.clone(),
             event,
-        );
+            parents: parents.into(),
+        });
+        state.establish_from_proof(&relation, proof, &self.derivations);
+        proof
     }
 
     /// [ENT-3] S9: `let x: T = c[i];` where c is the bare IDENT of a
@@ -1455,29 +1279,13 @@ impl Analyzer<'_, '_> {
     }
 
     // ------------------------------------------------------------------
-    // S7 checked arithmetic, observed at a match
+    // Arm entry facts
     // ------------------------------------------------------------------
 
-    /// Records the outcome origin of a `let` whose initializer is a checked
-    /// arithmetic call, so a later match
-    /// over the bare IDENT observes the same fact the direct scrutinee does.
-    /// The recorded origin dies with any kill on its base term and with a
-    /// `set` naming the binding, the discipline [ENT-3] states for it.
-    fn record_outcome_origin(
-        &mut self,
-        binding: BindingId,
-        value: &CheckedExpression,
-        state: &mut FactState,
-    ) {
-        if let Some(outcome) = self.outcome_fact(value) {
-            state.outcomes.insert(binding, outcome);
-        }
-    }
-
     /// The [ENT-3] arm facts one match scrutinee admits: the S1 comparison
-    /// relation for a `Bool` match, and the S7 fact carried by an
-    /// outcome-typed scrutinee — the call directly, or a bare IDENT naming a
-    /// binding of its outcome whose origin survived the path here.
+    /// relation and goal origins of a `Bool` match. A checked row's success
+    /// facts reach its `Ok` arm through the scrutinee's conditional Result
+    /// context instead [ENT-5].
     pub(super) fn arm_facts(
         &mut self,
         scrutinee: &CheckedExpression,
@@ -1485,143 +1293,19 @@ impl Analyzer<'_, '_> {
         state: &FactState,
     ) -> ArmFacts {
         let node_path = Self::expression_node_path(scrutinee).cloned();
-        if enum_type == CheckedEnumType::Bool {
+        if enum_type != CheckedEnumType::Bool {
             return ArmFacts {
                 node_path,
-                comparison: self.scrutinee_relation(scrutinee, state),
-                goals: self.goal_origin_set(scrutinee, state),
-                outcome: None,
+                comparison: None,
+                goals: Vec::new(),
             };
         }
-        let outcome = match scrutinee {
-            CheckedExpression::Binding { binding, .. } => state.outcomes.get(binding).cloned(),
-            _ => self.outcome_fact(scrutinee),
-        };
-        let outcome = outcome.and_then(|outcome| {
-            self.variant_tag(enum_type, outcome.variant)
-                .map(|tag| (tag, outcome))
-        });
         ArmFacts {
             node_path,
-            comparison: None,
-            goals: Vec::new(),
-            outcome,
+            comparison: self.scrutinee_relation(scrutinee, state),
+            goals: self.goal_origin_set(scrutinee, state),
         }
     }
-
-    /// The tag of one named variant of a checked enum type.
-    fn variant_tag(&self, enum_type: CheckedEnumType, variant: &str) -> Option<u32> {
-        let CheckedEnumType::Nominal(nominal) = enum_type else {
-            return None;
-        };
-        let nominal = self.context.nominals.get(nominal.0 as usize)?;
-        let CheckedNominalKind::Enum { variants } = &nominal.kind else {
-            return None;
-        };
-        variants
-            .iter()
-            .find(|candidate| candidate.name == variant)
-            .map(|candidate| candidate.tag)
-    }
-
-    /// The outcome fact one call expression carries, if any: S7's checked
-    /// `Ok(value: w)` shift on the observing arm.
-    fn outcome_fact(&mut self, value: &CheckedExpression) -> Option<OutcomeFact> {
-        self.checked_offset_outcome(value)
-    }
-
-    /// [ENT-3] S7: `iadd.checked::<T>(p, k)` and `isub.checked::<T>(p, k)` with a
-    /// constant k give the `Ok(value: w)` arm w = p ± k; the `Err` arm
-    /// establishes nothing.
-    fn checked_offset_outcome(&mut self, value: &CheckedExpression) -> Option<OutcomeFact> {
-        let CheckedExpression::IntegerOperation {
-            operation,
-            operand_type,
-            arguments,
-            ..
-        } = value
-        else {
-            return None;
-        };
-        fragment_type(*operand_type)?;
-        let adding = match operation {
-            CheckedIntegerOperation::AddChecked => true,
-            CheckedIntegerOperation::SubtractChecked => false,
-            _ => return None,
-        };
-        let [left, right] = arguments.as_slice() else {
-            return None;
-        };
-        let left = self.read_operand(left)?;
-        let right = self.read_operand(right)?;
-        let (base, delta) = self.split_offset(left, right, adding)?;
-        Some(OutcomeFact {
-            variant: "Ok",
-            base,
-            relation: OutcomeRelation::Shifted(delta),
-            event_kind: FlowEventKind::S7,
-        })
-    }
-
-    /// Establishes one arm's binder fact at arm entry: the value binder of
-    /// the observing variant gains the recorded relation against its base.
-    pub(super) fn establish_binder_fact(
-        &mut self,
-        arm: &CheckedMatchArm,
-        outcome: &OutcomeFact,
-        state: &mut FactState,
-        event: FlowEventId,
-    ) {
-        let Some(binder) = arm.binders.iter().find(|binder| binder.field == 0) else {
-            return;
-        };
-        let Some(fragment) = fragment_type(binder.ty) else {
-            return;
-        };
-        let place = ResolvedPlace::spelled(PlaceRoot::Binding(binder.binding), false, Vec::new());
-        let bound = self.terms.intern(TermKind::Place(place, fragment));
-        match outcome.relation {
-            OutcomeRelation::Shifted(delta) => {
-                establish_shifted(
-                    state,
-                    bound,
-                    outcome.base,
-                    delta,
-                    &mut self.derivations,
-                    event,
-                );
-            }
-        }
-    }
-}
-
-/// `bound = base + delta`, as the difference-bound pair over that term pair.
-fn establish_shifted(
-    state: &mut FactState,
-    bound: TermId,
-    base: TermId,
-    delta: i128,
-    ledger: &mut DerivationLedger,
-    event: FlowEventId,
-) {
-    state.establish(
-        &Relation::Bound {
-            left: bound,
-            right: base,
-            bound: delta,
-        },
-        ledger,
-        event,
-    );
-    state.establish(
-        &Relation::Bound {
-            left: base,
-            right: bound,
-            bound: -delta,
-        },
-        ledger,
-        event,
-    );
 }
 
 /// The normalized relation of one comparison operation over two read

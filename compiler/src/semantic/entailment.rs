@@ -15,11 +15,10 @@
 //!
 //! Implemented fact sources: S1 branch and match facts with both
 //! comparison-origin shapes, S4 requires facts, S5 binding and post-SET-1
-//! copy/conversion equalities, S6 length facts, S7
-//! constant-offset arithmetic, S9 const-array element ranges, and S10
-//! boundary count facts; the label S8 is retired, not reused [ENT-3]. An
-//! absent source only under-derives, which is the version-monotone
-//! direction [ENT-1].
+//! copy/conversion equalities, S6 length facts, S7 operation facts, S9
+//! const-array element ranges, S11 counted-range facts, and the S12 and S13
+//! call publication sources. An absent source only under-derives, which is
+//! the version-monotone direction [ENT-1].
 
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod affine;
@@ -51,7 +50,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use super::goal::{ConcreteGoal, GoalExpression};
 use super::model::{
-    BindingId, CheckedConstant, CheckedConstantId, CheckedExpression, CheckedFunction,
+    CheckedConstant, CheckedConstantId, CheckedExpression, CheckedFunction,
     CheckedIntegerOperation, CheckedLoopId, CheckedMode, CheckedNominal, CheckedSetTarget,
     CheckedStatement, CheckedType, FunctionId, IntegerType,
 };
@@ -829,64 +828,6 @@ pub(crate) struct JoinedSourceProofProvenance {
     pub(crate) predecessors: Box<[SourceAffineFactRef]>,
 }
 
-/// The exact written mathematical-one identity admitted by S7. Generic
-/// numeric identities and const-generic values deliberately have no member.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum ShiftOneIdentity {
-    TypedLiteral { source: NodePath },
-    NamedConstant { declaration: DeclarationId },
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum S7DerivationKind {
-    BitAndBound {
-        operand: u8,
-        admitted: TermId,
-    },
-    ShiftOneNonzero {
-        count_atom: NodePath,
-        one: ShiftOneIdentity,
-    },
-    UnsignedRemainderBound {
-        divisor: TermId,
-    },
-    UnsignedDivisionBound {
-        dividend: TermId,
-        divisor: TermId,
-    },
-    SignedRemainderBound {
-        divisor: i128,
-        endpoint: RemainderEndpoint,
-    },
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum RemainderEndpoint {
-    Minimum,
-    Maximum,
-}
-
-/// The value one retained S7 image was established on: a `let` binder, a
-/// `set` commit value, or a checked conversion's conditional payload.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum S7Subject {
-    Binding(BindingId),
-    Commit(NodePath),
-    ResultPayload(TermId),
-}
-
-/// One required unused-or-consumed S7 source root.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct S7Derivation {
-    pub(crate) source: NodePath,
-    pub(crate) row: IntegerType,
-    pub(crate) subject: S7Subject,
-    pub(crate) kind: S7DerivationKind,
-    pub(crate) relation: state::Relation,
-    pub(crate) event: state::FlowEventId,
-    pub(crate) parent: DerivationId,
-}
-
 /// The complete and exclusive FN-9 relation-query disposition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PostconditionDisposition {
@@ -1145,9 +1086,6 @@ pub(crate) struct FunctionEntailment {
     /// Diagnostic-only DAG nodes introduced when equal source-proof facts
     /// meet at structural joins. Dense ordinals are function-local.
     pub(crate) joined_source_proofs: Vec<JoinedSourceProofProvenance>,
-    /// Every admitted S7 relation, in structural source and operand order.
-    /// Each entry owns one required source root.
-    pub(crate) s7_derivations: Vec<S7Derivation>,
     /// One entry per source-ordered FN-9 relation on a concrete function.
     pub(crate) postconditions: Vec<FunctionPostconditionProof>,
     /// O11 candidate decomposition sets recorded at the signed-goal

@@ -1863,10 +1863,18 @@ fn indexed_call_separation_uses_runtime_order_and_disequality_facts() {
         "{INDEXED_CALL_HELPER}\nfn mixed(values: &Array<u8, 4>, j: u64) -> result: unit writes(values) {{\n  if 0_u64 < j {{\n    write_two(values: values, first: 0_u64, second: j);\n  }}\n  return unit;\n}}\n"
     );
     assert_indexed_call_proof("mixed literal", mixed.as_bytes(), false);
-    let affine = format!(
-        "{INDEXED_CALL_HELPER}\nfn affine(values: &Array<u8, 4>, i: u64, k: u64) -> result: unit writes(values) {{\n  if i < 3_u64 {{\n    if 0_u64 < k {{\n      if k < 3_u64 {{\n        let j = i + k;\n        write_two(values: values, first: i, second: j);\n      }}\n    }}\n  }}\n  return unit;\n}}\n"
+    // [ENT-3.S7] the successor's offset relation `j - i >= 1` is an L0 fact.
+    let successor = format!(
+        "{INDEXED_CALL_HELPER}\nfn successor(values: &Array<u8, 4>, i: u64, k: u64) -> result: unit writes(values) {{\n  if i < 3_u64 {{\n    if 0_u64 < k {{\n      if k < 3_u64 {{\n        let j = i + k;\n        write_two(values: values, first: i, second: j);\n      }}\n    }}\n  }}\n  return unit;\n}}\n"
     );
-    assert_indexed_call_proof("affine successor", affine.as_bytes(), true);
+    assert_indexed_call_proof("offset successor", successor.as_bytes(), false);
+    // The offsets `t - i` in [2, 4] and `j - t` in [-3, -1] leave `j - i` in
+    // [-1, 3], so only the affine images `j = i + k - m` and the guard
+    // `m < k` separate the two positions.
+    let affine = format!(
+        "{INDEXED_CALL_HELPER}\nfn affine(values: &Array<u8, 4>, i: u64, k: u64, m: u64) -> result: unit writes(values) {{\n  if i < 3_u64 {{\n    if 0_u64 < m {{\n      if m < k {{\n        if k < 5_u64 {{\n          let t = i + k;\n          let j = t - m;\n          write_two(values: values, first: i, second: j);\n        }}\n      }}\n    }}\n  }}\n  return unit;\n}}\n"
+    );
+    assert_indexed_call_proof("affine difference", affine.as_bytes(), true);
     for body in [
         "  write_two(values: values, first: i, second: j);\n",
         "  if i == j {\n    write_two(values: values, first: i, second: j);\n  }\n",

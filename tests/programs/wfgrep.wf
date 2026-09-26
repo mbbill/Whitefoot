@@ -414,13 +414,10 @@ fn put_decimal(destination: &[u8], at: u64, value: u64) -> result: u64 writes(de
     }
     set cursor = cursor -wrap 1_u64;
     let digit = rest % 10_u64;
-    let known = digit < glyphs;
-    if known {
-      let writable = cursor < spare;
-      if writable {
-        let glyph = digit_glyphs[digit];
-        set deref(destination)[cursor] = glyph;
-      }
+    let writable = cursor < spare;
+    if writable {
+      let glyph = digit_glyphs[digit];
+      set deref(destination)[cursor] = glyph;
     }
     set rest = rest / 10_u64;
   }

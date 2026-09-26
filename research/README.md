@@ -52,6 +52,10 @@ the work-branch and merge boundary.
 - [Incremental L0 closure](investigations/proof-certificate-architecture/INCREMENTAL-CLOSURE.md):
   keep fact states' closed cores and insert fresh edges instead of recomputing
   the cubic closure, relaxing only which equal-bound L0 derivation is retained.
+- [Automatic operation facts](investigations/automatic-operation-facts/DESIGN.md):
+  the inventory of operation-derived facts, corpus and idiom-sweep evidence,
+  and the operation table that replaced the idiom menu of [ENT-3], with its
+  measured checking cost.
 - [Modular compilation](investigations/modular-compilation/DESIGN.md):
   modules for large projects and for an architect agent that owns module
   interfaces while implementer agents write bodies in parallel. Self-contained
