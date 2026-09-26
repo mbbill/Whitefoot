@@ -174,12 +174,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // struct [TYPE-9, PRE-1], so a cell's content is reached through its
         // member `inner` and never by taking the cell apart.
         let opaque_repair = match usage.target() {
-            ResolvedTarget::Source { declaration, .. } => self
-                .is_opaque_struct_declaration(declaration)?
-                .then(|| self.opaque_struct_repair(declaration, true)),
-            _ => cell.then_some(
-                "a cell's content is its member `inner` [TYPE-9]: read or move `inner` instead of taking the cell apart",
-            ),
+            ResolvedTarget::Source { declaration, .. } => {
+                if self.is_opaque_struct_declaration(declaration)? {
+                    Some(
+                        super::super::repairs::opaque_struct_taken_apart(
+                            self.opaque_struct_kind(declaration)?,
+                        )
+                        .to_owned(),
+                    )
+                } else {
+                    None
+                }
+            }
+            _ if cell => Some(self.cell_taken_apart_repair(node, place, bindings)?),
+            _ => None,
         };
         if let Some(mechanical_fix) = opaque_repair {
             return self.issue_node(
@@ -368,6 +376,71 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
         Ok(releases)
+    }
+
+    /// [TYPE-2, TYPE-9] the repair of a destructuring consume that names
+    /// `Box`: how the statement reaches the content instead, which turns on
+    /// what the consumed cell holds. The cell is typed by the oracle that
+    /// reads declared types without judging the use, so the refusal still
+    /// precedes every judgment of the consumed place.
+    fn cell_taken_apart_repair(
+        &self,
+        node: NodeId,
+        place: NodeId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<String, CheckStop> {
+        use super::super::repairs::{CellContent, cell_taken_apart};
+        let binder = match self
+            .tree
+            .first_child_with(node, Production::FieldbindList)?
+        {
+            Some(list) => match self
+                .tree
+                .children_with(list, Production::Fieldbind)?
+                .first()
+            {
+                Some(&written) => Some(
+                    self.declaration_at(written, crate::DeclarationRole::Let)?
+                        .spelling()
+                        .to_owned(),
+                ),
+                None => None,
+            },
+            None => None,
+        };
+        let content = match self.place_selected_type(place, bindings) {
+            Ok(Some(ty)) => self.box_content(ty)?,
+            Ok(None) | Err(CheckStop::Unsupported(_)) => None,
+            Err(stop) => return Err(stop),
+        };
+        // [OWN-1] nothing moves out of a cell a reference reaches, so there
+        // a content that is not read as a copy is used in place. A
+        // runtime-capacity content is never a binding's value, whatever its
+        // elements [TYPE-9].
+        let pbase = self
+            .tree
+            .first_child_with(place, Production::Pbase)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let borrowed = self.has_fixed(pbase, FixedTerminal::Deref)?;
+        let content = match content {
+            Some(CheckedType::Buffer { .. } | CheckedType::Window { capacity: None, .. })
+                if !borrowed =>
+            {
+                Some(CellContent::RuntimeCapacity)
+            }
+            Some(CheckedType::Buffer { .. } | CheckedType::Window { capacity: None, .. }) => {
+                Some(CellContent::Borrowed)
+            }
+            Some(ty) if self.is_copy_type(ty)? => Some(CellContent::Copy),
+            Some(_) if borrowed => Some(CellContent::Borrowed),
+            Some(_) => Some(CellContent::Owned),
+            None => None,
+        };
+        Ok(cell_taken_apart(
+            content,
+            &self.tree.source_spelling(place)?,
+            binder.as_deref(),
+        ))
     }
 
     /// [TYPE-5] the destructuring consume's operand is not a value of the

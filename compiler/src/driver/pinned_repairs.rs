@@ -1,11 +1,12 @@
-//! Every repair [DIAG-1] the compiler prints, pinned with the programs it
-//! produces.
+//! The repairs [DIAG-1] the compiler prints, pinned with the programs they
+//! produce.
 //!
 //! A repair is a sentence with a promise in it, so each pair pins more than
 //! a probe in `driver::pinned_sentences` does: besides the rejected source
 //! and the repair it carries, one program for each alternative the pair
 //! carries out, which must be accepted with the repaired construct live.
-//! Adding a repair to the compiler means adding a pair here.
+//! Adding or rewording a repair means adding or updating a pair here; the
+//! repairs still printed without one are listed in `docs/todo.md`.
 
 use super::{CompilationFailureKind, CompilerLimits, compile};
 use crate::SourceInput;
@@ -2243,8 +2244,8 @@ fn main() -> status: std::process::ExitStatus pure {
         ],
     },
     RepairPair {
-        // [TYPE-2, PRE-2] a host handle is formed only by the standard library's functions, and the program's entry receives this one.
-        name: "standard-opaque-struct-constructed.wf",
+        // [TYPE-2, PRE-2] a host handle is formed only by a host function; the program's entry receives this one.
+        name: "host-handle-constructed-from-entry.wf",
         rejected: br#"alias ExitStatus = std::process::ExitStatus;
 alias HandleFactory = std::io::HandleFactory;
 alias exit_status = std::process::exit_status;
@@ -2256,7 +2257,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "TYPE-2",
         sentences: &[
-            "\n  mechanical_fix: a standard library opaque struct is formed only by its library's functions [PRE-2]: use a value one of them returns, or one the program's entry receives, instead of constructing one\n",
+            "\n  mechanical_fix: a host handle is formed only by a host function [PRE-2]: replace this construction with a handle that a function of its module returns or that the program's entry receives\n",
         ],
         repaired: &[
             br#"alias ExitStatus = std::process::ExitStatus;
@@ -2273,8 +2274,32 @@ fn main(inputs: Inputs) -> status: ExitStatus pure {
         ],
     },
     RepairPair {
-        // [TYPE-2, PRE-2] a host handle has no fields a program can take apart; the value is passed to the functions that take it.
-        name: "standard-opaque-struct-taken-apart.wf",
+        // [TYPE-2, PRE-2] the same repair, where a function of the handle's module returns one.
+        name: "host-handle-constructed-from-function.wf",
+        rejected: br#"alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
+fn main() -> status: ExitStatus pure {
+  let status = ExitStatus();
+  return move status;
+}
+"#,
+        rule: "TYPE-2",
+        sentences: &[
+            "\n  mechanical_fix: a host handle is formed only by a host function [PRE-2]: replace this construction with a handle that a function of its module returns or that the program's entry receives\n",
+        ],
+        repaired: &[br#"alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
+fn main() -> status: ExitStatus pure {
+  let status = exit_status(code: 0_u8);
+  return move status;
+}
+"#],
+    },
+    RepairPair {
+        // [TYPE-2, PRE-2] a host handle has no fields, so taking one apart does nothing a `nocopy` handle needs.
+        name: "host-handle-taken-apart.wf",
         rejected: br#"alias ExitStatus = std::process::ExitStatus;
 alias HandleFactory = std::io::HandleFactory;
 alias Inputs = std::process::Inputs;
@@ -2290,7 +2315,7 @@ fn main(inputs: Inputs) -> status: ExitStatus pure {
 "#,
         rule: "TYPE-2",
         sentences: &[
-            "\n  mechanical_fix: a standard library opaque struct is taken apart only by its library's functions [PRE-2]: remove this statement and pass the value to the functions that take it\n",
+            "\n  mechanical_fix: a host handle has no fields to take apart [PRE-2]: remove this statement\n",
         ],
         repaired: &[
             br#"alias ExitStatus = std::process::ExitStatus;
@@ -2301,6 +2326,38 @@ alias exit_status = std::process::exit_status;
 fn main(inputs: Inputs) -> status: ExitStatus pure {
   let Inputs(args: unused_args, cwd: unused_cwd, stdout: unused_stdout, stderr: unused_stderr, handles: factory, stdin: unused_stdin) = move inputs;
   close_directory(factory: &factory, directory: move unused_cwd);
+  return exit_status(code: 0_u8);
+}
+"#,
+        ],
+    },
+    RepairPair {
+        // [TYPE-2, PRE-2, PROV-6] a `nodrop` host handle leaves its scope only by moving into the function that closes it.
+        name: "nodrop-host-handle-taken-apart.wf",
+        rejected: br#"alias ExitStatus = std::process::ExitStatus;
+alias DirectoryRead = std::fs::DirectoryRead;
+alias Inputs = std::process::Inputs;
+alias exit_status = std::process::exit_status;
+
+fn main(inputs: Inputs) -> status: ExitStatus pure {
+  let Inputs(args: unused_args, cwd: directory, stdout: unused_stdout, stderr: unused_stderr, handles: factory, stdin: unused_stdin) = move inputs;
+  let DirectoryRead() = move directory;
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "TYPE-2",
+        sentences: &[
+            "\n  mechanical_fix: a host handle has no fields to take apart [PRE-2], and a `nodrop` one leaves its scope only by moving out [PROV-6]: replace this statement with a call to the function of its module that closes the handle\n",
+        ],
+        repaired: &[
+            br#"alias ExitStatus = std::process::ExitStatus;
+alias Inputs = std::process::Inputs;
+alias close_directory = std::fs::close_directory;
+alias exit_status = std::process::exit_status;
+
+fn main(inputs: Inputs) -> status: ExitStatus pure {
+  let Inputs(args: unused_args, cwd: directory, stdout: unused_stdout, stderr: unused_stderr, handles: factory, stdin: unused_stdin) = move inputs;
+  close_directory(factory: &factory, directory: move directory);
   return exit_status(code: 0_u8);
 }
 "#,
@@ -2323,7 +2380,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "TYPE-2",
         sentences: &[
-            "\n  mechanical_fix: no value of an opaque struct the program declares is ever formed [TYPE-2]: remove `opaque` from its declaration to construct it here\n",
+            "\n  mechanical_fix: no value of an opaque struct the program declares is ever formed [TYPE-2]: remove `opaque` from its declaration\n",
         ],
         repaired: &[
             br#"alias ExitStatus = std::process::ExitStatus;
@@ -2361,7 +2418,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "TYPE-2",
         sentences: &[
-            "\n  mechanical_fix: no value of an opaque struct the program declares is ever formed [TYPE-2]: remove `opaque` from its declaration to take it apart here\n",
+            "\n  mechanical_fix: no value of an opaque struct the program declares is ever formed [TYPE-2]: remove `opaque` from its declaration\n",
         ],
         repaired: &[
             br#"alias ExitStatus = std::process::ExitStatus;
@@ -2383,8 +2440,8 @@ fn main() -> status: ExitStatus pure {
         ],
     },
     RepairPair {
-        // [TYPE-2, TYPE-9] a cell's content is reached through `inner`, never by taking the cell apart.
-        name: "cell-taken-apart.wf",
+        // [TYPE-2, TYPE-9, OWN-1] a cell's copy content is read through `inner`, never moved.
+        name: "cell-with-copy-content-taken-apart.wf",
         rejected: br#"alias ExitStatus = std::process::ExitStatus;
 alias exit_status = std::process::exit_status;
 
@@ -2396,7 +2453,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "TYPE-2",
         sentences: &[
-            "\n  mechanical_fix: a cell's content is its member `inner` [TYPE-9]: read or move `inner` instead of taking the cell apart\n",
+            "\n  mechanical_fix: a cell's content is its member `inner` [TYPE-9]: replace this statement with `let content = cell.inner;`\n",
         ],
         repaired: &[
             br#"alias ExitStatus = std::process::ExitStatus;
@@ -2405,6 +2462,145 @@ alias exit_status = std::process::exit_status;
 fn main() -> status: ExitStatus pure {
   let cell = box_new::<u64>(value: 5_u64);
   let content = cell.inner;
+  return exit_status(code: 0_u8);
+}
+"#,
+        ],
+    },
+    RepairPair {
+        // [TYPE-2, TYPE-9, WIN-3] a content without copy moves out through `inner`, which frees the cell.
+        name: "cell-with-owned-content-taken-apart.wf",
+        rejected: br#"alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
+nocopy struct Token {
+  value: u64;
+}
+
+fn main() -> status: ExitStatus pure {
+  let token = Token(value: 1_u64);
+  let cell = box_new::<Token>(value: move token);
+  let Box(inner: content) = move cell;
+  let Token(value: inside) = move content;
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "TYPE-2",
+        sentences: &[
+            "\n  mechanical_fix: a cell's content is its member `inner` [TYPE-9]: replace this statement with `let content = move cell.inner;`, which frees the cell [WIN-3]\n",
+        ],
+        repaired: &[
+            br#"alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
+nocopy struct Token {
+  value: u64;
+}
+
+fn main() -> status: ExitStatus pure {
+  let token = Token(value: 1_u64);
+  let cell = box_new::<Token>(value: move token);
+  let content = move cell.inner;
+  let Token(value: inside) = move content;
+  return exit_status(code: 0_u8);
+}
+"#,
+        ],
+    },
+    RepairPair {
+        // [TYPE-2, TYPE-9, OP-14] a runtime-capacity content is used where it is, and the cell itself is what `free_empty` consumes.
+        name: "cell-with-runtime-capacity-content-taken-apart.wf",
+        rejected: br#"alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
+fn main() -> status: ExitStatus pure {
+  let cell = box_slots_new::<u64>(capacity: 4_u64);
+  let Box(inner: window) = move cell;
+  let count = window.len;
+  free_empty(window: move window);
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "TYPE-2",
+        sentences: &[
+            "\n  mechanical_fix: a cell's content is its member `inner` [TYPE-9], and a runtime-capacity content never leaves it: remove this statement, and write `cell.inner` where `window` is used and `move cell` where `window` is moved [OP-14]\n",
+        ],
+        repaired: &[
+            br#"alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
+fn main() -> status: ExitStatus pure {
+  let cell = box_slots_new::<u64>(capacity: 4_u64);
+  let count = cell.inner.len;
+  free_empty(window: move cell);
+  return exit_status(code: 0_u8);
+}
+"#,
+        ],
+    },
+    RepairPair {
+        // [TYPE-2, TYPE-9, OWN-1] nothing moves out of a cell a reference reaches, so its content is used in place.
+        name: "cell-through-a-reference-taken-apart.wf",
+        rejected: br#"alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
+nocopy struct Token {
+  value: u64;
+}
+
+fn peek(cell: &Box<Token>) -> result: u64 reads(cell) {
+  let Box(inner: token) = move deref(cell);
+  return token.value;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "TYPE-2",
+        sentences: &[
+            "\n  mechanical_fix: a cell's content is its member `inner` [TYPE-9], and nothing moves out of a cell a reference reaches [OWN-1]: remove this statement, and write `deref(cell).inner` where `token` is used\n",
+        ],
+        repaired: &[
+            br#"alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
+nocopy struct Token {
+  value: u64;
+}
+
+fn peek(cell: &Box<Token>) -> result: u64 reads(cell) {
+  return deref(cell).inner.value;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        ],
+    },
+    RepairPair {
+        // [TYPE-2, TYPE-9] a statement that binds nothing only consumes the cell, which its scope already releases.
+        name: "cell-taken-apart-binding-nothing.wf",
+        rejected: br#"alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
+fn main() -> status: ExitStatus pure {
+  let cell = box_new::<u64>(value: 5_u64);
+  let Box(..) = move cell;
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "TYPE-2",
+        sentences: &[
+            "\n  mechanical_fix: a cell's content is its member `inner` [TYPE-9]: remove this statement\n",
+        ],
+        repaired: &[
+            br#"alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
+fn main() -> status: ExitStatus pure {
+  let cell = box_new::<u64>(value: 5_u64);
   return exit_status(code: 0_u8);
 }
 "#,
@@ -2645,11 +2841,11 @@ fn contradictory_successes(name: &str, source: &[u8]) -> Result<Vec<String>, Str
     .map_err(|failure| failure.to_string())
 }
 
-/// Every repair the compiler prints is pinned with a program that carries it
-/// out [DIAG-1]: each alternative is accepted, and its construct runs in a
-/// state that is not contradictory.
+/// Each pinned repair is carried out by its programs [DIAG-1]: each
+/// alternative is accepted, and its construct runs in a state that is not
+/// contradictory.
 #[test]
-fn every_repair_is_pinned_with_a_repaired_program() {
+fn each_pinned_repair_is_carried_out_by_its_programs() {
     for pair in REPAIRS {
         let failure = compile(
             &[SourceInput::new(pair.name, pair.rejected)],
@@ -2695,7 +2891,7 @@ fn every_repair_is_pinned_with_a_repaired_program() {
 /// [OP-9, STOR-6] an allocation's repair is carried out only when the
 /// repaired program also builds: after checking, the selected target
 /// qualifies the retained bound of every allocation the entry runs, which
-/// [`every_repair_is_pinned_with_a_repaired_program`] does not reach.
+/// [`each_pinned_repair_is_carried_out_by_its_programs`] does not reach.
 #[test]
 fn every_allocation_repair_builds() {
     for pair in REPAIRS.iter().filter(|pair| pair.rule == "OP-9") {

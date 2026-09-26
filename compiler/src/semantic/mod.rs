@@ -774,14 +774,14 @@ pub enum SemanticIssueKind {
         /// Exact mechanical repair required by OWN-1.
         mechanical_fix: &'static str,
     },
-    /// [BLK-1] a `construct` named one of the four compiler-owned container or
-    /// provider nominals. No construct produces a run, a provider, or a
-    /// store: each contributes a constructor entry that exists to be refused.
+    /// [TYPE-2] a constructor `call` or a destructuring `let_stmt` named an
+    /// opaque struct, whose constructor entry exists to be refused.
     ContainerConstruction {
         /// The nominal the construct named.
         nominal: String,
-        /// Exact restructuring required by BLK-1.
-        mechanical_fix: &'static str,
+        /// The repair [DIAG-1], chosen by where the struct comes from and,
+        /// for a cell taken apart, by its content.
+        mechanical_fix: String,
     },
     /// A binding was used after ownership had already been consumed.
     UseAfterMove {

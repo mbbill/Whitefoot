@@ -407,7 +407,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// type it can name. Every ownership, liveness, validity and effect
     /// judgment on the same operand is made once, by the ordinary argument
     /// check against the instance this oracle selects.
-    fn place_selected_type(
+    pub(in crate::semantic::check) fn place_selected_type(
         &self,
         place: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
