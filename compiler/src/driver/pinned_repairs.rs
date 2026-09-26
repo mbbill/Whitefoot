@@ -1708,6 +1708,52 @@ fn main() -> status: std::process::ExitStatus pure {
 }
 "#],
     },
+    // The suggested row names the body's range read beside its written
+    // slot, and a call that passes the slot outside the range carries it
+    // out [OWN-7, EFF-5].
+    RepairPair {
+        name: "declared-row-omits-a-range-read-beside-a-written-slot.wf",
+        rejected: br#"fn record_run(values: &Array<u64, 4>, start: u64, end: u64, slot: u64) -> result: unit writes(values[slot]) contract {
+  requires start <= end;
+  requires end <= 4_u64;
+  requires slot < 4_u64;
+} {
+  let run = &deref(values)[start..end];
+  let length = deref(run).len;
+  set deref(values)[slot] = length;
+  return unit;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  let values = array_filled::<u64, 4>(value: 0_u64);
+  record_run(values: &values, start: 0_u64, end: 2_u64, slot: 3_u64);
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+        rule: "EFF-2",
+        sentences: &[
+            "\n  mechanical_fix: declare the row as `reads(values[start..end].len), writes(values[slot])`, which covers every access the body makes and no other\n",
+        ],
+        repaired: &[
+            br#"fn record_run(values: &Array<u64, 4>, start: u64, end: u64, slot: u64) -> result: unit reads(values[start..end].len), writes(values[slot]) contract {
+  requires start <= end;
+  requires end <= 4_u64;
+  requires slot < 4_u64;
+} {
+  let run = &deref(values)[start..end];
+  let length = deref(run).len;
+  set deref(values)[slot] = length;
+  return unit;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  let values = array_filled::<u64, 4>(value: 0_u64);
+  record_run(values: &values, start: 0_u64, end: 2_u64, slot: 3_u64);
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+        ],
+    },
     RepairPair {
         name: "row-writes-before-reads.wf",
         rejected: br#"struct Stats {
@@ -1846,50 +1892,6 @@ fn main() -> status: std::process::ExitStatus pure {
 }
 "#,
         ],
-    },
-    RepairPair {
-        // No [OWN-7] family separates a range position from an index
-        // position, so no position this call passes separates this one
-        // argument's pair [EFF-5], and the repair is at the callee's row.
-        name: "row-entries-overlapping-through-one-argument.wf",
-        rejected: br#"fn record_run(values: &Array<u64, 4>, start: u64, end: u64, slot: u64) -> result: unit reads(values[start..end]), writes(values[slot]) contract {
-  requires start <= end;
-  requires end <= 4_u64;
-  requires slot < 4_u64;
-} {
-  let run = &deref(values)[start..end];
-  let length = deref(run).len;
-  set deref(values)[slot] = length;
-  return unit;
-}
-
-fn main() -> status: std::process::ExitStatus pure {
-  let values = array_filled::<u64, 4>(value: 0_u64);
-  record_run(values: &values, start: 0_u64, end: 2_u64, slot: 3_u64);
-  return std::process::exit_status(code: 0_u8);
-}
-"#,
-        rule: "EFF-5",
-        sentences: &[
-            "\n  mechanical_fix: these two entries of the callee's row may reach overlapping places through one argument, and no position this call passes separates them: replace the callee's row entries at or below their common path with one `writes` entry of that path\n",
-        ],
-        repaired: &[br#"fn record_run(values: &Array<u64, 4>, start: u64, end: u64, slot: u64) -> result: unit writes(values) contract {
-  requires start <= end;
-  requires end <= 4_u64;
-  requires slot < 4_u64;
-} {
-  let run = &deref(values)[start..end];
-  let length = deref(run).len;
-  set deref(values)[slot] = length;
-  return unit;
-}
-
-fn main() -> status: std::process::ExitStatus pure {
-  let values = array_filled::<u64, 4>(value: 0_u64);
-  record_run(values: &values, start: 0_u64, end: 2_u64, slot: 3_u64);
-  return std::process::exit_status(code: 0_u8);
-}
-"#],
     },
     RepairPair {
         // [EFF-5] one argument supplies both entries and the two positions
@@ -2162,6 +2164,738 @@ fn outer<interface Stage>(r: &Slots<u64, 4>, k: u64) -> result: u64 writes(r) co
   requires 0_u64 < deref(r).len;
 } {
   let y = Stage::step(x: r, w: r, i: 0_u64);
+  return y;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+        ],
+    },
+    RepairPair {
+        // [OWN-7] an index beside a range one argument supplies is separated
+        // from it once proved outside it, which this call does not prove
+        // [EFF-5].
+        name: "call-separation-index-beside-range.wf",
+        rejected: br#"fn record_run(values: &Array<u64, 4>, start: u64, end: u64, slot: u64) -> result: unit reads(values[start..end]), writes(values[slot]) contract {
+  requires start <= end;
+  requires end <= 4_u64;
+  requires slot < 4_u64;
+} {
+  let run = &deref(values)[start..end];
+  let length = deref(run).len;
+  set deref(values)[slot] = length;
+  return unit;
+}
+
+fn outer(values: &Array<u64, 4>, lo: u64, hi: u64, at: u64) -> result: unit writes(values) contract {
+  requires lo <= hi;
+  requires hi <= 4_u64;
+  requires at < 4_u64;
+} {
+  record_run(values: values, start: lo, end: hi, slot: at);
+  return unit;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  let values = array_filled::<u64, 4>(value: 0_u64);
+  outer(values: &values, lo: 0_u64, hi: 2_u64, at: 3_u64);
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+        rule: "EFF-5",
+        sentences: &[
+            "\n  mechanical_fix: when the index can lie outside the range here, prove before this call that it is below the range's start or at or after its end; otherwise pass positions this call proves apart, or replace the callee's row entries at or below their common path with one `writes` entry of that path\n",
+        ],
+        repaired: &[
+            br#"fn record_run(values: &Array<u64, 4>, start: u64, end: u64, slot: u64) -> result: unit reads(values[start..end]), writes(values[slot]) contract {
+  requires start <= end;
+  requires end <= 4_u64;
+  requires slot < 4_u64;
+} {
+  let run = &deref(values)[start..end];
+  let length = deref(run).len;
+  set deref(values)[slot] = length;
+  return unit;
+}
+
+fn outer(values: &Array<u64, 4>, lo: u64, hi: u64, at: u64) -> result: unit writes(values) contract {
+  requires lo <= hi;
+  requires hi <= 4_u64;
+  requires at < 4_u64;
+} {
+  if hi <= at {
+    record_run(values: values, start: lo, end: hi, slot: at);
+  }
+  return unit;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  let values = array_filled::<u64, 4>(value: 0_u64);
+  outer(values: &values, lo: 0_u64, hi: 2_u64, at: 3_u64);
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+            br#"fn record_run(values: &Array<u64, 4>, start: u64, end: u64, slot: u64) -> result: unit reads(values[start..end]), writes(values[slot]) contract {
+  requires start <= end;
+  requires end <= 4_u64;
+  requires slot < 4_u64;
+} {
+  let run = &deref(values)[start..end];
+  let length = deref(run).len;
+  set deref(values)[slot] = length;
+  return unit;
+}
+
+fn outer(values: &Array<u64, 4>, lo: u64, hi: u64, at: u64) -> result: unit writes(values) contract {
+  requires lo <= hi;
+  requires hi <= 4_u64;
+  requires at < 4_u64;
+} {
+  record_run(values: values, start: 0_u64, end: 2_u64, slot: 3_u64);
+  return unit;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  let values = array_filled::<u64, 4>(value: 0_u64);
+  outer(values: &values, lo: 0_u64, hi: 2_u64, at: 3_u64);
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+            br#"fn record_run(values: &Array<u64, 4>, start: u64, end: u64, slot: u64) -> result: unit writes(values) contract {
+  requires start <= end;
+  requires end <= 4_u64;
+  requires slot < 4_u64;
+} {
+  let run = &deref(values)[start..end];
+  let length = deref(run).len;
+  set deref(values)[slot] = length;
+  return unit;
+}
+
+fn outer(values: &Array<u64, 4>, lo: u64, hi: u64, at: u64) -> result: unit writes(values) contract {
+  requires lo <= hi;
+  requires hi <= 4_u64;
+  requires at < 4_u64;
+} {
+  record_run(values: values, start: lo, end: hi, slot: at);
+  return unit;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  let values = array_filled::<u64, 4>(value: 0_u64);
+  outer(values: &values, lo: 0_u64, hi: 2_u64, at: 3_u64);
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+        ],
+    },
+    RepairPair {
+        // [WIN-2] an index beside a window's `last` is separated from it once
+        // proved below the last slot, which this call does not prove.
+        name: "call-separation-index-beside-last.wf",
+        rejected: br#"fn read_then_pop(r: &Slots<u64, 4>, i: u64) -> result: u64 reads(r[i]), writes(r.last), writes(r.len) contract {
+  requires deref(r).len > 0_u64;
+} {
+  let seen = if i < deref(r).len {
+    give deref(r)[i];
+  } else {
+    give 0_u64;
+  }
+  let last = take_back(window: r);
+  let total = seen +wrap last;
+  return total;
+}
+
+fn caller(r: &Slots<u64, 4>, a: u64, b: u64) -> result: u64 writes(r) contract {
+  requires deref(r).len > 0_u64;
+} {
+  let x = read_then_pop(r: r, i: a);
+  return x;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  let window = slots_new::<u64, 4>();
+  place_back(window: &window, value: 5_u64);
+  place_back(window: &window, value: 6_u64);
+  let x = caller(r: &window, a: 0_u64, b: 1_u64);
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+        rule: "EFF-5",
+        sentences: &[
+            "\n  mechanical_fix: when the index can be below the window's last slot here, prove that before this call; otherwise pass an index this call proves below it, or replace the callee's row entries at or below their common path with one `writes` entry of that path\n",
+        ],
+        repaired: &[
+            br#"fn read_then_pop(r: &Slots<u64, 4>, i: u64) -> result: u64 reads(r[i]), writes(r.last), writes(r.len) contract {
+  requires deref(r).len > 0_u64;
+} {
+  let seen = if i < deref(r).len {
+    give deref(r)[i];
+  } else {
+    give 0_u64;
+  }
+  let last = take_back(window: r);
+  let total = seen +wrap last;
+  return total;
+}
+
+fn caller(r: &Slots<u64, 4>, a: u64, b: u64) -> result: u64 writes(r) contract {
+  requires deref(r).len > 0_u64;
+} {
+  let last_index = deref(r).len - 1_u64;
+  if a < last_index {
+    let x = read_then_pop(r: r, i: a);
+    return x;
+  }
+  return 0_u64;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  let window = slots_new::<u64, 4>();
+  place_back(window: &window, value: 5_u64);
+  place_back(window: &window, value: 6_u64);
+  let x = caller(r: &window, a: 0_u64, b: 1_u64);
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+            br#"fn read_then_pop(r: &Slots<u64, 4>, i: u64) -> result: u64 reads(r[i]), writes(r.last), writes(r.len) contract {
+  requires deref(r).len > 0_u64;
+} {
+  let seen = if i < deref(r).len {
+    give deref(r)[i];
+  } else {
+    give 0_u64;
+  }
+  let last = take_back(window: r);
+  let total = seen +wrap last;
+  return total;
+}
+
+fn caller(r: &Slots<u64, 4>, a: u64, b: u64) -> result: u64 writes(r) contract {
+  requires deref(r).len > 0_u64;
+  requires 1_u64 < deref(r).len;
+} {
+  let x = read_then_pop(r: r, i: 0_u64);
+  return x;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  let window = slots_new::<u64, 4>();
+  place_back(window: &window, value: 5_u64);
+  place_back(window: &window, value: 6_u64);
+  let x = caller(r: &window, a: 0_u64, b: 1_u64);
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+            br#"fn read_then_pop(r: &Slots<u64, 4>, i: u64) -> result: u64 writes(r) contract {
+  requires deref(r).len > 0_u64;
+} {
+  let seen = if i < deref(r).len {
+    give deref(r)[i];
+  } else {
+    give 0_u64;
+  }
+  let last = take_back(window: r);
+  let total = seen +wrap last;
+  return total;
+}
+
+fn caller(r: &Slots<u64, 4>, a: u64, b: u64) -> result: u64 writes(r) contract {
+  requires deref(r).len > 0_u64;
+} {
+  let x = read_then_pop(r: r, i: a);
+  return x;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  let window = slots_new::<u64, 4>();
+  place_back(window: &window, value: 5_u64);
+  place_back(window: &window, value: 6_u64);
+  let x = caller(r: &window, a: 0_u64, b: 1_u64);
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+        ],
+    },
+    RepairPair {
+        // [WIN-2] a range beside a window's `next` is separated from it once
+        // proved to end at or below the window's length.
+        name: "call-separation-range-beside-next.wf",
+        rejected: br#"fn count_then_push(r: &Slots<u64, 4>, lo: u64, hi: u64) -> result: u64 reads(r[lo..hi]), writes(r.next), writes(r.len) contract {
+  requires lo <= hi;
+  requires deref(r).len < 4_u64;
+} {
+  let seen = if hi <= deref(r).len {
+    let run = &deref(r)[lo..hi];
+    give deref(run).len;
+  } else {
+    give 0_u64;
+  }
+  place_back(window: r, value: seen);
+  return seen;
+}
+
+fn caller(r: &Slots<u64, 4>, a: u64, b: u64) -> result: u64 writes(r) contract {
+  requires a <= b;
+  requires deref(r).len < 4_u64;
+} {
+  let x = count_then_push(r: r, lo: a, hi: b);
+  return x;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  let window = slots_new::<u64, 4>();
+  place_back(window: &window, value: 5_u64);
+  place_back(window: &window, value: 6_u64);
+  let x = caller(r: &window, a: 0_u64, b: 1_u64);
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+        rule: "EFF-5",
+        sentences: &[
+            "\n  mechanical_fix: when the range can end at or below the window's length here, prove that before this call; otherwise pass a range this call proves ends there, or replace the callee's row entries at or below their common path with one `writes` entry of that path\n",
+        ],
+        repaired: &[
+            br#"fn count_then_push(r: &Slots<u64, 4>, lo: u64, hi: u64) -> result: u64 reads(r[lo..hi]), writes(r.next), writes(r.len) contract {
+  requires lo <= hi;
+  requires deref(r).len < 4_u64;
+} {
+  let seen = if hi <= deref(r).len {
+    let run = &deref(r)[lo..hi];
+    give deref(run).len;
+  } else {
+    give 0_u64;
+  }
+  place_back(window: r, value: seen);
+  return seen;
+}
+
+fn caller(r: &Slots<u64, 4>, a: u64, b: u64) -> result: u64 writes(r) contract {
+  requires a <= b;
+  requires deref(r).len < 4_u64;
+} {
+  if b <= deref(r).len {
+    let x = count_then_push(r: r, lo: a, hi: b);
+    return x;
+  }
+  return 0_u64;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  let window = slots_new::<u64, 4>();
+  place_back(window: &window, value: 5_u64);
+  place_back(window: &window, value: 6_u64);
+  let x = caller(r: &window, a: 0_u64, b: 1_u64);
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+            br#"fn count_then_push(r: &Slots<u64, 4>, lo: u64, hi: u64) -> result: u64 reads(r[lo..hi]), writes(r.next), writes(r.len) contract {
+  requires lo <= hi;
+  requires deref(r).len < 4_u64;
+} {
+  let seen = if hi <= deref(r).len {
+    let run = &deref(r)[lo..hi];
+    give deref(run).len;
+  } else {
+    give 0_u64;
+  }
+  place_back(window: r, value: seen);
+  return seen;
+}
+
+fn caller(r: &Slots<u64, 4>, a: u64, b: u64) -> result: u64 writes(r) contract {
+  requires a <= b;
+  requires deref(r).len < 4_u64;
+} {
+  let x = count_then_push(r: r, lo: 0_u64, hi: 0_u64);
+  return x;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  let window = slots_new::<u64, 4>();
+  place_back(window: &window, value: 5_u64);
+  place_back(window: &window, value: 6_u64);
+  let x = caller(r: &window, a: 0_u64, b: 1_u64);
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+            br#"fn count_then_push(r: &Slots<u64, 4>, lo: u64, hi: u64) -> result: u64 writes(r) contract {
+  requires lo <= hi;
+  requires deref(r).len < 4_u64;
+} {
+  let seen = if hi <= deref(r).len {
+    let run = &deref(r)[lo..hi];
+    give deref(run).len;
+  } else {
+    give 0_u64;
+  }
+  place_back(window: r, value: seen);
+  return seen;
+}
+
+fn caller(r: &Slots<u64, 4>, a: u64, b: u64) -> result: u64 writes(r) contract {
+  requires a <= b;
+  requires deref(r).len < 4_u64;
+} {
+  let x = count_then_push(r: r, lo: a, hi: b);
+  return x;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  let window = slots_new::<u64, 4>();
+  place_back(window: &window, value: 5_u64);
+  place_back(window: &window, value: 6_u64);
+  let x = caller(r: &window, a: 0_u64, b: 1_u64);
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+        ],
+    },
+    RepairPair {
+        // [WIN-2] a range beside a window's `last` is separated from it once
+        // proved to end below the window's length.
+        name: "call-separation-range-beside-last.wf",
+        rejected: br#"fn count_then_pop(r: &Slots<u64, 4>, lo: u64, hi: u64) -> result: u64 reads(r[lo..hi]), writes(r.last), writes(r.len) contract {
+  requires lo <= hi;
+  requires deref(r).len > 0_u64;
+} {
+  let seen = if hi < deref(r).len {
+    let run = &deref(r)[lo..hi];
+    give deref(run).len;
+  } else {
+    give 0_u64;
+  }
+  let last = take_back(window: r);
+  let total = seen +wrap last;
+  return total;
+}
+
+fn caller(r: &Slots<u64, 4>, a: u64, b: u64) -> result: u64 writes(r) contract {
+  requires a <= b;
+  requires deref(r).len > 0_u64;
+} {
+  let x = count_then_pop(r: r, lo: a, hi: b);
+  return x;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  let window = slots_new::<u64, 4>();
+  place_back(window: &window, value: 5_u64);
+  place_back(window: &window, value: 6_u64);
+  let x = caller(r: &window, a: 0_u64, b: 1_u64);
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+        rule: "EFF-5",
+        sentences: &[
+            "\n  mechanical_fix: when the range can end below the window's length here, prove that before this call; otherwise pass a range this call proves ends there, or replace the callee's row entries at or below their common path with one `writes` entry of that path\n",
+        ],
+        repaired: &[
+            br#"fn count_then_pop(r: &Slots<u64, 4>, lo: u64, hi: u64) -> result: u64 reads(r[lo..hi]), writes(r.last), writes(r.len) contract {
+  requires lo <= hi;
+  requires deref(r).len > 0_u64;
+} {
+  let seen = if hi < deref(r).len {
+    let run = &deref(r)[lo..hi];
+    give deref(run).len;
+  } else {
+    give 0_u64;
+  }
+  let last = take_back(window: r);
+  let total = seen +wrap last;
+  return total;
+}
+
+fn caller(r: &Slots<u64, 4>, a: u64, b: u64) -> result: u64 writes(r) contract {
+  requires a <= b;
+  requires deref(r).len > 0_u64;
+} {
+  if b < deref(r).len {
+    let x = count_then_pop(r: r, lo: a, hi: b);
+    return x;
+  }
+  return 0_u64;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  let window = slots_new::<u64, 4>();
+  place_back(window: &window, value: 5_u64);
+  place_back(window: &window, value: 6_u64);
+  let x = caller(r: &window, a: 0_u64, b: 1_u64);
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+            br#"fn count_then_pop(r: &Slots<u64, 4>, lo: u64, hi: u64) -> result: u64 reads(r[lo..hi]), writes(r.last), writes(r.len) contract {
+  requires lo <= hi;
+  requires deref(r).len > 0_u64;
+} {
+  let seen = if hi < deref(r).len {
+    let run = &deref(r)[lo..hi];
+    give deref(run).len;
+  } else {
+    give 0_u64;
+  }
+  let last = take_back(window: r);
+  let total = seen +wrap last;
+  return total;
+}
+
+fn caller(r: &Slots<u64, 4>, a: u64, b: u64) -> result: u64 writes(r) contract {
+  requires a <= b;
+  requires deref(r).len > 0_u64;
+} {
+  let x = count_then_pop(r: r, lo: 0_u64, hi: 0_u64);
+  return x;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  let window = slots_new::<u64, 4>();
+  place_back(window: &window, value: 5_u64);
+  place_back(window: &window, value: 6_u64);
+  let x = caller(r: &window, a: 0_u64, b: 1_u64);
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+            br#"fn count_then_pop(r: &Slots<u64, 4>, lo: u64, hi: u64) -> result: u64 writes(r) contract {
+  requires lo <= hi;
+  requires deref(r).len > 0_u64;
+} {
+  let seen = if hi < deref(r).len {
+    let run = &deref(r)[lo..hi];
+    give deref(run).len;
+  } else {
+    give 0_u64;
+  }
+  let last = take_back(window: r);
+  let total = seen +wrap last;
+  return total;
+}
+
+fn caller(r: &Slots<u64, 4>, a: u64, b: u64) -> result: u64 writes(r) contract {
+  requires a <= b;
+  requires deref(r).len > 0_u64;
+} {
+  let x = count_then_pop(r: r, lo: a, hi: b);
+  return x;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  let window = slots_new::<u64, 4>();
+  place_back(window: &window, value: 5_u64);
+  place_back(window: &window, value: 6_u64);
+  let x = caller(r: &window, a: 0_u64, b: 1_u64);
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+        ],
+    },
+    RepairPair {
+        // The index-beside-range question from two arguments of an interface
+        // member's row, whose declaration bounds none of its positions.
+        name: "call-separation-index-beside-range-two-arguments.wf",
+        rejected: br#"interface Stage {
+  fn step(x: &Array<u64, 4>, y: &Array<u64, 4>, lo: u64, hi: u64, i: u64) -> result: u64 reads(x[lo..hi]), writes(y[i]);
+}
+
+fn outer<interface Stage>(r: &Array<u64, 4>, a: u64, b: u64, k: u64) -> result: u64 writes(r) {
+  let y = Stage::step(x: r, y: r, lo: a, hi: b, i: k);
+  return y;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+        rule: "EFF-5",
+        sentences: &[
+            "\n  mechanical_fix: when the index can lie outside the range here, prove before this call that it is below the range's start or at or after its end; otherwise pass positions this call proves apart\n",
+        ],
+        repaired: &[
+            br#"interface Stage {
+  fn step(x: &Array<u64, 4>, y: &Array<u64, 4>, lo: u64, hi: u64, i: u64) -> result: u64 reads(x[lo..hi]), writes(y[i]);
+}
+
+fn outer<interface Stage>(r: &Array<u64, 4>, a: u64, b: u64, k: u64) -> result: u64 writes(r) {
+  if b <= k {
+    let y = Stage::step(x: r, y: r, lo: a, hi: b, i: k);
+    return y;
+  }
+  return 0_u64;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+            br#"interface Stage {
+  fn step(x: &Array<u64, 4>, y: &Array<u64, 4>, lo: u64, hi: u64, i: u64) -> result: u64 reads(x[lo..hi]), writes(y[i]);
+}
+
+fn outer<interface Stage>(r: &Array<u64, 4>, a: u64, b: u64, k: u64) -> result: u64 writes(r) {
+  let y = Stage::step(x: r, y: r, lo: 0_u64, hi: 2_u64, i: 3_u64);
+  return y;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+        ],
+    },
+    RepairPair {
+        // The index-beside-`last` question from two arguments.
+        name: "call-separation-index-beside-last-two-arguments.wf",
+        rejected: br#"interface Stage {
+  fn step(x: &Slots<u64, 4>, w: &Slots<u64, 4>, i: u64) -> result: u64 reads(x[i]), writes(w.last);
+}
+
+fn outer<interface Stage>(r: &Slots<u64, 4>, k: u64) -> result: u64 writes(r) {
+  let y = Stage::step(x: r, w: r, i: k);
+  return y;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+        rule: "EFF-5",
+        sentences: &[
+            "\n  mechanical_fix: when the index can be below the window's last slot here, prove that before this call; otherwise pass an index this call proves below it\n",
+        ],
+        repaired: &[
+            br#"interface Stage {
+  fn step(x: &Slots<u64, 4>, w: &Slots<u64, 4>, i: u64) -> result: u64 reads(x[i]), writes(w.last);
+}
+
+fn outer<interface Stage>(r: &Slots<u64, 4>, k: u64) -> result: u64 writes(r) contract {
+  requires deref(r).len > 0_u64;
+} {
+  let last_index = deref(r).len - 1_u64;
+  if k < last_index {
+    let y = Stage::step(x: r, w: r, i: k);
+    return y;
+  }
+  return 0_u64;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+            br#"interface Stage {
+  fn step(x: &Slots<u64, 4>, w: &Slots<u64, 4>, i: u64) -> result: u64 reads(x[i]), writes(w.last);
+}
+
+fn outer<interface Stage>(r: &Slots<u64, 4>, k: u64) -> result: u64 writes(r) contract {
+  requires 1_u64 < deref(r).len;
+} {
+  let y = Stage::step(x: r, w: r, i: 0_u64);
+  return y;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+        ],
+    },
+    RepairPair {
+        // The range-beside-`next` question from two arguments.
+        name: "call-separation-range-beside-next-two-arguments.wf",
+        rejected: br#"interface Stage {
+  fn step(x: &Slots<u64, 4>, w: &Slots<u64, 4>, lo: u64, hi: u64) -> result: u64 reads(x[lo..hi]), writes(w.next);
+}
+
+fn outer<interface Stage>(r: &Slots<u64, 4>, a: u64, b: u64) -> result: u64 writes(r) {
+  let y = Stage::step(x: r, w: r, lo: a, hi: b);
+  return y;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+        rule: "EFF-5",
+        sentences: &[
+            "\n  mechanical_fix: when the range can end at or below the window's length here, prove that before this call; otherwise pass a range this call proves ends there\n",
+        ],
+        repaired: &[
+            br#"interface Stage {
+  fn step(x: &Slots<u64, 4>, w: &Slots<u64, 4>, lo: u64, hi: u64) -> result: u64 reads(x[lo..hi]), writes(w.next);
+}
+
+fn outer<interface Stage>(r: &Slots<u64, 4>, a: u64, b: u64) -> result: u64 writes(r) {
+  if b <= deref(r).len {
+    let y = Stage::step(x: r, w: r, lo: a, hi: b);
+    return y;
+  }
+  return 0_u64;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+            br#"interface Stage {
+  fn step(x: &Slots<u64, 4>, w: &Slots<u64, 4>, lo: u64, hi: u64) -> result: u64 reads(x[lo..hi]), writes(w.next);
+}
+
+fn outer<interface Stage>(r: &Slots<u64, 4>, a: u64, b: u64) -> result: u64 writes(r) {
+  let y = Stage::step(x: r, w: r, lo: 0_u64, hi: 0_u64);
+  return y;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+        ],
+    },
+    RepairPair {
+        // The range-beside-`last` question from two arguments.
+        name: "call-separation-range-beside-last-two-arguments.wf",
+        rejected: br#"interface Stage {
+  fn step(x: &Slots<u64, 4>, w: &Slots<u64, 4>, lo: u64, hi: u64) -> result: u64 reads(x[lo..hi]), writes(w.last);
+}
+
+fn outer<interface Stage>(r: &Slots<u64, 4>, a: u64, b: u64) -> result: u64 writes(r) {
+  let y = Stage::step(x: r, w: r, lo: a, hi: b);
+  return y;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+        rule: "EFF-5",
+        sentences: &[
+            "\n  mechanical_fix: when the range can end below the window's length here, prove that before this call; otherwise pass a range this call proves ends there\n",
+        ],
+        repaired: &[
+            br#"interface Stage {
+  fn step(x: &Slots<u64, 4>, w: &Slots<u64, 4>, lo: u64, hi: u64) -> result: u64 reads(x[lo..hi]), writes(w.last);
+}
+
+fn outer<interface Stage>(r: &Slots<u64, 4>, a: u64, b: u64) -> result: u64 writes(r) {
+  if b < deref(r).len {
+    let y = Stage::step(x: r, w: r, lo: a, hi: b);
+    return y;
+  }
+  return 0_u64;
+}
+
+fn main() -> status: std::process::ExitStatus pure {
+  return std::process::exit_status(code: 0_u8);
+}
+"#,
+            br#"interface Stage {
+  fn step(x: &Slots<u64, 4>, w: &Slots<u64, 4>, lo: u64, hi: u64) -> result: u64 reads(x[lo..hi]), writes(w.last);
+}
+
+fn outer<interface Stage>(r: &Slots<u64, 4>, a: u64, b: u64) -> result: u64 writes(r) {
+  let y = Stage::step(x: r, w: r, lo: 0_u64, hi: 0_u64);
   return y;
 }
 

@@ -668,28 +668,36 @@ fn main() -> status: std::process::ExitStatus pure {
         SemanticRule::Eff5,
         |kind| matches!(kind, SemanticIssueKind::OverlappingCallEffects { .. }),
     );
-    // [WIN-2] a slot overlaps `r.last` unless the call proves it is not the
-    // last one, so that pair depends on the slot's value.
-    assert_rule_kind(
-        br#"fn take_after_read(window: &Slots<u64, 4>, i: u64) -> result: u64 reads(window[i]), writes(window.last), writes(window.len) contract {
+    // [WIN-2] a slot overlaps `r.last` unless the call proves it is below
+    // the last one, so that pair depends on the slot's value: the call that
+    // passes the last slot is refused, and the one that passes the first is
+    // separated.
+    let take_after_read = |slot: &str| {
+        format!(
+            "fn take_after_read(window: &Slots<u64, 4>, i: u64) -> result: u64 reads(window[i]), writes(window.last), writes(window.len) contract {{
   requires i < deref(window).len;
-} {
+}} {{
   let observed = deref(window)[i];
   let taken = take_back(window: window);
   return observed +wrap taken;
-}
+}}
 
-fn main() -> status: std::process::ExitStatus pure {
+fn main() -> status: std::process::ExitStatus pure {{
   let window = slots_new::<u64, 4>();
   place_back(window: &window, value: 5_u64);
   place_back(window: &window, value: 6_u64);
-  let sum = take_after_read(window: &window, i: 0_u64);
+  let sum = take_after_read(window: &window, i: {slot});
   return std::process::exit_status(code: 0_u8);
-}
-"#,
+}}
+"
+        )
+    };
+    assert_rule_kind(
+        take_after_read("1_u64").as_bytes(),
         SemanticRule::Eff5,
-        |kind| matches!(kind, SemanticIssueKind::OverlappingCallEffects { .. }),
+        |kind| matches!(kind, SemanticIssueKind::UndischargedCallSeparation { .. }),
     );
+    assert_accepts(take_after_read("0_u64").as_bytes());
     // The written field passed again through a second parameter is a pair of
     // two arguments.
     assert_rule_kind(

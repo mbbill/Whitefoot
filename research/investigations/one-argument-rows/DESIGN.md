@@ -232,3 +232,100 @@ Two items outside the ruling surfaced:
   One maintained row had this shape, a unit test declaring
   `reads(packet), reads(packet.Data.value)`, and now declares
   `reads(packet)`.
+
+## Follow-up: an index or a window part beside a range
+
+Rule 1 left three kinds of one-argument pair compared at every call with
+nothing able to separate them: an index position beside a range position,
+and a range position beside `.next`, `.free`, `.last` or `.filled`, for which
+OWN-7 and WIN-2 had no family, and an index position beside `.last`, which
+WIN-2 separates but the checker posed to no call. Every call of such a row
+was refused, `reads(values[start..end]), writes(values[slot])` with
+`start: 0_u64, end: 2_u64, slot: 3_u64` included, and EFF-2 could suggest
+such a row, so rule 3's ground failed for these pairs. Two directions kept
+it: (a) class the pairs with those that overlap at every position, so no
+call compares them; (b) give OWN-7 a family that separates an index from a
+range and WIN-2 rows for a range beside a part, so each call proves the pair
+apart as it proves two indices apart. The owner chose (b) on 2026-09-26.
+
+The rule, in kernel-spec v0.74:
+
+1. [OWN-7] An index step and a range step under one containing path are
+   disjoint when the ProofContext proves `index < range.start`,
+   `range.end <= index` or `range.end <= range.start`; a proved separation
+   separates everything below both.
+2. [WIN-2] A range `r[lo..hi]` does not overlap `r.next` or `r.free` when
+   `hi <= r.len` or `hi <= lo` is proved where the places are compared, does
+   not overlap `r.last` when `hi < r.len` or `hi <= lo` is proved there,
+   overlaps each of the three otherwise, and always overlaps `r.filled`. A
+   range formed in that state ends at or below `r.len` there by its REF-4
+   obligation.
+3. [EFF-5] A range position beside `.filled` joins the pairs that overlap at
+   every position, as an index position beside `.filled` is. Every other
+   pair with a range position stays compared and now has a family.
+4. The checker poses an index beside `.last` at a call as it poses one
+   beside `.next`, and the call's entry state proves `i - r.len <= -2`.
+
+Why (b): some values separate each of these pairs, so they do not overlap at
+every position, and (a) would call a position-dependent pair fixed. Both are
+sound by the argument under [Soundness](#soundness), which holds for any
+exempted pair. They differ in what a caller keeps. Under (a) OWN-7 still has
+no family, so a write beside a range kills every caller fact below it and a
+call whose read range holds the written slot is admitted. Under (b) the call
+proves the pair apart, and the same family keeps a caller fact on an element
+outside a written range, or below a range an append does not reach
+[CALL-5, ENT-5].
+
+Soundness of the families:
+
+- A slot `k` of `r[lo..hi]` satisfies `lo <= k < hi`, and each of
+  `index < lo`, `hi <= index` and `hi <= lo` excludes `k = index`. Steps
+  below the index and below the range are relative to different frames, so
+  only a separation proved at this pair separates their descendants.
+- Every slot of a range is below `hi`, so `hi <= r.len` puts it below the
+  append slot and every free slot, `hi < r.len` puts it below the last filled
+  slot, and an empty range holds no slot. Every range overlapping `r.filled`
+  is a fixed answer, as it is for every slot.
+- Where the bound is read. A call proves its positions in its entry state.
+  A kill event proves a range bound, as it proves liveness, in its own entry
+  state and never carries it along an edge, since `r.len` changes. The flow's
+  ledger records only the index-and-range separation, whose captured values
+  no write changes, and drops it at a join a predecessor lacks.
+- Loop headers. A header's kills stand for every iteration's events and read
+  bounds from the preheader state. A range proved there to end at or below
+  `r.len` stays so at each such event, because `r.len` falls only at a write
+  of `r.last`, `r.filled` or the whole window, and each of those kills every
+  fact below the range, since no event answers `hi < r.len`.
+- PAR-1 poses no index-and-range query, so such a pair overlaps unless its
+  literals decide it. It reads a range either statement forms as within the
+  length, as it reads a subscript either forms as live, under the existing
+  shared-length guard.
+
+Criterion: (b) holds when every new conformance case below reaches its
+declared verdict through the ordinary compiler path, every running case
+exits 0, the v0.73 compiler refuses every positive case, and no existing
+case changes its verdict.
+
+| Case | v0.73 compiler | v0.74 |
+|---|---|---|
+| `own7-pos-index-outside-range-separate` | EFF-5 | exit 0 |
+| `eff5-neg-index-inside-written-range` | EFF-5 | EFF-5 |
+| `eff5-neg-index-beside-range-unproved` | EFF-5 | EFF-5 |
+| `win2-pos-range-within-length-beside-append` | EFF-5 | exit 0 |
+| `eff5-neg-range-reaching-append-slot` | EFF-5 | EFF-5 |
+| `win2-pos-range-before-last-beside-take` | EFF-5 | exit 0 |
+| `eff5-neg-range-reaching-last-slot` | EFF-5 | EFF-5 |
+| `win2-pos-index-before-last-beside-take` | EFF-5 | exit 0 |
+| `eff5-neg-index-at-last-slot` | EFF-5 | EFF-5 |
+| `eff5-pos-range-beside-filled-not-compared` | EFF-5 | exit 0 |
+| `eff5-pos-two-arguments-range-beside-append` | EFF-5 | exit 0 |
+| `call3-pos-range-write-beside-element-keeps-its-measure` | OP-4 | exit 0 |
+| `ent5-pos-range-element-measure-survives-append` | OP-4 | exit 0 |
+
+The criterion held. The pinned repair pair
+`declared-row-omits-a-range-read-beside-a-written-slot.wf` shows EFF-2's
+suggested `reads(values[start..end].len), writes(values[slot])` accepted at
+a call that passes the slot outside the range. The probes `range-positions`
+and `window-index-last` above describe calls that v0.74 accepts, since each
+passes positions its entry state proves apart; their table rows record the
+v0.73 rule.

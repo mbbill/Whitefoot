@@ -4342,32 +4342,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 .call_separations
                                 .get(query as usize)
                                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                            let live = matches!(
-                                separation.positions.first(),
-                                Some(super::model::CheckedCallSeparationPositions::Live(_))
+                            let mechanical_fix = repairs::call_separation(
+                                separation.positions.first().copied(),
+                                separation.one_argument,
                             );
-                            // The facts may already refute the goal, so
-                            // proving it is offered only where it can hold;
-                            // changing what the call passes works either way
-                            // [DIAG-1]. An index beside a window's `next` or
-                            // `free` is separated by being below the window's
-                            // length [WIN-2], not by differing. When one
-                            // argument supplies both entries, the callee's
-                            // row can instead name their common path once.
-                            let mechanical_fix = match (live, separation.one_argument) {
-                                (false, false) => {
-                                    "when the two positions can differ here, prove them distinct before this call; otherwise pass places this call proves do not overlap"
-                                }
-                                (false, true) => {
-                                    "when the two positions can differ here, prove them distinct before this call; otherwise pass positions this call proves distinct, or replace the callee's row entries at or below their common path with one `writes` entry of that path"
-                                }
-                                (true, false) => {
-                                    "when the index can be below the window's length here, prove that before this call; otherwise pass an index this call proves below it"
-                                }
-                                (true, true) => {
-                                    "when the index can be below the window's length here, prove that before this call; otherwise pass an index this call proves below it, or replace the callee's row entries at or below their common path with one `writes` entry of that path"
-                                }
-                            };
                             SemanticIssue {
                                 rule: SemanticRule::Eff5,
                                 location,
