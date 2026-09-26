@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-26 Record incremental gate builds, acceptance records and engine components
+
+Nodes: compiler/verification, compiler/acceptance-records, compiler/engine-components, compiler/incremental-compilation
+
+Owner-approved: After the handoff for PR #128 at 7271a131, whose decision cards 1 to 3 presented the compiler-incremental-gate, compiler-acceptance-records and compiler-engine-components amendments, linked their files and recommended approving each, the owner approved all four of that handoff's cards on 2026-09-26.
+
+Summary: compiler/verification gains the decision that local builds of the gate profile compile incrementally while hosted CI builds it with incremental compilation off, for the measured edit latency and the cost incremental state adds to a fresh checkout. The new compiler/acceptance-records node records that the checker forms every mandatory obligation as a record the engine answers, and that a function is accepted exactly when every record is discharged, failing closed. The new compiler/engine-components node records dividing the flow's analyzer along its writers into typed sub-contexts and then modules, keeping the one prove dispatcher, the one ledger, the walker's event order and the fact states single. The same handoff's fourth card accepted that P1.1 shares only the classification of how an expression names caller storage; whether the consumers read the checker's point-current call facts stays open in docs/todo.md. The measurements and findings are in research/investigations/compiler-architecture/DESIGN.md. Remove the three accepted amendments and the amendment directory. This entry also names compiler/incremental-compilation, which the same PR changed under the ruling of the entry below, so that the newest entry names every node the PR changes.
+
 ## 2026-09-25 Build the owned representation before composition queries
 
 Nodes: compiler/incremental-compilation

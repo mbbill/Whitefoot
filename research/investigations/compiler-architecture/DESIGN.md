@@ -339,7 +339,7 @@ and applied (`design/log.md`, 2026-09-25).
    table. Cost: medium; many semantic tests read the engine's outcome lists,
    which can stay alongside the dispositions to spare them. Validation:
    identical verdicts, rules and locations on the corpus. Tree: a new
-   decision, `design/amendments/compiler-acceptance-records.md`.
+   decision, `design/compiler/acceptance-records.md` (owner-approved).
 
 ### P2. Component boundaries
 
@@ -352,7 +352,7 @@ and applied (`design/log.md`, 2026-09-25).
    mechanical after the sub-contexts. Validation: identical ledgers and
    verdicts; the 155 entailment tests read only `FunctionEntailment`.
    Supersedes the current `docs/todo.md` plan for `flow.rs`. Tree: a new
-   decision, `design/amendments/compiler-engine-components.md`.
+   decision, `design/compiler/engine-components.md` (owner-approved).
 2. **Checker components.** A `TypeContext` that can intern during body checks
    (removing `DeferredNominal`'s restarts of whole function walks), a
    read-only `DeclarationInventory` and a per-attempt `BodyChecker` owning its
@@ -459,10 +459,10 @@ checkout, where incremental compilation only adds that cost. Splitting the
 crate stays unselected: `design/compiler.md` keeps one crate with private
 interfaces, and incremental compilation recovers most of the latency without
 new boundaries. Tree: the verification decision on the `gate` profile gains
-one sentence, `design/amendments/compiler-incremental-gate.md`. Done on this
-branch while that amendment awaits its ruling: `compiler/Cargo.toml` makes
-the `gate` profile incremental, the five workflows that build it set
-`CARGO_INCREMENTAL=0`, and `README.md` says so.
+one sentence, which the owner approved into `design/compiler/verification.md`.
+Done on this branch: `compiler/Cargo.toml` makes the `gate` profile
+incremental, the five workflows that build it set `CARGO_INCREMENTAL=0`, and
+`README.md` says so.
 
 ## Order
 

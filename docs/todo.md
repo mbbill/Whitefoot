@@ -280,10 +280,11 @@ rarely insert at the same place.
   `free_empty`. A mandatory outcome list added without a matching arm would be
   accepted. The [architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#f2-rules-implemented-twice-with-nothing-checking-that-they-agree)
   proposes explicit obligation records, one disposition each and one
-  acceptance query (its P1.3, a design amendment). Validate with identical
-  verdicts, rules and locations on the conformance corpus and test programs,
-  and a deliberately dropped disposition that rejects. Close when acceptance
-  is one query over the records or the owner declines them.
+  acceptance query (its P1.3), which `design/compiler/acceptance-records.md`
+  now records. Validate with identical verdicts, rules and locations on the
+  conformance corpus and test programs, and a deliberately dropped
+  disposition that rejects. Close when acceptance is one query over the
+  records.
 
 - **Rules recognized by spelling or implemented twice.** OP-14 is selected
   by the callee spelling `free_empty` (`compiler/src/semantic/check.rs`) and
@@ -1205,7 +1206,8 @@ rarely insert at the same place.
   sub-contexts, a vocabulary (terms, goals, ledger, atoms), read-only inputs,
   outputs and walk frames, then move code along the components the
   [architecture investigation](../research/investigations/compiler-architecture/DESIGN.md#p2-component-boundaries) lists (its
-  P2.1, a design amendment). `state.rs` can move its test
+  P2.1, which `design/compiler/engine-components.md` now records). `state.rs`
+  can move its test
   module to its own file and its dense-closure algorithms apart from the fact
   state and ledger types; the tests can group by the section they exercise.
   Validate that each move changes no behavior: identical `make check` results
