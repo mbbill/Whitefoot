@@ -337,7 +337,7 @@ rarely insert at the same place.
 - **Most repairs outside the goal families have no pinned pair.**
   `compiler/diagnostic-repairs` pins every repair with its rejected source
   and a program for each alternative, and keeps the words in one module;
-  `driver::pinned_repairs` holds 77 pairs, nearly all for goals, effect rows
+  `driver::pinned_repairs` holds 75 pairs, nearly all for goals, effect rows
   and TYPE-2's opaque-struct refusals, while most of the eighty-odd sites
   across the checker that print a fixed repair sentence have none. Among
   them are TYPE-2's "build it with a construction function [OP-13]" for a
@@ -1890,22 +1890,27 @@ condition under which it is taken up.
   bounded. Validate with that body accepted and one requiring only
   `i <= j` still refused. Found while adding OWN-7's index-and-range
   family; the gap is older than the family.
-- **No kill event separates a fact from `r.last`.** WIN-2 separates `r[i]`
-  from `r.last` where `i != r.len - 1` is proved, and `r[lo..hi]` where
-  `hi < r.len` or `hi <= lo` is, but an ENT-5 event answers neither, so a
-  fact below `r[0]` dies at a `take_back` whose entry state proves
-  `r.len == 2`, and a program that reads it back is refused although the
-  specification separates the two. A loop header's kills stand for
-  every iteration's events, and the flow answers WIN-2's liveness and range
-  bounds there from the preheader state: `r.len` falls only at an event
-  writing `r.last`, `r.filled` or the whole window, each of which kills
-  every fact below `r[i]` or `r[lo..hi]` because no event answers the last
-  slot. Answering it at an ordinary event, from that event's entry state as
-  liveness is, would let the fact survive, but a header must still not
-  answer it, since a proof made there need not hold at a later iteration's
-  event. Validate with a measure fact over `rows[0]` read after a
-  `take_back` of `rows` holding two elements, and a loop that calls
-  `take_back` once per iteration still killing it at the header.
+- **A call ends a window reference's bound without reading the callee's
+  `ensures`.** OP-10 keeps a reference into a window valid while the bound
+  it was formed under holds, and `place_back`'s `ensures` carries that bound
+  across the call. The checker instead ends it at every call of `take_back`,
+  `remove_at`, `append`, `split_off`, `place_front`, `take_front` or
+  `grow`, and at every other call whose row writes the window's `last` or
+  `filled`, whatever the callee ensures. So `&front[0_u64]` dies at
+  `append(destination: &front, source: &back)` although `append` ensures
+  `deref(destination).len >= deref(entry(destination)).len`, and a slot
+  reference dies at a user function declared `writes(window.last),
+  writes(window.next), writes(window.len)` that takes one element back,
+  places one back and ensures `deref(window).len ==
+  deref(entry(window)).len`. The v0.73 checker accepted the second, since it
+  ended no bound at a user call, which also let a reference outlive a user
+  function that took its slot back. This refuses programs only. Reopen when
+  a program needs such a reference: after the call, ask the entailment
+  fragment whether the bound still holds in the call's exit state, as an
+  event asks liveness in its entry state, and end the reference only where
+  it is unproved. Validate with both programs accepted, the same callee
+  without its `ensures` still ending the reference, and a reference below
+  the slot still dying by REF-2's prefix rule.
 - **Member names `len`, `cap` and `head` are classified by spelling in two
   paths.** Contract clauses and subscripted body places pick the measure
   route by the member's name before its type is known, so a writer's field
@@ -1941,3 +1946,33 @@ condition under which it is taken up.
   required source work from removable lowering cost. Defer a broad repeat of all
   eight engineering tasks until it answers a concrete selection question;
   a passing new library does not dispose of the remaining matrix claims.
+- **A call separates positions below containing paths that differ in an
+  index.** OWN-7 separates two ranges, or an index and a range, only under
+  one identical containing path, but EFF-5's call check also separates them
+  below containing paths that differ only in index steps it cannot prove
+  distinct. Two ranges formed at a call, `&deref(rows)[i][0_u64..2_u64]`
+  beside `&deref(rows)[j][2_u64..4_u64]`, were already accepted for unproved
+  `i` and `j`, and v0.74 accepts the same for an index beside a range, a row
+  `reads(rows[i][lo..hi]), writes(rows[j][k])` called with `lo: 0_u64,
+  hi: 2_u64, k: 3_u64`. This is sound, since an index step's coordinates are
+  absolute: equal `i` and `j` name one row, whose positions the family
+  compares, and unequal ones name different rows. But the compiler admits
+  calls the specification's wording refuses. Decide whether OWN-7 states
+  the relation the checker implements or the checker requires identical
+  containing paths; validate with those two calls, and with containing
+  paths that differ in a range step, which must stay refused. Found by the
+  completion review of PR #141.
+- **A requirement through a reference is checked against its offset's
+  current value.** After `let wr = &rows[k];` and `set k = 1_u64;`, a
+  requirement a call states through `wr`, such as `requires i <
+  deref(x).len` for `get(x: wr, i: 2_u64)`, is instantiated as
+  `2 < rows[k].len` with the new `k`, so facts about `rows[1_u64]` discharge
+  it while `wr` still names `rows[0_u64]`. A program that proves
+  `3 <= rows[k].len` after the assignment reads index 2 of a one-element
+  row and segfaults; the v0.73 and v0.74 checkers both accept it. The
+  requirement must read the reference's target as captured at formation
+  [REF-1], as a range's captured endpoints are [OWN-7]. Validate with that
+  program refused, the same program with `wr` formed after the assignment
+  accepted, and a reference whose offset is never reassigned unchanged.
+  Found by the completion review of PR #141; the fix is planned as its own
+  PR.

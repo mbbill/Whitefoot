@@ -1473,22 +1473,13 @@ impl SeparationOracle for SeparationLedger {
         false
     }
 
-    /// Like liveness, every bound by `r.len` holds at the event it was proved
-    /// for and is never carried along the edge [WIN-2]: an index below the
-    /// last slot, and a range ending at or below `r.len` or below it.
-    fn index_is_not_last(&self, _window: &ResolvedPlace, _index: CapturedValue) -> bool {
-        false
-    }
-
     fn index_outside_range(&self, index: CapturedValue, range: CapturedRange) -> bool {
         self.outside_ranges.contains(&(index.capture, range))
     }
 
+    /// Like liveness, a range's bound by `r.len` holds at the event it was
+    /// proved for and is never carried along the edge [WIN-2].
     fn range_within_length(&self, _window: &ResolvedPlace, _range: CapturedRange) -> bool {
-        false
-    }
-
-    fn range_before_last(&self, _window: &ResolvedPlace, _range: CapturedRange) -> bool {
         false
     }
 
@@ -1538,20 +1529,12 @@ impl SeparationOracle for EventSeparations<'_> {
         self.live.indices.contains(&(window.clone(), index))
     }
 
-    fn index_is_not_last(&self, window: &ResolvedPlace, index: CapturedValue) -> bool {
-        self.ledger.index_is_not_last(window, index)
-    }
-
     fn index_outside_range(&self, index: CapturedValue, range: CapturedRange) -> bool {
         self.ledger.index_outside_range(index, range)
     }
 
     fn range_within_length(&self, window: &ResolvedPlace, range: CapturedRange) -> bool {
         self.live.ranges.contains(&(window.clone(), range))
-    }
-
-    fn range_before_last(&self, window: &ResolvedPlace, range: CapturedRange) -> bool {
-        self.ledger.range_before_last(window, range)
     }
 
     fn window_length_is_shared(&self, window: &ResolvedPlace) -> bool {
@@ -4858,7 +4841,9 @@ impl Analyzer<'_, '_> {
                     };
                     if written_parts.contains(&(window.root, depth))
                         && asked_ranges.insert((window.clone(), range))
-                        && self.range_length_proof(&window, range, 0, states).is_some()
+                        && self
+                            .range_within_length_proof(&window, range, states)
+                            .is_some()
                     {
                         live.ranges.insert((window, range));
                     }
@@ -4875,18 +4860,6 @@ impl Analyzer<'_, '_> {
         &mut self,
         window: &ResolvedPlace,
         index: CapturedValue,
-        states: &ProofFlowState,
-    ) -> Option<ProofResult> {
-        self.index_bound_proof(window, index, -1, states)
-    }
-
-    /// [WIN-2] the proof `states` gives of `index - len(window) <= bound`:
-    /// liveness at `-1`, and below the last slot at `-2`.
-    fn index_bound_proof(
-        &mut self,
-        window: &ResolvedPlace,
-        index: CapturedValue,
-        bound: i128,
         states: &ProofFlowState,
     ) -> Option<ProofResult> {
         let length = self
@@ -4907,13 +4880,8 @@ impl Analyzer<'_, '_> {
         .or_else(|| self.affine_term_value(offset, &states.affine));
         let direct_affine = affine_offset.as_ref().and_then(|offset| {
             let length = self.measure_atom(length, &states.affine);
-            AffineInequality::from_bounded_forms(
-                offset,
-                &length,
-                bound,
-                &mut AffineCheckState::new(),
-            )
-            .ok()
+            AffineInequality::from_bounded_forms(offset, &length, -1, &mut AffineCheckState::new())
+                .ok()
         });
         let proof = self.prove(
             ProofContext::new(&states.facts, &states.affine),
@@ -4922,7 +4890,7 @@ impl Analyzer<'_, '_> {
                 request: Some(BoundsRequest {
                     left: Some(offset),
                     right: length,
-                    bound,
+                    bound: -1,
                     distinct: false,
                 }),
                 direct_affine: direct_affine.as_ref(),
@@ -7178,17 +7146,17 @@ impl Analyzer<'_, '_> {
                                 Positions::Indices(left, right) => {
                                     vec![left.capture, right.capture]
                                 }
-                                Positions::Ranges(left, right) => {
-                                    vec![left.start.capture, right.start.capture]
-                                }
-                                Positions::Live(index) | Positions::NotLast(index) => {
-                                    vec![index.capture]
-                                }
+                                Positions::Ranges(left, right) => vec![
+                                    left.start.capture,
+                                    left.end.capture,
+                                    right.start.capture,
+                                    right.end.capture,
+                                ],
+                                Positions::Live(index) => vec![index.capture],
                                 Positions::IndexOutsideRange(index, range) => {
                                     vec![index.capture, range.start.capture, range.end.capture]
                                 }
-                                Positions::RangeWithinLength(range)
-                                | Positions::RangeBeforeLast(range) => {
+                                Positions::RangeWithinLength(range) => {
                                     vec![range.start.capture, range.end.capture]
                                 }
                             }
@@ -9823,21 +9791,13 @@ impl Analyzer<'_, '_> {
                     .window
                     .as_ref()
                     .and_then(|window| self.index_live_proof(window, index, state)),
-                CheckedCallSeparationPositions::NotLast(index) => separation
-                    .window
-                    .as_ref()
-                    .and_then(|window| self.index_bound_proof(window, index, -2, state)),
                 CheckedCallSeparationPositions::IndexOutsideRange(index, range) => {
                     self.prove_index_outside_range(index, range, state)
                 }
                 CheckedCallSeparationPositions::RangeWithinLength(range) => separation
                     .window
                     .as_ref()
-                    .and_then(|window| self.range_length_proof(window, range, 0, state)),
-                CheckedCallSeparationPositions::RangeBeforeLast(range) => separation
-                    .window
-                    .as_ref()
-                    .and_then(|window| self.range_length_proof(window, range, -1, state)),
+                    .and_then(|window| self.range_within_length_proof(window, range, state)),
             };
             proof.map(|proof| (positions, proof))
         });
@@ -9857,9 +9817,7 @@ impl Analyzer<'_, '_> {
                 // A bound by the window's length holds at this call's entry
                 // alone and is never carried along the edge [WIN-2].
                 CheckedCallSeparationPositions::Live(_)
-                | CheckedCallSeparationPositions::NotLast(_)
-                | CheckedCallSeparationPositions::RangeWithinLength(_)
-                | CheckedCallSeparationPositions::RangeBeforeLast(_) => {}
+                | CheckedCallSeparationPositions::RangeWithinLength(_) => {}
             }
         }
         let derivation = proof.and_then(|proof| proof.derivation);
@@ -9902,20 +9860,12 @@ impl Analyzer<'_, '_> {
                     "{} and {} select different storage (the index is below the window's length)",
                     separation.left_spelling, separation.right_spelling
                 ),
-                Some(CheckedCallSeparationPositions::NotLast(..)) => format!(
-                    "{} and {} select different storage (the index is below the window's last slot)",
-                    separation.left_spelling, separation.right_spelling
-                ),
                 Some(CheckedCallSeparationPositions::IndexOutsideRange(..)) => format!(
                     "{} and {} select different storage (the index is before the range's start or at or after its end, or the range is empty)",
                     separation.left_spelling, separation.right_spelling
                 ),
                 Some(CheckedCallSeparationPositions::RangeWithinLength(..)) => format!(
                     "{} and {} select different storage (the range ends at or below the window's length, or is empty)",
-                    separation.left_spelling, separation.right_spelling
-                ),
-                Some(CheckedCallSeparationPositions::RangeBeforeLast(..)) => format!(
-                    "{} and {} select different storage (the range ends below the window's length, or is empty)",
                     separation.left_spelling, separation.right_spelling
                 ),
                 None => unreachable!("checker hands off at least one position candidate"),
@@ -10117,6 +10067,9 @@ impl Analyzer<'_, '_> {
         Some(proof)
     }
 
+    /// [OWN-7] the proof `affine` gives that two ranges of one containing
+    /// path are disjoint, over the images their formations filed or, for a
+    /// range a row takes from a call's arguments, its endpoints' own.
     fn prove_range_separation(
         &mut self,
         left: CapturedRange,
@@ -10124,28 +10077,24 @@ impl Analyzer<'_, '_> {
         facts: &FactState,
         affine: &AffineFlowState,
     ) -> Option<ProofResult> {
-        let left_image = affine.ranges.get(&left.start.capture)?.clone();
-        let right_image = affine.ranges.get(&right.start.capture)?.clone();
+        let (left_start, left_end) = self.range_endpoint_images(left, affine)?;
+        let (right_start, right_end) = self.range_endpoint_images(right, affine)?;
         for (ordering, end, start) in [
             (
                 RangeSeparationOrdering::LeftBeforeRight,
-                &left_image.end,
-                &right_image.start,
+                &left_end,
+                &right_start,
             ),
             (
                 RangeSeparationOrdering::RightBeforeLeft,
-                &right_image.end,
-                &left_image.start,
+                &right_end,
+                &left_start,
             ),
-            (
-                RangeSeparationOrdering::LeftEmpty,
-                &left_image.end,
-                &left_image.start,
-            ),
+            (RangeSeparationOrdering::LeftEmpty, &left_end, &left_start),
             (
                 RangeSeparationOrdering::RightEmpty,
-                &right_image.end,
-                &right_image.start,
+                &right_end,
+                &right_start,
             ),
         ] {
             let Ok(inequality) =
@@ -10253,14 +10202,12 @@ impl Analyzer<'_, '_> {
         )
     }
 
-    /// [WIN-2] the proof `state` gives that a range of `window` ends with
-    /// `end - len(window) <= bound`, at or below the length at `0` and below
-    /// it at `-1`, or is empty.
-    fn range_length_proof(
+    /// [WIN-2] the proof `state` gives that a range of `window` ends at or
+    /// below the window's length, `end <= len(window)`, or is empty.
+    fn range_within_length_proof(
         &mut self,
         window: &ResolvedPlace,
         range: CapturedRange,
-        bound: i128,
         state: &ProofFlowState,
     ) -> Option<ProofResult> {
         let (start, end) = self.range_endpoint_images(range, &state.affine)?;
@@ -10269,7 +10216,7 @@ impl Analyzer<'_, '_> {
             .interned(&TermKind::Measure(CheckedMeasure::Length, window.clone()))
             .map(|length| self.measure_atom(length, &state.affine));
         let within = length.map(|length| {
-            AffineInequality::from_bounded_forms(&end, &length, bound, &mut AffineCheckState::new())
+            AffineInequality::from_forms(&end, &length, &mut AffineCheckState::new())
         });
         self.prove_first_affine(
             within.into_iter().chain([AffineInequality::from_forms(
@@ -16577,11 +16524,11 @@ impl Analyzer<'_, '_> {
         // [WIN-2], as a range this state proves to end at or below `r.len`
         // stays within it: `r.len` falls only at an event that writes
         // `r.last`, `r.filled` or the whole window [OP-10], each of which
-        // kills every fact below `r[i]` or `r[lo..hi]` here because no event
-        // answers `i != r.len - 1` or `hi < r.len`, a write of `i` kills the
-        // fact through its offset support [ENT-5], and a range's endpoints
-        // are captured values no write changes [OWN-7]. A fact these kills
-        // leave therefore meets no such event.
+        // kills every fact below `r[i]` or `r[lo..hi]` here because [WIN-2]
+        // fixes every index and range as overlapping `r.last` and `r.filled`,
+        // a write of `i` kills the fact through its offset support [ENT-5],
+        // and a range's endpoints are captured values no write changes
+        // [OWN-7]. A fact these kills leave therefore meets no such event.
         let ledger = states.separations.clone();
         let live = self.event_live_bounds(states, &kills.events);
         let separations = EventSeparations {

@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-26 Overlap every index and range with a window's last filled slot
+
+Nodes: language/ownership/range-reference, language/ownership
+
+Owner-approved: The owner agreed to card 1 of PR #141's completion review ("agreed", written in Chinese), 2026-09-26.
+
+Summary: The completion review of PR #141 found the separation of an index or a range from a window's last filled slot, proved at call entry, unsound: one `writes(r.last)` entry covers every `take_back` a body makes, so a row's `last` stands for every slot the callee's successive take-backs reach, and the review's probes miscompiled, a callee taking back twice through one argument reading the slot another argument named, and a caller's reference kept across a double take-back reading a released cell. language/ownership/range-reference's second decision, approved earlier the same day, now separates a range only from a window's append slot or free slots and overlaps the last filled slot, and its option-(a) rejection is narrowed to an index, the append slot or the free slots beside a range, pairs some values do separate. language/ownership's window-part decision adds that an indexed position is never separated from the last filled slot, and the specification's earlier separation where `i != r.len - 1` is proved becomes a rejected alternative. The settled wording is in kernel-spec v0.74 rules WIN-2 and EFF-5, which list an index or range position beside `.last` among the pairs that overlap at every position; the [one-argument rows investigation](../research/investigations/one-argument-rows/DESIGN.md#follow-up-an-index-or-a-window-part-beside-a-range) records the probes. This ruling does not authorize a merge.
+
 ## 2026-09-26 Separate a range from an index, and from a window part it ends before
 
 Nodes: language/ownership/range-reference
