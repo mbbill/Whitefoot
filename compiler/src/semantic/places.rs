@@ -505,18 +505,15 @@ impl ResolvedPlace {
         }
     }
 
-    /// Whether some index of this path has no spelling a term can name: one
-    /// whose binding was written after the formation, or one a loop may
-    /// evaluate again.
-    pub(crate) fn has_unspelled_index(&self) -> bool {
-        self.path.iter().any(|step| {
-            matches!(
-                step,
-                PlaceStep::Index(CapturedValue {
-                    term: CapturedTerm::Superseded(_) | CapturedTerm::Opaque,
-                    ..
-                })
-            )
+    /// The bindings whose spelling still names an index of this path, which
+    /// a later write of one of them supersedes [`Self::supersede_binding`].
+    pub(crate) fn spelled_index_bindings(&self) -> impl Iterator<Item = BindingId> + '_ {
+        self.path.iter().filter_map(|step| match step {
+            PlaceStep::Index(CapturedValue {
+                term: CapturedTerm::Binding(binding),
+                ..
+            }) => Some(*binding),
+            _ => None,
         })
     }
 
@@ -1963,7 +1960,10 @@ mod tests {
                 PlaceStep::Index(binding(1, 2)),
             ],
         );
-        assert!(!path.has_unspelled_index());
+        assert_eq!(
+            path.spelled_index_bindings().collect::<Vec<_>>(),
+            [BindingId(1), BindingId(2)]
+        );
         path.supersede_binding(BindingId(1));
         let PlaceStep::Index(superseded) = path.path[0] else {
             unreachable!("the first step is an index");
@@ -1977,6 +1977,9 @@ mod tests {
         assert_eq!(superseded.support(), None);
         assert_eq!(kept, binding(1, 2));
         assert_ne!(kept.goal_identity(), kept);
-        assert!(path.has_unspelled_index());
+        assert_eq!(
+            path.spelled_index_bindings().collect::<Vec<_>>(),
+            [BindingId(2)]
+        );
     }
 }

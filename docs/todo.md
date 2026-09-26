@@ -1944,3 +1944,21 @@ condition under which it is taken up.
   containing paths; validate with those three calls, and with containing
   paths that differ in a range step, which must stay refused. Found by the
   completion review of PR #141.
+- **A body access keeps a row's index after the body writes that index
+  parameter.** EFF-1 evaluates the index of a row entry such as
+  `writes(window[index])` once at the call, but EFF-2 attributes a body
+  access `deref(window)[index]` to that entry by the parameter's spelling,
+  even after `set index = 0_u64`. A callee declared that way that sets
+  `index` to 0 and writes `deref(window)[index]`, called with
+  `index: 1_u64`, writes `r[0_u64]` while the caller's `p = &r[0_u64]`
+  stays valid and reads the new value. One that replaces `deref(rows)[index]`
+  after the same write leaves the caller's fact `3 <= rows[0_u64].len`
+  standing over a replaced row, and the caller reads an uninitialized
+  element. The v0.73 and v0.74 checkers accept both, directly and through a
+  reference formed after the write. The access must map to the entry only
+  while the parameter still holds its call value, and otherwise to its
+  nearest enclosing path [EFF-2]. That is flow-sensitive: a loop that writes
+  the parameter must reach its header the way a loop's write of a
+  reference's index binding does. Validate with those two programs refused
+  and a parameter written only after its last access accepted. Found by the
+  completion review of PR #145.

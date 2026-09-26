@@ -40,8 +40,8 @@ use super::super::model::{
     CheckedType, IntegerType, WindowShape,
 };
 use super::super::places::{
-    CapturedRange, CapturedValue, DescendantTarget, PlaceRoot, PlaceStep, ResolvedPlace,
-    UnprovedSeparations,
+    CapturedRange, CapturedTerm, CapturedValue, DescendantTarget, PlaceRoot, PlaceStep,
+    ResolvedPlace, UnprovedSeparations,
 };
 use super::{
     CheckStop, Checker, EffectPath, FunctionSignature, LocalBinding, PlaceAccess, TypedExpression,
@@ -655,6 +655,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 for path in &mut reference.paths {
                     path.supersede_binding(binding);
                 }
+            }
+            // An enclosing loop whose header still spells an index with this
+            // binding reaches that header again after this write: the header
+            // grows, and the walk restarts from it (see
+            // `enter_loop_reference_header`).
+            let mut grown = false;
+            let mut superseded = self.loop_superseded_bindings.borrow_mut();
+            for (loop_id, spelled) in self.active_loop_captures.borrow().iter() {
+                if spelled.contains(&binding) {
+                    grown |= superseded.entry(*loop_id).or_default().insert(binding);
+                }
+            }
+            if grown {
+                return Err(CheckStop::ReferenceSummaryChanged);
             }
         }
         let include_equal = matches!(event, InvalidationEvent::PrefixMoved);
@@ -1375,10 +1389,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// is the only index spelling a declared row admits.
     fn captured_parameter(
         &self,
-        captured: super::super::places::CapturedValue,
+        captured: CapturedValue,
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Option<DeclarationId> {
-        let binding = captured.support()?;
+        // A superseded index still holds the value its formation read, so it
+        // names the parameter exactly as the spelled index did [REF-1].
+        let binding = match captured.term {
+            CapturedTerm::Binding(binding) | CapturedTerm::Superseded(binding) => binding,
+            CapturedTerm::Literal(_) | CapturedTerm::Const(_) | CapturedTerm::Opaque => {
+                return None;
+            }
+        };
         let local = bindings.values().find(|local| local.binding == binding)?;
         self.resolved
             .declarations()
