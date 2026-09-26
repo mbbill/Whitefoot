@@ -1,35 +1,36 @@
 # Whitefoot
 
-Whitefoot is a research systems programming language. A program the compiler
-accepts cannot reach undefined behavior, a panic, or a silent integer overflow
-at run time, provided its [trusted base](#what-an-accepted-program-cannot-do-and-what-it-still-can)
-is correct. It gets there without runtime checks: every indexing, arithmetic,
-conversion, division and allocation-size operation needs a proof that it is in
-range, and the compiler finds most of those proofs itself, with a fixed
-procedure and no SMT solver. A proved check costs nothing at run time.
+Whitefoot is a research systems programming language built around three
+properties:
 
-## A bounds check that is proved away
+- **Safe.** A program the compiler accepts has no undefined behavior, given
+  a correct trusted base; it cannot panic, and no bounds, overflow or
+  conversion check runs in it. There is no `unsafe` to opt out with.
+- **Fast.** The safety comes from proofs checked at compile time, not from
+  checks at run time, and the same proofs let the compiler drop bounds and
+  overflow checks, tell LLVM which references do not alias, and run
+  independent code in parallel.
+- **Small.** Functions, structs, enums and explicit generics, close to C. No
+  lifetimes, no methods, no traits, no exceptions.
 
-This loop keeps the non-space bytes of a buffer in place. In Rust:
+The compiler finds most proofs itself, with a fixed procedure and no SMT
+solver. You write the rest as loop invariants and, now and then, a short
+proof step, and the compiler checks them.
 
-```rust
-pub fn squeeze(buf: &mut [u8]) -> usize {
-    let mut kept = 0;
-    for i in 0..buf.len() {
-        let b = buf[i];
-        if b != b' ' {
-            buf[kept] = b;
-            kept += 1;
-        }
-    }
-    kept
-}
-```
+## Fast: the proofs pay for the speed
 
-`buf[kept]` is always in range, because `kept` never passes `i`. Seeing that
-takes induction over the loop, which the optimizer does not do, so the
-compiled loop compares `kept` with the length for every byte it keeps. In
-Whitefoot the reason is one more line, and the compiler checks it:
+A proof that an operation is in range also makes its runtime check
+unnecessary, and a proof that two pieces of code touch different memory lets
+them run at the same time. The two examples below show one use each, and the
+list after them names others.
+
+### A bounds check proved away
+
+This loop keeps the non-space bytes of a buffer, in place. The line
+`invariant behind: kept <= i` states why the store `buf[kept]` is in range.
+The compiler proves it before the first iteration and after every iteration,
+and with `i < buf.len` concludes `kept < buf.len`, so the store compiles to a
+plain store:
 
 ```
 fn squeeze(buf: &[u8]) -> kept: u64 writes(buf) {
@@ -48,40 +49,23 @@ fn squeeze(buf: &[u8]) -> kept: u64 writes(buf) {
 }
 ```
 
-The compiler proves that `kept <= i` holds on entry and after every
-iteration; with `i < buf.len` that gives `kept < buf.len`, so no check is
-left:
+In each of the seven safe Rust spellings of this loop we measured (rustc
+1.98.1, x86-64), the compiled loop keeps a runtime check of `kept`; the
+measured spellings without one use `unsafe`, `retain` on an owned `Vec`, or a
+second buffer
+([measurements](research/experiments/bounds-check-spellings/README.md#results)).
+Without the invariant, Whitefoot rejects the function and names the missing
+fact, `kept < deref(buf).len`. [Proofs without a solver, by
+hand](docs/articles/proofs-by-hand.md) follows the compiler through this
+proof step by step.
 
-| Spelling | Check left in the loop | Needs `unsafe` |
-|---|---|---|
-| Rust, `buf[kept] = b` | yes | no |
-| Rust, [six other safe spellings](research/experiments/bounds-check-spellings/README.md#results) (`get_mut`, `copy_within`, `Cell`, a branchless store, a `while` loop, `assert!(kept <= i)`) | yes | no |
-| Rust, `get_unchecked_mut` or `assert_unchecked` | no | yes; the reason is a comment |
-| Whitefoot, as above | no | no; the reason is checked |
+### Sequential code, parallel results
 
-(rustc 1.98.1, x86-64, `-C opt-level=2` and `3`. Two safe rewrites also leave
-no check by changing the algorithm: `retain` on an owned `Vec`, which a slice
-borrowed from a caller does not have, and collecting the kept bytes into a new
-vector and copying them back, which allocates and reads them twice.)
-
-Drop the invariant, leaving the header `for (i in 0_u64..deref(buf).len) {`,
-and the program is rejected, with the fact that is missing:
-
-```text
-squeeze.wf:6:21: error[OP-4]: UndischargedBoundsObligation
-  source:       set deref(buf)[kept] = byte;
-  marker:                     ^^^^^^
-  residual: kept < deref(buf).len
-  mechanical_fix: …
-```
-
-## Write sequential code, get parallel results
-
-Every function states what it reads and writes (`reads(...)`, `writes(...)`),
-and the compiler checks that statement against the body. So at any two
-statements it knows which memory each one touches. When it can prove the two
-touch different memory, it may run them in parallel, and the result is the
-one the sequential program computes. Nothing in the source asks for it:
+Every function states what it reads and writes, `reads(...)` and
+`writes(...)`, and the compiler checks the statement against the body. So it
+knows what memory each call touches, and when it proves that two calls touch
+different memory, it may run them at the same time. Nothing in this source
+asks for parallelism:
 
 ```
 fn quicksort(v: &[u64]) -> result: unit writes(v) {
@@ -99,22 +83,118 @@ fn quicksort(v: &[u64]) -> result: unit writes(v) {
 }
 ```
 
-Compiled with `--par`, the two recursive calls run in parallel, because the
-compiler proves that `[0, p)` and `[p + 1, n)` do not overlap. The recursion
-fans out to a depth the runtime derives from the number of workers and runs
-sequentially below it. `--par-ledger` explains every decision:
+Compiled with `--par`, the two recursive calls run in parallel down to a
+depth derived from the number of workers, because the compiler proves that
+`[0, p)` and `[p + 1, n)` do not overlap, and the result is the one the
+sequential program computes. A run that sorts 2 million numbers takes 0.18 s
+sequentially and 0.07 s on 4 workers
+([measurement](research/experiments/par-quicksort/README.md));
+`--par-ledger` prints every decision with its reason.
 
-```text
-PAR permitted   quicksort.wf:10  pair(quicksort, quicksort)  eligible
-PAR frontier    component(quicksort)  budget-carrying clone family, entered with recursion budget runtime-derived
+### Other uses of the same proofs
+
+- A proved `+` compiles to a plain add carrying LLVM's no-wrap flag (`nuw`
+  unsigned, `nsw` signed), which the optimizer can use.
+- Each reference parameter reaches LLVM as `noalias`, C's `restrict`,
+  because every call has proved that what one argument writes, no other
+  argument reaches. The exception is `swap`, whose two arguments may be the
+  same place.
+- A loop whose iterations write their own elements, or combine one value with
+  one of a fixed set of associative and commutative operations such as
+  `+wrap`, can be split across workers.
+
+## Safe: no undefined behavior, no panics, no failing checks
+
+Every operation that could go wrong at run time, such as an index, an integer
+operation, a narrowing conversion, a division or an allocation size, must be
+proved in range before the program is accepted. The language has no
+`unsafe`, no panic, no exceptions and no unwinding; an expected failure is a
+value (`Result`, `Option`) the caller handles. When the trusted base is
+correct, an accepted program cannot:
+
+- read or write out of bounds, use freed memory, or read uninitialized memory;
+- overflow an integer silently. Each operation states its meaning (`+wrap`,
+  `+checked`, `+sat`), and a bare `+` must be proved not to overflow;
+- lose a value in a narrowing conversion, or divide by zero;
+- race: parallel execution comes only from proved independence, and its
+  result equals the sequential one;
+- panic, abort, throw or unwind. The language has no such construct;
+- behave differently between a debug and a release build. There is one build.
+
+It still can:
+
+- run out of stack. It then stops with the fixed record
+  `{"resource":"stack"}`, the same way on every run, and `--stack-ledger`
+  reports each function's frame and how many levels each recursive cycle fits;
+- run out of heap. The allocator stops the program; on Linux with overcommit,
+  the kernel's OOM killer may act first;
+- loop forever, or compute the wrong answer. Contracts describe what was
+  written down, not what was meant;
+- be miscompiled. The trusted base is the Whitefoot compiler and its checker,
+  LLVM and clang, the runtime and allocator, C functions linked in as trusted
+  definitions, libc and the operating system ([SCOPE-3](spec/kernel-spec.md)).
+
+As far as we know, no other general-purpose systems language gives this
+guarantee for every program it accepts. SPARK proves the same absence of
+runtime errors, with SMT solvers, as an analysis separate from compilation:
+the Ada compiler builds a program whether or not it has been proved. Wuffs
+checks similar proofs without a solver, but it is a language for libraries
+that parse, decode and encode file formats, and its code cannot make system
+calls or allocate memory.
+
+## A small language
+
+Whitefoot is close to a safe C with simple generics. Its syntax borrows from
+Rust, but a program has C's shape: functions, structs, enums, arrays and heap
+cells; a generic function takes its type arguments explicitly, as in
+`array_filled::<u8, 4>(value: 0_u8)`, and is compiled once per instance.
+Here is a cursor over a byte buffer:
+
+```
+struct Cursor {
+  position: u64;
+}
+
+fn next_byte(input: &[u8], cursor: &Cursor) -> result: Option<u8> reads(input), writes(cursor) {
+  let at = deref(cursor).position;
+  if at < deref(input).len {
+    let byte = deref(input)[at];
+    set deref(cursor).position = at + 1_u64;
+    return Some<u8>(value: byte);
+  }
+  return None<u8>();
+}
 ```
 
-A run that sorts 2 million numbers takes 0.18 s sequentially and 0.07 s on 4
-workers ([how it was measured](research/experiments/par-quicksort/README.md)).
+A C programmer writes the same shape: a struct that holds a position, and a
+function that takes the buffer. A Rust cursor that borrows its buffer
+carries a lifetime, `struct Cursor<'a> { input: &'a [u8], position: usize }`,
+and a struct that stores one usually needs a lifetime parameter too. Whitefoot
+has no lifetimes at all. A reference can be bound to a local and passed to a
+call, but never stored in a struct or returned
+([REF-3](spec/kernel-spec.md)), so it cannot outlive what it points to; a
+function that finds something returns its index. Rust written in the C shape
+needs no lifetime annotations either; Whitefoot makes that shape the only
+one.
+
+The language also leaves out:
+
+- methods, traits and dynamic dispatch. A call names one function; generic
+  code receives the functions it uses as explicit compile-time arguments, an
+  `interface` names such a group, and nothing is looked up from a type;
+- operator overloading and implicit conversions. `+` on two `u64` values has
+  one meaning, and a conversion is written `cvt`;
+- exceptions, unwinding and null. An error is a `Result` value and absence is
+  an `Option`;
+- closures and function values.
+
+The cost is spelling: an expression does one operation, literals carry their
+type (`1_u64`), arguments are named, and a reference is read through `deref`.
+Code is longer than C, and each construct has one spelling.
 
 ## Articles
 
-Short pieces, each on one idea, with programs that compile. The first two
+Short pieces, each on one idea, with programs that compile. The first three
 start from the examples above:
 
 1. Prove it or write a branch — bounds and overflow checks that disappear
@@ -131,39 +211,12 @@ start from the examples above:
    exhaustion.
 7. What a reviewer reads — contracts and effect rows as the review surface.
 8. The trusted base — what is trusted, and the plan to shrink it.
-9. Where the speed comes from.
+9. Where the speed comes from — every way the proofs are used.
 10. A layout engine — the first large program.
 11. How this project is built with agents.
 
 The other articles are being written; each title becomes a link when its
 article is published.
-
-## What an accepted program cannot do, and what it still can
-
-When the trusted base is correct, an accepted program cannot:
-
-- read or write out of bounds, use freed memory, or read uninitialized memory;
-- overflow an integer silently. Each operation states its meaning (`+wrap`,
-  `+checked`, `+sat`), and a bare `+` must be proved not to overflow;
-- lose a value in a narrowing conversion, or divide by zero;
-- race: parallel execution comes only from proved independence, and its
-  result equals the sequential one;
-- panic, abort, throw or unwind. The language has no such construct; expected
-  failures are values (`Result`, `Option`) the caller handles;
-- behave differently between a debug and a release build. There is one build.
-
-It still can:
-
-- run out of stack. It then stops with the fixed record
-  `{"resource":"stack"}`, the same way on every run, and `--stack-ledger`
-  reports each function's frame and how many levels each recursive cycle fits;
-- run out of heap. The allocator stops the program; on Linux with overcommit,
-  the kernel's OOM killer may act first;
-- loop forever, or compute the wrong answer. Contracts describe what was
-  written down, not what was meant;
-- be miscompiled. The trusted base is the Whitefoot compiler and its checker,
-  LLVM and clang, the runtime and allocator, C functions linked in as trusted
-  definitions, libc and the operating system ([SCOPE-3](spec/kernel-spec.md)).
 
 ## What you write
 
@@ -211,10 +264,10 @@ prints it as JSON.
 
 ## Evidence
 
-- [Specification](spec/kernel-spec.md): 130 numbered rules. Every rejection
+- [Specification](spec/kernel-spec.md): 132 numbered rules. Every rejection
   cites one rule and one location.
-- [Conformance suite](tests/conformance/): about 1,250 cases, more than 600
-  of which must be rejected under a named rule (nearly 70 distinct rules).
+- [Conformance suite](tests/conformance/): about 1,300 cases, more than 600
+  of which must be rejected under a named rule (70 distinct rules).
 - [Programs](tests/programs/) built and run by the test gate.
 - [Known defects and follow-up work](docs/todo.md), including compiler bugs.
 - [Experiments](research/experiments/README.md), negative results included.
@@ -223,8 +276,9 @@ prints it as JSON.
 
 | | Borrowed | Different |
 |---|---|---|
-| Rust | ownership, `Result`, no null | no `unsafe` in source; bounds and overflow are proved, not checked at run time |
-| SPARK | proving the absence of runtime errors | no SMT solver; what the fixed procedure cannot prove is written as explicit steps |
+| Rust | ownership, `Result`, no null | no `unsafe` and no lifetimes in source; bounds and overflow are proved, not checked at run time |
+| C | functions and structs as the main building blocks | no undefined behavior; every partial operation is proved; enums carry payloads |
+| SPARK | proving the absence of runtime errors | no SMT solver, and acceptance is the proof; what the fixed procedure cannot prove is written as explicit steps |
 | Wuffs | a proof checker instead of a solver | a general-purpose language with heap data and effects |
 | Dafny, Verus | contracts and invariants | the goal is runtime safety, not full functional correctness |
 
