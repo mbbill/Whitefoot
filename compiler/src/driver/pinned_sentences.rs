@@ -46,6 +46,14 @@
 //!   sentence, retires with the same former for the same reason: a measure
 //!   member read on an unmeasured place is [MSR-1]'s own [TYPE-5] rejection
 //!   carrying the measured types, not this one.
+//! - The two-argument call-separation repair for an index beside a window's
+//!   `next` or `free` in `check.rs`, "when the index can be below the
+//!   window's length here, prove that before this call; otherwise pass an
+//!   index this call proves below it". A callee reads `x[i]` only under a
+//!   proof of `i < x.len`: a requirement, whose [FN-8] rejection at the call
+//!   comes first, or a read of `x.len`, which overlaps the other argument's
+//!   write of that length, declared by every prelude row that writes `next`
+//!   or `free`, so the checker refuses the call under [EFF-5] first.
 //!
 //! Two bullets this list used to carry are gone with their sentences rather
 //! than with their reachability: `check::expressions::region_spelling` and
@@ -3120,7 +3128,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "EFF-5",
         sentences: &[
-            "\n  mechanical_fix: this call gives these two entries of the callee's row the same positions: pass positions this call proves do not overlap, or declare one `writes` entry of their common path in the callee's row instead\n",
+            "\n  mechanical_fix: this call gives these two entries of the callee's row the same positions: pass positions this call proves do not overlap, or replace the callee's row entries at or below their common path with one `writes` entry of that path\n",
         ],
         repaired: &[
             br#"fn copy_within(values: &Array<u8, 4>, i: u64, j: u64) -> result: unit reads(values[i]), writes(values[j]) contract {
@@ -3179,7 +3187,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "EFF-5",
         sentences: &[
-            "\n  mechanical_fix: these two entries of the callee's row may reach overlapping places through one argument, and no position this call passes separates them: declare one `writes` entry of their common path in the callee's row instead\n",
+            "\n  mechanical_fix: these two entries of the callee's row may reach overlapping places through one argument, and no position this call passes separates them: replace the callee's row entries at or below their common path with one `writes` entry of that path\n",
         ],
         repaired: &[br#"fn record_run(values: &Array<u64, 4>, start: u64, end: u64, slot: u64) -> result: unit writes(values) contract {
   requires start <= end;
@@ -3229,7 +3237,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "EFF-5",
         sentences: &[
-            "\n  mechanical_fix: when the two positions can differ here, prove them distinct before this call; otherwise pass positions this call proves distinct, or declare one `writes` entry of their common path in the callee's row instead\n",
+            "\n  mechanical_fix: when the two positions can differ here, prove them distinct before this call; otherwise pass positions this call proves distinct, or replace the callee's row entries at or below their common path with one `writes` entry of that path\n",
         ],
         repaired: &[
             br#"fn copy_within(values: &Array<u8, 4>, i: u64, j: u64) -> result: unit reads(values[i]), writes(values[j]) contract {
@@ -3299,6 +3307,126 @@ fn shift(values: &Array<u8, 4>, a: u64, b: u64) -> result: unit writes(values) c
 fn main() -> status: ExitStatus pure {
   let values = array_filled::<u8, 4>(value: 1_u8);
   shift(values: &values, a: 1_u64, b: 2_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+        ],
+    },
+    RepairPair {
+        // [WIN-2] an index beside a window's `next` is separated from it by
+        // being below the window's length, which the call does not prove;
+        // one argument supplies both entries [EFF-5].
+        name: "call-separation-index-beside-next.wf",
+        rejected: br#"fn read_then_append(r: &Slots<u64, 4>, i: u64) -> result: u64 reads(r[i]), writes(r.next), writes(r.len) contract {
+  requires deref(r).len < 4_u64;
+} {
+  let seen = if i < deref(r).len {
+    give deref(r)[i];
+  } else {
+    give 0_u64;
+  }
+  place_back(window: r, value: seen);
+  return seen;
+}
+
+fn caller(r: &Slots<u64, 4>, k: u64) -> result: u64 writes(r) contract {
+  requires deref(r).len < 4_u64;
+} {
+  let x = read_then_append(r: r, i: k);
+  return x;
+}
+
+fn main() -> status: ExitStatus pure {
+  let window = slots_new::<u64, 4>();
+  place_back(window: &window, value: 5_u64);
+  let x = caller(r: &window, k: 0_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "EFF-5",
+        sentences: &[
+            "\n  mechanical_fix: when the index can be below the window's length here, prove that before this call; otherwise pass an index this call proves below it, or replace the callee's row entries at or below their common path with one `writes` entry of that path\n",
+        ],
+        repaired: &[
+            br#"fn read_then_append(r: &Slots<u64, 4>, i: u64) -> result: u64 reads(r[i]), writes(r.next), writes(r.len) contract {
+  requires deref(r).len < 4_u64;
+} {
+  let seen = if i < deref(r).len {
+    give deref(r)[i];
+  } else {
+    give 0_u64;
+  }
+  place_back(window: r, value: seen);
+  return seen;
+}
+
+fn caller(r: &Slots<u64, 4>, k: u64) -> result: u64 writes(r) contract {
+  requires deref(r).len < 4_u64;
+} {
+  if k < deref(r).len {
+    let x = read_then_append(r: r, i: k);
+    return x;
+  }
+  return 0_u64;
+}
+
+fn main() -> status: ExitStatus pure {
+  let window = slots_new::<u64, 4>();
+  place_back(window: &window, value: 5_u64);
+  let x = caller(r: &window, k: 0_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+            br#"fn read_then_append(r: &Slots<u64, 4>, i: u64) -> result: u64 reads(r[i]), writes(r.next), writes(r.len) contract {
+  requires deref(r).len < 4_u64;
+} {
+  let seen = if i < deref(r).len {
+    give deref(r)[i];
+  } else {
+    give 0_u64;
+  }
+  place_back(window: r, value: seen);
+  return seen;
+}
+
+fn caller(r: &Slots<u64, 4>, k: u64) -> result: u64 writes(r) contract {
+  requires deref(r).len < 4_u64;
+  requires 0_u64 < deref(r).len;
+} {
+  let x = read_then_append(r: r, i: 0_u64);
+  return x;
+}
+
+fn main() -> status: ExitStatus pure {
+  let window = slots_new::<u64, 4>();
+  place_back(window: &window, value: 5_u64);
+  let x = caller(r: &window, k: 0_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+            br#"fn read_then_append(r: &Slots<u64, 4>, i: u64) -> result: u64 writes(r) contract {
+  requires deref(r).len < 4_u64;
+} {
+  let seen = if i < deref(r).len {
+    give deref(r)[i];
+  } else {
+    give 0_u64;
+  }
+  place_back(window: r, value: seen);
+  return seen;
+}
+
+fn caller(r: &Slots<u64, 4>, k: u64) -> result: u64 writes(r) contract {
+  requires deref(r).len < 4_u64;
+} {
+  let x = read_then_append(r: r, i: k);
+  return x;
+}
+
+fn main() -> status: ExitStatus pure {
+  let window = slots_new::<u64, 4>();
+  place_back(window: &window, value: 5_u64);
+  let x = caller(r: &window, k: 0_u64);
   return exit_status(code: 0_u8);
 }
 "#,
