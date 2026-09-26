@@ -12,6 +12,9 @@ mod diagnostic;
 mod reads;
 
 pub(crate) mod launcher;
+/// The repair pairs that pin every repair with the programs it produces.
+#[cfg(test)]
+mod pinned_repairs;
 /// The probe corpus that pins every diagnostic sentence by its rendered text.
 #[cfg(test)]
 mod pinned_sentences;

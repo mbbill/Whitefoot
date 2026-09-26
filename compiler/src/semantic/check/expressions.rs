@@ -2007,7 +2007,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         node,
                         SemanticIssueKind::ContainerConstruction {
                             nominal: constructor_name,
-                            mechanical_fix: "build it with a construction function [OP-13, PRE-1]",
+                            mechanical_fix: self.opaque_struct_repair(declaration, false),
                         },
                     );
                 }

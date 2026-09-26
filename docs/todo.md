@@ -399,22 +399,6 @@ rarely insert at the same place.
   repair-wording and one-argument-row changes; reopen with the owner's
   direction.
 
-- **The opaque-struct repair offers a construction that cannot exist.**
-  TYPE-2 refuses a constructor `call` or a destructuring `let` of an opaque
-  struct, and the compiler's repair at both sites
-  (`check/expressions.rs`, `check/control/results.rs`) is "build it with a
-  construction function [OP-13, PRE-1]". Since the standard library moved
-  the host declarations into std modules, a host handle such as
-  `std::io::HandleFactory` is formed only by a host function of its module
-  [PRE-2], and an opaque struct a program declares has no value at all, so
-  for those the alternative cannot be carried out, against DIAG-1; for
-  destructuring it names construction at all. Choose the words by the
-  struct's home: a host handle points to the host functions of its module
-  and the entry's inputs, a program's own opaque struct to its declaration,
-  a `Box` to its `inner` member. Validate each with a pinned repair pair.
-  Found in the review of the standard-library merge; reopen with the next
-  diagnostics change or when an agent is seen following the wrong repair.
-
 - **An index beside a window's `last` is never separated at a call.** WIN-2
   separates a live `r[i]` from `r.last` once `i != r.len - 1` is proved, and
   `separation` answers that for two places, but the call-site candidates

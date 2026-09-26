@@ -1219,6 +1219,52 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
+    /// Whether a declaration belongs to a standard library module [MOD-10],
+    /// whose opaque structs only that library's own functions form [PRE-2].
+    pub(in crate::semantic::check) fn is_standard_declaration(
+        &self,
+        declaration: DeclarationId,
+    ) -> bool {
+        self.resolved
+            .declaration(declaration)
+            .and_then(crate::DeclarationRecord::module)
+            .and_then(|module| {
+                self.resolved
+                    .syntax()
+                    .classified_bundle()
+                    .source_bundle()
+                    .module(module)
+            })
+            .is_some_and(|module| module.package() == crate::Package::Standard)
+    }
+
+    /// [TYPE-2] the repair for constructing or taking apart a source-declared
+    /// opaque struct, by the struct's home [DIAG-1]. A standard library's
+    /// opaque struct, a host handle or `ExitStatus`, comes only from that
+    /// library's functions and the program's entry, and a program's own has no
+    /// value until its declaration drops `opaque`; neither is formed by a
+    /// construction row, which forms only the prelude's shapes [OP-13].
+    pub(in crate::semantic::check) fn opaque_struct_repair(
+        &self,
+        declaration: DeclarationId,
+        taking_apart: bool,
+    ) -> &'static str {
+        match (self.is_standard_declaration(declaration), taking_apart) {
+            (true, false) => {
+                "a standard library opaque struct is formed only by its library's functions [PRE-2]: use a value one of them returns, or one the program's entry receives, instead of constructing one"
+            }
+            (true, true) => {
+                "a standard library opaque struct is taken apart only by its library's functions [PRE-2]: remove this statement and pass the value to the functions that take it"
+            }
+            (false, false) => {
+                "no value of an opaque struct the program declares is ever formed [TYPE-2]: remove `opaque` from its declaration to construct it here"
+            }
+            (false, true) => {
+                "no value of an opaque struct the program declares is ever formed [TYPE-2]: remove `opaque` from its declaration to take it apart here"
+            }
+        }
+    }
+
     /// The concrete function ids of a substitution's function-kind actuals
     /// [FN-2]; an actual not yet instantiated as a signature contributes none.
     fn function_actual_ids(

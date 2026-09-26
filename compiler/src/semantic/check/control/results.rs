@@ -173,19 +173,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // error at the complete statement. `Box` is the prelude's opaque
         // struct [TYPE-9, PRE-1], so a cell's content is reached through its
         // member `inner` and never by taking the cell apart.
-        let opaque_typeid = match usage.target() {
-            ResolvedTarget::Source { declaration, .. } => {
-                self.is_opaque_struct_declaration(declaration)?
-            }
-            _ => cell,
+        let opaque_repair = match usage.target() {
+            ResolvedTarget::Source { declaration, .. } => self
+                .is_opaque_struct_declaration(declaration)?
+                .then(|| self.opaque_struct_repair(declaration, true)),
+            _ => cell.then_some(
+                "a cell's content is its member `inner` [TYPE-9]: read or move `inner` instead of taking the cell apart",
+            ),
         };
-        if opaque_typeid {
+        if let Some(mechanical_fix) = opaque_repair {
             return self.issue_node(
                 SemanticRule::Type2,
                 node,
                 SemanticIssueKind::ContainerConstruction {
                     nominal: written,
-                    mechanical_fix: "build it with a construction function [OP-13, PRE-1]",
+                    mechanical_fix,
                 },
             );
         }

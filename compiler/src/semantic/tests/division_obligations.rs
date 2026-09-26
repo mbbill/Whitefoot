@@ -19,7 +19,7 @@ use super::with_semantics;
 /// [OP-2] one rejection's residual and disposition, and the fragment of its
 /// repair that shows which routes the goal's disposition and terms selected
 /// [DIAG-1]. The complete sentences are pinned with repaired programs in
-/// `driver::pinned_sentences`.
+/// `driver::pinned_repairs`.
 fn assert_integer_domain(
     kind: &SemanticIssueKind,
     expected_residual: &str,
