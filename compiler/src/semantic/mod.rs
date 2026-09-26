@@ -11,6 +11,7 @@ mod entry;
 mod goal;
 mod loop_permission;
 mod model;
+mod obligations;
 pub(crate) mod permission;
 mod permission_ledger;
 mod places;
@@ -1289,6 +1290,11 @@ pub enum SemanticCompilerFailure {
     InvalidSourceEncoding,
     /// A dense identity or source-coordinate calculation overflowed.
     CounterOverflow,
+    /// A function's obligation records and the entailment engine's judgments
+    /// disagreed: a record no judgment answered, with no answered record
+    /// undischarged, or a judgment that answered no record. The function is
+    /// not accepted (`design/compiler/acceptance-records.md`).
+    ObligationContract,
 }
 
 /// Whole-unit semantic success and its only lowering authority.
