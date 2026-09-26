@@ -425,7 +425,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// A range binding stores its element in `LocalBinding::ty`, so retaining
     /// the kind prevents an index from projecting through a composite element
     /// a second time.
-    fn place_selected_kind(
+    pub(in crate::semantic::check) fn place_selected_kind(
         &self,
         place: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,

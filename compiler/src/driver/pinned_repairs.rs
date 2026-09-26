@@ -2347,7 +2347,7 @@ fn main(inputs: Inputs) -> status: ExitStatus pure {
 "#,
         rule: "TYPE-2",
         sentences: &[
-            "\n  mechanical_fix: a host handle has no fields to take apart [PRE-2], and a `nodrop` one leaves its scope only by moving out [PROV-6]: replace this statement with a call to the function of its module that closes the handle\n",
+            "\n  mechanical_fix: a host handle has no fields to take apart [PRE-2], and a `nodrop` one leaves its scope only by moving out [PROV-6]: replace this statement with a call to the function of its module that closes the handle, which also takes a `HandleFactory` reference\n",
         ],
         repaired: &[
             br#"alias ExitStatus = std::process::ExitStatus;
@@ -2539,7 +2539,7 @@ fn main() -> status: ExitStatus pure {
         ],
     },
     RepairPair {
-        // [TYPE-2, TYPE-9, OWN-1] nothing moves out of a cell a reference reaches, so its content is used in place.
+        // [TYPE-2, TYPE-9, OWN-1] nothing moves out of a cell a reference reaches, so a content never moved is used in place.
         name: "cell-through-a-reference-taken-apart.wf",
         rejected: br#"alias ExitStatus = std::process::ExitStatus;
 alias exit_status = std::process::exit_status;
@@ -2559,7 +2559,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "TYPE-2",
         sentences: &[
-            "\n  mechanical_fix: a cell's content is its member `inner` [TYPE-9], and nothing moves out of a cell a reference reaches [OWN-1]: remove this statement, and write `deref(cell).inner` where `token` is used\n",
+            "\n  mechanical_fix: a cell's content is its member `inner` [TYPE-9], and nothing moves out of a cell a reference or an element reaches [OWN-1, WIN-3]: when `token` is never moved, remove this statement and write `deref(cell).inner` where `token` is used\n",
         ],
         repaired: &[
             br#"alias ExitStatus = std::process::ExitStatus;
@@ -2580,7 +2580,7 @@ fn main() -> status: ExitStatus pure {
         ],
     },
     RepairPair {
-        // [TYPE-2, TYPE-9] a statement that binds nothing only consumes the cell, which its scope already releases.
+        // [TYPE-2, TYPE-9] a statement that binds nothing only consumes the cell, which its scope releases when the content is not linear.
         name: "cell-taken-apart-binding-nothing.wf",
         rejected: br#"alias ExitStatus = std::process::ExitStatus;
 alias exit_status = std::process::exit_status;
@@ -2605,6 +2605,110 @@ fn main() -> status: ExitStatus pure {
 }
 "#,
         ],
+    },
+    RepairPair {
+        // [TYPE-2, TYPE-9, WIN-3] nothing moves out of a cell an element reaches, so a content never moved is used in place.
+        name: "cell-in-an-element-taken-apart.wf",
+        rejected: br#"alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
+nocopy struct Token {
+  value: u64;
+}
+
+fn first(values: Array<Box<Token>, 2>) -> result: u64 pure {
+  let Box(inner: token) = move values[0_u64];
+  return token.value;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "TYPE-2",
+        sentences: &[
+            "\n  mechanical_fix: a cell's content is its member `inner` [TYPE-9], and nothing moves out of a cell a reference or an element reaches [OWN-1, WIN-3]: when `token` is never moved, remove this statement and write `values[0_u64].inner` where `token` is used\n",
+        ],
+        repaired: &[br#"alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
+nocopy struct Token {
+  value: u64;
+}
+
+fn first(values: Array<Box<Token>, 2>) -> result: u64 pure {
+  return values[0_u64].inner.value;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#],
+    },
+    RepairPair {
+        // [TYPE-2, TYPE-7] a reference variable written bare is read through `deref`.
+        name: "cell-through-a-bare-reference-taken-apart.wf",
+        rejected: br#"alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
+fn peek(cell: &Box<u64>) -> result: u64 reads(cell) {
+  let Box(inner: inside) = move cell;
+  return inside;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "TYPE-2",
+        sentences: &[
+            "\n  mechanical_fix: a cell's content is its member `inner` [TYPE-9]: replace this statement with `let inside = deref(cell).inner;`\n",
+        ],
+        repaired: &[br#"alias ExitStatus = std::process::ExitStatus;
+alias exit_status = std::process::exit_status;
+
+fn peek(cell: &Box<u64>) -> result: u64 reads(cell) {
+  let inside = deref(cell).inner;
+  return inside;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#],
+    },
+    RepairPair {
+        // [TYPE-2, PRE-2, OWN-1] a `nodrop` handle a reference reaches is closed by its owner, not here.
+        name: "nodrop-host-handle-through-a-reference-taken-apart.wf",
+        rejected: br#"alias ExitStatus = std::process::ExitStatus;
+alias DirectoryRead = std::fs::DirectoryRead;
+alias exit_status = std::process::exit_status;
+
+fn discard(directory: &DirectoryRead) -> result: unit pure {
+  let DirectoryRead() = move deref(directory);
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "TYPE-2",
+        sentences: &[
+            "\n  mechanical_fix: a host handle has no fields to take apart [PRE-2]: remove this statement\n",
+        ],
+        repaired: &[br#"alias ExitStatus = std::process::ExitStatus;
+alias DirectoryRead = std::fs::DirectoryRead;
+alias exit_status = std::process::exit_status;
+
+fn discard(directory: &DirectoryRead) -> result: unit pure {
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#],
     },
     RepairPair {
         name: "swap-of-a-possible-ancestor.wf",

@@ -20,6 +20,15 @@ const _: () = assert!(
     "check_return_implicit_read precedes the operand's OWN-1 judgments"
 );
 
+/// The consumed place of a destructuring consume, as its repairs name it.
+pub(super) struct ConsumedPlace {
+    /// Whether it names owned storage directly, so that its parts can move
+    /// out [OWN-1, WIN-3].
+    pub(super) owned: bool,
+    /// The place as a read of it is written [TYPE-7].
+    pub(super) spelling: String,
+}
+
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     /// The result-list nominal a checked value carries, when it is one
     /// [GRAM-2, CALL-4].
@@ -179,6 +188,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     Some(
                         super::super::repairs::opaque_struct_taken_apart(
                             self.opaque_struct_kind(declaration)?,
+                            self.consumed_place(place, bindings)?.owned,
                         )
                         .to_owned(),
                     )
@@ -380,9 +390,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// [TYPE-2, TYPE-9] the repair of a destructuring consume that names
     /// `Box`: how the statement reaches the content instead, which turns on
-    /// what the consumed cell holds. The cell is typed by the oracle that
-    /// reads declared types without judging the use, so the refusal still
-    /// precedes every judgment of the consumed place.
+    /// what the consumed cell holds and on whether the place owns it. The
+    /// cell is typed by the oracle that reads declared types without judging
+    /// the use, so the refusal still precedes every judgment of the consumed
+    /// place.
     fn cell_taken_apart_repair(
         &self,
         node: NodeId,
@@ -408,39 +419,80 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             },
             None => None,
         };
-        let content = match self.place_selected_type(place, bindings) {
-            Ok(Some(ty)) => self.box_content(ty)?,
-            Ok(None) | Err(CheckStop::Unsupported(_)) => None,
+        // A range reference selects a run, never one cell [REF-4].
+        let content = match self.place_selected_kind(place, bindings) {
+            Ok(Some(super::super::types::SelectedPlaceType::Value(ty))) => self.box_content(ty)?,
+            Ok(_) | Err(CheckStop::Unsupported(_)) => None,
             Err(stop) => return Err(stop),
         };
-        // [OWN-1] nothing moves out of a cell a reference reaches, so there
-        // a content that is not read as a copy is used in place. A
-        // runtime-capacity content is never a binding's value, whatever its
-        // elements [TYPE-9].
-        let pbase = self
-            .tree
-            .first_child_with(place, Production::Pbase)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let borrowed = self.has_fixed(pbase, FixedTerminal::Deref)?;
+        let consumed = self.consumed_place(place, bindings)?;
+        // [OWN-1, WIN-3] nothing moves out of a cell a reference or an element
+        // reaches, so there a content that is not read as a copy is used in
+        // place. A runtime-capacity content is never a binding's value,
+        // whatever its elements [TYPE-9].
         let content = match content {
-            Some(CheckedType::Buffer { .. } | CheckedType::Window { capacity: None, .. })
-                if !borrowed =>
-            {
-                Some(CellContent::RuntimeCapacity)
-            }
             Some(CheckedType::Buffer { .. } | CheckedType::Window { capacity: None, .. }) => {
-                Some(CellContent::Borrowed)
+                Some(if consumed.owned {
+                    CellContent::RuntimeCapacity
+                } else {
+                    CellContent::InPlace
+                })
             }
             Some(ty) if self.is_copy_type(ty)? => Some(CellContent::Copy),
-            Some(_) if borrowed => Some(CellContent::Borrowed),
-            Some(_) => Some(CellContent::Owned),
+            Some(_) if consumed.owned => Some(CellContent::Owned),
+            Some(_) => Some(CellContent::InPlace),
             None => None,
         };
         Ok(cell_taken_apart(
             content,
-            &self.tree.source_spelling(place)?,
+            &consumed.spelling,
             binder.as_deref(),
         ))
+    }
+
+    /// How the consumed place of a destructuring consume holds its value:
+    /// `owned` when it names owned storage directly, with no reference and no
+    /// element on its path, so that its parts can move out [OWN-1, WIN-3];
+    /// and the spelling that reads it as a place, which steps through a
+    /// reference variable written bare with `deref` [TYPE-7].
+    pub(super) fn consumed_place(
+        &self,
+        place: NodeId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<ConsumedPlace, CheckStop> {
+        let spelling = self.tree.source_spelling(place)?;
+        let pbase = self
+            .tree
+            .first_child_with(place, Production::Pbase)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let mut element = false;
+        for suffix in self.tree.children_with(place, Production::Psuffix)? {
+            element |= self.subscript_offset(suffix)?.is_some();
+        }
+        if self.has_fixed(pbase, FixedTerminal::Deref)? {
+            return Ok(ConsumedPlace {
+                owned: false,
+                spelling,
+            });
+        }
+        let reference = match self.use_at(pbase, LexicalUseRole::PlaceBase)?.target() {
+            ResolvedTarget::Source { declaration, .. } => bindings
+                .get(&declaration)
+                .is_some_and(|local| local.mode.is_reference()),
+            _ => false,
+        };
+        if !reference {
+            return Ok(ConsumedPlace {
+                owned: !element,
+                spelling,
+            });
+        }
+        let root = self.tree.source_spelling(pbase)?;
+        let rest = spelling.strip_prefix(root.as_str()).unwrap_or_default();
+        Ok(ConsumedPlace {
+            owned: false,
+            spelling: format!("deref({root}){rest}"),
+        })
     }
 
     /// [TYPE-5] the destructuring consume's operand is not a value of the

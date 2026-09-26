@@ -379,6 +379,36 @@ rarely insert at the same place.
   opaque-struct repair; reopen with the next diagnostics change or when an
   agent follows an unpinned repair that fails.
 
+- **A cell taken apart with no binder is repaired by removing the
+  statement, even when its content is linear.** TYPE-2's repair for
+  `let Box(..) = move cell;` is "remove this statement", and so is the
+  repair for a binder over a place the checker cannot type as a cell. With
+  a linear content the removal leaves the cell to PROV-6's
+  LinearValueNotConsumed at scope exit, and with a binder its uses become
+  unresolved. DIAG-1 holds, since the refused judgment succeeds and the
+  later ones judge the program's own statements, but a repair that moves
+  the content out (`let content = move cell.inner;`) or names
+  `free_empty` for a runtime-capacity content would save a round. Validate
+  with a pinned pair for each; reopen when an agent is seen needing that
+  round.
+
+- **Four design nodes keep wording that later changes moved past.**
+  `language/ownership/copy-classification`'s second decision still says the
+  prelude declares `Box`, `Slots`, `Ring` and the fourteen host handles
+  `nocopy` or `nodrop`, although the host handles moved to the standard
+  library's host modules (the specification's OWN-1 already says so).
+  `language/system-interface/opaque-scalar-types` calls `exit_status` and
+  `socket_address_v4` construction functions, the term
+  `language/data-model/opaque-struct` now keeps for OP-13's rows, and
+  opaque-struct's third decision still names "the separate system
+  declaration domain the prelude is deliberately not" where the refused
+  domain concerns the standard library's host declarations too.
+  `compiler/diagnostic-repairs`' fourth decision places the pairs in the
+  pinned-sentence corpus, which now lives in `driver::pinned_repairs`. Each
+  needs an amendment and the owner's ruling; found in the second review of
+  the opaque-struct repair; reopen with the next change to any of these
+  nodes.
+
 - **Taking a storage shape apart is refused as a type mismatch.**
   `let Slots(len: l, cap: c) = move w;`, and the same statement naming
   `Array` or `Ring`, is rejected with TYPE-5 "found: a value of another type"
@@ -679,7 +709,7 @@ rarely insert at the same place.
   which names no source site, no proved bound and no bound the target
   admits. The numbers exist where the check fails, in the runtime-sized
   allocation branch of the source-call validation in
-  `compiler/src/backend/target.rs`: the retained bound, the element's target
+  `compiler/src/target.rs`: the retained bound, the element's target
   stride, the descriptor header and `runtime_allocation_max()`, which give the
   largest admitted count `(max - header) / stride`. Design: `IrSourceCall`
   carries the call's node path, copied from the checked call during lowering;

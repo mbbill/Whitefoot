@@ -1578,9 +1578,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// [TYPE-2, PRE-2] where an opaque struct a construct names comes from,
-    /// which selects the repair of its refusal. A standard library module's
-    /// opaque struct is a host handle, since only a host function forms one,
-    /// and a program's own never has a value.
+    /// which selects the repair of its refusal. The standard library declares
+    /// opaque structs only in its host modules, each a fieldless host handle
+    /// that a host function forms [PRE-2], so its package decides; a program's
+    /// own opaque struct never has a value.
     pub(super) fn opaque_struct_kind(
         &self,
         declaration: crate::DeclarationId,

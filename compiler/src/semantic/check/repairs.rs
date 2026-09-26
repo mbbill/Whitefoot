@@ -20,9 +20,9 @@
 //! until a `let` binds it, so that binding is its repair.
 //!
 //! The words of [TYPE-2]'s refusals of an opaque struct's construction and
-//! destructuring live here too. They turn on where the struct comes from and,
-//! for a cell, on its content, since only those decide which source change
-//! can be carried out.
+//! destructuring live here too. They turn on where the struct comes from,
+//! whether the consumed place owns its value and, for a cell, on its content,
+//! since those decide which source change can be carried out.
 //!
 //! The sentences live here, in one place, so that wording can follow evidence
 //! from agents without touching the judgments that select them.
@@ -940,16 +940,18 @@ pub(super) fn opaque_struct_constructed(opaque: OpaqueStruct) -> &'static str {
     }
 }
 
-/// [TYPE-2] a destructuring `let` naming an opaque struct a module declares.
-/// A host handle has nothing to take apart, so the statement goes; a `nodrop`
-/// one is then still owed its closing call [PROV-6].
-pub(super) fn opaque_struct_taken_apart(opaque: OpaqueStruct) -> &'static str {
+/// [TYPE-2] a destructuring `let` naming an opaque struct a module declares,
+/// consuming a place that `owned` says names owned storage directly. A host
+/// handle has nothing to take apart, so the statement goes; a `nodrop` one
+/// this function owns is then still owed its closing call [PROV-6], which
+/// nothing makes through a reference or an element [OWN-1, WIN-3].
+pub(super) fn opaque_struct_taken_apart(opaque: OpaqueStruct, owned: bool) -> &'static str {
     match opaque {
-        OpaqueStruct::HostHandle { linear: false } => {
-            "a host handle has no fields to take apart [PRE-2]: remove this statement"
+        OpaqueStruct::HostHandle { linear: true } if owned => {
+            "a host handle has no fields to take apart [PRE-2], and a `nodrop` one leaves its scope only by moving out [PROV-6]: replace this statement with a call to the function of its module that closes the handle, which also takes a `HandleFactory` reference"
         }
-        OpaqueStruct::HostHandle { linear: true } => {
-            "a host handle has no fields to take apart [PRE-2], and a `nodrop` one leaves its scope only by moving out [PROV-6]: replace this statement with a call to the function of its module that closes the handle"
+        OpaqueStruct::HostHandle { .. } => {
+            "a host handle has no fields to take apart [PRE-2]: remove this statement"
         }
         OpaqueStruct::Program => PROGRAM_OPAQUE_STRUCT,
     }
@@ -966,15 +968,16 @@ pub(super) enum CellContent {
     Owned,
     /// A runtime-capacity shape, which never leaves its cell [TYPE-9].
     RuntimeCapacity,
-    /// A content without copy in a cell a reference reaches, which nothing
-    /// moves out of [OWN-1], so it is used in place.
-    Borrowed,
+    /// A content not read as a copy, in a cell a reference or an element
+    /// reaches, which nothing moves out of [OWN-1, WIN-3], so it is used in
+    /// place.
+    InPlace,
 }
 
 /// [TYPE-2, TYPE-9] a destructuring `let` naming `Box`. `cell` is the
-/// consumed place as written and `binder` the name the statement binds, when
-/// it binds one. `content` is `None` when the place selects no cell the
-/// checker can type.
+/// consumed place as a read of it is written and `binder` the name the
+/// statement binds, when it binds one. `content` is `None` when the place
+/// selects no cell the checker can type.
 pub(super) fn cell_taken_apart(
     content: Option<CellContent>,
     cell: &str,
@@ -991,8 +994,8 @@ pub(super) fn cell_taken_apart(
         (Some(CellContent::RuntimeCapacity), Some(name)) => format!(
             "{INNER}, and a runtime-capacity content never leaves it: remove this statement, and write `{cell}.inner` where `{name}` is used and `move {cell}` where `{name}` is moved [OP-14]"
         ),
-        (Some(CellContent::Borrowed), Some(name)) => format!(
-            "{INNER}, and nothing moves out of a cell a reference reaches [OWN-1]: remove this statement, and write `{cell}.inner` where `{name}` is used"
+        (Some(CellContent::InPlace), Some(name)) => format!(
+            "{INNER}, and nothing moves out of a cell a reference or an element reaches [OWN-1, WIN-3]: when `{name}` is never moved, remove this statement and write `{cell}.inner` where `{name}` is used"
         ),
         (None, _) | (_, None) => format!("{INNER}: remove this statement"),
     }

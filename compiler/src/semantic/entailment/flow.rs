@@ -4655,8 +4655,10 @@ impl Analyzer<'_, '_> {
     /// One batch of kill events on the path components after the Result
     /// states: the facts, the affine images and the entry images, in that
     /// order, and the path's record of written bindings [DIAG-1]. Every kill
-    /// transfer applies its events through here, so a new path component
-    /// joins every one of them at once.
+    /// transfer but a loop head's applies its events through here, so a new
+    /// path component joins every one of them at once;
+    /// [`Self::apply_loop_kills`] applies the same components, the written
+    /// record included, from its summary.
     fn kill_path_components(
         &mut self,
         separations: &dyn SeparationOracle,
@@ -14572,8 +14574,8 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    /// The commit kill of one `set` target, and the goal-origin and outcome
-    /// state a whole-place commit invalidates. One target list's commits are
+    /// The commit kill of one `set` target, and the goal-origin state a
+    /// whole-place commit invalidates. One target list's commits are
     /// exactly this event per target, on the same edge.
     fn collect_target_kill(
         &self,
