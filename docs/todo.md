@@ -1132,6 +1132,24 @@ rarely insert at the same place.
   three-statement shape against a peer that answers only after the send, at
   `WF_WORKERS` 2 and 4.
 
+- **Overlap can produce host effects that no sequential execution produces.**
+  [PAR-2] says that when an iteration does not reach its continuation, the
+  overlapped execution "produces none" of the later observables. Yet a
+  counted loop whose body passes `&deref(all)[i..after]` to a helper that
+  calls `send_once` is permitted and split under `--par`. If iteration 0's
+  send never completes, a later iteration's send still reaches its peer.
+  [PAR-1] promises only that state places are equal, so a first statement
+  that never finishes, next to a second that sends, shows the same gap.
+  File and stream output avoid it only because every such call writes the one
+  `HandleFactory`.
+
+  The language has not said whether source order between two proved-independent
+  statements orders their host effects. Either answer needs a ruling. If order
+  holds, overlap may not start a later member's host effect before the earlier
+  member completes. If order does not hold, [PAR-2]'s clause is restated for
+  state places, and the host traces of independent statements may interleave.
+  Reopen with the concurrent I/O design.
+
 ## Platforms and host interfaces
 
 - **Upstream LLVM on Darwin does not yet support the selected stack-probe
