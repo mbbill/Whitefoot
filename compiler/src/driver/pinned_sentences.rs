@@ -3098,24 +3098,82 @@ fn main() -> status: ExitStatus pure {
 "#],
     },
     RepairPair {
-        // [EFF-2] admits a row whose two entries overlap through one
-        // parameter, and [EFF-5] refuses it at every call, so the repair is at
-        // the callee's row, not at the call.
-        name: "row-entries-overlapping-through-one-argument.wf",
-        rejected: br#"struct Stats {
-  count: u64;
-  total: u64;
-}
-
-fn record(stats: &Stats) -> result: unit reads(stats), writes(stats.count) {
-  let whole = deref(stats);
-  set deref(stats).count = whole.total;
+        // [EFF-5] compares two entries one argument supplies when their
+        // declared positions can tell them apart, and this call gives those
+        // positions one value, so the repair is at the call's positions or at
+        // the callee's row.
+        name: "row-positions-one-call-makes-equal.wf",
+        rejected: br#"fn copy_within(values: &Array<u8, 4>, i: u64, j: u64) -> result: unit reads(values[i]), writes(values[j]) contract {
+  requires i < 4_u64;
+  requires j < 4_u64;
+} {
+  let observed = deref(values)[i];
+  set deref(values)[j] = observed;
   return unit;
 }
 
 fn main() -> status: ExitStatus pure {
-  let stats = Stats(count: 0_u64, total: 0_u64);
-  record(stats: &stats);
+  let values = array_filled::<u8, 4>(value: 1_u8);
+  copy_within(values: &values, i: 1_u64, j: 1_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "EFF-5",
+        sentences: &[
+            "\n  mechanical_fix: this call gives these two entries of the callee's row the same positions: pass positions this call proves do not overlap, or declare one `writes` entry of their common path in the callee's row instead\n",
+        ],
+        repaired: &[
+            br#"fn copy_within(values: &Array<u8, 4>, i: u64, j: u64) -> result: unit reads(values[i]), writes(values[j]) contract {
+  requires i < 4_u64;
+  requires j < 4_u64;
+} {
+  let observed = deref(values)[i];
+  set deref(values)[j] = observed;
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  let values = array_filled::<u8, 4>(value: 1_u8);
+  copy_within(values: &values, i: 1_u64, j: 2_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+            br#"fn copy_within(values: &Array<u8, 4>, i: u64, j: u64) -> result: unit writes(values) contract {
+  requires i < 4_u64;
+  requires j < 4_u64;
+} {
+  let observed = deref(values)[i];
+  set deref(values)[j] = observed;
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  let values = array_filled::<u8, 4>(value: 1_u8);
+  copy_within(values: &values, i: 1_u64, j: 1_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+        ],
+    },
+    RepairPair {
+        // No [OWN-7] family separates a range position from an index
+        // position, so [EFF-5] refuses this one argument's pair at every
+        // call, and the repair is at the callee's row, not at the call.
+        name: "row-entries-overlapping-through-one-argument.wf",
+        rejected: br#"fn record_run(values: &Array<u64, 4>, start: u64, end: u64, slot: u64) -> result: unit reads(values[start..end]), writes(values[slot]) contract {
+  requires start <= end;
+  requires end <= 4_u64;
+  requires slot < 4_u64;
+} {
+  let run = &deref(values)[start..end];
+  let length = deref(run).len;
+  set deref(values)[slot] = length;
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  let values = array_filled::<u64, 4>(value: 0_u64);
+  record_run(values: &values, start: 0_u64, end: 2_u64, slot: 3_u64);
   return exit_status(code: 0_u8);
 }
 "#,
@@ -3123,20 +3181,20 @@ fn main() -> status: ExitStatus pure {
         sentences: &[
             "\n  mechanical_fix: these two entries of the callee's row reach overlapping places through one argument, so every call rejects them: declare one `writes` entry of their common path in its row instead\n",
         ],
-        repaired: &[br#"struct Stats {
-  count: u64;
-  total: u64;
-}
-
-fn record(stats: &Stats) -> result: unit writes(stats) {
-  let whole = deref(stats);
-  set deref(stats).count = whole.total;
+        repaired: &[br#"fn record_run(values: &Array<u64, 4>, start: u64, end: u64, slot: u64) -> result: unit writes(values) contract {
+  requires start <= end;
+  requires end <= 4_u64;
+  requires slot < 4_u64;
+} {
+  let run = &deref(values)[start..end];
+  let length = deref(run).len;
+  set deref(values)[slot] = length;
   return unit;
 }
 
 fn main() -> status: ExitStatus pure {
-  let stats = Stats(count: 0_u64, total: 0_u64);
-  record(stats: &stats);
+  let values = array_filled::<u64, 4>(value: 0_u64);
+  record_run(values: &values, start: 0_u64, end: 2_u64, slot: 3_u64);
   return exit_status(code: 0_u8);
 }
 "#],

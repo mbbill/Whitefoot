@@ -823,9 +823,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         first: self.render_resolved_place(&left.place, bindings)?,
                         second: self.render_resolved_place(&right.place, bindings)?,
                         // No position separates this pair, so proving one
-                        // distinct is no repair here [DIAG-1].
+                        // distinct is no repair here [DIAG-1]. One
+                        // argument's pair got here either because this call
+                        // gives the declared positions that tell its entries
+                        // apart the same values, or because no family
+                        // separates the steps at which its declared paths
+                        // differ, such as a range beside an index, and then
+                        // no call passes it.
                         mechanical_fix: if exchange {
                             "exchange equal or disjoint places without an ancestor relation"
+                        } else if left.argument == right.argument
+                            && let (Some(left_formal), Some(right_formal)) =
+                                (formal.get(left.origin), formal.get(right.origin))
+                            && Self::separable_by_position(left_formal, right_formal).is_some()
+                        {
+                            "this call gives these two entries of the callee's row the same positions: pass positions this call proves do not overlap, or declare one `writes` entry of their common path in the callee's row instead"
                         } else if left.argument == right.argument {
                             "these two entries of the callee's row reach overlapping places through one argument, so every call rejects them: declare one `writes` entry of their common path in its row instead"
                         } else {

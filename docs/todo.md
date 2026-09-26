@@ -357,6 +357,24 @@ rarely insert at the same place.
   referent omission is found; close when the consumers read one inventory or
   that inventory is shown unsuitable for point-current flow facts.
 
+- **Some one-argument row pairs are refused at every call.** EFF-5 leaves a
+  pair of one argument's entries uncompared when their declared paths overlap
+  at every position, and lists the step pairs that decide that. The list
+  omits a range position beside an index position or a window part, which no
+  OWN-7 family separates either. So `reads(values[start..end]),
+  writes(values[slot])` is compared, never separated, and refused at every
+  call, including `start: 0_u64, end: 2_u64, slot: 3_u64`; the writer must
+  widen the row to `writes(values)`, the dead end the one-argument rule
+  removes for the listed pairs. Adding these pairs to EFF-5's list, and
+  making `overlaps_at_every_position` answer by the same OWN-7 judgment
+  instead of stopping at any range step, would make that call acceptable.
+  Validate with that call accepted and a caller fact outside `slot`
+  surviving, and with two index positions and two range positions of one
+  argument still compared. Found while stacking the repair-wording and
+  one-argument-row changes, whose one-argument repair now names this case
+  separately; reopen with the next EFF-5 change or when a program needs such
+  a row.
+
 ## Containers and storage lowering
 
 - **Validate a shared Ring wrap calculation independent of layout bounds.**

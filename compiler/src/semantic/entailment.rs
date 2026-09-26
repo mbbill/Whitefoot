@@ -50,7 +50,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use super::goal::{ConcreteGoal, GoalExpression};
 use super::model::{
-    CheckedConstant, CheckedConstantId, CheckedExpression, CheckedFunction,
+    BindingId, CheckedConstant, CheckedConstantId, CheckedExpression, CheckedFunction,
     CheckedIntegerOperation, CheckedLoopId, CheckedMode, CheckedNominal, CheckedSetTarget,
     CheckedStatement, CheckedType, FunctionId, IntegerType,
 };

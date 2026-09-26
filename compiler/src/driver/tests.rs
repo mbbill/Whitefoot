@@ -2889,11 +2889,9 @@ fn an_effect_row_defect_names_its_condition_and_the_row_that_repairs_it() {
             "{detail}"
         );
     assert!(
-            detail.contains(
-                "\n  mechanical_fix: delete the repeated entry"
-            ),
-            "{detail}"
-        );
+        detail.contains("\n  mechanical_fix: delete the repeated entry"),
+        "{detail}"
+    );
 }
 
 /// [EFF-2] publishes both rows and the exact difference between them.
