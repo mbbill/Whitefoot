@@ -977,10 +977,11 @@ pub(super) fn contract_implies(
         analyzer.call_goal_disposition(&goal, ProofContext::new(&state.facts, &state.affine));
     if let Some(root) = derivation {
         analyzer
+            .vocabulary
             .derivations
             .add_root(DerivationRootKind::ContractGoal(0), root);
     }
-    let (terms, measure_bounds) = analyzer.terms.into_inventory();
+    let (terms, measure_bounds) = analyzer.vocabulary.terms.into_inventory();
     FunctionEntailment {
         contract_goals: vec![ContractGoalOutcome {
             goal,
@@ -988,11 +989,11 @@ pub(super) fn contract_implies(
             evidence,
             derivation,
         }],
-        derivations: analyzer.derivations,
+        derivations: analyzer.vocabulary.derivations,
         inventory: DerivationInventory {
             terms,
             measure_bounds,
-            goals: analyzer.goals.into_inventory(),
+            goals: analyzer.vocabulary.goals.into_inventory(),
         },
         ..FunctionEntailment::default()
     }
@@ -1046,7 +1047,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
     analyzer.collect_bindings();
     analyzer.collect_postcondition_entry_images();
     let mut state = ProofFlowState {
-        entry_images: vec![None; analyzer.entry_images.len()],
+        entry_images: vec![None; analyzer.input.entry_images.len()],
         ..ProofFlowState::default()
     };
     analyzer.initialize_affine_parameters(&mut state.affine);
@@ -1055,6 +1056,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
     // that measure at body entry.
     analyzer.establish_entry_datums(&mut state);
     analyzer
+        .frames
         .scopes
         .push(function.parameters.iter().map(|p| p.binding).collect());
     // [ENT-3] S4: every substituted `requires` goal independently enters the
@@ -1072,13 +1074,14 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
     let body_disposition = {
         let closed = close(
             &state.facts,
-            &analyzer.terms,
-            &analyzer.goals,
-            &mut analyzer.derivations,
+            &analyzer.vocabulary.terms,
+            &analyzer.vocabulary.goals,
+            &mut analyzer.vocabulary.derivations,
         );
         match closed.contradiction_proof() {
             Some(contradiction) => {
                 analyzer
+                    .vocabulary
                     .derivations
                     .add_root(DerivationRootKind::BodyEntryContradiction, contradiction);
                 super::super::model::CheckedBodyDisposition::Uninhabited { contradiction }
@@ -1096,32 +1099,32 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         analyzer.walk_block(body, &mut state);
     }
     analyzer.reject_unjudged_separations();
-    analyzer.scopes.pop();
+    analyzer.frames.scopes.pop();
     analyzer.finalize_postcondition_aggregates();
     let permission_separations = analyzer.finalize_permission_separations();
     assert_eq!(
-        analyzer.completed_counted_roots, analyzer.encountered_counted,
+        analyzer.vocabulary.completed_counted_roots, analyzer.vocabulary.encountered_counted,
         "every encountered counted statement must publish one complete S11 root group"
     );
-    let (terms, measure_bounds) = analyzer.terms.into_inventory();
+    let (terms, measure_bounds) = analyzer.vocabulary.terms.into_inventory();
     let inventory = DerivationInventory {
         terms,
         measure_bounds,
-        goals: analyzer.goals.into_inventory(),
+        goals: analyzer.vocabulary.goals.into_inventory(),
     };
     AnalysisRun {
         body_disposition,
-        obligations: analyzer.obligations,
-        call_goals: analyzer.call_goals,
-        counted_derivations: analyzer.counted_derivations,
-        loop_invariants: analyzer.loop_invariants,
-        source_proofs: analyzer.source_proofs,
-        joined_source_proofs: analyzer.joined_source_proofs,
-        s7_derivations: analyzer.s7_derivations,
-        postconditions: analyzer.postconditions,
-        boolean_decompositions: analyzer.boolean_decompositions,
+        obligations: analyzer.output.obligations,
+        call_goals: analyzer.output.call_goals,
+        counted_derivations: analyzer.output.counted_derivations,
+        loop_invariants: analyzer.output.loop_invariants,
+        source_proofs: analyzer.output.source_proofs,
+        joined_source_proofs: analyzer.output.joined_source_proofs,
+        s7_derivations: analyzer.output.s7_derivations,
+        postconditions: analyzer.output.postconditions,
+        boolean_decompositions: analyzer.output.boolean_decompositions,
         permission_separations,
-        derivations: analyzer.derivations,
+        derivations: analyzer.vocabulary.derivations,
         inventory,
     }
 }
@@ -1129,53 +1132,61 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
 impl<'check, 'unit> Analyzer<'check, 'unit> {
     fn new(context: &'check EntailmentContext<'unit>, function: &'check CheckedFunction) -> Self {
         Self {
-            context,
-            function,
-            places: PlaceMap::default(),
-            judged_separations: HashSet::new(),
-            permission_separations: function
-                .permission_separation_queries
-                .iter()
-                .cloned()
-                .map(|query| PermissionSeparationAttempt {
-                    query,
-                    attempted: false,
-                    discharged: true,
-                    derivations: Vec::new(),
-                })
-                .collect(),
-            terms: TermTable::new(),
-            goals: GoalTable::default(),
-            derivations: DerivationLedger::default(),
-            obligations: Vec::new(),
-            product_intervals: HashMap::new(),
-            product_operands: HashMap::new(),
-            product_atoms: HashMap::new(),
-            unsigned_divisions: Vec::new(),
-            handle_images: HashMap::new(),
-            call_goals: Vec::new(),
-            counted_derivations: Vec::new(),
-            loop_invariants: Vec::new(),
-            source_proofs: Vec::new(),
-            joined_source_proofs: Vec::new(),
-            invariant_targets: HashMap::new(),
-            s7_derivations: Vec::new(),
-            postconditions: Vec::new(),
-            boolean_decompositions: Vec::new(),
-            entry_images: Vec::new(),
-            postcondition_entry_images: Vec::new(),
-            affine_atoms: Vec::new(),
-            measure_terms_seen: Vec::new(),
-            measure_terms_scanned: 0,
-            encountered_counted: 0,
-            completed_counted_roots: 0,
-            s12_roots: 0,
-            contract_call_roots: 0,
-            delivery_give_roots: HashSet::new(),
-            delivery_join_roots: 0,
-            scopes: Vec::new(),
-            loops: Vec::new(),
-            gives: Vec::new(),
+            input: Input {
+                context,
+                function,
+                places: PlaceMap::default(),
+                entry_images: Vec::new(),
+                postcondition_entry_images: Vec::new(),
+            },
+            vocabulary: Vocabulary {
+                terms: TermTable::new(),
+                goals: GoalTable::default(),
+                derivations: DerivationLedger::default(),
+                affine_atoms: Vec::new(),
+                measure_terms_seen: Vec::new(),
+                measure_terms_scanned: 0,
+                product_atoms: HashMap::new(),
+                handle_images: HashMap::new(),
+                invariant_targets: HashMap::new(),
+                unsigned_divisions: Vec::new(),
+                encountered_counted: 0,
+                completed_counted_roots: 0,
+                s12_roots: 0,
+                contract_call_roots: 0,
+                delivery_give_roots: HashSet::new(),
+                delivery_join_roots: 0,
+            },
+            output: Output {
+                obligations: Vec::new(),
+                call_goals: Vec::new(),
+                counted_derivations: Vec::new(),
+                loop_invariants: Vec::new(),
+                source_proofs: Vec::new(),
+                joined_source_proofs: Vec::new(),
+                s7_derivations: Vec::new(),
+                postconditions: Vec::new(),
+                boolean_decompositions: Vec::new(),
+                permission_separations: function
+                    .permission_separation_queries
+                    .iter()
+                    .cloned()
+                    .map(|query| PermissionSeparationAttempt {
+                        query,
+                        attempted: false,
+                        discharged: true,
+                        derivations: Vec::new(),
+                    })
+                    .collect(),
+                judged_separations: HashSet::new(),
+            },
+            frames: Frames {
+                scopes: Vec::new(),
+                loops: Vec::new(),
+                gives: Vec::new(),
+                product_intervals: HashMap::new(),
+                product_operands: HashMap::new(),
+            },
         }
     }
 }
@@ -1484,21 +1495,107 @@ impl SeparationOracle for EventSeparations<'_> {
     }
 }
 
+/// One function's analysis, divided along its writers
+/// (`design/compiler/engine-components.md`): what it reads and never changes,
+/// the vocabulary its judgments are stated in, what it publishes, and the
+/// frames of the one walk that owns event order.
 struct Analyzer<'check, 'unit> {
+    input: Input<'check, 'unit>,
+    vocabulary: Vocabulary,
+    output: Output,
+    frames: Frames,
+}
+
+/// What the analysis reads: the program-level context, the checked function,
+/// and what is resolved from the function once before the walk.
+struct Input<'check, 'unit> {
     context: &'check EntailmentContext<'unit>,
     function: &'check CheckedFunction,
     /// [REF-1] place resolution for this function.
     places: PlaceMap,
-    /// The effect and demanded reference-preservation questions already
-    /// judged, distinguished by query even when they share a write event.
-    judged_separations: HashSet<usize>,
-    /// Optional [PAR-1] range questions. Each one is evaluated only at its
-    /// first statement's entry and meets every visit with logical AND.
-    permission_separations: Vec<PermissionSeparationAttempt>,
+    entry_images: Vec<EntryImageRecord>,
+    /// Global entry-image indices used by each source-ordered relation. The
+    /// flow state tracks invalidation once per structural image, while each
+    /// FN-9 proof consults only the images its own relation references.
+    postcondition_entry_images: Vec<Vec<usize>>,
+}
+
+/// The terms, goals, affine atoms and derivation ledger every judgment is
+/// stated in, with the canonical records keyed by them and the ordinals that
+/// number the ledger's retained roots.
+struct Vocabulary {
     terms: TermTable,
     goals: GoalTable,
     derivations: DerivationLedger,
+    /// Function-local mathematical atoms allocated in structural execution
+    /// order. They are ordinary checker state and are discarded with the
+    /// analysis.
+    affine_atoms: Vec<AffineAtom>,
+    /// Every measure term registered so far, and how much of the term
+    /// registry the scan that found them has covered.
+    measure_terms_seen: Vec<TermId>,
+    measure_terms_scanned: usize,
+    /// What every admitted exact product equals, as value identities: the atom
+    /// the multiplication bound, and the two operand atoms it is the product
+    /// of.
+    ///
+    /// An `AffineTermId` names one immutable value, so this map needs no kill
+    /// and no join: a write to the product or to an operand mints a new atom,
+    /// which is simply absent here, while the old atoms keep denoting the old
+    /// values and the recorded equality stays true. [PRF-1] reads it to fold a
+    /// term-scaled premise's nonlinear monomials back to affine.
+    product_atoms: HashMap<AffineTermId, (AffineTermId, AffineTermId)>,
+    /// What each minted opaque handle stands for. An `AffineTermId` is one
+    /// immutable value identity, so this needs no kill and no join, exactly as
+    /// `product_atoms` does.
+    handle_images: HashMap<AffineTermId, AffineForm>,
+    /// Canonical immutable target formed at each invariant declaration.
+    ///
+    /// This table is deliberately separate from flow availability. A named
+    /// PRF-1 `use` must form its written certificate from the declaration's
+    /// proposition even on a path where that proposition is unavailable;
+    /// availability is checked later as an independent premise judgment.
+    invariant_targets: HashMap<crate::DeclarationId, Result<AffineInequality, AffineCheckError>>,
+    /// Source-establishment order is the specified tie-break for matching
+    /// a product against more than one captured division.
+    unsigned_divisions: Vec<CapturedUnsignedDivision>,
+    encountered_counted: u32,
+    completed_counted_roots: u32,
+    s12_roots: u32,
+    contract_call_roots: u32,
+    delivery_give_roots: HashSet<DerivationId>,
+    delivery_join_roots: u32,
+}
+
+/// What the analysis publishes: every judgment's outcome, the retained
+/// derivation sets, and which separation questions have been asked.
+struct Output {
     obligations: Vec<ObligationOutcome>,
+    call_goals: Vec<CallGoalOutcome>,
+    counted_derivations: Vec<CountedDerivationSet>,
+    loop_invariants: Vec<LoopInvariantOutcome>,
+    source_proofs: Vec<SourceProofOutcome>,
+    joined_source_proofs: Vec<JoinedSourceProofProvenance>,
+    s7_derivations: Vec<S7Derivation>,
+    postconditions: Vec<super::FunctionPostconditionProof>,
+    /// O11 candidate decomposition sets, recorded at
+    /// signed-goal establishments and never established as facts.
+    boolean_decompositions: Vec<super::BooleanGoalDecomposition>,
+    /// Optional [PAR-1] range questions. Each one is evaluated only at its
+    /// first statement's entry and meets every visit with logical AND.
+    permission_separations: Vec<PermissionSeparationAttempt>,
+    /// The effect and demanded reference-preservation questions already
+    /// judged, distinguished by query even when they share a write event.
+    judged_separations: HashSet<usize>,
+}
+
+/// The walk's own frames: open scopes, loops and value initializers, and the
+/// measurements one judgment hands to the binding the walk reaches next.
+struct Frames {
+    /// Lexical scope stack: the bindings declared in each open block.
+    scopes: Vec<Vec<BindingId>>,
+    loops: Vec<LoopFrame>,
+    gives: Vec<GiveFrame>,
     /// The interval [ENT-6]'s interval-product rule proved at each admitted
     /// non-constant multiplication, keyed by that operation's own node. The
     /// domain is judged while the initializer is walked and [ENT-3.S14]
@@ -1511,68 +1608,12 @@ struct Analyzer<'check, 'unit> {
     /// records only that the domain held: which values the fold names is a
     /// separate question the binding answers.
     product_operands: HashMap<crate::NodePath, (DerivationId, u32)>,
-    /// What every admitted exact product equals, as value identities: the atom
-    /// the multiplication bound, and the two operand atoms it is the product
-    /// of.
-    ///
-    /// An `AffineTermId` names one immutable value, so this map needs no kill
-    /// and no join: a write to the product or to an operand mints a new atom,
-    /// which is simply absent here, while the old atoms keep denoting the old
-    /// values and the recorded equality stays true. [PRF-1] reads it to fold a
-    /// term-scaled premise's nonlinear monomials back to affine.
-    product_atoms: HashMap<AffineTermId, (AffineTermId, AffineTermId)>,
-    /// Source-establishment order is the specified tie-break for matching
-    /// a product against more than one captured division.
-    unsigned_divisions: Vec<CapturedUnsignedDivision>,
-    /// What each minted opaque handle stands for. An `AffineTermId` is one
-    /// immutable value identity, so this needs no kill and no join, exactly as
-    /// `product_atoms` does.
-    handle_images: HashMap<AffineTermId, AffineForm>,
-    call_goals: Vec<CallGoalOutcome>,
-    counted_derivations: Vec<CountedDerivationSet>,
-    loop_invariants: Vec<LoopInvariantOutcome>,
-    source_proofs: Vec<SourceProofOutcome>,
-    joined_source_proofs: Vec<JoinedSourceProofProvenance>,
-    /// Canonical immutable target formed at each invariant declaration.
-    ///
-    /// This table is deliberately separate from flow availability. A named
-    /// PRF-1 `use` must form its written certificate from the declaration's
-    /// proposition even on a path where that proposition is unavailable;
-    /// availability is checked later as an independent premise judgment.
-    invariant_targets: HashMap<crate::DeclarationId, Result<AffineInequality, AffineCheckError>>,
-    s7_derivations: Vec<S7Derivation>,
-    postconditions: Vec<super::FunctionPostconditionProof>,
-    /// O11 candidate decomposition sets, recorded at
-    /// signed-goal establishments and never established as facts.
-    boolean_decompositions: Vec<super::BooleanGoalDecomposition>,
-    entry_images: Vec<EntryImageRecord>,
-    /// Global entry-image indices used by each source-ordered relation. The
-    /// flow state tracks invalidation once per structural image, while each
-    /// FN-9 proof consults only the images its own relation references.
-    postcondition_entry_images: Vec<Vec<usize>>,
-    /// Function-local mathematical atoms allocated in structural execution
-    /// order. They are ordinary checker state and are discarded with the
-    /// analysis.
-    affine_atoms: Vec<AffineAtom>,
-    /// Every measure term registered so far, and how much of the term
-    /// registry the scan that found them has covered.
-    measure_terms_seen: Vec<TermId>,
-    measure_terms_scanned: usize,
-    encountered_counted: u32,
-    completed_counted_roots: u32,
-    s12_roots: u32,
-    contract_call_roots: u32,
-    delivery_give_roots: HashSet<DerivationId>,
-    delivery_join_roots: u32,
-    /// Lexical scope stack: the bindings declared in each open block.
-    scopes: Vec<Vec<BindingId>>,
-    loops: Vec<LoopFrame>,
-    gives: Vec<GiveFrame>,
 }
 
 impl Analyzer<'_, '_> {
     fn initialize_affine_parameters(&mut self, state: &mut AffineFlowState) {
         let parameters = self
+            .input
             .function
             .parameters
             .iter()
@@ -1592,7 +1633,8 @@ impl Analyzer<'_, '_> {
             discharged: false,
             derivation: None,
         };
-        self.postconditions = self
+        self.output.postconditions = self
+            .input
             .function
             .postconditions
             .iter()
@@ -1610,10 +1652,10 @@ impl Analyzer<'_, '_> {
     }
 
     fn finalize_postcondition_aggregates(&mut self) {
-        for index in 0..self.postconditions.len() {
-            let block = self.postconditions[index].block.clone();
-            let relation_ordinal = self.postconditions[index].relation_ordinal;
-            let parents = self.postconditions[index]
+        for index in 0..self.output.postconditions.len() {
+            let block = self.output.postconditions[index].block.clone();
+            let relation_ordinal = self.output.postconditions[index].relation_ordinal;
+            let parents = self.output.postconditions[index]
                 .exits
                 .iter()
                 .map(|exit| {
@@ -1622,7 +1664,7 @@ impl Analyzer<'_, '_> {
                         .flatten()
                 })
                 .collect::<Option<Vec<_>>>();
-            self.postconditions[index].aggregate =
+            self.output.postconditions[index].aggregate =
                 self.retain_postcondition_aggregate(&block, relation_ordinal, parents);
         }
     }
@@ -1633,14 +1675,14 @@ impl Analyzer<'_, '_> {
         relation_ordinal: u32,
         parents: Option<Vec<DerivationId>>,
     ) -> PostconditionAggregate {
-        if self.function.formal_hypothesis || self.function.body.is_none() {
-            let node = self
-                .derivations
-                .intern(super::state::DerivationNode::SignatureContract {
+        if self.input.function.formal_hypothesis || self.input.function.body.is_none() {
+            let node = self.vocabulary.derivations.intern(
+                super::state::DerivationNode::SignatureContract {
                     block: block.clone(),
                     relation_ordinal,
-                });
-            self.derivations.add_root(
+                },
+            );
+            self.vocabulary.derivations.add_root(
                 DerivationRootKind::PostconditionAggregate { relation_ordinal },
                 node,
             );
@@ -1655,14 +1697,14 @@ impl Analyzer<'_, '_> {
                 derivation: None,
             };
         };
-        let node = self
-            .derivations
-            .intern(super::state::DerivationNode::PostconditionAggregate {
+        let node = self.vocabulary.derivations.intern(
+            super::state::DerivationNode::PostconditionAggregate {
                 block: block.clone(),
                 relation_ordinal,
                 parents,
-            });
-        self.derivations.add_root(
+            },
+        );
+        self.vocabulary.derivations.add_root(
             DerivationRootKind::PostconditionAggregate { relation_ordinal },
             node,
         );
@@ -1680,11 +1722,11 @@ impl Analyzer<'_, '_> {
         value_reached: bool,
         forwarded: &[Option<ResultEvidence>],
     ) {
-        if self.postconditions.is_empty() {
+        if self.output.postconditions.is_empty() {
             return;
         }
-        for index in 0..self.function.postconditions.len() {
-            let postcondition = &self.function.postconditions[index];
+        for index in 0..self.input.function.postconditions.len() {
+            let postcondition = &self.input.function.postconditions[index];
             let Some(selected) = postcondition
                 .selected_returns
                 .iter()
@@ -1711,7 +1753,11 @@ impl Analyzer<'_, '_> {
                     conditional_facts.promote_to_contradiction(result.facts.contradiction);
                 }
                 for (relation, parent) in result.facts.l0_candidates() {
-                    conditional_facts.establish_from_proof(&relation, parent, &self.derivations);
+                    conditional_facts.establish_from_proof(
+                        &relation,
+                        parent,
+                        &self.vocabulary.derivations,
+                    );
                 }
             }
             // [CALL-4] one term per declared result ordinal, in written order.
@@ -1748,15 +1794,15 @@ impl Analyzer<'_, '_> {
                 });
             let residual = self.render_relation(&relation);
 
-            let entry_images = self.postcondition_entry_images[index]
+            let entry_images = self.input.postcondition_entry_images[index]
                 .iter()
                 .map(|entry_index| PostconditionEntryImageOutcome {
-                    datum: self.entry_images[*entry_index].datum.clone(),
+                    datum: self.input.entry_images[*entry_index].datum.clone(),
                     invalidation: states.entry_images[*entry_index],
                 })
                 .collect::<Vec<_>>();
-            let occurrence = self.postconditions[index].exits.len();
-            let relation_ordinal = self.postconditions[index].relation_ordinal;
+            let occurrence = self.output.postconditions[index].exits.len();
+            let relation_ordinal = self.output.postconditions[index].relation_ordinal;
             let unavailable = !value_reached
                 || entry_images
                     .iter()
@@ -1771,14 +1817,16 @@ impl Analyzer<'_, '_> {
                 &states.affine,
                 unavailable,
             );
-            self.postconditions[index].exits.push(PostconditionExit {
-                statement: statement.clone(),
-                relation,
-                residual,
-                entry_images,
-                disposition: complete.disposition,
-                derivation: complete.derivation,
-            });
+            self.output.postconditions[index]
+                .exits
+                .push(PostconditionExit {
+                    statement: statement.clone(),
+                    relation,
+                    residual,
+                    entry_images,
+                    disposition: complete.disposition,
+                    derivation: complete.derivation,
+                });
         }
     }
 
@@ -1812,15 +1860,15 @@ impl Analyzer<'_, '_> {
             let parent = proof
                 .derivation
                 .expect("a proved postcondition relation must retain its local derivation");
-            let node = self
-                .derivations
-                .intern(super::state::DerivationNode::PostconditionExit {
+            let node = self.vocabulary.derivations.intern(
+                super::state::DerivationNode::PostconditionExit {
                     statement: statement.clone(),
                     relation_ordinal,
                     relation: Box::new(relation.clone()),
                     parent,
-                });
-            self.derivations.add_root(
+                },
+            );
+            self.vocabulary.derivations.add_root(
                 DerivationRootKind::PostconditionExit {
                     relation_ordinal,
                     occurrence: u32::try_from(occurrence)
@@ -1944,7 +1992,12 @@ impl Analyzer<'_, '_> {
                 projections,
                 ty: CheckedType::Integer(_),
             } if projections.is_empty() => {
-                let binding = self.function.parameters.get(*ordinal as usize)?.binding;
+                let binding = self
+                    .input
+                    .function
+                    .parameters
+                    .get(*ordinal as usize)?
+                    .binding;
                 state.values.get(&binding).cloned()
             }
             RelationDatum::NamedConst {
@@ -1952,6 +2005,7 @@ impl Analyzer<'_, '_> {
                 projections,
                 ty: CheckedType::Integer(_),
             } if projections.is_empty() => self
+                .input
                 .context
                 .constant(*declaration)
                 .and_then(|constant| Self::postcondition_affine_constant(&constant.value)),
@@ -2032,10 +2086,10 @@ impl Analyzer<'_, '_> {
         for (member, (goal, sign)) in members.into_iter().enumerate() {
             // Existing L0 projections remain on their ordinary route; putting
             // them in this list would widen AUTO's bounded premise sums.
-            if self.goals.projection(goal).is_some() {
+            if self.vocabulary.goals.projection(goal).is_some() {
                 continue;
             }
-            let expression = self.goals.expression(goal).clone();
+            let expression = self.vocabulary.goals.expression(goal).clone();
             let Some(inequality) =
                 self.affine_signed_goal_ordering_target(&expression, &state.affine, sign)
             else {
@@ -2047,14 +2101,10 @@ impl Analyzer<'_, '_> {
                 .get(&(goal, sign))
                 .copied()
                 .expect("every S4 decomposition member is established");
-            let parent =
-                self.derivations
-                    .intern(super::state::DerivationNode::RequirementAffineImage {
-                        goal,
-                        sign,
-                        parent,
-                    });
-            self.derivations.add_root(
+            let parent = self.vocabulary.derivations.intern(
+                super::state::DerivationNode::RequirementAffineImage { goal, sign, parent },
+            );
+            self.vocabulary.derivations.add_root(
                 DerivationRootKind::RequirementAffineImage {
                     requirement: u32::try_from(ordinal).expect("requirement ordinal exceeds u32"),
                     member: u32::try_from(member).expect("decomposition ordinal exceeds u32"),
@@ -2135,6 +2185,7 @@ impl Analyzer<'_, '_> {
                 projections,
                 ty: CheckedType::Integer(_),
             }) if projections.is_empty() => self
+                .input
                 .context
                 .constant(*declaration)
                 .and_then(|constant| Self::postcondition_affine_constant(&constant.value)),
@@ -2290,7 +2341,12 @@ impl Analyzer<'_, '_> {
                 projections,
                 ty,
             } => {
-                let binding = self.function.parameters.get(*ordinal as usize)?.binding;
+                let binding = self
+                    .input
+                    .function
+                    .parameters
+                    .get(*ordinal as usize)?
+                    .binding;
                 let projections = self.body_projections(PlaceRoot::Binding(binding), projections);
                 self.postcondition_place_term(PlaceRoot::Binding(binding), projections, *ty)
             }
@@ -2308,10 +2364,15 @@ impl Analyzer<'_, '_> {
                 // back still means the entry value.
                 PostconditionPlaceRoot::Parameter { ordinal } => {
                     let kind = Self::entry_datum_kind(ordinal, &place.projections, *measure);
-                    if let Some(datum) = self.terms.interned(&kind) {
+                    if let Some(datum) = self.vocabulary.terms.interned(&kind) {
                         return Some(datum);
                     }
-                    let binding = self.function.parameters.get(ordinal as usize)?.binding;
+                    let binding = self
+                        .input
+                        .function
+                        .parameters
+                        .get(ordinal as usize)?
+                        .binding;
                     let projections =
                         self.body_projections(PlaceRoot::Binding(binding), &place.projections);
                     self.postcondition_measure_term(
@@ -2323,7 +2384,12 @@ impl Analyzer<'_, '_> {
                     )
                 }
                 PostconditionPlaceRoot::ExitParameter { ordinal } => {
-                    let binding = self.function.parameters.get(ordinal as usize)?.binding;
+                    let binding = self
+                        .input
+                        .function
+                        .parameters
+                        .get(ordinal as usize)?
+                        .binding;
                     let projections =
                         self.body_projections(PlaceRoot::Binding(binding), &place.projections);
                     self.postcondition_measure_term(
@@ -2353,9 +2419,8 @@ impl Analyzer<'_, '_> {
 
     fn postcondition_return_term(&mut self, datum: &PostconditionReturnDatum) -> Option<TermId> {
         match datum {
-            PostconditionReturnDatum::ResultPayload { ty } => {
-                fragment_type(*ty).map(|ty| self.terms.intern(TermKind::ResultPayload(ty)))
-            }
+            PostconditionReturnDatum::ResultPayload { ty } => fragment_type(*ty)
+                .map(|ty| self.vocabulary.terms.intern(TermKind::ResultPayload(ty))),
             PostconditionReturnDatum::Place(place) => self.postcondition_return_place_term(place),
             PostconditionReturnDatum::Literal { value, .. } => {
                 self.postcondition_constant_term(value)
@@ -2391,7 +2456,7 @@ impl Analyzer<'_, '_> {
         match root {
             PostconditionReturnPlaceRoot::Binding(binding) => Some(PlaceRoot::Binding(binding)),
             PostconditionReturnPlaceRoot::NamedConst(declaration) => Some(PlaceRoot::Constant(
-                *self.context.constant_ids.get(&declaration)?,
+                *self.input.context.constant_ids.get(&declaration)?,
             )),
         }
     }
@@ -2404,13 +2469,14 @@ impl Analyzer<'_, '_> {
     ) -> Option<TermId> {
         if projections.is_empty()
             && let Some(term) = self
+                .input
                 .context
                 .constant(declaration)
                 .and_then(|constant| self.postcondition_constant_term(&constant.value))
         {
             return Some(term);
         }
-        let root = PlaceRoot::Constant(*self.context.constant_ids.get(&declaration)?);
+        let root = PlaceRoot::Constant(*self.input.context.constant_ids.get(&declaration)?);
         self.postcondition_place_term(root, projections, ty)
     }
 
@@ -2419,8 +2485,10 @@ impl Analyzer<'_, '_> {
     /// A storage extent or a differently typed formal does not create another
     /// constant identity or grant that parameter a different interval.
     fn const_parameter_term(&mut self, declaration: crate::DeclarationId) -> TermId {
-        let ty = self.context.const_parameter_types[&declaration];
-        self.terms.intern(TermKind::ConstParameter(declaration, ty))
+        let ty = self.input.context.const_parameter_types[&declaration];
+        self.vocabulary
+            .terms
+            .intern(TermKind::ConstParameter(declaration, ty))
     }
 
     fn postcondition_constant_term(&mut self, value: &CheckedValue) -> Option<TermId> {
@@ -2435,7 +2503,7 @@ impl Analyzer<'_, '_> {
             } => i128::from(*one),
             _ => return None,
         };
-        Some(self.terms.intern(TermKind::Constant(value)))
+        Some(self.vocabulary.terms.intern(TermKind::Constant(value)))
     }
 
     fn postcondition_place_term(
@@ -2453,13 +2521,18 @@ impl Analyzer<'_, '_> {
             root,
             path: projections,
         };
-        Some(self.terms.intern(TermKind::Place(path, fragment)))
+        Some(
+            self.vocabulary
+                .terms
+                .intern(TermKind::Place(path, fragment)),
+        )
     }
 
     /// [TYPE-8, REF-4] whether the formal at this ordinal is a `&[T]`, whose
     /// one [MSR-1] row is the range's and not the element type's.
     fn formal_is_range(&self, ordinal: u32) -> bool {
-        self.function
+        self.input
+            .function
             .parameters
             .get(ordinal as usize)
             .is_some_and(|parameter| parameter.mode == CheckedMode::Range)
@@ -2563,21 +2636,24 @@ impl Analyzer<'_, '_> {
                 MeasureCell::ExactRuntime | MeasureCell::Bounded | MeasureCell::Absent => None,
             };
             if let Some(bound) = bound {
-                self.terms.set_measure_bound(term, bound);
+                self.vocabulary.terms.set_measure_bound(term, bound);
             }
         }
         self.intern_measure(measure, &path)
     }
 
     fn intern_measure(&mut self, measure: CheckedMeasure, path: &ResolvedPlace) -> TermId {
-        self.terms.intern(TermKind::Measure(measure, path.clone()))
+        self.vocabulary
+            .terms
+            .intern(TermKind::Measure(measure, path.clone()))
     }
 
     fn available_postconditions(
         &self,
         function: super::super::model::FunctionId,
     ) -> Vec<AvailablePostcondition> {
-        self.context
+        self.input
+            .context
             .verified_postconditions(function)
             .unwrap_or_default()
             .into_iter()
@@ -2613,13 +2689,13 @@ impl Analyzer<'_, '_> {
             .postconditions
             .iter()
             .filter_map(|boundary| {
-                let query = self.context.contract_query(boundary.query)?;
+                let query = self.input.context.contract_query(boundary.query)?;
                 let [outcome] = query.proof.contract_goals.as_slice() else {
                     return None;
                 };
                 if outcome.disposition != CallGoalDisposition::Discharged
                     || outcome.derivation.is_none()
-                    || query.instance != Some(self.function.id)
+                    || query.instance != Some(self.input.function.id)
                     || query.goal != boundary.selector.block
                     || query.premises.len() != boundary.actual_premises.len()
                 {
@@ -2630,8 +2706,10 @@ impl Analyzer<'_, '_> {
                     .iter()
                     .zip(&query.premises)
                     .map(|(ordinal, clause)| {
-                        let (postcondition, proof) =
-                            self.context.verified_postcondition(function, *ordinal)?;
+                        let (postcondition, proof) = self
+                            .input
+                            .context
+                            .verified_postcondition(function, *ordinal)?;
                         let summary = proof.summary.as_ref()?;
                         (postcondition.selector.block == *clause
                             && summary.function == function
@@ -2664,7 +2742,7 @@ impl Analyzer<'_, '_> {
     /// fact. v0.59 walked a holder chain; v0.60 asks the reference summary,
     /// which is where a reference's path set now lives.
     fn append_holder_chain(&self, binding: BindingId, holders: &mut Vec<BindingId>) {
-        if !self.places.is_reference(binding) {
+        if !self.input.places.is_reference(binding) {
             return;
         }
         if !holders.contains(&binding) {
@@ -2758,7 +2836,7 @@ impl Analyzer<'_, '_> {
 
     fn postcondition_term_live_holders(&self, term: TermId) -> Vec<BindingId> {
         let mut holders = Vec::new();
-        match self.terms.kind(term) {
+        match self.vocabulary.terms.kind(term) {
             TermKind::Place(place, _) | TermKind::Measure(_, place) => {
                 let PlaceRoot::Binding(root) = place.root else {
                     return holders;
@@ -2770,7 +2848,7 @@ impl Analyzer<'_, '_> {
                         .iter()
                         .map_while(goal_projection_of_step)
                         .collect(),
-                    measure: match self.terms.kind(term) {
+                    measure: match self.vocabulary.terms.kind(term) {
                         TermKind::Measure(measure, _) => Some(*measure),
                         _ => None,
                     },
@@ -2898,8 +2976,8 @@ impl Analyzer<'_, '_> {
         if written.root == PlaceRoot::Binding(holder) && written.path.is_empty() {
             return true;
         }
-        let holder_targets = self.places.resolve(PlaceRoot::Binding(holder), &[]);
-        let written_targets = self.places.resolve(written.root, &written.path);
+        let holder_targets = self.input.places.resolve(PlaceRoot::Binding(holder), &[]);
+        let written_targets = self.input.places.resolve(written.root, &written.path);
         if holder_targets.is_empty() || written_targets.is_empty() {
             return true;
         }
@@ -2953,8 +3031,10 @@ impl Analyzer<'_, '_> {
         if !state.may_hold_postcondition_candidates() {
             return;
         }
-        state.kill_proof_candidates(&self.derivations, |left, right, proof| {
-            self.derivations.depends_on_postcondition_call(proof)
+        state.kill_proof_candidates(&self.vocabulary.derivations, |left, right, proof| {
+            self.vocabulary
+                .derivations
+                .depends_on_postcondition_call(proof)
                 && (self.s12_candidate_term_killed(separations, left, event)
                     || self.s12_candidate_term_killed(separations, right, event))
         });
@@ -2964,8 +3044,10 @@ impl Analyzer<'_, '_> {
         if !state.may_hold_postcondition_candidates() {
             return;
         }
-        state.kill_proof_candidates(&self.derivations, |left, right, proof| {
-            self.derivations.depends_on_postcondition_call(proof)
+        state.kill_proof_candidates(&self.vocabulary.derivations, |left, right, proof| {
+            self.vocabulary
+                .derivations
+                .depends_on_postcondition_call(proof)
                 && (self.s12_candidate_scope_kills_term(left, exited)
                     || self.s12_candidate_scope_kills_term(right, exited))
         });
@@ -2988,7 +3070,7 @@ impl Analyzer<'_, '_> {
                 projections,
                 ..
             } => (
-                PlaceRoot::Constant(*self.context.constant_ids.get(declaration)?),
+                PlaceRoot::Constant(*self.input.context.constant_ids.get(declaration)?),
                 projections,
             ),
             GoalDatum::Parameter { .. }
@@ -3084,7 +3166,7 @@ impl Analyzer<'_, '_> {
         postconditions: &[AvailablePostcondition],
         state: &mut ProofFlowState,
     ) {
-        let Some(callee) = self.context.callee(function) else {
+        let Some(callee) = self.input.context.callee(function) else {
             return;
         };
         let parameter_modes = callee.parameter_modes.clone();
@@ -3139,7 +3221,7 @@ impl Analyzer<'_, '_> {
                 continue;
             };
             let kind = Self::call_datum_kind(call, ordinal, &projections, measure, datum_type);
-            if self.terms.interned(&kind).is_some() {
+            if self.vocabulary.terms.interned(&kind).is_some() {
                 continue;
             }
             let Some(actual) = goal_arguments.get(ordinal as usize) else {
@@ -3158,7 +3240,7 @@ impl Analyzer<'_, '_> {
             if self.immortal_term(term) {
                 continue;
             }
-            let datum = self.terms.intern(kind);
+            let datum = self.vocabulary.terms.intern(kind);
             self.adopt_measure_atom(datum, term, &state.affine);
             state.facts.establish(
                 &Relation::Equal {
@@ -3166,7 +3248,7 @@ impl Analyzer<'_, '_> {
                     right: term,
                     difference: 0,
                 },
-                &mut self.derivations,
+                &mut self.vocabulary.derivations,
                 event,
             );
         }
@@ -3176,7 +3258,7 @@ impl Analyzer<'_, '_> {
     /// [ENT-5] event can change what it denotes [ENT-2, MSR-3].
     fn immortal_term(&self, term: TermId) -> bool {
         matches!(
-            self.terms.kind(term),
+            self.vocabulary.terms.kind(term),
             TermKind::Zero
                 | TermKind::Constant(_)
                 | TermKind::ConstParameter(..)
@@ -3203,7 +3285,7 @@ impl Analyzer<'_, '_> {
         } else {
             fragment_type(ty)?
         };
-        self.terms.interned(&Self::call_datum_kind(
+        self.vocabulary.terms.interned(&Self::call_datum_kind(
             call,
             formal,
             projections,
@@ -3223,7 +3305,7 @@ impl Analyzer<'_, '_> {
         results: &[Option<TermId>],
         result_places: &[Option<(PlaceRoot, Vec<GoalProjection>, CheckedType)>],
     ) -> Option<InstantiatedPostcondition> {
-        let parameter_modes = self.context.callee(function)?.parameter_modes.clone();
+        let parameter_modes = self.input.context.callee(function)?.parameter_modes.clone();
         let mut substitutions = Vec::new();
         let mut operands = Vec::with_capacity(template.operands.len());
         for (operand, term_operand) in template.operands.iter().enumerate() {
@@ -3415,7 +3497,8 @@ impl Analyzer<'_, '_> {
     ) -> Option<DerivationId> {
         let summary = self.selected_call_summary(available)?;
         Some(
-            self.derivations
+            self.vocabulary
+                .derivations
                 .intern(super::state::DerivationNode::PostconditionCall {
                     detail: Box::new(super::state::PostconditionCallDetail {
                         call: prepared.call.clone(),
@@ -3441,24 +3524,25 @@ impl Analyzer<'_, '_> {
         let Some(call) = self.retain_postcondition_call(instantiated, available, prepared) else {
             return;
         };
-        let route =
-            self.derivations
-                .intern(super::state::DerivationNode::PostconditionDirectResult {
-                    statement: statement.clone(),
-                    binding,
-                    relation: Box::new(instantiated.relation.clone()),
-                    parent: call,
-                });
-        let occurrence = self.s12_roots;
-        self.s12_roots = self
+        let route = self.vocabulary.derivations.intern(
+            super::state::DerivationNode::PostconditionDirectResult {
+                statement: statement.clone(),
+                binding,
+                relation: Box::new(instantiated.relation.clone()),
+                parent: call,
+            },
+        );
+        let occurrence = self.vocabulary.s12_roots;
+        self.vocabulary.s12_roots = self
+            .vocabulary
             .s12_roots
             .checked_add(1)
             .expect("S12 roots exceed the u32 identity space");
-        self.derivations.add_root(
+        self.vocabulary.derivations.add_root(
             DerivationRootKind::PostconditionDirectResult { occurrence },
             route,
         );
-        state.establish_from_proof(&instantiated.relation, route, &self.derivations);
+        state.establish_from_proof(&instantiated.relation, route, &self.vocabulary.derivations);
     }
 
     fn establish_direct_result(
@@ -3736,26 +3820,31 @@ impl Analyzer<'_, '_> {
         else {
             return;
         };
-        let proof =
-            self.derivations
-                .intern(super::state::DerivationNode::PostconditionDirectReceiver {
-                    statement: statement.clone(),
-                    binding: candidate.route.binding,
-                    receiver_formal: candidate.route.formal,
-                    relation: Box::new(candidate.instantiated.relation.clone()),
-                    target_event,
-                    parent: call,
-                });
-        let occurrence = self.s12_roots;
-        self.s12_roots = self
+        let proof = self.vocabulary.derivations.intern(
+            super::state::DerivationNode::PostconditionDirectReceiver {
+                statement: statement.clone(),
+                binding: candidate.route.binding,
+                receiver_formal: candidate.route.formal,
+                relation: Box::new(candidate.instantiated.relation.clone()),
+                target_event,
+                parent: call,
+            },
+        );
+        let occurrence = self.vocabulary.s12_roots;
+        self.vocabulary.s12_roots = self
+            .vocabulary
             .s12_roots
             .checked_add(1)
             .expect("S12 roots exceed the u32 identity space");
-        self.derivations.add_root(
+        self.vocabulary.derivations.add_root(
             DerivationRootKind::PostconditionDirectReceiver { occurrence },
             proof,
         );
-        state.establish_from_proof(&candidate.instantiated.relation, proof, &self.derivations);
+        state.establish_from_proof(
+            &candidate.instantiated.relation,
+            proof,
+            &self.vocabulary.derivations,
+        );
     }
 
     fn prepare_direct_receiver(
@@ -3890,7 +3979,7 @@ impl Analyzer<'_, '_> {
     }
 
     fn retain_s7_derivation(&mut self, source: S7Derivation) {
-        let occurrence = u32::try_from(self.s7_derivations.len())
+        let occurrence = u32::try_from(self.output.s7_derivations.len())
             .expect("S7 source roots exceed the u32 identity space");
         let kind = match &source.kind {
             super::S7DerivationKind::BitAndBound { .. } => {
@@ -3909,13 +3998,13 @@ impl Analyzer<'_, '_> {
                 DerivationRootKind::SignedRemainderBound(occurrence)
             }
         };
-        self.derivations.add_root(kind, source.parent);
-        self.s7_derivations.push(source);
+        self.vocabulary.derivations.add_root(kind, source.parent);
+        self.output.s7_derivations.push(source);
     }
 
     fn retain_counted_derivations(&mut self, occurrence: u32, counted: CountedDerivationSet) {
         assert_eq!(
-            occurrence, self.completed_counted_roots,
+            occurrence, self.vocabulary.completed_counted_roots,
             "counted S11 groups must complete in statement-walk order"
         );
         let atoms = [
@@ -3953,11 +4042,13 @@ impl Analyzer<'_, '_> {
             ),
         ];
         for (atom, parent) in atoms {
-            self.derivations
+            self.vocabulary
+                .derivations
                 .add_root(DerivationRootKind::CountedS11 { occurrence, atom }, parent);
         }
-        self.counted_derivations.push(counted);
-        self.completed_counted_roots = self
+        self.output.counted_derivations.push(counted);
+        self.vocabulary.completed_counted_roots = self
+            .vocabulary
             .completed_counted_roots
             .checked_add(1)
             .expect("counted S11 root groups exceed the u32 identity space");
@@ -3968,7 +4059,7 @@ impl Analyzer<'_, '_> {
         kind: FlowEventKind,
         node_path: Option<&crate::NodePath>,
     ) -> FlowEventId {
-        self.derivations.event(kind, node_path.cloned())
+        self.vocabulary.derivations.event(kind, node_path.cloned())
     }
 
     fn expression_node_path(expression: &CheckedExpression) -> Option<&crate::NodePath> {
@@ -3980,17 +4071,17 @@ impl Analyzer<'_, '_> {
     // ------------------------------------------------------------------
 
     fn summary(&self, binding: BindingId) -> Option<&BindingSummary> {
-        self.places.summary(binding)
+        self.input.places.summary(binding)
     }
 
     fn collect_bindings(&mut self) {
-        self.places = PlaceMap::for_function(self.function);
+        self.input.places = PlaceMap::for_function(self.input.function);
     }
 
     fn collect_postcondition_entry_images(&mut self) {
         let mut data = Vec::new();
-        let mut relation_images = Vec::with_capacity(self.function.postconditions.len());
-        for postcondition in &self.function.postconditions {
+        let mut relation_images = Vec::with_capacity(self.input.function.postconditions.len());
+        for postcondition in &self.input.function.postconditions {
             let mut indices = Vec::new();
             for operand in &postcondition.relation.operands {
                 let datum = match &operand.datum {
@@ -4041,10 +4132,11 @@ impl Analyzer<'_, '_> {
             }
             relation_images.push(indices);
         }
-        self.entry_images = data
+        self.input.entry_images = data
             .into_iter()
             .map(|(datum, ty)| {
                 let parameter = self
+                    .input
                     .function
                     .parameters
                     .get(datum.parameter as usize)
@@ -4066,7 +4158,7 @@ impl Analyzer<'_, '_> {
                 }
             })
             .collect();
-        self.postcondition_entry_images = relation_images;
+        self.input.postcondition_entry_images = relation_images;
     }
 
     /// [MSR-3] the entry placement: at body entry, per parameter of measured
@@ -4079,17 +4171,18 @@ impl Analyzer<'_, '_> {
     /// [LIV-2] `set`, and it is the callee-side half of the denotation
     /// [MSR-3]'s table gives the same operand at a caller.
     fn establish_entry_datums(&mut self, state: &mut ProofFlowState) {
-        if self.entry_images.is_empty() {
+        if self.input.entry_images.is_empty() {
             return;
         }
         let event = self.proof_event(FlowEventKind::Entry, None);
-        for index in 0..self.entry_images.len() {
-            let image = self.entry_images[index].datum.clone();
-            let ty = self.entry_images[index].ty;
+        for index in 0..self.input.entry_images.len() {
+            let image = self.input.entry_images[index].datum.clone();
+            let ty = self.input.entry_images[index].ty;
             let Some(measure) = image.measure else {
                 continue;
             };
-            let Some(parameter) = self.function.parameters.get(image.parameter as usize) else {
+            let Some(parameter) = self.input.function.parameters.get(image.parameter as usize)
+            else {
                 continue;
             };
             let binding = parameter.binding;
@@ -4104,7 +4197,7 @@ impl Analyzer<'_, '_> {
             ) else {
                 continue;
             };
-            let datum = self.terms.intern(Self::entry_datum_kind(
+            let datum = self.vocabulary.terms.intern(Self::entry_datum_kind(
                 image.parameter,
                 &image.projections,
                 measure,
@@ -4116,7 +4209,7 @@ impl Analyzer<'_, '_> {
                     right: live,
                     difference: 0,
                 },
-                &mut self.derivations,
+                &mut self.vocabulary.derivations,
                 event,
             );
         }
@@ -4168,7 +4261,7 @@ impl Analyzer<'_, '_> {
         let PlaceRoot::Binding(binding) = root else {
             return projections;
         };
-        if !self.places.is_reference(binding) {
+        if !self.input.places.is_reference(binding) {
             return projections;
         }
         match projections.split_first() {
@@ -4190,7 +4283,7 @@ impl Analyzer<'_, '_> {
     /// asserting equality to any one possible origin. Kill judgments must
     /// still consider every origin through `resolved_places_overlap`.
     fn resolve(&self, place: &ResolvedPlace) -> ResolvedPlace {
-        let candidates = self.places.resolve(place.root, &place.path);
+        let candidates = self.input.places.resolve(place.root, &place.path);
         match candidates.as_slice() {
             [unique] => unique.clone(),
             _ => place.clone(),
@@ -4206,8 +4299,8 @@ impl Analyzer<'_, '_> {
         left: &ResolvedPlace,
         right: &ResolvedPlace,
     ) -> bool {
-        let lefts = self.places.resolve(left.root, &left.path);
-        let rights = self.places.resolve(right.root, &right.path);
+        let lefts = self.input.places.resolve(left.root, &left.path);
+        let rights = self.input.places.resolve(right.root, &right.path);
         if lefts.is_empty() || rights.is_empty() {
             // The place prepass represents an unresolved reference with no
             // candidates. It is unknown storage, not proof of separation.
@@ -4216,7 +4309,7 @@ impl Analyzer<'_, '_> {
         lefts.iter().any(|left| {
             rights
                 .iter()
-                .any(|right| self.places.overlaps(separations, left, right))
+                .any(|right| self.input.places.overlaps(separations, left, right))
         })
     }
 
@@ -4227,7 +4320,7 @@ impl Analyzer<'_, '_> {
         term: TermId,
         event: &KillEvent,
     ) -> bool {
-        match self.terms.kind(term) {
+        match self.vocabulary.terms.kind(term) {
             TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(..) => false,
             // Counted captures and commit values are immutable. A counted
             // capture dies with its construct-scope exit, handled separately
@@ -4350,7 +4443,7 @@ impl Analyzer<'_, '_> {
     /// selected from it. A unique resolved origin ends in its captured range
     /// step; a joined reference may have several such origins.
     fn is_range_descriptor_support(&self, support: &ResolvedPlace) -> bool {
-        let resolved = self.places.resolve(support.root, &support.path);
+        let resolved = self.input.places.resolve(support.root, &support.path);
         !resolved.is_empty()
             && resolved
                 .iter()
@@ -4361,7 +4454,7 @@ impl Analyzer<'_, '_> {
     /// word of a window. These suffixes are the exact [WIN-2] effect-row
     /// targets; a field, holder, or whole-owner replacement does not qualify.
     fn is_window_extent_write(&self, written: &ResolvedPlace) -> bool {
-        let resolved = self.places.resolve(written.root, &written.path);
+        let resolved = self.input.places.resolve(written.root, &written.path);
         !resolved.is_empty()
             && resolved.iter().all(|place| {
                 matches!(
@@ -4408,7 +4501,7 @@ impl Analyzer<'_, '_> {
     /// `term`: the support contains every tracked place's root binding and
     /// every holder read through, which is the spelling root here.
     fn scope_kills_term(&self, term: TermId, exited: &HashSet<BindingId>) -> bool {
-        match self.terms.kind(term) {
+        match self.vocabulary.terms.kind(term) {
             TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(..) => false,
             TermKind::CountedCapture { .. }
             | TermKind::IndexCapture { .. }
@@ -4443,6 +4536,7 @@ impl Analyzer<'_, '_> {
         // holder of that place, while every projection is a real step below
         // its referent and must remain part of the support.
         let holders = self
+            .input
             .places
             .is_reference(support.root)
             .then_some(support.root)
@@ -4463,7 +4557,7 @@ impl Analyzer<'_, '_> {
         goal: GoalId,
         event: &KillEvent,
     ) -> bool {
-        self.goals.support(goal).iter().any(|support| {
+        self.vocabulary.goals.support(goal).iter().any(|support| {
             let (place, holders) = self.resolve_goal_support(support);
             // [ENT-5, MSR-2] a current place reads every named offset as
             // well as the selected storage. Goals and L0 terms must lose
@@ -4541,7 +4635,7 @@ impl Analyzer<'_, '_> {
     }
 
     fn scope_kills_goal(&self, goal: GoalId, exited: &HashSet<BindingId>) -> bool {
-        self.goals.support(goal).iter().any(|support| {
+        self.vocabulary.goals.support(goal).iter().any(|support| {
             let (place, holders) = self.resolve_goal_support(support);
             holders.iter().any(|holder| exited.contains(holder))
                 || matches!(place.root, PlaceRoot::Binding(binding) if exited.contains(&binding))
@@ -4563,11 +4657,16 @@ impl Analyzer<'_, '_> {
         // closed core and answers the same question directly; the probe stays
         // the cheaper test for a state with no closed part.
         if !closure_is_seeded(state)
-            && !contradiction_without_proofs(state, &self.terms, &self.goals)
+            && !contradiction_without_proofs(state, &self.vocabulary.terms, &self.vocabulary.goals)
         {
             return;
         }
-        let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
+        let closed = close(
+            state,
+            &self.vocabulary.terms,
+            &self.vocabulary.goals,
+            &mut self.vocabulary.derivations,
+        );
         if closed.contradictory() {
             state.promote_to_contradiction(closed.contradiction_proof());
         }
@@ -4587,7 +4686,12 @@ impl Analyzer<'_, '_> {
         if events.is_empty() {
             return;
         }
-        materialize_closure_before_kill(state, &self.terms, &self.goals, &mut self.derivations);
+        materialize_closure_before_kill(
+            state,
+            &self.vocabulary.terms,
+            &self.vocabulary.goals,
+            &mut self.vocabulary.derivations,
+        );
     }
 
     fn apply_kills_one(
@@ -4694,7 +4798,7 @@ impl Analyzer<'_, '_> {
     /// Keeps each event applied on a path inside a loop, where debug
     /// assertions are on, for the back-edge check against that loop's summary.
     fn record_continuing(&self, states: &mut ProofFlowState, events: &[KillEvent]) {
-        if cfg!(debug_assertions) && !self.loops.is_empty() {
+        if cfg!(debug_assertions) && !self.frames.loops.is_empty() {
             record_continuing(&mut states.continuing, events);
         }
     }
@@ -4733,7 +4837,7 @@ impl Analyzer<'_, '_> {
             else {
                 continue;
             };
-            for written in self.places.resolve(place.root, &place.path) {
+            for written in self.input.places.resolve(place.root, &place.path) {
                 for (depth, step) in written.path.iter().enumerate() {
                     if matches!(
                         step,
@@ -4749,17 +4853,24 @@ impl Analyzer<'_, '_> {
             return live;
         }
         let mut places = Vec::new();
-        for term in self.terms.ids() {
-            if let TermKind::Place(place, _) | TermKind::Measure(_, place) = self.terms.kind(term) {
+        for term in self.vocabulary.terms.ids() {
+            if let TermKind::Place(place, _) | TermKind::Measure(_, place) =
+                self.vocabulary.terms.kind(term)
+            {
                 places.push(place.clone());
             }
         }
-        for goal in self.goals.ids() {
-            for support in self.goals.support(goal) {
+        for goal in self.vocabulary.goals.ids() {
+            for support in self.vocabulary.goals.support(goal) {
                 places.push(self.resolve_goal_support(support).0);
             }
         }
-        places.extend(self.entry_images.iter().map(|image| image.place.clone()));
+        places.extend(
+            self.input
+                .entry_images
+                .iter()
+                .map(|image| image.place.clone()),
+        );
         let mut asked = HashSet::new();
         for place in places {
             for (depth, step) in place.path.iter().enumerate() {
@@ -4773,7 +4884,7 @@ impl Analyzer<'_, '_> {
                 if !asked.insert((window.clone(), index)) {
                     continue;
                 }
-                let resolved = self.places.resolve(window.root, &window.path);
+                let resolved = self.input.places.resolve(window.root, &window.path);
                 let [resolved] = resolved.as_slice() else {
                     continue;
                 };
@@ -4797,14 +4908,18 @@ impl Analyzer<'_, '_> {
         states: &ProofFlowState,
     ) -> Option<ProofResult> {
         let length = self
+            .vocabulary
             .terms
             .interned(&TermKind::Measure(CheckedMeasure::Length, window.clone()))?;
         let offset = match (index.capture, index.term) {
             // A place's term identity reads a binding offset by its spelling,
             // whose current value is the binding's own term [ENT-2].
-            (CaptureId::SpellingDetermined, CapturedTerm::Binding(binding)) => self.terms.interned(
-                &TermKind::Place(ResolvedPlace::binding(binding), IntegerType::U64),
-            ),
+            (CaptureId::SpellingDetermined, CapturedTerm::Binding(binding)) => {
+                self.vocabulary.terms.interned(&TermKind::Place(
+                    ResolvedPlace::binding(binding),
+                    IntegerType::U64,
+                ))
+            }
             _ => self.captured_index_term(index),
         }?;
         let affine_offset = match index.capture {
@@ -4865,11 +4980,12 @@ impl Analyzer<'_, '_> {
         events: &[KillEvent],
         shared_event: Option<FlowEventId>,
     ) {
-        if self.entry_images.is_empty() {
+        if self.input.entry_images.is_empty() {
             return;
         }
         for event in events {
             let killed = self
+                .input
                 .entry_images
                 .iter()
                 .enumerate()
@@ -4901,8 +5017,14 @@ impl Analyzer<'_, '_> {
     /// Applies the scope-exit kills for every scope deeper than `depth`,
     /// as the edge event ordered before any join [ENT-5].
     fn exit_scopes_to_one(&mut self, state: &mut FactState, depth: usize) {
-        let exited: HashSet<BindingId> =
-            self.scopes.iter().skip(depth).flatten().copied().collect();
+        let exited: HashSet<BindingId> = self
+            .frames
+            .scopes
+            .iter()
+            .skip(depth)
+            .flatten()
+            .copied()
+            .collect();
         if exited.is_empty() {
             return;
         }
@@ -4940,6 +5062,7 @@ impl Analyzer<'_, '_> {
 
     fn exit_affine_scopes_to(&mut self, state: &mut AffineFlowState, depth: usize) {
         let exited = self
+            .frames
             .scopes
             .iter()
             .skip(depth)
@@ -4967,6 +5090,7 @@ impl Analyzer<'_, '_> {
 
     fn exit_scopes_to(&mut self, states: &mut ProofFlowState, depth: usize) {
         let has_exited_bindings = self
+            .frames
             .scopes
             .iter()
             .skip(depth)
@@ -4979,12 +5103,15 @@ impl Analyzer<'_, '_> {
         // closure while that vertex still exists, then let the ordinary scope
         // kill remove every materialized fact whose own support still names
         // the exiting scope.
-        let snapshot = self.derivations.event(FlowEventKind::Snapshot, None);
+        let snapshot = self
+            .vocabulary
+            .derivations
+            .event(FlowEventKind::Snapshot, None);
         states.facts = materialize_closure_at(
             &states.facts,
-            &self.terms,
-            &self.goals,
-            &mut self.derivations,
+            &self.vocabulary.terms,
+            &self.vocabulary.goals,
+            &mut self.vocabulary.derivations,
             snapshot,
         );
         // Materialization has already promoted any relation or goal
@@ -4996,7 +5123,7 @@ impl Analyzer<'_, '_> {
     fn exit_counted_capture_scope_one(&mut self, state: &mut FactState, range_path: &[u32]) {
         state.kill(|term| {
             matches!(
-                self.terms.kind(term),
+                self.vocabulary.terms.kind(term),
                 TermKind::CountedCapture { range_path: path, .. } if path == range_path
             )
         });
@@ -5008,9 +5135,9 @@ impl Analyzer<'_, '_> {
             self.refresh_result(result, &states.facts);
             materialize_closure_before_kill(
                 &mut result.facts,
-                &self.terms,
-                &self.goals,
-                &mut self.derivations,
+                &self.vocabulary.terms,
+                &self.vocabulary.goals,
+                &mut self.vocabulary.derivations,
             );
             self.exit_counted_capture_scope_one(&mut result.facts, range_path);
         }
@@ -5084,6 +5211,7 @@ impl Analyzer<'_, '_> {
     /// non-local edge. Ordinary loop frames carry no private captures.
     fn exit_counted_loops_from(&mut self, states: &mut ProofFlowState, loop_depth: usize) {
         let loops = self
+            .frames
             .loops
             .iter()
             .skip(loop_depth)
@@ -5118,8 +5246,8 @@ impl Analyzer<'_, '_> {
         let PlaceRoot::Constant(id) = root.root else {
             return None;
         };
-        let declaration = self.context.constant_declaration(id)?;
-        let mut value = &self.context.constant(declaration)?.value;
+        let declaration = self.input.context.constant_declaration(id)?;
+        let mut value = &self.input.context.constant(declaration)?.value;
         for step in &root.path {
             let CheckedPlaceStep::Field(index) = step else {
                 return None;
@@ -5151,7 +5279,8 @@ impl Analyzer<'_, '_> {
                 ..
             } => {
                 return Some(
-                    self.terms
+                    self.vocabulary
+                        .terms
                         .intern(TermKind::Constant(integer_value(*ty, *bits))),
                 );
             }
@@ -5169,7 +5298,7 @@ impl Analyzer<'_, '_> {
             }
             _ => TermKind::Place(path, fragment),
         };
-        Some(self.terms.intern(kind))
+        Some(self.vocabulary.terms.intern(kind))
     }
 
     /// Reconstructs the exact source-order place path retained by the checked
@@ -5214,13 +5343,13 @@ impl Analyzer<'_, '_> {
             // every offset was captured is one; the measure former keeps its
             // own row in `measure_operand`.
             CheckedExpression::ReadStorage { root, .. }
-                if root.readonly_field_term(self.context.nominals)
+                if root.readonly_field_term(self.input.context.nominals)
                     == Some(SubscriptedTerm::Represented) =>
             {
                 Some(self.container_root_path(root))
             }
             CheckedExpression::RangeIndex { place, .. }
-                if place.readonly_field_term(self.context.nominals)
+                if place.readonly_field_term(self.input.context.nominals)
                     == Some(SubscriptedTerm::Represented) =>
             {
                 Some(ResolvedPlace::from_path(
@@ -5593,7 +5722,7 @@ impl Analyzer<'_, '_> {
                     return None;
                 };
                 if root_length != *length
-                    || self.context.elements.get(element.index()) != Some(element_type)
+                    || self.input.context.elements.get(element.index()) != Some(element_type)
                 {
                     return None;
                 }
@@ -5815,7 +5944,7 @@ impl Analyzer<'_, '_> {
                 let operand =
                     u32::try_from(operand).expect("proof-obligation operand ordinal exceeds u32");
                 GoalExpression::Datum(GoalDatum::EvaluatedValue {
-                    function: self.function.id,
+                    function: self.input.function.id,
                     occurrence: EvaluatedValueOccurrence::ObligationOperand {
                         site: site.clone(),
                         operand,
@@ -5851,8 +5980,8 @@ impl Analyzer<'_, '_> {
                 ))
             }
             CheckedArrayRoot::Constant(id) => {
-                let declaration = self.context.constant_declaration(*id)?;
-                let ty = self.context.constants.get(id.0 as usize)?.ty;
+                let declaration = self.input.context.constant_declaration(*id)?;
+                let ty = self.input.context.constants.get(id.0 as usize)?.ty;
                 Some(GoalExpression::Datum(GoalDatum::NamedConst {
                     declaration,
                     projections: Vec::new(),
@@ -5868,7 +5997,7 @@ impl Analyzer<'_, '_> {
                 self.goal_binding_place(binding, root.goal_projections(), root.ty)
             }
             PlaceRoot::Constant(id) => GoalExpression::Datum(GoalDatum::NamedConst {
-                declaration: self.context.constant_declaration(id)?,
+                declaration: self.input.context.constant_declaration(id)?,
                 projections: root.goal_projections(),
                 ty: root.ty,
             }),
@@ -5882,7 +6011,7 @@ impl Analyzer<'_, '_> {
                 return None;
             };
             let CheckedNominalKind::Struct { fields } =
-                &self.context.nominals.get(nominal.0 as usize)?.kind
+                &self.input.context.nominals.get(nominal.0 as usize)?.kind
             else {
                 return None;
             };
@@ -5921,7 +6050,7 @@ impl Analyzer<'_, '_> {
                 if !expanding.insert(*root) {
                     return expression.clone();
                 }
-                let origin = self.goals.expression(origin).clone();
+                let origin = self.vocabulary.goals.expression(origin).clone();
                 let mut expanded = self.expand_goal_expression_inner(
                     &origin,
                     state,
@@ -5993,7 +6122,7 @@ impl Analyzer<'_, '_> {
         match projection {
             GoalProjection::Deref => match input {
                 CheckedType::Nominal(nominal) => {
-                    match self.context.nominals.get(nominal.0 as usize)?.kind {
+                    match self.input.context.nominals.get(nominal.0 as usize)?.kind {
                         CheckedNominalKind::Box { referent, .. } => Some(referent),
                         _ => Some(input),
                     }
@@ -6006,7 +6135,7 @@ impl Analyzer<'_, '_> {
                     return None;
                 };
                 let CheckedNominalKind::Struct { fields } =
-                    &self.context.nominals.get(nominal.0 as usize)?.kind
+                    &self.input.context.nominals.get(nominal.0 as usize)?.kind
                 else {
                     return None;
                 };
@@ -6017,7 +6146,7 @@ impl Analyzer<'_, '_> {
                     return None;
                 };
                 let CheckedNominalKind::Enum { variants } =
-                    &self.context.nominals.get(nominal.0 as usize)?.kind
+                    &self.input.context.nominals.get(nominal.0 as usize)?.kind
                 else {
                     return None;
                 };
@@ -6031,15 +6160,17 @@ impl Analyzer<'_, '_> {
             // [OP-4] a subscript selects the base's element type, which
             // [MSR-1] admits in a measure place and [WIN-1] gives the one
             // slot a run holds.
-            GoalProjection::Subscript(_) => element_type(input, self.context.elements),
+            GoalProjection::Subscript(_) => element_type(input, self.input.context.elements),
             // [REF-4, TYPE-8] a range step selects the run of T elements the
             // range names, and `&[T]` is a reference kind and not a type, so
             // that run's checked image is its element type, exactly as a
             // `&[T]` parameter's is.
-            GoalProjection::Range(_) => element_type(input, self.context.elements),
+            GoalProjection::Range(_) => element_type(input, self.input.context.elements),
             // [MSR-1] the same element selection a written subscript makes;
             // the offset is what the reader substitutes, not the type.
-            GoalProjection::FormalSubscript { .. } => element_type(input, self.context.elements),
+            GoalProjection::FormalSubscript { .. } => {
+                element_type(input, self.input.context.elements)
+            }
         }
     }
 
@@ -6113,7 +6244,8 @@ impl Analyzer<'_, '_> {
         let normalization = self.goal_normalization(&expression);
         let mut support = Vec::new();
         self.collect_goal_support(&expression, None, &mut support);
-        self.goals
+        self.vocabulary
+            .goals
             .intern(expression, projection, normalization, support)
     }
 
@@ -6133,7 +6265,7 @@ impl Analyzer<'_, '_> {
         sign: GoalSign,
         state: &FactState,
     ) -> Vec<(GoalId, GoalSign)> {
-        let expression = self.goals.expression(parent).clone();
+        let expression = self.vocabulary.goals.expression(parent).clone();
         let mut members = Vec::new();
         self.collect_decomposition_members(
             &expression,
@@ -6175,7 +6307,7 @@ impl Analyzer<'_, '_> {
             // guard binding holds a comparison, so this settles the common case
             // without retaining the origin.
             if !matches!(
-                self.goals.expression(origin),
+                self.vocabulary.goals.expression(origin),
                 GoalExpression::Operation {
                     row: GoalOperation::Boolean(_),
                     ..
@@ -6186,7 +6318,7 @@ impl Analyzer<'_, '_> {
             if !following.insert(*root) {
                 return;
             }
-            let origin = self.goals.expression(origin).clone();
+            let origin = self.vocabulary.goals.expression(origin).clone();
             self.collect_decomposition_members(&origin, sign, state, members, following);
             following.remove(root);
             return;
@@ -6237,8 +6369,9 @@ impl Analyzer<'_, '_> {
         event: FlowEventId,
     ) {
         for (member, member_sign) in self.signed_boolean_decomposition(parent, sign, state) {
-            state.establish_goal(member, member_sign, &mut self.derivations, event);
+            state.establish_goal(member, member_sign, &mut self.vocabulary.derivations, event);
             let Some(relation) = self
+                .vocabulary
                 .goals
                 .projection(member)
                 .cloned()
@@ -6250,7 +6383,7 @@ impl Analyzer<'_, '_> {
                 GoalSign::Positive => relation,
                 GoalSign::Negative => relation.negated(),
             };
-            state.establish(&relation, &mut self.derivations, event);
+            state.establish(&relation, &mut self.vocabulary.derivations, event);
         }
     }
 
@@ -6264,7 +6397,7 @@ impl Analyzer<'_, '_> {
             root,
             projections,
             ty: CheckedType::Bool,
-        }) = self.goals.expression(member)
+        }) = self.vocabulary.goals.expression(member)
         else {
             return None;
         };
@@ -6285,6 +6418,7 @@ impl Analyzer<'_, '_> {
         state: &FactState,
     ) {
         if self
+            .output
             .boolean_decompositions
             .iter()
             .any(|candidate| candidate.parent == parent && candidate.sign == sign)
@@ -6295,7 +6429,8 @@ impl Analyzer<'_, '_> {
         if members.is_empty() {
             return;
         }
-        self.boolean_decompositions
+        self.output
+            .boolean_decompositions
             .push(super::BooleanGoalDecomposition {
                 parent,
                 sign,
@@ -6380,7 +6515,10 @@ impl Analyzer<'_, '_> {
         let (term, constant) = self.goal_affine_side(expression)?;
         match term {
             Some(term) => Some((term, constant)),
-            None => Some((self.terms.intern(TermKind::Constant(constant)), 0)),
+            None => Some((
+                self.vocabulary.terms.intern(TermKind::Constant(constant)),
+                0,
+            )),
         }
     }
 
@@ -6443,7 +6581,8 @@ impl Analyzer<'_, '_> {
                 ..
             })) => Some(self.const_parameter_term(*declaration)),
             GoalExpression::Datum(GoalDatum::Literal(CheckedValue::Integer { ty, bits })) => Some(
-                self.terms
+                self.vocabulary
+                    .terms
                     .intern(TermKind::Constant(integer_value(*ty, *bits))),
             ),
             GoalExpression::Datum(GoalDatum::NamedConst {
@@ -6454,19 +6593,24 @@ impl Analyzer<'_, '_> {
                 let CheckedValue::Integer {
                     ty: value_type,
                     bits,
-                } = &self.context.constant(*declaration)?.value
+                } = &self.input.context.constant(*declaration)?.value
                 else {
                     return None;
                 };
                 (*ty == CheckedType::Integer(*value_type)).then(|| {
-                    self.terms
+                    self.vocabulary
+                        .terms
                         .intern(TermKind::Constant(integer_value(*value_type, *bits)))
                 })
             }
             GoalExpression::Datum(datum) => {
                 let fragment = fragment_type(datum.ty())?;
                 let path = self.goal_place_path(datum)?;
-                Some(self.terms.intern(TermKind::Place(path, fragment)))
+                Some(
+                    self.vocabulary
+                        .terms
+                        .intern(TermKind::Place(path, fragment)),
+                )
             }
             GoalExpression::Operation { row, arguments, .. }
                 if matches!(
@@ -6514,7 +6658,7 @@ impl Analyzer<'_, '_> {
                     && let Some(PlaceStep::Range(range)) = path.path.last()
                     && let Some(length) = range.constant_length()
                 {
-                    return Some(self.terms.intern(TermKind::Constant(length)));
+                    return Some(self.vocabulary.terms.intern(TermKind::Constant(length)));
                 }
                 Some(self.measure_term(measure, path, measured, array_length))
             }
@@ -6544,7 +6688,7 @@ impl Analyzer<'_, '_> {
         let (end_term, end_constant) = self.goal_affine_side(&end_goal)?;
         let difference = end_constant.checked_sub(start_constant)?;
         let right = match (start_term, end_term) {
-            (None, None) => self.terms.intern(TermKind::Constant(difference)),
+            (None, None) => self.vocabulary.terms.intern(TermKind::Constant(difference)),
             (None, Some(term)) => {
                 return Some(Relation::Equal {
                     left: length,
@@ -6553,7 +6697,7 @@ impl Analyzer<'_, '_> {
                 });
             }
             (Some(start), Some(end)) if start == end => {
-                self.terms.intern(TermKind::Constant(difference))
+                self.vocabulary.terms.intern(TermKind::Constant(difference))
             }
             _ => return None,
         };
@@ -6609,7 +6753,7 @@ impl Analyzer<'_, '_> {
                 projections,
                 ..
             } => (
-                PlaceRoot::Constant(*self.context.constant_ids.get(declaration)?),
+                PlaceRoot::Constant(*self.input.context.constant_ids.get(declaration)?),
                 projections,
             ),
             GoalDatum::Parameter { .. }
@@ -6636,33 +6780,33 @@ impl Analyzer<'_, '_> {
                 projections,
                 ty,
             }) => {
-                let parameter = self.function.parameters.get(*ordinal as usize)?;
+                let parameter = self.input.function.parameters.get(*ordinal as usize)?;
                 let binding = parameter.binding;
                 // [MSR-1, ENT-2] a formal-valued subscript names a value
                 // parameter of this same callable, so inside the body it is
                 // that parameter's own binding: `deref(rows)[i].len` written
                 // in the clause and written in the body are one term because
                 // their canonical spellings are byte-identical there.
-                let projections = self
-                    .body_projections(PlaceRoot::Binding(binding), projections)
-                    .iter()
-                    .map(|projection| match projection {
-                        GoalProjection::FormalSubscript { ordinal } => self
-                            .function
-                            .parameters
-                            .get(*ordinal as usize)
-                            .map(|offset| {
-                                GoalProjection::Subscript(
-                                    CapturedValue::new(
-                                        CaptureId::source(u32::MAX),
-                                        CapturedTerm::Binding(offset.binding),
-                                    )
-                                    .goal_identity(),
+                let projections =
+                    self.body_projections(PlaceRoot::Binding(binding), projections)
+                        .iter()
+                        .map(|projection| match projection {
+                            GoalProjection::FormalSubscript { ordinal } => {
+                                self.input.function.parameters.get(*ordinal as usize).map(
+                                    |offset| {
+                                        GoalProjection::Subscript(
+                                            CapturedValue::new(
+                                                CaptureId::source(u32::MAX),
+                                                CapturedTerm::Binding(offset.binding),
+                                            )
+                                            .goal_identity(),
+                                        )
+                                    },
                                 )
-                            }),
-                        other => Some(*other),
-                    })
-                    .collect::<Option<Vec<_>>>()?;
+                            }
+                            other => Some(*other),
+                        })
+                        .collect::<Option<Vec<_>>>()?;
                 Some(GoalExpression::Datum(GoalDatum::Place {
                     root: binding,
                     projections,
@@ -6769,8 +6913,8 @@ impl Analyzer<'_, '_> {
     fn is_copy(&self, ty: CheckedType) -> bool {
         crate::semantic::model::type_has_copy_capability(
             ty,
-            self.context.nominals,
-            self.context.elements,
+            self.input.context.nominals,
+            self.input.context.elements,
             &|_| Some(false),
         )
         .unwrap_or(false)
@@ -6796,12 +6940,12 @@ impl Analyzer<'_, '_> {
             return Vec::new();
         };
         let through_reference = match named.form {
-            NamingForm::Binding(binding) if self.places.is_reference(binding) => true,
+            NamingForm::Binding(binding) if self.input.places.is_reference(binding) => true,
             NamingForm::Borrow | NamingForm::Range => false,
             NamingForm::Binding(_) | NamingForm::Read => return Vec::new(),
         };
         named
-            .resolve(&self.places, true)
+            .resolve(&self.input.places, true)
             .into_iter()
             .map(|place| (place, through_reference))
             .collect()
@@ -6917,7 +7061,7 @@ impl Analyzer<'_, '_> {
                 formal_effects,
                 ..
             } => {
-                let callee = self.context.callee(*function);
+                let callee = self.input.context.callee(*function);
                 for argument in arguments {
                     self.collect_expression_kills(argument, events);
                 }
@@ -7019,10 +7163,12 @@ impl Analyzer<'_, '_> {
     }
 
     fn obligations_since_discharged(&self, obligation_start: usize) -> bool {
-        self.obligations[obligation_start..].iter().all(|outcome| {
-            outcome.discharged
-                || matches!(outcome.family, ObligationFamily::ReferencePreservation(_))
-        })
+        self.output.obligations[obligation_start..]
+            .iter()
+            .all(|outcome| {
+                outcome.discharged
+                    || matches!(outcome.family, ObligationFamily::ReferencePreservation(_))
+            })
     }
 
     fn judge_expression(
@@ -7042,13 +7188,14 @@ impl Analyzer<'_, '_> {
                 allocation,
                 ..
             } => {
-                let obligation_start = self.obligations.len();
+                let obligation_start = self.output.obligations.len();
                 let mut actuals_reached = true;
                 for argument in arguments {
                     actuals_reached &= self.judge_expression(argument, states).reached;
                 }
                 if actuals_reached {
                     let required_captures = self
+                        .input
                         .function
                         .call_separations
                         .iter()
@@ -7094,7 +7241,7 @@ impl Analyzer<'_, '_> {
                     );
                     actuals_reached &= self.obligations_since_discharged(obligation_start);
                 }
-                let actual_parents = self.obligations[obligation_start..]
+                let actual_parents = self.output.obligations[obligation_start..]
                     .iter()
                     .filter(|outcome| {
                         !matches!(outcome.family, ObligationFamily::ReferencePreservation(_))
@@ -7218,7 +7365,7 @@ impl Analyzer<'_, '_> {
             } => {
                 let reaches_index =
                     self.judge_children_reach_parent(std::iter::once(offset.as_ref()), states);
-                let obligation_start = self.obligations.len();
+                let obligation_start = self.output.obligations.len();
                 if reaches_index {
                     let base = self.array_root_place(root);
                     self.judge_obligation(
@@ -7243,7 +7390,7 @@ impl Analyzer<'_, '_> {
             } => {
                 let reaches_index =
                     self.judge_children_reach_parent(std::iter::once(offset.as_ref()), states);
-                let obligation_start = self.obligations.len();
+                let obligation_start = self.output.obligations.len();
                 if reaches_index {
                     let base = ResolvedPlace::from_path(root.binding, root.place_path());
                     self.judge_obligation(
@@ -7300,7 +7447,7 @@ impl Analyzer<'_, '_> {
                 {
                     states.affine.ranges.insert(captured.start.capture, image);
                 }
-                let obligation_start = self.obligations.len();
+                let obligation_start = self.output.obligations.len();
                 let source_subscripts = match source {
                     CheckedRangeSource::Storage(root) => self.judge_place_subscripts(root, states),
                     CheckedRangeSource::Range(_) => true,
@@ -7316,13 +7463,13 @@ impl Analyzer<'_, '_> {
                             root: root.clone(),
                         },
                     };
-                    let formation_start = self.obligations.len();
+                    let formation_start = self.output.obligations.len();
                     self.judge_view_range(obligation, start, end, &length, states);
                     // [PAR-2] retain the existing range-image proof only
                     // after both endpoint-domain obligations succeeded.
                     // Permission consumes these proofs; it cannot infer a
                     // partition merely from the shape of a range argument.
-                    if self.obligations.len() == formation_start + 2
+                    if self.output.obligations.len() == formation_start + 2
                         && self.obligations_since_discharged(formation_start)
                         && let Some(image) =
                             states.affine.ranges.get(&captured.start.capture).cloned()
@@ -7339,7 +7486,7 @@ impl Analyzer<'_, '_> {
                                 (false, partition.stride_nonnegative),
                                 (true, partition.base_nonnegative),
                             ] {
-                                self.derivations.add_root(
+                                self.vocabulary.derivations.add_root(
                                     DerivationRootKind::RangePartition {
                                         obligation: u32::try_from(outcome)
                                             .expect("ENT obligation ordinal exceeds u32"),
@@ -7351,7 +7498,7 @@ impl Analyzer<'_, '_> {
                                 );
                             }
                         }
-                        self.obligations[outcome].range_partitions = partitions;
+                        self.output.obligations[outcome].range_partitions = partitions;
                     }
                 }
                 ExpressionJudgment {
@@ -7364,7 +7511,7 @@ impl Analyzer<'_, '_> {
             // that place's own subscripts are discharged [OP-4].
             CheckedExpression::ContainerMeasure { root, .. }
             | CheckedExpression::BorrowAddressed { root, .. } => {
-                let obligation_start = self.obligations.len();
+                let obligation_start = self.output.obligations.len();
                 let reached = self.judge_place_subscripts(root, states);
                 ExpressionJudgment {
                     prepared_call: None,
@@ -7391,7 +7538,7 @@ impl Analyzer<'_, '_> {
                 ..
             } => {
                 let reaches_operation = self.judge_children_reach_parent(arguments, states);
-                let obligation_start = self.obligations.len();
+                let obligation_start = self.output.obligations.len();
                 if operation.is_exact() && reaches_operation {
                     self.judge_integer_domain_obligation(
                         *operation,
@@ -7416,7 +7563,7 @@ impl Analyzer<'_, '_> {
                 ..
             } => {
                 let reaches_operation = self.judge_children_reach_parent([value.as_ref()], states);
-                let obligation_start = self.obligations.len();
+                let obligation_start = self.output.obligations.len();
                 if reaches_operation {
                     self.judge_conversion_domain_obligation(
                         *source,
@@ -7457,14 +7604,15 @@ impl Analyzer<'_, '_> {
         context: ProofContext<'_>,
     ) -> (CallGoalDisposition, Option<DerivationId>) {
         let (disposition, evidence, derivation) = self.call_goal_disposition(&goal, context);
-        let ordinal = u32::try_from(self.call_goals.len())
+        let ordinal = u32::try_from(self.output.call_goals.len())
             .expect("ENT call-root ordinal exceeds the u32 identity space");
         if let Some(root) = derivation {
-            self.derivations
+            self.vocabulary
+                .derivations
                 .add_root(DerivationRootKind::CallGoal(ordinal), root);
         }
         let rendered_goal = self.render_concrete_goal(&goal.root);
-        self.call_goals.push(CallGoalOutcome {
+        self.output.call_goals.push(CallGoalOutcome {
             node_path: node_path.clone(),
             callee,
             requires_clause,
@@ -7500,30 +7648,33 @@ impl Analyzer<'_, '_> {
         }
         let mut retained = Vec::with_capacity(contract.requirement_queries.len());
         for query_id in &contract.requirement_queries {
-            let query = self.context.contract_query(*query_id)?;
+            let query = self.input.context.contract_query(*query_id)?;
             let [outcome] = query.proof.contract_goals.as_slice() else {
                 return None;
             };
-            if query.instance != Some(self.function.id)
+            if query.instance != Some(self.input.function.id)
                 || outcome.disposition != CallGoalDisposition::Discharged
                 || outcome.derivation.is_none()
                 || query.premises.iter().ne(premise_paths.iter().copied())
             {
                 return None;
             }
-            let node = self
-                .derivations
-                .intern(super::state::DerivationNode::ContractCall {
-                    call: call.clone(),
-                    query: *query_id,
-                    parents: parents.to_vec(),
-                });
-            let occurrence = self.contract_call_roots;
-            self.contract_call_roots = self
+            let node =
+                self.vocabulary
+                    .derivations
+                    .intern(super::state::DerivationNode::ContractCall {
+                        call: call.clone(),
+                        query: *query_id,
+                        parents: parents.to_vec(),
+                    });
+            let occurrence = self.vocabulary.contract_call_roots;
+            self.vocabulary.contract_call_roots = self
+                .vocabulary
                 .contract_call_roots
                 .checked_add(1)
                 .expect("FN-4 call roots exceed the u32 identity space");
-            self.derivations
+            self.vocabulary
+                .derivations
                 .add_root(DerivationRootKind::CallContract(occurrence), node);
             retained.push(node);
         }
@@ -7652,7 +7803,11 @@ impl Analyzer<'_, '_> {
         inequality: &AffineInequality,
         right: Option<TermId>,
     ) -> ProofResult {
-        let closed = context.close(&self.terms, &self.goals, &mut self.derivations);
+        let closed = context.close(
+            &self.vocabulary.terms,
+            &self.vocabulary.goals,
+            &mut self.vocabulary.derivations,
+        );
         if closed.contradictory() {
             return ProofResult {
                 disposition: ProofDisposition::Proved,
@@ -7671,11 +7826,14 @@ impl Analyzer<'_, '_> {
                 product_interval: None,
             };
         };
-        let derivation = self.derivations.intern(DerivationNode::AffineConsequence {
-            relation: None,
-            premises: proof.premises.into_boxed_slice(),
-            parents: proof.parents,
-        });
+        let derivation = self
+            .vocabulary
+            .derivations
+            .intern(DerivationNode::AffineConsequence {
+                relation: None,
+                premises: proof.premises.into_boxed_slice(),
+                parents: proof.parents,
+            });
         ProofResult {
             disposition: ProofDisposition::Proved,
             route: Some(ProofRoute::Affine),
@@ -7694,9 +7852,9 @@ impl Analyzer<'_, '_> {
         let goal = self.intern_goal_expression(expression.clone());
         let closed = close(
             context.facts,
-            &self.terms,
-            &self.goals,
-            &mut self.derivations,
+            &self.vocabulary.terms,
+            &self.vocabulary.goals,
+            &mut self.vocabulary.derivations,
         );
         if closed.contradictory() {
             return ProofResult {
@@ -7738,15 +7896,16 @@ impl Analyzer<'_, '_> {
 
         let positive_opaque = closed.holds_opaque(goal, GoalSign::Positive);
         let positive_projection = self
+            .vocabulary
             .goals
             .projection(goal)
             .is_some_and(|relation| closed.derives(relation));
         let positive_normalization =
-            closed.derives_normalized_goal(goal, GoalSign::Positive, &self.goals);
+            closed.derives_normalized_goal(goal, GoalSign::Positive, &self.vocabulary.goals);
         let positive_introduction = !positive_opaque
             && !positive_projection
             && !positive_normalization
-            && closed.derives_goal(goal, GoalSign::Positive, &self.goals);
+            && closed.derives_goal(goal, GoalSign::Positive, &self.vocabulary.goals);
         if positive_opaque || positive_projection || positive_normalization || positive_introduction
         {
             return ProofResult {
@@ -7760,8 +7919,8 @@ impl Analyzer<'_, '_> {
                 derivation: closed.goal_proof(
                     goal,
                     GoalSign::Positive,
-                    &self.goals,
-                    &mut self.derivations,
+                    &self.vocabulary.goals,
+                    &mut self.vocabulary.derivations,
                 ),
                 numeric_upper_bound: None,
                 product_interval: None,
@@ -7770,15 +7929,16 @@ impl Analyzer<'_, '_> {
 
         let negative_opaque = closed.holds_opaque(goal, GoalSign::Negative);
         let negative_projection = self
+            .vocabulary
             .goals
             .projection(goal)
             .is_some_and(|relation| closed.derives(&relation.negated()));
         let negative_normalization =
-            closed.derives_normalized_goal(goal, GoalSign::Negative, &self.goals);
+            closed.derives_normalized_goal(goal, GoalSign::Negative, &self.vocabulary.goals);
         let negative_introduction = !negative_opaque
             && !negative_projection
             && !negative_normalization
-            && closed.derives_goal(goal, GoalSign::Negative, &self.goals);
+            && closed.derives_goal(goal, GoalSign::Negative, &self.vocabulary.goals);
         if negative_opaque || negative_projection || negative_normalization || negative_introduction
         {
             return ProofResult {
@@ -7801,29 +7961,37 @@ impl Analyzer<'_, '_> {
         // two-term projection to name and instead retains the exact signed
         // goal above its affine consequence.
         if let Some(target) = affine_target {
-            let projection = self.goals.projection(goal).cloned();
+            let projection = self.vocabulary.goals.projection(goal).cloned();
             let right = self.signed_goal_right_term(expression, GoalSign::Positive);
             if let Some(proof) = self.numeric_affine_proof(target, right, context) {
-                let consequence = self.derivations.intern(DerivationNode::AffineConsequence {
-                    relation: projection.clone().map(Box::new),
-                    premises: proof.premises.into_boxed_slice(),
-                    parents: proof.parents,
-                });
-                let derivation = match projection {
-                    Some(relation) => self.derivations.intern(DerivationNode::GoalProjection {
-                        goal,
-                        sign: GoalSign::Positive,
-                        relation,
-                        parent: consequence,
-                    }),
-                    None => self
+                let consequence =
+                    self.vocabulary
                         .derivations
-                        .intern(DerivationNode::GoalAffineConsequence {
-                            goal,
-                            sign: GoalSign::Positive,
-                            parent: consequence,
-                        }),
-                };
+                        .intern(DerivationNode::AffineConsequence {
+                            relation: projection.clone().map(Box::new),
+                            premises: proof.premises.into_boxed_slice(),
+                            parents: proof.parents,
+                        });
+                let derivation =
+                    match projection {
+                        Some(relation) => {
+                            self.vocabulary
+                                .derivations
+                                .intern(DerivationNode::GoalProjection {
+                                    goal,
+                                    sign: GoalSign::Positive,
+                                    relation,
+                                    parent: consequence,
+                                })
+                        }
+                        None => self.vocabulary.derivations.intern(
+                            DerivationNode::GoalAffineConsequence {
+                                goal,
+                                sign: GoalSign::Positive,
+                                parent: consequence,
+                            },
+                        ),
+                    };
                 return ProofResult {
                     disposition: ProofDisposition::Proved,
                     route: Some(ProofRoute::Affine),
@@ -7865,18 +8033,21 @@ impl Analyzer<'_, '_> {
         sign: GoalSign,
     ) -> Option<DerivationId> {
         let target = self.affine_signed_goal_ordering_target(expression, context.affine, sign)?;
-        let mut relation = self.goals.projection(goal).cloned();
+        let mut relation = self.vocabulary.goals.projection(goal).cloned();
         if sign == GoalSign::Negative {
             relation = relation.map(|relation| relation.negated());
         }
         let right = self.signed_goal_right_term(expression, sign);
         let proof = self.numeric_affine_proof(&target, right, context)?;
-        let consequence = self.derivations.intern(DerivationNode::AffineConsequence {
-            relation: relation.clone().map(Box::new),
-            premises: proof.premises.into_boxed_slice(),
-            parents: proof.parents,
-        });
-        Some(self.derivations.intern(match relation {
+        let consequence = self
+            .vocabulary
+            .derivations
+            .intern(DerivationNode::AffineConsequence {
+                relation: relation.clone().map(Box::new),
+                premises: proof.premises.into_boxed_slice(),
+                parents: proof.parents,
+            });
+        Some(self.vocabulary.derivations.intern(match relation {
             Some(relation) => DerivationNode::GoalProjection {
                 goal,
                 sign,
@@ -7905,7 +8076,12 @@ impl Analyzer<'_, '_> {
         visiting: &mut HashSet<(GoalId, GoalSign)>,
     ) -> Option<DerivationId> {
         let goal = self.intern_goal_expression(expression.clone());
-        if let Some(proof) = closed.goal_proof(goal, sign, &self.goals, &mut self.derivations) {
+        if let Some(proof) = closed.goal_proof(
+            goal,
+            sign,
+            &self.vocabulary.goals,
+            &mut self.vocabulary.derivations,
+        ) {
             return Some(proof);
         }
         if !visiting.insert((goal, sign)) {
@@ -7977,7 +8153,8 @@ impl Analyzer<'_, '_> {
                     best.map(|parent| vec![parent])
                 };
                 parents.map(|parents| {
-                    self.derivations
+                    self.vocabulary
+                        .derivations
                         .intern(DerivationNode::BooleanIntroduction {
                             goal,
                             sign,
@@ -8000,7 +8177,11 @@ impl Analyzer<'_, '_> {
         relation: &Relation,
         affine_target: Option<&[AffineInequality]>,
     ) -> ProofResult {
-        let closed = context.close(&self.terms, &self.goals, &mut self.derivations);
+        let closed = context.close(
+            &self.vocabulary.terms,
+            &self.vocabulary.goals,
+            &mut self.vocabulary.derivations,
+        );
         if closed.contradictory() {
             return ProofResult {
                 disposition: ProofDisposition::Proved,
@@ -8016,7 +8197,7 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::L0),
                 derivation: Some(
                     closed
-                        .relation_proof(relation, &mut self.derivations)
+                        .relation_proof(relation, &mut self.vocabulary.derivations)
                         .expect("a proved L0 relation must retain its local derivation"),
                 ),
                 numeric_upper_bound: None,
@@ -8066,11 +8247,14 @@ impl Analyzer<'_, '_> {
             premises.extend(proof.premises);
             parents.extend(proof.parents);
         }
-        let derivation = self.derivations.intern(DerivationNode::AffineConsequence {
-            relation: None,
-            premises: premises.into_boxed_slice(),
-            parents,
-        });
+        let derivation = self
+            .vocabulary
+            .derivations
+            .intern(DerivationNode::AffineConsequence {
+                relation: None,
+                premises: premises.into_boxed_slice(),
+                parents,
+            });
         ProofResult {
             disposition: ProofDisposition::Proved,
             route: Some(ProofRoute::Affine),
@@ -8090,9 +8274,9 @@ impl Analyzer<'_, '_> {
             .map(|expression| self.intern_goal_expression(expression.clone()));
         let closed = close(
             context.facts,
-            &self.terms,
-            &self.goals,
-            &mut self.derivations,
+            &self.vocabulary.terms,
+            &self.vocabulary.goals,
+            &mut self.vocabulary.derivations,
         );
         if closed.contradictory() {
             return ProofResult {
@@ -8128,7 +8312,7 @@ impl Analyzer<'_, '_> {
         if let Some(relation) = relation.as_ref() {
             if closed.derives(relation) {
                 let parent = closed
-                    .relation_proof(relation, &mut self.derivations)
+                    .relation_proof(relation, &mut self.vocabulary.derivations)
                     .expect("a proved L0 relation must retain its local derivation");
                 let derivation = self.goal_numeric_derivation(canonical, Some(relation), parent);
                 return ProofResult {
@@ -8153,11 +8337,14 @@ impl Analyzer<'_, '_> {
         if let Some(target) = goal.direct_affine {
             let assumptions = Self::affine_facts(context.affine);
             if let Some(proof) = self.affine_target_proof(target, &assumptions, context) {
-                let parent = self.derivations.intern(DerivationNode::AffineConsequence {
-                    relation: relation.clone().map(Box::new),
-                    premises: proof.premises.into_boxed_slice(),
-                    parents: proof.parents,
-                });
+                let parent =
+                    self.vocabulary
+                        .derivations
+                        .intern(DerivationNode::AffineConsequence {
+                            relation: relation.clone().map(Box::new),
+                            premises: proof.premises.into_boxed_slice(),
+                            parents: proof.parents,
+                        });
                 let derivation = self.goal_numeric_derivation(canonical, relation.as_ref(), parent);
                 return ProofResult {
                     disposition: ProofDisposition::Proved,
@@ -8234,26 +8421,36 @@ impl Analyzer<'_, '_> {
             return parent;
         };
         if let Some(relation) = relation
-            && self.goals.projection(goal) == Some(relation)
+            && self.vocabulary.goals.projection(goal) == Some(relation)
         {
-            return self.derivations.intern(DerivationNode::GoalProjection {
-                goal,
-                sign: GoalSign::Positive,
-                relation: relation.clone(),
-                parent,
-            });
+            return self
+                .vocabulary
+                .derivations
+                .intern(DerivationNode::GoalProjection {
+                    goal,
+                    sign: GoalSign::Positive,
+                    relation: relation.clone(),
+                    parent,
+                });
         }
         if let Some(relation) = relation
-            && self.goals.normalization(goal).is_some_and(|normalization| {
-                normalization.clause_is_single_relation(GoalSign::Positive, 0, relation)
-            })
+            && self
+                .vocabulary
+                .goals
+                .normalization(goal)
+                .is_some_and(|normalization| {
+                    normalization.clause_is_single_relation(GoalSign::Positive, 0, relation)
+                })
         {
-            return self.derivations.intern(DerivationNode::GoalNormalization {
-                goal,
-                sign: GoalSign::Positive,
-                clause: 0,
-                parents: vec![parent],
-            });
+            return self
+                .vocabulary
+                .derivations
+                .intern(DerivationNode::GoalNormalization {
+                    goal,
+                    sign: GoalSign::Positive,
+                    clause: 0,
+                    parents: vec![parent],
+                });
         }
         // A bounded obligation may have an exact complete goal whose source
         // occurrence is represented in L0 only through an evaluated alias.
@@ -8263,7 +8460,8 @@ impl Analyzer<'_, '_> {
         if relation.is_some() {
             return parent;
         }
-        self.derivations
+        self.vocabulary
+            .derivations
             .intern(DerivationNode::GoalAffineConsequence {
                 goal,
                 sign: GoalSign::Positive,
@@ -8287,9 +8485,9 @@ impl Analyzer<'_, '_> {
     ) -> ProofResult {
         let closed = close(
             context.facts,
-            &self.terms,
-            &self.goals,
-            &mut self.derivations,
+            &self.vocabulary.terms,
+            &self.vocabulary.goals,
+            &mut self.vocabulary.derivations,
         );
         if closed.contradictory() {
             return ProofResult {
@@ -8323,7 +8521,7 @@ impl Analyzer<'_, '_> {
         if let Some(relation) = relation {
             if closed.derives(relation) {
                 let parent = closed
-                    .relation_proof(relation, &mut self.derivations)
+                    .relation_proof(relation, &mut self.vocabulary.derivations)
                     .expect("a proved L0 relation must retain its local derivation");
                 let derivation = self.goal_numeric_derivation(goal, Some(relation), parent);
                 return ProofResult {
@@ -8363,11 +8561,14 @@ impl Analyzer<'_, '_> {
                 product_interval: None,
             };
         };
-        let consequence = self.derivations.intern(DerivationNode::AffineConsequence {
-            relation: relation.cloned().map(Box::new),
-            premises: proof.premises.into_boxed_slice(),
-            parents: proof.parents,
-        });
+        let consequence = self
+            .vocabulary
+            .derivations
+            .intern(DerivationNode::AffineConsequence {
+                relation: relation.cloned().map(Box::new),
+                premises: proof.premises.into_boxed_slice(),
+                parents: proof.parents,
+            });
         let derivation = self.goal_numeric_derivation(goal, relation, consequence);
         ProofResult {
             disposition: ProofDisposition::Proved,
@@ -8416,14 +8617,14 @@ impl Analyzer<'_, '_> {
         if let Some(term) = request.term {
             let closed = close(
                 context.facts,
-                &self.terms,
-                &self.goals,
-                &mut self.derivations,
+                &self.vocabulary.terms,
+                &self.vocabulary.goals,
+                &mut self.vocabulary.derivations,
             );
             if let Some(candidate) = closed.tight_bound(term, ZERO)
                 && candidate < selected.value
                 && let Some(derivation) =
-                    closed.bound_proof(term, ZERO, candidate, &mut self.derivations)
+                    closed.bound_proof(term, ZERO, candidate, &mut self.vocabulary.derivations)
             {
                 selected = ProvedNumericUpperBound {
                     value: candidate,
@@ -8446,11 +8647,14 @@ impl Analyzer<'_, '_> {
                         bound: endpoint.value,
                     })
                 });
-                let derivation = self.derivations.intern(DerivationNode::AffineConsequence {
-                    relation,
-                    premises: endpoint.consequence.premises.into_boxed_slice(),
-                    parents: endpoint.consequence.parents,
-                });
+                let derivation =
+                    self.vocabulary
+                        .derivations
+                        .intern(DerivationNode::AffineConsequence {
+                            relation,
+                            premises: endpoint.consequence.premises.into_boxed_slice(),
+                            parents: endpoint.consequence.parents,
+                        });
                 selected = ProvedNumericUpperBound {
                     value: endpoint.value,
                     derivation,
@@ -8573,14 +8777,14 @@ impl Analyzer<'_, '_> {
         let kind = TermKind::IndexCapture {
             capture: captured.capture,
         };
-        if self.terms.interned(&kind).is_some() {
+        if self.vocabulary.terms.interned(&kind).is_some() {
             return;
         }
         let image = self.affine_expression_form(expression, &mut state.affine);
         let Some(source) = self.read_operand(expression) else {
             return;
         };
-        let datum = self.terms.intern(kind);
+        let datum = self.vocabulary.terms.intern(kind);
         if let Some(image) = image {
             state.affine.indices.insert(captured.capture, image);
         }
@@ -8591,7 +8795,7 @@ impl Analyzer<'_, '_> {
                 right: source,
                 difference: 0,
             },
-            &mut self.derivations,
+            &mut self.vocabulary.derivations,
             event,
         );
     }
@@ -8627,7 +8831,7 @@ impl Analyzer<'_, '_> {
                     };
                     let reaches_offset = self
                         .judge_children_reach_parent(std::iter::once(&subscript.offset), states);
-                    let obligation_start = self.obligations.len();
+                    let obligation_start = self.output.obligations.len();
                     if reaches_offset {
                         self.establish_index_capture(subscript.captured, &subscript.offset, states);
                         self.judge_obligation(
@@ -8665,7 +8869,7 @@ impl Analyzer<'_, '_> {
         );
         let reaches_offset =
             self.judge_children_reach_parent(std::iter::once(&place.offset), states);
-        let obligation_start = self.obligations.len();
+        let obligation_start = self.output.obligations.len();
         if reaches_offset {
             self.establish_index_capture(place.captured, &place.offset, states);
             self.judge_obligation(
@@ -8692,7 +8896,7 @@ impl Analyzer<'_, '_> {
                     };
                     let reaches_offset = self
                         .judge_children_reach_parent(std::iter::once(&subscript.offset), states);
-                    let obligation_start = self.obligations.len();
+                    let obligation_start = self.output.obligations.len();
                     if reaches_offset {
                         self.establish_index_capture(subscript.captured, &subscript.offset, states);
                         self.judge_obligation(
@@ -8825,7 +9029,7 @@ impl Analyzer<'_, '_> {
                 fields,
                 ..
             } => {
-                let Some(nominal) = self.context.nominals.get(nominal.0 as usize) else {
+                let Some(nominal) = self.input.context.nominals.get(nominal.0 as usize) else {
                     return Vec::new();
                 };
                 let CheckedNominalKind::Enum { variants } = &nominal.kind else {
@@ -8904,7 +9108,7 @@ impl Analyzer<'_, '_> {
         let CheckedEnumType::Nominal(nominal) = enum_type else {
             return Vec::new();
         };
-        let Some(nominal) = self.context.nominals.get(nominal.0 as usize) else {
+        let Some(nominal) = self.input.context.nominals.get(nominal.0 as usize) else {
             return Vec::new();
         };
         let CheckedNominalKind::Enum { variants } = &nominal.kind else {
@@ -9038,9 +9242,11 @@ impl Analyzer<'_, '_> {
             distinct: false,
         };
         let fixed_array_middle = match array_length {
-            Some(CheckedConst::Value(length)) => {
-                Some(self.terms.intern(TermKind::Constant(i128::from(length))))
-            }
+            Some(CheckedConst::Value(length)) => Some(
+                self.vocabulary
+                    .terms
+                    .intern(TermKind::Constant(i128::from(length))),
+            ),
             Some(CheckedConst::Parameter(_) | CheckedConst::Derived(_)) | None => None,
         };
         let fixed_affine_bridge =
@@ -9067,13 +9273,14 @@ impl Analyzer<'_, '_> {
         let contradictory = proof.route == Some(ProofRoute::Contradiction);
         let derivation = proof.derivation;
         let residual = (!discharged).then(|| rendered_residual.clone());
-        let ordinal = u32::try_from(self.obligations.len())
+        let ordinal = u32::try_from(self.output.obligations.len())
             .expect("ENT obligation-root ordinal exceeds the u32 identity space");
         if let Some(root) = derivation {
-            self.derivations
+            self.vocabulary
+                .derivations
                 .add_root(DerivationRootKind::BoundsObligation(ordinal), root);
         }
-        self.obligations.push(ObligationOutcome {
+        self.output.obligations.push(ObligationOutcome {
             node_path: node_path.clone(),
             family: ObligationFamily::Bounds,
             conjunct: 0,
@@ -9111,7 +9318,8 @@ impl Analyzer<'_, '_> {
         let [coefficient] = offset.terms() else {
             return Vec::new();
         };
-        self.loops
+        self.frames
+            .loops
             .iter()
             .filter_map(|frame| {
                 let binder = frame.counted_binder?;
@@ -9136,6 +9344,7 @@ impl Analyzer<'_, '_> {
         states: &ProofFlowState,
     ) -> Vec<super::ProvedRangePartition> {
         let candidates = self
+            .frames
             .loops
             .iter()
             .filter_map(|frame| {
@@ -9263,7 +9472,7 @@ impl Analyzer<'_, '_> {
         // handle and its image name the same value, so expand it before the
         // invariant-atom case: otherwise the product's stride and an endpoint
         // that reads the sum directly would have different canonical images.
-        if let Some(image) = self.handle_images.get(&term) {
+        if let Some(image) = self.vocabulary.handle_images.get(&term) {
             return self.counted_value_image(image, binder, invariant, visiting);
         }
         if invariant.contains(&term) {
@@ -9272,7 +9481,7 @@ impl Analyzer<'_, '_> {
                 base: AffineForm::term(term),
             });
         }
-        let (left, right) = *self.product_atoms.get(&term)?;
+        let (left, right) = *self.vocabulary.product_atoms.get(&term)?;
         let left =
             self.counted_value_image(&AffineForm::term(left), binder, invariant, visiting)?;
         let right =
@@ -9338,11 +9547,15 @@ impl Analyzer<'_, '_> {
         let assumptions = Self::affine_facts(affine);
         let proof =
             self.affine_target_proof(target, &assumptions, ProofContext::new(facts, affine))?;
-        Some(self.derivations.intern(DerivationNode::AffineConsequence {
-            relation: relation.map(Box::new),
-            premises: proof.premises.into_boxed_slice(),
-            parents: proof.parents,
-        }))
+        Some(
+            self.vocabulary
+                .derivations
+                .intern(DerivationNode::AffineConsequence {
+                    relation: relation.map(Box::new),
+                    premises: proof.premises.into_boxed_slice(),
+                    parents: proof.parents,
+                }),
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -9363,16 +9576,30 @@ impl Analyzer<'_, '_> {
         };
         let first =
             self.affine_consequence_derivation(bridge.target, Some(first_relation), affine, facts)?;
-        let closed = close(facts, &self.terms, &self.goals, &mut self.derivations);
-        let second = closed.bound_proof(bridge.middle, right, remaining, &mut self.derivations)?;
-        Some(self.derivations.intern(DerivationNode::TransitiveBound {
-            left,
-            middle: bridge.middle,
+        let closed = close(
+            facts,
+            &self.vocabulary.terms,
+            &self.vocabulary.goals,
+            &mut self.vocabulary.derivations,
+        );
+        let second = closed.bound_proof(
+            bridge.middle,
             right,
-            bound: requested,
-            first,
-            second,
-        }))
+            remaining,
+            &mut self.vocabulary.derivations,
+        )?;
+        Some(
+            self.vocabulary
+                .derivations
+                .intern(DerivationNode::TransitiveBound {
+                    left,
+                    middle: bridge.middle,
+                    right,
+                    bound: requested,
+                    first,
+                    second,
+                }),
+        )
     }
 
     /// The complete Step 6 inventory. Querying it must not recreate a measure
@@ -9387,7 +9614,7 @@ impl Analyzer<'_, '_> {
             let mut anchor = term;
             let mut fixed = None;
             for _ in 0..4 {
-                match self.terms.measure_bound(anchor) {
+                match self.vocabulary.terms.measure_bound(anchor) {
                     Some(MeasureBound::Constant(value)) => {
                         fixed = Some(AffineForm::constant(value));
                         break;
@@ -9408,7 +9635,7 @@ impl Analyzer<'_, '_> {
             let Some(ty) = self.affine_binding_type(binding) else {
                 continue;
             };
-            let term = self.terms.intern(TermKind::Place(
+            let term = self.vocabulary.terms.intern(TermKind::Place(
                 ResolvedPlace::spelled(PlaceRoot::Binding(binding), false, Vec::new()),
                 ty,
             ));
@@ -9437,7 +9664,11 @@ impl Analyzer<'_, '_> {
         let right = right?;
         let right_value = self.affine_term_value(right, context.affine)?;
         let candidates = self.affine_right_bridge_candidates(context.affine);
-        let closed = context.close(&self.terms, &self.goals, &mut self.derivations);
+        let closed = context.close(
+            &self.vocabulary.terms,
+            &self.vocabulary.goals,
+            &mut self.vocabulary.derivations,
+        );
         for candidate in candidates {
             let Some(bound) = closed.tight_bound(candidate.term, right) else {
                 continue;
@@ -9457,9 +9688,12 @@ impl Analyzer<'_, '_> {
             let Some(mut proof) = self.affine_target_proof(&residual, &assumptions, context) else {
                 continue;
             };
-            let Some(bridge) =
-                closed.bound_proof(candidate.term, right, bound, &mut self.derivations)
-            else {
+            let Some(bridge) = closed.bound_proof(
+                candidate.term,
+                right,
+                bound,
+                &mut self.vocabulary.derivations,
+            ) else {
                 continue;
             };
             proof.parents.push(bridge);
@@ -9484,7 +9718,12 @@ impl Analyzer<'_, '_> {
         facts: &FactState,
     ) -> Option<DerivationId> {
         let candidates = self.affine_right_bridge_candidates(affine);
-        let closed = close(facts, &self.terms, &self.goals, &mut self.derivations);
+        let closed = close(
+            facts,
+            &self.vocabulary.terms,
+            &self.vocabulary.goals,
+            &mut self.vocabulary.derivations,
+        );
         if closed.contradictory() {
             return closed.contradiction_proof();
         }
@@ -9521,18 +9760,22 @@ impl Analyzer<'_, '_> {
                 continue;
             };
             let Some(second) =
-                closed.bound_proof(middle, right_term, bridge, &mut self.derivations)
+                closed.bound_proof(middle, right_term, bridge, &mut self.vocabulary.derivations)
             else {
                 continue;
             };
-            return Some(self.derivations.intern(DerivationNode::TransitiveBound {
-                left: left_term,
-                middle,
-                right: right_term,
-                bound: requested,
-                first,
-                second,
-            }));
+            return Some(
+                self.vocabulary
+                    .derivations
+                    .intern(DerivationNode::TransitiveBound {
+                        left: left_term,
+                        middle,
+                        right: right_term,
+                        bound: requested,
+                        first,
+                        second,
+                    }),
+            );
         }
         None
     }
@@ -9563,6 +9806,7 @@ impl Analyzer<'_, '_> {
         let goal = Some(self.intern_goal_expression(canonical_goal.clone()));
         let length_term = self.read_operand(length);
         let threshold_term = self
+            .vocabulary
             .terms
             .intern(TermKind::Constant(i128::from(maximum_length)));
         let ordering_relation = length_term.map(|length| Relation::Bound {
@@ -9610,19 +9854,21 @@ impl Analyzer<'_, '_> {
             .and_then(|bound| u64::try_from(bound.value).ok());
         let allocation_length_upper_bound_derivation =
             proof.numeric_upper_bound.map(|bound| bound.derivation);
-        let ordinal = u32::try_from(self.obligations.len())
+        let ordinal = u32::try_from(self.output.obligations.len())
             .expect("ENT obligation-root ordinal exceeds the u32 identity space");
         if let Some(root) = derivation {
-            self.derivations
+            self.vocabulary
+                .derivations
                 .add_root(DerivationRootKind::BoundsObligation(ordinal), root);
         }
         if let Some(root) = allocation_length_upper_bound_derivation
             && Some(root) != derivation
         {
-            self.derivations
+            self.vocabulary
+                .derivations
                 .add_root(DerivationRootKind::AllocationUpperBound(ordinal), root);
         }
-        self.obligations.push(ObligationOutcome {
+        self.output.obligations.push(ObligationOutcome {
             node_path: node_path.clone(),
             family: ObligationFamily::AllocationFit,
             conjunct: 0,
@@ -9662,17 +9908,18 @@ impl Analyzer<'_, '_> {
         state: &mut ProofFlowState,
     ) -> bool {
         let pending: Vec<_> = self
+            .input
             .function
             .call_separations
             .iter()
             .enumerate()
-            .filter(|(query, _)| !self.judged_separations.contains(query))
+            .filter(|(query, _)| !self.output.judged_separations.contains(query))
             .filter(|(_, separation)| separation.site.components().starts_with(site.components()))
             .map(|(query, separation)| (query, separation.clone()))
             .collect();
         let mut all_discharged = true;
         for (query, separation) in pending {
-            self.judged_separations.insert(query);
+            self.output.judged_separations.insert(query);
             let discharged = self.judge_one_separation(query, &separation, state);
             // A preservation query is a later reference-use obligation. It
             // does not make this event unreachable or suppress its effects.
@@ -9723,13 +9970,14 @@ impl Analyzer<'_, '_> {
             }
         }
         let derivation = proof.and_then(|proof| proof.derivation);
-        let ordinal =
-            u32::try_from(self.obligations.len()).expect("ENT obligation ordinal exceeds u32");
+        let ordinal = u32::try_from(self.output.obligations.len())
+            .expect("ENT obligation ordinal exceeds u32");
         if let Some(root) = derivation {
-            self.derivations
+            self.vocabulary
+                .derivations
                 .add_root(DerivationRootKind::BoundsObligation(ordinal), root);
         }
-        self.obligations.push(ObligationOutcome {
+        self.output.obligations.push(ObligationOutcome {
             node_path: separation.reference_use.as_ref()
                 .map_or_else(|| separation.site.clone(), |use_site| use_site.site.clone()),
             family: if separation.reference_use.is_some() {
@@ -9777,12 +10025,14 @@ impl Analyzer<'_, '_> {
 
     fn captured_index_term(&mut self, value: CapturedValue) -> Option<TermId> {
         match value.term {
-            CapturedTerm::Literal(value) => {
-                Some(self.terms.intern(TermKind::Constant(i128::from(value))))
-            }
+            CapturedTerm::Literal(value) => Some(
+                self.vocabulary
+                    .terms
+                    .intern(TermKind::Constant(i128::from(value))),
+            ),
             CapturedTerm::Const(declaration) => Some(self.const_parameter_term(declaration)),
             CapturedTerm::Binding(_) if matches!(value.capture, CaptureId::Source(_)) => {
-                self.terms.interned(&TermKind::IndexCapture {
+                self.vocabulary.terms.interned(&TermKind::IndexCapture {
                     capture: value.capture,
                 })
             }
@@ -9848,11 +10098,11 @@ impl Analyzer<'_, '_> {
             && let (CapturedTerm::Binding(left_binding), CapturedTerm::Binding(right_binding)) =
                 (left.term, right.term)
         {
-            let source_left = self.terms.intern(TermKind::Place(
+            let source_left = self.vocabulary.terms.intern(TermKind::Place(
                 ResolvedPlace::spelled(PlaceRoot::Binding(left_binding), false, Vec::new()),
                 super::super::model::IntegerType::U64,
             ));
-            let source_right = self.terms.intern(TermKind::Place(
+            let source_right = self.vocabulary.terms.intern(TermKind::Place(
                 ResolvedPlace::spelled(PlaceRoot::Binding(right_binding), false, Vec::new()),
                 super::super::model::IntegerType::U64,
             ));
@@ -9880,22 +10130,22 @@ impl Analyzer<'_, '_> {
                 difference: 0,
             };
             let closed = ProofContext::new(&state.facts, &state.affine).close(
-                &self.terms,
-                &self.goals,
-                &mut self.derivations,
+                &self.vocabulary.terms,
+                &self.vocabulary.goals,
+                &mut self.vocabulary.derivations,
             );
             if closed.derives(&source_relation)
                 && closed.derives(&left_identity)
                 && closed.derives(&right_identity)
             {
                 let parent = closed
-                    .relation_proof(&source_relation, &mut self.derivations)
+                    .relation_proof(&source_relation, &mut self.vocabulary.derivations)
                     .expect("a proved source disequality retains its proof");
                 let left_identity = closed
-                    .relation_proof(&left_identity, &mut self.derivations)
+                    .relation_proof(&left_identity, &mut self.vocabulary.derivations)
                     .expect("a live left capture identity retains its proof");
                 let right_identity = closed
-                    .relation_proof(&right_identity, &mut self.derivations)
+                    .relation_proof(&right_identity, &mut self.vocabulary.derivations)
                     .expect("a live right capture identity retains its proof");
                 substitution = Some(Box::new(IndexCaptureSubstitution {
                     source_left,
@@ -9945,16 +10195,18 @@ impl Analyzer<'_, '_> {
         let parent = proof
             .derivation
             .expect("a proved index separation retains its L0 or affine parent");
-        proof.derivation = Some(self.derivations.intern(DerivationNode::IndexSeparation {
-            detail: Box::new(IndexSeparationDetail {
-                left,
-                right,
-                parent,
-                affine_target,
-                affine_images,
-                substitution,
-            }),
-        }));
+        proof.derivation = Some(self.vocabulary.derivations.intern(
+            DerivationNode::IndexSeparation {
+                detail: Box::new(IndexSeparationDetail {
+                    left,
+                    right,
+                    parent,
+                    affine_target,
+                    affine_images,
+                    substitution,
+                }),
+            },
+        ));
         Some(proof)
     }
 
@@ -10004,14 +10256,16 @@ impl Analyzer<'_, '_> {
                 let parent = proof
                     .derivation
                     .expect("a proved range ordering retains its affine or contradiction parent");
-                proof.derivation = Some(self.derivations.intern(DerivationNode::RangeSeparation {
-                    detail: Box::new(RangeSeparationDetail {
-                        left,
-                        right,
-                        ordering,
-                        parent,
-                    }),
-                }));
+                proof.derivation = Some(self.vocabulary.derivations.intern(
+                    DerivationNode::RangeSeparation {
+                        detail: Box::new(RangeSeparationDetail {
+                            left,
+                            right,
+                            ordering,
+                            parent,
+                        }),
+                    },
+                ));
                 return Some(proof);
             }
         }
@@ -10025,17 +10279,18 @@ impl Analyzer<'_, '_> {
     /// permission proof can never authorize an EFF-5 or kill judgment.
     fn judge_permission_separations(&mut self, site: &crate::NodePath, state: &ProofFlowState) {
         let pending = self
+            .output
             .permission_separations
             .iter()
             .enumerate()
             .filter_map(|(index, attempt)| (attempt.query.first == *site).then_some(index))
             .collect::<Vec<_>>();
         for index in pending {
-            let query = self.permission_separations[index].query.clone();
+            let query = self.output.permission_separations[index].query.clone();
             let derivation = self
                 .prove_range_separation(query.left, query.right, state)
                 .and_then(|proof| proof.derivation);
-            let attempt = &mut self.permission_separations[index];
+            let attempt = &mut self.output.permission_separations[index];
             attempt.attempted = true;
             attempt.discharged &= derivation.is_some();
             if let Some(derivation) = derivation {
@@ -10045,8 +10300,8 @@ impl Analyzer<'_, '_> {
     }
 
     fn finalize_permission_separations(&mut self) -> Vec<PermissionSeparationProof> {
-        let mut retained = Vec::with_capacity(self.permission_separations.len());
-        let attempts = std::mem::take(&mut self.permission_separations);
+        let mut retained = Vec::with_capacity(self.output.permission_separations.len());
+        let attempts = std::mem::take(&mut self.output.permission_separations);
         for (query, attempt) in attempts.into_iter().enumerate() {
             let PermissionSeparationAttempt {
                 query: identity,
@@ -10057,7 +10312,7 @@ impl Analyzer<'_, '_> {
             let discharged = attempted && discharged;
             if discharged {
                 for (occurrence, root) in derivations.iter().copied().enumerate() {
-                    self.derivations.add_root(
+                    self.vocabulary.derivations.add_root(
                         DerivationRootKind::PermissionSeparation {
                             query: u32::try_from(query)
                                 .expect("PAR-1 range queries exceed the u32 identity space"),
@@ -10083,15 +10338,16 @@ impl Analyzer<'_, '_> {
     /// walked call reached is recorded undischarged rather than dropped.
     fn reject_unjudged_separations(&mut self) {
         let missing: Vec<_> = self
+            .input
             .function
             .call_separations
             .iter()
             .enumerate()
-            .filter(|(query, _)| !self.judged_separations.contains(query))
+            .filter(|(query, _)| !self.output.judged_separations.contains(query))
             .map(|(query, separation)| (query, separation.clone()))
             .collect();
         for (query, separation) in missing {
-            self.judged_separations.insert(query);
+            self.output.judged_separations.insert(query);
             let mut state = ProofFlowState::default();
             self.judge_one_separation(query, &separation, &mut state);
         }
@@ -10140,13 +10396,14 @@ impl Analyzer<'_, '_> {
         let refuted = proof.disposition == ProofDisposition::Refuted;
         let contradictory = proof.route == Some(ProofRoute::Contradiction);
         let derivation = proof.derivation;
-        let ordinal = u32::try_from(self.obligations.len())
+        let ordinal = u32::try_from(self.output.obligations.len())
             .expect("ENT obligation-root ordinal exceeds the u32 identity space");
         if let Some(root) = derivation {
-            self.derivations
+            self.vocabulary
+                .derivations
                 .add_root(DerivationRootKind::BoundsObligation(ordinal), root);
         }
-        self.obligations.push(ObligationOutcome {
+        self.output.obligations.push(ObligationOutcome {
             node_path: node_path.clone(),
             family,
             conjunct,
@@ -10208,7 +10465,7 @@ impl Analyzer<'_, '_> {
     }
 
     fn affine_term_value(&mut self, term: TermId, state: &AffineFlowState) -> Option<AffineForm> {
-        match self.terms.kind(term).clone() {
+        match self.vocabulary.terms.kind(term).clone() {
             TermKind::Zero => Some(AffineForm::constant(0)),
             TermKind::Constant(value) => Some(AffineForm::constant(value)),
             TermKind::Place(place, _) if place.path.is_empty() => match place.root {
@@ -10256,7 +10513,7 @@ impl Analyzer<'_, '_> {
         // before it can spell the fixed affine alternatives. Keep that work
         // local until the one proof query selects an affine route (or leaves
         // the goal unknown, matching the prior attempted-route state change).
-        let candidate_atom_start = self.affine_atoms.len();
+        let candidate_atom_start = self.vocabulary.affine_atoms.len();
         let mut prepared_affine = states.affine.clone();
         let affine_clauses = self.affine_integer_domain_clauses(
             operation,
@@ -10281,7 +10538,7 @@ impl Analyzer<'_, '_> {
         if outcome.route == Some(ProofRoute::Affine) || outcome.route.is_none() {
             states.affine = prepared_affine;
         } else {
-            self.affine_atoms.truncate(candidate_atom_start);
+            self.vocabulary.affine_atoms.truncate(candidate_atom_start);
         }
         let discharged = outcome.disposition == ProofDisposition::Proved;
         let refuted = outcome.disposition == ProofDisposition::Refuted;
@@ -10291,33 +10548,37 @@ impl Analyzer<'_, '_> {
         // operand values each time, so the previous walk's measurement is
         // dropped before this one decides: a judgment that does not discharge
         // must leave nothing behind for the binding to read.
-        self.product_intervals.remove(node_path);
-        self.product_operands.remove(node_path);
+        self.frames.product_intervals.remove(node_path);
+        self.frames.product_operands.remove(node_path);
         // [ENT-3.S14] publishes only what an admitted multiplication proved,
         // so the interval is retained exactly when this obligation discharged
         // through the interval-product route.
         if discharged && let Some(interval) = outcome.product_interval.clone() {
-            self.product_intervals.insert(node_path.clone(), interval);
+            self.frames
+                .product_intervals
+                .insert(node_path.clone(), interval);
         }
         // That the exact multiplication's domain held, for [PRF-1] to fold a
         // term-scaled premise against. Recorded only when the domain
         // discharged through an affine route, which is what committed
         // `prepared_affine` and so fixed the images the judgment read.
-        let ordinal = u32::try_from(self.obligations.len())
+        let ordinal = u32::try_from(self.output.obligations.len())
             .expect("ENT obligation-root ordinal exceeds the u32 identity space");
         if discharged
             && outcome.route == Some(ProofRoute::Affine)
             && operation == CheckedIntegerOperation::MultiplyExact
             && let Some(parent) = outcome.derivation
         {
-            self.product_operands
+            self.frames
+                .product_operands
                 .insert(node_path.clone(), (parent, ordinal));
         }
         if let Some(root) = outcome.derivation {
-            self.derivations
+            self.vocabulary
+                .derivations
                 .add_root(DerivationRootKind::IntegerDomainObligation(ordinal), root);
         }
-        self.obligations.push(ObligationOutcome {
+        self.output.obligations.push(ObligationOutcome {
             node_path: node_path.clone(),
             family: ObligationFamily::IntegerDomain,
             conjunct: 0,
@@ -10404,6 +10665,7 @@ impl Analyzer<'_, '_> {
             return None;
         };
         let threshold = self
+            .vocabulary
             .terms
             .intern(TermKind::Constant(i128::from(*maximum_length)));
         Some(GoalNormalization::conjunction(vec![
@@ -10458,7 +10720,7 @@ impl Analyzer<'_, '_> {
                 let CheckedValue::Integer {
                     ty: value_type,
                     bits,
-                } = &self.context.constant(*declaration)?.value
+                } = &self.input.context.constant(*declaration)?.value
                 else {
                     return None;
                 };
@@ -10540,6 +10802,7 @@ impl Analyzer<'_, '_> {
                 components.push(BoundsRequest {
                     left: dividend.term,
                     right: self
+                        .vocabulary
                         .terms
                         .intern(TermKind::Constant(type_range(fragment).0)),
                     bound: 0,
@@ -10547,7 +10810,7 @@ impl Analyzer<'_, '_> {
                 });
                 components.push(BoundsRequest {
                     left: divisor.term,
-                    right: self.terms.intern(TermKind::Constant(-1)),
+                    right: self.vocabulary.terms.intern(TermKind::Constant(-1)),
                     bound: 0,
                     distinct: true,
                 });
@@ -10578,6 +10841,7 @@ impl Analyzer<'_, '_> {
             let mut components = vec![BoundsRequest {
                 left: operand.term,
                 right: self
+                    .vocabulary
                     .terms
                     .intern(TermKind::Constant(type_range(fragment).0)),
                 bound: 0,
@@ -10678,9 +10942,9 @@ impl Analyzer<'_, '_> {
     ) -> ProofResult {
         let closed = close(
             context.facts,
-            &self.terms,
-            &self.goals,
-            &mut self.derivations,
+            &self.vocabulary.terms,
+            &self.vocabulary.goals,
+            &mut self.vocabulary.derivations,
         );
         let contradictory = closed.contradictory();
         let signed_division = matches!(
@@ -10698,10 +10962,13 @@ impl Analyzer<'_, '_> {
             let Some(parents) = parents else {
                 unreachable!("a contradictory closure retains its proof");
             };
-            let derivation = self.derivations.intern(DerivationNode::IntegerDomain {
-                goal: goal.canonical,
-                parents,
-            });
+            let derivation = self
+                .vocabulary
+                .derivations
+                .intern(DerivationNode::IntegerDomain {
+                    goal: goal.canonical,
+                    parents,
+                });
             return ProofResult {
                 disposition: ProofDisposition::Proved,
                 route: Some(ProofRoute::Contradiction),
@@ -10716,10 +10983,13 @@ impl Analyzer<'_, '_> {
                 let parent = closed
                     .opaque_proof(canonical, GoalSign::Positive)
                     .expect("an opaque goal fact retains its proof");
-                let derivation = self.derivations.intern(DerivationNode::IntegerDomain {
-                    goal: Some(canonical),
-                    parents: vec![parent],
-                });
+                let derivation =
+                    self.vocabulary
+                        .derivations
+                        .intern(DerivationNode::IntegerDomain {
+                            goal: Some(canonical),
+                            parents: vec![parent],
+                        });
                 return ProofResult {
                     disposition: ProofDisposition::Proved,
                     route: Some(ProofRoute::FiniteGoal),
@@ -10740,9 +11010,9 @@ impl Analyzer<'_, '_> {
         }
 
         let normalization_parents = if signed_division && goal.components.len() == 3 {
-            component_proof(0, &mut self.derivations).and_then(|nonzero| {
-                component_proof(1, &mut self.derivations)
-                    .or_else(|| component_proof(2, &mut self.derivations))
+            component_proof(0, &mut self.vocabulary.derivations).and_then(|nonzero| {
+                component_proof(1, &mut self.vocabulary.derivations)
+                    .or_else(|| component_proof(2, &mut self.vocabulary.derivations))
                     .map(|witness| vec![nonzero, witness])
             })
         } else if !goal.components.is_empty() {
@@ -10750,7 +11020,7 @@ impl Analyzer<'_, '_> {
                 .iter()
                 .map(|request| {
                     request_relation(request).and_then(|relation| {
-                        closed.relation_proof(&relation, &mut self.derivations)
+                        closed.relation_proof(&relation, &mut self.vocabulary.derivations)
                     })
                 })
                 .collect::<Option<Vec<_>>>()
@@ -10762,8 +11032,8 @@ impl Analyzer<'_, '_> {
                 if let Some(normalization) = closed.normalization_proof(
                     canonical,
                     GoalSign::Positive,
-                    &self.goals,
-                    &mut self.derivations,
+                    &self.vocabulary.goals,
+                    &mut self.vocabulary.derivations,
                 ) {
                     vec![normalization]
                 } else {
@@ -10779,10 +11049,13 @@ impl Analyzer<'_, '_> {
             } else {
                 parents
             };
-            let derivation = self.derivations.intern(DerivationNode::IntegerDomain {
-                goal: goal.canonical,
-                parents,
-            });
+            let derivation = self
+                .vocabulary
+                .derivations
+                .intern(DerivationNode::IntegerDomain {
+                    goal: goal.canonical,
+                    parents,
+                });
             return ProofResult {
                 disposition: ProofDisposition::Proved,
                 route: Some(ProofRoute::L0),
@@ -10848,17 +11121,23 @@ impl Analyzer<'_, '_> {
                     proved = false;
                     break;
                 };
-                consequences.push(self.derivations.intern(DerivationNode::AffineConsequence {
-                    relation: None,
-                    premises: proof.premises.into_boxed_slice(),
-                    parents: proof.parents,
-                }));
+                consequences.push(self.vocabulary.derivations.intern(
+                    DerivationNode::AffineConsequence {
+                        relation: None,
+                        premises: proof.premises.into_boxed_slice(),
+                        parents: proof.parents,
+                    },
+                ));
             }
             if proved {
-                return Some(self.derivations.intern(DerivationNode::IntegerDomain {
-                    goal,
-                    parents: consequences,
-                }));
+                return Some(
+                    self.vocabulary
+                        .derivations
+                        .intern(DerivationNode::IntegerDomain {
+                            goal,
+                            parents: consequences,
+                        }),
+                );
             }
         }
         None
@@ -10907,10 +11186,13 @@ impl Analyzer<'_, '_> {
         goal: Option<GoalId>,
     ) -> Option<(DerivationId, AffineProductInterval)> {
         let interval = self.affine_integer_product_interval(product, affine, facts)?;
-        let derivation = self.derivations.intern(DerivationNode::IntegerDomain {
-            goal,
-            parents: interval.consequences.to_vec(),
-        });
+        let derivation = self
+            .vocabulary
+            .derivations
+            .intern(DerivationNode::IntegerDomain {
+                goal,
+                parents: interval.consequences.to_vec(),
+            });
         Some((derivation, interval))
     }
 
@@ -10957,11 +11239,13 @@ impl Analyzer<'_, '_> {
         ]
         .into_iter()
         .map(|proof| {
-            self.derivations.intern(DerivationNode::AffineConsequence {
-                relation: None,
-                premises: proof.premises.into_boxed_slice(),
-                parents: proof.parents,
-            })
+            self.vocabulary
+                .derivations
+                .intern(DerivationNode::AffineConsequence {
+                    relation: None,
+                    premises: proof.premises.into_boxed_slice(),
+                    parents: proof.parents,
+                })
         })
         .collect();
         Some(AffineProductInterval {
@@ -11092,6 +11376,7 @@ impl Analyzer<'_, '_> {
                 &AffineForm::constant(i128::from(ty.width()) - 1),
             )?;
             let right = self
+                .vocabulary
                 .terms
                 .intern(TermKind::Constant(i128::from(ty.width()) - 1));
             return Some(vec![vec![NumericAffineTarget {
@@ -11143,8 +11428,8 @@ impl Analyzer<'_, '_> {
             if !ty.signed() {
                 return Some(vec![vec![positive]]);
             }
-            let minus_one = self.terms.intern(TermKind::Constant(-1));
-            let minus_two = self.terms.intern(TermKind::Constant(-2));
+            let minus_one = self.vocabulary.terms.intern(TermKind::Constant(-1));
+            let minus_two = self.vocabulary.terms.intern(TermKind::Constant(-2));
             let negative = NumericAffineTarget {
                 inequality: Self::affine_less_equal(&divisor, &AffineForm::constant(-1))?,
                 right: Some(minus_one),
@@ -11224,7 +11509,7 @@ impl Analyzer<'_, '_> {
         };
         let (minimum, maximum) = type_range(ty);
         let mut check = AffineCheckState::new();
-        let maximum_term = self.terms.intern(TermKind::Constant(maximum));
+        let maximum_term = self.vocabulary.terms.intern(TermKind::Constant(maximum));
         Some(vec![vec![
             NumericAffineTarget {
                 inequality: AffineInequality::from_forms(
@@ -11453,9 +11738,9 @@ impl Analyzer<'_, '_> {
         maximum: i128,
         join_delta: bool,
     ) -> AffineForm {
-        let index = u32::try_from(self.affine_atoms.len())
+        let index = u32::try_from(self.vocabulary.affine_atoms.len())
             .expect("affine value atoms exceed the u32 identity space");
-        self.affine_atoms.push(AffineAtom {
+        self.vocabulary.affine_atoms.push(AffineAtom {
             ty,
             minimum,
             maximum,
@@ -11477,7 +11762,10 @@ impl Analyzer<'_, '_> {
         let mut maximum = minimum;
         let mut check = AffineCheckState::new();
         for coefficient in value.terms() {
-            let atom = self.affine_atoms.get(coefficient.term().index() as usize)?;
+            let atom = self
+                .vocabulary
+                .affine_atoms
+                .get(coefficient.term().index() as usize)?;
             if !atom.join_delta {
                 continue;
             }
@@ -11547,7 +11835,7 @@ impl Analyzer<'_, '_> {
             return Some(handle);
         };
         let atom = handle.unit_term()?;
-        self.handle_images.insert(atom, image);
+        self.vocabulary.handle_images.insert(atom, image);
         state.opaque_values.insert(binding, handle.clone());
         Some(handle)
     }
@@ -11627,9 +11915,10 @@ impl Analyzer<'_, '_> {
                         })
                         .collect::<Vec<_>>()
                         .into_boxed_slice();
-                    let join_ordinal = u32::try_from(self.joined_source_proofs.len())
+                    let join_ordinal = u32::try_from(self.output.joined_source_proofs.len())
                         .expect("joined affine fact count exceeds the u32 identity space");
-                    self.joined_source_proofs
+                    self.output
+                        .joined_source_proofs
                         .push(JoinedSourceProofProvenance { predecessors });
                     AffineFactEvidence::Source(SourceAffineFactRef::JoinedSourceProof {
                         join_ordinal,
@@ -11709,12 +11998,12 @@ impl Analyzer<'_, '_> {
                             .map(|image| image.maximum)
                             .max()
                             .expect("one join input exists");
-                        let atom_start = self.affine_atoms.len();
+                        let atom_start = self.vocabulary.affine_atoms.len();
                         let delta = self.new_affine_atom_with_interval(ty, minimum, maximum, true);
                         match folded[0].form.add(&delta, &mut AffineCheckState::new()) {
                             Ok(value) => value,
                             Err(_) => {
-                                self.affine_atoms.truncate(atom_start);
+                                self.vocabulary.affine_atoms.truncate(atom_start);
                                 self.new_affine_atom(ty)
                             }
                         }
@@ -11806,8 +12095,8 @@ impl Analyzer<'_, '_> {
             .iter()
             .map(|states| states.facts.clone())
             .collect::<Vec<_>>();
-        let event = self.derivations.event(FlowEventKind::Join, None);
-        let entry_images = (0..self.entry_images.len())
+        let event = self.vocabulary.derivations.event(FlowEventKind::Join, None);
+        let entry_images = (0..self.input.entry_images.len())
             .map(|index| {
                 contributing
                     .iter()
@@ -11824,9 +12113,9 @@ impl Analyzer<'_, '_> {
             results,
             facts: join_at(
                 &facts,
-                &self.terms,
-                &self.goals,
-                &mut self.derivations,
+                &self.vocabulary.terms,
+                &self.vocabulary.goals,
+                &mut self.vocabulary.derivations,
                 event,
             ),
             entry_images,
@@ -11856,7 +12145,7 @@ impl Analyzer<'_, '_> {
             return None;
         }
         let fragment = fragment_type(*ty)?;
-        let carrier = self.terms.intern(TermKind::Place(
+        let carrier = self.vocabulary.terms.intern(TermKind::Place(
             ResolvedPlace::spelled(PlaceRoot::Binding(*binding), false, Vec::new()),
             fragment,
         ));
@@ -11925,6 +12214,7 @@ impl Analyzer<'_, '_> {
         for (source_relation, parent) in closed.delivery_relations() {
             if !source_relation.terms().contains(&context.carrier)
                 || !self
+                    .vocabulary
                     .derivations
                     .depends_on_explicit_relation(parent, &mut explicit)
             {
@@ -11935,15 +12225,18 @@ impl Analyzer<'_, '_> {
                 context.carrier,
                 context.receiver,
             );
-            let proof = self.derivations.intern(DerivationNode::PostconditionGive {
-                statement: context.statement.clone(),
-                carrier: context.carrier_binding,
-                receiver: context.receiver_binding,
-                relation: Box::new(relation.clone()),
-                event: context.event,
-                parent,
-            });
-            image.establish_from_proof(&relation, proof, &self.derivations);
+            let proof = self
+                .vocabulary
+                .derivations
+                .intern(DerivationNode::PostconditionGive {
+                    statement: context.statement.clone(),
+                    carrier: context.carrier_binding,
+                    receiver: context.receiver_binding,
+                    relation: Box::new(relation.clone()),
+                    event: context.event,
+                    parent,
+                });
+            image.establish_from_proof(&relation, proof, &self.vocabulary.derivations);
         }
         image
     }
@@ -11951,19 +12244,19 @@ impl Analyzer<'_, '_> {
     fn retain_delivery_give_parents(&mut self, parents: &[JoinParent]) {
         for parent in parents {
             if !matches!(
-                self.derivations.nodes[parent.parent.0 as usize],
+                self.vocabulary.derivations.nodes[parent.parent.0 as usize],
                 DerivationNode::PostconditionGive { .. }
             ) {
                 continue;
             }
-            let occurrence = u32::try_from(self.delivery_give_roots.len())
+            let occurrence = u32::try_from(self.vocabulary.delivery_give_roots.len())
                 .expect("value-if give roots exceed the u32 identity space");
             // A full and an ordinary delivery join can share an edge parent.
             // The ledger retains one required root per Give node.
-            if !self.delivery_give_roots.insert(parent.parent) {
+            if !self.vocabulary.delivery_give_roots.insert(parent.parent) {
                 continue;
             }
-            self.derivations.add_root(
+            self.vocabulary.derivations.add_root(
                 DerivationRootKind::PostconditionGive { occurrence },
                 parent.parent,
             );
@@ -11981,7 +12274,7 @@ impl Analyzer<'_, '_> {
         else {
             return ProofFlowState::default();
         };
-        let receiver = self.terms.intern(TermKind::Place(
+        let receiver = self.vocabulary.terms.intern(TermKind::Place(
             ResolvedPlace::spelled(
                 PlaceRoot::Binding(context.receiver_binding),
                 false,
@@ -11994,9 +12287,9 @@ impl Analyzer<'_, '_> {
         // No implicit fact on x may participate in selecting d -> x.
         let facts = close_excluding_term(
             &source.facts,
-            &self.terms,
-            &self.goals,
-            &mut self.derivations,
+            &self.vocabulary.terms,
+            &self.vocabulary.goals,
+            &mut self.vocabulary.derivations,
             receiver,
         );
         let event = self.proof_event(FlowEventKind::PostconditionGive, Some(context.statement));
@@ -12011,16 +12304,16 @@ impl Analyzer<'_, '_> {
         let mut delivered = self.delivery_edge_state(facts, &edge);
         if delivered.may_hold_postcondition_candidates() {
             let mut ordinary = source.facts.clone();
-            ordinary.retain_non_postcondition_candidates(&self.derivations);
+            ordinary.retain_non_postcondition_candidates(&self.vocabulary.derivations);
             let ordinary = close_excluding_term(
                 &ordinary,
-                &self.terms,
-                &self.goals,
-                &mut self.derivations,
+                &self.vocabulary.terms,
+                &self.vocabulary.goals,
+                &mut self.vocabulary.derivations,
                 receiver,
             );
             let fallback = self.delivery_edge_state(ordinary, &edge);
-            delivered.merge_relation_candidates_from(&fallback, &self.derivations);
+            delivered.merge_relation_candidates_from(&fallback, &self.vocabulary.derivations);
         }
         let mut image = ProofFlowState {
             facts: delivered,
@@ -12059,7 +12352,7 @@ impl Analyzer<'_, '_> {
         // fallback when a later holder event removes call-dependent proofs.
         let mut ordinary = images.to_vec();
         for image in &mut ordinary {
-            image.retain_non_postcondition_candidates(&self.derivations);
+            image.retain_non_postcondition_candidates(&self.vocabulary.derivations);
         }
         self.establish_delivery_join_once(&ordinary, context, target, true);
     }
@@ -12075,7 +12368,7 @@ impl Analyzer<'_, '_> {
             image.all_derivable
                 || image.live_l0_relations().iter().all(|(_, proof)| {
                     matches!(
-                        self.derivations.nodes[proof.0 as usize],
+                        self.vocabulary.derivations.nodes[proof.0 as usize],
                         DerivationNode::PostconditionGive { .. }
                     )
                 })
@@ -12115,7 +12408,11 @@ impl Analyzer<'_, '_> {
                     .bounds
                     .get(pair.0, pair.1)
                     .is_some_and(|(bound, proof)| {
-                        bound <= weakest && !self.derivations.depends_on_postcondition_call(proof)
+                        bound <= weakest
+                            && !self
+                                .vocabulary
+                                .derivations
+                                .depends_on_postcondition_call(proof)
                     })
             {
                 continue;
@@ -12144,34 +12441,36 @@ impl Analyzer<'_, '_> {
                 right: pair.1,
                 bound: weakest,
             };
-            let proof = self
-                .derivations
-                .intern(DerivationNode::PostconditionDeliveryJoin {
-                    detail: Box::new(super::state::PostconditionDeliveryJoinDetail {
-                        statement: context.statement.clone(),
-                        receiver: context.receiver_binding,
-                        relation: relation.clone(),
-                        event: context.event,
-                        parents,
-                    }),
-                });
+            let proof =
+                self.vocabulary
+                    .derivations
+                    .intern(DerivationNode::PostconditionDeliveryJoin {
+                        detail: Box::new(super::state::PostconditionDeliveryJoinDetail {
+                            statement: context.statement.clone(),
+                            receiver: context.receiver_binding,
+                            relation: relation.clone(),
+                            event: context.event,
+                            parents,
+                        }),
+                    });
             let DerivationNode::PostconditionDeliveryJoin { detail } =
-                &self.derivations.nodes[proof.0 as usize]
+                &self.vocabulary.derivations.nodes[proof.0 as usize]
             else {
                 unreachable!("just interned one delivery join")
             };
             let parents = detail.parents.clone();
             self.retain_delivery_give_parents(&parents);
-            let occurrence = self.delivery_join_roots;
-            self.delivery_join_roots = self
+            let occurrence = self.vocabulary.delivery_join_roots;
+            self.vocabulary.delivery_join_roots = self
+                .vocabulary
                 .delivery_join_roots
                 .checked_add(1)
                 .expect("value-if delivery join roots exceed the u32 identity space");
-            self.derivations.add_root(
+            self.vocabulary.derivations.add_root(
                 DerivationRootKind::PostconditionDeliveryJoin { occurrence },
                 proof,
             );
-            target.establish_from_proof(&relation, proof, &self.derivations);
+            target.establish_from_proof(&relation, proof, &self.vocabulary.derivations);
         }
 
         let mut distinct = first.distinct.iter().copied().collect::<Vec<_>>();
@@ -12185,10 +12484,12 @@ impl Analyzer<'_, '_> {
                 continue;
             }
             if ordinary_only
-                && target
-                    .distinct_proofs
-                    .get(&pair)
-                    .is_some_and(|proof| !self.derivations.depends_on_postcondition_call(*proof))
+                && target.distinct_proofs.get(&pair).is_some_and(|proof| {
+                    !self
+                        .vocabulary
+                        .derivations
+                        .depends_on_postcondition_call(*proof)
+                })
             {
                 continue;
             }
@@ -12212,34 +12513,36 @@ impl Analyzer<'_, '_> {
                 right: pair.1,
                 difference: 0,
             };
-            let proof = self
-                .derivations
-                .intern(DerivationNode::PostconditionDeliveryJoin {
-                    detail: Box::new(super::state::PostconditionDeliveryJoinDetail {
-                        statement: context.statement.clone(),
-                        receiver: context.receiver_binding,
-                        relation: relation.clone(),
-                        event: context.event,
-                        parents,
-                    }),
-                });
+            let proof =
+                self.vocabulary
+                    .derivations
+                    .intern(DerivationNode::PostconditionDeliveryJoin {
+                        detail: Box::new(super::state::PostconditionDeliveryJoinDetail {
+                            statement: context.statement.clone(),
+                            receiver: context.receiver_binding,
+                            relation: relation.clone(),
+                            event: context.event,
+                            parents,
+                        }),
+                    });
             let DerivationNode::PostconditionDeliveryJoin { detail } =
-                &self.derivations.nodes[proof.0 as usize]
+                &self.vocabulary.derivations.nodes[proof.0 as usize]
             else {
                 unreachable!("just interned one delivery join")
             };
             let parents = detail.parents.clone();
             self.retain_delivery_give_parents(&parents);
-            let occurrence = self.delivery_join_roots;
-            self.delivery_join_roots = self
+            let occurrence = self.vocabulary.delivery_join_roots;
+            self.vocabulary.delivery_join_roots = self
+                .vocabulary
                 .delivery_join_roots
                 .checked_add(1)
                 .expect("value-if delivery join roots exceed the u32 identity space");
-            self.derivations.add_root(
+            self.vocabulary.derivations.add_root(
                 DerivationRootKind::PostconditionDeliveryJoin { occurrence },
                 proof,
             );
-            target.establish_from_proof(&relation, proof, &self.derivations);
+            target.establish_from_proof(&relation, proof, &self.vocabulary.derivations);
         }
     }
 
@@ -12255,7 +12558,7 @@ impl Analyzer<'_, '_> {
         let Some(fragment) = fragment_type(frame.result_type) else {
             return;
         };
-        let receiver = self.terms.intern(TermKind::Place(
+        let receiver = self.vocabulary.terms.intern(TermKind::Place(
             ResolvedPlace::spelled(PlaceRoot::Binding(frame.binding), false, Vec::new()),
             fragment,
         ));
@@ -12278,7 +12581,7 @@ impl Analyzer<'_, '_> {
     }
 
     fn walk_block(&mut self, statements: &[CheckedStatement], state: &mut ProofFlowState) -> bool {
-        self.scopes.push(Vec::new());
+        self.frames.scopes.push(Vec::new());
         let mut continues = true;
         for statement in statements {
             if !continues {
@@ -12287,15 +12590,15 @@ impl Analyzer<'_, '_> {
             continues = self.walk_statement(statement, state);
         }
         if continues {
-            let depth = self.scopes.len() - 1;
+            let depth = self.frames.scopes.len() - 1;
             self.exit_scopes_to(state, depth);
         }
-        self.scopes.pop();
+        self.frames.scopes.pop();
         continues
     }
 
     fn declare(&mut self, binding: BindingId) {
-        if let Some(scope) = self.scopes.last_mut() {
+        if let Some(scope) = self.frames.scopes.last_mut() {
             scope.push(binding);
         }
     }
@@ -12360,7 +12663,7 @@ impl Analyzer<'_, '_> {
         else {
             return;
         };
-        if !self.product_operands.contains_key(carrier) {
+        if !self.frames.product_operands.contains_key(carrier) {
             return;
         }
         let [left, right] = arguments.as_slice() else {
@@ -12391,7 +12694,8 @@ impl Analyzer<'_, '_> {
         ) else {
             return;
         };
-        self.product_atoms
+        self.vocabulary
+            .product_atoms
             .insert(product, (left.min(right), left.max(right)));
     }
 
@@ -12426,12 +12730,14 @@ impl Analyzer<'_, '_> {
         established: sources::EstablishedUnsignedDivision,
         state: &mut AffineFlowState,
     ) {
-        self.unsigned_divisions.push(CapturedUnsignedDivision {
-            quotient: quotient.clone(),
-            dividend: dividend.clone(),
-            divisor: divisor.clone(),
-            parent: established.parent,
-        });
+        self.vocabulary
+            .unsigned_divisions
+            .push(CapturedUnsignedDivision {
+                quotient: quotient.clone(),
+                dividend: dividend.clone(),
+                divisor: divisor.clone(),
+                parent: established.parent,
+            });
         let Some(scale) = established.literal_divisor else {
             return;
         };
@@ -12464,7 +12770,7 @@ impl Analyzer<'_, '_> {
         else {
             return;
         };
-        let Some(&(domain, ordinal)) = self.product_operands.get(carrier) else {
+        let Some(&(domain, ordinal)) = self.frames.product_operands.get(carrier) else {
             return;
         };
         let [left, right] = arguments.as_slice() else {
@@ -12476,7 +12782,7 @@ impl Analyzer<'_, '_> {
         ) else {
             return;
         };
-        let Some(division) = self.unsigned_divisions.iter().find(|division| {
+        let Some(division) = self.vocabulary.unsigned_divisions.iter().find(|division| {
             (division.quotient == left && division.divisor == right)
                 || (division.quotient == right && division.divisor == left)
         }) else {
@@ -12486,13 +12792,15 @@ impl Analyzer<'_, '_> {
             return;
         };
         let parent = self
+            .vocabulary
             .derivations
             .intern(DerivationNode::UnsignedDivisionProduct {
                 product: carrier.clone(),
                 division: division.parent,
                 domain,
             });
-        self.derivations
+        self.vocabulary
+            .derivations
             .add_root(DerivationRootKind::UnsignedDivisionProduct(ordinal), parent);
         state.facts.push(ActiveAffineFact {
             inequality,
@@ -12794,7 +13102,8 @@ impl Analyzer<'_, '_> {
                     &mut AffineCheckState::new(),
                 )
                 .and_then(Result::ok);
-            self.invariant_targets
+            self.vocabulary
+                .invariant_targets
                 .insert(invariant.declaration, target.clone());
             if base_batch && let Ok(inequality) = target {
                 state
@@ -12828,7 +13137,7 @@ impl Analyzer<'_, '_> {
         counted_binder: Option<BindingId>,
     ) {
         for (index, invariant) in invariants.iter().enumerate() {
-            self.loop_invariants.push(LoopInvariantOutcome {
+            self.output.loop_invariants.push(LoopInvariantOutcome {
                 node_path: invariant.relation.node_path.clone(),
                 loop_id,
                 source_ordinal: u32::try_from(index).expect("loop invariant ordinal exceeds u32"),
@@ -13013,7 +13322,7 @@ impl Analyzer<'_, '_> {
             return None;
         };
         if right == ZERO {
-            Some(self.terms.intern(TermKind::Constant(bound)))
+            Some(self.vocabulary.terms.intern(TermKind::Constant(bound)))
         } else {
             Some(right)
         }
@@ -13127,7 +13436,7 @@ impl Analyzer<'_, '_> {
                 let binding = *binding;
                 let fragment =
                     fragment_type(CheckedType::Integer(self.affine_binding_type(binding)?))?;
-                Some(self.terms.intern(TermKind::Place(
+                Some(self.vocabulary.terms.intern(TermKind::Place(
                     ResolvedPlace::spelled(PlaceRoot::Binding(binding), false, Vec::new()),
                     fragment,
                 )))
@@ -13193,15 +13502,14 @@ impl Analyzer<'_, '_> {
                 // Each relation source reads these same immutable facts. A
                 // newly registered term or goal changes the closure universe,
                 // so only the unchanged view is reused; no proof is memoized.
-                if closed
-                    .as_ref()
-                    .is_none_or(|view| !view.matches(&self.terms, &self.goals))
-                {
+                if closed.as_ref().is_none_or(|view| {
+                    !view.matches(&self.vocabulary.terms, &self.vocabulary.goals)
+                }) {
                     closed = Some(ProofClosure::new(
                         facts,
-                        &self.terms,
-                        &self.goals,
-                        &mut self.derivations,
+                        &self.vocabulary.terms,
+                        &self.vocabulary.goals,
+                        &mut self.vocabulary.derivations,
                     ));
                 }
                 self.prove(
@@ -13420,7 +13728,7 @@ impl Analyzer<'_, '_> {
             .map(|coefficient| coefficient.term())
             .collect::<HashSet<_>>();
         let mut products = std::collections::BTreeMap::new();
-        for (product, operands) in &self.product_atoms {
+        for (product, operands) in &self.vocabulary.product_atoms {
             products
                 .entry(*operands)
                 .and_modify(|chosen: &mut AffineTermId| {
@@ -13442,7 +13750,7 @@ impl Analyzer<'_, '_> {
             .fold_products(&products)
             .map_err(Self::certificate_fold_failure)?;
         let mut images = std::collections::BTreeMap::new();
-        for (handle, image) in &self.handle_images {
+        for (handle, image) in &self.vocabulary.handle_images {
             let mut weights = image
                 .terms()
                 .iter()
@@ -13503,7 +13811,12 @@ impl Analyzer<'_, '_> {
             ) => return Ok(false),
         }
         let candidates = self.affine_l0_candidates(values);
-        let closed = close(facts, &self.terms, &self.goals, &mut self.derivations);
+        let closed = close(
+            facts,
+            &self.vocabulary.terms,
+            &self.vocabulary.goals,
+            &mut self.vocabulary.derivations,
+        );
         let l0 = self.affine_l0_index(&candidates, &closed, &mut check);
         let mut query = AffineDirectQuery::new(&l0, values, &closed);
         Ok(self
@@ -13534,6 +13847,7 @@ impl Analyzer<'_, '_> {
         let mut term_intervals = HashMap::new();
         for atom_id in requested {
             let atom = *self
+                .vocabulary
                 .affine_atoms
                 .get(atom_id.index() as usize)
                 .ok_or(AffineCheckError::CoefficientMismatch)?;
@@ -13552,7 +13866,7 @@ impl Analyzer<'_, '_> {
                     if self.affine_binding_type(binding) != Some(atom.ty) {
                         return None;
                     }
-                    Some(self.terms.intern(TermKind::Place(
+                    Some(self.vocabulary.terms.intern(TermKind::Place(
                         ResolvedPlace::spelled(PlaceRoot::Binding(binding), false, Vec::new()),
                         atom.ty,
                     )))
@@ -13564,7 +13878,12 @@ impl Analyzer<'_, '_> {
             term_intervals.insert(atom_id, (minimum, maximum, terms));
         }
 
-        let closed = close(facts, &self.terms, &self.goals, &mut self.derivations);
+        let closed = close(
+            facts,
+            &self.vocabulary.terms,
+            &self.vocabulary.goals,
+            &mut self.vocabulary.derivations,
+        );
         if closed.contradictory() {
             return Ok(None);
         }
@@ -13605,7 +13924,7 @@ impl Analyzer<'_, '_> {
     /// rest of the function walk.
     /// The binding one measure term's place is rooted in, where it has one.
     fn measure_term_root(&self, term: TermId) -> Option<BindingId> {
-        let root = match self.terms.kind(term) {
+        let root = match self.vocabulary.terms.kind(term) {
             TermKind::Measure(_, place) => place.root,
             _ => return None,
         };
@@ -13659,7 +13978,7 @@ impl Analyzer<'_, '_> {
         // this version's rows chain at most once. The bound keeps a future
         // row from looping.
         for _ in 0..4 {
-            match self.terms.measure_bound(anchor) {
+            match self.vocabulary.terms.measure_bound(anchor) {
                 Some(MeasureBound::Constant(value)) => return AffineForm::constant(value),
                 Some(MeasureBound::Equal(other)) => anchor = other,
                 None => break,
@@ -13672,7 +13991,7 @@ impl Analyzer<'_, '_> {
         // S6 can install its length image. Its measure term retains the exact
         // range step, whose original capture occurrence selects the image
         // published when the formation evaluated its endpoints.
-        let captured = match self.terms.kind(anchor) {
+        let captured = match self.vocabulary.terms.kind(anchor) {
             TermKind::Measure(CheckedMeasure::Length, place) => {
                 place.path.last().and_then(|step| match step {
                     PlaceStep::Range(range) => Some(*range),
@@ -13694,7 +14013,7 @@ impl Analyzer<'_, '_> {
         // type; measures and their immutable datums instead have type u64.
         // Sharing the image path cannot give a signed parameter the unsigned
         // nonnegativity bound or widen a narrower parameter's range.
-        let ty = match self.terms.kind(anchor) {
+        let ty = match self.vocabulary.terms.kind(anchor) {
             TermKind::ConstParameter(_, ty) => *ty,
             _ => IntegerType::U64,
         };
@@ -13732,8 +14051,8 @@ impl Analyzer<'_, '_> {
     /// numeric goal queries it, and rescanning the whole registry per query
     /// made that quadratic in the size of the function.
     fn measure_terms(&mut self) -> Vec<TermId> {
-        let registered = self.terms.ids().count();
-        for index in self.measure_terms_scanned..registered {
+        let registered = self.vocabulary.terms.ids().count();
+        for index in self.vocabulary.measure_terms_scanned..registered {
             let id = TermId(
                 u32::try_from(index).expect("ENT term inventory exceeds the u32 identity space"),
             );
@@ -13744,7 +14063,7 @@ impl Analyzer<'_, '_> {
             // what carries a header conclusion across the write that kills
             // the term the conclusion was published over.
             if matches!(
-                self.terms.kind(id),
+                self.vocabulary.terms.kind(id),
                 TermKind::Measure(..)
                     | TermKind::CallDatum {
                         measure: Some(_),
@@ -13753,11 +14072,11 @@ impl Analyzer<'_, '_> {
                     | TermKind::EntryDatum { .. }
                     | TermKind::MeasureDatum { .. }
             ) {
-                self.measure_terms_seen.push(id);
+                self.vocabulary.measure_terms_seen.push(id);
             }
         }
-        self.measure_terms_scanned = registered;
-        self.measure_terms_seen.clone()
+        self.vocabulary.measure_terms_scanned = registered;
+        self.vocabulary.measure_terms_seen.clone()
     }
 
     /// Every live measure term, grouped by the affine atom it images.
@@ -13809,7 +14128,7 @@ impl Analyzer<'_, '_> {
             let Some(ty) = self.affine_binding_type(binding) else {
                 continue;
             };
-            let term = self.terms.intern(TermKind::Place(
+            let term = self.vocabulary.terms.intern(TermKind::Place(
                 ResolvedPlace::spelled(PlaceRoot::Binding(binding), false, Vec::new()),
                 ty,
             ));
@@ -13938,7 +14257,12 @@ impl Analyzer<'_, '_> {
             return Ok(None);
         }
         let parent = closed
-            .bound_proof(entry.left, entry.right, entry.bound, &mut self.derivations)
+            .bound_proof(
+                entry.left,
+                entry.right,
+                entry.bound,
+                &mut self.vocabulary.derivations,
+            )
             .ok_or(AffineCheckError::CoefficientMismatch)?;
         Ok(Some(vec![parent]))
     }
@@ -13969,6 +14293,7 @@ impl Analyzer<'_, '_> {
                 continue;
             }
             let atom = *self
+                .vocabulary
                 .affine_atoms
                 .get(atom_id.index() as usize)
                 .ok_or(AffineCheckError::CoefficientMismatch)?;
@@ -13993,7 +14318,7 @@ impl Analyzer<'_, '_> {
                     if self.affine_binding_type(binding) != Some(atom.ty) {
                         return None;
                     }
-                    Some(self.terms.intern(TermKind::Place(
+                    Some(self.vocabulary.terms.intern(TermKind::Place(
                         ResolvedPlace::spelled(PlaceRoot::Binding(binding), false, Vec::new()),
                         atom.ty,
                     )))
@@ -14050,7 +14375,7 @@ impl Analyzer<'_, '_> {
             if let Some((left, right, bound)) = selected {
                 let parent = query
                     .closed
-                    .bound_proof(left, right, bound, &mut self.derivations)
+                    .bound_proof(left, right, bound, &mut self.vocabulary.derivations)
                     .ok_or(AffineCheckError::CoefficientMismatch)?;
                 parents.push(parent);
             }
@@ -14125,7 +14450,7 @@ impl Analyzer<'_, '_> {
                 entry.left,
                 entry.right,
                 entry.bound,
-                &mut self.derivations,
+                &mut self.vocabulary.derivations,
             ) else {
                 continue;
             };
@@ -14146,7 +14471,11 @@ impl Analyzer<'_, '_> {
         let values = context.affine;
         let mut check = AffineCheckState::new();
         let candidates = self.affine_l0_candidates(values);
-        let closed = context.close(&self.terms, &self.goals, &mut self.derivations);
+        let closed = context.close(
+            &self.vocabulary.terms,
+            &self.vocabulary.goals,
+            &mut self.vocabulary.derivations,
+        );
         // Every relation-form use in a certificate sees the same entering
         // facts and value images. Its target and residual still run through
         // all ordinary rules; only the unchanged ordered query index is
@@ -14154,12 +14483,12 @@ impl Analyzer<'_, '_> {
         // may register a previously unseen term.
         let l0 = context
             .closed
-            .and_then(|view| view.affine_index(&self.terms, &self.goals))
+            .and_then(|view| view.affine_index(&self.vocabulary.terms, &self.vocabulary.goals))
             .unwrap_or_else(|| {
                 let index = Rc::new(self.affine_l0_index(&candidates, &closed, &mut check));
                 if let Some(view) = context
                     .closed
-                    .filter(|view| view.matches(&self.terms, &self.goals))
+                    .filter(|view| view.matches(&self.vocabulary.terms, &self.vocabulary.goals))
                 {
                     *view.affine_index.borrow_mut() = Some(Rc::clone(&index));
                 }
@@ -14376,16 +14705,20 @@ impl Analyzer<'_, '_> {
             else {
                 continue;
             };
-            let occurrence = self.s12_roots;
-            self.s12_roots = self
+            let occurrence = self.vocabulary.s12_roots;
+            self.vocabulary.s12_roots = self
+                .vocabulary
                 .s12_roots
                 .checked_add(1)
                 .expect("S12 roots exceed the u32 identity space");
-            self.derivations
+            self.vocabulary
+                .derivations
                 .add_root(DerivationRootKind::PostconditionState { occurrence }, proof);
-            state
-                .facts
-                .establish_from_proof(&instantiated.relation, proof, &self.derivations);
+            state.facts.establish_from_proof(
+                &instantiated.relation,
+                proof,
+                &self.vocabulary.derivations,
+            );
         }
     }
 
@@ -14789,6 +15122,7 @@ impl Analyzer<'_, '_> {
                                 .map(|image| Relation::Equal {
                                     left: term,
                                     right: self
+                                        .vocabulary
                                         .terms
                                         .intern(TermKind::Constant(image.constant_value())),
                                     difference: 0,
@@ -14796,9 +15130,11 @@ impl Analyzer<'_, '_> {
                                 .or_else(|| self.range_length_relation(term, start, end))
                         }) {
                             let formation = self.proof_event(FlowEventKind::S6, Some(node_path));
-                            state
-                                .facts
-                                .establish(&relation, &mut self.derivations, formation);
+                            state.facts.establish(
+                                &relation,
+                                &mut self.vocabulary.derivations,
+                                formation,
+                            );
                         }
                     }
                 }
@@ -14904,7 +15240,7 @@ impl Analyzer<'_, '_> {
                         self.judge_affine_relation_subscripts(relation, state);
                     }
                 }
-                let source_ordinal = u32::try_from(self.source_proofs.len())
+                let source_ordinal = u32::try_from(self.output.source_proofs.len())
                     .expect("local invariant count exceeds the u32 identity space");
                 let target_result = self.checked_affine_relation_inequality(
                     &proof.target,
@@ -14933,13 +15269,15 @@ impl Analyzer<'_, '_> {
                     .and_then(|partner| partner.as_ref().ok().cloned());
                 let partner_written = partner_result.is_some();
                 let target_failure = target_failure.or(partner_failure);
-                self.invariant_targets
+                self.vocabulary
+                    .invariant_targets
                     .insert(proof.declaration, target_result);
                 let formed_premises = proof
                     .uses
                     .iter()
                     .map(|written_use| match &written_use.source {
                         CheckedProofUseSource::Named(declaration) => self
+                            .vocabulary
                             .invariant_targets
                             .get(declaration)
                             .cloned()
@@ -14975,6 +15313,7 @@ impl Analyzer<'_, '_> {
                     .iter()
                     .map(|written_use| match &written_use.source {
                         CheckedProofUseSource::Named(declaration) => self
+                            .vocabulary
                             .invariant_targets
                             .get(declaration)
                             .and_then(|formed| formed.as_ref().ok())
@@ -15139,7 +15478,7 @@ impl Analyzer<'_, '_> {
                         .published_invariants
                         .insert(proof.declaration, target);
                 }
-                self.source_proofs.push(SourceProofOutcome {
+                self.output.source_proofs.push(SourceProofOutcome {
                     node_path: proof.node_path.clone(),
                     use_node_paths: proof
                         .uses
@@ -15158,7 +15497,7 @@ impl Analyzer<'_, '_> {
                 value,
                 drops: _,
             } => {
-                let multiple = self.function.postconditions.iter().any(|clause| {
+                let multiple = self.input.function.postconditions.iter().any(|clause| {
                     clause.selected_returns.iter().any(|selected| {
                         selected.statement == *node_path && selected.values.len() > 1
                     })
@@ -15226,7 +15565,7 @@ impl Analyzer<'_, '_> {
                 let judgment = self.expression_effects(value, state);
                 self.finish_result(value, &judgment, &mut result, state);
                 if let Some((scope_depth, loop_depth, binding, result_type)) =
-                    self.gives.last().map(|frame| {
+                    self.frames.gives.last().map(|frame| {
                         (
                             frame.scope_depth,
                             frame.loop_depth,
@@ -15260,7 +15599,7 @@ impl Analyzer<'_, '_> {
                     }
                     self.exit_scopes_to(&mut exit, scope_depth);
                     self.exit_counted_loops_from(&mut exit, loop_depth);
-                    if let Some(frame) = self.gives.last_mut() {
+                    if let Some(frame) = self.frames.gives.last_mut() {
                         frame.gives.push(exit);
                         frame.give_goal_origins.push(give_goal_origin);
                         if let Some(delivery) = delivery {
@@ -15272,12 +15611,17 @@ impl Analyzer<'_, '_> {
                 false
             }
             CheckedStatement::Break { target, drops: _ } => {
-                if let Some(position) = self.loops.iter().rposition(|frame| frame.id == *target) {
-                    let depth = self.loops[position].scope_depth;
+                if let Some(position) = self
+                    .frames
+                    .loops
+                    .iter()
+                    .rposition(|frame| frame.id == *target)
+                {
+                    let depth = self.frames.loops[position].scope_depth;
                     let mut exit = state.clone();
                     self.exit_scopes_to(&mut exit, depth);
                     self.exit_counted_loops_from(&mut exit, position);
-                    self.loops[position].breaks.push(exit);
+                    self.frames.loops[position].breaks.push(exit);
                 }
                 false
             }
@@ -15337,9 +15681,9 @@ impl Analyzer<'_, '_> {
                 } else {
                     ArmFacts::default()
                 };
-                self.gives.push(GiveFrame {
-                    scope_depth: self.scopes.len(),
-                    loop_depth: self.loops.len(),
+                self.frames.gives.push(GiveFrame {
+                    scope_depth: self.frames.scopes.len(),
+                    loop_depth: self.frames.loops.len(),
                     node_path: node_path.clone(),
                     binding: *binding,
                     result_type: *result_type,
@@ -15355,6 +15699,7 @@ impl Analyzer<'_, '_> {
                     let _ = self.walk_arm(arm, state, &facts, payload, result.as_ref());
                 }
                 let frame = self
+                    .frames
                     .gives
                     .pop()
                     .expect("checked value initializer has one active give frame");
@@ -15402,10 +15747,10 @@ impl Analyzer<'_, '_> {
                     .map(|invariant| invariant.declaration)
                     .collect::<Vec<_>>();
                 let head_entry_images = state.entry_images.clone();
-                self.loops.push(LoopFrame {
+                self.frames.loops.push(LoopFrame {
                     id: *id,
                     invariant_declarations: invariant_declarations.clone().into_boxed_slice(),
-                    scope_depth: self.scopes.len(),
+                    scope_depth: self.frames.scopes.len(),
                     counted_binder: None,
                     invariant_atoms: HashSet::new(),
                     capture_path: None,
@@ -15428,7 +15773,7 @@ impl Analyzer<'_, '_> {
                 }
                 self.record_loop_invariant_outcomes(*id, invariants, &base, &step, None);
 
-                let frame = self.loops.pop();
+                let frame = self.frames.loops.pop();
                 let mut breaks = frame.map(|frame| frame.breaks).unwrap_or_default();
                 for break_state in &mut breaks {
                     Self::remove_active_loop_invariants(
@@ -15459,8 +15804,9 @@ impl Analyzer<'_, '_> {
                 body,
                 backedge_drops: _,
             } => {
-                let occurrence = self.encountered_counted;
-                self.encountered_counted = self
+                let occurrence = self.vocabulary.encountered_counted;
+                self.vocabulary.encountered_counted = self
+                    .vocabulary
                     .encountered_counted
                     .checked_add(1)
                     .expect("counted statements exceed the u32 identity space");
@@ -15475,8 +15821,8 @@ impl Analyzer<'_, '_> {
                 // atom identities for every later program-point value.
                 let upper_affine = self.affine_expression_form(upper, &mut state.affine);
                 let _ = self.expression_effects(upper, state);
-                let outer_scope_depth = self.scopes.len();
-                self.scopes.push(vec![*binder]);
+                let outer_scope_depth = self.frames.scopes.len();
+                self.frames.scopes.push(vec![*binder]);
                 let range_path = node_path.components().to_vec();
                 let preheader_event = self.proof_event(FlowEventKind::S11, Some(node_path));
                 let counted_terms = self.establish_counted_preheader(
@@ -15491,12 +15837,15 @@ impl Analyzer<'_, '_> {
                 // continuing kills are subtracted. This preserves sound
                 // snapshot consequences without rereading a mutable endpoint
                 // on later iterations.
-                let snapshot = self.derivations.event(FlowEventKind::Snapshot, None);
+                let snapshot = self
+                    .vocabulary
+                    .derivations
+                    .event(FlowEventKind::Snapshot, None);
                 state.facts = materialize_closure_at(
                     &state.facts,
-                    &self.terms,
-                    &self.goals,
-                    &mut self.derivations,
+                    &self.vocabulary.terms,
+                    &self.vocabulary.goals,
+                    &mut self.vocabulary.derivations,
                     snapshot,
                 );
                 let counted = self.capture_counted_preheader(counted_terms, &state.facts);
@@ -15576,7 +15925,7 @@ impl Analyzer<'_, '_> {
                     .iter()
                     .map(|invariant| invariant.declaration)
                     .collect::<Vec<_>>();
-                self.loops.push(LoopFrame {
+                self.frames.loops.push(LoopFrame {
                     id: *id,
                     invariant_declarations: invariant_declarations.clone().into_boxed_slice(),
                     scope_depth: outer_scope_depth,
@@ -15624,7 +15973,10 @@ impl Analyzer<'_, '_> {
                         )
                         .ok()
                     });
-                    let counter_limit = self.terms.intern(TermKind::Constant(u64::MAX as i128));
+                    let counter_limit = self
+                        .vocabulary
+                        .terms
+                        .intern(TermKind::Constant(u64::MAX as i128));
                     hidden_update = hidden_target.as_ref().is_some_and(|target| {
                         self.prove(
                             ProofContext::new(&body_state.facts, &body_state.affine),
@@ -15688,7 +16040,7 @@ impl Analyzer<'_, '_> {
                 self.record_loop_invariant_outcomes(*id, invariants, &base, &step, Some(*binder));
                 let step_batch = step.iter().all(|proved| proved.unwrap_or(true));
                 let export = lower_le_upper && base_batch && step_batch && hidden_update;
-                let frame = self.loops.pop();
+                let frame = self.frames.loops.pop();
                 let mut breaks = frame.map(|frame| frame.breaks).unwrap_or_default();
                 for break_state in &mut breaks {
                     Self::remove_active_loop_invariants(
@@ -15755,7 +16107,7 @@ impl Analyzer<'_, '_> {
                 let mut exits = Vec::with_capacity(1 + breaks.len());
                 exits.push(exhaustion);
                 exits.extend(breaks);
-                self.scopes.pop();
+                self.frames.scopes.pop();
                 *state = self.join_flows(&exits);
                 record_continuing(&mut state.continuing, &outer_continuing);
                 true
@@ -15820,7 +16172,8 @@ impl Analyzer<'_, '_> {
                 &mut state,
             );
         }
-        self.scopes
+        self.frames
+            .scopes
             .push(arm.binders.iter().map(|b| b.binding).collect());
         for binder in &arm.binders {
             if let CheckedType::Integer(ty) = binder.ty
@@ -15838,10 +16191,10 @@ impl Analyzer<'_, '_> {
             continues = self.walk_statement(statement, &mut state);
         }
         if continues {
-            let depth = self.scopes.len() - 1;
+            let depth = self.frames.scopes.len() - 1;
             self.exit_scopes_to(&mut state, depth);
         }
-        self.scopes.pop();
+        self.frames.scopes.pop();
         continues.then_some(state)
     }
 
@@ -15859,13 +16212,13 @@ impl Analyzer<'_, '_> {
             if arm.tag == 1 {
                 state.establish(
                     relation,
-                    &mut self.derivations,
+                    &mut self.vocabulary.derivations,
                     event.expect("comparison arm has an S1 proof event"),
                 );
             } else if arm.tag == 0 {
                 state.establish(
                     &relation.negated(),
-                    &mut self.derivations,
+                    &mut self.vocabulary.derivations,
                     event.expect("comparison arm has an S1 proof event"),
                 );
             }
@@ -15875,7 +16228,7 @@ impl Analyzer<'_, '_> {
                 state.establish_goal(
                     *goal,
                     GoalSign::Positive,
-                    &mut self.derivations,
+                    &mut self.vocabulary.derivations,
                     event.expect("goal arm has an S1 proof event"),
                 );
                 // [ENT-3] Signed Boolean decomposition of the established goal.
@@ -15890,7 +16243,7 @@ impl Analyzer<'_, '_> {
                 state.establish_goal(
                     *goal,
                     GoalSign::Negative,
-                    &mut self.derivations,
+                    &mut self.vocabulary.derivations,
                     event.expect("goal arm has an S1 proof event"),
                 );
                 // [ENT-3] Signed Boolean decomposition of the established goal.
@@ -16238,7 +16591,8 @@ impl Analyzer<'_, '_> {
     // ------------------------------------------------------------------
 
     fn binding_name(&self, binding: BindingId) -> String {
-        self.context
+        self.input
+            .context
             .binding_names
             .get(binding.0 as usize)
             .cloned()
@@ -16247,7 +16601,8 @@ impl Analyzer<'_, '_> {
 
     /// The source spelling of one declaration, such as a generic parameter.
     fn declaration_name(&self, declaration: crate::DeclarationId) -> String {
-        self.context
+        self.input
+            .context
             .declarations
             .get(declaration.index())
             .map_or_else(|| "?".to_owned(), |record| record.spelling().to_owned())
@@ -16265,7 +16620,7 @@ impl Analyzer<'_, '_> {
 
     fn render_place(&self, place: &ResolvedPlace) -> String {
         let reference_root = matches!(place.root, PlaceRoot::Binding(binding)
-            if self.places.is_reference(binding));
+            if self.input.places.is_reference(binding));
         let (mut rendered, mut ty) = match place.root {
             PlaceRoot::Binding(binding) => (
                 {
@@ -16284,12 +16639,14 @@ impl Analyzer<'_, '_> {
                 self.summary(binding).and_then(|summary| summary.ty),
             ),
             PlaceRoot::Constant(id) => (
-                self.context
+                self.input
+                    .context
                     .constants
                     .get(id.0 as usize)
                     .map(|constant| constant.name.clone())
                     .unwrap_or_else(|| "?".to_owned()),
-                self.context
+                self.input
+                    .context
                     .constants
                     .get(id.0 as usize)
                     .map(|constant| constant.ty),
@@ -16340,7 +16697,7 @@ impl Analyzer<'_, '_> {
                 }
                 PlaceStep::Index(offset) => {
                     rendered.push_str(&format!("[{}]", self.render_offset(*offset)));
-                    ty = ty.and_then(|ty| element_type(ty, self.context.elements));
+                    ty = ty.and_then(|ty| element_type(ty, self.input.context.elements));
                 }
                 PlaceStep::Deref => {
                     self.render_content_step(&mut rendered, &mut ty);
@@ -16355,7 +16712,7 @@ impl Analyzer<'_, '_> {
     fn render_content_step(&self, rendered: &mut String, ty: &mut Option<CheckedType>) {
         let boxed = ty.is_some_and(|ty| {
             matches!(ty, CheckedType::Nominal(id)
-                if self.context.nominals.get(id.0 as usize)
+                if self.input.context.nominals.get(id.0 as usize)
                     .is_some_and(|nominal| matches!(nominal.kind, CheckedNominalKind::Box { .. })))
         });
         if boxed {
@@ -16371,7 +16728,7 @@ impl Analyzer<'_, '_> {
             // Borrow bindings retain the referent type in checked form.
             return Some(ty);
         };
-        let nominal = self.context.nominals.get(id.0 as usize)?;
+        let nominal = self.input.context.nominals.get(id.0 as usize)?;
         match nominal.kind {
             CheckedNominalKind::Box { referent, .. } => Some(referent),
             _ => Some(ty),
@@ -16383,7 +16740,7 @@ impl Analyzer<'_, '_> {
         let CheckedType::Nominal(id) = ty else {
             return Some(None);
         };
-        let nominal = self.context.nominals.get(id.0 as usize)?;
+        let nominal = self.input.context.nominals.get(id.0 as usize)?;
         let CheckedNominalKind::Struct { fields } = &nominal.kind else {
             return Some(None);
         };
@@ -16437,7 +16794,7 @@ impl Analyzer<'_, '_> {
     }
 
     fn render_term(&self, term: TermId) -> String {
-        match self.terms.kind(term) {
+        match self.vocabulary.terms.kind(term) {
             TermKind::Zero => "0".to_owned(),
             TermKind::Constant(value) => value.to_string(),
             TermKind::ConstParameter(..) => "<const parameter>".to_owned(),
@@ -16463,16 +16820,21 @@ impl Analyzer<'_, '_> {
                 projections,
                 measure,
             } => {
-                let mut place = self.function.parameters.get(*formal as usize).map_or_else(
-                    || "?".to_owned(),
-                    |parameter| {
-                        if matches!(parameter.mode, CheckedMode::Reference) {
-                            format!("entry({})", parameter.name)
-                        } else {
-                            parameter.name.clone()
-                        }
-                    },
-                );
+                let mut place = self
+                    .input
+                    .function
+                    .parameters
+                    .get(*formal as usize)
+                    .map_or_else(
+                        || "?".to_owned(),
+                        |parameter| {
+                            if matches!(parameter.mode, CheckedMode::Reference) {
+                                format!("entry({})", parameter.name)
+                            } else {
+                                parameter.name.clone()
+                            }
+                        },
+                    );
                 for projection in projections {
                     match projection {
                         PlaceStep::Descendant(_) => place.push_str(".**"),
@@ -16538,7 +16900,7 @@ impl Analyzer<'_, '_> {
                     .iter()
                     .map(|argument| self.render_concrete_goal(argument))
                     .collect::<Vec<_>>();
-                render_goal_row(row, &arguments, self.context.declarations)
+                render_goal_row(row, &arguments, self.input.context.declarations)
             }
         }
     }
@@ -16557,7 +16919,7 @@ impl Analyzer<'_, '_> {
                 projections,
                 ..
             } => {
-                let (name, ty) = self.context.constant(*declaration).map_or_else(
+                let (name, ty) = self.input.context.constant(*declaration).map_or_else(
                     || ("?".to_owned(), None),
                     |constant| (constant.name.clone(), Some(constant.ty)),
                 );
@@ -16576,7 +16938,7 @@ impl Analyzer<'_, '_> {
                 // name *is* the path inside the body — so rendering puts that
                 // source wrapper back while retaining every concrete step
                 // below the referent.
-                let reference = self.places.is_reference(*root);
+                let reference = self.input.places.is_reference(*root);
                 let base = if reference {
                     format!("deref({base})")
                 } else {
@@ -16666,7 +17028,7 @@ impl Analyzer<'_, '_> {
                             return None;
                         };
                         let CheckedNominalKind::Enum { variants } =
-                            &self.context.nominals.get(nominal.0 as usize)?.kind
+                            &self.input.context.nominals.get(nominal.0 as usize)?.kind
                         else {
                             return None;
                         };
@@ -16684,7 +17046,7 @@ impl Analyzer<'_, '_> {
                 }
                 GoalProjection::Subscript(offset) => {
                     rendered.push_str(&format!("[{}]", self.render_offset(*offset)));
-                    ty = ty.and_then(|ty| element_type(ty, self.context.elements));
+                    ty = ty.and_then(|ty| element_type(ty, self.input.context.elements));
                 }
                 // [REF-4] the range the actual formed, spelled exactly as it
                 // was written: the range names no binding, so its two
@@ -16695,11 +17057,11 @@ impl Analyzer<'_, '_> {
                         self.render_offset(range.start),
                         self.render_offset(range.end)
                     ));
-                    ty = ty.and_then(|ty| element_type(ty, self.context.elements));
+                    ty = ty.and_then(|ty| element_type(ty, self.input.context.elements));
                 }
                 GoalProjection::FormalSubscript { ordinal } => {
                     rendered.push_str(&format!("[parameter #{ordinal}]"));
-                    ty = ty.and_then(|ty| element_type(ty, self.context.elements));
+                    ty = ty.and_then(|ty| element_type(ty, self.input.context.elements));
                 }
             }
         }
@@ -16717,6 +17079,7 @@ impl Analyzer<'_, '_> {
         let mut ty = match root.root {
             PlaceRoot::Binding(binding) => self.summary(binding).and_then(|summary| summary.ty),
             PlaceRoot::Constant(id) => self
+                .input
                 .context
                 .constants
                 .get(id.0 as usize)
@@ -16816,6 +17179,7 @@ impl Analyzer<'_, '_> {
                 ..
             } => {
                 let field_name = self
+                    .input
                     .context
                     .nominals
                     .get(nominal.0 as usize)
@@ -17205,7 +17569,7 @@ mod indexed_goal_kill_tests {
                 CapturedTerm::Binding(index),
             )),
         ];
-        let goal = analyzer.goals.intern(
+        let goal = analyzer.vocabulary.goals.intern(
             GoalExpression::Datum(GoalDatum::Place {
                 root: BindingId(0),
                 projections: projections.clone(),
@@ -17235,40 +17599,56 @@ mod indexed_goal_kill_tests {
                 ];
                 for event in events {
                     let mut facts = FactState::new();
-                    let established = analyzer.derivations.event(FlowEventKind::S1, None);
-                    facts.establish_goal(goal, sign, &mut analyzer.derivations, established);
+                    let established = analyzer
+                        .vocabulary
+                        .derivations
+                        .event(FlowEventKind::S1, None);
+                    facts.establish_goal(
+                        goal,
+                        sign,
+                        &mut analyzer.vocabulary.derivations,
+                        established,
+                    );
                     analyzer.apply_kills_one(&separations, &mut facts, &[event]);
                     let closed = close(
                         &facts,
-                        &analyzer.terms,
-                        &analyzer.goals,
-                        &mut analyzer.derivations,
+                        &analyzer.vocabulary.terms,
+                        &analyzer.vocabulary.goals,
+                        &mut analyzer.vocabulary.derivations,
                     );
                     assert_eq!(
-                        closed.derives_goal(goal, sign, &analyzer.goals),
+                        closed.derives_goal(goal, sign, &analyzer.vocabulary.goals),
                         binding == unrelated,
                         "event must remove exactly the goals that read its binding"
                     );
                 }
                 let mut facts = FactState::new();
-                let established = analyzer.derivations.event(FlowEventKind::S1, None);
-                facts.establish_goal(goal, sign, &mut analyzer.derivations, established);
+                let established = analyzer
+                    .vocabulary
+                    .derivations
+                    .event(FlowEventKind::S1, None);
+                facts.establish_goal(
+                    goal,
+                    sign,
+                    &mut analyzer.vocabulary.derivations,
+                    established,
+                );
                 let exited = HashSet::from([binding]);
                 materialize_closure_before_kill(
                     &mut facts,
-                    &analyzer.terms,
-                    &analyzer.goals,
-                    &mut analyzer.derivations,
+                    &analyzer.vocabulary.terms,
+                    &analyzer.vocabulary.goals,
+                    &mut analyzer.vocabulary.derivations,
                 );
                 facts.kill_goals(|candidate| analyzer.scope_kills_goal(candidate, &exited));
                 let closed = close(
                     &facts,
-                    &analyzer.terms,
-                    &analyzer.goals,
-                    &mut analyzer.derivations,
+                    &analyzer.vocabulary.terms,
+                    &analyzer.vocabulary.goals,
+                    &mut analyzer.vocabulary.derivations,
                 );
                 assert_eq!(
-                    closed.derives_goal(goal, sign, &analyzer.goals),
+                    closed.derives_goal(goal, sign, &analyzer.vocabulary.goals),
                     binding == unrelated,
                     "scope exit must remove exactly the goals that read its binding"
                 );
@@ -17399,7 +17779,7 @@ mod range_argument_kill_tests {
             entailment: FunctionEntailment::default(),
         };
         let mut analyzer = Analyzer::new(&context, &function);
-        analyzer.places = PlaceMap::for_function(&function);
+        analyzer.input.places = PlaceMap::for_function(&function);
 
         let inner = range(20, 1, 3);
         let direct = formation(storage_source(), inner, 1, 3);
@@ -17435,6 +17815,7 @@ mod range_argument_kill_tests {
             own.push(PlaceStep::Range(inner));
             let [selected, origin, own] = [selected, Vec::new(), own].map(|path| {
                 analyzer
+                    .vocabulary
                     .terms
                     .intern(TermKind::Measure(CheckedMeasure::Length, place(path)))
             });

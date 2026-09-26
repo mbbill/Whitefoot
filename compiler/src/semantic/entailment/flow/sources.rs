@@ -100,15 +100,15 @@ impl Analyzer<'_, '_> {
         let upper_source = self
             .copy_source(upper)
             .expect("checked counted upper endpoint must be an ENT-2 term or constant");
-        let lower_capture = self.terms.intern(TermKind::CountedCapture {
+        let lower_capture = self.vocabulary.terms.intern(TermKind::CountedCapture {
             range_path: range_path.to_vec(),
             side: CountedCaptureSide::Lower,
         });
-        let upper_capture = self.terms.intern(TermKind::CountedCapture {
+        let upper_capture = self.vocabulary.terms.intern(TermKind::CountedCapture {
             range_path: range_path.to_vec(),
             side: CountedCaptureSide::Upper,
         });
-        let binder = self.terms.intern(TermKind::Place(
+        let binder = self.vocabulary.terms.intern(TermKind::Place(
             ResolvedPlace::spelled(PlaceRoot::Binding(binder), false, Vec::new()),
             IntegerType::U64,
         ));
@@ -118,7 +118,7 @@ impl Analyzer<'_, '_> {
                 right: lower_source,
                 difference: 0,
             },
-            &mut self.derivations,
+            &mut self.vocabulary.derivations,
             event,
         );
         state.establish(
@@ -127,7 +127,7 @@ impl Analyzer<'_, '_> {
                 right: upper_source,
                 difference: 0,
             },
-            &mut self.derivations,
+            &mut self.vocabulary.derivations,
             event,
         );
         state.establish(
@@ -136,7 +136,7 @@ impl Analyzer<'_, '_> {
                 right: lower_capture,
                 difference: 0,
             },
-            &mut self.derivations,
+            &mut self.vocabulary.derivations,
             event,
         );
         CountedTerms {
@@ -213,7 +213,7 @@ impl Analyzer<'_, '_> {
             counted.terms.lower,
             counted.terms.binder,
             0,
-            &mut self.derivations,
+            &mut self.vocabulary.derivations,
             event,
         );
         let upper_relation = Relation::Bound {
@@ -225,7 +225,7 @@ impl Analyzer<'_, '_> {
             counted.terms.binder,
             counted.terms.upper,
             -1,
-            &mut self.derivations,
+            &mut self.vocabulary.derivations,
             event,
         );
         CountedDerivationSet {
@@ -271,11 +271,11 @@ impl Analyzer<'_, '_> {
         state.establish_goal(
             goal,
             super::super::state::GoalSign::Positive,
-            &mut self.derivations,
+            &mut self.vocabulary.derivations,
             event,
         );
-        if let Some(relation) = self.goals.projection(goal).cloned() {
-            state.establish(&relation, &mut self.derivations, event);
+        if let Some(relation) = self.vocabulary.goals.projection(goal).cloned() {
+            state.establish(&relation, &mut self.vocabulary.derivations, event);
         }
         // [ENT-3] Signed Boolean decomposition of the established body goal.
         self.establish_boolean_decomposition(
@@ -362,7 +362,7 @@ impl Analyzer<'_, '_> {
             ResolvedPlace::spelled(PlaceRoot::Binding(binding), false, fields.to_vec()),
             fragment,
         );
-        Some(self.terms.intern(kind))
+        Some(self.vocabulary.terms.intern(kind))
     }
 
     /// [ENT-3.S5] admits direct scalar places, including fields and Box
@@ -381,7 +381,11 @@ impl Analyzer<'_, '_> {
             {
                 let fragment = fragment_type(target.ty)?;
                 let place = self.container_root_path(target);
-                Some(self.terms.intern(TermKind::Place(place, fragment)))
+                Some(
+                    self.vocabulary
+                        .terms
+                        .intern(TermKind::Place(place, fragment)),
+                )
             }
             _ => None,
         }
@@ -420,7 +424,7 @@ impl Analyzer<'_, '_> {
         value: &CheckedExpression,
     ) -> Option<TermId> {
         let kind = Self::commit_value_kind(node_path, value)?;
-        Some(self.terms.intern(kind))
+        Some(self.vocabulary.terms.intern(kind))
     }
 
     /// The same term when a source above already formed it, and nothing when
@@ -431,7 +435,8 @@ impl Analyzer<'_, '_> {
         node_path: &crate::NodePath,
         value: &CheckedExpression,
     ) -> Option<TermId> {
-        self.terms
+        self.vocabulary
+            .terms
             .interned(&Self::commit_value_kind(node_path, value)?)
     }
 
@@ -480,7 +485,7 @@ impl Analyzer<'_, '_> {
                 right: source,
                 difference: 0,
             },
-            &mut self.derivations,
+            &mut self.vocabulary.derivations,
             event,
         );
     }
@@ -588,7 +593,7 @@ impl Analyzer<'_, '_> {
             let mut datums = Vec::with_capacity(4);
             for measure in MEASURES {
                 let live = self.place_measure_term(measure, place.clone(), measured, constant);
-                let datum = self.terms.intern(TermKind::MeasureDatum {
+                let datum = self.vocabulary.terms.intern(TermKind::MeasureDatum {
                     statement: node_path.components().to_vec(),
                     ordinal,
                     path: path.clone(),
@@ -602,7 +607,7 @@ impl Analyzer<'_, '_> {
                         right: live,
                         difference: 0,
                     },
-                    &mut self.derivations,
+                    &mut self.vocabulary.derivations,
                     event,
                 );
                 datums.push(datum);
@@ -637,8 +642,9 @@ impl Analyzer<'_, '_> {
             return found;
         }
         let source = source.clone().term_identity();
-        for term in self.terms.ids() {
-            let TermKind::Measure(CheckedMeasure::Length, place) = self.terms.kind(term) else {
+        for term in self.vocabulary.terms.ids() {
+            let TermKind::Measure(CheckedMeasure::Length, place) = self.vocabulary.terms.kind(term)
+            else {
                 continue;
             };
             if place.root != source.root {
@@ -677,6 +683,7 @@ impl Analyzer<'_, '_> {
             return false;
         };
         let Some(kind) = self
+            .input
             .context
             .nominals
             .get(nominal.0 as usize)
@@ -733,7 +740,10 @@ impl Analyzer<'_, '_> {
             let CheckedType::Nominal(nominal) = ty else {
                 return None;
             };
-            ty = match (&self.context.nominals.get(nominal.0 as usize)?.kind, step) {
+            ty = match (
+                &self.input.context.nominals.get(nominal.0 as usize)?.kind,
+                step,
+            ) {
                 (CheckedNominalKind::Struct { fields }, PlaceStep::Field(field)) => {
                     fields.get(*field as usize)?.ty
                 }
@@ -792,7 +802,7 @@ impl Analyzer<'_, '_> {
                         right: *datum,
                         difference: 0,
                     },
-                    &mut self.derivations,
+                    &mut self.vocabulary.derivations,
                     event,
                 );
             }
@@ -861,7 +871,7 @@ impl Analyzer<'_, '_> {
                             right: source_length,
                             difference: 0,
                         },
-                        &mut self.derivations,
+                        &mut self.vocabulary.derivations,
                         event,
                     );
                 }
@@ -972,7 +982,12 @@ impl Analyzer<'_, '_> {
                 return true;
             };
             let (minimum, maximum) = type_range(ty);
-            let closed = close(state, &self.terms, &self.goals, &mut self.derivations);
+            let closed = close(
+                state,
+                &self.vocabulary.terms,
+                &self.vocabulary.goals,
+                &mut self.vocabulary.derivations,
+            );
             // `min(T) <= p + k` and `p + k <= max(T)`, as bounds on p through
             // Z: p - Z <= max(T) - k and Z - p <= k - min(T).
             let within = closed.derives_bound(base, ZERO, maximum.saturating_sub(delta))
@@ -982,7 +997,14 @@ impl Analyzer<'_, '_> {
             }
         }
         let event = self.binding_event(event, FlowEventKind::S7, node_path);
-        establish_shifted(state, bound, base, delta, &mut self.derivations, event);
+        establish_shifted(
+            state,
+            bound,
+            base,
+            delta,
+            &mut self.vocabulary.derivations,
+            event,
+        );
         true
     }
 
@@ -1029,8 +1051,13 @@ impl Analyzer<'_, '_> {
             right: dividend,
             bound: 0,
         };
-        let parent =
-            state.establish_bound_with_proof(result, dividend, 0, &mut self.derivations, event);
+        let parent = state.establish_bound_with_proof(
+            result,
+            dividend,
+            0,
+            &mut self.vocabulary.derivations,
+            event,
+        );
         self.retain_s7_derivation(S7Derivation {
             source: node_path.clone(),
             row: *row,
@@ -1084,8 +1111,13 @@ impl Analyzer<'_, '_> {
                 right: divisor,
                 bound: -1,
             };
-            let parent =
-                state.establish_bound_with_proof(result, divisor, -1, &mut self.derivations, event);
+            let parent = state.establish_bound_with_proof(
+                result,
+                divisor,
+                -1,
+                &mut self.vocabulary.derivations,
+                event,
+            );
             self.retain_s7_derivation(S7Derivation {
                 source: node_path.clone(),
                 row: *row,
@@ -1119,8 +1151,13 @@ impl Analyzer<'_, '_> {
                 right,
                 bound: limit,
             };
-            let parent =
-                state.establish_bound_with_proof(left, right, limit, &mut self.derivations, event);
+            let parent = state.establish_bound_with_proof(
+                left,
+                right,
+                limit,
+                &mut self.vocabulary.derivations,
+                event,
+            );
             self.retain_s7_derivation(S7Derivation {
                 source: node_path.clone(),
                 row: *row,
@@ -1170,8 +1207,13 @@ impl Analyzer<'_, '_> {
                 right: admitted,
                 bound: 0,
             };
-            let parent =
-                state.establish_bound_with_proof(result, admitted, 0, &mut self.derivations, event);
+            let parent = state.establish_bound_with_proof(
+                result,
+                admitted,
+                0,
+                &mut self.vocabulary.derivations,
+                event,
+            );
             self.retain_s7_derivation(S7Derivation {
                 source: node_path.clone(),
                 row: *row,
@@ -1253,8 +1295,12 @@ impl Analyzer<'_, '_> {
             right,
             difference: 0,
         };
-        let parent =
-            state.establish_distinct_with_proof(result, ZERO, &mut self.derivations, event);
+        let parent = state.establish_distinct_with_proof(
+            result,
+            ZERO,
+            &mut self.vocabulary.derivations,
+            event,
+        );
         self.retain_s7_derivation(S7Derivation {
             source: node_path.clone(),
             row: *row,
@@ -1316,7 +1362,7 @@ impl Analyzer<'_, '_> {
     /// The mathematical value of a constant term. Z is the interned form of
     /// the written constant zero, so it reads as one here.
     fn constant_term_value(&self, term: TermId) -> Option<i128> {
-        match *self.terms.kind(term) {
+        match *self.vocabulary.terms.kind(term) {
             TermKind::Zero => Some(0),
             TermKind::Constant(value) => Some(value),
             _ => None,
@@ -1353,7 +1399,7 @@ impl Analyzer<'_, '_> {
         let CheckedExpression::IntegerOperation { carrier, .. } = value else {
             return;
         };
-        let Some(interval) = self.product_intervals.get(carrier).cloned() else {
+        let Some(interval) = self.frames.product_intervals.get(carrier).cloned() else {
             return;
         };
         let Some(bound) = self.bound_term(destination, value) else {
@@ -1366,7 +1412,7 @@ impl Analyzer<'_, '_> {
                 right: bound,
                 bound: -interval.minimum,
             },
-            &mut self.derivations,
+            &mut self.vocabulary.derivations,
             event,
         );
         state.establish(
@@ -1375,7 +1421,7 @@ impl Analyzer<'_, '_> {
                 right: ZERO,
                 bound: interval.maximum,
             },
-            &mut self.derivations,
+            &mut self.vocabulary.derivations,
             event,
         );
     }
@@ -1412,7 +1458,7 @@ impl Analyzer<'_, '_> {
             }
             _ => return false,
         };
-        let Some(constant) = self.context.constants.get(constant.0 as usize) else {
+        let Some(constant) = self.input.context.constants.get(constant.0 as usize) else {
             return true;
         };
         let CheckedValue::Array { elements, .. } = &constant.value else {
@@ -1439,7 +1485,7 @@ impl Analyzer<'_, '_> {
                 right: bound,
                 bound: -low,
             },
-            &mut self.derivations,
+            &mut self.vocabulary.derivations,
             event,
         );
         state.establish(
@@ -1448,7 +1494,7 @@ impl Analyzer<'_, '_> {
                 right: ZERO,
                 bound: high,
             },
-            &mut self.derivations,
+            &mut self.vocabulary.derivations,
             event,
         );
         true
@@ -1514,7 +1560,7 @@ impl Analyzer<'_, '_> {
         let CheckedEnumType::Nominal(nominal) = enum_type else {
             return None;
         };
-        let nominal = self.context.nominals.get(nominal.0 as usize)?;
+        let nominal = self.input.context.nominals.get(nominal.0 as usize)?;
         let CheckedNominalKind::Enum { variants } = &nominal.kind else {
             return None;
         };
@@ -1579,7 +1625,10 @@ impl Analyzer<'_, '_> {
             return;
         };
         let place = ResolvedPlace::spelled(PlaceRoot::Binding(binder.binding), false, Vec::new());
-        let bound = self.terms.intern(TermKind::Place(place, fragment));
+        let bound = self
+            .vocabulary
+            .terms
+            .intern(TermKind::Place(place, fragment));
         match outcome.relation {
             OutcomeRelation::Shifted(delta) => {
                 establish_shifted(
@@ -1587,7 +1636,7 @@ impl Analyzer<'_, '_> {
                     bound,
                     outcome.base,
                     delta,
-                    &mut self.derivations,
+                    &mut self.vocabulary.derivations,
                     event,
                 );
             }

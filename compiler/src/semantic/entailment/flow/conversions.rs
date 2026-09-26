@@ -110,7 +110,7 @@ impl Analyzer<'_, '_> {
                 projections,
                 ty,
             }) if projections.is_empty() => {
-                let value = &self.context.constant(*declaration)?.value;
+                let value = &self.input.context.constant(*declaration)?.value;
                 (value.ty() == *ty).then_some(value)
             }
             _ => None,
@@ -143,7 +143,7 @@ impl Analyzer<'_, '_> {
             .map_or_else(Vec::new, |(minimum, maximum)| {
                 bound_components(operand_term, minimum, maximum)
             });
-        let candidate_atom_start = self.affine_atoms.len();
+        let candidate_atom_start = self.vocabulary.affine_atoms.len();
         let mut prepared = state.affine.clone();
         let image = self.affine_pre_domain_form(operand, &mut prepared);
         let outcome = self.prove(
@@ -157,19 +157,19 @@ impl Analyzer<'_, '_> {
         if outcome.route == Some(ProofRoute::Affine) || outcome.route.is_none() {
             state.affine = prepared;
         } else {
-            self.affine_atoms.truncate(candidate_atom_start);
+            self.vocabulary.affine_atoms.truncate(candidate_atom_start);
         }
         let discharged = outcome.disposition == ProofDisposition::Proved;
         if let Some(root) = outcome.derivation {
             let ordinal =
-                u32::try_from(self.obligations.len()).expect("obligation ordinal fits u32");
-            self.derivations.add_root(
+                u32::try_from(self.output.obligations.len()).expect("obligation ordinal fits u32");
+            self.vocabulary.derivations.add_root(
                 DerivationRootKind::ConversionDomainObligation(ordinal),
                 root,
             );
         }
         let residual = (!discharged).then(|| self.render_concrete_goal(&canonical));
-        self.obligations.push(ObligationOutcome {
+        self.output.obligations.push(ObligationOutcome {
             node_path: site.clone(),
             family: ObligationFamily::ConversionDomain,
             conjunct: 0,
@@ -240,7 +240,11 @@ impl Analyzer<'_, '_> {
         image: Option<&AffineForm>,
         (minimum, maximum): (i128, i128),
     ) -> Option<DerivationId> {
-        let closed = context.close(&self.terms, &self.goals, &mut self.derivations);
+        let closed = context.close(
+            &self.vocabulary.terms,
+            &self.vocabulary.goals,
+            &mut self.vocabulary.derivations,
+        );
         let components = bound_components(operand, minimum, maximum);
         let affine = image.and_then(|value| {
             Some([
@@ -249,11 +253,11 @@ impl Analyzer<'_, '_> {
             ])
         });
         let mut parents = Vec::with_capacity(2);
-        let maximum_term = self.terms.intern(TermKind::Constant(maximum));
+        let maximum_term = self.vocabulary.terms.intern(TermKind::Constant(maximum));
         for (ordinal, request) in components.iter().enumerate() {
-            if let Some(parent) = request_relation(request)
-                .and_then(|relation| closed.relation_proof(&relation, &mut self.derivations))
-            {
+            if let Some(parent) = request_relation(request).and_then(|relation| {
+                closed.relation_proof(&relation, &mut self.vocabulary.derivations)
+            }) {
                 parents.push(parent);
                 continue;
             }
@@ -264,14 +268,19 @@ impl Analyzer<'_, '_> {
                 operand
             };
             let proof = self.numeric_affine_proof(target, right, context)?;
-            parents.push(self.derivations.intern(DerivationNode::AffineConsequence {
-                relation: None,
-                premises: proof.premises.into_boxed_slice(),
-                parents: proof.parents,
-            }));
+            parents.push(
+                self.vocabulary
+                    .derivations
+                    .intern(DerivationNode::AffineConsequence {
+                        relation: None,
+                        premises: proof.premises.into_boxed_slice(),
+                        parents: proof.parents,
+                    }),
+            );
         }
         Some(
-            self.derivations
+            self.vocabulary
+                .derivations
                 .intern(DerivationNode::ConversionDomain { goal, parents }),
         )
     }
