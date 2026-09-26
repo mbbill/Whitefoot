@@ -2760,3 +2760,116 @@ fn a_late_prelude_function_collision_names_its_preorder_ordinal() {
         },
     );
 }
+
+/// Each declaration by role and spelling, with its key.
+type DeclarationKeys = Vec<(String, String)>;
+
+/// Each lexical use by spelling, with its item-relative key and its
+/// whole-unit node path.
+type UseKeys = Vec<(String, String, Vec<u32>)>;
+
+/// Every declaration of `source` and every lexical use in it, with their
+/// keys.
+fn keys_of(source: &[u8]) -> (DeclarationKeys, UseKeys) {
+    with_one_resolution(source, |outcome| {
+        let ResolutionOutcome::Complete(resolved) = outcome else {
+            panic!("key probe source must resolve: {outcome:?}");
+        };
+        let declarations = resolved
+            .declarations()
+            .iter()
+            .map(|declaration| {
+                (
+                    format!("{:?} {}", declaration.role(), declaration.spelling()),
+                    declaration.key().to_string(),
+                )
+            })
+            .collect();
+        let uses = resolved
+            .lexical_uses()
+            .iter()
+            .map(|usage| {
+                (
+                    usage.spelling().to_owned(),
+                    resolved
+                        .occurrence_key(usage.origin().node())
+                        .expect("a use inside an item has an occurrence key")
+                        .to_string(),
+                    usage.origin().node().components().to_vec(),
+                )
+            })
+            .collect();
+        (declarations, uses)
+    })
+}
+
+/// [MOD-3] an item added before the others moves every later item's node
+/// paths but renames no declaration and no occurrence: keys are relative to
+/// the item that holds them (`design/compiler/incremental-compilation.md`).
+#[test]
+fn an_unrelated_item_renames_no_declaration_or_occurrence() {
+    let body = br#"fn probe(limit: u64) -> result: unit pure {
+  for @range (index in 0_u64..limit) {
+    let copied = index;
+    helper();
+    break @range;
+  }
+  return unit;
+}
+
+fn helper() -> result: unit pure {
+}
+"#;
+    let mut widened = b"fn unrelated() -> result: unit pure {\n}\n\n".to_vec();
+    widened.extend_from_slice(body);
+    let (declarations, uses) = keys_of(body);
+    let (wider_declarations, wider_uses) = keys_of(&widened);
+    assert_eq!(wider_declarations.len(), declarations.len() + 1);
+    for declaration in &declarations {
+        assert!(
+            wider_declarations.contains(declaration),
+            "{declaration:?} must keep its key"
+        );
+    }
+    assert_eq!(wider_uses.len(), uses.len());
+    for ((spelling, key, path), (wider_spelling, wider_key, wider_path)) in
+        uses.iter().zip(&wider_uses)
+    {
+        assert_eq!(spelling, wider_spelling);
+        assert_eq!(key, wider_key, "`{spelling}` must keep its occurrence key");
+        assert_ne!(path, wider_path, "`{spelling}` moves in the whole unit");
+    }
+}
+
+/// [TYPE-6] two enums of one module may name a variant alike, since a
+/// construction names its owner and an arm its scrutinee's type; each
+/// variant's key is placed within its own enum.
+#[test]
+fn variants_of_two_enums_keep_distinct_keys() {
+    let source = br#"enum Left {
+  Same();
+}
+
+enum Right {
+  Same();
+}
+"#;
+    let (declarations, _) = keys_of(source);
+    let variants = declarations
+        .iter()
+        .filter(|(declaration, _)| declaration == "Variant Same")
+        .map(|(_, key)| key.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(variants.len(), 2);
+    assert_ne!(variants[0], variants[1]);
+    assert!(
+        variants[0].starts_with("pkg::Left#Enum/"),
+        "{}",
+        variants[0]
+    );
+    assert!(
+        variants[1].starts_with("pkg::Right#Enum/"),
+        "{}",
+        variants[1]
+    );
+}

@@ -367,7 +367,7 @@ impl ModuleId {
 
 /// The part a writer source plays in its module [MOD-2]: the module's one
 /// interface record, `module.wfm`, or one of its implementation records.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum SourceRole {
     /// The module's interface, `module.wfm`.
     Interface,
