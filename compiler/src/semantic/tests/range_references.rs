@@ -405,12 +405,13 @@ fn a_write_through_an_inline_range_kills_the_element_measure_it_may_reach() {
     ));
 }
 
-/// [OWN-7] separates two index steps and two range steps and names no family
-/// for an index step against a range step. A written range that does not in
-/// fact contain the guarded element is therefore still overlapping, and the
-/// bound and inline spellings of that range reach the same verdict.
+/// [OWN-7] separates an index step from a range step once the index is
+/// proved outside the range, here by written literals: element 1 lies before
+/// the range `2..3`. A write through that range therefore keeps the guarded
+/// measure of `rows[1]`, and the bound and inline spellings of the range reach
+/// the same verdict; a range that contains the element still kills it.
 #[test]
-fn an_index_outside_a_written_range_is_not_separated_from_it() {
+fn an_index_outside_a_written_range_is_separated_from_it() {
     let body = |call: &str| {
         format!(
             "fn refill(part: &[Slots<u64, 8>], at: u64) -> result: unit writes(part) contract {{
@@ -444,12 +445,13 @@ fn main() -> status: std::process::ExitStatus pure {{
 "
         )
     };
-    assert_cells_read_unproved(
-        body("      refill(part: &rows[2_u64..3_u64], at: 0_u64);\n").as_bytes(),
-    );
-    assert_cells_read_unproved(
+    assert_accepts(body("      refill(part: &rows[2_u64..3_u64], at: 0_u64);\n").as_bytes());
+    assert_accepts(
         body("      let tail = &rows[2_u64..3_u64];\n      refill(part: tail, at: 0_u64);\n")
             .as_bytes(),
+    );
+    assert_cells_read_unproved(
+        body("      refill(part: &rows[1_u64..3_u64], at: 0_u64);\n").as_bytes(),
     );
     // Control: with no write the guard discharges the read.
     assert_accepts(body("").as_bytes());

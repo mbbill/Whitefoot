@@ -334,42 +334,20 @@ rarely insert at the same place.
   and a prelude-spelled source declaration that still reaches neither path.
   Reopen when a prelude collision rule changes.
 
-- **Some one-argument row pairs are refused at every call.** EFF-5 leaves a
-  pair of one argument's entries uncompared when their declared paths overlap
-  at every position, and lists the step pairs that decide that. The list
-  omits a range position beside an index position or a window part, which no
-  OWN-7 family separates either. So `reads(values[start..end]),
-  writes(values[slot])` is compared, never separated, and refused at every
-  call, including `start: 0_u64, end: 2_u64, slot: 3_u64`. The writer can
-  declare `reads(values), writes(values[slot])` instead, which is callable
-  but reads all of `values` in every PAR-1 footprint. The EFF-2 repair
-  suggests exactly the refused row: a body that reads the length of
-  `deref(values)[start..end]` and writes `deref(values)[slot]`, declared
-  `writes(values[slot])`, is told to declare `reads(values[start..end].len),
-  writes(values[slot])`, a row no call admits, against DIAG-1. The ground of
-  that suggestion in `design/compiler/rejection-payloads.md`, that every pair
-  such a row leaves on one parameter either overlaps whatever its positions
-  are or depends on positions each call proves, does not hold for these
-  pairs. Two repairs keep that ground: add these pairs to EFF-5's list and
-  make `overlaps_at_every_position` answer by the same OWN-7 judgment instead
-  of stopping at any range step, or give OWN-7 a family that separates an
-  index from a range. Either changes EFF-5 or OWN-7 and the owner decides.
-  Validate with that call accepted, a caller fact outside `slot` surviving,
-  the EFF-2 suggestion accepted at a call, and two index positions and two
-  range positions of one argument still compared. Found while stacking the
-  repair-wording and one-argument-row changes; reopen with the owner's
-  direction.
-
 - **Most repairs outside the goal families have no pinned pair.**
   `compiler/diagnostic-repairs` pins every repair with its rejected source
   and a program for each alternative, and keeps the words in one module;
-  `driver::pinned_repairs` holds 66 pairs, nearly all for goals, effect rows
+  `driver::pinned_repairs` holds 77 pairs, nearly all for goals, effect rows
   and TYPE-2's opaque-struct refusals, while most of the eighty-odd sites
   across the checker that print a fixed repair sentence have none. Among
   them are TYPE-2's "build it with a construction function [OP-13]" for a
   storage shape or a cell, OWN-1's "write `move p` for the affine place" and
-  "use the copy place without `move`", and TYPE-9's inline-shape and
-  content-move repairs. Some cannot be carried out as written: TYPE-9's
+  "use the copy place without `move`", TYPE-9's inline-shape and
+  content-move repairs, and EFF-5's "these two entries of the callee's row
+  may reach overlapping places through one argument", whose pair v0.74
+  accepts now that an index and a range can be proved apart: every pair of
+  one argument's declared paths a call compares now has a position to
+  prove, so only a joined argument naming two places still reaches it. Some cannot be carried out as written: TYPE-9's
   content-move repair writes `free_empty(move b)` without the argument name
   GRAM-11 requires and offers the cell's scope-exit release to a content
   whose elements are linear, and PROV-6's partial-consume repair writes the
@@ -433,19 +411,6 @@ rarely insert at the same place.
   read, write and move out on such a parameter. Found in the review of the
   opaque-struct repair; reopen when a program has a reason to declare an
   opaque struct with fields, or with the next change to nominal kinds.
-
-- **An index beside a window's `last` is never separated at a call.** WIN-2
-  separates a live `r[i]` from `r.last` once `i != r.len - 1` is proved, and
-  `separation` answers that for two places, but the call-site candidates
-  `separable_by_position` hands to the entailment fragment include only an
-  index beside `next` or `free`. So a pair such as `reads(r[i])`,
-  `writes(r.last)`, from one argument or two, is refused at every call even
-  where the caller proves `i` live and not last. Add a candidate that proves
-  liveness and `i != r.len - 1` in the call's entry state, beside the `Live`
-  candidate; validate with an accepted call that proves both, a refused call
-  that proves only liveness, and the pair's PAR-1 judgment unchanged. Found
-  in the stack review; the pair is rare, so reopen when a window operation
-  needs it.
 
 ## Containers and storage lowering
 
@@ -1917,25 +1882,48 @@ condition under which it is taken up.
   offset rule non-recursive. Reopen when an index-based program needs it,
   after the capture above; validate with kills of the inner element, the
   inner offset and the outer element.
-- **PAR-1 proves no window liveness.** WIN-2 separates `r[i]` from `r.next`
-  and `r.free` only where `i < r.len` is proved. PAR-1's footprints carry an
-  effect row's index as an unknown value, and an offset no captured value
-  names as the same value, so a statement pair meeting on a part and such an
-  index gets no overlap permission even when the subscript was formed in the
-  compared state. This loses permission only. Reopen when a program needs it:
-  carry the row's argument capture into the footprint and ask the
-  entailment fragment for the bound, as EFF-5 already does through
-  `CheckedCallSeparationPositions::Live`.
-- **Loop-header liveness rests on no proof of `i != r.len - 1`.** A loop
-  header's kills stand for every iteration's events, and the flow answers
-  WIN-2's liveness there from the preheader state: `r.len` falls only at an
-  event writing `r.last`, `r.filled` or the whole window, each of which kills
-  every fact below `r[i]` because the ledger never records `i != r.len - 1`.
-  Recording that proof would let a fact survive a `take_back` in a loop body,
-  where a proof made at the header need not hold at a later iteration's
-  event, and would break the header argument above. Whoever first records it
-  must make it event-local as liveness is and revisit the header answer; a
-  loop that calls `take_back` once per iteration is the validating case.
+- **PAR-1 proves no window liveness and no index outside a range.** WIN-2
+  separates `r[i]` from `r.next` and `r.free` only where `i < r.len` is
+  proved, and a range from them only where `hi <= r.len` is. PAR-1's
+  footprints carry an effect row's index and endpoints as unknown values,
+  and an offset no captured value names as the same value, so a statement
+  pair meeting on a part and such an index or range gets no overlap
+  permission even when the subscript or range was formed in the compared
+  state. PAR-1 also poses no query for OWN-7's index-and-range family, so
+  an index beside a range separates only by written literals. This loses
+  permission only. Reopen when a program needs it: carry the row's argument
+  captures into the footprint and ask the entailment fragment for the bound
+  or the ordering, as EFF-5 already does through
+  `CheckedCallSeparationPositions`.
+- **A kill event proves no two positions apart.** OWN-7 separates two
+  indices, two ranges, or an index and a range where the current
+  ProofContext proves them apart, but an ENT-5 kill asks only written
+  literals and the separations an EFF-5 call recorded in the flow's ledger.
+  So in a body that requires `i < j`, a fact over `deref(rows)[i].len` dies
+  at `set deref(rows)[j] = move fresh`, and a later read that needs it is
+  refused although the specification separates the two; a fact at an index
+  before a range a callee writes through dies the same way. Asking the
+  entailment fragment only for a fact whose place meets a written position
+  under the same base, as event liveness asks, keeps the added proofs
+  bounded. Validate with that body accepted and one requiring only
+  `i <= j` still refused. Found while adding OWN-7's index-and-range
+  family; the gap is older than the family.
+- **No kill event separates a fact from `r.last`.** WIN-2 separates `r[i]`
+  from `r.last` where `i != r.len - 1` is proved, and `r[lo..hi]` where
+  `hi < r.len` or `hi <= lo` is, but an ENT-5 event answers neither, so a
+  fact below `r[0]` dies at a `take_back` whose entry state proves
+  `r.len == 2`, and a program that reads it back is refused although the
+  specification separates the two. A loop header's kills stand for
+  every iteration's events, and the flow answers WIN-2's liveness and range
+  bounds there from the preheader state: `r.len` falls only at an event
+  writing `r.last`, `r.filled` or the whole window, each of which kills
+  every fact below `r[i]` or `r[lo..hi]` because no event answers the last
+  slot. Answering it at an ordinary event, from that event's entry state as
+  liveness is, would let the fact survive, but a header must still not
+  answer it, since a proof made there need not hold at a later iteration's
+  event. Validate with a measure fact over `rows[0]` read after a
+  `take_back` of `rows` holding two elements, and a loop that calls
+  `take_back` once per iteration still killing it at the header.
 - **Member names `len`, `cap` and `head` are classified by spelling in two
   paths.** Contract clauses and subscripted body places pick the measure
   route by the member's name before its type is known, so a writer's field

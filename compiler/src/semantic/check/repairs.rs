@@ -34,8 +34,8 @@ use super::super::goal::{
     EvaluatedValueOccurrence, GoalDatum, GoalExpression, GoalOperation, GoalProjection,
 };
 use super::super::model::{
-    BindingId, CheckedConversionMode, CheckedExpression, CheckedFunction, CheckedIntegerOperation,
-    CheckedStatement, FunctionId, expression_children,
+    BindingId, CheckedCallSeparationPositions, CheckedConversionMode, CheckedExpression,
+    CheckedFunction, CheckedIntegerOperation, CheckedStatement, FunctionId, expression_children,
 };
 use super::super::permission::visit_read_bindings;
 use crate::NodePath;
@@ -905,6 +905,60 @@ pub(super) fn loop_invariant_backedge(disposition: Disposition, name: &str) -> S
         Disposition::Unproved => format!(
             "`{name}` is not proved preserved at the next loop header: strengthen the invariant prefix, weaken or correct it, or establish in the body the facts from which every reachable fallthrough preserves it"
         ),
+    }
+}
+
+/// [EFF-5] a call whose two substituted entries no admitted family separated,
+/// by the first position the checker handed over and by whether one argument
+/// supplies both entries. The facts may already refute the separation, so
+/// proving it is offered only where it can hold; changing what the call
+/// passes works either way [DIAG-1]. A position beside a window's part is
+/// separated by a bound on the window's length [WIN-2], and an index beside a
+/// range by lying outside it [OWN-7], not by differing. When one argument
+/// supplies both entries, the callee's row can instead name their common path
+/// once.
+pub(super) fn call_separation(
+    position: Option<CheckedCallSeparationPositions>,
+    one_argument: bool,
+) -> &'static str {
+    use CheckedCallSeparationPositions as Positions;
+    match (position, one_argument) {
+        (Some(Positions::Live(_)), false) => {
+            "when the index can be below the window's length here, prove that before this call; otherwise pass an index this call proves below it"
+        }
+        (Some(Positions::Live(_)), true) => {
+            "when the index can be below the window's length here, prove that before this call; otherwise pass an index this call proves below it, or replace the callee's row entries at or below their common path with one `writes` entry of that path"
+        }
+        (Some(Positions::NotLast(_)), false) => {
+            "when the index can be below the window's last slot here, prove that before this call; otherwise pass an index this call proves below it"
+        }
+        (Some(Positions::NotLast(_)), true) => {
+            "when the index can be below the window's last slot here, prove that before this call; otherwise pass an index this call proves below it, or replace the callee's row entries at or below their common path with one `writes` entry of that path"
+        }
+        (Some(Positions::IndexOutsideRange(..)), false) => {
+            "when the index can lie outside the range here, prove before this call that it is below the range's start or at or after its end; otherwise pass positions this call proves apart"
+        }
+        (Some(Positions::IndexOutsideRange(..)), true) => {
+            "when the index can lie outside the range here, prove before this call that it is below the range's start or at or after its end; otherwise pass positions this call proves apart, or replace the callee's row entries at or below their common path with one `writes` entry of that path"
+        }
+        (Some(Positions::RangeWithinLength(_)), false) => {
+            "when the range can end at or below the window's length here, prove that before this call; otherwise pass a range this call proves ends there"
+        }
+        (Some(Positions::RangeWithinLength(_)), true) => {
+            "when the range can end at or below the window's length here, prove that before this call; otherwise pass a range this call proves ends there, or replace the callee's row entries at or below their common path with one `writes` entry of that path"
+        }
+        (Some(Positions::RangeBeforeLast(_)), false) => {
+            "when the range can end below the window's length here, prove that before this call; otherwise pass a range this call proves ends there"
+        }
+        (Some(Positions::RangeBeforeLast(_)), true) => {
+            "when the range can end below the window's length here, prove that before this call; otherwise pass a range this call proves ends there, or replace the callee's row entries at or below their common path with one `writes` entry of that path"
+        }
+        (_, false) => {
+            "when the two positions can differ here, prove them distinct before this call; otherwise pass places this call proves do not overlap"
+        }
+        (_, true) => {
+            "when the two positions can differ here, prove them distinct before this call; otherwise pass positions this call proves distinct, or replace the callee's row entries at or below their common path with one `writes` entry of that path"
+        }
     }
 }
 

@@ -93,6 +93,26 @@ impl SeparationOracle for EntryPairSeparations<'_> {
         UnprovedSeparations.index_is_not_last(window, index)
     }
 
+    fn index_outside_range(&self, index: CapturedValue, range: CapturedRange) -> bool {
+        UnprovedSeparations.index_outside_range(index, range)
+    }
+
+    /// A range of an actual's own path was formed at the call and discharged
+    /// its [REF-4] bound there, so it lies within the length of the call's
+    /// entry state, as an index formed there is live; a range a row supplies
+    /// takes its endpoints from other arguments and is bounded by nothing
+    /// until the entailment fragment proves it [EFF-5, WIN-2].
+    fn range_within_length(&self, window: &ResolvedPlace, range: CapturedRange) -> bool {
+        let depth = window.path.len();
+        self.entries.iter().all(|entry| {
+            depth < entry.formed || entry.place.path.get(depth) != Some(&PlaceStep::Range(range))
+        })
+    }
+
+    fn range_before_last(&self, window: &ResolvedPlace, range: CapturedRange) -> bool {
+        UnprovedSeparations.range_before_last(window, range)
+    }
+
     fn window_length_is_shared(&self, window: &ResolvedPlace) -> bool {
         UnprovedSeparations.window_length_is_shared(window)
     }
@@ -829,10 +849,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         // the declared positions that tell its entries apart
                         // the same values over one place the argument names,
                         // or because no family this checker poses at a call
-                        // separates the steps at which the two paths differ:
-                        // a range beside an index, an index beside `.last`,
-                        // or two places a joined argument may name. Only the
-                        // first is repaired at the call's positions.
+                        // separates the steps at which the two paths differ,
+                        // as for two places a joined argument may name. Only
+                        // the first is repaired at the call's positions.
                         mechanical_fix: if exchange {
                             "exchange equal or disjoint places without an ancestor relation"
                         } else if left.argument == right.argument
@@ -857,11 +876,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// The ordered position disagreements an admitted [OWN-7] family can
-    /// still separate. Index suffixes remain candidates; a range divergence
-    /// is the final candidate because its coordinate frames then differ, and
-    /// so is an index beside a window's `next` or `free`, which [WIN-2]
-    /// separates once the index is proved live, together with the window it
-    /// indexes.
+    /// still separate. Index suffixes remain candidates; a divergence with a
+    /// range step is the final candidate because its coordinate frames then
+    /// differ, whether against another range or against an index, and so is
+    /// a position beside one of a window's parts, which [WIN-2] separates by
+    /// a bound on that window's length, together with the window it reads.
     pub(in crate::semantic::check) fn separable_by_position(
         left: &ResolvedPlace,
         right: &ResolvedPlace,
@@ -892,10 +911,35 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     candidates.push(CheckedCallSeparationPositions::Ranges(*first, *second));
                     break;
                 }
-                (PlaceStep::Index(index), PlaceStep::Part(WindowPart::Next | WindowPart::Free))
-                | (PlaceStep::Part(WindowPart::Next | WindowPart::Free), PlaceStep::Index(index)) =>
+                (PlaceStep::Index(index), PlaceStep::Range(range))
+                | (PlaceStep::Range(range), PlaceStep::Index(index)) => {
+                    candidates.push(CheckedCallSeparationPositions::IndexOutsideRange(
+                        *index, *range,
+                    ));
+                    break;
+                }
+                (PlaceStep::Index(_) | PlaceStep::Range(_), PlaceStep::Part(part))
+                | (PlaceStep::Part(part), PlaceStep::Index(_) | PlaceStep::Range(_))
+                    if *part != WindowPart::Filled =>
                 {
-                    candidates.push(CheckedCallSeparationPositions::Live(*index));
+                    let position = match (steps, part) {
+                        (
+                            (PlaceStep::Index(index), _) | (_, PlaceStep::Index(index)),
+                            WindowPart::Last,
+                        ) => CheckedCallSeparationPositions::NotLast(*index),
+                        ((PlaceStep::Index(index), _) | (_, PlaceStep::Index(index)), _) => {
+                            CheckedCallSeparationPositions::Live(*index)
+                        }
+                        (
+                            (PlaceStep::Range(range), _) | (_, PlaceStep::Range(range)),
+                            WindowPart::Last,
+                        ) => CheckedCallSeparationPositions::RangeBeforeLast(*range),
+                        ((PlaceStep::Range(range), _) | (_, PlaceStep::Range(range)), _) => {
+                            CheckedCallSeparationPositions::RangeWithinLength(*range)
+                        }
+                        _ => break,
+                    };
+                    candidates.push(position);
                     window = Some(ResolvedPlace {
                         root: left.root,
                         path: left.path[..depth].to_vec(),
