@@ -5,6 +5,14 @@ refused amendment: a dated title, `Nodes:` naming every node changed or ruled
 on, `Owner-approved:` for an approved live-tree change, and `Summary:`;
 `skill/SKILL.md` owns the form.
 
+## 2026-09-26 Leave repair words to the compiler under stated conditions
+
+Nodes: language, compiler/diagnostic-repairs
+
+Owner-approved: The owner approved PR #125's repair-scope and diagnostic-repairs amendments ("125 approved", written in Chinese), 2026-09-26.
+
+Summary: Add to the language root the decision that the specification fixes a rejection's rule, location and payload, which rejections carry a repair and what every alternative of a repair must do (let the rejected judgment succeed at that construct in a state that is not contradictory when carried out as it directs, state any condition the checker has neither established nor refuted, and write nothing a rule rejects), leaving the words to the toolchain [DIAG-1], with its four rejected alternatives. Add the node compiler/diagnostic-repairs with its four decisions: the compiler owns the words in one module; a refuted goal's repair changes what reaches the construct, and an unproved goal's routes follow what it reads, with the requirement route taken per path and the callee route only for results of functions outside the prelude; OP-9's ceiling is named as the language's limit and never offered as the bound to write; and every repair is pinned by its rejected source and a repaired source per alternative, accepted without a contradictory state and, for an allocation, built. It lists seven rejected alternatives. The [repair-wording investigation](../research/investigations/repair-wording/DESIGN.md) holds the inventory, the probes and the pairs. The settled wording is in kernel-spec rules DIAG-1 and MSR-4 and the per-rule references to a repair. Remove both accepted amendments and the amendment directory. This ruling does not authorize a merge.
+
 ## 2026-09-25 Form requirement places at body entry and separate window parts only from live indices
 
 Nodes: language/checks-and-proofs/requires-entry-contract, language/ownership, language/checks-and-proofs
