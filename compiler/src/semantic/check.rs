@@ -3883,7 +3883,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         super::entailment::ObligationFamily::ConversionDomain => SemanticRule::Op6,
                         super::entailment::ObligationFamily::AllocationFit => SemanticRule::Op9,
                         super::entailment::ObligationFamily::RangeFormation => SemanticRule::Ref4,
-                        super::entailment::ObligationFamily::CallSeparation => SemanticRule::Eff5,
+                        super::entailment::ObligationFamily::CallSeparation(_) => {
+                            SemanticRule::Eff5
+                        }
                         super::entailment::ObligationFamily::ReferencePreservation(_) => {
                             SemanticRule::Ref2
                         }
@@ -4314,15 +4316,32 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 request: None,
                             }
                         }
-                        super::entailment::ObligationFamily::CallSeparation => SemanticIssue {
-                            rule: SemanticRule::Eff5,
-                            location,
-                            kind: SemanticIssueKind::UndischargedCallSeparation {
-                                residual,
-                                mechanical_fix: "prove the two positions distinct before this call, or pass one of them",
-                            },
-                            request: None,
-                        },
+                        super::entailment::ObligationFamily::CallSeparation(query) => {
+                            let one_argument = function
+                                .call_separations
+                                .get(query as usize)
+                                .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                                .one_argument;
+                            // The facts may already fix the two positions
+                            // equal, so proving them distinct is offered only
+                            // under that condition; changing what the call
+                            // passes works either way [DIAG-1]. When one
+                            // argument supplies both entries, the callee's
+                            // row can instead name their common path once.
+                            SemanticIssue {
+                                rule: SemanticRule::Eff5,
+                                location,
+                                kind: SemanticIssueKind::UndischargedCallSeparation {
+                                    residual,
+                                    mechanical_fix: if one_argument {
+                                        "when the two positions can differ here, prove them distinct before this call; otherwise pass positions this call proves distinct, or declare one `writes` entry of their common path in the callee's row instead"
+                                    } else {
+                                        "when the two positions can differ here, prove them distinct before this call; otherwise pass places this call proves do not overlap"
+                                    },
+                                },
+                                request: None,
+                            }
+                        }
                         super::entailment::ObligationFamily::ExchangeSeparation => SemanticIssue {
                             rule: SemanticRule::Op11,
                             location,

@@ -711,6 +711,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 window,
                 left_spelling: self.render_resolved_place(written, bindings)?,
                 right_spelling: self.render_resolved_place(&path, bindings)?,
+                one_argument: false,
             };
             let Some(reference) = bindings
                 .get_mut(&declaration)

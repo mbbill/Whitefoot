@@ -2760,6 +2760,9 @@ pub(crate) struct CheckedCallSeparation {
     /// The two substituted paths as the diagnostic renders them.
     pub(crate) left_spelling: String,
     pub(crate) right_spelling: String,
+    /// Whether one reference argument supplies both paths [EFF-5], so that
+    /// passing only one of them is no repair [DIAG-1].
+    pub(crate) one_argument: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

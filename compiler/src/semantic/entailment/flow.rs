@@ -9713,7 +9713,9 @@ impl Analyzer<'_, '_> {
             } else if separation.exchange {
                 ObligationFamily::ExchangeSeparation
             } else {
-                ObligationFamily::CallSeparation
+                ObligationFamily::CallSeparation(
+                    u32::try_from(query).expect("call-separation queries exceed u32"),
+                )
             },
             conjunct: 0,
             canonical_goal: None,

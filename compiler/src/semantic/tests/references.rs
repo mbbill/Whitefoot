@@ -1994,8 +1994,10 @@ fn assert_indexed_call_proof(label: &str, source: &[u8], require_affine: bool) {
         for function in &program.data.functions {
             super::entailment::validate_derivations(&function.entailment);
             found |= function.entailment.obligations.iter().any(|outcome| {
-                outcome.family == super::super::entailment::ObligationFamily::CallSeparation
-                    && outcome.discharged
+                matches!(
+                    outcome.family,
+                    super::super::entailment::ObligationFamily::CallSeparation(_)
+                ) && outcome.discharged
                     && outcome.derivation.is_some_and(|root| {
                         let Some(super::super::entailment::DerivationNode::IndexSeparation {
                             detail,

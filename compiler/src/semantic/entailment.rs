@@ -289,8 +289,9 @@ pub(crate) enum ObligationFamily {
     /// is [REF-4].
     RangeFormation,
     /// Two range steps of a compared pair of paths must be disjoint, by the
-    /// four non-strict orderings [OWN-7] submits under [ENT-6] [EFF-5].
-    CallSeparation,
+    /// four non-strict orderings [OWN-7] submits under [ENT-6] [EFF-5]. The
+    /// number is the query's position in the function's call separations.
+    CallSeparation(u32),
     /// Disjoint positions exclude proper ancestry at an exchange [OP-11].
     ExchangeSeparation,
     /// A REF-2 use depends on this event-site separation query.

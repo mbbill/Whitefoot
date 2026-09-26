@@ -3157,8 +3157,8 @@ fn main() -> status: ExitStatus pure {
     },
     RepairPair {
         // No [OWN-7] family separates a range position from an index
-        // position, so [EFF-5] refuses this one argument's pair at every
-        // call, and the repair is at the callee's row, not at the call.
+        // position, so no position this call passes separates this one
+        // argument's pair [EFF-5], and the repair is at the callee's row.
         name: "row-entries-overlapping-through-one-argument.wf",
         rejected: br#"fn record_run(values: &Array<u64, 4>, start: u64, end: u64, slot: u64) -> result: unit reads(values[start..end]), writes(values[slot]) contract {
   requires start <= end;
@@ -3179,7 +3179,7 @@ fn main() -> status: ExitStatus pure {
 "#,
         rule: "EFF-5",
         sentences: &[
-            "\n  mechanical_fix: these two entries of the callee's row reach overlapping places through one argument, so every call rejects them: declare one `writes` entry of their common path in its row instead\n",
+            "\n  mechanical_fix: these two entries of the callee's row may reach overlapping places through one argument, and no position this call passes separates them: declare one `writes` entry of their common path in the callee's row instead\n",
         ],
         repaired: &[br#"fn record_run(values: &Array<u64, 4>, start: u64, end: u64, slot: u64) -> result: unit writes(values) contract {
   requires start <= end;
@@ -3198,6 +3198,183 @@ fn main() -> status: ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#],
+    },
+    RepairPair {
+        // [EFF-5] one argument supplies both entries and the two positions
+        // are left to the entailment fragment, which cannot prove `a` and `b`
+        // distinct here; passing one of the places removes neither entry.
+        name: "call-separation-one-argument.wf",
+        rejected: br#"fn copy_within(values: &Array<u8, 4>, i: u64, j: u64) -> result: unit reads(values[i]), writes(values[j]) contract {
+  requires i < 4_u64;
+  requires j < 4_u64;
+} {
+  let observed = deref(values)[i];
+  set deref(values)[j] = observed;
+  return unit;
+}
+
+fn shift(values: &Array<u8, 4>, a: u64, b: u64) -> result: unit writes(values) contract {
+  requires a < 4_u64;
+  requires b < 4_u64;
+} {
+  copy_within(values: values, i: a, j: b);
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  let values = array_filled::<u8, 4>(value: 1_u8);
+  shift(values: &values, a: 1_u64, b: 2_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "EFF-5",
+        sentences: &[
+            "\n  mechanical_fix: when the two positions can differ here, prove them distinct before this call; otherwise pass positions this call proves distinct, or declare one `writes` entry of their common path in the callee's row instead\n",
+        ],
+        repaired: &[
+            br#"fn copy_within(values: &Array<u8, 4>, i: u64, j: u64) -> result: unit reads(values[i]), writes(values[j]) contract {
+  requires i < 4_u64;
+  requires j < 4_u64;
+} {
+  let observed = deref(values)[i];
+  set deref(values)[j] = observed;
+  return unit;
+}
+
+fn shift(values: &Array<u8, 4>, a: u64, b: u64) -> result: unit writes(values) contract {
+  requires a < 4_u64;
+  requires b < 4_u64;
+  requires a < b;
+} {
+  copy_within(values: values, i: a, j: b);
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  let values = array_filled::<u8, 4>(value: 1_u8);
+  shift(values: &values, a: 1_u64, b: 2_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+            br#"fn copy_within(values: &Array<u8, 4>, i: u64, j: u64) -> result: unit reads(values[i]), writes(values[j]) contract {
+  requires i < 4_u64;
+  requires j < 4_u64;
+} {
+  let observed = deref(values)[i];
+  set deref(values)[j] = observed;
+  return unit;
+}
+
+fn shift(values: &Array<u8, 4>, a: u64, b: u64) -> result: unit writes(values) contract {
+  requires a < 4_u64;
+  requires b < 4_u64;
+} {
+  copy_within(values: values, i: 0_u64, j: 1_u64);
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  let values = array_filled::<u8, 4>(value: 1_u8);
+  shift(values: &values, a: 1_u64, b: 2_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+            br#"fn copy_within(values: &Array<u8, 4>, i: u64, j: u64) -> result: unit writes(values) contract {
+  requires i < 4_u64;
+  requires j < 4_u64;
+} {
+  let observed = deref(values)[i];
+  set deref(values)[j] = observed;
+  return unit;
+}
+
+fn shift(values: &Array<u8, 4>, a: u64, b: u64) -> result: unit writes(values) contract {
+  requires a < 4_u64;
+  requires b < 4_u64;
+} {
+  copy_within(values: values, i: a, j: b);
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  let values = array_filled::<u8, 4>(value: 1_u8);
+  shift(values: &values, a: 1_u64, b: 2_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+        ],
+    },
+    RepairPair {
+        // [EFF-5] two arguments name elements of one array at positions the
+        // entailment fragment cannot prove distinct.
+        name: "call-separation-two-arguments.wf",
+        rejected: br#"fn copy_across(source: &u8, destination: &u8) -> result: unit reads(source), writes(destination) {
+  let observed = deref(source);
+  set deref(destination) = observed;
+  return unit;
+}
+
+fn shift(values: &Array<u8, 4>, a: u64, b: u64) -> result: unit writes(values) contract {
+  requires a < 4_u64;
+  requires b < 4_u64;
+} {
+  copy_across(source: &deref(values)[a], destination: &deref(values)[b]);
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  let values = array_filled::<u8, 4>(value: 1_u8);
+  shift(values: &values, a: 1_u64, b: 2_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "EFF-5",
+        sentences: &[
+            "\n  mechanical_fix: when the two positions can differ here, prove them distinct before this call; otherwise pass places this call proves do not overlap\n",
+        ],
+        repaired: &[
+            br#"fn copy_across(source: &u8, destination: &u8) -> result: unit reads(source), writes(destination) {
+  let observed = deref(source);
+  set deref(destination) = observed;
+  return unit;
+}
+
+fn shift(values: &Array<u8, 4>, a: u64, b: u64) -> result: unit writes(values) contract {
+  requires a < 4_u64;
+  requires b < 4_u64;
+  requires a < b;
+} {
+  copy_across(source: &deref(values)[a], destination: &deref(values)[b]);
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  let values = array_filled::<u8, 4>(value: 1_u8);
+  shift(values: &values, a: 1_u64, b: 2_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+            br#"fn copy_across(source: &u8, destination: &u8) -> result: unit reads(source), writes(destination) {
+  let observed = deref(source);
+  set deref(destination) = observed;
+  return unit;
+}
+
+fn shift(values: &Array<u8, 4>, a: u64, b: u64) -> result: unit writes(values) contract {
+  requires a < 4_u64;
+  requires b < 4_u64;
+} {
+  copy_across(source: &deref(values)[0_u64], destination: &deref(values)[1_u64]);
+  return unit;
+}
+
+fn main() -> status: ExitStatus pure {
+  let values = array_filled::<u8, 4>(value: 1_u8);
+  shift(values: &values, a: 1_u64, b: 2_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+        ],
     },
     RepairPair {
         name: "swap-of-a-possible-ancestor.wf",

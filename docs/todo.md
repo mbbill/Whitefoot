@@ -363,17 +363,38 @@ rarely insert at the same place.
   omits a range position beside an index position or a window part, which no
   OWN-7 family separates either. So `reads(values[start..end]),
   writes(values[slot])` is compared, never separated, and refused at every
-  call, including `start: 0_u64, end: 2_u64, slot: 3_u64`; the writer must
-  widen the row to `writes(values)`, the dead end the one-argument rule
-  removes for the listed pairs. Adding these pairs to EFF-5's list, and
-  making `overlaps_at_every_position` answer by the same OWN-7 judgment
-  instead of stopping at any range step, would make that call acceptable.
-  Validate with that call accepted and a caller fact outside `slot`
-  surviving, and with two index positions and two range positions of one
-  argument still compared. Found while stacking the repair-wording and
-  one-argument-row changes, whose one-argument repair now names this case
-  separately; reopen with the next EFF-5 change or when a program needs such
-  a row.
+  call, including `start: 0_u64, end: 2_u64, slot: 3_u64`. The writer can
+  declare `reads(values), writes(values[slot])` instead, which is callable
+  but reads all of `values` in every PAR-1 footprint. The EFF-2 repair
+  suggests exactly the refused row: a body that reads the length of
+  `deref(values)[start..end]` and writes `deref(values)[slot]`, declared
+  `writes(values[slot])`, is told to declare `reads(values[start..end].len),
+  writes(values[slot])`, a row no call admits, against DIAG-1. The ground of
+  that suggestion in `design/compiler/rejection-payloads.md`, that every pair
+  such a row leaves on one parameter either overlaps whatever its positions
+  are or depends on positions each call proves, does not hold for these
+  pairs. Two repairs keep that ground: add these pairs to EFF-5's list and
+  make `overlaps_at_every_position` answer by the same OWN-7 judgment instead
+  of stopping at any range step, or give OWN-7 a family that separates an
+  index from a range. Either changes EFF-5 or OWN-7 and the owner decides.
+  Validate with that call accepted, a caller fact outside `slot` surviving,
+  the EFF-2 suggestion accepted at a call, and two index positions and two
+  range positions of one argument still compared. Found while stacking the
+  repair-wording and one-argument-row changes; reopen with the owner's
+  direction.
+
+- **An index beside a window's `last` is never separated at a call.** WIN-2
+  separates a live `r[i]` from `r.last` once `i != r.len - 1` is proved, and
+  `separation` answers that for two places, but the call-site candidates
+  `separable_by_position` hands to the entailment fragment include only an
+  index beside `next` or `free`. So a pair such as `reads(r[i])`,
+  `writes(r.last)`, from one argument or two, is refused at every call even
+  where the caller proves `i` live and not last. Add a candidate that proves
+  liveness and `i != r.len - 1` in the call's entry state, beside the `Live`
+  candidate; validate with an accepted call that proves both, a refused call
+  that proves only liveness, and the pair's PAR-1 judgment unchanged. Found
+  in the stack review; the pair is rare, so reopen when a window operation
+  needs it.
 
 ## Containers and storage lowering
 

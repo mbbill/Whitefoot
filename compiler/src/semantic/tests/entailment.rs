@@ -2025,7 +2025,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     ObligationFamily::AllocationFit => assert_eq!(outcome.conjunct, 0),
                     // Separation for a call, exchange or reference preservation
                     // is one occurrence, without a conjunct of its own.
-                    ObligationFamily::CallSeparation
+                    ObligationFamily::CallSeparation(_)
                     | ObligationFamily::ExchangeSeparation
                     | ObligationFamily::ReferencePreservation(_) => {
                         assert_eq!(outcome.conjunct, 0)
@@ -2050,7 +2050,8 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 // contradiction), rather than being accepted by shape alone.
                 if matches!(
                     outcome.family,
-                    ObligationFamily::CallSeparation | ObligationFamily::ReferencePreservation(_)
+                    ObligationFamily::CallSeparation(_)
+                        | ObligationFamily::ReferencePreservation(_)
                 ) {
                     assert!(outcome.components.is_empty());
                     assert!(outcome.canonical_goal.is_none());

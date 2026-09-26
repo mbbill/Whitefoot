@@ -809,6 +809,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             window,
                             left_spelling: self.render_resolved_place(&left.place, bindings)?,
                             right_spelling: self.render_resolved_place(&right.place, bindings)?,
+                            one_argument: left.argument == right.argument,
                         });
                     continue;
                 }
@@ -824,22 +825,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         second: self.render_resolved_place(&right.place, bindings)?,
                         // No position separates this pair, so proving one
                         // distinct is no repair here [DIAG-1]. One
-                        // argument's pair got here either because this call
-                        // gives the declared positions that tell its entries
-                        // apart the same values, or because no family
-                        // separates the steps at which its declared paths
-                        // differ, such as a range beside an index, and then
-                        // no call passes it.
+                        // argument's pair got here because this call gives
+                        // the declared positions that tell its entries apart
+                        // the same values over one place the argument names,
+                        // or because no family this checker poses at a call
+                        // separates the steps at which the two paths differ:
+                        // a range beside an index, an index beside `.last`,
+                        // or two places a joined argument may name. Only the
+                        // first is repaired at the call's positions.
                         mechanical_fix: if exchange {
                             "exchange equal or disjoint places without an ancestor relation"
                         } else if left.argument == right.argument
+                            && left.place.root == right.place.root
+                            && left.place.path.get(..left.formed)
+                                == right.place.path.get(..right.formed)
                             && let (Some(left_formal), Some(right_formal)) =
                                 (formal.get(left.origin), formal.get(right.origin))
                             && Self::separable_by_position(left_formal, right_formal).is_some()
                         {
                             "this call gives these two entries of the callee's row the same positions: pass positions this call proves do not overlap, or declare one `writes` entry of their common path in the callee's row instead"
                         } else if left.argument == right.argument {
-                            "these two entries of the callee's row reach overlapping places through one argument, so every call rejects them: declare one `writes` entry of their common path in its row instead"
+                            "these two entries of the callee's row may reach overlapping places through one argument, and no position this call passes separates them: declare one `writes` entry of their common path in the callee's row instead"
                         } else {
                             "pass places that do not overlap, or pass the shared place through one argument only"
                         },
