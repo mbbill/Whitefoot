@@ -40,8 +40,8 @@ use super::super::model::{
     CheckedType, IntegerType, WindowShape,
 };
 use super::super::places::{
-    CapturedRange, CapturedValue, DescendantTarget, PlaceRoot, PlaceStep, ResolvedPlace,
-    UnprovedSeparations,
+    CapturedRange, CapturedTerm, CapturedValue, DescendantTarget, PlaceRoot, PlaceStep,
+    ResolvedPlace, UnprovedSeparations,
 };
 use super::{
     CheckStop, Checker, EffectPath, FunctionSignature, LocalBinding, PlaceAccess, TypedExpression,
@@ -231,11 +231,31 @@ impl ReferenceInfo {
     /// [REF-1] the join of two incoming edges: the union of the path sets,
     /// and the meet of the validity facts, because a check must hold on every
     /// incoming edge.
+    ///
+    /// An index one edge superseded is superseded after the join too, so the
+    /// same capture on both edges stays one member rather than two.
     pub(super) fn join(&mut self, other: &Self) {
         for path in &other.paths {
             if !self.paths.contains(path) {
                 self.paths.push(path.clone());
             }
+        }
+        let superseded = self
+            .paths
+            .iter()
+            .flat_map(ResolvedPlace::superseded_indices)
+            .collect::<Vec<_>>();
+        if !superseded.is_empty() {
+            let mut joined = Vec::with_capacity(self.paths.len());
+            for mut path in std::mem::take(&mut self.paths) {
+                for (capture, binding) in &superseded {
+                    path.supersede_capture(*capture, *binding);
+                }
+                if !joined.contains(&path) {
+                    joined.push(path);
+                }
+            }
+            self.paths = joined;
         }
         if let ReferenceValidity::Invalid(event) = &other.validity {
             self.invalidate(event.clone());
@@ -642,6 +662,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         event: &InvalidationEvent,
         site: Option<&crate::NodePath>,
     ) -> Result<(), CheckStop> {
+        // [REF-1] a reference keeps the index value its formation read, so a
+        // write of that binding leaves the reference valid but ends the
+        // binding's spelling as a name for its index.
+        if written.path.is_empty()
+            && let PlaceRoot::Binding(binding) = written.root
+        {
+            for reference in bindings
+                .values_mut()
+                .filter_map(|local| local.reference.as_mut())
+            {
+                for path in &mut reference.paths {
+                    path.supersede_binding(binding);
+                }
+            }
+        }
         let include_equal = matches!(event, InvalidationEvent::PrefixMoved);
         let primitive_write = !include_equal
             && !matches!(
@@ -1360,10 +1395,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// is the only index spelling a declared row admits.
     fn captured_parameter(
         &self,
-        captured: super::super::places::CapturedValue,
+        captured: CapturedValue,
         bindings: &HashMap<DeclarationId, LocalBinding>,
     ) -> Option<DeclarationId> {
-        let binding = captured.support()?;
+        // A superseded index still holds the value its formation read, so it
+        // names the parameter exactly as the spelled index did [REF-1].
+        let binding = match captured.term {
+            CapturedTerm::Binding(binding) | CapturedTerm::Superseded(binding) => binding,
+            CapturedTerm::Literal(_) | CapturedTerm::Const(_) | CapturedTerm::Opaque => {
+                return None;
+            }
+        };
         let local = bindings.values().find(|local| local.binding == binding)?;
         self.resolved
             .declarations()
@@ -1579,6 +1621,39 @@ mod tests {
         let right = reference(0);
         left.join(&right);
         assert_eq!(left.paths.len(), 1);
+    }
+
+    /// [REF-1] an index one edge wrote the binding of after the formation is
+    /// superseded after the join: both edges still hold the one capture, so
+    /// the joined reference keeps one member, and the binding's spelling no
+    /// longer names its index. Another capture from the same binding keeps
+    /// its spelling.
+    #[test]
+    fn a_join_supersedes_an_index_one_edge_wrote() {
+        use crate::semantic::places::{CaptureId, CapturedTerm, CapturedValue};
+        let indexed = |capture: u32| {
+            let mut place = ResolvedPlace::binding(BindingId(0));
+            place.push_subscript(CapturedValue::new(
+                CaptureId::source(capture),
+                CapturedTerm::Binding(BindingId(1)),
+            ));
+            ReferenceInfo::formed(ReferenceKind::Single, place)
+        };
+        let mut unwritten = indexed(0);
+        let mut written = indexed(0);
+        written.paths[0].supersede_binding(BindingId(1));
+        unwritten.join(&written);
+        assert_eq!(unwritten.paths, written.paths);
+
+        let mut other_formation = indexed(1);
+        other_formation.join(&written);
+        assert_eq!(other_formation.paths.len(), 2);
+        assert_eq!(
+            other_formation.paths[0]
+                .spelled_indices()
+                .collect::<Vec<_>>(),
+            [(CaptureId::source(1), BindingId(1))]
+        );
     }
 
     /// [REF-1] classify when a contribution retains its entering shape and

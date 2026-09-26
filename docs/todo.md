@@ -1973,17 +1973,32 @@ condition under which it is taken up.
   required source work from removable lowering cost. Defer a broad repeat of all
   eight engineering tasks until it answers a concrete selection question;
   a passing new library does not dispose of the remaining matrix claims.
-- **A requirement through a reference is checked against its offset's
-  current value.** After `let wr = &rows[k];` and `set k = 1_u64;`, a
-  requirement a call states through `wr`, such as `requires i <
-  deref(x).len` for `get(x: wr, i: 2_u64)`, is instantiated as
-  `2 < rows[k].len` with the new `k`, so facts about `rows[1_u64]` discharge
-  it while `wr` still names `rows[0_u64]`. A program that proves
-  `3 <= rows[k].len` after the assignment reads index 2 of a one-element
-  row and segfaults; the v0.73 and v0.74 checkers both accept it. The
-  requirement must read the reference's target as captured at formation
-  [REF-1], as a range's captured endpoints are [OWN-7]. Validate with that
-  program refused, the same program with `wr` formed after the assignment
-  accepted, and a reference whose offset is never reassigned unchanged.
-  Found by the completion review of PR #141; the fix is planned as its own
-  PR.
+- **A body access keeps a row's index after the body writes that index
+  parameter.** EFF-1 evaluates the index of a row entry such as
+  `writes(window[index])` once at the call, but EFF-2 attributes a body
+  access `deref(window)[index]` to that entry by the parameter's spelling,
+  even after `set index = 0_u64`. A callee declared that way that sets
+  `index` to 0 and writes `deref(window)[index]`, called with
+  `index: 1_u64`, writes `r[0_u64]` while the caller's `p = &r[0_u64]`
+  stays valid and reads the new value. One that replaces `deref(rows)[index]`
+  after the same write leaves the caller's fact `3 <= rows[0_u64].len`
+  standing over a replaced row, and the caller reads an uninitialized
+  element. The v0.73 and v0.74 checkers accept both, directly and through a
+  reference formed after the write. The access must map to the entry only
+  while the parameter still holds its call value, and otherwise to its
+  nearest enclosing path [EFF-2]. That is flow-sensitive: a loop that writes
+  the parameter must reach its header the way a loop's write of a
+  reference's index binding does. Validate with those two programs refused
+  and a parameter written only after its last access accepted. Found by the
+  completion review of PR #145.
+- **A goal over an index no spelling names offers routes that cannot
+  establish it.** After `let wr = &rows[k];` and `set k = 1_u64;`, a call's
+  requirement through `wr` reads `rows[?].len`, and FN-8's repair offers an
+  `invariant` whose `use` steps name the facts implying it, or a guard whose
+  condition establishes it. No fact or condition names that row, so
+  neither can succeed, while binding the index first, `let k0 = k;` and
+  `let wr = &rows[k0];`, does. An index a loop-rebound holder carries, also
+  rendered `?`, gets the same two routes, and there forming the reference
+  after the rebinding is what works. Select the route from what the `?`
+  stands for, and pin each pair with a repaired source that is accepted.
+  Found while fixing the completion review of PR #145.

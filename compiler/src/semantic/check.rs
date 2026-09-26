@@ -23,7 +23,7 @@ mod types;
 pub(crate) use receipts::ProofReceipts;
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::syntax::NodeId;
 use crate::{
@@ -599,6 +599,13 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// the function driver clears this scratch state on every retry.
     deferred_loop_reference_uses: RefCell<Vec<references::DeferredLoopReferenceUse>>,
     loop_reference_summaries: RefCell<HashMap<references::LoopReferenceToken, Vec<ResolvedPlace>>>,
+    /// [REF-1] for each loop, the bindings a write reaches its backedge with
+    /// after a reference live at its header captured an index from them. The
+    /// next iteration reaches the header after that write, so the header
+    /// supersedes those indices. The sets only grow across the function's
+    /// retries, and a new member restarts the walk, as a new loop-header
+    /// summary path does.
+    loop_superseded_bindings: RefCell<HashMap<super::model::CheckedLoopId, HashSet<BindingId>>>,
     /// Resolved origins established by this structural function attempt.
     /// Every retry starts fresh; only its complete final walk is published.
     reference_origins: RefCell<Vec<Vec<ResolvedPlace>>>,
@@ -1555,6 +1562,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             call_separations: RefCell::new(Vec::new()),
             deferred_loop_reference_uses: RefCell::new(Vec::new()),
             loop_reference_summaries: RefCell::new(HashMap::new()),
+            loop_superseded_bindings: RefCell::new(HashMap::new()),
             reference_origins: RefCell::new(Vec::new()),
             contract_queries: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
@@ -2264,6 +2272,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .template_spelling_authority
             .replace(signature.substitution.len() > 0 && !signature.substitution.is_symbolic());
         self.loop_reference_summaries.borrow_mut().clear();
+        self.loop_superseded_bindings.borrow_mut().clear();
         let queries = self.contract_queries.borrow().len();
         let tail_rejections = self.musttail_rejections.borrow().len();
         let outcome = loop {
