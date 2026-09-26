@@ -1107,6 +1107,31 @@ rarely insert at the same place.
   sources. Reopen when the next parallel-lowering experiment has to change the
   split.
 
+- **A handed-out call may block on a peer while a join waits beneath it.**
+  `sched/core.c` assumes that compute callbacks never block on I/O, and
+  `wf__par_wait` lets a joining lane run other published work on its own
+  stack. Nothing in permission or lowering keeps a call that reaches a
+  blocking host operation out of a hand-out. Under `--par --par-ledger`,
+  two adjacent calls of a helper that wraps `receive_next` on two different
+  connections are permitted and chained, and the emitted `pair` publishes
+  one of them through `wf__par_publish`. A direct pair of `receive_next`
+  calls is not handed out, but only because its addressed result ends the
+  group. A lane that runs such a task while it helps a join therefore blocks
+  on the network with that join's continuation stranded below it. Take a
+  run of three independent statements: A forks compute and then sends on one
+  connection, B receives on another, C is anything. If a lane running A helps
+  with B, and the peer answers B only after A's send, the parallel program
+  hangs where the sequential one completes. This hang is reasoned from the
+  scheduler code; no run has shown it. Blocking file reads have the same
+  stacking but end on their own; their cost is lost compute.
+
+  The fix belongs to the I/O model under discussion: no handed-out or helping
+  task may wait, and a blocking call must be recognizable from its signature.
+  Until then, the minimal repair is to treat a call that reaches a blocking
+  host operation as not offerable. Validate with a harness test that runs the
+  three-statement shape against a peer that answers only after the send, at
+  `WF_WORKERS` 2 and 4.
+
 ## Platforms and host interfaces
 
 - **Upstream LLVM on Darwin does not yet support the selected stack-probe
