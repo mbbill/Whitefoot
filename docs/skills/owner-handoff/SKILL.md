@@ -21,7 +21,8 @@ English.
    ## Decision card #1
 
    ### Topic
-   The question the owner decides, in one sentence.
+   The question the owner decides, in one sentence; for an amendment, the
+   node it changes.
 
    ### Current state
    What the specification, design or implementation does now, and the
@@ -40,8 +41,10 @@ English.
 
    Write the headings and their content in the owner's language. Link the
    amendment or evidence that holds the problem, alternatives, tradeoffs and
-   uncertainty. Bring one of them into the card only when it decides the
-   recommendation.
+   uncertainty in full; the fields above summarize them, and an alternative
+   enters the card only when it decides the recommendation. Each part after
+   the cards starts with its own `##` heading, so none reads as part of the
+   last card.
 2. **Result.** A few lines: what changed, the validation actually run (full
    gate or focused, and the tested revision), what remains unverified, and the
    PR link.
